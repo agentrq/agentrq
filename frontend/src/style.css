@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* Inter font configuration from fontsource */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}

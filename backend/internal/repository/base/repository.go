@@ -1,0 +1,205 @@
+package base
+
+import (
+	"context"
+	"errors"
+
+	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
+	"github.com/hasmcp/agentrq/backend/internal/data/model"
+	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
+	"gorm.io/gorm"
+)
+
+var ErrNotFound = errors.New("not found")
+
+type Repository interface {
+	// Workspace
+	CreateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+	GetWorkspace(ctx context.Context, id int64, userID string) (model.Workspace, error)
+	ListWorkspaces(ctx context.Context, userID string, includeArchived bool) ([]model.Workspace, error)
+	DeleteWorkspace(ctx context.Context, id int64, userID string) error
+	UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+
+	// Task
+	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
+	GetTask(ctx context.Context, workspaceID, taskID int64, userID string) (model.Task, error)
+	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID string) ([]model.Task, error)
+	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
+	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID string) error
+
+	// Message
+	CreateMessage(ctx context.Context, m model.Message) error
+	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
+	UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error
+
+	// System/Internal
+	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
+	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
+	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
+}
+
+type repository struct {
+	db dbconn.DBConn
+}
+
+func New(db dbconn.DBConn) Repository {
+	return &repository{db: db}
+}
+
+func (r *repository) conn(ctx context.Context) *gorm.DB {
+	return r.db.Conn(ctx).WithContext(ctx)
+}
+
+// ── Workspaces ──────────────────────────────────────────────────────────────────
+
+func (r *repository) CreateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
+	if err := r.conn(ctx).Create(&p).Error; err != nil {
+		return model.Workspace{}, err
+	}
+	return p, nil
+}
+
+func (r *repository) GetWorkspace(ctx context.Context, id int64, userID string) (model.Workspace, error) {
+	var p model.Workspace
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&p).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Workspace{}, ErrNotFound
+	}
+	return p, err
+}
+
+func (r *repository) ListWorkspaces(ctx context.Context, userID string, includeArchived bool) ([]model.Workspace, error) {
+	var workspaces []model.Workspace
+	query := r.conn(ctx).Where("user_id = ?", userID)
+	if !includeArchived {
+		query = query.Where("archived_at IS NULL")
+	}
+	err := query.Order("created_at desc").Find(&workspaces).Error
+	return workspaces, err
+}
+
+func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error) {
+	if err := r.conn(ctx).Save(&p).Error; err != nil {
+		return model.Workspace{}, err
+	}
+	return p, nil
+}
+
+func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID string) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Delete all messages for all tasks in this workspace
+		if err := tx.Where("task_id IN (?)", tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)).Delete(&model.Message{}).Error; err != nil {
+			return err
+		}
+
+		// 2. Delete all tasks in this workspace
+		if err := tx.Where("workspace_id = ?", id).Delete(&model.Task{}).Error; err != nil {
+			return err
+		}
+
+		// 3. Delete the workspace itself
+		res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Workspace{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
+	if err := r.conn(ctx).Create(&t).Error; err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
+}
+
+func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, userID string) (model.Task, error) {
+	var t model.Task
+	err := r.conn(ctx).
+		Preload("Messages").
+		Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).
+		First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Task{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID string) ([]model.Task, error) {
+	var tasks []model.Task
+	q := r.conn(ctx).Preload("Messages").Where("workspace_id = ? AND user_id = ?", req.WorkspaceID, userID)
+	if req.CreatedBy != "" {
+		q = q.Where("created_by = ?", req.CreatedBy)
+	}
+	err := q.Order("created_at desc").Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {
+	if err := r.conn(ctx).Save(&t).Error; err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
+}
+
+func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, userID string) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Delete all messages for this task
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.Message{}).Error; err != nil {
+			return err
+		}
+
+		// 2. Delete the task
+		res := tx.Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).
+			Delete(&model.Task{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+func (r *repository) CreateMessage(ctx context.Context, m model.Message) error {
+	return r.conn(ctx).Create(&m).Error
+}
+
+func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Message, error) {
+	var msgs []model.Message
+	err := r.conn(ctx).Where("task_id = ?", taskID).Order("created_at asc").Find(&msgs).Error
+	return msgs, err
+}
+
+func (r *repository) UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error {
+	return r.conn(ctx).Model(&model.Message{}).Where("id = ?", messageID).Update("metadata", metadata).Error
+}
+
+func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {
+	var p model.Workspace
+	err := r.conn(ctx).First(&p, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Workspace{}, ErrNotFound
+	}
+	return p, err
+}
+
+func (r *repository) SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.conn(ctx).Where("status = ?", status).Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *repository) SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error) {
+	var count int64
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("workspace_id = ? AND parent_id = ? AND status = ?", workspaceID, parentID, status).
+		Count(&count).Error
+	return count > 0, err
+}

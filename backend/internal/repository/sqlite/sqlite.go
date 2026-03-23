@@ -1,0 +1,86 @@
+package sqlite
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
+	"github.com/hasmcp/agentrq/backend/internal/service/config"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+)
+
+type (
+	Params struct {
+		Config config.Service
+	}
+
+	repository struct {
+		db *gorm.DB
+	}
+
+	sqliteConfig struct {
+		Enabled         bool          `yaml:"enabled"`
+		DSN             string        `yaml:"dsn"`
+		MaxIdleConns    int           `yaml:"maxIdleConns"`
+		MaxOpenConns    int           `yaml:"maxOpenConns"`
+		MaxConnLifetime time.Duration `yaml:"maxConnLifetime"`
+	}
+)
+
+const (
+	_cfgKey = "sqlite"
+
+	_logPrefix = "[sqlite] "
+)
+
+func New(p Params) (dbconn.DBConn, error) {
+	var cfg sqliteConfig
+
+	err := p.Config.Populate(_cfgKey, &cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if !cfg.Enabled {
+		fmt.Println(_logPrefix + "sqlite repository is not enabled, skipping")
+		return nil, nil
+	}
+
+	db, err := gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{TranslateError: true})
+	if err != nil {
+		return nil, fmt.Errorf(_logPrefix+"failed to connect: %w", err)
+	}
+
+	fmt.Println(_logPrefix + "connected")
+
+	dbi, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf(_logPrefix+"failed to get database connection: %w", err)
+	}
+
+	if cfg.MaxIdleConns > 0 {
+		dbi.SetMaxIdleConns(cfg.MaxIdleConns)
+	}
+	if cfg.MaxOpenConns > 0 {
+		dbi.SetMaxOpenConns(cfg.MaxOpenConns)
+	}
+	if cfg.MaxConnLifetime > 0 {
+		dbi.SetConnMaxLifetime(cfg.MaxConnLifetime)
+	}
+
+	return &repository{db: db}, nil
+}
+
+func (r *repository) Conn(ctx context.Context) *gorm.DB {
+	return r.db
+}
+
+func (r *repository) Close(ctx context.Context) {
+	dbi, err := r.db.DB()
+	if err != nil {
+		return
+	}
+	dbi.Close()
+}

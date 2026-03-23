@@ -1,0 +1,60 @@
+package model
+
+import (
+	"time"
+
+	"gorm.io/datatypes"
+)
+
+type (
+	// Workspace hosts an agentrq workspace
+	Workspace struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		UserID      string `gorm:"index:idx_workspaces_user_id;type:varchar(64)"`
+		Name        string `gorm:"type:varchar(128)"`
+		Description string `gorm:"type:text"`
+		ArchivedAt           *time.Time
+		Icon                 string         `gorm:"type:text"`
+		NotificationSettings datatypes.JSON `gorm:"type:text"`
+		TokenEncrypted       string         `gorm:"type:text"`
+		TokenNonce           string         `gorm:"type:varchar(64)"`
+		AutoAllowedTools     datatypes.JSON `gorm:"type:text"`
+	}
+
+	// Task hosts a task created by a human or an agent within a workspace
+	Task struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+
+		UserID      string `gorm:"index:idx_tasks_user_id;type:varchar(64)"`
+		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id"`
+		CreatedBy   string `gorm:"type:varchar(16)"` // "human" | "agent"
+		Assignee    string `gorm:"type:varchar(16)"` // "human" | "agent"
+		Status      string `gorm:"type:varchar(16)"` // "pending" | "done" | "rejected"
+		Title       string `gorm:"type:varchar(255)"`
+		Body        string `gorm:"type:text"`
+		Response    string `gorm:"type:text"`
+		ReplyText   string `gorm:"type:text"`
+		Attachments datatypes.JSON
+		Messages    []Message `gorm:"foreignKey:TaskID"`
+
+		CronSchedule string `gorm:"type:varchar(64)"`
+		ParentID     int64  `gorm:"index:idx_tasks_parent_id"`
+		SortOrder    float64 `gorm:"type:real;default:0"`
+	}
+
+	// Message is an entry in a task's chat history
+	Message struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		TaskID      int64  `gorm:"index:idx_messages_task_id"`
+		UserID      string `gorm:"index:idx_messages_user_id;type:varchar(64)"`
+		Sender      string `gorm:"type:varchar(16)"` // "human" | "agent"
+		Text        string `gorm:"type:text"`
+		Attachments datatypes.JSON
+		Metadata    datatypes.JSON
+	}
+)

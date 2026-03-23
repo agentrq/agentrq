@@ -1,0 +1,54 @@
+package storage
+
+import (
+	"encoding/base64"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+type Service interface {
+	Save(id string, dataBase64 string) error
+	Load(id string) (string, error)
+	LoadRaw(id string) ([]byte, error)
+	Delete(id string) error
+}
+
+type service struct {
+	baseDir string
+}
+
+func New(baseDir string) (Service, error) {
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
+		return nil, err
+	}
+	return &service{baseDir: baseDir}, nil
+}
+
+func (s *service) Save(id string, dataBase64 string) error {
+	data, err := base64.StdEncoding.DecodeString(dataBase64)
+	if err != nil {
+		return fmt.Errorf("decode base64: %w", err)
+	}
+
+	path := filepath.Join(s.baseDir, id)
+	return os.WriteFile(path, data, 0644)
+}
+
+func (s *service) Load(id string) (string, error) {
+	path := filepath.Join(s.baseDir, id)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+func (s *service) LoadRaw(id string) ([]byte, error) {
+	path := filepath.Join(s.baseDir, id)
+	return os.ReadFile(path)
+}
+
+func (s *service) Delete(id string) error {
+	path := filepath.Join(s.baseDir, id)
+	return os.Remove(path)
+}

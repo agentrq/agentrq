@@ -1,0 +1,40 @@
+app:
+  port: ${PORT:3000}
+  baseUrl: ${AGENTRQ_BASE_URL:http://localhost:3000}
+  domain: ${AGENTRQ_DOMAIN:localhost}
+
+ssl:
+  enabled: ${AGENTRQ_SSL_ENABLED:false}
+  cacheDir: ${AGENTRQ_SSL_CACHE_DIR:/_certs}
+  letsencryptEmail: ${AGENTRQ_SSL_LETSENCRYPT_EMAIL:}
+  cloudflareApiToken: ${AGENTRQ_SSL_CLOUDFLARE_API_TOKEN:}
+
+sqlite:
+  enabled: ${AGENTRQ_SQLITE_ENABLED:true}
+  dsn: ${AGENTRQ_SQLITE_DSN:./_storage/agentrq.db}
+  maxIdleConns: 10
+  maxOpenConns: 100
+  maxConnLifetime: 1h
+
+postgres:
+  enabled: ${AGENTRQ_POSTGRES_ENABLED:false}
+  dsn: "host=${AGENTRQ_POSTGRES_HOST:localhost} user=${AGENTRQ_POSTGRES_USER:postgres} password=${AGENTRQ_POSTGRES_PASSWORD:postgres} dbname=${AGENTRQ_POSTGRES_DBNAME:agentrq} port=${AGENTRQ_POSTGRES_PORT:5432} sslmode=disable TimeZone=UTC"
+  maxIdleConns: 10
+  maxOpenConns: 100
+  maxConnLifetime: 1h
+
+auth:
+  jwtSecret: ${AGENTRQ_AUTH_JWT_SECRET:agentrq-secret-change-me}
+  rootAccessToken: ${AGENTRQ_AUTH_ROOT_ACCESS_TOKEN:agentrq}
+  rootLoginEnabled: ${AGENTRQ_AUTH_ROOT_LOGIN_ENABLED:false}
+  google:
+    clientId: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_ID}
+    clientSecret: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_SECRET}
+
+smtp:
+  enabled: ${AGENTRQ_SMTP_ENABLED:true}
+  host: ${AGENTRQ_SMTP_HOST:}
+  port: ${AGENTRQ_SMTP_PORT:587}
+  username: ${AGENTRQ_SMTP_USERNAME:}
+  password: ${AGENTRQ_SMTP_PASSWORD:}
+  from: ${AGENTRQ_SMTP_FROM:AgentRQ <no-reply@agentrq.com>}

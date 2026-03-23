@@ -1,0 +1,6 @@
+app:
+  port: 3000
+
+sqlite:
+  enabled: true
+  dsn: ./_storage/agentrq.db
