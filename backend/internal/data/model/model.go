@@ -79,4 +79,10 @@ const (
 	ActionIDMessageCreate
 	ActionIDMessageUpdate
 	ActionIDMessageDelete
+	ActionIDMCPToolCall
+	ActionIDTaskApproveManual
+	ActionIDMCPPermissionManual
+	ActionIDMCPPermissionAuto
+	ActionIDTaskComplete
+	ActionIDTaskFromScheduled
 )

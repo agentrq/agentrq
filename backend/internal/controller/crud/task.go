@@ -147,6 +147,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if msgText == "" {
 			msgText = "Human approved this task."
 		}
+		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskApproveManual)
 	case "reject":
 		m.Status = "rejected"
 		createMsg = true
@@ -230,6 +231,9 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	updated, err := c.repository.UpdateTask(ctx, m)
 	if err != nil {
 		return nil, err
+	}
+	if updated.Status == "completed" || updated.Status == "done" {
+		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskComplete)
 	}
 	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateTaskStatusResponse{Task: c.fromModelTaskToEntity(updated)}, nil

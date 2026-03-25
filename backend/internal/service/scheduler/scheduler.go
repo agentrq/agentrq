@@ -9,7 +9,8 @@ import (
 	"github.com/hasmcp/agentrq/backend/internal/repository/base"
 	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
 	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-    mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
+	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
+	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
 	"github.com/robfig/cron/v3"
 )
 
@@ -18,13 +19,14 @@ type Service interface {
 }
 
 type scheduler struct {
-	repo  base.Repository
-	idgen idgen.Service
-	bus   *eventbus.Bus
+	repo      base.Repository
+	idgen     idgen.Service
+	bus       *eventbus.Bus
+	telemetry telemetry.Service
 }
 
-func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus) Service {
-	return &scheduler{repo: repo, idgen: idgen, bus: bus}
+func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, telemetry telemetry.Service) Service {
+	return &scheduler{repo: repo, idgen: idgen, bus: bus, telemetry: telemetry}
 }
 
 func (s *scheduler) Start(ctx context.Context) {
@@ -111,6 +113,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		fmt.Printf("scheduler: failed to spawn task from cron %d: %v\n", parent.ID, err)
 		return
 	}
+	s.telemetry.Record(ctx, parent.UserID, parent.WorkspaceID, model.ActionIDTaskFromScheduled)
 
 	fmt.Printf("scheduler: spawned task %d from cron %d\n", created.ID, parent.ID)
 

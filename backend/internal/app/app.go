@@ -145,7 +145,7 @@ func New(cfg Config) (*App, error) {
 	})
 
 	// ── Scheduler ─────────────────────────────────────────────────────────────
-	schedSvc := scheduler.New(repo, ids, bus)
+	schedSvc := scheduler.New(repo, ids, bus, telemetrySvc)
 	schedSvc.Start(context.Background())
 
 	// ── Auth service ──────────────────────────────────────────────────────────
@@ -199,6 +199,9 @@ func New(cfg Config) (*App, error) {
 
 				updated, err := repo.UpdateTask(ctx, m)
 				if err == nil {
+					if updated.Status == "completed" || updated.Status == "done" {
+						telemetrySvc.Record(ctx, workspaceOwner, workspaceID, model.ActionIDTaskComplete)
+					}
 					if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
 						notifSvc.NotifyTaskStatusUpdated(w, updated)
 					}
@@ -329,6 +332,7 @@ func New(cfg Config) (*App, error) {
 				return tools
 			}(),
 			tokenSvc,
+			telemetrySvc,
 		)
 		srv.StartPoller(repo)
 		return srv

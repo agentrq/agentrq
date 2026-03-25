@@ -211,28 +211,34 @@
       </div>
 
       <form @submit.prevent="submitReply">
-        <div class="flex gap-2 items-center">
+        <div class="flex gap-2 items-end">
           <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
-          <div class="flex-1 flex items-center h-[46px] border-2 border-black bg-white focus-within:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group">
-            <input type="text"
+          <div class="flex-1 flex items-center border-2 border-black bg-white focus-within:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group relative">
+            <textarea
+              ref="textareaRef"
               v-model="replyText"
               @keydown.enter.exact.prevent="submitReply"
+              @input="adjustTextareaHeight"
+              rows="1"
               :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-              :placeholder="!workspace.agent_connected ? 'Waiting for agent to connect...' : (task.status === 'notstarted' || task.status === 'pending') ? 'Task not started yet...' : 'Type a message or instruction...'"
-              class="flex-1 h-full px-4 text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50"
-            />
+              :placeholder="!workspace.agent_connected ? 'Waiting for agent...' : (task.status === 'notstarted' || task.status === 'pending') ? 'Task not started...' : 'Type instructions...'"
+              class="flex-1 px-4 py-3 text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
+            ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
                     :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-                    class="h-full px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30">
+                    class="h-[46px] px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30 self-end">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
 
           <button type="submit"
                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || !workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-                  class="h-[46px] px-6 bg-black text-white border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black disabled:opacity-30 transition-all shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center">
-            Send
+                  class="h-[46px] w-[46px] bg-black text-white border-2 border-black hover:bg-[#00FF88] hover:text-black disabled:opacity-30 transition-all shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center"
+                  title="Send Instruction">
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
           </button>
         </div>
 
@@ -410,6 +416,9 @@ async function submitReply() {
   const atts = [...replyAttachments.value];
   replyText.value = '';
   replyAttachments.value = [];
+  nextTick(() => {
+    adjustTextareaHeight();
+  });
   try {
     const res = await respondToTask(workspaceId, taskId, 'text', text, atts);
     task.value = res.task;
@@ -418,7 +427,20 @@ async function submitReply() {
     notifyError("Failed to deliver message: " + err.message);
     replyText.value = text;
     replyAttachments.value = atts;
+    nextTick(() => {
+      adjustTextareaHeight();
+    });
   }
+}
+
+const textareaRef = ref(null);
+
+function adjustTextareaHeight() {
+  const el = textareaRef.value;
+  if (!el) return;
+  el.style.height = '46px';
+  const newHeight = Math.min(el.scrollHeight, 150);
+  el.style.height = newHeight + 'px';
 }
 
 function formatDateTime(dateStr) {

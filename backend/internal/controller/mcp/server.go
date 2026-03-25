@@ -21,6 +21,7 @@ import (
 	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
 	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
 	"github.com/hasmcp/agentrq/backend/internal/service/storage"
+	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
@@ -59,6 +60,7 @@ type WorkspaceServer struct {
 	bus                   *eventbus.Bus
 	idgen                 idgen.Service
 	storage               storage.Service
+	telemetry             telemetry.Service
 	tokenSvc              auth.TokenService
 	autoAllowedToolsMu    sync.RWMutex
 	autoAllowedTools      []string
@@ -135,6 +137,7 @@ func NewWorkspaceServer(
 	archivedAt *time.Time,
 	autoAllowedTools []string,
 	tokenSvc auth.TokenService,
+	telemetry telemetry.Service,
 ) *WorkspaceServer {
 	fmt.Printf("NEW WORKSPACE SERVER CREATED: %d\n", workspaceID)
 	ps := &WorkspaceServer{
@@ -161,6 +164,7 @@ func NewWorkspaceServer(
 		name:                  name,
 		description:           description,
 		archivedAt:            archivedAt,
+		telemetry:             telemetry,
 	}
 
 	workspaceIDStr := monoflake.ID(workspaceID).String()
@@ -443,6 +447,7 @@ func (ps *WorkspaceServer) UpdateAutoAllowedTools(tools []string) {
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
 func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, params CreateTaskParams) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -524,6 +529,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 }
 
 func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.CallToolRequest, params UpdateTaskStatusParams) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -592,6 +598,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 }
 
 func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolRequest, params ReplyParams) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -630,6 +637,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 }
 
 func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mcp.CallToolRequest, params DownloadAttachmentParams) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -685,6 +693,7 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 }
 
 func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	name := ps.name
 	desc := ps.description
@@ -720,6 +729,7 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 }
 
 func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.CallToolRequest, params GetTaskMessagesParams) (*mcp.CallToolResult, any, error) {
+	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -821,6 +831,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		fmt.Printf("MCP INCOMING: %s\n", method)
 		if method == "notifications/claude/channel/permission_request" {
+			ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
 			params := req.GetParams()
 			var p PermissionRequestParams
 			b, _ := json.Marshal(params)
@@ -850,6 +861,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 					_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
 				}()
+				ps.telemetry.Record(context.Background(), ps.userID, ps.workspaceID, model.ActionIDMCPPermissionAuto)
 				return nil, nil
 			}
 
@@ -944,6 +956,10 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 		}
 	}
 
+	if effectiveBehavior == "allow" {
+		ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPPermissionManual)
+	}
+
 	// Notify Claude Code session
 	params := map[string]any{
 		"request_id": requestID,
@@ -1020,6 +1036,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				time.Sleep(100 * time.Millisecond)
 				_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
 			}()
+			ps.telemetry.Record(context.Background(), ps.userID, ps.workspaceID, model.ActionIDMCPPermissionAuto)
 			return
 		}
 

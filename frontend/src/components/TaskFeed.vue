@@ -152,7 +152,7 @@
           </div>
           
           <div class="space-y-3">
-            <div v-for="t in grp.tasks" :key="t.id"
+            <div v-for="(t, idx) in grp.tasks" :key="t.id"
                  @click="openTask(t)"
                  class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm"
                  :class="getTaskBgStyle(t.status)">
@@ -191,7 +191,19 @@
                    </div>
                  </div>
               </div>
-
+               
+               <div v-if="!isArchived && grp.title === 'Not Started'" class="flex flex-col gap-0.5 mr-1 shrink-0">
+                    <button @click.stop="reorderTask(t, -1)" 
+                            :disabled="idx === 0"
+                            class="p-1 text-gray-400 hover:text-black hover:bg-gray-100 disabled:opacity-20 transition-all rounded-sm" title="Move Up">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
+                    </button>
+                    <button @click.stop="reorderTask(t, 1)" 
+                            :disabled="idx === grp.tasks.length - 1"
+                            class="p-1 text-gray-400 hover:text-black hover:bg-gray-100 disabled:opacity-20 transition-all rounded-sm" title="Move Down">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                  </div>
               <div class="flex items-center justify-end gap-3 shrink-0">
                  <div v-if="!isArchived && t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')" class="hidden md:flex items-center gap-1.5 mr-2">
                                            <button @click.stop.prevent="respond(t.id, 'allow')" 
@@ -259,7 +271,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask } from '../api';
+import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
 
@@ -562,6 +574,43 @@ async function onDeleteConfirm() {
     notifyError('Delete Error: ' + err.message);
   } finally {
     closeDeleteModal();
+  }
+}
+
+async function reorderTask(task, direction) {
+  const group = displayGroups.value.find(g => g.title === 'Not Started');
+  if (!group) return;
+  
+  const idx = group.tasks.findIndex(x => x.id === task.id);
+  if (idx === -1) return;
+  
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= group.tasks.length) return;
+  
+  const neighbor = group.tasks[targetIdx];
+  // Sort is DESC so: UP = idx decreases relative to list but order value should INCREASE
+  // actually index 0 is at the top.
+  // Move UP (direction -1) to targetIdx (idx - 1)
+  // Move DOWN (direction 1) to targetIdx (idx + 1)
+  
+  const neighborOrder = getTaskOrder(neighbor);
+  let newOrder;
+  if (direction === -1) {
+    // Moving UP above neighbor: order must be > neighborOrder
+    newOrder = neighborOrder + 0.001; 
+  } else {
+    // Moving DOWN below neighbor: order must be < neighborOrder
+    newOrder = neighborOrder - 0.001;
+  }
+  
+  try {
+    const res = await updateTaskOrder(props.workspaceId, task.id, newOrder);
+    const localIdx = localTasks.value.findIndex(x => x.id === task.id);
+    if (localIdx !== -1) {
+      localTasks.value[localIdx] = res.task;
+    }
+  } catch (err) {
+    notifyError('Reorder Error: ' + err.message);
   }
 }
 </script>
