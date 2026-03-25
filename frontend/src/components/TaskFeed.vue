@@ -16,41 +16,46 @@
     />
 
     <!-- Action Bar -->
-    <div v-if="!isArchived" class="pt-2 pb-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+    <div v-if="!isArchived" class="pt-2 pb-4 flex flex-row items-center justify-between gap-2 shrink-0 flex-wrap">
         <button @click="showScheduledOnly = !showScheduledOnly"
-                class="flex items-center gap-2 px-3 py-2 border-2 border-black text-[11px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
+                class="flex items-center gap-1.5 px-2.5 py-2 border-2 border-black text-[10px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
                 :class="showScheduledOnly ? 'bg-[#00FF88] text-black translate-y-[1px]' : 'bg-white text-gray-500 hover:bg-[#00FF88]/20 hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'"
                 :title="showScheduledOnly ? 'Show All' : 'Show Scheduled Only'">
            <svg class="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
            </svg>
-           <span class="hidden md:inline">Scheduled Only</span>
+           <span class="hidden sm:inline">Scheduled</span>
         </button>
        
-       <div class="flex items-center gap-2.5 ml-auto">
+       <div class="flex items-center gap-2 ml-auto">
          <button @click="$emit('archive')" 
-                 class="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-black text-[11px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+                 class="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-black text-[10px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
             <svg class="w-3.5 h-3.5 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            Archive
+            <span class="hidden sm:inline">Archive</span>
          </button>
           <button @click="startCreate" 
-                  class="group flex items-center gap-2.5 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-5 py-2.5 text-[11px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+                  class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
             <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-            New Task
+            <span class="hidden sm:inline">New Task</span>
+            <span class="sm:hidden">Task</span>
          </button>
        </div>
     </div>
 
     <!-- Create/Edit Task Inline Form -->
     <Transition name="fade-down">
-      <div v-if="isFormOpen" class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-6 shrink-0 z-10 relative">
+      <div v-if="isFormOpen" class="fixed inset-0 z-40 flex items-center justify-center p-4 md:relative md:inset-auto md:p-0 md:bg-transparent md:z-10 md:block">
+        <!-- Backdrop for mobile -->
+        <div class="fixed inset-0 bg-black/60 md:hidden" @click="isFormOpen = false"></div>
+        
+        <div class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full max-w-2xl md:mb-6 shrink-0 z-10 relative flex flex-col max-h-[90vh] md:max-h-none">
         <div class="px-6 py-4 border-b-2 border-black bg-black flex justify-between items-center shrink-0">
             <h2 class="text-sm font-black text-white uppercase tracking-widest">{{ isEditMode ? 'Edit Chronic Task' : 'Define New Task' }}</h2>
             <button @click="isFormOpen = false" class="text-white/60 hover:text-[#00FF88] transition-colors p-1 border border-white/20 hover:border-[#00FF88]">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
         </div>
-        <form @submit.prevent="isEditMode ? submitEditTask() : submitHumanTask()" class="p-6 flex flex-col gap-4 overflow-y-auto max-h-[70vh] custom-scrollbar">
+        <form @submit.prevent="isEditMode ? submitEditTask() : submitHumanTask()" class="p-6 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
             <div class="flex flex-col gap-1.5">
                <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Title</label>
                <input v-model="newTask.title" placeholder="Requirement summary..." class="w-full bg-white border-2 border-black px-4 py-2 text-sm outline-none font-bold text-gray-900 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" required />
@@ -128,6 +133,7 @@
                <button type="button" @click="isFormOpen = false" class="px-5 py-2.5 border-2 border-black bg-white text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all ml-auto">Cancel</button>
             </div>
         </form>
+        </div>
       </div>
     </Transition>
 

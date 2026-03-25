@@ -37,7 +37,11 @@
 
     <!-- Create workspace form -->
     <Transition name="fade-down">
-      <div v-if="showCreate" class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-6">
+      <div v-if="showCreate" class="fixed inset-0 z-40 flex items-center justify-center p-4 md:relative md:inset-auto md:p-0 md:bg-transparent md:z-10 md:block">
+        <!-- Backdrop for mobile -->
+        <div class="fixed inset-0 bg-black/60 md:hidden" @click="showCreate = false"></div>
+        
+        <div class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full max-w-2xl md:mb-6 shrink-0 z-10 relative flex flex-col max-h-[90vh] md:max-h-none">
         <div class="px-6 py-4 border-b-2 border-black bg-black flex justify-between items-center">
           <h2 class="text-sm font-black text-white uppercase tracking-widest">Initialize New Workspace</h2>
           <button @click="showCreate = false" class="text-white/60 hover:text-[#00FF88] transition-colors p-1 border border-white/20 hover:border-[#00FF88]">
@@ -75,6 +79,7 @@
               </button>
             </div>
           </form>
+        </div>
         </div>
       </div>
     </Transition>

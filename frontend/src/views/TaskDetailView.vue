@@ -218,7 +218,6 @@
             <textarea
               ref="textareaRef"
               v-model="replyText"
-              @keydown.enter.exact.prevent="submitReply"
               @input="adjustTextareaHeight"
               rows="1"
               :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
@@ -261,7 +260,7 @@
 
         <div v-if="workspace.agent_connected && task.status !== 'notstarted' && task.status !== 'pending'" class="flex items-center justify-center gap-2 mt-3">
           <div class="h-px bg-gray-200 grow"></div>
-          <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Enter to send · Secure Agent Sync</span>
+          <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Shift+Enter for newline · Secure Agent Sync</span>
           <div class="h-px bg-gray-200 grow"></div>
         </div>
       </form>
