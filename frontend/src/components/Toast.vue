@@ -1,6 +1,6 @@
 <template>
   <div v-if="toasts.length > 0" 
-       class="fixed bottom-6 right-6 z-[200] w-[600px] border-2 border-black bg-white shadow-[8px_8px_0_0_rgba(0,0,0,1)] flex flex-col pointer-events-auto overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
+       class="fixed bottom-6 right-4 left-4 md:left-auto md:right-6 z-[200] md:w-[600px] border-2 border-black bg-white shadow-[6px_6px_0_0_rgba(0,0,0,1)] flex flex-col pointer-events-auto overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-300">
     
     <!-- Header -->
     <div class="bg-black text-white px-4 py-2.5 flex items-center justify-between shrink-0 border-b-2 border-black">

@@ -105,6 +105,32 @@
         </div>
       </div>
     </div>
+
+    <!-- Stats Footer -->
+    <div v-if="tasks.length > 0" class="mt-4 pt-4 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0">
+        <div class="flex items-center gap-4">
+           <div class="flex items-center gap-1.5" title="Active Tasks">
+             <span class="hidden md:inline">Active Tasks</span>
+             <span class="md:hidden">⚡</span>
+             <span class="text-black font-black">{{ activeTaskCount }}</span>
+           </div>
+           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4" title="Scheduled Runs">
+             <span class="hidden md:inline">Scheduled</span>
+             <span class="md:hidden">⏰</span>
+             <span class="text-black font-black">{{ scheduledCount }}</span>
+           </div>
+           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 transition-all" 
+                :class="pendingInputCount > 0 ? 'bg-yellow-400 text-black px-2 -my-1 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : ''"
+                title="Your Attention Needed">
+             <span class="hidden md:inline">{{ pendingInputCount > 0 ? 'Action Required' : 'Pending on Me' }}</span>
+             <span class="md:hidden">!</span>
+             <span class="font-black" :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-300'">{{ pendingInputCount }}</span>
+           </div>
+        </div>
+        <div class="hidden md:flex items-center gap-1.5 text-[9px] font-black text-gray-300">
+          GLOBAL VIEW · SYNCED
+        </div>
+    </div>
   </div>
 </template>
 
@@ -136,6 +162,10 @@ const title = computed(() => {
   };
   return map[filterType.value] || 'Global Tasks';
 });
+
+const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cron').length);
+const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
+const pendingInputCount = computed(() => tasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')).length);
 
 const getWorkspaceName = (workspaceId) => {
   const ws = workspaces.value.find(w => w.id === workspaceId);

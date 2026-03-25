@@ -223,28 +223,34 @@
       </div>
     </div>
     
-    <!-- Footer -->
-    <div v-if="localTasks.length > 0 && !isArchived" class="mt-3 pt-3 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-widest shrink-0">
-        <span class="flex items-center gap-4">
-           <span title="Active Tasks" class="flex items-center gap-1.5">
-             <span class="hidden md:inline text-gray-400">Tasks:</span>
-             <span class="md:hidden">≡</span>
-             <span class="text-black">{{ activeTaskCount }}</span>
-           </span>
-           <span title="Scheduled Tasks" class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 md:border-none md:pl-0">
-             <span class="hidden md:inline text-gray-400">Scheduled:</span>
-             <span class="md:hidden">◴</span>
-             <span class="text-black">{{ scheduledCount }}</span>
-           </span>
-           <span :class="pendingInputCount > 0 ? 'text-black font-black bg-yellow-100 -mx-1 px-1' : ''" title="Action Required" class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 md:border-none md:pl-0 transition-all">
-             <span class="hidden md:inline text-gray-400">Pending on me:</span>
+    <!-- Refined Stats Footer -->
+    <div v-if="localTasks.length > 0 && !isArchived" class="mt-4 pt-4 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0">
+        <div class="flex items-center gap-4">
+           <div class="flex items-center gap-1.5" title="Active Tasks">
+             <span class="hidden md:inline">Active Tasks</span>
+             <span class="md:hidden">⚡</span>
+             <span class="text-black font-black">{{ activeTaskCount }}</span>
+           </div>
+           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4" title="Scheduled Runs">
+             <span class="hidden md:inline">Scheduled</span>
+             <span class="md:hidden">⏰</span>
+             <span class="text-black font-black">{{ scheduledCount }}</span>
+           </div>
+           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 transition-all" 
+                :class="pendingInputCount > 0 ? 'bg-yellow-400 text-black px-2 -my-1 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : ''"
+                title="Your Attention Needed">
+             <span class="hidden md:inline">{{ pendingInputCount > 0 ? 'Action Required' : 'Pending on Me' }}</span>
              <span class="md:hidden">!</span>
-             <span :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-400'">{{ pendingInputCount }}</span>
-           </span>
-        </span>
-        <span class="flex items-center gap-1.5 text-black" :title="isAgentConnected ? 'Agent is actively connected' : 'Agent is offline'">
-            <span class="w-2 h-2 rounded-full border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-colors duration-300" :class="isAgentConnected ? 'bg-[#00FF88]' : 'bg-red-500 animate-pulse'"></span>{{ isAgentConnected ? 'Live' : 'Offline' }}
-        </span>
+             <span class="font-black" :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-300'">{{ pendingInputCount }}</span>
+           </div>
+        </div>
+        <div class="flex items-center gap-2 group/status">
+            <div class="flex items-center gap-1.5 px-2 py-1 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              <span class="w-2 h-2 rounded-full border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)] transition-colors duration-500" 
+                    :class="isAgentConnected ? 'bg-[#00FF88] shadow-[#00FF88]/40' : 'bg-red-500 animate-pulse'"></span>
+              <span class="text-[9px] font-black text-black">{{ isAgentConnected ? 'Live' : 'Offline' }}</span>
+            </div>
+        </div>
     </div>
   </div>
 </template>

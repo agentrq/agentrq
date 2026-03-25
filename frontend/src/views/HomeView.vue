@@ -144,24 +144,6 @@
             <p v-if="p.description" class="text-[11px] font-medium line-clamp-2 leading-relaxed pl-1 text-black/50 mb-3"
             >{{ p.description }}</p>
 
-            <!-- Refined Stats Grid -->
-            <div v-if="workspaceStats[p.id]" 
-                 class="grid gap-2 text-xs font-bold mt-2 max-w-[280px]"
-                 :class="workspaceStats[p.id].stats?.some(d => d.count > 0) ? 'grid-cols-3' : 'grid-cols-2'">
-              <div class="bg-white border-2 border-black p-1.5 text-center flex flex-col justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)]">
-                <div class="text-lg font-black leading-none tracking-tighter">{{ workspaceStats[p.id].active_tasks }}</div>
-                <div class="text-[7px] text-gray-400 uppercase tracking-widest mt-0.5">Active</div>
-              </div>
-              <div class="bg-white border-2 border-black p-1.5 text-center flex flex-col justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)]">
-                <div class="text-lg font-black leading-none tracking-tighter">{{ workspaceStats[p.id].total_tasks }}</div>
-                <div class="text-[7px] text-gray-400 uppercase tracking-widest mt-0.5">Total</div>
-              </div>
-              <div v-if="workspaceStats[p.id].stats?.some(d => d.count > 0)" 
-                   class="bg-white border-2 border-black p-1 text-center flex items-center justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
-                <Sparkline :data="workspaceStats[p.id].stats" />
-              </div>
-            </div>
-
             <div class="mt-4 pt-4 border-t-2 border-black/10 flex items-center justify-between text-[9px] uppercase font-black tracking-widest">
               <span class="text-black/30">{{ new Date(p.created_at).toLocaleDateString() }}</span>
               <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -246,15 +228,13 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchWorkspaces, createWorkspace, deleteWorkspace, archiveWorkspace, unarchiveWorkspace, fetchWorkspaceStats } from '../api';
+import { fetchWorkspaces, createWorkspace, deleteWorkspace, archiveWorkspace, unarchiveWorkspace } from '../api';
 import { useToasts } from '../composables/useToasts';
 import DeleteModal from '../components/DeleteModal.vue';
-import Sparkline from '../components/Sparkline.vue';
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
 const workspaces = ref([]);
-const workspaceStats = ref({});
 const showCreate = ref(false);
 const showArchived = ref(false);
 const searchQuery = ref('');
@@ -301,8 +281,6 @@ async function loadWorkspaces() {
     if (workspaces.value.length === 0) {
       showCreate.value = true;
     }
-    // Load stats async
-    loadStatsForWorkspaces(workspaces.value);
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -310,16 +288,6 @@ async function loadWorkspaces() {
   }
 }
 
-async function loadStatsForWorkspaces(list) {
-  list.forEach(async (w) => {
-    try {
-      const res = await fetchWorkspaceStats(w.id);
-      workspaceStats.value[w.id] = res;
-    } catch (err) {
-      // Ignore individually
-    }
-  });
-}
 
 watch(showCreate, (val) => {
   if (!val) {

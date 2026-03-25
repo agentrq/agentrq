@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,15 +21,15 @@ import (
 
 type (
 	Params struct {
-		Crud          crud.Controller
-		Auth          auth.Service
-		TokenSvc      auth.TokenService
-		MCPManager    *mcpctrl.Manager
-		EventBus      *eventbus.Bus
-		BaseURL       string
-		MCPBaseURL    string
-		Domain        string
-		SSLEnabled    bool
+		Crud             crud.Controller
+		Auth             auth.Service
+		TokenSvc         auth.TokenService
+		MCPManager       *mcpctrl.Manager
+		EventBus         *eventbus.Bus
+		BaseURL          string
+		MCPBaseURL       string
+		Domain           string
+		SSLEnabled       bool
 		TokenKey         string
 		RootLoginEnabled bool
 		RootToken        string
@@ -66,14 +67,14 @@ var _invalidPayload = []byte(`{"error":{"message":"invalid request payload","cod
 
 func New(p Params) (Handler, error) {
 	h := &handler{
-		crud:          p.Crud,
-		auth:          p.Auth,
-		tokenSvc:      p.TokenSvc,
-		mcpManager:    p.MCPManager,
-		bus:           p.EventBus,
-		baseURL:       p.BaseURL,
-		mcpBaseURL:    p.MCPBaseURL,
-		domain:        p.Domain,
+		crud:             p.Crud,
+		auth:             p.Auth,
+		tokenSvc:         p.TokenSvc,
+		mcpManager:       p.MCPManager,
+		bus:              p.EventBus,
+		baseURL:          p.BaseURL,
+		mcpBaseURL:       p.MCPBaseURL,
+		domain:           p.Domain,
 		sslEnabled:       p.SSLEnabled,
 		tokenKey:         p.TokenKey,
 		rootLoginEnabled: p.RootLoginEnabled,
@@ -116,7 +117,9 @@ func (h *handler) mcpURL(workspaceID int64, token string) string {
 		if !h.sslEnabled {
 			proto = "http"
 		}
-		url = fmt.Sprintf("%s://%s.mcp.%s", proto, id, h.domain)
+		// Subdomain based URLs use base36 for better compatibility (case-insensitive subdomains)
+		id36 := strings.ToLower(strconv.FormatInt(workspaceID, 36))
+		url = fmt.Sprintf("%s://%s.mcp.%s", proto, id36, h.domain)
 	}
 
 	if token != "" {

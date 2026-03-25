@@ -17,11 +17,14 @@ import (
 	"sync"
 	"time"
 
+	"strconv"
+
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/lego"
 	"github.com/go-acme/lego/v4/providers/dns/cloudflare"
 	"github.com/go-acme/lego/v4/registration"
+	"github.com/mustafaturan/monoflake"
 )
 
 type (
@@ -86,7 +89,16 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// 1. Check if it's an MCP subdomain
 		if strings.HasSuffix(host, mcpSuffix) {
-			workspaceID := strings.TrimSuffix(host, mcpSuffix)
+			workspaceID36 := strings.TrimSuffix(host, mcpSuffix)
+			// Subdomain is in base36, parse it back to int64
+			id, err := strconv.ParseInt(workspaceID36, 36, 64)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "Invalid workspace ID in subdomain: %s", workspaceID36)
+				return
+			}
+			// Map it back to the base62 system for internal routing
+			workspaceID := monoflake.ID(id).String()
 			r.URL.Path = "/mcp/" + workspaceID
 		} else if host != appHost {
 			// 2. If it's not appHost or an MCP host, reject it
