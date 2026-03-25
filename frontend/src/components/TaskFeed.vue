@@ -15,216 +15,237 @@
       @confirm="onDeleteConfirm" 
     />
 
-    <!-- Create Task Modal -->
-    <div v-if="isCreateModalOpen" class="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="isCreateModalOpen = false"></div>
-      <div class="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in zoom-in-95 duration-200">
-         <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-            <h2 class="text-lg font-bold text-gray-900">Define New Task</h2>
-            <button @click="isCreateModalOpen = false" class="text-gray-400 hover:text-black transition-colors">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+    <!-- Action Bar -->
+    <div v-if="!isArchived" class="pt-2 pb-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+        <button @click="showScheduledOnly = !showScheduledOnly"
+                class="flex items-center gap-2 px-3 py-2 border-2 border-black text-[11px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
+                :class="showScheduledOnly ? 'bg-[#00FF88] text-black translate-y-[1px]' : 'bg-white text-gray-500 hover:bg-[#00FF88]/20 hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'"
+                :title="showScheduledOnly ? 'Show All' : 'Show Scheduled Only'">
+           <svg class="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+           </svg>
+           <span class="hidden md:inline">Scheduled Only</span>
+        </button>
+       
+       <div class="flex items-center gap-2.5 ml-auto">
+         <button @click="$emit('archive')" 
+                 class="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-black text-[11px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+            <svg class="w-3.5 h-3.5 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+            Archive
+         </button>
+          <button @click="startCreate" 
+                  class="group flex items-center gap-2.5 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-5 py-2.5 text-[11px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+            <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+            New Task
+         </button>
+       </div>
+    </div>
+
+    <!-- Create/Edit Task Inline Form -->
+    <Transition name="fade-down">
+      <div v-if="isFormOpen" class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-6 shrink-0 z-10 relative">
+        <div class="px-6 py-4 border-b-2 border-black bg-black flex justify-between items-center shrink-0">
+            <h2 class="text-sm font-black text-white uppercase tracking-widest">{{ isEditMode ? 'Edit Chronic Task' : 'Define New Task' }}</h2>
+            <button @click="isFormOpen = false" class="text-white/60 hover:text-[#00FF88] transition-colors p-1 border border-white/20 hover:border-[#00FF88]">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-         </div>
-         <form @submit.prevent="submitHumanTask" class="p-6 flex flex-col gap-4">
+        </div>
+        <form @submit.prevent="isEditMode ? submitEditTask() : submitHumanTask()" class="p-6 flex flex-col gap-4 overflow-y-auto max-h-[70vh] custom-scrollbar">
             <div class="flex flex-col gap-1.5">
-               <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Title</label>
-               <input v-model="newTask.title" placeholder="Requirement summary..." class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none font-semibold text-gray-900" required />
+               <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Title</label>
+               <input v-model="newTask.title" placeholder="Requirement summary..." class="w-full bg-white border-2 border-black px-4 py-2 text-sm outline-none font-bold text-gray-900 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" required />
             </div>
             <div class="flex flex-col gap-1.5">
-               <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Description / Instructions</label>
-               <textarea v-model="newTask.body" placeholder="Provide detailed context for the agent..." class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none resize-none min-h-[120px] max-h-64 text-gray-800 leading-relaxed" required></textarea>
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-               <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Assignee</label>
-               <div class="flex p-1 bg-gray-100/50 rounded-xl border border-gray-100 w-fit">
-                  <button type="button" 
-                          @click="newTask.assignee = 'agent'"
-                          :class="newTask.assignee === 'agent' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'"
-                          class="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
-                    Agent
-                  </button>
-                  <button type="button" 
-                          @click="newTask.assignee = 'human'"
-                          :class="newTask.assignee === 'human' ? 'bg-white text-black shadow-sm' : 'text-gray-400 hover:text-gray-600'"
-                          class="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">
-                    Human
-                  </button>
-               </div>
+               <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Description / Instructions</label>
+               <textarea v-model="newTask.body" placeholder="Provide detailed context for the agent..." class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-medium text-gray-800 transition-all resize-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-h-[100px]" required></textarea>
             </div>
 
-            <div class="flex flex-col gap-1.5 mt-2">
-                <div class="flex items-center gap-2 mb-1">
-                   <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Chronic Task (Recurring)</label>
-                   <button type="button" @click="newTask.isRecurring = !newTask.isRecurring" 
-                           class="w-10 h-5 flex items-center transition-all duration-300 rounded-full p-1 border border-gray-100"
-                           :class="newTask.isRecurring ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-100'">
-                      <div class="w-3 h-3 bg-white rounded-full shadow-sm transform transition-all duration-300"
-                           :class="newTask.isRecurring ? 'translate-x-5' : 'translate-x-0'"></div>
-                   </button>
-                </div>
-                
-                <Transition name="fade-slide">
-                  <div v-if="newTask.isRecurring" class="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex flex-col gap-3">
-                    <p class="text-[10px] text-indigo-600 font-bold leading-tight uppercase tracking-tight">Set a recurring schedule. New instances appear in To Do automatically.</p>
-                    <div class="flex gap-2">
-                       <select v-model="newTask.cronSchedule" class="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs font-bold text-indigo-900 focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm h-9">
-                        <option value="*/15 * * * *">Every 15 Minutes</option>
-                        <option value="*/30 * * * *">Every 30 Minutes</option>
-                        <option value="0 * * * *">Hourly</option>
-                        <option value="0 0 * * *">Daily at Midnight</option>
-                        <option value="0 0 * * 0">Weekly (Sunday)</option>
-                        <option value="0 0 1 * *">Monthly (1st)</option>
-                      </select>
-                      <input v-model="newTask.cronSchedule" placeholder="Custom Cron: * * * * *" class="flex-1 bg-white border border-indigo-200 rounded-lg px-3 py-2 text-[11px] font-mono font-bold text-indigo-600 focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm h-9" />
-                    </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="flex flex-col gap-1.5">
+                 <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Assignee</label>
+                 <div class="flex p-1 bg-gray-100 border-2 border-black w-fit">
+                    <button type="button" 
+                            @click="newTask.assignee = 'agent'"
+                            :class="newTask.assignee === 'agent' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                            class="px-5 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all">
+                      Agent
+                    </button>
+                    <button type="button" 
+                            @click="newTask.assignee = 'human'"
+                            :class="newTask.assignee === 'human' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                            class="px-5 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all">
+                      Human
+                    </button>
+                 </div>
+              </div>
+
+              <div class="flex flex-col gap-1.5">
+                  <div class="flex items-center gap-2 mb-1">
+                     <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Chronic Task (Recurring)</label>
+                     <button type="button" @click="newTask.isRecurring = !newTask.isRecurring" 
+                             class="w-10 h-5 flex items-center transition-all duration-300 border-2 border-black p-0.5"
+                             :class="newTask.isRecurring ? 'bg-[#00FF88]' : 'bg-gray-200'">
+                        <div class="w-3 h-3 bg-black transform transition-all duration-300"
+                             :class="newTask.isRecurring ? 'translate-x-[18px]' : 'translate-x-0'"></div>
+                     </button>
                   </div>
-                </Transition>
-             </div>
-
-            <!-- Attachments in Modal -->
-            <div class="flex flex-col gap-2">
-               <div class="flex items-center justify-between mb-2">
-                  <h3 class="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Attachments ({{ newTaskAttachments.length }})</h3>
-                  <div class="flex items-center gap-1.5 h-6">
-                     <button type="button" @click="$refs.fileInput.click()" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-widest">Add Files</button>
+                  
+                  <div v-if="newTask.isRecurring" class="flex gap-2">
+                     <select v-model="newTask.cronSchedule" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-black uppercase tracking-widest text-black outline-none h-8">
+                      <option value="*/15 * * * *">Every 15 Min</option>
+                      <option value="*/30 * * * *">Every 30 Min</option>
+                      <option value="0 * * * *">Hourly</option>
+                      <option value="0 0 * * *">Daily</option>
+                      <option value="0 0 * * 0">Weekly</option>
+                      <option value="0 0 1 * *">Monthly</option>
+                    </select>
+                    <input v-model="newTask.cronSchedule" placeholder="Cron: * * * * *" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-mono font-bold text-black outline-none h-8" />
                   </div>
                </div>
-               <div v-if="newTaskAttachments.length > 0" class="flex flex-wrap gap-2 p-2 bg-gray-50 rounded-xl border border-gray-200 min-h-[50px]">
-                  <div v-for="(att, i) in newTaskAttachments" :key="i" class="flex items-center text-[10px] bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-sm font-bold animate-in fade-in slide-in-from-bottom-2">
+            </div>
+
+            <div v-if="!isEditMode" class="flex flex-col gap-2 pt-2">
+               <div class="flex items-center justify-between">
+                  <h3 class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Attachments ({{ newTaskAttachments.length }})</h3>
+                  <button type="button" @click="$refs.fileInput.click()" class="text-[10px] font-black text-black border-b-2 border-black hover:text-[#00FF88] hover:bg-black uppercase tracking-widest transition-colors">Add Files</button>
+               </div>
+               <div v-if="newTaskAttachments.length > 0" class="flex flex-wrap gap-2 p-3 bg-gray-50 border-2 border-black min-h-[50px]">
+                  <div v-for="(att, i) in newTaskAttachments" :key="i" class="flex items-center text-[10px] bg-white border-2 border-black px-3 py-1 font-black uppercase tracking-widest">
                     <span class="truncate max-w-[140px]">{{ att.filename }}</span>
                     <button @click.prevent="newTaskAttachments.splice(i, 1)" class="ml-2 text-gray-400 hover:text-red-500">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
                   </div>
                </div>
                <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
             </div>
 
-            <div class="mt-4 flex gap-3">
-               <button type="button" @click="isCreateModalOpen = false" class="flex-1 py-3 px-4 border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl text-sm font-bold transition-all">Cancel</button>
-               <button type="submit" :disabled="sending || !newTask.title || !newTask.body" class="flex-[2] py-3 px-4 bg-black text-white hover:bg-gray-800 disabled:opacity-50 rounded-xl text-sm font-bold shadow-lg shadow-black/10 transition-all flex items-center justify-center gap-2">
+            <div class="mt-2 flex gap-3 flex-row-reverse">
+               <button type="submit" :disabled="sending || !newTask.title || !newTask.body" class="bg-black text-white px-6 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px] flex items-center justify-center gap-2 disabled:opacity-50">
                   <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                  {{ sending ? 'Dispatching...' : 'Create Task' }}
+                  {{ sending ? (isEditMode ? 'Saving...' : 'Dispatching...') : (isEditMode ? 'Save Changes' : 'Create Task') }}
                </button>
+               <button type="button" @click="isFormOpen = false" class="px-5 py-2.5 border-2 border-black bg-white text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all ml-auto">Cancel</button>
             </div>
-         </form>
+        </form>
       </div>
-    </div>
+    </Transition>
 
-    <div v-if="!isArchived" class="pt-2 pb-0 flex items-center justify-end gap-2.5 shrink-0">
-       <button @click="$emit('archive')" 
-               class="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 rounded-lg text-[11px] font-black text-gray-400 hover:text-red-500 hover:border-red-100 hover:bg-red-50 transition-all uppercase tracking-widest">
-          <svg class="w-3.5 h-3.5 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-          Archive
-       </button>
-       <button @click="isCreateModalOpen = true" class="group flex items-center gap-2.5 bg-black hover:bg-zinc-800 text-white px-5 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all">
-          <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-          New Task
-       </button>
-    </div>
+    <!-- Single List Area -->
+    <div class="flex-1 overflow-y-auto pt-4 pb-6 custom-scrollbar pr-2 md:pr-4">
+      <div v-if="localTasks.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50 mt-2">
+        <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+        <span class="text-xs font-black uppercase tracking-widest text-gray-500">No tasks found in workspace</span>
+      </div>
 
-    <!-- Kanban Board Area -->
-    <div class="flex-1 flex flex-col md:grid md:grid-cols-4 pt-4 gap-6 items-stretch overflow-y-auto md:overflow-hidden pb-6 custom-scrollbar">
-      
-      <!-- Columns -->
-      <div v-for="col in columns" :key="col.id" class="flex flex-col shrink-0 md:h-full min-h-0">
-        
-        <!-- Column Header -->
-        <div class="flex items-center justify-between mb-4 px-1.5 shrink-0">
-          <div class="flex items-center gap-2.5">
-             <div class="w-1.5 h-1.5 rounded-full" :class="col.id === 'notstarted' ? 'bg-gray-400' : (col.id === 'ongoing' ? 'bg-indigo-500' : 'bg-green-500')"></div>
-             <h3 class="text-[11px] font-extrabold text-gray-900 uppercase tracking-widest">{{ col.name }}</h3>
+      <div v-else-if="displayGroups.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50 mt-2">
+        <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span class="text-xs font-black uppercase tracking-widest text-gray-500">No tasks match filter</span>
+      </div>
+
+      <div v-else class="space-y-8">
+        <div v-for="grp in displayGroups" :key="grp.title">
+          <div class="mb-3 flex items-center gap-2">
+            <h3 class="text-xs font-black uppercase tracking-widest text-black">{{ grp.title }}</h3>
+            <span class="text-[10px] font-bold text-gray-400 border border-gray-200 bg-white px-1 shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)]">{{ grp.title === 'Completed' ? grp.totalCompleted : grp.tasks.length }}</span>
+            <div class="h-px bg-gray-200 flex-1 ml-2"></div>
           </div>
-          <span class="text-[10px] font-black text-gray-400 bg-white border border-gray-100 w-6 h-6 flex items-center justify-center rounded-lg shadow-sm">{{ col.tasks.length }}</span>
-        </div>
+          
+          <div class="space-y-3">
+            <div v-for="t in grp.tasks" :key="t.id"
+                 @click="openTask(t)"
+                 class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm"
+                 :class="getTaskBgStyle(t.status)">
+                 
+              <div class="flex items-center gap-3.5 flex-1 min-w-0 pr-4">
+                 <span class="w-2.5 h-2.5 rounded-full border border-black shrink-0" :class="getTaskDotStyle(t.status)"></span>
+                 <div class="flex flex-col gap-1 w-full relative">
+                   <span class="font-black text-[14px] text-gray-900 leading-snug truncate group-hover:text-indigo-700 transition-colors w-full font-bold text-sm">{{ t.title }}</span>
+                   
+                   <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
+                     <span class="text-gray-500">{{ formatTime(t.created_at) }}</span>
+                     
+                     <span class="flex items-center gap-1">
+                       <span class="text-gray-400">BY</span>
+                       <span :class="t.created_by === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.created_by === 'human' ? 'YOU' : 'AGENT' }}</span>
+                     </span>
+                     
+                     <span class="flex items-center gap-1" v-if="t.assignee">
+                       <span class="text-gray-400">FOR</span>
+                       <span :class="t.assignee === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.assignee === 'human' ? 'YOU' : 'AGENT' }}</span>
+                     </span>
 
-        <!-- Drop Zone -->
-        <div class="grow overflow-y-visible md:overflow-y-auto bg-gray-50/50 border border-gray-100 rounded-2xl p-3 min-h-[150px] transition-all hover:bg-gray-100/30 w-full"
-             @dragover.prevent
-             @dragenter.prevent
-             @drop="onDrop($event, col.id)">
-             
-          <div v-if="col.tasks.length === 0" class="h-full flex flex-col items-center justify-center text-gray-300 opacity-60 py-8">
-            <svg class="w-6 h-6 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-            <span class="text-[9px] font-bold uppercase tracking-tighter">Empty</span>
-          </div>
-             
-          <!-- Task Cards -->
-          <div v-for="t in col.tasks" :key="t.id"
-               :draggable="!isArchived && t.status !== 'cron'" 
-               @dragstart="onDragStart($event, t.id)"
-               @dragover.prevent
-               @dragenter.prevent
-               @drop.stop="onDropOnTask($event, t.id, col.id)"
-               @click="openTask(t)"
-               class="bg-white p-4 mb-3 shrink-0 rounded-xl border border-gray-100 cursor-pointer active:cursor-grabbing hover:border-indigo-200 transition-all select-none group relative overflow-hidden">
-            
-            <div class="flex justify-between items-baseline mb-2.5">
-              <div class="flex flex-col gap-1">
-                <div class="flex items-center gap-1.5">
-                  <div class="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow-sm"
-                        :class="t.created_by === 'human' ? 'bg-black' : 'bg-indigo-600'">
-                      {{ t.created_by === 'human' ? 'U' : 'A' }}
-                  </div>
-                  <span class="text-[8px] font-black uppercase tracking-widest" :class="t.created_by === 'human' ? 'text-black' : 'text-indigo-600'">
-                    By {{ t.created_by === 'human' ? 'YOU' : 'AGENT' }}
-                  </span>
-                </div>
-                <div class="flex items-center gap-1.5 pl-6">
-                  <span class="text-[7px] font-bold text-gray-400 uppercase tracking-widest">Assignee:</span>
-                  <span class="text-[8px] font-black uppercase tracking-widest" :class="t.assignee === 'human' ? 'text-black' : 'text-indigo-600'">
-                    {{ t.assignee === 'human' ? 'YOU' : 'AGENT' }}
-                  </span>
-                </div>
-              </div>
-               <div class="flex items-center gap-1.5">
-                <span v-if="t.status === 'cron'" class="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[8px] font-black rounded border border-indigo-100 uppercase tracking-tighter">
-                  Recurring: {{ formatCron(t.cron_schedule) }}
-                </span>
-                <span class="text-[8px] text-gray-400 font-bold uppercase tracking-tight">
-                  {{ formatTime(t.created_at) }}
-                </span>
-                <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-0.5 hover:bg-red-50 rounded-md">
-                   <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
-            </div>
-            
-            <h4 class="text-base font-bold text-gray-900 leading-snug group-hover:text-indigo-600 transition-colors mb-1">{{ t.title }}</h4>
-            <p v-if="t.body" class="text-[12px] text-gray-400/80 font-medium line-clamp-2 leading-relaxed">{{ t.body }}</p>
-            
-            <!-- Render Attachments Mini -->
-            <div v-if="t.attachments && t.attachments.length > 0" class="flex flex-wrap gap-1.5 mt-2 pt-3 border-t border-gray-50">
-              <div v-for="(att, i) in t.attachments" :key="i" class="w-7 h-7 rounded-lg shrink-0 overflow-hidden ring-1 ring-gray-100 shadow-sm">
-                 <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="getAttachmentUrl(props.workspaceId, att.id)" class="w-full h-full object-cover" />
-                 <div v-else class="w-full h-full bg-gray-50 flex items-center justify-center text-gray-300">
-                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                     <span v-if="t.status === 'cron'" class="text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.5">
+                       CRON: {{ formatCron(t.cron_schedule) }}
+                     </span>
+
+                     <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.Messages && t.Messages.length > 0">
+                       <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                       {{ t.Messages.length }}
+                     </span>
+                     
+                     <div v-if="t.attachments && t.attachments.length > 0" class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600">
+                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                        {{ t.attachments.length }}
+                     </div>
+                   </div>
                  </div>
               </div>
-            </div>
-            
-            <!-- Agent Actions -->
-            <div v-if="!isArchived && t.created_by === 'agent' && t.status === 'notstarted'" class="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2 relative z-10" @mousedown.stop>
-               <input v-model="responses[t.id]" placeholder="Add context or notes..." class="w-full text-xs rounded-xl bg-gray-50 border-gray-100 p-2.5 text-gray-800 focus:ring-1 focus:ring-black focus:bg-white transition-all shadow-sm italic" />
-               <div class="flex space-x-2 mt-1">
-                 <button @click.prevent="respond(t.id, 'allow')" class="flex-1 py-2 bg-black text-white hover:bg-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95">
-                   Approve
-                 </button>
-                 <button @click.prevent="respond(t.id, 'reject')" class="flex-1 py-2 bg-white border border-gray-100 text-red-600 hover:bg-red-50 hover:border-red-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm active:scale-95">
-                   Reject
-                 </button>
-               </div>
-            </div>
 
-            <div v-if="t.Messages && t.Messages.length > 0" class="absolute bottom-0 right-0 p-2 bg-white/80 backdrop-blur-sm rounded-tl-xl border-l border-t border-gray-100 flex items-center gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
-               <svg class="w-3 h-3 text-indigo-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 1.891.526 3.658 1.439 5.166L2.1 21.897l4.735-1.332C8.342 21.474 10.109 22 12 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/></svg>
-               <span class="text-[9px] font-black text-gray-900">{{ t.Messages.length }}</span>
+              <div class="flex items-center justify-end gap-3 shrink-0">
+                 <div v-if="!isArchived && t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')" class="hidden md:flex items-center gap-1.5 mr-2">
+                                           <button @click.stop.prevent="respond(t.id, 'allow')" 
+                              :disabled="!isAgentConnected"
+                              class="px-3 py-1 bg-black text-white hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Approve</button>
+
+                                           <button @click.stop.prevent="respond(t.id, 'reject')" 
+                              :disabled="!isAgentConnected"
+                              class="px-3 py-1 bg-white text-red-600 hover:bg-red-50 text-[10px] font-black uppercase tracking-widest border-2 border-red-200 shadow-[2px_2px_0px_0px_rgba(254,204,203,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Reject</button>
+
+                 </div>
+                 <span class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px]" :class="getTaskBadgeStyle(t.status)">
+                   {{ getTaskLabel(t.status) }}
+                 </span>
+                  <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                  </button>
+                  <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+              </div>
             </div>
           </div>
+          
+          <button v-if="grp.hasMore" @click.stop="completedLimit += 5" class="w-full mt-3 py-3 border-2 border-dashed border-gray-300 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:border-black hover:text-black hover:bg-white transition-all shadow-none hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            Load More ({{ grp.totalCompleted - completedLimit }} remaining)
+          </button>
         </div>
       </div>
-    </div> <!-- / Board -->
+    </div>
+    
+    <!-- Footer -->
+    <div v-if="localTasks.length > 0 && !isArchived" class="mt-3 pt-3 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-500 uppercase tracking-widest shrink-0">
+        <span class="flex items-center gap-4">
+           <span title="Active Tasks" class="flex items-center gap-1.5">
+             <span class="hidden md:inline text-gray-400">Tasks:</span>
+             <span class="md:hidden">≡</span>
+             <span class="text-black">{{ activeTaskCount }}</span>
+           </span>
+           <span title="Scheduled Tasks" class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 md:border-none md:pl-0">
+             <span class="hidden md:inline text-gray-400">Scheduled:</span>
+             <span class="md:hidden">◴</span>
+             <span class="text-black">{{ scheduledCount }}</span>
+           </span>
+           <span :class="pendingInputCount > 0 ? 'text-black font-black bg-yellow-100 -mx-1 px-1' : ''" title="Action Required" class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 md:border-none md:pl-0 transition-all">
+             <span class="hidden md:inline text-gray-400">Pending on me:</span>
+             <span class="md:hidden">!</span>
+             <span :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-400'">{{ pendingInputCount }}</span>
+           </span>
+        </span>
+        <span class="flex items-center gap-1.5 text-black" :title="isAgentConnected ? 'Agent is actively connected' : 'Agent is offline'">
+            <span class="w-2 h-2 rounded-full border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-colors duration-300" :class="isAgentConnected ? 'bg-[#00FF88]' : 'bg-red-500 animate-pulse'"></span>{{ isAgentConnected ? 'Live' : 'Offline' }}
+        </span>
+    </div>
   </div>
 </template>
 
@@ -232,33 +253,40 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { createTask, respondToTask, updateTaskStatus, updateTaskOrder, deleteTask, getAttachmentUrl } from '../api';
+import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask } from '../api';
 import DeleteModal from './DeleteModal.vue';
+import { useToasts } from '../composables/useToasts';
 
 const props = defineProps({
   workspaceId: { type: [String, Number], required: true },
   initialTasks: { type: Array, default: () => [] },
   liveEvents: { type: Array, default: () => [] },
-  isArchived: { type: Boolean, default: false }
+  isArchived: { type: Boolean, default: false },
+  isAgentConnected: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['archive']);
 
 const router = useRouter();
+const { notifyError, notifySuccess, notifyInfo } = useToasts();
 const fileInput = ref(null);
 const responses = ref({});
 const newTask = ref({ title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' });
 const newTaskAttachments = ref([]);
 const sending = ref(false);
 const toastMessage = ref('');
-const toastTimeout = ref(null);
-const isCreateModalOpen = ref(false);
+
+const isFormOpen = ref(false);
+const isEditMode = ref(false);
+const editingTaskId = ref(null);
 
 const showDeleteModal = ref(false);
 const taskToDeleteId = ref(null);
 const taskToDeleteTitle = ref('');
 
 const localTasks = ref([...props.initialTasks]);
+const showScheduledOnly = ref(false);
+const completedLimit = ref(5);
 
 // Sync with initial loads or reloads
 watch(() => props.initialTasks, (newTasks) => {
@@ -313,14 +341,6 @@ function formatCron(cron) {
   return presets[cron] || cron;
 }
 
-function showNotification(msg) {
-  if (toastTimeout.value) clearTimeout(toastTimeout.value);
-  toastMessage.value = msg;
-  toastTimeout.value = setTimeout(() => {
-    toastMessage.value = '';
-  }, 5000);
-}
-
 function getTaskOrder(t) {
   if (t.sort_order) return t.sort_order;
   if (!t.created_at) return Date.now();
@@ -331,117 +351,71 @@ const allTasks = computed(() => {
   return [...localTasks.value].sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
 });
 
-const columns = computed(() => {
-  const all = allTasks.value;
-  return [
-    { 
-      id: 'cron', 
-      name: 'Chronic Tasks', 
-      tasks: all.filter(x => x.status === 'cron') 
-    },
-    { 
-      id: 'notstarted', 
-      name: 'To Do', 
-      tasks: all.filter(x => !x.status || x.status === 'notstarted' || x.status === 'pending') 
-    },
-    { 
-      id: 'ongoing', 
-      name: 'In Progress', 
-      tasks: all.filter(x => x.status === 'ongoing') 
-    },
-    { 
-      id: 'completed', 
-      name: 'Done', 
-      tasks: all.filter(x => x.status === 'completed' || x.status === 'done' || x.status === 'rejected') 
-    }
-  ];
+const displayGroups = computed(() => {
+  if (showScheduledOnly.value) {
+    const cron = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
+    if (cron.length === 0) return [];
+    return [{ title: 'Scheduled Tasks', tasks: cron }];
+  }
+
+  const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked', 'requires_action'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const notStarted = localTasks.value.filter(t => ['notstarted', 'pending'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const completed = localTasks.value.filter(t => ['completed', 'done', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+
+  const groups = [];
+  if (ongoing.length > 0) groups.push({ title: 'Ongoing', tasks: ongoing });
+  
+  if (completed.length > 0) {
+    groups.push({ 
+      title: 'Completed', 
+      tasks: completed.slice(0, completedLimit.value),
+      hasMore: completed.length > completedLimit.value,
+      totalCompleted: completed.length
+    });
+  }
+  
+  if (notStarted.length > 0) groups.push({ title: 'Not Started', tasks: notStarted });
+
+  return groups;
 });
 
-function onDragStart(e, taskId) {
-  e.dataTransfer.setData('taskId', taskId);
-  e.dataTransfer.effectAllowed = 'move';
+const pendingInputCount = computed(() => {
+  return localTasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')).length;
+});
+
+const scheduledCount = computed(() => {
+  return localTasks.value.filter(t => t.status === 'cron').length;
+});
+
+const activeTaskCount = computed(() => {
+  return localTasks.value.length - scheduledCount.value;
+});
+
+function getTaskBgStyle(status) {
+  if (status === 'ongoing') return 'bg-yellow-50 border-black';
+  if (status === 'blocked' || status === 'requires_action') return 'bg-red-50 border-black';
+  if (status === 'completed' || status === 'done') return 'bg-green-50 border-black';
+  if (status === 'cron') return 'bg-indigo-50 border-indigo-200';
+  return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
 }
-
-async function onDrop(e, statusId) {
-  const taskId = e.dataTransfer.getData('taskId');
-  if(!taskId) return;
-  const task = localTasks.value.find(t => t.id === taskId);
-  if(!task || task.status === 'cron') return;
-
-  const oldStatus = task.status;
-  const statusChanged = task.status !== statusId;
-  task.status = statusId; 
-
-  const colTasks = columns.value.find(c => c.id === statusId).tasks.filter(t => t.id !== taskId);
-  const oldOrder = task.sort_order;
-  let newOrder = getTaskOrder(task);
-  if(colTasks.length > 0) {
-    newOrder = getTaskOrder(colTasks[colTasks.length - 1]) + 1024;
-  }
-  task.sort_order = newOrder;
-
-  try {
-     if (statusChanged) await updateTaskStatus(props.workspaceId, taskId, statusId);
-     if (oldOrder !== newOrder) await updateTaskOrder(props.workspaceId, taskId, newOrder);
-  } catch (err) {
-    task.status = oldStatus;
-    task.sort_order = oldOrder;
-    alert('Failed to transition stage: ' + err.message);
-  }
+function getTaskDotStyle(status) {
+  if (status === 'ongoing') return 'bg-yellow-400';
+  if (status === 'blocked' || status === 'requires_action') return 'bg-red-500';
+  if (status === 'completed' || status === 'done') return 'bg-green-500';
+  if (status === 'cron') return 'bg-indigo-500 border-indigo-600';
+  return 'bg-gray-300 border-gray-400';
 }
-
-async function onDropOnTask(e, targetTaskId, statusId) {
-  const taskId = e.dataTransfer.getData('taskId');
-  if(!taskId || taskId === targetTaskId) return;
-  
-  const task = localTasks.value.find(t => t.id === taskId);
-  if(!task || task.status === 'cron') return;
-
-  let statusChanged = false;
-  const oldStatus = task.status;
-  if(task.status !== statusId) {
-    task.status = statusId;
-    statusChanged = true;
-  }
-
-  const colTasks = columns.value.find(c => c.id === statusId).tasks;
-  let newOrder = getTaskOrder(task);
-  
-  const targetTask = colTasks.find(t => t.id === targetTaskId);
-  if (targetTask) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const offsetY = e.clientY - rect.top;
-    const insertAfter = offsetY > rect.height / 2;
-    
-    const sorted = colTasks.filter(t => t.id !== taskId);
-    const targetIdx = sorted.findIndex(t => t.id === targetTaskId);
-    
-    if (insertAfter) {
-      if (targetIdx === sorted.length - 1) {
-        newOrder = getTaskOrder(sorted[targetIdx]) + 1024;
-      } else {
-        newOrder = (getTaskOrder(sorted[targetIdx]) + getTaskOrder(sorted[targetIdx+1])) / 2;
-      }
-    } else {
-      if (targetIdx === 0) {
-        newOrder = getTaskOrder(sorted[targetIdx]) - 1024;
-      } else {
-        newOrder = (getTaskOrder(sorted[targetIdx-1]) + getTaskOrder(sorted[targetIdx])) / 2;
-      }
-    }
-  }
-
-  const oldOrder = task.sort_order;
-  task.sort_order = newOrder;
-
-  try {
-     if (statusChanged && oldStatus !== statusId) await updateTaskStatus(props.workspaceId, taskId, statusId);
-     if (oldOrder !== newOrder) await updateTaskOrder(props.workspaceId, taskId, newOrder);
-  } catch (err) {
-    task.status = oldStatus;
-    task.sort_order = oldOrder;
-    alert('Failed to transition stage/order: ' + err.message);
-  }
+function getTaskBadgeStyle(status) {
+  if (status === 'ongoing') return 'bg-yellow-200 border-black text-black border-2';
+  if (status === 'blocked' || status === 'requires_action') return 'bg-red-200 border-black text-black border-2';
+  if (status === 'completed' || status === 'done') return 'bg-green-200 border-black text-black border-2';
+  if (status === 'cron') return 'bg-indigo-200 border-indigo-400 text-indigo-800 border-2';
+  return 'bg-gray-100 border-gray-300 text-gray-500 font-bold border-2';
+}
+function getTaskLabel(status) {
+  if (status === 'notstarted' || status === 'pending') return 'NOT STARTED';
+  if (status === 'cron') return 'CHRONIC';
+  return status;
 }
 
 function handleFileUpload(event) {
@@ -484,7 +458,7 @@ async function submitHumanTask() {
     if (idx === -1) localTasks.value.push(res.task);
     newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
     newTaskAttachments.value = [];
-    isCreateModalOpen.value = false;
+    isFormOpen.value = false;
     notifySuccess(status === 'cron' ? 'Chronic task scheduled successfully' : 'Task dispatched to pipeline');
   } catch(err) {
     notifyError("Dispatch Error: " + err.message);
@@ -493,6 +467,56 @@ async function submitHumanTask() {
   }
 }
 
+async function submitEditTask() {
+  if (!newTask.value.title.trim() || !newTask.value.body.trim()) return;
+  sending.value = true;
+  try {
+    const res = await updateScheduledTask(
+      props.workspaceId,
+      editingTaskId.value,
+      newTask.value.title,
+      newTask.value.body,
+      newTask.value.assignee,
+      newTask.value.cronSchedule
+    );
+    const idx = localTasks.value.findIndex(x => x.id === res.task.id);
+    if (idx !== -1) localTasks.value[idx] = res.task;
+    isFormOpen.value = false;
+    isEditMode.value = false;
+    editingTaskId.value = null;
+    notifySuccess('Chronic task updated');
+  } catch(err) {
+    notifyError("Update Error: " + err.message);
+  } finally {
+    sending.value = false;
+  }
+}
+
+function startCreate() {
+  isEditMode.value = false;
+  editingTaskId.value = null;
+  newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
+  newTaskAttachments.value = [];
+  isFormOpen.value = true;
+}
+
+function openTask(task) {
+  if (task.status === 'cron') return;
+  router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}`);
+}
+
+function triggerEdit(task) {
+  isEditMode.value = true;
+  editingTaskId.value = task.id;
+  newTask.value = { 
+    title: task.title, 
+    body: task.body, 
+    assignee: task.assignee, 
+    isRecurring: true, 
+    cronSchedule: task.cron_schedule 
+  };
+  isFormOpen.value = true;
+}
 async function respond(taskId, action) {
   const text = responses.value[taskId] || '';
   try {
@@ -502,13 +526,10 @@ async function respond(taskId, action) {
       localTasks.value[idx] = res.task;
     }
     delete responses.value[taskId];
+    notifySuccess('Action confirmed');
   } catch(err) {
     notifyError("Failed to confirm action: " + err.message);
   }
-}
-
-function openTask(task) {
-  router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}`);
 }
 
 async function triggerDelete(task) {

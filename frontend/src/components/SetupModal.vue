@@ -26,7 +26,7 @@
               Recommended Strategy
             </h3>
             <p class="text-[13px] text-gray-600 leading-relaxed font-medium">
-              We recommend creating a <code class="bg-gray-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold">.mcp.json</code> file in each of your local project directories. This ensures that each Claude / Claude-Code instance is isolated and only responsible for its specific workspace.
+              We recommend creating a <code class="bg-gray-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold">.mcp.json</code>(dot is required as prefix) file in each of your local project directories. This ensures that each Claude / Claude-Code instance is isolated and only responsible for its specific workspace.
             </p>
           </section>
 

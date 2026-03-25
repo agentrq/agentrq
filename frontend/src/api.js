@@ -62,6 +62,18 @@ export async function fetchTasks(workspaceId) {
   return res.json();
 }
 
+export async function fetchGlobalTasks({ status, filter, limit = 10, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (filter) params.append('filter', filter);
+  if (limit) params.append('limit', limit);
+  if (offset) params.append('offset', offset);
+  
+  const res = await fetch(`${API_BASE_URL}/tasks?${params.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch global tasks');
+  return res.json();
+}
+
 export async function getTask(workspaceId, taskId) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`);
   if (!res.ok) throw new Error('Failed to fetch task');
@@ -176,4 +188,26 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   });
   if (!res.ok) throw new Error('Failed to send verdict');
   return res;
+}
+export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task: {
+        title,
+        body,
+        assignee,
+        cron_schedule: cronSchedule
+      }
+    })
+  });
+  if (!res.ok) throw new Error('Failed to update scheduled task');
+  return res.json();
+}
+
+export async function fetchWorkspaceStats(id) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/stats`);
+  if (!res.ok) throw new Error('Failed to fetch workspace stats');
+  return res.json();
 }

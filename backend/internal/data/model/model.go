@@ -47,6 +47,7 @@ type (
 	}
 
 	// Message is an entry in a task's chat history
+	// Message is an entry in a task's chat history
 	Message struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time
@@ -57,4 +58,25 @@ type (
 		Attachments datatypes.JSON
 		Metadata    datatypes.JSON
 	}
+
+	// Telemetry record for user and workspace actions
+	Telemetry struct {
+		UserID      int64 `gorm:"index:idx_telemetry_user_id"`
+		WorkspaceID int64 `gorm:"index:idx_telemetry_workspace_id"`
+		OccurredAt  int64 `gorm:"index:idx_telemetry_occurred_at"`
+		Action      uint8 `gorm:"index:idx_telemetry_action"`
+	}
+)
+
+const (
+	ActionIDUnknown uint8 = iota
+	ActionIDWorkspaceCreate
+	ActionIDWorkspaceUpdate
+	ActionIDWorkspaceDelete
+	ActionIDTaskCreate
+	ActionIDTaskUpdate
+	ActionIDTaskDelete
+	ActionIDMessageCreate
+	ActionIDMessageUpdate
+	ActionIDMessageDelete
 )

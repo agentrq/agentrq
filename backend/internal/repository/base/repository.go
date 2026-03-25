@@ -3,6 +3,7 @@ package base
 import (
 	"context"
 	"errors"
+	"time"
 
 	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
 	"github.com/hasmcp/agentrq/backend/internal/data/model"
@@ -32,10 +33,11 @@ type Repository interface {
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error
 
-	// System/Internal
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
+	GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error)
+	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 }
 
 type repository struct {
@@ -132,11 +134,41 @@ func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, use
 
 func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID string) ([]model.Task, error) {
 	var tasks []model.Task
-	q := r.conn(ctx).Preload("Messages").Where("workspace_id = ? AND user_id = ?", req.WorkspaceID, userID)
+	q := r.conn(ctx).Preload("Messages").Where("user_id = ?", userID)
+
+	if req.WorkspaceID != 0 {
+		q = q.Where("workspace_id = ?", req.WorkspaceID)
+	}
 	if req.CreatedBy != "" {
 		q = q.Where("created_by = ?", req.CreatedBy)
 	}
-	err := q.Order("created_at desc").Find(&tasks).Error
+	if len(req.Status) > 0 {
+		q = q.Where("status IN ?", req.Status)
+	}
+
+	if req.Filter == "pending_approval" {
+		// SQLite subquery to find tasks with pending permission requests as the latest state
+		q = q.Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND metadata LIKE '%\"type\":\"permission_request\"%')")
+	}
+
+	orderBy := "created_at desc"
+	if req.Filter == "pending_approval" {
+		orderBy = "created_at asc"
+	} else if len(req.Status) > 0 {
+		status := req.Status[0]
+		if status != "notstarted" && status != "pending" && status != "cron" {
+			orderBy = "updated_at desc"
+		}
+	}
+
+	if req.Limit > 0 {
+		q = q.Limit(req.Limit)
+	}
+	if req.Offset > 0 {
+		q = q.Offset(req.Offset)
+	}
+
+	err := q.Order(orderBy).Find(&tasks).Error
 	return tasks, err
 }
 
@@ -202,4 +234,44 @@ func (r *repository) SystemCheckTaskExists(ctx context.Context, workspaceID, par
 		Where("workspace_id = ? AND parent_id = ? AND status = ?", workspaceID, parentID, status).
 		Count(&count).Error
 	return count > 0, err
+}
+
+func (r *repository) GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error) {
+	var stats []entity.DailyStat
+	since := time.Now().AddDate(0, 0, -days).Unix()
+
+	query := r.conn(ctx).Model(&model.Telemetry{}).
+		Where("workspace_id = ? AND occurred_at >= ?", workspaceID, since)
+
+	// Dialect specific date formatting
+	dialect := r.conn(ctx).Dialector.Name()
+	var dateExpr string
+	if dialect == "sqlite" {
+		dateExpr = "strftime('%Y-%m-%d', datetime(occurred_at, 'unixepoch', 'localtime'))"
+	} else {
+		// Assume Postgres
+		dateExpr = "TO_CHAR(TO_TIMESTAMP(occurred_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
+	}
+
+	err := query.Select(dateExpr + " as date, count(*) as count").
+		Group("date").
+		Order("date ASC").
+		Scan(&stats).Error
+
+	return stats, err
+}
+
+func (r *repository) GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error) {
+	var total, active int64
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("workspace_id = ?", workspaceID).
+		Count(&total).Error
+	if err != nil {
+		return 0, 0, err
+	}
+
+	err = r.conn(ctx).Model(&model.Task{}).
+		Where("workspace_id = ? AND status NOT IN ?", workspaceID, []string{"completed", "archived"}).
+		Count(&active).Error
+	return active, total, err
 }

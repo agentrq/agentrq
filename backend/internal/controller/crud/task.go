@@ -93,6 +93,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 			c.notif.NotifyTaskCreated(w, created)
 		}
 	}
+	c.telemetry.Record(ctx, req.UserID, created.WorkspaceID, model.ActionIDTaskCreate)
 
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
@@ -181,6 +182,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if err := c.repository.CreateMessage(ctx, msg); err != nil {
 			return nil, err
 		}
+		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageCreate)
 	}
 
 	m.UpdatedAt = time.Now()
@@ -188,6 +190,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	if err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
 
 	// Fetch latest state with messages
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
@@ -228,6 +231,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	if err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateTaskStatusResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -247,6 +251,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	if err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateTaskOrderResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -280,12 +285,14 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err := c.repository.CreateMessage(ctx, msg); err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageCreate)
 	
 	m.UpdatedAt = time.Now()
 	updated, err := c.repository.UpdateTask(ctx, m)
 	if err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
 	
 	// Fetch latest state with messages
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
@@ -341,6 +348,8 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 		_ = c.storage.Delete(id)
 	}
 
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskDelete)
+
 	return &entity.DeleteTaskResponse{}, nil
 }
 
@@ -356,7 +365,11 @@ func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.Updat
 		return err
 	}
 
-	return c.repository.UpdateMessageMetadata(ctx, req.MessageID, b)
+	if err := c.repository.UpdateMessageMetadata(ctx, req.MessageID, b); err != nil {
+		return err
+	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageUpdate)
+	return nil
 }
 
 func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
@@ -456,4 +469,35 @@ func (c *controller) saveAttachments(atts []entity.Attachment) {
 			atts[i].Data = "" // clear from metadata
 		}
 	}
+}
+func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error) {
+	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if m.Status != "cron" {
+		return nil, fmt.Errorf("only chronic tasks can be edited this way")
+	}
+
+	// Validate Cron Schedule
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(req.CronSchedule); err != nil {
+		return nil, fmt.Errorf("invalid cron schedule: %w", err)
+	}
+
+	m.Title = req.Title
+	m.Body = req.Body
+	m.Assignee = req.Assignee
+	m.CronSchedule = req.CronSchedule
+	m.UpdatedAt = time.Now()
+
+	updated, err := c.repository.UpdateTask(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }

@@ -1,67 +1,75 @@
 <template>
-  <div class="space-y-8 p-6 md:p-8">
-    <div class="border-b border-b-gray-100 pb-6 flex flex-col md:flex-row md:items-end justify-between gap-6">
+  <div class="space-y-6">
+    <!-- Page Header -->
+    <div class="border-b-2 border-black pb-5 flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div class="flex-1">
-        <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Workspaces</h1>
-        <p class="text-sm font-medium text-gray-400 mt-1 uppercase tracking-widest">Manage your AgentRQ pipelines</p>
-        
+        <div class="flex items-center gap-3 mb-1">
+          <h1 class="text-2xl font-black text-black uppercase tracking-tight">Workspaces</h1>
+          <span v-if="!loadingWorkspaces" class="border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest bg-white">
+            {{ activeWorkspaces.length }}
+          </span>
+        </div>
+        <p class="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Manage your AgentRQ pipelines</p>
+
         <!-- Search Bar -->
-        <div class="mt-6 relative max-w-md group">
-          <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          <input v-model="searchQuery" 
-                 type="text" 
-                 placeholder="Search workspaces by name or description..." 
-                 class="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm focus:ring-1 focus:ring-black focus:border-black outline-none transition-all placeholder:text-gray-300 font-medium shadow-sm" />
+        <div class="mt-4 relative max-w-sm">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <input v-model="searchQuery"
+                 type="text"
+                 placeholder="Search workspaces..."
+                 class="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-black text-sm outline-none font-medium placeholder:text-gray-300 focus:border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" />
         </div>
       </div>
-      
-      <div class="flex items-center gap-3">
-         <button @click="showArchived = !showArchived" 
-                 class="px-5 py-3 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all border flex items-center gap-2"
-                 :class="showArchived ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-white text-gray-400 border-gray-100 hover:text-black'">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            {{ showArchived ? 'Hide Archived' : 'Show Archived' }}
-         </button>
-         <button @click="showCreate = true" class="bg-black text-white px-6 py-3 rounded-lg hover:bg-zinc-800 transition-all text-[11px] font-black uppercase tracking-widest active:scale-95">
-           New Workspace
-         </button>
+
+      <div class="flex items-center gap-2">
+        <button @click="showArchived = !showArchived"
+                class="px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all border-2 flex items-center gap-2"
+                :class="showArchived ? 'bg-black text-white border-black' : 'bg-white text-gray-500 border-black hover:bg-black hover:text-white'">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+          {{ showArchived ? 'Hide Archived' : 'Show Archived' }}
+        </button>
+        <button @click="showCreate = true" class="bg-[#00FF88] text-black px-5 py-2.5 border-2 border-black hover:bg-black hover:text-[#00FF88] transition-all text-[11px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+          New Workspace
+        </button>
       </div>
     </div>
 
     <!-- Create workspace form -->
     <Transition name="fade-down">
-      <div v-if="showCreate" class="bg-white rounded-xl border border-gray-100 mb-8 animate-in slide-in-from-top-4 duration-300">
-        <div class="px-8 py-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-          <h2 class="text-lg font-bold text-gray-900">Initialize New Workspace</h2>
-          <button @click="showCreate = false" class="text-gray-400 hover:text-black transition-colors p-2">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+      <div v-if="showCreate" class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] mb-6">
+        <div class="px-6 py-4 border-b-2 border-black bg-black flex justify-between items-center">
+          <h2 class="text-sm font-black text-white uppercase tracking-widest">Initialize New Workspace</h2>
+          <button @click="showCreate = false" class="text-white/60 hover:text-[#00FF88] transition-colors p-1 border border-white/20 hover:border-[#00FF88]">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        <div class="p-8">
-          <form @submit.prevent="submit" class="grid grid-cols-1 gap-6">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div class="md:col-span-1 space-y-2">
-                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Icon (32x32, 64KB)</label>
-                <div class="relative group">
+        <div class="p-6">
+          <form @submit.prevent="submit" class="grid grid-cols-1 gap-5">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-5">
+              <div class="md:col-span-1 space-y-1.5">
+                <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Icon (32x32, 64KB)</label>
+                <div class="relative">
                   <input type="file" ref="createFileInput" class="hidden" accept="image/*" @change="handleIconUpload" />
-                  <div @click="$refs.createFileInput.click()" class="w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg h-[46px] flex items-center justify-center cursor-pointer hover:border-black transition-all overflow-hidden group">
+                  <div @click="$refs.createFileInput.click()" class="w-full bg-gray-50 border-2 border-dashed border-gray-300 h-[46px] flex items-center justify-center cursor-pointer hover:border-black transition-all overflow-hidden">
                     <img v-if="form.icon" :src="form.icon" class="w-8 h-8 object-contain" />
-                    <svg v-else class="w-5 h-5 text-gray-300 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <svg v-else class="w-5 h-5 text-gray-300 hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                   </div>
                 </div>
-                <p v-if="iconError" class="text-[9px] font-bold text-red-500 mt-1 uppercase tracking-widest">{{ iconError }}</p>
+                <p v-if="iconError" class="text-[9px] font-bold text-red-500 uppercase tracking-widest">{{ iconError }}</p>
               </div>
-              <div class="md:col-span-3 space-y-2">
-                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Workspace Name</label>
-                <input v-model="form.name" type="text" required class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none font-semibold text-gray-900 transition-all" placeholder="e.g. Workspace Redstone" />
+              <div class="md:col-span-3 space-y-1.5">
+                <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Workspace Name</label>
+                <input v-model="form.name" type="text" required class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-bold text-gray-900 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" placeholder="e.g. my-saas-backend" />
               </div>
             </div>
-            <div class="space-y-2">
-              <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Vision / Description</label>
-              <textarea v-model="form.description" rows="3" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none font-medium text-gray-800 transition-all resize-none" placeholder="What are we building together? Describe the mission of this workspace..."></textarea>
+            <div class="space-y-1.5">
+              <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Mission / Description</label>
+              <textarea v-model="form.description" rows="3" class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-medium text-gray-800 transition-all resize-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
             </div>
-            <div class="flex justify-end gap-3 pt-4">
-              <button type="submit" class="bg-black text-white px-8 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-800 shadow-xl shadow-black/10 transition-all active:scale-95 flex items-center gap-2" :disabled="loading">
+            <div class="flex justify-end gap-3 pt-2">
+              <button type="button" @click="showCreate = false" class="px-5 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all">Cancel</button>
+              <button type="submit" class="bg-black text-white px-6 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2" :disabled="loading">
                 <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 12a8 8 0 018-8v8H4z" /></svg>
                 {{ loading ? 'Initializing...' : 'Create Workspace' }}
               </button>
@@ -71,56 +79,94 @@
       </div>
     </Transition>
 
-    <div v-if="error" class="bg-red-50 border border-red-100 text-red-600 px-6 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest mb-8 animate-in bounce-in duration-300">
+    <div v-if="error" class="bg-red-50 border-2 border-red-500 text-red-700 px-5 py-3 text-xs font-bold uppercase tracking-widest">
       {{ error }}
     </div>
 
     <!-- Workspace list -->
-    <div v-if="loadingWorkspaces" class="text-xs font-bold text-gray-400 uppercase tracking-widest animate-pulse flex items-center gap-3">
-      <div class="w-2 h-2 rounded-full bg-black"></div>
+    <div v-if="loadingWorkspaces" class="text-xs font-black text-gray-400 uppercase tracking-widest animate-pulse flex items-center gap-3 py-8">
+      <div class="w-2 h-2 bg-black animate-pulse"></div>
       Loading Workspaces...
     </div>
-    
-    <div v-else class="space-y-12">
+
+    <div v-else class="space-y-10">
       <!-- Active Workspaces -->
       <section v-if="filteredActiveWorkspaces.length > 0">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div v-for="p in filteredActiveWorkspaces" 
-               :key="p.id" 
-               class="bg-white rounded-xl border border-gray-100 p-6 hover:border-gray-200 transition-all duration-300 cursor-pointer group flex flex-col justify-between relative overflow-hidden" 
+        <div class="text-[9px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Your workspaces</div>
+        <div class="space-y-3">
+          <div v-for="p in filteredActiveWorkspaces"
+               :key="p.id"
+               class="border-2 border-black p-4 cursor-pointer group flex flex-col justify-between transition-all duration-150 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
+               :class="p.agent_connected ? 'bg-[#00FF88]' : 'bg-white'"
                @click="goToWorkspace(p.id)">
-            
-            <div class="absolute top-0 right-0 w-24 h-24 bg-indigo-50/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover:bg-indigo-100/20 transition-colors duration-500"></div>
 
-            <div class="relative z-10">
-              <div class="flex justify-between items-start mb-4">
-              <div class="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all duration-300 shadow-inner overflow-hidden relative">
-                <template v-if="p.icon">
-                  <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
-                  <span v-else class="text-sm">{{ p.icon }}</span>
-                </template>
-                <svg v-else viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                  <path d="M12 7l-3.5 8" />
-                  <path d="M12 7l3.5 8" />
-                  <path d="M9.5 12h5" />
-                </svg>
-                <!-- Agent connection dot -->
-                <div v-if="p.agent_connected" class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full transition-all"></div>
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-3">
+                <!-- Status dot -->
+                <div class="w-3 h-3 rounded-full border border-black"
+                     :class="p.agent_connected ? 'bg-black animate-pulse' : 'bg-gray-300'"></div>
+                <!-- Icon -->
+                <div class="w-8 h-8 border-2 border-black bg-white flex items-center justify-center overflow-hidden shrink-0">
+                  <template v-if="p.icon">
+                    <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
+                    <span v-else class="text-sm">{{ p.icon }}</span>
+                  </template>
+                  <svg v-else viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
+                  </svg>
+                </div>
+                <span class="font-black text-sm uppercase tracking-tight">{{ p.name }}</span>
               </div>
-                <button @click.stop="removeWorkspace(p.id)" class="text-gray-100 hover:text-red-500 transition-all p-1.5 hover:bg-red-50 rounded-lg">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
+              <div class="flex items-center gap-2">
+                <span v-if="p.agent_connected" class="text-[10px] font-black bg-black text-white px-2 py-0.5 uppercase tracking-widest">Claude connected</span>
+                <span v-else class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Idle</span>
+                
+                <div class="flex items-center border-l-2 border-black/5 ml-1 pl-2 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button @click.stop="toggleArchive(p)" 
+                          class="p-1 hover:bg-gray-100 border border-transparent hover:border-black transition-all"
+                          title="Archive workspace">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                    </svg>
+                  </button>
+                  <button @click.stop="removeWorkspace(p.id)" 
+                          class="p-1 hover:bg-red-50 border border-transparent hover:border-red-600 group/del transition-all"
+                          title="Delete workspace">
+                    <svg class="w-3.5 h-3.5 text-gray-400 group-hover/del:text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                  </button>
+                </div>
               </div>
-              <h3 class="text-lg font-bold text-gray-900 mb-1 truncate group-hover:text-indigo-600 transition-colors">{{ p.name }}</h3>
-              <p class="text-[12px] font-medium text-gray-400 line-clamp-2 leading-relaxed">{{ p.description || 'No vision defined yet.' }}</p>
             </div>
-            
-            <div class="mt-6 pt-4 border-t border-gray-50 flex items-center justify-between relative z-10 text-[9px] uppercase font-black tracking-widest">
-              <span class="text-gray-300 group-hover:text-black transition-colors">{{ new Date(p.created_at).toLocaleDateString() }}</span>
-              <div class="flex items-center gap-1 text-black opacity-0 group-hover:opacity-100 transition-all transform translate-x-2 group-hover:translate-x-0">
-                Go to Workspace
-                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M13 7l5 5-5 5M6 7l5 5-5 5" /></svg>
+
+            <p v-if="p.description" class="text-[11px] font-medium line-clamp-2 leading-relaxed pl-1 text-black/50 mb-3"
+            >{{ p.description }}</p>
+
+            <!-- Refined Stats Grid -->
+            <div v-if="workspaceStats[p.id]" 
+                 class="grid gap-2 text-xs font-bold mt-2 max-w-[280px]"
+                 :class="workspaceStats[p.id].stats?.some(d => d.count > 0) ? 'grid-cols-3' : 'grid-cols-2'">
+              <div class="bg-white border-2 border-black p-1.5 text-center flex flex-col justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)]">
+                <div class="text-lg font-black leading-none tracking-tighter">{{ workspaceStats[p.id].active_tasks }}</div>
+                <div class="text-[7px] text-gray-400 uppercase tracking-widest mt-0.5">Active</div>
+              </div>
+              <div class="bg-white border-2 border-black p-1.5 text-center flex flex-col justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)]">
+                <div class="text-lg font-black leading-none tracking-tighter">{{ workspaceStats[p.id].total_tasks }}</div>
+                <div class="text-[7px] text-gray-400 uppercase tracking-widest mt-0.5">Total</div>
+              </div>
+              <div v-if="workspaceStats[p.id].stats?.some(d => d.count > 0)" 
+                   class="bg-white border-2 border-black p-1 text-center flex items-center justify-center min-h-[42px] shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
+                <Sparkline :data="workspaceStats[p.id].stats" />
+              </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t-2 border-black/10 flex items-center justify-between text-[9px] uppercase font-black tracking-widest">
+              <span class="text-black/30">{{ new Date(p.created_at).toLocaleDateString() }}</span>
+              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                Open
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7" /></svg>
               </div>
             </div>
           </div>
@@ -128,82 +174,71 @@
       </section>
 
       <!-- Empty State for Search -->
-      <div v-if="filteredActiveWorkspaces.length === 0 && searchQuery && !loadingWorkspaces" class="py-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-gray-100">
-         <svg class="mx-auto h-16 w-16 text-gray-100 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-         <p class="text-lg font-bold text-gray-900">No matches for "{{ searchQuery }}"</p>
-         <p class="text-sm text-gray-400 mt-2">Try adjusting your search criteria.</p>
-         <button @click="searchQuery = ''" class="mt-6 text-xs font-black uppercase tracking-widest text-indigo-600 hover:text-indigo-800 p-2">Clear Search</button>
+      <div v-if="filteredActiveWorkspaces.length === 0 && searchQuery && !loadingWorkspaces" class="py-16 text-center border-2 border-dashed border-gray-300">
+        <svg class="mx-auto h-12 w-12 text-gray-200 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+        <p class="text-sm font-black text-gray-900 uppercase">No matches for "{{ searchQuery }}"</p>
+        <button @click="searchQuery = ''" class="mt-4 text-xs font-black uppercase tracking-widest text-black border-2 border-black px-4 py-2 hover:bg-black hover:text-white transition-colors">Clear Search</button>
       </div>
 
       <!-- No Workspaces State -->
-      <div v-if="activeWorkspaces.length === 0 && !showCreate && !loadingWorkspaces && !searchQuery" class="py-24 text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-[3rem]">
-        <svg class="mx-auto h-16 w-16 text-gray-200 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
-        <p class="text-lg font-bold text-gray-900">No active workspaces</p>
-        <p class="text-sm text-gray-400 mt-2 font-medium">Build your first AgentRQ pipeline today.</p>
-        <button @click="showCreate = true" class="mt-8 px-8 py-4 bg-black text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-2xl shadow-black/20">Create Workspace</button>
+      <div v-if="activeWorkspaces.length === 0 && !showCreate && !loadingWorkspaces && !searchQuery" class="py-16 text-center border-2 border-dashed border-gray-300 bg-gray-50">
+        <svg class="mx-auto h-12 w-12 text-gray-200 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+        <p class="text-sm font-black text-gray-900 uppercase tracking-widest">No active workspaces</p>
+        <p class="text-xs text-gray-400 mt-2 font-bold uppercase tracking-widest">Build your first AgentRQ pipeline today.</p>
+        <button @click="showCreate = true" class="mt-6 px-6 py-3 bg-[#00FF88] text-black border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-black hover:text-[#00FF88] transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">+ New Workspace</button>
       </div>
 
       <!-- Archived Workspaces -->
-      <section v-if="showArchived" class="border-t border-gray-100 pt-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
-        <div class="flex items-center gap-4 mb-8">
-           <span class="text-[10px] font-black uppercase tracking-[0.3em] text-gray-300">Vaulted Workspaces</span>
-           <div class="flex-1 h-px bg-gray-100"></div>
+      <section v-if="showArchived" class="border-t-2 border-black pt-8">
+        <div class="flex items-center gap-4 mb-6">
+          <span class="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400">Archived Workspaces</span>
+          <div class="flex-1 h-0.5 bg-gray-200"></div>
         </div>
-        
-        <div v-if="filteredArchivedWorkspaces.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          <div v-for="p in filteredArchivedWorkspaces" 
-               :key="p.id" 
-               class="bg-gray-100/50 grayscale-[0.8] opacity-60 rounded-[2.5rem] border border-gray-200/50 p-8 hover:grayscale-0 hover:opacity-100 hover:bg-white hover:shadow-2xl hover:shadow-gray-200/50 transition-all duration-500 cursor-pointer group flex flex-col justify-between"
+
+        <div v-if="filteredArchivedWorkspaces.length > 0" class="space-y-2">
+          <div v-for="p in filteredArchivedWorkspaces"
+               :key="p.id"
+               class="border-2 border-gray-300 bg-gray-50 p-4 opacity-60 hover:opacity-100 hover:border-black hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer group flex items-center justify-between"
                @click="goToWorkspace(p.id)">
-            
-            <div>
-              <div class="flex justify-between items-start mb-6">
-              <div class="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shadow-inner border border-gray-100 overflow-hidden">
+            <div class="flex items-center gap-3">
+              <div class="w-7 h-7 border border-gray-300 bg-white flex items-center justify-center overflow-hidden">
                 <template v-if="p.icon">
                   <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
-                  <span v-else class="text-xl">{{ p.icon }}</span>
+                  <span v-else class="text-sm">{{ p.icon }}</span>
                 </template>
-                <svg v-else viewBox="0 0 24 24" class="w-6 h-6 text-black" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <svg v-else viewBox="0 0 24 24" class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                  <path d="M12 7l-3.5 8" />
-                  <path d="M12 7l3.5 8" />
-                  <path d="M9.5 12h5" />
+                  <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
                 </svg>
               </div>
-                <div class="flex items-center gap-1">
-                  <button @click.stop="restoreWorkspace(p.id)" class="text-gray-300 hover:text-indigo-600 transition-all p-2 hover:bg-indigo-50 rounded-xl" title="Restore Workspace">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M3 10h10a5 5 0 015 5v2M3 10l5-5M3 10l5 5"/></svg>
-                  </button>
-                  <button @click.stop="removeWorkspace(p.id)" class="text-gray-300 hover:text-red-500 transition-all p-2 hover:bg-red-50 rounded-xl">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                  </button>
-                </div>
-              </div>
-              <h3 class="text-xl font-black text-gray-500 mb-2 truncate group-hover:text-black transition-colors">{{ p.name }}</h3>
-              <div class="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-red-400 bg-red-50 px-2.5 py-1 rounded-md mb-4 border border-red-100/50">
-                Archived
+              <div>
+                <span class="font-black text-sm text-gray-600 group-hover:text-black uppercase tracking-tight transition-colors">{{ p.name }}</span>
+                <div class="text-[9px] font-black text-red-400 uppercase tracking-widest">Archived {{ new Date(p.ArchivedAt).toLocaleDateString() }}</div>
               </div>
             </div>
-            
-            <div class="mt-8 pt-6 border-t border-gray-100 flex items-center justify-between text-[10px] uppercase font-black tracking-widest">
-              <span class="text-gray-400">Archived {{ new Date(p.ArchivedAt).toLocaleDateString() }}</span>
-              <svg class="w-4 h-4 text-gray-300 group-hover:text-black transition-all" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7"></path></svg>
+            <div class="flex items-center gap-1">
+              <button @click.stop="toggleArchive(p)" class="text-gray-400 hover:text-black transition-all p-1.5 border border-transparent hover:border-black" title="Restore Workspace">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M3 10h10a5 5 0 015 5v2M3 10l5-5M3 10l5 5"/></svg>
+              </button>
+              <button @click.stop="removeWorkspace(p.id)" class="text-gray-400 hover:text-red-600 transition-all p-1.5 border border-transparent hover:border-red-300">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              </button>
             </div>
           </div>
         </div>
-        <div v-else class="py-12 text-center text-xs font-bold text-gray-300 uppercase tracking-widest">
+        <div v-else class="py-8 text-center text-xs font-black text-gray-300 uppercase tracking-widest border-2 border-dashed border-gray-200">
           No archived workspaces found
         </div>
       </section>
     </div>
 
     <!-- Purge Confirmation Modal -->
-    <DeleteModal 
-      :show="showPurgeModal" 
+    <DeleteModal
+      :show="showPurgeModal"
       :taskTitle="workspaceToPurge?.name || ''"
-      title="Purge Workspace" 
-      @close="closePurgeModal" 
-      @confirm="onPurgeConfirm" 
+      title="Purge Workspace"
+      @close="closePurgeModal"
+      @confirm="onPurgeConfirm"
     />
   </div>
 </template>
@@ -211,13 +246,15 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchWorkspaces, createWorkspace, deleteWorkspace, unarchiveWorkspace } from '../api';
+import { fetchWorkspaces, createWorkspace, deleteWorkspace, archiveWorkspace, unarchiveWorkspace, fetchWorkspaceStats } from '../api';
 import { useToasts } from '../composables/useToasts';
 import DeleteModal from '../components/DeleteModal.vue';
+import Sparkline from '../components/Sparkline.vue';
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
 const workspaces = ref([]);
+const workspaceStats = ref({});
 const showCreate = ref(false);
 const showArchived = ref(false);
 const searchQuery = ref('');
@@ -264,11 +301,24 @@ async function loadWorkspaces() {
     if (workspaces.value.length === 0) {
       showCreate.value = true;
     }
+    // Load stats async
+    loadStatsForWorkspaces(workspaces.value);
   } catch (err) {
     error.value = err.message;
   } finally {
     loadingWorkspaces.value = false;
   }
+}
+
+async function loadStatsForWorkspaces(list) {
+  list.forEach(async (w) => {
+    try {
+      const res = await fetchWorkspaceStats(w.id);
+      workspaceStats.value[w.id] = res;
+    } catch (err) {
+      // Ignore individually
+    }
+  });
 }
 
 watch(showCreate, (val) => {
@@ -320,13 +370,18 @@ async function submit() {
   }
 }
 
-async function restoreWorkspace(id) {
+async function toggleArchive(p) {
   try {
-    await unarchiveWorkspace(id);
+    if (p.ArchivedAt) {
+      await unarchiveWorkspace(p.id);
+      notifySuccess('Workspace protocol restored');
+    } else {
+      await archiveWorkspace(p.id);
+      notifySuccess('Workspace archived');
+    }
     await loadWorkspaces();
-    notifySuccess('Workspace protocol restored');
   } catch (err) {
-    notifyError(err.message, 'Restoration Failed');
+    notifyError(err.message, 'Operation Failed');
   }
 }
 

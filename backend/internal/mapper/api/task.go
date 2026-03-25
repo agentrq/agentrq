@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
@@ -67,12 +69,23 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 
 func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
-		return nil
+	
+	statusStr := c.Query("status")
+	var status []string
+	if statusStr != "" {
+		status = strings.Split(statusStr, ",")
 	}
+	
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
 	return &entity.ListTasksRequest{
 		WorkspaceID: workspaceID,
-		CreatedBy: c.Query("created_by"),
+		CreatedBy:   c.Query("created_by"),
+		Status:      status,
+		Filter:      c.Query("filter"),
+		Limit:       limit,
+		Offset:      offset,
 	}
 }
 
@@ -316,4 +329,28 @@ func FromModelTaskToView(t model.Task) view.Task {
 		res.ParentID = monoflake.ID(t.ParentID).String()
 	}
 	return res
+}
+func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.UpdateScheduledTaskRequest {
+	var payload view.UpdateScheduledTaskRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	if workspaceID == 0 || taskID == 0 || payload.Task.Title == "" {
+		return nil
+	}
+	return &entity.UpdateScheduledTaskRequest{
+		WorkspaceID:  workspaceID,
+		TaskID:       taskID,
+		Title:        payload.Task.Title,
+		Body:         payload.Task.Body,
+		Assignee:     payload.Task.Assignee,
+		CronSchedule: payload.Task.CronSchedule,
+	}
+}
+
+func FromUpdateScheduledTaskResponseEntityToHTTPResponse(rs *entity.UpdateScheduledTaskResponse) []byte {
+	payload, _ := json.Marshal(view.UpdateScheduledTaskResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
 }

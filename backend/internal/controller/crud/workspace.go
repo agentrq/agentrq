@@ -50,6 +50,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
+	c.telemetry.Record(ctx, req.UserID, created.ID, model.ActionIDWorkspaceCreate)
 	return &entity.CreateWorkspaceResponse{
 		Workspace: fromModelWorkspaceToEntity(created),
 	}, nil
@@ -118,6 +119,7 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 		_ = c.storage.Delete(id)
 	}
 
+	c.telemetry.Record(ctx, req.UserID, req.ID, model.ActionIDWorkspaceDelete)
 	return nil
 }
 
@@ -131,6 +133,7 @@ func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWor
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
 		c.notif.NotifyWorkspaceArchived(updated)
+		c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
 	}
 	return err
 }
@@ -144,6 +147,7 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
 		c.notif.NotifyWorkspaceUnarchived(updated)
+		c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
 	}
 	return err
 }
@@ -181,6 +185,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	if err != nil {
 		return nil, err
 	}
+	c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
 	res := fromModelWorkspaceToEntity(updated)
 	return &res, nil
 }
@@ -194,7 +199,14 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	m.AutoAllowedTools = datatypes.JSON(b)
 	m.UpdatedAt = time.Now()
 	_, err = c.repository.UpdateWorkspace(ctx, m)
+	if err == nil {
+		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDWorkspaceUpdate)
+	}
 	return err
+}
+
+func (c *controller) GetWorkspaceStats(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceStatsResponse, error) {
+	return c.telemetry.GetWorkspaceStats(ctx, req.ID)
 }
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {

@@ -10,6 +10,7 @@ import { fetchUser } from './api'
 
 const routes = [
   { path: '/', component: () => import('./views/HomeView.vue') },
+  { path: '/tasks/:filter', component: () => import('./views/TaskListView.vue') },
   { path: '/workspaces/:id', component: () => import('./views/WorkspaceDetailView.vue') },
   { path: '/workspaces/:workspaceId/tasks/:taskId', component: () => import('./views/TaskDetailView.vue') },
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }

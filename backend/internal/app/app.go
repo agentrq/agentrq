@@ -38,6 +38,7 @@ import (
 	"github.com/hasmcp/agentrq/backend/internal/service/server"
 	"github.com/hasmcp/agentrq/backend/internal/service/smtp"
 	"github.com/hasmcp/agentrq/backend/internal/service/storage"
+	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -100,7 +101,7 @@ func New(cfg Config) (*App, error) {
 		return nil, errors.New("either postgres or sqlite must be enabled in config")
 	}
 
-	if err := db.Conn(context.Background()).AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}); err != nil {
+	if err := db.Conn(context.Background()).AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.Telemetry{}); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
@@ -110,6 +111,7 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("idgen: %w", err)
 	}
 	repo := base.New(db)
+	telemetrySvc := telemetry.New(db, repo)
 	bus := eventbus.New()
 
 	storageSvc, err := storage.New("./_storage")
@@ -139,6 +141,7 @@ func New(cfg Config) (*App, error) {
 		Image:      imgSvc,
 		Notif:      notifSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
+		Telemetry:  telemetrySvc,
 	})
 
 	// ── Scheduler ─────────────────────────────────────────────────────────────
@@ -183,7 +186,7 @@ func New(cfg Config) (*App, error) {
 					return m, nil
 				}
 				m.Status = status
-				
+
 				// Add message to chat about status change
 				_ = repo.CreateMessage(ctx, model.Message{
 					ID:        ids.NextID(),
@@ -215,7 +218,7 @@ func New(cfg Config) (*App, error) {
 					return 0, fmt.Errorf("invalid chat ID: %s", chatID)
 				}
 				taskID := id.Int64()
-				
+
 				// Assign IDs to agent-provided attachments if missing and save binary
 				for i := range attachments {
 					if attachments[i].ID == "" {
@@ -231,7 +234,7 @@ func New(cfg Config) (*App, error) {
 				if len(attachments) > 0 {
 					attsData, _ = json.Marshal(attachments)
 				}
-				
+
 				var metadataJSON datatypes.JSON
 				if metadata != nil {
 					if b, err := json.Marshal(metadata); err == nil {
@@ -352,7 +355,10 @@ func New(cfg Config) (*App, error) {
 
 	// Serve static files from public directory
 	fiberApp.Static("/", "./public", fiber.Static{
-		Compress: true,
+		Compress: false,
+		Next: func(c *fiber.Ctx) bool {
+			return strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp")
+		},
 	})
 
 	// Mount MCP handler at root (before /api/v1 group)
@@ -370,14 +376,14 @@ func New(cfg Config) (*App, error) {
 	// Mount API handler
 	apiGroup := fiberApp.Group("/api/v1")
 	if _, err := handlerapi.New(handlerapi.Params{
-		Crud:          crudCtrl,
-		Auth:          authSvc,
-		TokenSvc:      tokenSvc,
-		MCPManager:    mcpManager,
-		EventBus:      bus,
-		BaseURL:       cfg.App.BaseURL,
-		MCPBaseURL:    cfg.App.BaseURL,
-		Domain:        cfg.App.Domain,
+		Crud:             crudCtrl,
+		Auth:             authSvc,
+		TokenSvc:         tokenSvc,
+		MCPManager:       mcpManager,
+		EventBus:         bus,
+		BaseURL:          cfg.App.BaseURL,
+		MCPBaseURL:       cfg.App.BaseURL,
+		Domain:           cfg.App.Domain,
 		SSLEnabled:       cfg.SSL.Enabled,
 		TokenKey:         cfg.Auth.WorkspaceTokenKey,
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
@@ -389,6 +395,11 @@ func New(cfg Config) (*App, error) {
 
 	// SPA Fallback: handle all other routes by serving index.html
 	fiberApp.Get("/*", func(c *fiber.Ctx) error {
+		if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp") {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": "Not Found",
+			})
+		}
 		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 		c.Set("Pragma", "no-cache")
 		c.Set("Expires", "0")

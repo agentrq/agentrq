@@ -299,6 +299,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Patch("/:id", h.updateWorkspace())
 	r.Post("/:id/archive", h.archiveWorkspace())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
+	r.Get("/:id/stats", h.getWorkspaceStats())
 	return nil
 }
 
@@ -510,5 +511,27 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate workspace token"})
 		}
 		return c.JSON(fiber.Map{"token": token})
+	}
+}
+
+func (h *handler) getWorkspaceStats() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if workspaceID == 0 {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		userID := c.Locals("user_id").(string)
+		rq := entity.GetWorkspaceRequest{ID: workspaceID, UserID: userID}
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.GetWorkspaceStats(ctx, rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Status(http.StatusOK).JSON(rs)
 	}
 }

@@ -165,4 +165,12 @@ type (
 		RequestID string `json:"request_id"`
 		Behavior  string `json:"behavior"` // "allow" | "deny"
 	}
+
+	UpdateScheduledTaskRequest struct {
+		Task Task `json:"task"`
+	}
+
+	UpdateScheduledTaskResponse struct {
+		Task Task `json:"task"`
+	}
 )

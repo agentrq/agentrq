@@ -9,6 +9,7 @@ import (
 	"github.com/hasmcp/agentrq/backend/internal/service/image"
 	"github.com/hasmcp/agentrq/backend/internal/service/notif"
 	"github.com/hasmcp/agentrq/backend/internal/service/storage"
+	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
 )
 
 type (
@@ -19,6 +20,7 @@ type (
 		Image      image.Service
 		Notif      notif.Service
 		TokenKey   string
+		Telemetry  telemetry.Service
 	}
 
 	Controller interface {
@@ -33,6 +35,7 @@ type (
 		img        image.Service
 		notif      notif.Service
 		tokenKey   string
+		telemetry  telemetry.Service
 	}
 )
 
@@ -44,6 +47,7 @@ func New(p Params) Controller {
 		img:        p.Image,
 		notif:      p.Notif,
 		tokenKey:   p.TokenKey,
+		telemetry:  p.Telemetry,
 	}
 }
 
@@ -57,6 +61,7 @@ type WorkspaceController interface {
 	UnarchiveWorkspace(ctx context.Context, req entity.UnarchiveWorkspaceRequest) error
 	UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.Workspace, error)
 	UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error
+	GetWorkspaceStats(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceStatsResponse, error)
 }
 
 // TaskController defines task operations.
@@ -71,4 +76,5 @@ type TaskController interface {
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
 	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
+	UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error)
 }

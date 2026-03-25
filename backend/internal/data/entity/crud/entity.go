@@ -145,8 +145,12 @@ type (
 
 	ListTasksRequest struct {
 		WorkspaceID int64
-		CreatedBy string // optional filter
-		UserID    string
+		CreatedBy   string   // optional filter
+		Status      []string // optional filter
+		Filter      string   // e.g. "pending_approval"
+		Limit       int
+		Offset      int
+		UserID      string
 	}
 
 	ListTasksResponse struct {
@@ -226,5 +230,31 @@ type (
 		Data     []byte
 		Filename string
 		MimeType string
+	}
+
+	UpdateScheduledTaskRequest struct {
+		WorkspaceID  int64
+		TaskID       int64
+		Title        string
+		Body         string
+		Assignee     string
+		CronSchedule string
+		UserID       string
+	}
+
+	UpdateScheduledTaskResponse struct {
+		Task Task
+	}
+
+	DailyStat struct {
+		Date  string `json:"date"`
+		Count int64  `json:"count"`
+	}
+
+	GetWorkspaceStatsResponse struct {
+		Stats       []DailyStat `json:"stats"`
+		Total       int64       `json:"total"`
+		ActiveTasks int64       `json:"active_tasks"`
+		TotalTasks  int64       `json:"total_tasks"`
 	}
 )

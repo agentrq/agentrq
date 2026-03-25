@@ -22,12 +22,14 @@ const (
 	_routePathReply      = "/workspaces/:id/tasks/:taskID/reply"
 	_routePathStatus     = "/workspaces/:id/tasks/:taskID/status"
 	_routePathOrder      = "/workspaces/:id/tasks/:taskID/order"
+	_routePathScheduled  = "/workspaces/:id/tasks/:taskID/scheduled"
 	_routePathPermission = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathEvents     = "/workspaces/:id/events"
 	_routePathAttachment = "/workspaces/:id/attachments/:attachmentID"
 )
 
 func (h *handler) registerTaskRoutes() error {
+	h.router.Get("/tasks", h.listTasks())
 	h.router.Post(_routePathTasks, h.createTask())
 	h.router.Get(_routePathTasks, h.listTasks())
 	h.router.Get(_routePathTask, h.getTask())
@@ -35,6 +37,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Post(_routePathReply, h.replyToTask())
 	h.router.Patch(_routePathStatus, h.updateTaskStatus())
 	h.router.Patch(_routePathOrder, h.updateTaskOrder())
+	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
 	h.router.Delete(_routePathTask, h.deleteTask())
 	h.router.Get(_routePathEvents, h.sseEvents())
@@ -363,5 +366,34 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 		}
 
 		return c.SendStatus(http.StatusOK)
+	}
+}
+
+func (h *handler) updateScheduledTask() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToUpdateScheduledTaskRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.UpdateScheduledTask(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		// Broadcast task update
+		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+			Type:    "task.updated",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromUpdateScheduledTaskResponseEntityToHTTPResponse(rs))
 	}
 }
