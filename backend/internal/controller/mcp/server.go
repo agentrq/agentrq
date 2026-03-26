@@ -361,6 +361,23 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	fmt.Printf("MCP NOTIFICATION SENT TO %d SESSIONS\n", sessionCount)
 }
 
+// StartPing pings all connected MCP client sessions every 30 seconds to keep connections alive.
+func (ps *WorkspaceServer) StartPing() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			for sess := range ps.mcpServer.Sessions() {
+				if err := sess.Ping(ctx, nil); err != nil {
+					fmt.Printf("MCP PING ERROR (Workspace: %d, Session: %s): %v\n", ps.workspaceID, sess.ID(), err)
+				}
+			}
+			cancel()
+		}
+	}()
+}
+
 // StartPoller checks for pending tasks periodically and pushes them if no ongoing tasks exist.
 func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 	go func() {

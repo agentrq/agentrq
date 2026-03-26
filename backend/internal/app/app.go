@@ -335,6 +335,7 @@ func New(cfg Config) (*App, error) {
 			telemetrySvc,
 		)
 		srv.StartPoller(repo)
+		srv.StartPing()
 		return srv
 	})
 
