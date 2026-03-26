@@ -1,5 +1,8 @@
 .PHONY: dev backend frontend install stop
 
+remote-claude:
+	claude --dangerously-load-development-channels server:agentrq-0ZSxLpLjsBt
+
 # Default command to start everything in development mode
 dev:
 	@echo "Starting AgentRQ Development Environment..."
