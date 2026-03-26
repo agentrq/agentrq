@@ -171,8 +171,20 @@ func New(cfg Config) (*App, error) {
 			func(ctx context.Context, task model.Task) (model.Task, error) {
 				res, err := repo.CreateTask(ctx, task)
 				if err == nil {
-					if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
-						notifSvc.NotifyTaskCreated(w, res)
+					// Only notify if there is no ongoing task — avoids spamming the human
+					// while the agent is actively working.
+					existingTasks, _ := repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID}, workspaceOwner)
+					hasOngoing := false
+					for _, t := range existingTasks {
+						if t.Status == "ongoing" && t.ID != res.ID {
+							hasOngoing = true
+							break
+						}
+					}
+					if !hasOngoing {
+						if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
+							notifSvc.NotifyTaskCreated(w, res)
+						}
 					}
 				}
 				return res, err
@@ -245,19 +257,6 @@ func New(cfg Config) (*App, error) {
 					}
 				}
 
-				// Create a new message in the chat history
-				msgID := ids.NextID()
-				msg := model.Message{
-					ID:          msgID,
-					CreatedAt:   time.Now(),
-					TaskID:      taskID,
-					UserID:      workspaceOwner,
-					Sender:      "agent",
-					Text:        text,
-					Attachments: datatypes.JSON(attsData),
-					Metadata:    metadataJSON,
-				}
-
 				// If the task was not started, mark as ongoing when agent replies
 				m, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
 				if err == nil && m.Status == "notstarted" {
@@ -274,16 +273,34 @@ func New(cfg Config) (*App, error) {
 					})
 				}
 
+				// Create the main message AFTER any status messages so it always has
+				// the latest timestamp — critical for the pending_approval SQL filter
+				// which looks for tasks whose most recent message is a permission_request.
+				msgID := ids.NextID()
+				msg := model.Message{
+					ID:          msgID,
+					CreatedAt:   time.Now(),
+					TaskID:      taskID,
+					UserID:      workspaceOwner,
+					Sender:      "agent",
+					Text:        text,
+					Attachments: datatypes.JSON(attsData),
+					Metadata:    metadataJSON,
+				}
+
 				if err := repo.CreateMessage(ctx, msg); err != nil {
 					return 0, err
 				}
 
-				// Notify message received
-				if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
-					// We need the task model to notify
-					t, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
-					if err == nil {
-						notifSvc.NotifyTaskReceivedMessage(w, t, msg)
+				// Notify on permission_request messages only — avoids periodic spam
+				// from routine agent progress updates.
+				isPermissionRequest := len(metadataJSON) > 0 && strings.Contains(string(metadataJSON), `"type":"permission_request"`)
+				if isPermissionRequest {
+					if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
+						t, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+						if err == nil {
+							notifSvc.NotifyTaskReceivedMessage(w, t, msg)
+						}
 					}
 				}
 
