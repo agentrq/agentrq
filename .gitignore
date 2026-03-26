@@ -8,3 +8,4 @@ frontend/dist
 *.log
 *.tmp
 main
+.mcp.json
