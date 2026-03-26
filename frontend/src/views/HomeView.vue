@@ -109,7 +109,7 @@
               <div class="flex items-center gap-3">
                 <!-- Status dot -->
                 <div class="w-3 h-3 rounded-full border border-black"
-                     :class="p.agent_connected ? 'bg-black animate-pulse' : 'bg-gray-300'"></div>
+                     :class="p.agent_connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
                 <!-- Icon -->
                 <div class="w-8 h-8 border-2 border-black bg-white flex items-center justify-center overflow-hidden shrink-0">
                   <template v-if="p.icon">
