@@ -53,7 +53,7 @@
                   <path d="M9.5 12h5" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </g>
               </svg>
-              <span v-if="!isCollapsed" class="text-sm font-black text-white truncate uppercase tracking-widest">AgentRQ</span>
+              <span v-if="!isCollapsed || isMobileMenuOpen" class="text-sm font-black text-white truncate uppercase tracking-widest">AgentRQ</span>
             </div>
           </div>
 
@@ -69,76 +69,76 @@
         </div>
 
         <div class="space-y-1 mt-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2">
-          <div v-if="!isCollapsed" class="px-1 mb-3">
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-1 mb-3">
             <span class="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Navigation</span>
           </div>
           <router-link to="/"
               @mouseenter="showTooltip($event, 'Workspaces')" @mouseleave="hideTooltip"
               class="flex items-center gap-3 px-3 py-2.5 text-xs font-black uppercase tracking-widest transition-all border-2 border-transparent"
               :class="[
-                isCollapsed ? 'justify-center px-0' : '',
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
                 $route.path === '/' || $route.path.startsWith('/workspaces') ? 'bg-white text-black border-white' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
             </svg>
-            <span v-if="!isCollapsed">Workspaces</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Workspaces</span>
           </router-link>
 
-          <div v-if="!isCollapsed" class="px-1 mt-6 mb-3">
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-1 mt-6 mb-3">
             <span class="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Tasks</span>
           </div>
-          
+
           <router-link to="/tasks/pending"
               @mouseenter="showTooltip($event, 'Pending on Me')" @mouseleave="hideTooltip"
               class="flex items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent"
               :class="[
-                isCollapsed ? 'justify-center px-0' : '',
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
                 $route.path === '/tasks/pending' ? 'bg-[#00FF88] text-black border-[#00FF88]' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span v-if="!isCollapsed">Pending on Me</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Pending on Me</span>
           </router-link>
 
           <router-link to="/tasks/notstarted"
               @mouseenter="showTooltip($event, 'Not Started')" @mouseleave="hideTooltip"
               class="flex items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent"
               :class="[
-                isCollapsed ? 'justify-center px-0' : '',
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
                 $route.path === '/tasks/notstarted' ? 'bg-[#00FF88] text-black border-[#00FF88]' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span v-if="!isCollapsed">Not Started</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Not Started</span>
           </router-link>
 
           <router-link to="/tasks/ongoing"
               @mouseenter="showTooltip($event, 'Ongoing')" @mouseleave="hideTooltip"
               class="flex items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent"
               :class="[
-                isCollapsed ? 'justify-center px-0' : '',
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
                 $route.path === '/tasks/ongoing' ? 'bg-[#00FF88] text-black border-[#00FF88]' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            <span v-if="!isCollapsed">Ongoing</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Ongoing</span>
           </router-link>
 
           <router-link to="/tasks/completed"
               @mouseenter="showTooltip($event, 'Completed')" @mouseleave="hideTooltip"
               class="flex items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent"
               :class="[
-                isCollapsed ? 'justify-center px-0' : '',
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
                 $route.path === '/tasks/completed' ? 'bg-[#00FF88] text-black border-[#00FF88]' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span v-if="!isCollapsed">Completed</span>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Completed</span>
           </router-link>
         </div>
 
@@ -167,19 +167,19 @@
           <!-- User Profile Pill -->
           <button @click="isUserMenuOpen = !isUserMenuOpen"
                   class="flex items-center gap-3 w-full p-2 border-2 border-transparent hover:border-white/20 hover:bg-white/5 transition-all duration-200 group outline-none"
-                  :class="isCollapsed ? 'justify-center' : ''">
+                  :class="(isCollapsed && !isMobileMenuOpen) ? 'justify-center' : ''">
             <div class="relative shrink-0">
               <div class="w-8 h-8 bg-[#00FF88] border-2 border-[#00FF88] flex items-center justify-center text-black font-black text-xs overflow-hidden">
                 <img v-if="user?.picture" :src="user.picture" class="w-full h-full object-cover" alt="Profile" />
                 <span v-else>{{ user?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || '?' }}</span>
               </div>
             </div>
-            <div v-if="!isCollapsed" class="flex flex-col items-start overflow-hidden text-left min-w-0 flex-1">
+            <div v-if="!isCollapsed || isMobileMenuOpen" class="flex flex-col items-start overflow-hidden text-left min-w-0 flex-1">
               <span class="text-xs font-black text-white/80 truncate w-full group-hover:text-white transition-colors uppercase tracking-wide">
                 {{ user?.name || user?.email || 'User' }}
               </span>
             </div>
-            <svg v-if="!isCollapsed" class="w-3 h-3 text-white/30 group-hover:text-white/60 transition-colors" :class="isUserMenuOpen ? '' : 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <svg v-if="!isCollapsed || isMobileMenuOpen" class="w-3 h-3 text-white/30 group-hover:text-white/60 transition-colors" :class="isUserMenuOpen ? '' : 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
           </button>
