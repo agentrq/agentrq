@@ -44,14 +44,7 @@
                   </button>
                 </div>
               </div>
-              <pre class="text-[12px] text-zinc-300 font-mono leading-relaxed overflow-x-auto"><code>{
-  "mcpServers": {
-    "{{ serverName }}": {
-      "type": "http",
-      "url": "{{ authenticatedUrl }}"
-    }
-  }
-}</code></pre>
+              <pre class="text-[12px] text-zinc-300 font-mono leading-relaxed overflow-x-auto"><code>{{ configJson }}</code></pre>
             </div>
           </section>
 
@@ -89,7 +82,8 @@ import { getWorkspaceToken } from '../api';
 const props = defineProps({
   show: Boolean,
   mcpUrl: String,
-  workspaceId: [String, Number]
+  workspaceId: [String, Number],
+  allowedTools: Array
 });
 
 const isCopied = ref(false);
@@ -114,17 +108,21 @@ watch([() => props.show, () => props.workspaceId, () => props.mcpUrl], async ([n
 const serverName = computed(() => `agentrq-${props.workspaceId}`);
 const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value}`);
 
+const mcpConfig = computed(() => {
+  const entry = {
+    type: "http",
+    url: authenticatedUrl.value
+  };
+  if (props.allowedTools && props.allowedTools.length > 0) {
+    entry.allowedTools = props.allowedTools;
+  }
+  return { mcpServers: { [serverName.value]: entry } };
+});
+
+const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
+
 function copyConfig() {
-  const config = JSON.stringify({
-    mcpServers: {
-      [serverName.value]: {
-        type: "http",
-        url: authenticatedUrl.value
-      }
-    }
-  }, null, 2);
-  
-  navigator.clipboard.writeText(config);
+  navigator.clipboard.writeText(configJson.value);
   isCopied.value = true;
   setTimeout(() => isCopied.value = false, 2000);
 }

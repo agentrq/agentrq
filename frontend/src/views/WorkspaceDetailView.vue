@@ -92,11 +92,12 @@
     @submit="handleUpdate" 
   />
 
-  <SetupModal 
-    :show="showSetupModal" 
-    :mcpUrl="workspace?.mcp_url" 
+  <SetupModal
+    :show="showSetupModal"
+    :mcpUrl="workspace?.mcp_url"
     :workspaceId="workspace?.id"
-    @close="showSetupModal = false" 
+    :allowedTools="workspace?.auto_allowed_tools"
+    @close="showSetupModal = false"
   />
 
 </template>
