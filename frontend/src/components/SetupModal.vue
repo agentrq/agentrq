@@ -48,7 +48,7 @@
   "mcpServers": {
     "{{ serverName }}": {
       "type": "http",
-      "url": "{{ mcpUrl }}"
+      "url": "{{ authenticatedUrl }}"
     }
   }
 }</code></pre>
@@ -83,7 +83,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { getWorkspaceToken } from '../api';
 
 const props = defineProps({
   show: Boolean,
@@ -92,6 +93,23 @@ const props = defineProps({
 });
 
 const isCopied = ref(false);
+const token = ref('');
+
+const authenticatedUrl = computed(() => {
+  if (!token.value) return props.mcpUrl;
+  return `${props.mcpUrl}?token=${token.value}`;
+});
+
+watch([() => props.show, () => props.workspaceId, () => props.mcpUrl], async ([newShow, newId, newUrl]) => {
+  if (newShow && newId && newUrl) {
+    try {
+      const res = await getWorkspaceToken(newId);
+      token.value = res.token || '';
+    } catch (err) {
+      console.error('Failed to fetch token:', err);
+    }
+  }
+}, { immediate: true });
 
 const serverName = computed(() => `agentrq-${props.workspaceId}`);
 const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value}`);
@@ -100,7 +118,8 @@ function copyConfig() {
   const config = JSON.stringify({
     mcpServers: {
       [serverName.value]: {
-        url: props.mcpUrl
+        type: "http",
+        url: authenticatedUrl.value
       }
     }
   }, null, 2);

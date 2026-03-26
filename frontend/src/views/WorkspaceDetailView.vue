@@ -37,7 +37,7 @@
       <div class="flex items-center gap-2 shrink-0 max-w-full overflow-hidden">
         <div class="bg-gray-950 border-2 border-black px-3 py-2 flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] max-w-full overflow-hidden">
           <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest shrink-0">MCP</span>
-          <code class="text-[11px] text-[#00FF88] font-mono select-all truncate shrink min-w-0 max-w-[200px]">{{ workspace.mcp_url }}</code>
+          <code class="text-[11px] text-[#00FF88] font-mono select-all truncate shrink min-w-0 max-w-[200px]">{{ authenticatedUrl }}</code>
           <div class="flex items-center gap-1 pl-1 border-l border-gray-700 shrink-0">
             <button @click="copyUrl"
                     class="p-1 transition-all border border-transparent focus:outline-none"
@@ -102,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken } from '../api';
 import { useEventBus } from '../useEventBus';
@@ -130,6 +130,24 @@ const isUpdating = ref(false);
 
 const { connect, disconnect, events, isConnected } = useEventBus(workspaceId);
 const isAgentConnected = ref(false);
+const token = ref('');
+
+const authenticatedUrl = computed(() => {
+  if (!workspace.value || !workspace.value.mcp_url) return '';
+  if (!token.value) return workspace.value.mcp_url;
+  return `${workspace.value.mcp_url}?token=${token.value}`;
+});
+
+async function fetchToken() {
+  if (workspaceId) {
+    try {
+      const res = await getWorkspaceToken(workspaceId);
+      token.value = res.token || '';
+    } catch (err) {
+      console.error('Failed to fetch token:', err);
+    }
+  }
+}
 
 watch(events, (evts) => {
   const last = evts[evts.length - 1];
@@ -151,6 +169,8 @@ async function load() {
     isAgentConnected.value = workspace.value.agent_connected;
     const tRes = await fetchTasks(workspaceId);
     tasks.value = tRes.tasks || [];
+    // Fetch token for display
+    fetchToken();
     // Start SSE stream
     connect();
   } catch (err) {
