@@ -82,8 +82,7 @@ import { getWorkspaceToken } from '../api';
 const props = defineProps({
   show: Boolean,
   mcpUrl: String,
-  workspaceId: [String, Number],
-  allowedTools: Array
+  workspaceId: [String, Number]
 });
 
 const isCopied = ref(false);
@@ -108,16 +107,24 @@ watch([() => props.show, () => props.workspaceId, () => props.mcpUrl], async ([n
 const serverName = computed(() => `agentrq-${props.workspaceId}`);
 const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value}`);
 
-const mcpConfig = computed(() => {
-  const entry = {
-    type: "http",
-    url: authenticatedUrl.value
-  };
-  if (props.allowedTools && props.allowedTools.length > 0) {
-    entry.allowedTools = props.allowedTools;
+const AGENTRQ_TOOLS = [
+  "createTask",
+  "updateTaskStatus",
+  "reply",
+  "downloadAttachment",
+  "getWorkspace",
+  "getTaskMessages"
+];
+
+const mcpConfig = computed(() => ({
+  mcpServers: {
+    [serverName.value]: {
+      type: "http",
+      url: authenticatedUrl.value,
+      allowedTools: AGENTRQ_TOOLS
+    }
   }
-  return { mcpServers: { [serverName.value]: entry } };
-});
+}));
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
 

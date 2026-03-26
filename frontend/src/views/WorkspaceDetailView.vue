@@ -96,7 +96,6 @@
     :show="showSetupModal"
     :mcpUrl="workspace?.mcp_url"
     :workspaceId="workspace?.id"
-    :allowedTools="workspace?.auto_allowed_tools"
     @close="showSetupModal = false"
   />
 
