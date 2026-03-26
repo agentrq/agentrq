@@ -107,21 +107,11 @@ watch([() => props.show, () => props.workspaceId, () => props.mcpUrl], async ([n
 const serverName = computed(() => `agentrq-${props.workspaceId}`);
 const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value}`);
 
-const AGENTRQ_TOOLS = [
-  "createTask",
-  "updateTaskStatus",
-  "reply",
-  "downloadAttachment",
-  "getWorkspace",
-  "getTaskMessages"
-];
-
 const mcpConfig = computed(() => ({
   mcpServers: {
     [serverName.value]: {
       type: "http",
-      url: authenticatedUrl.value,
-      allowedTools: AGENTRQ_TOOLS
+      url: authenticatedUrl.value
     }
   }
 }));
