@@ -127,7 +127,7 @@
                 <span v-if="p.agent_connected" class="text-[10px] font-black bg-black text-white px-2 py-0.5 uppercase tracking-widest">Claude connected</span>
                 <span v-else class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Idle</span>
                 
-                <div class="flex items-center border-l-2 border-black/5 ml-1 pl-2 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div class="flex items-center border-l-2 border-black/5 ml-1 pl-2 gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <button @click.stop="toggleArchive(p)" 
                           class="p-1 hover:bg-gray-100 border border-transparent hover:border-black transition-all"
                           title="Archive workspace">
@@ -151,7 +151,7 @@
 
             <div class="mt-4 pt-4 border-t-2 border-black/10 flex items-center justify-between text-[9px] uppercase font-black tracking-widest">
               <span class="text-black/30">{{ new Date(p.created_at).toLocaleDateString() }}</span>
-              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+              <div class="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
                 Open
                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7" /></svg>
               </div>
