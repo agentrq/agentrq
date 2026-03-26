@@ -439,8 +439,8 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 			if err := json.Unmarshal(t.Attachments, &atts); err == nil {
 				for _, a := range atts {
 					if a.ID == req.AttachmentID {
-						data, _ := c.storage.Load(a.ID)
-						return &entity.GetAttachmentResponse{Data: []byte(data), Filename: a.Filename, MimeType: a.MimeType}, nil
+						data, _ := c.storage.LoadRaw(a.ID)
+						return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
 					}
 				}
 			}
@@ -451,8 +451,8 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
 					for _, a := range atts {
 						if a.ID == req.AttachmentID {
-							data, _ := c.storage.Load(a.ID)
-							return &entity.GetAttachmentResponse{Data: []byte(data), Filename: a.Filename, MimeType: a.MimeType}, nil
+							data, _ := c.storage.LoadRaw(a.ID)
+							return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
 						}
 					}
 				}
