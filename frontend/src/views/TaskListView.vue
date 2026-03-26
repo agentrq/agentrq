@@ -43,9 +43,9 @@
             </p>
             
             <div class="flex gap-2" @click.stop v-if="isAgentConnected(task.workspace_id)">
-              <button @click="handleAction(task, 'allow')" 
+              <button @click="handleAction(task, 'allow')"
                       class="px-3 py-1 bg-[#00FF88] border-2 border-black text-xs font-bold hover:bg-[#00e07a] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
-                Approve
+                Allow
               </button>
               <button @click="openTask(task)"
                       class="px-3 py-1 bg-white border-2 border-black text-xs font-bold hover:bg-gray-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
@@ -53,7 +53,7 @@
               </button>
               <button @click="handleAction(task, 'reject')"
                       class="px-3 py-1 bg-red-100 border-2 border-black text-xs font-bold hover:bg-red-200 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
-                Reject
+                Deny
               </button>
             </div>
             <div v-else class="flex items-center gap-2 mt-2 px-3 py-1 bg-gray-100 border-2 border-black border-dashed w-fit">
@@ -137,7 +137,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, fetchWorkspaces, respondToTask } from '../api';
+import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict } from '../api';
 import { useToasts } from '../composables/useToasts';
 
 const route = useRoute();
@@ -185,8 +185,12 @@ const getLastMessageText = (task) => {
 
 const handleAction = async (task, action) => {
   try {
-    await respondToTask(task.workspace_id, task.id, action);
-    notifySuccess(`Task ${action === 'allow' ? 'approved' : 'rejected'}`);
+    const lastMsg = task.messages?.[task.messages.length - 1];
+    const requestId = lastMsg?.metadata?.request_id;
+    if (!requestId) throw new Error('No pending permission request found');
+    const behavior = action === 'allow' ? 'allow' : 'deny';
+    await sendPermissionVerdict(task.workspace_id, task.id, requestId, behavior);
+    notifySuccess(`Permission ${action === 'allow' ? 'allowed' : 'denied'}`);
     // Refresh the list to remove the acted task
     await fetchInitial();
   } catch (err) {
