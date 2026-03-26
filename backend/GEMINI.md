@@ -69,3 +69,14 @@ Views define the external structures, like JSON inputs/outputs.
 - **Param validation:** Always check for missing route parameters inside `FromHTTPRequestTo...RequestEntity` and return `nil` if validation fails.
 - **Payload transformation:** Return raw `[]byte` payloads from `...ToHTTPResponse` mappers using `json.Marshal` internally, preventing the caller (handler) from doing repetitive marshaling.
 - **Formatting:** After your changes use always go format
+
+## 4. Unit Testing and Mocking
+
+Unit testing is critical for maintaining service reliability. 
+
+- **Coverage**: Every new service addition or significant change MUST include unit tests. Aim for **100% code coverage** for the service layer logic.
+- **Mocking**: Use `gomock` to mock external dependencies (repositories, other services, etc.).
+  - Mocks are located in `internal/service/mocks/` and are excluded from version control.
+  - Run `make mocks` from the root directory to generate or update mocks.
+  - Run `make test` to execute all unit tests after generating mocks.
+- **Test Placement**: Keep test files (`*_test.go`) in the same package as the service implementation to allow testing of unexported methods/fields when necessary for full coverage.

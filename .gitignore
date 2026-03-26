@@ -9,3 +9,5 @@ frontend/dist
 *.tmp
 main
 .mcp.json
+backend/internal/service/mocks
+coverage.out
