@@ -388,17 +388,16 @@ const displayGroups = computed(() => {
 
   const groups = [];
   if (ongoing.length > 0) groups.push({ title: 'Ongoing', tasks: ongoing });
-  
+  if (notStarted.length > 0) groups.push({ title: 'Not Started', tasks: notStarted });
+
   if (completed.length > 0) {
-    groups.push({ 
-      title: 'Completed', 
+    groups.push({
+      title: 'Completed',
       tasks: completed.slice(0, completedLimit.value),
       hasMore: completed.length > completedLimit.value,
       totalCompleted: completed.length
     });
   }
-  
-  if (notStarted.length > 0) groups.push({ title: 'Not Started', tasks: notStarted });
 
   return groups;
 });
