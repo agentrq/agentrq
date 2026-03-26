@@ -147,8 +147,16 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	}
 
 	if req.Filter == "pending_approval" {
-		// SQLite subquery to find tasks with pending permission requests as the latest state
-		q = q.Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND metadata LIKE '%\"type\":\"permission_request\"%')")
+		// Find tasks whose most recent message is a permission_request.
+		// PostgreSQL: JSONB columns don't support LIKE; cast to text or use @> containment.
+		// SQLite: metadata is plain text, LIKE works fine.
+		var metadataExpr string
+		if r.conn(ctx).Dialector.Name() == "postgres" {
+			metadataExpr = "metadata @> '{\"type\":\"permission_request\"}'::jsonb"
+		} else {
+			metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%'"
+		}
+		q = q.Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")")
 	}
 
 	orderBy := "created_at desc"
