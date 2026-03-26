@@ -102,7 +102,7 @@
           <div v-for="p in filteredActiveWorkspaces"
                :key="p.id"
                class="border-2 border-black p-4 cursor-pointer group flex flex-col justify-between transition-all duration-150 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
-               :class="p.agent_connected ? 'bg-[#00FF88]' : 'bg-white'"
+               :class="'bg-white'"
                @click="goToWorkspace(p.id)">
 
             <div class="flex items-center justify-between mb-3">
