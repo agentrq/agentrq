@@ -61,7 +61,11 @@
                       <div class="p-2 bg-white rounded-lg shadow-sm border border-gray-100">
                         <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                       </div>
-                      <div v-if="tool.includes(':')" class="flex flex-col gap-0.5">
+                      <div v-if="isShellToolEntry(tool)" class="flex flex-col gap-0.5">
+                        <span class="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">{{ getToolName(tool) }}</span>
+                        <span class="text-xs font-bold text-gray-800 font-mono">{{ getShellPattern(tool) }}</span>
+                      </div>
+                      <div v-else-if="tool.includes(':')" class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-black text-indigo-400 uppercase tracking-tighter">{{ tool.split(':')[0] }}</span>
                         <span class="text-xs font-bold text-gray-800 font-mono">{{ tool.split(':').slice(1).join(':') }}</span>
                       </div>
@@ -215,6 +219,23 @@ async function handleIconUpload(e) {
     form.value.icon = base64;
   };
   reader.readAsDataURL(file);
+}
+
+const SHELL_TOOLS = ['Bash', 'shell_execute', 'execute_command'];
+
+function isShellToolEntry(tool) {
+  const name = tool.split(':')[0];
+  return SHELL_TOOLS.includes(name);
+}
+
+function getToolName(tool) {
+  return tool.split(':')[0];
+}
+
+function getShellPattern(tool) {
+  if (!tool.includes(':')) return 'all commands';
+  const pattern = tool.split(':').slice(1).join(':');
+  return pattern === '*' ? 'all commands' : pattern;
 }
 
 function submit() {

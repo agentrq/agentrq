@@ -61,20 +61,25 @@ func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *Permissio
 		return toolName
 	}
 
-	// Shell tools: extract the base command and create a glob pattern
-	if isShellTool(toolName) && params != nil {
-		if cmd, ok := extractCommandFromPreview(params.InputPreview); ok {
-			// Split on shell operators and use the first subcommand's base command
-			subcommands := splitShellOperators(cmd)
-			if len(subcommands) > 0 {
-				base := extractBaseCommand(subcommands[0])
-				if base != "" {
-					rule := fmt.Sprintf("%s:%s *", toolName, base)
-					fmt.Printf("SHELL RULE GENERATED: %s (from command: %s)\n", rule, cmd)
-					return rule
+	// Shell tools: extract the base command and create a glob pattern.
+	// Always store with colon format so the UI can show the pattern.
+	if isShellTool(toolName) {
+		if params != nil {
+			if cmd, ok := extractCommandFromPreview(params.InputPreview); ok {
+				// Split on shell operators and use the first subcommand's base command
+				subcommands := splitShellOperators(cmd)
+				if len(subcommands) > 0 {
+					base := extractBaseCommand(subcommands[0])
+					if base != "" {
+						rule := fmt.Sprintf("%s:%s *", toolName, base)
+						fmt.Printf("SHELL RULE GENERATED: %s (from command: %s)\n", rule, cmd)
+						return rule
+					}
 				}
 			}
 		}
+		// Fallback: can't extract specific command — allow all commands for this shell tool
+		return fmt.Sprintf("%s:*", toolName)
 	}
 
 	// Everything else: store exact tool name
