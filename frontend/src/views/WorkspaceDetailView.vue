@@ -3,7 +3,7 @@
     <!-- Workspace Header -->
     <div class="border-b-2 border-black pb-4 flex flex-col md:flex-row md:items-start justify-between gap-4">
       <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-3 flex-nowrap min-w-0">
           <!-- Icon -->
           <div class="w-10 h-10 border-2 border-black bg-white flex items-center justify-center overflow-hidden shrink-0">
             <template v-if="workspace.icon">
@@ -15,15 +15,23 @@
               <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
             </svg>
           </div>
-          <h1 class="text-xl font-black text-black uppercase tracking-tight">{{ workspace.name }}</h1>
+          <h1 class="text-xl font-black text-black uppercase tracking-tight truncate">{{ workspace.name }}</h1>
           <!-- Agent connection removed from header -->
-          <button v-if="!workspace.archived_at" @click="showEditModal = true" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Edit Workspace Settings">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-          </button>
+          <div class="flex items-center gap-1 shrink-0">
+            <button v-if="!workspace.archived_at" @click="showEditModal = true" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Edit Workspace Settings">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            </button>
+            
+            <button @click="showSetupModal = true"
+                    class="md:hidden p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all"
+                    title="How to connect Claude">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </button>
+          </div>
         </div>
 
         <!-- Description -->
-        <div v-if="workspace.description" class="mt-2">
+        <div v-if="workspace.description" class="mt-2 hidden md:block">
           <p class="text-xs text-gray-500 font-medium leading-relaxed max-w-3xl cursor-pointer hover:text-black transition-colors"
              :class="isDescriptionExpanded ? '' : 'line-clamp-1'"
              @click="isDescriptionExpanded = !isDescriptionExpanded">
@@ -34,7 +42,7 @@
       </div>
 
       <!-- MCP Endpoint -->
-      <div class="flex items-center gap-2 shrink-0 max-w-full overflow-hidden">
+      <div class="hidden md:flex items-center gap-2 shrink-0 max-w-full overflow-hidden">
         <div class="bg-gray-950 border-2 border-black px-3 py-2 flex items-center gap-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] max-w-full overflow-hidden">
           <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest shrink-0">MCP</span>
           <code class="text-[11px] text-[#00FF88] font-mono select-all truncate shrink min-w-0 max-w-[200px]">{{ authenticatedUrl }}</code>

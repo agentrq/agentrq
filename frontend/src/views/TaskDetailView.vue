@@ -3,20 +3,42 @@
 
     <!-- Breadcrumb Header -->
     <header class="pb-2 border-b-2 border-black shrink-0 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0">
-        <router-link :to="'/workspaces/' + workspaceId" class="text-gray-400 hover:text-black transition-colors shrink-0">
+      <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0 flex-1">
+        <router-link :to="'/workspaces/' + workspaceId" class="hidden md:block text-gray-400 hover:text-black transition-colors shrink-0">
           {{ workspace.name }}
         </router-link>
-        <svg class="w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
-        <span class="text-black truncate break-all">{{ task.title }}</span>
-        <span class="border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0"
+        <svg class="hidden md:block w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
+        <span class="text-black truncate flex-1 min-w-0 text-sm">{{ task.title }}</span>
+        <div class="flex items-center gap-1.5 border-2 border-black px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0"
               :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black' : task.status === 'completed' || task.status === 'done' ? 'bg-black text-white' : task.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-white text-gray-500'">
-          {{ task.status }}
-        </span>
+          
+          <!-- Ongoing Icon -->
+          <svg v-if="task.status === 'ongoing'" class="w-3 h-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
+          </svg>
+          <!-- Completed Icon -->
+          <svg v-else-if="task.status === 'completed' || task.status === 'done'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <!-- Not Started Icon -->
+          <svg v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <!-- Rejected Icon -->
+          <svg v-else-if="task.status === 'rejected'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+
+          <span class="hidden sm:inline">{{ task.status }}</span>
+        </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span v-if="workspace.archived_at" class="border-2 border-yellow-500 bg-yellow-300 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">Archived</span>
         <span class="hidden md:inline text-[9px] font-black text-gray-300 uppercase tracking-widest">{{ task.id }}</span>
+        <button @click="toggleFullscreen" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Toggle Fullscreen">
+          <svg v-if="!isFullscreen" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4l5 5m0 0V4m0 5H4m16-5l-5 5m0 0h4m-4 0V4M4 20l5-5m0 0v4m0-5H4m16 5l-5-5m0 0V20m0-5h4" /></svg>
+        </button>
         <button @click="router.push('/workspaces/' + workspaceId)" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
@@ -258,7 +280,7 @@
            <p class="text-[9px] text-yellow-600 font-bold uppercase tracking-tight text-center italic">Please wait for the task to start or be accepted before sending messages.</p>
         </div>
 
-        <div v-if="workspace.agent_connected && task.status !== 'notstarted' && task.status !== 'pending'" class="flex items-center justify-center gap-2 mt-3">
+        <div v-if="workspace.agent_connected && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
           <div class="h-px bg-gray-200 grow"></div>
           <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Shift+Enter for newline · Secure Agent Sync</span>
           <div class="h-px bg-gray-200 grow"></div>
@@ -337,6 +359,20 @@ const replyText = ref('');
 const replyAttachments = ref([]);
 const scrollContainer = ref(null);
 const autoscrollEnabled = ref(true);
+const isFullscreen = ref(false);
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().then(() => {
+      isFullscreen.value = true;
+    }).catch(err => {
+      notifyError("Fullscreen not supported or blocked");
+    });
+  } else {
+    document.exitFullscreen();
+    isFullscreen.value = false;
+  }
+}
 
 const { connect, disconnect, events } = useEventBus(workspaceId);
 
