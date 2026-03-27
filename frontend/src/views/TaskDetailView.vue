@@ -528,6 +528,10 @@ function openAttachment(attId) {
   window.open(getAttachmentUrl(workspaceId, attId), '_blank');
 }
 
+watch(() => task.value?.title, (title) => {
+  if (title) document.title = `${title} | AgentRQ`;
+}, { immediate: true });
+
 onMounted(() => {
   load();
   scrollToBottom();

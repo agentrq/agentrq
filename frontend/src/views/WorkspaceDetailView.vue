@@ -274,6 +274,10 @@ async function copyUrl() {
   }
 }
 
+watch(() => workspace.value?.name, (name) => {
+  if (name) document.title = `${name} | AgentRQ`;
+}, { immediate: true });
+
 onMounted(() => {
   load();
 });

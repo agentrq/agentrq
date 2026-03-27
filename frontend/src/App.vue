@@ -397,10 +397,19 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-watch(() => route.path, () => {
+watch(() => route.path, (path) => {
   isWorkspaceDropdownOpen.value = false
   isMobileMenuOpen.value = false
   hideTooltip()
+  
+  // Base Titles
+  if (path === '/') document.title = 'Workspaces | AgentRQ';
+  else if (path === '/login') document.title = 'Login | AgentRQ';
+  else if (path.startsWith('/tasks/')) {
+    const filter = route.params.filter || '';
+    const title = filter ? filter.charAt(0).toUpperCase() + filter.slice(1) : 'All';
+    document.title = `${title} Tasks | AgentRQ`;
+  }
 })
 
 watch(isLoginPage, (val) => {
