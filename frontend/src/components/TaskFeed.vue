@@ -160,8 +160,8 @@
           <div class="space-y-3">
             <div v-for="(t, idx) in grp.tasks" :key="t.id"
                  @click="openTask(t)"
-                 class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm"
-                 :class="getTaskBgStyle(t.status)">
+                 class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm relative"
+                 :class="[getTaskBgStyle(t.status), activeStatusMenuId === t.id ? 'z-50' : 'z-0']">
                  
               <div class="flex items-center gap-3.5 flex-1 min-w-0 pr-4">
                  <span class="w-2.5 h-2.5 rounded-full border border-black shrink-0" :class="getTaskDotStyle(t.status)"></span>
@@ -219,11 +219,43 @@
                                            <button @click.stop.prevent="respond(t.id, 'reject')" 
                               :disabled="!isAgentConnected"
                               class="px-3 py-1 bg-white text-red-600 hover:bg-red-50 text-[10px] font-black uppercase tracking-widest border-2 border-red-200 shadow-[2px_2px_0px_0px_rgba(254,204,203,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Reject</button>
-
                  </div>
-                 <span class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px]" :class="getTaskBadgeStyle(t.status)">
-                   {{ getTaskLabel(t.status) }}
-                 </span>
+                 <div class="relative group/status shrink-0">
+                   <button @click.stop="activeStatusMenuId = activeStatusMenuId === t.id ? null : t.id"
+                           class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 transition-all hover:translate-y-px active:translate-y-0.5" 
+                           :class="getTaskBadgeStyle(t.status)">
+                     {{ getTaskLabel(t.status) }}
+                     <svg class="w-2.5 h-2.5 ml-0.5 transition-transform duration-200" :class="activeStatusMenuId === t.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
+                   </button>
+ 
+                   <!-- Status Dropdown (Feed) -->
+                   <div v-if="activeStatusMenuId === t.id" 
+                        v-click-outside="() => activeStatusMenuId = null"
+                        class="absolute right-0 top-full mt-1 w-36 bg-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] z-50 animate-in slide-in-from-top-1 duration-150">
+                     <div class="p-1 flex flex-col gap-0.5">
+                        <button v-if="t.status !== 'notstarted'" @click.stop="respond(t.id, 'notstarted'); activeStatusMenuId = null"
+                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-gray-100 text-gray-500 transition-colors text-left">
+                          <div class="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
+                          Queue
+                        </button>
+                        <button v-if="t.status !== 'ongoing'" @click.stop="respond(t.id, 'ongoing'); activeStatusMenuId = null"
+                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-[#00FF88]/10 text-black transition-colors text-left">
+                          <div class="w-1.5 h-1.5 rounded-full bg-[#00FF88]"></div>
+                          Start
+                        </button>
+                        <button v-if="t.status !== 'done'" @click.stop="respond(t.id, 'done'); activeStatusMenuId = null"
+                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-0.5 pt-1.5">
+                          <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                          Complete
+                        </button>
+                        <button v-if="t.status !== 'rejected'" @click.stop="respond(t.id, 'rejected'); activeStatusMenuId = null"
+                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-red-50 text-red-600 transition-colors text-left">
+                          <div class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                          Reject
+                        </button>
+                     </div>
+                   </div>
+                 </div>
                   <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   </button>
@@ -277,7 +309,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder } from '../api';
+import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder, updateTaskStatus } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
 
@@ -298,6 +330,7 @@ const fileInput = ref(null);
 const responses = ref({});
 const newTask = ref({ title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' });
 const newTaskAttachments = ref([]);
+const activeStatusMenuId = ref(null);
 const sending = ref(false);
 const toastMessage = ref('');
 
@@ -544,15 +577,21 @@ function triggerEdit(task) {
 async function respond(taskId, action) {
   const text = responses.value[taskId] || '';
   try {
-    const res = await respondToTask(props.workspaceId, taskId, action, text);
+    let res;
+    // Check if it's a direct status update (allowed by clicking badge) or a response to agent
+    if (['notstarted', 'ongoing', 'done', 'rejected'].includes(action)) {
+        res = await updateTaskStatus(props.workspaceId, taskId, action);
+    } else {
+        res = await respondToTask(props.workspaceId, taskId, action, text);
+    }
     const idx = localTasks.value.findIndex(x => x.id === taskId);
     if (idx !== -1) {
       localTasks.value[idx] = res.task;
     }
     delete responses.value[taskId];
-    notifySuccess('Action confirmed');
+    notifySuccess('Status updated successfully');
   } catch(err) {
-    notifyError("Failed to confirm action: " + err.message);
+    notifyError("Failed to update status: " + err.message);
   }
 }
 

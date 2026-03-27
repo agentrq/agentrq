@@ -9,27 +9,48 @@
         </router-link>
         <svg class="hidden md:block w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
         <span class="text-black truncate flex-1 min-w-0 text-sm">{{ task.title }}</span>
-        <div class="flex items-center gap-1.5 border-2 border-black px-1.5 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0"
-              :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black' : task.status === 'completed' || task.status === 'done' ? 'bg-black text-white' : task.status === 'rejected' ? 'bg-red-500 text-white' : 'bg-white text-gray-500'">
-          
-          <!-- Ongoing Icon -->
-          <svg v-if="task.status === 'ongoing'" class="w-3 h-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 3l14 9-14 9V3z" />
-          </svg>
-          <!-- Completed Icon -->
-          <svg v-else-if="task.status === 'completed' || task.status === 'done'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-          <!-- Not Started Icon -->
-          <svg v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <!-- Rejected Icon -->
-          <svg v-else-if="task.status === 'rejected'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+        <div class="relative group/status">
+          <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
+                  class="flex items-center gap-1.5 border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0 transition-all hover:translate-y-px active:translate-y-0.5"
+                  :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : task.status === 'completed' || task.status === 'done' ? 'bg-black text-white shadow-[2px_2px_1px_0px_rgba(0,255,136,0.3)]' : task.status === 'rejected' ? 'bg-red-500 text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white text-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'">
+            
+            <!-- Icons based on status -->
+            <svg v-if="task.status === 'ongoing'" class="w-3 h-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 3l14 9-14 9V3z" /></svg>
+            <svg v-else-if="task.status === 'completed' || task.status === 'done'" class="w-3 h-3 text-[#00FF88]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path d="M5 13l4 4L19 7" /></svg>
+            <svg v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <svg v-else-if="task.status === 'rejected'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M6 18L18 6M6 6l12 12" /></svg>
 
-          <span class="hidden sm:inline">{{ task.status }}</span>
+            <span class="hidden sm:inline">{{ task.status }}</span>
+            <svg class="w-3 h-3 ml-0.5 transition-transform duration-200" :class="isStatusMenuOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" /></svg>
+          </button>
+
+          <!-- Dropdown Menu -->
+          <div v-if="isStatusMenuOpen" 
+               v-click-outside="() => isStatusMenuOpen = false"
+               class="absolute right-0 top-full mt-2 w-40 bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-[100] animate-in slide-in-from-top-2 duration-150">
+            <div class="p-1 flex flex-col gap-0.5">
+              <button v-if="task.status !== 'notstarted'" @click="updateStatus('notstarted'); isStatusMenuOpen = false"
+                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 text-gray-500 transition-colors text-left">
+                <div class="w-2 h-2 rounded-full bg-gray-300"></div>
+                Queue
+              </button>
+              <button v-if="task.status !== 'ongoing'" @click="updateStatus('ongoing'); isStatusMenuOpen = false"
+                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-[#00FF88]/10 text-black transition-colors text-left">
+                <div class="w-2 h-2 rounded-full bg-[#00FF88]"></div>
+                Start
+              </button>
+              <button v-if="task.status !== 'done' && task.status !== 'completed'" @click="updateStatus('done'); isStatusMenuOpen = false"
+                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-1 pt-2">
+                <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                Complete
+              </button>
+              <button v-if="task.status !== 'rejected'" @click="updateStatus('rejected'); isStatusMenuOpen = false"
+                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 text-red-600 transition-colors text-left">
+                <div class="w-2 h-2 rounded-full bg-red-500"></div>
+                Reject
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -240,18 +261,18 @@
               v-model="replyText"
               @input="adjustTextareaHeight"
               rows="1"
-              :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-              :placeholder="!workspace.agent_connected ? 'Waiting for agent...' : (task.status === 'notstarted' || task.status === 'pending') ? 'Task not started...' : 'Type instructions...'"
+              :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
+              :placeholder="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions or response...'"
               class="flex-1 px-3 py-2 md:px-4 md:py-3 text-sm md:text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
-                    :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
+                    :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
                     class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30 self-end">
               <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
            <button type="submit"
-                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || !workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
+                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'))"
                    class="h-[38px] w-[32px] md:h-[46px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
                    title="Send Instruction">
              <svg class="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -261,7 +282,7 @@
         </div>
 
         <!-- Status Warning Messages -->
-        <div v-if="!workspace.agent_connected" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-red-50 border-2 border-red-200 border-dashed">
+        <div v-if="!workspace.agent_connected && task.assignee !== 'human'" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-red-50 border-2 border-red-200 border-dashed">
            <div class="flex items-center gap-2">
              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse border border-black/10"></span>
              <span class="text-[10px] font-black text-red-700 uppercase tracking-[0.2em]">Agent Offline</span>
@@ -269,7 +290,7 @@
            <p class="text-[9px] text-red-600 font-bold uppercase tracking-tight text-center italic">Delivery of instructions requires an active agent connection.</p>
         </div>
         
-        <div v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-yellow-50 border-2 border-yellow-200 border-dashed">
+        <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-yellow-50 border-2 border-yellow-200 border-dashed">
            <div class="flex items-center gap-2">
              <span class="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-black/10"></span>
              <span class="text-[10px] font-black text-yellow-700 uppercase tracking-[0.2em]">Task Not Started</span>
@@ -277,7 +298,7 @@
            <p class="text-[9px] text-yellow-600 font-bold uppercase tracking-tight text-center italic">Please wait for the task to start or be accepted before sending messages.</p>
         </div>
 
-        <div v-if="workspace.agent_connected && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
+        <div v-if="(workspace.agent_connected || task.assignee === 'human') && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
           <div class="h-px bg-gray-200 grow"></div>
           <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Shift+Enter for newline · Secure Agent Sync</span>
           <div class="h-px bg-gray-200 grow"></div>
@@ -339,7 +360,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, getTask, respondToTask, getAttachmentUrl, sendPermissionVerdict } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, getAttachmentUrl, sendPermissionVerdict } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 
@@ -357,6 +378,7 @@ const replyAttachments = ref([]);
 const scrollContainer = ref(null);
 const autoscrollEnabled = ref(true);
 const isFullscreen = ref(false);
+const isStatusMenuOpen = ref(false);
 
 const isMobile = computed(() => window.innerWidth < 768);
 const showHeader = ref(true);
@@ -438,12 +460,22 @@ async function handleFileUpload(e) {
 
 const handleVerdict = async (requestId, behavior) => {
   try {
-    await sendPermissionVerdict(workspaceId, taskId, requestId, behavior);
+    await sendPermissionVerdict(workspaceId, taskId, behavior);
     notifySuccess("Verdict sent successfully");
   } catch (err) {
     notifyError('Failed to send verdict: ' + err.message);
   }
 };
+
+async function updateStatus(newStatus) {
+  try {
+    const res = await updateTaskStatus(workspaceId, taskId, newStatus);
+    task.value = res.task;
+    notifySuccess(`Status updated to ${newStatus}`);
+  } catch (err) {
+    notifyError("Failed to update status: " + err.message);
+  }
+}
 
 async function submitReply() {
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;

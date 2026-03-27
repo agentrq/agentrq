@@ -36,6 +36,21 @@ router.beforeEach(async (to, from, next) => {
 const pinia = createPinia()
 const app = createApp(App)
 
+// Global Click Outside Directive
+app.directive('click-outside', {
+  mounted(el, binding) {
+    el._clickOutside = (event) => {
+      if (!(el === event.target || el.contains(event.target))) {
+        binding.value(event);
+      }
+    };
+    document.body.addEventListener('click', el._clickOutside);
+  },
+  unmounted(el) {
+    document.body.removeEventListener('click', el._clickOutside);
+  },
+});
+
 app.use(pinia)
 app.use(router)
 app.mount('#app')
