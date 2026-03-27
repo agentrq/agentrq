@@ -166,7 +166,7 @@
           <!-- User Menu Popover -->
           <div v-if="isUserMenuOpen"
                :class="[
-                 'absolute bg-black border-2 border-white overflow-hidden shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] z-[110]',
+                 'absolute bg-black border-2 border-zinc-800 overflow-hidden shadow-[12px_12px_40px_rgba(0,0,0,0.8)] z-[110]',
                  (isCollapsed && !isMobileMenuOpen) ? 'left-full bottom-0 ml-2 w-64 origin-bottom-left' : 'bottom-full left-1.5 right-1.5 mb-3 origin-bottom'
                ]">
             <div class="px-4 py-3 border-b-2 border-white/10 bg-white/5">
