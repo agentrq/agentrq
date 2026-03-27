@@ -250,10 +250,10 @@
       </div>
 
       <form @submit.prevent="submitReply">
-        <div class="flex gap-2 items-end">
+        <div class="flex items-end gap-2 w-full flex-nowrap">
           <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
-          <div class="flex-1 flex items-center border-2 border-black bg-white focus-within:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group relative">
+          <div class="flex-1 flex items-center border-2 border-black bg-white focus-within:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group relative min-w-0">
             <textarea
               ref="textareaRef"
               v-model="replyText"
