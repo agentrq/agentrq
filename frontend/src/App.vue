@@ -2,7 +2,7 @@
   <div id="app" class="flex flex-col md:flex-row h-[100dvh] bg-white">
 
     <!-- Mobile Header -->
-    <div v-if="!isLoginPage" class="md:hidden flex items-center justify-between px-4 py-3 bg-black border-b-2 border-black shrink-0 z-30">
+    <div v-if="!isLoginPage && !$route.meta.fullPage" class="md:hidden flex items-center justify-between px-4 py-3 bg-black border-b-2 border-black shrink-0 z-30">
       <div class="flex items-center gap-2.5 text-white font-black uppercase tracking-widest text-sm">
         <svg viewBox="0 0 32 32" class="w-7 h-7" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="32" height="32" rx="4" fill="#18181b"/>

@@ -2,7 +2,7 @@
   <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden" v-if="task && workspace">
 
     <!-- Breadcrumb Header -->
-    <header class="pb-2 border-b-2 border-black shrink-0 flex items-center justify-between gap-4">
+    <header v-if="showHeader" class="pb-2 border-b-2 border-black shrink-0 flex items-center justify-between gap-4">
       <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0 flex-1">
         <router-link :to="'/workspaces/' + workspaceId" class="hidden md:block text-gray-400 hover:text-black transition-colors shrink-0">
           {{ workspace.name }}
@@ -44,6 +44,23 @@
         </button>
       </div>
     </header>
+
+    <!-- Navigation Toggle Button (Visible on mobile when header is hidden) -->
+    <button v-if="!showHeader && isMobile" 
+            @click="showHeader = true"
+            class="absolute top-2 left-1/2 -translate-x-1/2 z-[30] px-4 py-1.5 bg-black/80 text-white/60 border-2 border-white/20 text-[10px] font-black uppercase tracking-[0.2em] rounded-full backdrop-blur-sm hover:text-white transition-all shadow-lg active:scale-95">
+      Show Meta
+    </button>
+
+    <!-- Focus Mode Entry Overlay (Necessary for fullscreen gesture) -->
+    <div v-if="isMobile && !sessionStarted" class="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+      <div class="w-20 h-20 bg-[#00FF88] border-2 border-black flex items-center justify-center mb-6 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]">
+        <svg class="w-10 h-10 text-black translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+      </div>
+      <h2 class="text-xl font-black text-white uppercase tracking-[0.3em] mb-3">Focus Mode</h2>
+      <p class="text-xs font-bold text-white/50 uppercase tracking-widest leading-relaxed mb-10 max-w-[240px]">Entering optimized full-screen workspace for better agent communication.</p>
+      <button @click="startSession" class="bg-[#00FF88] text-black border-2 border-black px-10 py-3.5 text-xs font-black uppercase tracking-[0.2em] hover:bg-white transition-all transform active:scale-95 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)]">Start Session</button>
+    </div>
 
     <!-- Scrollable chat area -->
     <div ref="scrollContainer" class="flex-1 overflow-y-auto pt-2 pb-6 flex flex-col gap-0 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
@@ -360,6 +377,20 @@ const replyAttachments = ref([]);
 const scrollContainer = ref(null);
 const autoscrollEnabled = ref(true);
 const isFullscreen = ref(false);
+
+const isMobile = computed(() => window.innerWidth < 768);
+const sessionStarted = ref(false);
+const showHeader = ref(!isMobile.value);
+
+function startSession() {
+  sessionStarted.value = true;
+  showHeader.value = false;
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().then(() => {
+      isFullscreen.value = true;
+    }).catch(() => {});
+  }
+}
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
