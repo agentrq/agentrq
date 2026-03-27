@@ -45,12 +45,7 @@
       </div>
     </header>
 
-    <!-- Navigation Toggle Button (Visible on mobile when header is hidden) -->
-    <button v-if="!showHeader && isMobile" 
-            @click="showHeader = true"
-            class="absolute top-2 left-1/2 -translate-x-1/2 z-[30] px-4 py-1.5 bg-black/80 text-white/60 border-2 border-white/20 text-[10px] font-black uppercase tracking-[0.2em] rounded-full backdrop-blur-sm hover:text-white transition-all shadow-lg active:scale-95">
-      Show Meta
-    </button>
+    <!-- Navigation Toggle removed in favor of global experiment -->
 
     <!-- Scrollable chat area -->
     <div ref="scrollContainer" class="flex-1 overflow-y-auto pt-2 pb-6 flex flex-col gap-0 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
@@ -368,7 +363,7 @@ const autoscrollEnabled = ref(true);
 const isFullscreen = ref(false);
 
 const isMobile = computed(() => window.innerWidth < 768);
-const showHeader = ref(!isMobile.value);
+const showHeader = ref(true);
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {

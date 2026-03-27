@@ -109,6 +109,7 @@ const submitRootLogin = async () => {
     })
     
     if (res.ok) {
+      localStorage.setItem('request_fullscreen', 'true')
       window.location.href = '/'
     } else {
       const data = await res.json()

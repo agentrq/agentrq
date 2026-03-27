@@ -1,8 +1,8 @@
 <template>
   <div id="app" class="flex flex-col md:flex-row h-[100dvh] bg-white">
 
-    <!-- Mobile Header -->
-    <div v-if="!isLoginPage && !$route.meta.fullPage" class="md:hidden flex items-center justify-between px-4 py-3 bg-black border-b-2 border-black shrink-0 z-30">
+    <!-- Mobile Header - Hidden for experimental UI -->
+    <div v-if="false && !isLoginPage && !$route.meta.fullPage" class="md:hidden flex items-center justify-between px-4 py-3 bg-black border-b-2 border-black shrink-0 z-30">
       <div class="flex items-center gap-2.5 text-white font-black uppercase tracking-widest text-sm">
         <svg viewBox="0 0 32 32" class="w-7 h-7" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="32" height="32" rx="4" fill="#18181b"/>
@@ -23,15 +23,25 @@
     </div>
 
     <!-- Overlay for mobile menu -->
-    <div v-if="isMobileMenuOpen" @click="isMobileMenuOpen = false" class="md:hidden fixed inset-0 bg-black/60 z-40"></div>
+    <div v-if="isMobileMenuOpen" @click="isMobileMenuOpen = false" class="md:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[90]"></div>
+
+    <!-- Global Mobile Menu Toggle (Bottom Floating Action) -->
+    <button v-if="!isLoginPage" 
+            @click.stop="isMobileMenuOpen = true"
+            class="md:hidden fixed bottom-1 left-1/2 -translate-x-1/2 z-[70] px-4 py-1 bg-black text-white border border-white/20 text-[9px] font-black uppercase tracking-[0.25em] rounded-full active:scale-90 flex items-center justify-center gap-2 transition-transform">
+      <svg class="w-3.5 h-3.5 text-[#00FF88]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7" />
+      </svg>
+      Menu
+    </button>
 
     <!-- Sidebar -->
     <nav v-if="!isLoginPage"
          :class="[
-           isMobileMenuOpen ? 'flex' : 'hidden', 'md:flex fixed inset-y-0 left-0 z-50 transform bg-black border-r-2 border-black md:relative md:translate-x-0',
+           isMobileMenuOpen ? 'flex' : 'hidden', 'md:flex fixed inset-y-0 left-0 z-[100] transform bg-black border-r-2 border-black md:relative md:translate-x-0',
            'text-white shrink-0 flex-col h-full transition-all duration-300 ease-in-out',
            isCollapsed && !isMobileMenuOpen ? 'w-16' : 'w-64',
-           isMobileMenuOpen ? 'w-64 shadow-[8px_0px_0px_0px_rgba(0,0,0,1)]' : ''
+           isMobileMenuOpen ? 'w-[280px] shadow-[20px_0px_60px_rgba(0,0,0,0.8)] border-r-2 border-[#00FF88]/30' : ''
          ]">
       <div :class="[isCollapsed ? 'px-2 py-4' : 'p-4']" class="flex flex-col min-h-0 grow">
         <!-- Sidebar Header -->
@@ -140,6 +150,15 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Completed</span>
           </router-link>
+
+          <button v-if="isMobileMenuOpen"
+              @click="toggleFullscreen"
+              class="flex w-full items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent text-[#00FF88]/70 hover:text-[#00FF88] hover:border-[#00FF88]/20 hover:bg-[#00FF88]/5 mt-4">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+               <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+            </svg>
+            <span>{{ isFullscreen ? 'Exit Fullscreen' : 'Fullscreen Mode' }}</span>
+          </button>
         </div>
 
         <!-- Sidebar Footer -->
@@ -147,8 +166,8 @@
           <!-- User Menu Popover -->
           <div v-if="isUserMenuOpen"
                :class="[
-                 'absolute bg-black border-2 border-white overflow-hidden shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] z-50',
-                 isCollapsed ? 'left-full bottom-0 ml-2 w-64 origin-bottom-left' : 'bottom-full left-0 w-full mb-3 origin-bottom'
+                 'absolute bg-black border-2 border-white overflow-hidden shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] z-[110]',
+                 (isCollapsed && !isMobileMenuOpen) ? 'left-full bottom-0 ml-2 w-64 origin-bottom-left' : 'bottom-full left-1.5 right-1.5 mb-3 origin-bottom'
                ]">
             <div class="px-4 py-3 border-b-2 border-white/10 bg-white/5">
               <p class="text-[9px] font-black text-white/40 uppercase tracking-widest mb-1">Signed in as</p>
@@ -194,9 +213,9 @@
     </main>
 
     <!-- App Content View -->
-    <main v-else class="grow h-full p-3 md:p-4 min-h-0 flex flex-col bg-gray-100">
-      <div class="h-full overflow-y-auto scroll-smooth bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all duration-300">
-        <div class="px-4 md:px-8 py-6 md:py-8 h-full flex flex-col min-h-0">
+    <main v-else class="grow h-full p-0 md:p-4 min-h-0 flex flex-col bg-white md:bg-gray-100">
+      <div class="h-full overflow-y-auto scroll-smooth bg-white border-0 md:border-2 md:border-black shadow-none md:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all duration-300">
+        <div class="px-4 md:px-8 py-4 md:py-8 h-full flex flex-col min-h-0">
           <router-view class="grow flex flex-col min-h-0" />
         </div>
       </div>
@@ -307,6 +326,37 @@ const hideTooltip = () => {
   tooltip.value.visible = false;
 }
 
+const isFullscreen = ref(false)
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().then(() => {
+      isFullscreen.value = true
+    }).catch(() => {})
+  } else {
+    document.exitFullscreen().then(() => {
+      isFullscreen.value = false
+    }).catch(() => {})
+  }
+}
+
+// Watch for fullscreen changes (e.g. system exit)
+onMounted(() => {
+  document.addEventListener('fullscreenchange', () => {
+    isFullscreen.value = !!document.fullscreenElement
+  })
+
+  // Auto-fullscreen on first interaction if requested
+  const requestAuto = () => {
+    if (localStorage.getItem('request_fullscreen') === 'true' && window.innerWidth < 1024) {
+      document.documentElement.requestFullscreen().catch(() => {})
+      localStorage.removeItem('request_fullscreen')
+    }
+    window.removeEventListener('click', requestAuto)
+    window.removeEventListener('touchstart', requestAuto)
+  }
+  window.addEventListener('click', requestAuto)
+  window.addEventListener('touchstart', requestAuto)
+})
 async function logout() {
   await fetch('/api/v1/auth/logout', { method: 'POST' })
   window.location.href = '/login'
