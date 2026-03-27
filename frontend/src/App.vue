@@ -291,7 +291,7 @@ const tooltip = ref({
 })
 
 const showTooltip = (event, text) => {
-  if (!isCollapsed.value) return;
+  if (!isCollapsed.value || window.innerWidth < 1024) return;
   const rect = event.currentTarget.getBoundingClientRect();
   tooltip.value = {
     visible: true,
@@ -350,6 +350,7 @@ onUnmounted(() => {
 watch(() => route.path, () => {
   isWorkspaceDropdownOpen.value = false
   isMobileMenuOpen.value = false
+  hideTooltip()
 })
 
 watch(isLoginPage, (val) => {
