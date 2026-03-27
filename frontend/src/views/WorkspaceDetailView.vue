@@ -21,12 +21,26 @@
             <button v-if="!workspace.archived_at" @click="showEditModal = true" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Edit Workspace Settings">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             </button>
-            
             <button @click="showSetupModal = true"
                     class="md:hidden p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all"
                     title="How to connect Claude">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </button>
+
+            <!-- Mobile Actions: Scheduled, Archive, +Task -->
+            <div class="md:hidden flex items-center gap-1 border-l border-gray-200 ml-1 pl-1">
+              <button @click="showScheduledOnly = !showScheduledOnly"
+                      :class="showScheduledOnly ? 'text-[#00FF88] border-black bg-black' : 'text-gray-400 border-transparent'"
+                      class="p-1.5 border-2 transition-all" title="Toggle Scheduled">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              </button>
+              <button @click="handleArchive" class="p-1.5 text-gray-400 hover:text-red-500 border-2 border-transparent transition-all" title="Archive Mission">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+              </button>
+              <button @click="taskFeed?.startCreate()" class="p-1.5 text-black bg-[#00FF88] border-2 border-black transition-all shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none" title="New Task">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -78,26 +92,35 @@
         <button @click="handleUnarchive" class="px-4 py-2 bg-black text-white border-2 border-black text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">Unarchive</button>
       </div>
 
-      <TaskFeed :workspaceId="workspace.id" :initialTasks="tasks" :liveEvents="events" :isArchived="!!workspace.archived_at" :isAgentConnected="isAgentConnected" @archive="handleArchive" />
+      <TaskFeed
+        ref="taskFeed"
+        :workspaceId="workspace.id"
+        :initialTasks="tasks"
+        :liveEvents="events"
+        :isArchived="!!workspace.archived_at"
+        :isAgentConnected="isAgentConnected"
+        :filterScheduled="showScheduledOnly"
+        @archive="handleArchive"
+      />
     </div>
   </div>
   <div v-else-if="loading" class="text-center py-12 text-sm font-black text-gray-400 uppercase tracking-widest animate-pulse">Loading workspace context...</div>
   <div v-else class="text-center py-12 text-sm font-black text-red-600 uppercase tracking-widest border-2 border-red-300 bg-red-50 p-6">{{ error }}</div>
 
   <!-- Archive Modal -->
-  <ArchiveModal 
-    :show="showArchiveModal" 
-    :workspaceName="workspace?.name || ''" 
-    @close="showArchiveModal = false" 
-    @confirm="doArchive" 
+  <ArchiveModal
+    :show="showArchiveModal"
+    :workspaceName="workspace?.name || ''"
+    @close="showArchiveModal = false"
+    @confirm="doArchive"
   />
   <!-- Edit Modal -->
-  <EditWorkspaceModal 
-    :show="showEditModal" 
-    :workspace="workspace" 
-    :loading="isUpdating" 
-    @close="showEditModal = false" 
-    @submit="handleUpdate" 
+  <EditWorkspaceModal
+    :show="showEditModal"
+    :workspace="workspace"
+    :loading="isUpdating"
+    @close="showEditModal = false"
+    @submit="handleUpdate"
   />
 
   <SetupModal
@@ -121,7 +144,7 @@ import SetupModal from '../components/SetupModal.vue';
 import EditWorkspaceModal from '../components/EditWorkspaceModal.vue';
 
 const route = useRoute();
-const router = useRouter(); 
+const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
 const workspaceId = route.params.id;
 
@@ -135,6 +158,8 @@ const isDescriptionExpanded = ref(false);
 const showSetupModal = ref(false);
 const showEditModal = ref(false);
 const isUpdating = ref(false);
+const showScheduledOnly = ref(false);
+const taskFeed = ref(null);
 
 const { connect, disconnect, events, isConnected } = useEventBus(workspaceId);
 const isAgentConnected = ref(false);

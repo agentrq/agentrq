@@ -14,30 +14,27 @@
       @close="closeDeleteModal" 
       @confirm="onDeleteConfirm" 
     />
-
     <!-- Action Bar -->
-    <div v-if="!isArchived" class="pt-2 pb-4 flex flex-row items-center justify-between gap-2 shrink-0 flex-wrap">
+    <div v-if="!isArchived" class="hidden lg:flex pt-2 pb-4 flex-row items-center justify-between gap-2 shrink-0 flex-wrap">
         <button @click="showScheduledOnly = !showScheduledOnly"
                 class="flex items-center gap-1.5 px-2.5 py-2 border-2 border-black text-[10px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
                 :class="showScheduledOnly ? 'bg-[#00FF88] text-black translate-y-[1px]' : 'bg-white text-gray-500 hover:bg-[#00FF88]/20 hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'"
-                :title="showScheduledOnly ? 'Show All' : 'Show Scheduled Only'">
+                title="Toggle Scheduled">
            <svg class="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
            </svg>
-           <span class="hidden sm:inline">Scheduled</span>
         </button>
        
        <div class="flex items-center gap-2 ml-auto">
          <button @click="$emit('archive')"
-                 class="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-black text-[10px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+                 class="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-black text-[10px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
+                 title="Archive Mission">
             <svg class="w-3.5 h-3.5 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            <span>Archive</span>
          </button>
           <button @click="startCreate" 
-                  class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]">
+                  class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
+                  title="New Task">
             <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-            <span class="hidden sm:inline">New Task</span>
-            <span class="sm:hidden">Task</span>
          </button>
        </div>
     </div>
@@ -286,7 +283,8 @@ const props = defineProps({
   initialTasks: { type: Array, default: () => [] },
   liveEvents: { type: Array, default: () => [] },
   isArchived: { type: Boolean, default: false },
-  isAgentConnected: { type: Boolean, default: false }
+  isAgentConnected: { type: Boolean, default: false },
+  filterScheduled: { type: Boolean, default: false }
 });
 
 const emit = defineEmits(['archive']);
@@ -309,7 +307,7 @@ const taskToDeleteId = ref(null);
 const taskToDeleteTitle = ref('');
 
 const localTasks = ref([...props.initialTasks]);
-const showScheduledOnly = ref(false);
+const showScheduledOnly = computed(() => props.filterScheduled);
 const completedLimit = ref(5);
 
 // Sync with initial loads or reloads
@@ -618,6 +616,7 @@ async function reorderTask(task, direction) {
     notifyError('Reorder Error: ' + err.message);
   }
 }
+defineExpose({ startCreate });
 </script>
 
 <style scoped>
