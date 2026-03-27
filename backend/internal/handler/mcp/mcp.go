@@ -102,7 +102,7 @@ func (h *handler) streamableHandler() http.Handler {
 				http.Error(w, "situational security: invalid mission token", http.StatusUnauthorized)
 				return
 			}
-			userID = workspace.UserID
+			userID = monoflake.ID(workspace.UserID).String()
 		}
 
 		// 2. Mandatory Mcp-Session-Id for non-initialize requests
@@ -188,7 +188,7 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 		if err == nil && workspace.TokenEncrypted != "" {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
 			if decErr == nil && dec == tokenStr {
-				return workspace.UserID
+				return monoflake.ID(workspace.UserID).String()
 			}
 		}
 	}

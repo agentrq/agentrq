@@ -12,7 +12,7 @@ type (
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time
 		UpdatedAt   time.Time
-		UserID      string `gorm:"index:idx_workspaces_user_id;type:varchar(64)"`
+		UserID      int64 `gorm:"index:idx_workspaces_user_id"`
 		Name        string `gorm:"type:varchar(128)"`
 		Description string `gorm:"type:text"`
 		ArchivedAt           *time.Time
@@ -29,7 +29,7 @@ type (
 		CreatedAt time.Time
 		UpdatedAt time.Time
 
-		UserID      string `gorm:"index:idx_tasks_user_id;type:varchar(64)"`
+		UserID      int64 `gorm:"index:idx_tasks_user_id"`
 		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id"`
 		CreatedBy   string `gorm:"type:varchar(16)"` // "human" | "agent"
 		Assignee    string `gorm:"type:varchar(16)"` // "human" | "agent"
@@ -52,7 +52,7 @@ type (
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time
 		TaskID      int64  `gorm:"index:idx_messages_task_id"`
-		UserID      string `gorm:"index:idx_messages_user_id;type:varchar(64)"`
+		UserID      int64  `gorm:"index:idx_messages_user_id"`
 		Sender      string `gorm:"type:varchar(16)"` // "human" | "agent"
 		Text        string `gorm:"type:text"`
 		Attachments datatypes.JSON
@@ -61,10 +61,10 @@ type (
 
 	// Telemetry record for user and workspace actions
 	Telemetry struct {
-		UserID      int64 `gorm:"index:idx_telemetry_user_id"`
-		WorkspaceID int64 `gorm:"index:idx_telemetry_workspace_id"`
-		OccurredAt  int64 `gorm:"index:idx_telemetry_occurred_at"`
-		Action      uint8 `gorm:"index:idx_telemetry_action"`
+		UserID      int64  `gorm:"index:idx_telemetry_user_id"`
+		WorkspaceID int64  `gorm:"index:idx_telemetry_workspace_id"`
+		OccurredAt  int64  `gorm:"index:idx_telemetry_occurred_at"`
+		Action      uint8  `gorm:"index:idx_telemetry_action"`
 	}
 
 	// User represents a human user
@@ -73,7 +73,6 @@ type (
 		CreatedAt  time.Time
 		UpdatedAt  time.Time
 		Email      string `gorm:"type:varchar(255);uniqueIndex"`
-		ExternalID string `gorm:"type:varchar(255);index"`
 		Name       string `gorm:"type:varchar(255)"`
 		Picture    string `gorm:"type:text"`
 	}

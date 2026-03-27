@@ -158,7 +158,7 @@ func New(cfg Config) (*App, error) {
 		var workspaceOwner string
 		workspace, err := repo.SystemGetWorkspace(context.Background(), workspaceID)
 		if err == nil {
-			workspaceOwner = workspace.UserID
+			workspaceOwner = monoflake.ID(workspace.UserID).String()
 		} else {
 			// Fallback to userID passed from the manager if getWorkspace fails
 			workspaceOwner = userID
@@ -173,7 +173,8 @@ func New(cfg Config) (*App, error) {
 				if err == nil {
 					// Only notify if there is no ongoing task — avoids spamming the human
 					// while the agent is actively working.
-					existingTasks, _ := repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID}, workspaceOwner)
+					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+					existingTasks, _ := repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID}, uid)
 					hasOngoing := false
 					for _, t := range existingTasks {
 						if t.Status == "ongoing" && t.ID != res.ID {
@@ -190,7 +191,8 @@ func New(cfg Config) (*App, error) {
 				return res, err
 			},
 			func(ctx context.Context, taskID int64, status string) (model.Task, error) {
-				m, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				m, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 				if err != nil {
 					return model.Task{}, err
 				}
@@ -204,7 +206,7 @@ func New(cfg Config) (*App, error) {
 					ID:        ids.NextID(),
 					CreatedAt: time.Now(),
 					TaskID:    taskID,
-					UserID:    workspaceOwner,
+					UserID:    monoflake.IDFromBase62(workspaceOwner).Int64(),
 					Sender:    "agent",
 					Text:      fmt.Sprintf("Status updated to: %s", status),
 				})
@@ -212,7 +214,8 @@ func New(cfg Config) (*App, error) {
 				updated, err := repo.UpdateTask(ctx, m)
 				if err == nil {
 					if updated.Status == "completed" || updated.Status == "done" {
-						telemetrySvc.Record(ctx, workspaceOwner, workspaceID, model.ActionIDTaskComplete)
+						uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+						telemetrySvc.Record(ctx, uid, workspaceID, model.ActionIDTaskComplete)
 					}
 					if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
 						notifSvc.NotifyTaskStatusUpdated(w, updated)
@@ -221,10 +224,12 @@ func New(cfg Config) (*App, error) {
 				return updated, err
 			},
 			func(ctx context.Context, taskID int64) (model.Task, error) {
-				return repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				return repo.GetTask(ctx, workspaceID, taskID, uid)
 			},
 			func(ctx context.Context) ([]model.Task, error) {
-				return repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID, UserID: workspaceOwner}, workspaceOwner)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				return repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID, UserID: workspaceOwner}, uid)
 			},
 			func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 				// The chatID is now expected to be the Base62 task ID
@@ -258,7 +263,8 @@ func New(cfg Config) (*App, error) {
 				}
 
 				// If the task was not started, mark as ongoing when agent replies
-				m, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				m, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 				if err == nil && m.Status == "notstarted" {
 					m.Status = "ongoing"
 					_, _ = repo.UpdateTask(ctx, m)
@@ -267,7 +273,7 @@ func New(cfg Config) (*App, error) {
 						ID:        ids.NextID(),
 						CreatedAt: time.Now(),
 						TaskID:    taskID,
-						UserID:    workspaceOwner,
+						UserID:    monoflake.IDFromBase62(workspaceOwner).Int64(),
 						Sender:    "agent",
 						Text:      "Status updated to: ongoing",
 					})
@@ -281,7 +287,7 @@ func New(cfg Config) (*App, error) {
 					ID:          msgID,
 					CreatedAt:   time.Now(),
 					TaskID:      taskID,
-					UserID:      workspaceOwner,
+					UserID:      monoflake.IDFromBase62(workspaceOwner).Int64(),
 					Sender:      "agent",
 					Text:        text,
 					Attachments: datatypes.JSON(attsData),
@@ -297,7 +303,8 @@ func New(cfg Config) (*App, error) {
 				isPermissionRequest := len(metadataJSON) > 0 && strings.Contains(string(metadataJSON), `"type":"permission_request"`)
 				if isPermissionRequest {
 					if w, err := repo.SystemGetWorkspace(ctx, workspaceID); err == nil {
-						t, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+						uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+						t, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 						if err == nil {
 							notifSvc.NotifyTaskReceivedMessage(w, t, msg)
 						}
@@ -305,7 +312,8 @@ func New(cfg Config) (*App, error) {
 				}
 
 				// Fetch updated task with messages to push to UI
-				latest, err := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+				uid = monoflake.IDFromBase62(workspaceOwner).Int64()
+				latest, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 				if err == nil {
 					bus.Publish(workspaceID, eventbus.Event{
 						Type:    "task.updated",
@@ -319,7 +327,8 @@ func New(cfg Config) (*App, error) {
 				err := repo.UpdateMessageMetadata(ctx, messageID, b)
 				if err == nil {
 					// Refresh task to push update to UI
-					latest, _ := repo.GetTask(ctx, workspaceID, taskID, workspaceOwner)
+					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+					latest, _ := repo.GetTask(ctx, workspaceID, taskID, uid)
 					bus.Publish(workspaceID, eventbus.Event{
 						Type:    "task.updated",
 						Payload: mapper.FromModelTaskToView(latest),
@@ -331,7 +340,7 @@ func New(cfg Config) (*App, error) {
 				return crudCtrl.UpdateWorkspaceAutoAllowedTools(ctx, entity.UpdateWorkspaceAutoAllowedToolsRequest{
 					WorkspaceID: workspace.ID,
 					Tools:       tools,
-					UserID:      workspace.UserID,
+					UserID:      monoflake.ID(workspace.UserID).String(),
 				})
 			},
 			bus,

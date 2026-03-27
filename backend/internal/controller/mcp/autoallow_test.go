@@ -229,13 +229,13 @@ func TestBuildAutoAllowRule(t *testing.T) {
 			"Bash with nil params",
 			"Bash",
 			nil,
-			"Bash",
+			"Bash:*",
 		},
 		{
 			"Bash with invalid JSON",
 			"Bash",
 			&PermissionRequestParams{InputPreview: "not json"},
-			"Bash",
+			"Bash:*",
 		},
 	}
 	for _, tt := range tests {

@@ -391,7 +391,8 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 				continue
 			}
 			req := entity.ListTasksRequest{WorkspaceID: ps.workspaceID, UserID: ps.userID}
-			tasks, err := repo.ListTasks(context.Background(), req, ps.userID)
+			uid := monoflake.IDFromBase62(ps.userID).Int64()
+			tasks, err := repo.ListTasks(context.Background(), req, uid)
 			if err != nil {
 				continue
 			}
@@ -464,7 +465,8 @@ func (ps *WorkspaceServer) UpdateAutoAllowedTools(tools []string) {
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
 func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, params CreateTaskParams) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -506,7 +508,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		WorkspaceID: ps.workspaceID,
-		UserID:      ps.userID,
+		UserID:      monoflake.IDFromBase62(ps.userID).Int64(),
 		CreatedBy:   "agent",
 		Assignee:    assignee,
 		Status:      "notstarted",
@@ -546,7 +548,8 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 }
 
 func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.CallToolRequest, params UpdateTaskStatusParams) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -615,7 +618,8 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 }
 
 func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolRequest, params ReplyParams) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -654,7 +658,8 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 }
 
 func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mcp.CallToolRequest, params DownloadAttachmentParams) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -710,7 +715,8 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 }
 
 func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	ps.metadataMu.RLock()
 	name := ps.name
 	desc := ps.description
@@ -746,7 +752,8 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 }
 
 func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.CallToolRequest, params GetTaskMessagesParams) (*mcp.CallToolResult, any, error) {
-	ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+	uid := monoflake.IDFromBase62(ps.userID).Int64()
+	ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -848,7 +855,8 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		fmt.Printf("MCP INCOMING: %s\n", method)
 		if method == "notifications/claude/channel/permission_request" {
-			ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPToolCall)
+			uid := monoflake.IDFromBase62(ps.userID).Int64()
+			ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
 			params := req.GetParams()
 			var p PermissionRequestParams
 			b, _ := json.Marshal(params)
@@ -878,7 +886,8 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 					_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
 				}()
-				ps.telemetry.Record(context.Background(), ps.userID, ps.workspaceID, model.ActionIDMCPPermissionAuto)
+				uid := monoflake.IDFromBase62(ps.userID).Int64()
+				ps.telemetry.Record(context.Background(), uid, ps.workspaceID, model.ActionIDMCPPermissionAuto)
 				return nil, nil
 			}
 
@@ -974,7 +983,8 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 	}
 
 	if effectiveBehavior == "allow" {
-		ps.telemetry.Record(ctx, ps.userID, ps.workspaceID, model.ActionIDMCPPermissionManual)
+		uid := monoflake.IDFromBase62(ps.userID).Int64()
+		ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPPermissionManual)
 	}
 
 	// Notify Claude Code session
@@ -1053,7 +1063,8 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				time.Sleep(100 * time.Millisecond)
 				_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
 			}()
-			ps.telemetry.Record(context.Background(), ps.userID, ps.workspaceID, model.ActionIDMCPPermissionAuto)
+			uid := monoflake.IDFromBase62(ps.userID).Int64()
+			ps.telemetry.Record(context.Background(), uid, ps.workspaceID, model.ActionIDMCPPermissionAuto)
 			return
 		}
 

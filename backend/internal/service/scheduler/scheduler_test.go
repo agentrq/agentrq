@@ -54,7 +54,7 @@ func TestScheduler(t *testing.T) {
 			ID:           1,
 			CronSchedule: "* * * * *",
 			WorkspaceID:  10,
-			UserID:       "u1",
+			UserID:       1,
 		}
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{task}, nil)
 		
@@ -63,7 +63,7 @@ func TestScheduler(t *testing.T) {
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "ongoing").Return(false, nil).AnyTimes()
 		mockIdgen.EXPECT().NextID().Return(int64(2)).AnyTimes()
 		mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 2}, nil).AnyTimes()
-		mockTelemetry.EXPECT().Record(gomock.Any(), "u1", int64(10), model.ActionIDTaskFromScheduled).AnyTimes()
+		mockTelemetry.EXPECT().Record(gomock.Any(), int64(1), int64(10), model.ActionIDTaskFromScheduled).AnyTimes()
 
 		s.(*scheduler).tick(context.Background())
 	})

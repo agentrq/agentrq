@@ -6,15 +6,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
 	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
+	"github.com/hasmcp/agentrq/backend/internal/data/model"
 	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/mustafaturan/monoflake"
+	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
 )
 
 type Service interface {
-	Record(ctx context.Context, userID string, workspaceID int64, action uint8)
+	Record(ctx context.Context, userID int64, workspaceID int64, action uint8)
 	Stop(ctx context.Context)
 	GetWorkspaceStats(ctx context.Context, workspaceID int64) (*entity.GetWorkspaceStatsResponse, error)
 }
@@ -43,10 +42,9 @@ func New(db dbconn.DBConn, repo base.Repository) Service {
 	return s
 }
 
-func (s *service) Record(ctx context.Context, userID string, workspaceID int64, action uint8) {
-	uid := monoflake.IDFromBase62(userID).Int64()
+func (s *service) Record(ctx context.Context, userID int64, workspaceID int64, action uint8) {
 	s.queue <- model.Telemetry{
-		UserID:      uid,
+		UserID:      userID,
 		WorkspaceID: workspaceID,
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
@@ -60,7 +58,7 @@ func (s *service) Stop(ctx context.Context) {
 
 func (s *service) worker() {
 	defer s.wg.Done()
-	
+
 	buffer := make([]model.Telemetry, 0, s.batchSize)
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()

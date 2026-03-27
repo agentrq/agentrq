@@ -20,8 +20,6 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 
 	if req.Email != "" {
 		u, err = c.repository.FindUserByEmail(ctx, req.Email)
-	} else if req.ExternalID != "" {
-		u, err = c.repository.FindUserByExternalID(ctx, req.ExternalID)
 	} else {
 		return nil, nil
 	}
@@ -55,8 +53,6 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 				CreatedAt:  u.CreatedAt,
 				UpdatedAt:  u.UpdatedAt,
 				Email:      u.Email,
-				ExternalID: u.ExternalID,
-				Name:       u.Name,
 				Picture:    u.Picture,
 			},
 		}, nil
@@ -70,7 +66,6 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 	newUser := model.User{
 		ID:         c.idgen.NextID(),
 		Email:      req.Email,
-		ExternalID: req.ExternalID,
 		Name:       req.Name,
 		Picture:    req.Picture,
 		CreatedAt:  time.Now(),
@@ -88,8 +83,6 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 			CreatedAt:  created.CreatedAt,
 			UpdatedAt:  created.UpdatedAt,
 			Email:      created.Email,
-			ExternalID: created.ExternalID,
-			Name:       created.Name,
 			Picture:    created.Picture,
 		},
 	}, nil

@@ -233,7 +233,6 @@ func (h *handler) rootLogin() fiber.Handler {
 		// Issue JWT for root user
 		dbUser, err := h.crud.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
 			Email:      "root@agentrq.local",
-			ExternalID: "root",
 			Name:       "Root Administrator",
 		})
 		if err != nil {
@@ -286,7 +285,6 @@ func (h *handler) googleCallback() fiber.Handler {
 		// Find or create user in DB
 		dbUser, err := h.crud.FindOrCreateUser(ctx, entity.FindOrCreateUserRequest{
 			Email:      user.Email,
-			ExternalID: sub,
 			Name:       user.Name,
 			Picture:    user.Picture,
 		})

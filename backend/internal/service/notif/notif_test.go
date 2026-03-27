@@ -33,7 +33,7 @@ func TestNotifyTaskCreated(t *testing.T) {
 
 	workspace := model.Workspace{
 		ID:     1,
-		UserID: "user@example.com",
+		UserID: 1,
 		Name:   "Test Workspace",
 	}
 	task := model.Task{
@@ -75,7 +75,7 @@ func TestNotifyTaskStatusUpdated(t *testing.T) {
 	s, _ := New(mockRepo, mockMQ, mockSMTP, "http://base.url")
 
 	workspace := model.Workspace{
-		UserID: "user@example.com",
+		UserID: 1,
 	}
 	settings := NotificationSettings{
 		TaskStatusUpdated: true,
@@ -112,7 +112,7 @@ func TestNotifyTaskReceivedMessage(t *testing.T) {
 	s, _ := New(mockRepo, mockMQ, mockSMTP, "http://base.url")
 
 	workspace := model.Workspace{
-		UserID: "user@example.com",
+		UserID: 1,
 	}
 	settings := NotificationSettings{
 		TaskReceivedMessage: true,
@@ -146,7 +146,7 @@ func TestNotifyWorkspaceArchivedUnarchived(t *testing.T) {
 	s, _ := New(mockRepo, mockMQ, mockSMTP, "http://base.url")
 
 	workspace := model.Workspace{
-		UserID: "user@example.com",
+		UserID: 1,
 	}
 	settings := NotificationSettings{
 		WorkspaceArchived:   true,
@@ -212,7 +212,7 @@ func TestEnqueueEmailError(t *testing.T) {
 	s, _ := New(mockRepo, mockMQ, mockSMTP, "http://base.url")
 
 	workspace := model.Workspace{
-		UserID: "user@example.com",
+		UserID: 1,
 	}
 	settings := NotificationSettings{
 		TaskCreated: true,

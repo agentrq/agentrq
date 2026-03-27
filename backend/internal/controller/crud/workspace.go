@@ -9,6 +9,7 @@ import (
 	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
 	"github.com/hasmcp/agentrq/backend/internal/data/model"
 	"github.com/hasmcp/agentrq/backend/internal/service/security"
+	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
 
@@ -18,7 +19,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		ID:          c.idgen.NextID(),
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		UserID:      req.UserID,
+		UserID:      monoflake.IDFromBase62(req.UserID).Int64(),
 		Name:        req.Workspace.Name,
 		Description: req.Workspace.Description,
 	}
@@ -50,14 +51,16 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
-	c.telemetry.Record(ctx, req.UserID, created.ID, model.ActionIDWorkspaceCreate)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	c.telemetry.Record(ctx, uid, created.ID, model.ActionIDWorkspaceCreate)
 	return &entity.CreateWorkspaceResponse{
 		Workspace: fromModelWorkspaceToEntity(created),
 	}, nil
 }
 
 func (c *controller) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
-	m, err := c.repository.GetWorkspace(ctx, req.ID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +68,8 @@ func (c *controller) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRe
 }
 
 func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error) {
-	ms, err := c.repository.ListWorkspaces(ctx, req.UserID, req.IncludeArchived)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	ms, err := c.repository.ListWorkspaces(ctx, uid, req.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +82,8 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {
 	// 1. Get all tasks for this workspace to collect attachment IDs
-	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.ID}, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.ID}, uid)
 	if err != nil {
 		// If workspace doesn't exist etc, repository delete will handle it below
 	}
@@ -110,7 +115,7 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	}
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
-	if err := c.repository.DeleteWorkspace(ctx, req.ID, req.UserID); err != nil {
+	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {
 		return err
 	}
 
@@ -119,12 +124,13 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 		_ = c.storage.Delete(id)
 	}
 
-	c.telemetry.Record(ctx, req.UserID, req.ID, model.ActionIDWorkspaceDelete)
+	c.telemetry.Record(ctx, uid, req.ID, model.ActionIDWorkspaceDelete)
 	return nil
 }
 
 func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error {
-	m, err := c.repository.GetWorkspace(ctx, req.ID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
 	if err != nil {
 		return err
 	}
@@ -133,13 +139,14 @@ func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWor
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
 		c.notif.NotifyWorkspaceArchived(updated)
-		c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
+		c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
 	}
 	return err
 }
 
 func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.UnarchiveWorkspaceRequest) error {
-	m, err := c.repository.GetWorkspace(ctx, req.ID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
 	if err != nil {
 		return err
 	}
@@ -147,13 +154,14 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
 		c.notif.NotifyWorkspaceUnarchived(updated)
-		c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
+		c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
 	}
 	return err
 }
 
 func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.Workspace, error) {
-	m, err := c.repository.GetWorkspace(ctx, req.Workspace.ID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.Workspace.ID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -185,13 +193,14 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, updated.ID, model.ActionIDWorkspaceUpdate)
+	c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
 	res := fromModelWorkspaceToEntity(updated)
 	return &res, nil
 }
 
 func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error {
-	m, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, uid)
 	if err != nil {
 		return err
 	}
@@ -200,7 +209,7 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	m.UpdatedAt = time.Now()
 	_, err = c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
-		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDWorkspaceUpdate)
+		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDWorkspaceUpdate)
 	}
 	return err
 }

@@ -14,7 +14,8 @@ import (
 )
 
 func (c *controller) ensureActiveWorkspace(ctx context.Context, id int64, userID string) error {
-	w, err := c.repository.GetWorkspace(ctx, id, userID)
+	uid := monoflake.IDFromBase62(userID).Int64()
+	w, err := c.repository.GetWorkspace(ctx, id, uid)
 	if err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		ID:           c.idgen.NextID(),
 		CreatedAt:    now,
 		UpdatedAt:    now,
-		UserID:       req.UserID,
+		UserID:       monoflake.IDFromBase62(req.UserID).Int64(),
 		WorkspaceID:  req.Task.WorkspaceID,
 		CreatedBy:    req.Task.CreatedBy,
 		Assignee:     req.Task.Assignee,
@@ -93,13 +94,15 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 			c.notif.NotifyTaskCreated(w, created)
 		}
 	}
-	c.telemetry.Record(ctx, req.UserID, created.WorkspaceID, model.ActionIDTaskCreate)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	c.telemetry.Record(ctx, uid, created.WorkspaceID, model.ActionIDTaskCreate)
 
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
 
 func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error) {
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +110,8 @@ func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*e
 }
 
 func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
-	ms, err := c.repository.ListTasks(ctx, req, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	ms, err := c.repository.ListTasks(ctx, req, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +126,8 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +139,8 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	switch req.Action {
 	case "allow", "allow_all":
 		// Enforce single ongoing task per workspace
-		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, req.UserID)
+		uid := monoflake.IDFromBase62(req.UserID).Int64()
+		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
 		if err == nil {
 			for _, t := range tasks {
 				if t.Status == "ongoing" && t.ID != req.TaskID {
@@ -147,7 +153,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if msgText == "" {
 			msgText = "Human approved this task."
 		}
-		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskApproveManual)
+		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskApproveManual)
 	case "reject":
 		m.Status = "rejected"
 		createMsg = true
@@ -175,7 +181,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 			ID:          c.idgen.NextID(),
 			CreatedAt:   time.Now(),
 			TaskID:      m.ID,
-			UserID:      req.UserID,
+			UserID:      monoflake.IDFromBase62(req.UserID).Int64(),
 			Sender:      msgSender,
 			Text:        msgText,
 			Attachments: attsData,
@@ -183,7 +189,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if err := c.repository.CreateMessage(ctx, msg); err != nil {
 			return nil, err
 		}
-		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageCreate)
+		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageCreate)
 	}
 
 	m.UpdatedAt = time.Now()
@@ -191,10 +197,11 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
 
 	// Fetch latest state with messages
-	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid = monoflake.IDFromBase62(req.UserID).Int64()
+	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return &entity.RespondToTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 	}
@@ -205,7 +212,8 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +223,8 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 
 	if req.Status == "ongoing" {
 		// Enforce single ongoing task per workspace
-		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, req.UserID)
+		uid := monoflake.IDFromBase62(req.UserID).Int64()
+		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
 		if err == nil {
 			for _, t := range tasks {
 				if t.Status == "ongoing" && t.ID != req.TaskID {
@@ -233,9 +242,9 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		return nil, err
 	}
 	if updated.Status == "completed" || updated.Status == "done" {
-		c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskComplete)
+		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskComplete)
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateTaskStatusResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -243,7 +252,8 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +265,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateTaskOrderResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -263,7 +273,8 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +292,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		ID:          c.idgen.NextID(),
 		CreatedAt:   time.Now(),
 		TaskID:      m.ID,
-		UserID:      req.UserID,
+		UserID:      monoflake.IDFromBase62(req.UserID).Int64(),
 		Sender:      "human",
 		Text:        req.Text,
 		Attachments: datatypes.JSON(attsData),
@@ -289,17 +300,18 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err := c.repository.CreateMessage(ctx, msg); err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageCreate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageCreate)
 	
 	m.UpdatedAt = time.Now()
 	updated, err := c.repository.UpdateTask(ctx, m)
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
 	
 	// Fetch latest state with messages
-	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid = monoflake.IDFromBase62(req.UserID).Int64()
+	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return &entity.ReplyToTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 	}
@@ -312,7 +324,8 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 	}
 
 	// 1. Get task information to collect attachment IDs before deleting
-	t, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	t, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +355,7 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 	}
 
 	// 2. Delete from DB (repository handles cascaded message delete)
-	err = c.repository.DeleteTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	err = c.repository.DeleteTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -352,14 +365,15 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 		_ = c.storage.Delete(id)
 	}
 
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskDelete)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskDelete)
 
 	return &entity.DeleteTaskResponse{}, nil
 }
 
 func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error {
 	// Let's verify task access
-	_, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	_, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return err
 	}
@@ -372,7 +386,7 @@ func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.Updat
 	if err := c.repository.UpdateMessageMetadata(ctx, req.MessageID, b); err != nil {
 		return err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDMessageUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageUpdate)
 	return nil
 }
 
@@ -428,7 +442,8 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
 	// Need to check if user has access to the workspace
 	// we just list all tasks for user and workspace and search attachmentid inside them
-	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch tasks for attachment verification: %w", err)
 	}
@@ -478,7 +493,8 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, req.UserID)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -502,6 +518,6 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, req.UserID, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
 	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }

@@ -8,7 +8,7 @@ type (
 		ID          int64
 		CreatedAt   time.Time
 		UpdatedAt   time.Time
-		UserID      string
+		UserID      int64
 		Name        string
 		Description string
 		ArchivedAt           *time.Time
@@ -93,7 +93,7 @@ type (
 		ID          int64
 		CreatedAt   time.Time
 		TaskID      int64
-		UserID      string
+		UserID      int64
 		Sender      string
 		Text        string
 		Attachments []Attachment
@@ -108,7 +108,7 @@ type (
 		CreatedAt time.Time
 		UpdatedAt time.Time
 
-		UserID      string
+		UserID      int64
 		WorkspaceID   int64
 		CreatedBy   string
 		Assignee    string
@@ -263,14 +263,12 @@ type (
 		CreatedAt  time.Time
 		UpdatedAt  time.Time
 		Email      string
-		ExternalID string
 		Name       string
 		Picture    string
 	}
 
 	FindOrCreateUserRequest struct {
 		Email      string
-		ExternalID string
 		Name       string
 		Picture    string
 	}

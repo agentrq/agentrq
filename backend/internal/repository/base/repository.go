@@ -16,17 +16,17 @@ var ErrNotFound = errors.New("not found")
 type Repository interface {
 	// Workspace
 	CreateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
-	GetWorkspace(ctx context.Context, id int64, userID string) (model.Workspace, error)
-	ListWorkspaces(ctx context.Context, userID string, includeArchived bool) ([]model.Workspace, error)
-	DeleteWorkspace(ctx context.Context, id int64, userID string) error
+	GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error)
+	ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error)
+	DeleteWorkspace(ctx context.Context, id int64, userID int64) error
 	UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
 
 	// Task
 	CreateTask(ctx context.Context, t model.Task) (model.Task, error)
-	GetTask(ctx context.Context, workspaceID, taskID int64, userID string) (model.Task, error)
-	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID string) ([]model.Task, error)
+	GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
+	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
-	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID string) error
+	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error
 
 	// Message
 	CreateMessage(ctx context.Context, m model.Message) error
@@ -41,7 +41,6 @@ type Repository interface {
 
 	// User
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
-	FindUserByExternalID(ctx context.Context, externalID string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
 }
@@ -67,7 +66,7 @@ func (r *repository) CreateWorkspace(ctx context.Context, p model.Workspace) (mo
 	return p, nil
 }
 
-func (r *repository) GetWorkspace(ctx context.Context, id int64, userID string) (model.Workspace, error) {
+func (r *repository) GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error) {
 	var p model.Workspace
 	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&p).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -76,7 +75,7 @@ func (r *repository) GetWorkspace(ctx context.Context, id int64, userID string) 
 	return p, err
 }
 
-func (r *repository) ListWorkspaces(ctx context.Context, userID string, includeArchived bool) ([]model.Workspace, error) {
+func (r *repository) ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error) {
 	var workspaces []model.Workspace
 	query := r.conn(ctx).Where("user_id = ?", userID)
 	if !includeArchived {
@@ -93,7 +92,7 @@ func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (mo
 	return p, nil
 }
 
-func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID string) error {
+func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Delete all messages for all tasks in this workspace
 		if err := tx.Where("task_id IN (?)", tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)).Delete(&model.Message{}).Error; err != nil {
@@ -126,7 +125,7 @@ func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, 
 	return t, nil
 }
 
-func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, userID string) (model.Task, error) {
+func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error) {
 	var t model.Task
 	err := r.conn(ctx).
 		Preload("Messages").
@@ -138,7 +137,7 @@ func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, use
 	return t, err
 }
 
-func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID string) ([]model.Task, error) {
+func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	var tasks []model.Task
 	q := r.conn(ctx).Preload("Messages").Where("user_id = ?", userID)
 
@@ -193,7 +192,7 @@ func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, 
 	return t, nil
 }
 
-func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, userID string) error {
+func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Delete all messages for this task
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.Message{}).Error; err != nil {
@@ -295,15 +294,6 @@ func (r *repository) GetWorkspaceTaskCounts(ctx context.Context, workspaceID int
 func (r *repository) FindUserByEmail(ctx context.Context, email string) (model.User, error) {
 	var u model.User
 	err := r.conn(ctx).Where("email = ?", email).First(&u).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.User{}, ErrNotFound
-	}
-	return u, err
-}
-
-func (r *repository) FindUserByExternalID(ctx context.Context, externalID string) (model.User, error) {
-	var u model.User
-	err := r.conn(ctx).Where("external_id = ?", externalID).First(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.User{}, ErrNotFound
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/hasmcp/agentrq/backend/internal/repository/base"
 	"github.com/hasmcp/agentrq/backend/internal/service/memq"
 	"github.com/hasmcp/agentrq/backend/internal/service/smtp"
+	"github.com/mustafaturan/monoflake"
 )
 
 type (
@@ -93,7 +94,7 @@ func (s *service) NotifyTaskCreated(workspace model.Workspace, task model.Task) 
 		return
 	}
 
-	s.enqueueEmail(workspace.UserID, fmt.Sprintf("New Task: %s [%s]", task.Title, workspace.Name),
+	s.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("New Task: %s [%s]", task.Title, workspace.Name),
 		fmt.Sprintf("Workspace: %s\n\nA new task has been created in your workspace:\n\nTitle: %s\nDetails: %s\n\nView Mission: %s/workspaces/%d",
 			workspace.Name, task.Title, task.Body, s.baseURL, workspace.ID))
 }
@@ -104,7 +105,7 @@ func (s *service) NotifyTaskStatusUpdated(workspace model.Workspace, task model.
 		return
 	}
 
-	s.enqueueEmail(workspace.UserID, fmt.Sprintf("Task Status Updated: %s [%s]", task.Title, workspace.Name),
+	s.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Task Status Updated: %s [%s]", task.Title, workspace.Name),
 		fmt.Sprintf("Workspace: %s\n\nThe status of task %s has been updated to: %s.\n\nView Mission: %s/workspaces/%d",
 			workspace.Name, task.Title, task.Status, s.baseURL, workspace.ID))
 }
@@ -115,7 +116,7 @@ func (s *service) NotifyTaskReceivedMessage(workspace model.Workspace, task mode
 		return
 	}
 
-	s.enqueueEmail(workspace.UserID, fmt.Sprintf("New Message in Task: %s [%s]", task.Title, workspace.Name),
+	s.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("New Message in Task: %s [%s]", task.Title, workspace.Name),
 		fmt.Sprintf("Workspace: %s\n\nAn agent sent a new message in task %s:\n\n%s\n\nReply to Mission: %s/workspaces/%d",
 			workspace.Name, task.Title, msg.Text, s.baseURL, workspace.ID))
 }
@@ -126,7 +127,7 @@ func (s *service) NotifyWorkspaceArchived(workspace model.Workspace) {
 		return
 	}
 
-	s.enqueueEmail(workspace.UserID, fmt.Sprintf("Mission Vaulted [%s]", workspace.Name),
+	s.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Mission Vaulted [%s]", workspace.Name),
 		fmt.Sprintf("Workspace: %s\n\nYour workspace has been archived and is now read-only.\n\nGo to Dashboard: %s/",
 			workspace.Name, s.baseURL))
 }
@@ -137,7 +138,7 @@ func (s *service) NotifyWorkspaceUnarchived(workspace model.Workspace) {
 		return
 	}
 
-	s.enqueueEmail(workspace.UserID, fmt.Sprintf("Mission Restored [%s]", workspace.Name),
+	s.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Mission Restored [%s]", workspace.Name),
 		fmt.Sprintf("Workspace: %s\n\nYour workspace has been restored and is now active for operations.\n\nView Mission: %s/workspaces/%d",
 			workspace.Name, s.baseURL, workspace.ID))
 }

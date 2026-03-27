@@ -49,7 +49,8 @@ mocks:
 		backend/internal/service/mocks/image \
 		backend/internal/service/mocks/storage \
 		backend/internal/service/mocks/auth \
-		backend/internal/service/mocks/dbconn
+		backend/internal/service/mocks/dbconn \
+		backend/internal/service/mocks/notif
 	@cd backend && \
 		mockgen -source=internal/repository/base/repository.go -destination=internal/service/mocks/repository/mock_repository.go -package=repository && \
 		mockgen -source=internal/service/memq/memq.go -destination=internal/service/mocks/memq/mock_memq.go -package=memq && \
@@ -61,7 +62,8 @@ mocks:
 		mockgen -source=internal/service/storage/storage.go -destination=internal/service/mocks/storage/mock_storage.go -package=storage && \
 		mockgen -source=internal/service/auth/auth.go -destination=internal/service/mocks/auth/mock_auth.go -package=auth && \
 		mockgen -source=internal/service/auth/jwt.go -destination=internal/service/mocks/auth/mock_jwt.go -package=auth && \
-		mockgen -source=internal/repository/dbconn/dbconn.go -destination=internal/service/mocks/dbconn/mock_dbconn.go -package=dbconn
+		mockgen -source=internal/repository/dbconn/dbconn.go -destination=internal/service/mocks/dbconn/mock_dbconn.go -package=dbconn && \
+		mockgen -source=internal/service/notif/notif.go -destination=internal/service/mocks/notif/mock_notif.go -package=notif
 
 test: mocks
 	@cd backend && go test ./internal/service/...
