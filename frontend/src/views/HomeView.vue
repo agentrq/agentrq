@@ -3,11 +3,26 @@
     <!-- Page Header -->
     <div class="border-b-2 border-black pb-5 flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div class="flex-1">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-2xl font-black text-black uppercase tracking-tight">Workspaces</h1>
-          <span v-if="!loadingWorkspaces" class="border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest bg-white">
-            {{ activeWorkspaces.length }}
-          </span>
+        <div class="flex items-center justify-between md:justify-start gap-3 mb-1">
+          <div class="flex items-center gap-3">
+            <h1 class="text-2xl font-black text-black uppercase tracking-tight">Workspaces</h1>
+            <span v-if="!loadingWorkspaces" class="border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest bg-white">
+              {{ activeWorkspaces.length }}
+            </span>
+          </div>
+
+          <!-- Mobile Actions -->
+          <div class="md:hidden flex items-center gap-1.5">
+            <button @click="showArchived = !showArchived"
+                    class="p-2 transition-all border-2 border-black"
+                    :class="showArchived ? 'bg-black text-[#00FF88]' : 'bg-white text-gray-500'"
+                    title="Toggle Archived">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+            </button>
+            <button @click="showCreate = true" class="bg-[#00FF88] text-black p-2 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none" title="New Workspace">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3.5"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+            </button>
+          </div>
         </div>
         <p class="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Manage your AgentRQ pipelines</p>
 
@@ -21,7 +36,7 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="hidden md:flex items-center gap-2">
         <button @click="showArchived = !showArchived"
                 class="px-4 py-2.5 text-[11px] font-black uppercase tracking-widest transition-all border-2 flex items-center gap-2"
                 :class="showArchived ? 'bg-black text-white border-black' : 'bg-white text-gray-500 border-black hover:bg-black hover:text-white'">
