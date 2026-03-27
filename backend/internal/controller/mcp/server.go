@@ -529,10 +529,12 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 	}
 
 	// Update session-to-task mapping for context-aware routing (like permissions)
-	sessID := req.GetSession().ID()
-	ps.sessionTasksMu.Lock()
-	ps.sessionTasks[sessID] = created.ID
-	ps.sessionTasksMu.Unlock()
+	if req != nil && req.GetSession() != nil {
+		sessID := req.GetSession().ID()
+		ps.sessionTasksMu.Lock()
+		ps.sessionTasks[sessID] = created.ID
+		ps.sessionTasksMu.Unlock()
+	}
 
 	// Push SSE event to human subscribers
 	ps.bus.Publish(ps.workspaceID, eventbus.Event{
@@ -599,10 +601,12 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 	}
 
 	// Update session-to-task mapping for context-aware routing (like permissions)
-	sessID := req.GetSession().ID()
-	ps.sessionTasksMu.Lock()
-	ps.sessionTasks[sessID] = taskID
-	ps.sessionTasksMu.Unlock()
+	if req != nil && req.GetSession() != nil {
+		sessID := req.GetSession().ID()
+		ps.sessionTasksMu.Lock()
+		ps.sessionTasks[sessID] = taskID
+		ps.sessionTasksMu.Unlock()
+	}
 
 	// Push SSE event to human subscribers
 	ps.bus.Publish(ps.workspaceID, eventbus.Event{
@@ -645,7 +649,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 	}
 
 	// Update session-to-task mapping for context-aware routing (like permissions)
-	if tid := monoflake.IDFromBase62(params.ChatID).Int64(); tid != 0 {
+	if tid := monoflake.IDFromBase62(params.ChatID).Int64(); tid != 0 && req != nil && req.GetSession() != nil {
 		sessID := req.GetSession().ID()
 		ps.sessionTasksMu.Lock()
 		ps.sessionTasks[sessID] = tid
@@ -862,10 +866,13 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			b, _ := json.Marshal(params)
 			_ = json.Unmarshal(b, &p)
 
-			sessID := req.GetSession().ID()
-			ps.permissionRequestsMu.Lock()
-			ps.permissionRequests[p.RequestID] = sessID
-			ps.permissionRequestsMu.Unlock()
+			sessID := ""
+			if req != nil && req.GetSession() != nil {
+				sessID = req.GetSession().ID()
+				ps.permissionRequestsMu.Lock()
+				ps.permissionRequests[p.RequestID] = sessID
+				ps.permissionRequestsMu.Unlock()
+			}
 
 			ps.requestToolsMu.Lock()
 			ps.requestTools[p.RequestID] = p.ToolName

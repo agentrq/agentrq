@@ -53,6 +53,7 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 				CreatedAt:  u.CreatedAt,
 				UpdatedAt:  u.UpdatedAt,
 				Email:      u.Email,
+				Name:       u.Name,
 				Picture:    u.Picture,
 			},
 		}, nil
@@ -83,6 +84,7 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 			CreatedAt:  created.CreatedAt,
 			UpdatedAt:  created.UpdatedAt,
 			Email:      created.Email,
+			Name:       created.Name,
 			Picture:    created.Picture,
 		},
 	}, nil
