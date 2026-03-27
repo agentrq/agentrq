@@ -58,7 +58,10 @@
             </p>
             <div class="bg-white/80 p-3 rounded-lg border border-indigo-100 flex items-center justify-between group">
               <code class="text-[11px] text-indigo-600 font-bold overflow-hidden text-ellipsis">{{ startCommand }}</code>
-              <button @click="copyCommand" class="opacity-0 group-hover:opacity-100 text-[9px] font-black text-indigo-500 uppercase tracking-widest pl-2">Copy</button>
+              <button @click="copyCommand" class="group-hover:opacity-100 text-[9px] font-black uppercase tracking-widest pl-2 transition-all"
+                      :class="isCommandCopied ? 'text-green-500 opacity-100' : 'opacity-0 text-indigo-500'">
+                {{ isCommandCopied ? 'Copied!' : 'Copy' }}
+              </button>
             </div>
           </section>
         </div>
@@ -86,6 +89,7 @@ const props = defineProps({
 });
 
 const isCopied = ref(false);
+const isCommandCopied = ref(false);
 const token = ref('');
 
 const authenticatedUrl = computed(() => {
@@ -126,6 +130,8 @@ function copyConfig() {
 
 function copyCommand() {
   navigator.clipboard.writeText(startCommand.value);
+  isCommandCopied.value = true;
+  setTimeout(() => isCommandCopied.value = false, 2000);
 }
 </script>
 

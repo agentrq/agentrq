@@ -15,7 +15,7 @@
               <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
             </svg>
           </div>
-          <h1 class="text-xl font-black text-black uppercase tracking-tight truncate">{{ workspace.name }}</h1>
+          <h1 class="text-xl font-black text-black uppercase tracking-tight truncate flex-1 min-w-0">{{ workspace.name }}</h1>
           <!-- Agent connection removed from header -->
           <div class="flex items-center gap-1 shrink-0">
             <button v-if="!workspace.archived_at" @click="showEditModal = true" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Edit Workspace Settings">
