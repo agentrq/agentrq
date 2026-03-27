@@ -52,16 +52,6 @@
       Show Meta
     </button>
 
-    <!-- Focus Mode Entry Overlay (Necessary for fullscreen gesture) -->
-    <div v-if="isMobile && !sessionStarted" class="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-      <div class="w-20 h-20 bg-[#00FF88] border-2 border-black flex items-center justify-center mb-6 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.1)]">
-        <svg class="w-10 h-10 text-black translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-      </div>
-      <h2 class="text-xl font-black text-white uppercase tracking-[0.3em] mb-3">Focus Mode</h2>
-      <p class="text-xs font-bold text-white/50 uppercase tracking-widest leading-relaxed mb-10 max-w-[240px]">Entering optimized full-screen workspace for better agent communication.</p>
-      <button @click="startSession" class="bg-[#00FF88] text-black border-2 border-black px-10 py-3.5 text-xs font-black uppercase tracking-[0.2em] hover:bg-white transition-all transform active:scale-95 shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)]">Start Session</button>
-    </div>
-
     <!-- Scrollable chat area -->
     <div ref="scrollContainer" class="flex-1 overflow-y-auto pt-2 pb-6 flex flex-col gap-0 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
 
@@ -261,23 +251,22 @@
               rows="1"
               :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
               :placeholder="!workspace.agent_connected ? 'Waiting for agent...' : (task.status === 'notstarted' || task.status === 'pending') ? 'Task not started...' : 'Type instructions...'"
-              class="flex-1 px-4 py-3 text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
+              class="flex-1 px-3 py-2 md:px-4 md:py-3 text-sm md:text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
                     :disabled="!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-                    class="h-[46px] px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30 self-end">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                    class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30 self-end">
+              <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
-
-          <button type="submit"
-                  :disabled="(!replyText.trim() && replyAttachments.length === 0) || !workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
-                  class="h-[46px] w-[46px] bg-black text-white border-2 border-black hover:bg-[#00FF88] hover:text-black disabled:opacity-30 transition-all shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center"
-                  title="Send Instruction">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+           <button type="submit"
+                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || !workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'"
+                   class="h-[38px] w-[32px] md:h-[46px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
+                   title="Send Instruction">
+             <svg class="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+               <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+             </svg>
+           </button>
         </div>
 
         <!-- Status Warning Messages -->
@@ -379,18 +368,7 @@ const autoscrollEnabled = ref(true);
 const isFullscreen = ref(false);
 
 const isMobile = computed(() => window.innerWidth < 768);
-const sessionStarted = ref(false);
 const showHeader = ref(!isMobile.value);
-
-function startSession() {
-  sessionStarted.value = true;
-  showHeader.value = false;
-  if (document.documentElement.requestFullscreen) {
-    document.documentElement.requestFullscreen().then(() => {
-      isFullscreen.value = true;
-    }).catch(() => {});
-  }
-}
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
@@ -504,7 +482,7 @@ const textareaRef = ref(null);
 function adjustTextareaHeight() {
   const el = textareaRef.value;
   if (!el) return;
-  el.style.height = '46px';
+  el.style.height = isMobile.value ? '38px' : '46px';
   const newHeight = Math.min(el.scrollHeight, 150);
   el.style.height = newHeight + 'px';
 }
