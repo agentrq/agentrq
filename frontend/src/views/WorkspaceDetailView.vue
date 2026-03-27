@@ -5,7 +5,7 @@
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-3 flex-nowrap min-w-0">
           <!-- Icon -->
-          <div class="w-10 h-10 border-2 border-black bg-white flex items-center justify-center overflow-hidden shrink-0">
+          <div class="w-10 h-10 bg-white flex items-center justify-center overflow-hidden shrink-0">
             <template v-if="workspace.icon">
               <img v-if="workspace.icon.startsWith('data:image')" :src="workspace.icon" class="w-full h-full object-cover" />
               <span v-else class="text-lg">{{ workspace.icon }}</span>

@@ -126,7 +126,7 @@
                 <div class="w-3 h-3 rounded-full border border-black"
                      :class="p.agent_connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
                 <!-- Icon -->
-                <div class="w-8 h-8 border-2 border-black bg-white flex items-center justify-center overflow-hidden shrink-0">
+                <div class="w-8 h-8 bg-white flex items-center justify-center overflow-hidden shrink-0">
                   <template v-if="p.icon">
                     <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
                     <span v-else class="text-sm">{{ p.icon }}</span>
@@ -203,7 +203,7 @@
                class="border-2 border-gray-300 bg-gray-50 p-4 opacity-60 hover:opacity-100 hover:border-black hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer group flex items-center justify-between"
                @click="goToWorkspace(p.id)">
             <div class="flex items-center gap-3">
-              <div class="w-7 h-7 border border-gray-300 bg-white flex items-center justify-center overflow-hidden">
+              <div class="w-7 h-7 bg-white flex items-center justify-center overflow-hidden">
                 <template v-if="p.icon">
                   <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
                   <span v-else class="text-sm">{{ p.icon }}</span>
