@@ -35,10 +35,6 @@
       <div class="flex items-center gap-2 shrink-0">
         <span v-if="workspace.archived_at" class="border-2 border-yellow-500 bg-yellow-300 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">Archived</span>
         <span class="hidden md:inline text-[9px] font-black text-gray-300 uppercase tracking-widest">{{ task.id }}</span>
-        <button @click="toggleFullscreen" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all" title="Toggle Fullscreen">
-          <svg v-if="!isFullscreen" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-          <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4l5 5m0 0V4m0 5H4m16-5l-5 5m0 0h4m-4 0V4M4 20l5-5m0 0v4m0-5H4m16 5l-5-5m0 0V20m0-5h4" /></svg>
-        </button>
         <button @click="router.push('/workspaces/' + workspaceId)" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
