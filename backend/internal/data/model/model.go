@@ -66,6 +66,17 @@ type (
 		OccurredAt  int64 `gorm:"index:idx_telemetry_occurred_at"`
 		Action      uint8 `gorm:"index:idx_telemetry_action"`
 	}
+
+	// User represents a human user
+	User struct {
+		ID         int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt  time.Time
+		UpdatedAt  time.Time
+		Email      string `gorm:"type:varchar(255);uniqueIndex"`
+		ExternalID string `gorm:"type:varchar(255);index"`
+		Name       string `gorm:"type:varchar(255)"`
+		Picture    string `gorm:"type:text"`
+	}
 )
 
 const (

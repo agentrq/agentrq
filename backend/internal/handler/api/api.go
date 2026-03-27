@@ -231,7 +231,18 @@ func (h *handler) rootLogin() fiber.Handler {
 		}
 
 		// Issue JWT for root user
-		tokenString, err := h.tokenSvc.CreateToken("root", "root@agentrq.local", "Root Administrator", "")
+		dbUser, err := h.crud.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
+			Email:      "root@agentrq.local",
+			ExternalID: "root",
+			Name:       "Root Administrator",
+		})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync root user"})
+		}
+
+		userID := monoflake.ID(dbUser.User.ID).String()
+
+		tokenString, err := h.tokenSvc.CreateToken(userID, "root@agentrq.local", "Root Administrator", "")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
 		}
@@ -272,8 +283,22 @@ func (h *handler) googleCallback() fiber.Handler {
 			sub = user.Sub
 		}
 
+		// Find or create user in DB
+		dbUser, err := h.crud.FindOrCreateUser(ctx, entity.FindOrCreateUserRequest{
+			Email:      user.Email,
+			ExternalID: sub,
+			Name:       user.Name,
+			Picture:    user.Picture,
+		})
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync user"})
+		}
+
+		// Use base62 ID for JWT "sub" and app-wide user identifier
+		userID := monoflake.ID(dbUser.User.ID).String()
+
 		// Create JWT using centralized logic
-		tokenString, err := h.tokenSvc.CreateToken(sub, user.Email, user.Name, user.Picture)
+		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, user.Picture)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
 		}

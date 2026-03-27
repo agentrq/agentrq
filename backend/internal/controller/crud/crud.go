@@ -26,6 +26,7 @@ type (
 	Controller interface {
 		WorkspaceController
 		TaskController
+		UserController
 	}
 
 	controller struct {

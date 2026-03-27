@@ -38,6 +38,12 @@ type Repository interface {
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
 	GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
+
+	// User
+	FindUserByEmail(ctx context.Context, email string) (model.User, error)
+	FindUserByExternalID(ctx context.Context, externalID string) (model.User, error)
+	CreateUser(ctx context.Context, u model.User) (model.User, error)
+	UpdateUser(ctx context.Context, u model.User) (model.User, error)
 }
 
 type repository struct {
@@ -282,4 +288,38 @@ func (r *repository) GetWorkspaceTaskCounts(ctx context.Context, workspaceID int
 		Where("workspace_id = ? AND status NOT IN ?", workspaceID, []string{"completed", "archived"}).
 		Count(&active).Error
 	return active, total, err
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+func (r *repository) FindUserByEmail(ctx context.Context, email string) (model.User, error) {
+	var u model.User
+	err := r.conn(ctx).Where("email = ?", email).First(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, ErrNotFound
+	}
+	return u, err
+}
+
+func (r *repository) FindUserByExternalID(ctx context.Context, externalID string) (model.User, error) {
+	var u model.User
+	err := r.conn(ctx).Where("external_id = ?", externalID).First(&u).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, ErrNotFound
+	}
+	return u, err
+}
+
+func (r *repository) CreateUser(ctx context.Context, u model.User) (model.User, error) {
+	if err := r.conn(ctx).Create(&u).Error; err != nil {
+		return model.User{}, err
+	}
+	return u, nil
+}
+
+func (r *repository) UpdateUser(ctx context.Context, u model.User) (model.User, error) {
+	if err := r.conn(ctx).Save(&u).Error; err != nil {
+		return model.User{}, err
+	}
+	return u, nil
 }

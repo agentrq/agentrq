@@ -257,4 +257,25 @@ type (
 		ActiveTasks int64       `json:"active_tasks"`
 		TotalTasks  int64       `json:"total_tasks"`
 	}
+
+	User struct {
+		ID         int64
+		CreatedAt  time.Time
+		UpdatedAt  time.Time
+		Email      string
+		ExternalID string
+		Name       string
+		Picture    string
+	}
+
+	FindOrCreateUserRequest struct {
+		Email      string
+		ExternalID string
+		Name       string
+		Picture    string
+	}
+
+	FindOrCreateUserResponse struct {
+		User User
+	}
 )

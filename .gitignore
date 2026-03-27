@@ -11,3 +11,4 @@ main
 .mcp.json
 backend/internal/service/mocks
 coverage.out
+agentrq.db
