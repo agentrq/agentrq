@@ -460,7 +460,7 @@ async function handleFileUpload(e) {
 
 const handleVerdict = async (requestId, behavior) => {
   try {
-    await sendPermissionVerdict(workspaceId, taskId, behavior);
+    await sendPermissionVerdict(workspaceId, taskId, requestId, behavior);
     notifySuccess("Verdict sent successfully");
   } catch (err) {
     notifyError('Failed to send verdict: ' + err.message);
