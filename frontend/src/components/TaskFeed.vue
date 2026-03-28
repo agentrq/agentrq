@@ -221,12 +221,18 @@
                               class="px-3 py-1 bg-white text-red-600 hover:bg-red-50 text-[10px] font-black uppercase tracking-widest border-2 border-red-200 shadow-[2px_2px_0px_0px_rgba(254,204,203,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Reject</button>
                  </div>
                  <div class="hidden md:block relative group/status shrink-0">
-                   <button @click.stop="activeStatusMenuId = activeStatusMenuId === t.id ? null : t.id"
-                           class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 transition-all hover:translate-y-px active:translate-y-0.5" 
-                           :class="getTaskBadgeStyle(t.status)">
-                     {{ getTaskLabel(t.status) }}
-                     <svg class="w-2.5 h-2.5 ml-0.5 transition-transform duration-200" :class="activeStatusMenuId === t.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
-                   </button>
+                    <div v-if="t.status === 'cron'"
+                         class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 border-2" 
+                         :class="getTaskBadgeStyle(t.status)">
+                      {{ getTaskLabel(t.status) }}
+                    </div>
+                    <button v-else
+                            @click.stop="activeStatusMenuId = activeStatusMenuId === t.id ? null : t.id"
+                            class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 transition-all hover:translate-y-px active:translate-y-0.5" 
+                            :class="getTaskBadgeStyle(t.status)">
+                      {{ getTaskLabel(t.status) }}
+                      <svg class="w-2.5 h-2.5 ml-0.5 transition-transform duration-200" :class="activeStatusMenuId === t.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
  
                    <!-- Status Dropdown (Feed) -->
                    <div v-if="activeStatusMenuId === t.id" 
