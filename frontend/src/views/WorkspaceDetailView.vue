@@ -101,6 +101,7 @@
         :isAgentConnected="isAgentConnected"
         :filterScheduled="showScheduledOnly"
         @archive="handleArchive"
+        @toggleScheduled="showScheduledOnly = !showScheduledOnly"
       />
     </div>
   </div>

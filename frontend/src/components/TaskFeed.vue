@@ -16,7 +16,7 @@
     />
     <!-- Action Bar -->
     <div v-if="!isArchived" class="hidden md:flex pt-2 pb-4 flex-row items-center justify-between gap-2 shrink-0 flex-wrap">
-        <button @click="showScheduledOnly = !showScheduledOnly"
+        <button @click="$emit('toggleScheduled')"
                 class="flex items-center gap-1.5 px-2.5 py-2 border-2 border-black text-[10px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
                 :class="showScheduledOnly ? 'bg-[#00FF88] text-black translate-y-[1px]' : 'bg-white text-gray-500 hover:bg-[#00FF88]/20 hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'"
                 title="Toggle Scheduled">
@@ -322,7 +322,7 @@ const props = defineProps({
   filterScheduled: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['archive']);
+const emit = defineEmits(['archive', 'toggleScheduled']);
 
 const router = useRouter();
 const { notifyError, notifySuccess, notifyInfo } = useToasts();
