@@ -417,9 +417,37 @@ const allTasks = computed(() => {
 
 const displayGroups = computed(() => {
   if (showScheduledOnly.value) {
-    const cron = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
-    if (cron.length === 0) return [];
-    return [{ title: 'Scheduled Tasks', tasks: cron }];
+    const cronTasks = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
+    if (cronTasks.length === 0) {
+      return [{ title: 'Scheduled Tasks', tasks: [], totalCompleted: 0 }];
+    }
+
+    const categories = [
+      { label: 'Every 15 mins', values: ['*/15 * * * *'] },
+      { label: 'Every 30 mins', values: ['*/30 * * * *'] },
+      { label: 'Hourly', values: ['0 * * * *'] },
+      { label: 'Daily', values: ['0 0 * * *'] },
+      { label: 'Weekly', values: ['0 0 * * 0'] },
+      { label: 'Monthly', values: ['0 0 1 * *'] },
+    ];
+
+    const grps = [];
+    const handledIds = new Set();
+
+    categories.forEach(cat => {
+      const matched = cronTasks.filter(t => cat.values.includes(t.cron_schedule));
+      if (matched.length > 0) {
+        grps.push({ title: cat.label, tasks: matched });
+        matched.forEach(t => handledIds.add(t.id));
+      }
+    });
+
+    const other = cronTasks.filter(t => !handledIds.has(t.id));
+    if (other.length > 0) {
+      grps.push({ title: 'Other', tasks: other });
+    }
+
+    return grps;
   }
 
   const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked', 'requires_action'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
