@@ -46,7 +46,7 @@ func (b *Bus) Unsubscribe(workspaceID int64, ch chan []byte) {
 	}
 }
 
-// Publish sends an event to all subscribers of the given workspace.
+// Publish sends an event to all subscribers of the given workspace and global ones.
 func (b *Bus) Publish(workspaceID int64, evt Event) {
 	data, err := json.Marshal(evt)
 	if err != nil {
@@ -57,11 +57,24 @@ func (b *Bus) Publish(workspaceID int64, evt Event) {
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	
+	// Send to specific workspace subscribers
 	for _, ch := range b.subscribers[workspaceID] {
 		select {
 		case ch <- line:
 		default:
 			// drop if slow consumer
+		}
+	}
+
+	// Also send to global subscribers (workspaceID 0) if it's not already global
+	if workspaceID != 0 {
+		for _, ch := range b.subscribers[0] {
+			select {
+			case ch <- line:
+			default:
+				// drop if slow consumer
+			}
 		}
 	}
 }

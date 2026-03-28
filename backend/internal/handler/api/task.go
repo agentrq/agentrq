@@ -71,6 +71,12 @@ func (h *handler) createTask() fiber.Handler {
 			srv.SendChannelNotification(ctx, rs.Task.ID, content)
 		}
 
+		// Push SSE event
+		h.bus.Publish(rq.Task.WorkspaceID, eventbus.Event{
+			Type:    "task.created",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}

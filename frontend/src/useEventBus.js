@@ -1,4 +1,4 @@
-import { ref, onUnmounted } from 'vue';
+import { ref, onUnmounted, unref } from 'vue';
 
 export function useEventBus(workspaceId) {
   const events = ref([]);
@@ -8,7 +8,9 @@ export function useEventBus(workspaceId) {
   function connect() {
     if (eventSource) return;
     
-    eventSource = new EventSource(`/api/v1/workspaces/${workspaceId}/events`);
+    const wsId = unref(workspaceId);
+    const url = wsId ? `/api/v1/workspaces/${wsId}/events` : `/api/v1/events`;
+    eventSource = new EventSource(url);
     
     eventSource.onopen = () => {
       isConnected.value = true;

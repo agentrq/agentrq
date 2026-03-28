@@ -135,10 +135,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { useEventBus } from '../useEventBus';
 
 const route = useRoute();
 const router = useRouter();
@@ -150,6 +151,20 @@ const loading = ref(false);
 const offset = ref(0);
 const limit = 10;
 const hasMore = ref(true);
+
+// Setup Global Event Bus
+const { connect, disconnect, events } = useEventBus();
+
+watch(events, (newEvents) => {
+  if (newEvents.length === 0) return;
+  const event = newEvents[newEvents.length - 1];
+  
+  // Refresh list on relevant task events
+  if (['task.created', 'task.updated', 'status.updated', 'task.deleted', 'reply.received', 'respond.ack'].includes(event.type)) {
+     // For global list, we refresh to keep it simple
+     fetchInitial();
+  }
+}, { deep: true });
 
 const filterType = computed(() => route.params.filter);
 
@@ -185,9 +200,16 @@ const getLastMessageText = (task) => {
 
 const handleAction = async (task, action) => {
   try {
-    const lastMsg = task.messages?.[task.messages.length - 1];
-    const requestId = lastMsg?.metadata?.request_id;
+    // Find the latest message that is a permission_request and has no verdict yet
+    const pendingMsg = [...(task.messages || [])].reverse().find(m => 
+      m.metadata?.type === 'permission_request' && 
+      m.metadata?.status !== 'allow' && 
+      m.metadata?.status !== 'deny'
+    );
+    
+    const requestId = pendingMsg?.metadata?.request_id;
     if (!requestId) throw new Error('No pending permission request found');
+    
     const behavior = action === 'allow' ? 'allow' : 'deny';
     await sendPermissionVerdict(task.workspace_id, task.id, requestId, behavior);
     notifySuccess(`Permission ${action === 'allow' ? 'allowed' : 'denied'}`);
@@ -288,5 +310,10 @@ watch(() => route.params.filter, () => {
 
 onMounted(() => {
   fetchInitial();
+  connect();
+});
+
+onUnmounted(() => {
+  disconnect();
 });
 </script>

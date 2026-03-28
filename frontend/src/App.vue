@@ -259,12 +259,8 @@ const currentWorkspaceId = computed(() => route.params.id || route.params.worksp
 const { connect, disconnect, events } = useEventBus(currentWorkspaceId)
 
 watch(currentWorkspaceId, (newId) => {
-  if (newId) {
-    disconnect()
-    connect()
-  } else {
-    disconnect()
-  }
+  disconnect()
+  connect()
 }, { immediate: true })
 
 // Watch for noteworthy events

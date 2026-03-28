@@ -187,6 +187,10 @@ func New(cfg Config) (*App, error) {
 							notifSvc.NotifyTaskCreated(w, res)
 						}
 					}
+					bus.Publish(workspaceID, eventbus.Event{
+						Type:    "task.created",
+						Payload: mapper.FromModelTaskToView(res),
+					})
 				}
 				return res, err
 			},
@@ -439,6 +443,7 @@ func New(cfg Config) (*App, error) {
 
 	// ── Unified Server Service ──────────────────────────────────────────
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(bus))
+	mux.Handle("/api/v1/events", eventsHandler(bus))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	serverSvc, err := server.New(server.Params{
@@ -463,10 +468,13 @@ func New(cfg Config) (*App, error) {
 func eventsHandler(bus *eventbus.Bus) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceIDParam := r.PathValue("id")
-		workspaceID := monoflake.IDFromBase62(workspaceIDParam).Int64()
-		if workspaceID == 0 {
-			http.Error(w, "invalid workspace id", http.StatusBadRequest)
-			return
+		var workspaceID int64
+		if workspaceIDParam != "" {
+			workspaceID = monoflake.IDFromBase62(workspaceIDParam).Int64()
+			if workspaceID == 0 {
+				http.Error(w, "invalid workspace id", http.StatusBadRequest)
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -483,7 +491,11 @@ func eventsHandler(bus *eventbus.Bus) http.Handler {
 			return
 		}
 
-		fmt.Fprintf(w, ": connected to workspace %s events\n\n", workspaceIDParam)
+		if workspaceIDParam != "" {
+			fmt.Fprintf(w, ": connected to workspace %s events\n\n", workspaceIDParam)
+		} else {
+			fmt.Fprintf(w, ": connected to global events\n\n")
+		}
 		flusher.Flush()
 
 		for {
