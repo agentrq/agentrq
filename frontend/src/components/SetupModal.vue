@@ -48,13 +48,34 @@
             </div>
           </section>
 
+          <section class="space-y-4">
+            <h3 class="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+              <span class="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px]">3</span>
+              Claude Permissions
+            </h3>
+            <p class="text-[13px] text-gray-600 leading-relaxed font-medium">
+              To enable Claude to use this MCP server without permission prompts, add a
+              <code class="bg-gray-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold">.claude/settings.local.json</code>
+              file in your project directory:
+            </p>
+            <div class="bg-zinc-900 rounded-xl p-5 relative group">
+              <div class="flex justify-between items-center mb-4">
+                <span class="text-[10px] font-black text-zinc-500 uppercase tracking-widest">.claude/settings.local.json</span>
+                <button @click="copyPermissionsConfig" class="text-[10px] font-black text-zinc-400 hover:text-white uppercase tracking-widest transition-colors flex items-center gap-1.5">
+                  {{ isPermissionsCopied ? 'Copied!' : 'Copy Config' }}
+                </button>
+              </div>
+              <pre class="text-[12px] text-zinc-300 font-mono leading-relaxed overflow-x-auto"><code>{{ permissionsConfigJson }}</code></pre>
+            </div>
+          </section>
+
           <section class="space-y-4 bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100/50">
             <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               Quick Startup
             </h3>
             <p class="text-[13px] text-indigo-950/70 font-medium leading-relaxed">
-              Once the file is created, run the following command in your terminal:
+              Once the files are created, run the following command in your terminal:
             </p>
             <div class="bg-white/80 p-3 rounded-lg border border-indigo-100 flex items-center justify-between group">
               <code class="text-[11px] text-indigo-600 font-bold overflow-hidden text-ellipsis">{{ startCommand }}</code>
@@ -89,6 +110,7 @@ const props = defineProps({
 });
 
 const isCopied = ref(false);
+const isPermissionsCopied = ref(false);
 const isCommandCopied = ref(false);
 const token = ref('');
 
@@ -122,10 +144,33 @@ const mcpConfig = computed(() => ({
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
 
+const permissionsConfig = computed(() => ({
+  permissions: {
+    allow: [
+      `mcp__${serverName.value}__updateTaskStatus`,
+      `mcp__${serverName.value}__getWorkspace`,
+      `mcp__${serverName.value}__reply`,
+      `mcp__${serverName.value}__createTask`,
+      `mcp__${serverName.value}__downloadAttachment`,
+      `mcp__${serverName.value}__getTaskMessages`,
+    ]
+  },
+  enableAllProjectMcpServers: true,
+  enabledMcpjsonServers: [serverName.value]
+}));
+
+const permissionsConfigJson = computed(() => JSON.stringify(permissionsConfig.value, null, 2));
+
 function copyConfig() {
   navigator.clipboard.writeText(configJson.value);
   isCopied.value = true;
   setTimeout(() => isCopied.value = false, 2000);
+}
+
+function copyPermissionsConfig() {
+  navigator.clipboard.writeText(permissionsConfigJson.value);
+  isPermissionsCopied.value = true;
+  setTimeout(() => isPermissionsCopied.value = false, 2000);
 }
 
 function copyCommand() {
