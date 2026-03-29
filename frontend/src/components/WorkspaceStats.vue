@@ -75,7 +75,7 @@
       <div class="bg-white border-2 border-black p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
         <div class="flex items-center justify-between mb-6">
           <h3 class="text-xs font-black uppercase tracking-tighter">Communication Volume</h3>
-          <div class="px-2 py-0.5 bg-blue-400 border border-black text-[9px] font-black uppercase tracking-widest shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] text-white">Total Messages</div>
+          <div class="px-2 py-0.5 bg-black border border-black text-[9px] font-black uppercase tracking-widest shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] text-white">Total Messages</div>
         </div>
         <div class="h-48 w-full border-l-2 border-b-2 border-gray-100 relative">
           <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
@@ -84,7 +84,7 @@
           <ChartSVG 
             v-if="stats && stats.timeseries && stats.timeseries.messages"
             :data="stats.timeseries.messages" 
-            color="#3B82F6" 
+            color="#000000" 
           />
         </div>
       </div>
