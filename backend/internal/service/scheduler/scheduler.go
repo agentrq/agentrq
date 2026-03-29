@@ -6,12 +6,13 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
-	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/robfig/cron/v3"
 )
 
@@ -20,14 +21,14 @@ type Service interface {
 }
 
 type scheduler struct {
-	repo      base.Repository
-	idgen     idgen.Service
-	bus       *eventbus.Bus
-	telemetry telemetry.Service
+	repo   base.Repository
+	idgen  idgen.Service
+	bus    *eventbus.Bus
+	pubsub pubsub.Service
 }
 
-func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, telemetry telemetry.Service) Service {
-	return &scheduler{repo: repo, idgen: idgen, bus: bus, telemetry: telemetry}
+func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, ps pubsub.Service) Service {
+	return &scheduler{repo: repo, idgen: idgen, bus: bus, pubsub: ps}
 }
 
 func (s *scheduler) Start(ctx context.Context) {
@@ -114,7 +115,20 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to spawn task")
 		return
 	}
-	s.telemetry.Record(ctx, parent.UserID, parent.WorkspaceID, model.ActionIDTaskFromScheduled)
+
+	if s.pubsub != nil {
+		_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
+			PubSubID: 0,
+			Event: entity.CRUDEvent{
+				Action:       entity.ActionTaskFromScheduled,
+				WorkspaceID:  parent.WorkspaceID,
+				UserID:       parent.UserID,
+				ResourceType: entity.ResourceTask,
+				ResourceID:   created.ID,
+				Actor:        entity.ActorHuman, // System acting on behalf of human
+			},
+		})
+	}
 
 	zlog.Info().Int64("task_id", created.ID).Int64("cron_id", parent.ID).Msg("scheduler: spawned task")
 

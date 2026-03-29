@@ -65,6 +65,7 @@ type (
 		WorkspaceID int64  `gorm:"index:idx_telemetry_workspace_id"`
 		OccurredAt  int64  `gorm:"index:idx_telemetry_occurred_at"`
 		Action      uint8  `gorm:"index:idx_telemetry_action"`
+		Actor       uint8  `gorm:"index:idx_telemetry_actor"`
 	}
 
 	// User represents a human user

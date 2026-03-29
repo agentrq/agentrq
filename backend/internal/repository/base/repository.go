@@ -34,12 +34,13 @@ type Repository interface {
 	UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
+	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
+	SystemGetMessage(ctx context.Context, id int64) (model.Message, error)
+	SystemGetUser(ctx context.Context, id int64) (model.User, error)
 	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
 	GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
-
-	// User
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
@@ -233,6 +234,33 @@ func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Wo
 		return model.Workspace{}, ErrNotFound
 	}
 	return p, err
+}
+
+func (r *repository) SystemGetTask(ctx context.Context, id int64) (model.Task, error) {
+	var t model.Task
+	err := r.conn(ctx).First(&t, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Task{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (r *repository) SystemGetMessage(ctx context.Context, id int64) (model.Message, error) {
+	var m model.Message
+	err := r.conn(ctx).First(&m, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Message{}, ErrNotFound
+	}
+	return m, err
+}
+
+func (r *repository) SystemGetUser(ctx context.Context, id int64) (model.User, error) {
+	var u model.User
+	err := r.conn(ctx).First(&u, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.User{}, ErrNotFound
+	}
+	return u, err
 }
 
 func (r *repository) SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error) {

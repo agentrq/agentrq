@@ -38,3 +38,6 @@ smtp:
   username: ${AGENTRQ_SMTP_USERNAME:}
   password: ${AGENTRQ_SMTP_PASSWORD:}
   from: ${AGENTRQ_SMTP_FROM:AgentRQ <no-reply@agentrq.com>}
+
+pubsub:
+  maxDurationForSubscriberToReceive: 5s

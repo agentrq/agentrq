@@ -23,9 +23,6 @@ func TestCreateTask_Success(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.idgen.EXPECT().NextID().Return(int64(42))
 	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(created, nil)
-	e.repo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(1)).Return(activeWorkspace(), nil)
-	e.notif.EXPECT().NotifyTaskCreated(gomock.Any(), gomock.Any())
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), gomock.Any())
 
 	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
 		UserID: testUserIDStr,
@@ -100,8 +97,6 @@ func TestCreateTask_ValidCronSchedule(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.idgen.EXPECT().NextID().Return(int64(5))
 	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(created, nil)
-	// cron tasks do not trigger notification
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), gomock.Any())
 
 	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
 		UserID: testUserIDStr,
@@ -234,10 +229,7 @@ func TestRespondToTask_Allow(t *testing.T) {
 	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskApproveManual)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDMessageCreate)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(updated, nil)
 	e.storage.EXPECT().Save("att1", "data1").Return(nil)
 
@@ -264,10 +256,7 @@ func TestRespondToTask_AllowAll(t *testing.T) {
 	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskApproveManual)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDMessageCreate)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(updated, nil)
 
 	resp, err := e.controller.RespondToTask(context.Background(), entity.RespondToTaskRequest{
@@ -291,9 +280,7 @@ func TestRespondToTask_Reject(t *testing.T) {
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDMessageCreate)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(updated, nil)
 
 	resp, err := e.controller.RespondToTask(context.Background(), entity.RespondToTaskRequest{
@@ -318,8 +305,6 @@ func TestUpdateTaskStatus_Success(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskComplete)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 
 	resp, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
 		WorkspaceID: 1, TaskID: 10, Status: "done", UserID: testUserIDStr,
@@ -374,7 +359,6 @@ func TestUpdateTaskOrder_Success(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 
 	resp, err := e.controller.UpdateTaskOrder(context.Background(), entity.UpdateTaskOrderRequest{
 		WorkspaceID: 1, TaskID: 10, SortOrder: 2.5, UserID: testUserIDStr,
@@ -397,9 +381,7 @@ func TestReplyToTask_Success(t *testing.T) {
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.idgen.EXPECT().NextID().Return(int64(101))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDMessageCreate)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(task, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	resp, err := e.controller.ReplyToTask(context.Background(), entity.ReplyToTaskRequest{
@@ -424,7 +406,6 @@ func TestUpdateScheduledTask_Success(t *testing.T) {
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskUpdate)
 
 	resp, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
 		WorkspaceID: 1, TaskID: 10, Title: "new title", CronSchedule: "0 9 * * 1", UserID: testUserIDStr,
@@ -472,7 +453,6 @@ func TestUpdateMessageMetadata_Success(t *testing.T) {
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, nil)
 	e.repo.EXPECT().UpdateMessageMetadata(gomock.Any(), int64(500), gomock.Any()).Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDMessageUpdate)
 
 	err := e.controller.UpdateMessageMetadata(context.Background(), entity.UpdateMessageMetadataRequest{
 		WorkspaceID: 1,
@@ -502,7 +482,6 @@ func TestDeleteTask_Success(t *testing.T) {
 	e.repo.EXPECT().DeleteTask(gomock.Any(), int64(1), int64(10), testUserID).Return(nil)
 	e.storage.EXPECT().Delete("a1").Return(nil)
 	e.storage.EXPECT().Delete("a2").Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDTaskDelete)
 
 	_, err := e.controller.DeleteTask(context.Background(), entity.DeleteTaskRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
 	if err != nil {

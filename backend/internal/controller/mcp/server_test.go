@@ -11,8 +11,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
-	mock_telemetry "github.com/agentrq/agentrq/backend/internal/service/mocks/telemetry"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -72,13 +73,13 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
+		userID:      monoflake.ID(15264777).String(),
 		name:        "My Workspace",
 		description: "My Description",
-		telemetry:   mockTel,
+		pubsub:      mockPS,
 		listTasks: func(ctx context.Context) ([]model.Task, error) {
 			return []model.Task{
 				{Status: "ongoing"},
@@ -87,7 +88,7 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	res, _, err := ps.handleGetWorkspace(context.Background(), nil, nil)
 	if err != nil {
@@ -106,7 +107,6 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 	ps.listTasks = func(ctx context.Context) ([]model.Task, error) {
 		return nil, fmt.Errorf("db error")
 	}
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ = ps.handleGetWorkspace(context.Background(), nil, nil)
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "db error") {
 		t.Errorf("expected error, got: %v", res)
@@ -117,12 +117,12 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	mockStor := mock_storage.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		storage:     mockStor,
 		listTasks: func(ctx context.Context) ([]model.Task, error) {
 			return []model.Task{
@@ -134,7 +134,7 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockStor.EXPECT().Load("att-1").Return("content in base64", nil)
 
 	params := DownloadAttachmentParams{AttachmentID: "att-1"}
@@ -156,12 +156,12 @@ func TestWorkspaceServer_HandleCreateTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	mockIdgen := mock_idgen.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		idgen:       mockIdgen,
 		bus:         eventbus.New(),
 		createTask: func(ctx context.Context, task model.Task) (model.Task, error) {
@@ -170,7 +170,7 @@ func TestWorkspaceServer_HandleCreateTask(t *testing.T) {
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockIdgen.EXPECT().NextID().Return(int64(123))
 
 	params := CreateTaskParams{
@@ -195,18 +195,18 @@ func TestWorkspaceServer_HandleUpdateTaskStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		bus:         eventbus.New(),
 		updateStatus: func(ctx context.Context, taskID int64, status string) (model.Task, error) {
 			return model.Task{ID: taskID, Status: status}, nil
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	taskIDStr := monoflake.ID(42).String()
 	params := UpdateTaskStatusParams{
@@ -231,17 +231,17 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 			return 1, nil
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := ReplyParams{
 		ChatID: monoflake.ID(42).String(),
@@ -260,11 +260,11 @@ func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
 			return model.Task{
 				ID: 42,
@@ -276,7 +276,7 @@ func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
 		},
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := GetTaskMessagesParams{
 		TaskID: monoflake.ID(42).String(),
@@ -301,17 +301,18 @@ func TestWorkspaceServer_HandleCreateTask_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	now := time.Now()
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		archivedAt:  &now,
 	}
 
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
 	// Case 1: Archived workspace
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ := ps.handleCreateTask(context.Background(), nil, CreateTaskParams{Title: "T", Body: "B"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "archived") {
 		t.Errorf("expected archived error, got: %v", res)
@@ -319,7 +320,6 @@ func TestWorkspaceServer_HandleCreateTask_Errors(t *testing.T) {
 
 	// Case 2: Missing title
 	ps.archivedAt = nil
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ = ps.handleCreateTask(context.Background(), nil, CreateTaskParams{Body: "B"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "title is required") {
 		t.Errorf("expected missing title error, got: %v", res)
@@ -330,17 +330,18 @@ func TestWorkspaceServer_HandleUpdateTaskStatus_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	now := time.Now()
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		archivedAt:  &now,
 	}
 
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
 	// Case 1: Archived workspace
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ := ps.handleUpdateTaskStatus(context.Background(), nil, UpdateTaskStatusParams{TaskID: "1", Status: "ongoing"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "archived") {
 		t.Errorf("expected archived error, got: %v", res)
@@ -348,7 +349,6 @@ func TestWorkspaceServer_HandleUpdateTaskStatus_Errors(t *testing.T) {
 
 	// Case 2: Missing task_id
 	ps.archivedAt = nil
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ = ps.handleUpdateTaskStatus(context.Background(), nil, UpdateTaskStatusParams{Status: "ongoing"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "task_id is required") {
 		t.Errorf("expected missing task_id error, got: %v", res)
@@ -359,14 +359,15 @@ func TestWorkspaceServer_HandleDownloadAttachment_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 	}
 
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
 	res, _, _ := ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "required") {
 		t.Errorf("expected missing attachment_id error, got: %v", res)
@@ -377,17 +378,18 @@ func TestWorkspaceServer_HandleReply_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockTel := mock_telemetry.NewMockService(ctrl)
+	mockPS := mock_pubsub.NewMockService(ctrl)
 	now := time.Now()
 	ps := &WorkspaceServer{
 		workspaceID: 100,
-		userID:      "15264777",
-		telemetry:   mockTel,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
 		archivedAt:  &now,
 	}
 
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
 	// Case 1: Archived
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ := ps.handleReply(context.Background(), nil, ReplyParams{ChatID: "1", Text: "hi"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "archived") {
 		t.Errorf("expected archived error, got: %v", res)
@@ -395,7 +397,6 @@ func TestWorkspaceServer_HandleReply_Errors(t *testing.T) {
 
 	// Case 2: Missing content
 	ps.archivedAt = nil
-	mockTel.EXPECT().Record(gomock.Any(), gomock.Any(), int64(100), model.ActionIDMCPToolCall)
 	res, _, _ = ps.handleReply(context.Background(), nil, ReplyParams{ChatID: "1"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "required") {
 		t.Errorf("expected missing content error, got: %v", res)

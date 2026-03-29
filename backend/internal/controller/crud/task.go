@@ -88,14 +88,14 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		return nil, fmt.Errorf("create task: %w", err)
 	}
 
-	// Notify task creation (only for real tasks, not recurring templates)
-	if created.Status != "cron" {
-		if w, err := c.repository.SystemGetWorkspace(ctx, req.Task.WorkspaceID); err == nil {
-			c.notif.NotifyTaskCreated(w, created)
-		}
-	}
-	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	c.telemetry.Record(ctx, uid, created.WorkspaceID, model.ActionIDTaskCreate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskCreate,
+		WorkspaceID:  created.WorkspaceID,
+		UserID:       created.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   created.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
@@ -153,7 +153,14 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if msgText == "" {
 			msgText = "Human approved this task."
 		}
-		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskApproveManual)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionTaskApproveManual,
+			WorkspaceID:  req.WorkspaceID,
+			UserID:       uid,
+			ResourceType: entity.ResourceTask,
+			ResourceID:   req.TaskID,
+			Actor:        entity.ActorHuman,
+		})
 	case "reject":
 		m.Status = "rejected"
 		createMsg = true
@@ -162,7 +169,6 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		}
 	case "text":
 		// Just a message, don't necessarily change status unless indicated
-		// But for now, if it was not started, maybe keep it as it is
 		createMsg = true
 	default:
 		return nil, fmt.Errorf("unknown action: %s", req.Action)
@@ -189,7 +195,14 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if err := c.repository.CreateMessage(ctx, msg); err != nil {
 			return nil, err
 		}
-		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageCreate)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionMessageCreate,
+			WorkspaceID:  req.WorkspaceID,
+			UserID:       msg.UserID,
+			ResourceType: entity.ResourceMessage,
+			ResourceID:   msg.ID,
+			Actor:        entity.ActorHuman,
+		})
 	}
 
 	m.UpdatedAt = time.Now()
@@ -197,7 +210,14 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	// Fetch latest state with messages
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
@@ -241,10 +261,27 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	if err != nil {
 		return nil, err
 	}
+
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+
 	if updated.Status == "completed" || updated.Status == "done" {
-		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskComplete)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionTaskComplete,
+			WorkspaceID:  updated.WorkspaceID,
+			UserID:       updated.UserID,
+			ResourceType: entity.ResourceTask,
+			ResourceID:   updated.ID,
+			Actor:        entity.ActorHuman,
+		})
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
+
 	return &entity.UpdateTaskStatusResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -265,7 +302,14 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
 	return &entity.UpdateTaskOrderResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
@@ -300,14 +344,28 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err := c.repository.CreateMessage(ctx, msg); err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageCreate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMessageCreate,
+		WorkspaceID:  req.WorkspaceID,
+		UserID:       msg.UserID,
+		ResourceType: entity.ResourceMessage,
+		ResourceID:   msg.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	m.UpdatedAt = time.Now()
 	updated, err := c.repository.UpdateTask(ctx, m)
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	// Fetch latest state with messages
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
@@ -359,13 +417,19 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 	if err != nil {
 		return nil, err
 	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskDelete,
+		WorkspaceID:  req.WorkspaceID,
+		UserID:       uid,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   req.TaskID,
+		Actor:        entity.ActorHuman,
+	})
 
 	// 3. Purge storage files
 	for _, id := range attachmentIDs {
 		_ = c.storage.Delete(id)
 	}
-
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskDelete)
 
 	return &entity.DeleteTaskResponse{}, nil
 }
@@ -386,7 +450,14 @@ func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.Updat
 	if err := c.repository.UpdateMessageMetadata(ctx, req.MessageID, b); err != nil {
 		return err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageUpdate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionMessageUpdate,
+		WorkspaceID:  req.WorkspaceID,
+		UserID:       uid,
+		ResourceType: entity.ResourceMessage,
+		ResourceID:   req.MessageID,
+		Actor:        entity.ActorHuman,
+	})
 	return nil
 }
 
@@ -518,6 +589,13 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
 	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }

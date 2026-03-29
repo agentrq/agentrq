@@ -17,7 +17,6 @@ func TestCreateWorkspace_WithOptions(t *testing.T) {
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.image.EXPECT().ResizeBase64("base64icon", 32, 32).Return("resized icon", nil)
 	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{ID: 100}, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(100), model.ActionIDWorkspaceCreate)
 
 	resp, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
 		UserID: testUserIDStr,
@@ -50,7 +49,6 @@ func TestDeleteWorkspace_Complex(t *testing.T) {
 	e.repo.EXPECT().DeleteWorkspace(gomock.Any(), int64(1), testUserID).Return(nil)
 	e.storage.EXPECT().Delete("att-1").Return(nil)
 	e.storage.EXPECT().Delete("att-2").Return(nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDWorkspaceDelete)
 
 	err := e.controller.DeleteWorkspace(context.Background(), entity.DeleteWorkspaceRequest{ID: 1, UserID: testUserIDStr})
 	if err != nil {
@@ -102,8 +100,6 @@ func TestArchiveWorkspace_Success(t *testing.T) {
 		}
 		return w, nil
 	})
-	e.notif.EXPECT().NotifyWorkspaceArchived(gomock.Any())
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDWorkspaceUpdate)
 
 	err := e.controller.ArchiveWorkspace(context.Background(), entity.ArchiveWorkspaceRequest{ID: 1, UserID: testUserIDStr})
 	if err != nil {
@@ -125,8 +121,6 @@ func TestUnarchiveWorkspace_Success(t *testing.T) {
 		}
 		return w, nil
 	})
-	e.notif.EXPECT().NotifyWorkspaceUnarchived(gomock.Any())
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDWorkspaceUpdate)
 
 	err := e.controller.UnarchiveWorkspace(context.Background(), entity.UnarchiveWorkspaceRequest{ID: 1, UserID: testUserIDStr})
 	if err != nil {
@@ -144,7 +138,6 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 		w.Icon = "icon"
 		return w, nil
 	})
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDWorkspaceUpdate)
 
 	resp, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
 		UserID:    testUserIDStr,
@@ -154,7 +147,7 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Description != "desc" {
+	if resp.Workspace.Description != "desc" {
 		t.Errorf("expected description updated")
 	}
 }
@@ -165,7 +158,6 @@ func TestUpdateWorkspaceAutoAllowedTools_Success(t *testing.T) {
 	ws := activeWorkspace()
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
 	e.repo.EXPECT().UpdateWorkspace(gomock.Any(), gomock.Any()).Return(ws, nil)
-	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(1), model.ActionIDWorkspaceUpdate)
 
 	err := e.controller.UpdateWorkspaceAutoAllowedTools(context.Background(), entity.UpdateWorkspaceAutoAllowedToolsRequest{
 		WorkspaceID: 1,
@@ -180,14 +172,15 @@ func TestUpdateWorkspaceAutoAllowedTools_Success(t *testing.T) {
 func TestGetWorkspaceStats_Success(t *testing.T) {
 	e := newTestController(t)
 
-	e.telemetry.EXPECT().GetWorkspaceStats(gomock.Any(), int64(1)).Return(&entity.GetWorkspaceStatsResponse{Total: 10}, nil)
+	e.repo.EXPECT().GetDailyStats(gomock.Any(), int64(1), 30).Return([]entity.DailyStat{}, nil)
+	e.repo.EXPECT().GetWorkspaceTaskCounts(gomock.Any(), int64(1)).Return(int64(5), int64(10), nil)
 
 	resp, err := e.controller.GetWorkspaceStats(context.Background(), entity.GetWorkspaceRequest{ID: 1, UserID: testUserIDStr})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Total != 10 {
-		t.Errorf("expected total 10")
+	if resp.TotalTasks != 10 || resp.ActiveTasks != 5 {
+		t.Errorf("expected task counts 5 and 10")
 	}
 }
 
