@@ -13,15 +13,17 @@ import (
 	"time"
 	"unsafe"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/service/auth"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
-	"github.com/hasmcp/agentrq/backend/internal/service/storage"
-	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
+	zlog "github.com/rs/zerolog/log"
+
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
@@ -139,7 +141,7 @@ func NewWorkspaceServer(
 	tokenSvc auth.TokenService,
 	telemetry telemetry.Service,
 ) *WorkspaceServer {
-	fmt.Printf("NEW WORKSPACE SERVER CREATED: %d\n", workspaceID)
+	zlog.Info().Int64("workspace_id", workspaceID).Msg("new workspace server created")
 	ps := &WorkspaceServer{
 		workspaceID:           workspaceID,
 		userID:                userID,
@@ -267,7 +269,7 @@ func NewWorkspaceServer(
 func (ps *WorkspaceServer) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := w.(http.Flusher); !ok {
-			fmt.Printf("WARNING: HTTP ResponseWriter DOES NOT support Flusher! (SSE will be buffered!)\n")
+			zlog.Warn().Msg("HTTP ResponseWriter does not support Flusher, SSE will be buffered")
 		}
 
 		sessID := r.Header.Get("Mcp-Session-Id")
@@ -297,7 +299,7 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 			}()
 		}
 
-		fmt.Printf("MCP REQUEST: %s %s (Session-ID: %s) [SSE: %v]\n", r.Method, r.URL.Path, logID, isSSE)
+		zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("session_id", logID).Bool("sse", isSSE).Msg("MCP request")
 		ps.streamServer.ServeHTTP(w, r)
 	})
 }
@@ -308,7 +310,7 @@ func (ps *WorkspaceServer) IsAgentConnected() bool {
 
 // SendChannelNotification delivers a human-originated message to any connected LLM session.
 func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
-	fmt.Printf("SEND MCP CHANNEL NOTIFICATION (Workspace: %d, Task: %d): %s\n", ps.workspaceID, taskID, content)
+	zlog.Debug().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Msg("send MCP channel notification")
 
 	params := map[string]any{
 		"content": content,
@@ -319,7 +321,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 			"ts":         time.Now().Format(time.RFC3339),
 		},
 	}
-	fmt.Printf("SENDING MCP NOTIFICATION PARAMS: %+v\n", params)
+	zlog.Debug().Interface("params", params).Msg("sending MCP notification params")
 
 	// as the official SDK does not yet expose a public API for generic notifications.
 	sessionCount := 0
@@ -336,7 +338,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 			authStatus = "AUTHENTICATED: " + c.Subject
 		}
 
-		fmt.Printf("FOUND ACTIVE SESSION: %s (%s)\n", logID, authStatus)
+		zlog.Debug().Str("session_id", logID).Str("auth", authStatus).Msg("found active session")
 		v := reflect.ValueOf(sess).Elem()
 		connField := v.FieldByName("conn")
 		if connField.IsValid() {
@@ -352,13 +354,13 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 					})
 					if len(results) > 0 && !results[0].IsNil() {
 						err := results[0].Interface().(error)
-						fmt.Printf("MCP NOTIFY ERROR FOR SESSION (claude/channel): %v\n", err)
+						zlog.Error().Err(err).Msg("MCP notify error for session")
 					}
 				}
 			}
 		}
 	}
-	fmt.Printf("MCP NOTIFICATION SENT TO %d SESSIONS\n", sessionCount)
+	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
 }
 
 // StartPing pings all connected MCP client sessions every 30 seconds to keep connections alive.
@@ -370,7 +372,7 @@ func (ps *WorkspaceServer) StartPing() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			for sess := range ps.mcpServer.Sessions() {
 				if err := sess.Ping(ctx, nil); err != nil {
-					fmt.Printf("MCP PING ERROR (Workspace: %d, Session: %s): %v\n", ps.workspaceID, sess.ID(), err)
+					zlog.Warn().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP ping error")
 				}
 			}
 			cancel()
@@ -847,8 +849,8 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 
 	b, _ := json.Marshal(map[string]any{
 		"messages": output,
-		"total": total,
-		"cursor": end,
+		"total":    total,
+		"cursor":   end,
 	})
 
 	return &mcp.CallToolResult{
@@ -857,7 +859,7 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 }
 func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		fmt.Printf("MCP INCOMING: %s\n", method)
+		zlog.Debug().Str("method", method).Msg("MCP incoming")
 		if method == "notifications/claude/channel/permission_request" {
 			uid := monoflake.IDFromBase62(ps.userID).Int64()
 			ps.telemetry.Record(ctx, uid, ps.workspaceID, model.ActionIDMCPToolCall)
@@ -888,7 +890,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			ps.autoAllowedToolsMu.RUnlock()
 
 			if isAutoAllowed {
-				fmt.Printf("AUTO-ALLOWING PERMISSION REQUEST %s for tool %s\n", p.RequestID, p.ToolName)
+				zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request")
 				go func() {
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 					_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
@@ -903,7 +905,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			ps.sessionTasksMu.RUnlock()
 
 			if ok {
-				fmt.Printf("RELAYING PERMISSION REQUEST %s to task %d\n", p.RequestID, taskID)
+				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("relaying permission request")
 				// Type "permission_request" helps UI render buttons
 				metadata := map[string]any{
 					"type":          "permission_request",
@@ -914,7 +916,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				}
 				_, _ = ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
 			} else {
-				fmt.Printf("COULD NOT RELAY PERMISSION REQUEST %s: no task active for session %s\n", p.RequestID, sessID)
+				zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessID).Msg("could not relay permission request: no active task")
 			}
 			return nil, nil // Notifications must return nil, nil
 		}
@@ -985,7 +987,7 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 				}
 			}
 			ps.autoAllowedToolsMu.Unlock()
-			fmt.Printf("AUTO-ALLOW RULE SAVED: %s\n", rule)
+			zlog.Info().Str("rule", rule).Msg("auto-allow rule saved")
 		}
 	}
 
@@ -1065,7 +1067,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		ps.autoAllowedToolsMu.RUnlock()
 
 		if isAutoAllowed {
-			fmt.Printf("AUTO-ALLOWING PERMISSION REQUEST %s for tool %s (via custom notification)\n", p.RequestID, p.ToolName)
+			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
 			go func() {
 				time.Sleep(100 * time.Millisecond)
 				_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
@@ -1080,7 +1082,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		ps.sessionTasksMu.RUnlock()
 
 		if ok {
-			fmt.Printf("RELAYING PERMISSION REQUEST %s to task %d (Session: %s)\n", p.RequestID, taskID, sessionID)
+			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
 			metadata := map[string]any{
 				"type":          "permission_request",
 				"request_id":    p.RequestID,
@@ -1096,7 +1098,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				ps.permissionResponsesMu.Unlock()
 			}
 		} else {
-			fmt.Printf("COULD NOT RELAY PERMISSION REQUEST %s: no task active for session %s\n", p.RequestID, sessionID)
+			zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessionID).Msg("could not relay permission request: no active task (custom notification)")
 		}
 	}
 }

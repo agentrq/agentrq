@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
-	"github.com/hasmcp/agentrq/backend/internal/service/config"
+	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -44,7 +46,7 @@ func New(p Params) (dbconn.DBConn, error) {
 	}
 
 	if !cfg.Enabled {
-		fmt.Println(_logPrefix + "sqlite repository is not enabled, skipping")
+		zlog.Info().Msg(_logPrefix + "sqlite repository is not enabled, skipping")
 		return nil, nil
 	}
 
@@ -53,7 +55,7 @@ func New(p Params) (dbconn.DBConn, error) {
 		return nil, fmt.Errorf(_logPrefix+"failed to connect: %w", err)
 	}
 
-	fmt.Println(_logPrefix + "connected")
+	zlog.Info().Msg(_logPrefix + "connected")
 
 	dbi, err := db.DB()
 	if err != nil {

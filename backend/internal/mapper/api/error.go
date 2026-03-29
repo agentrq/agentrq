@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 )
 
 type httpError struct {

@@ -3,9 +3,9 @@ package api
 import (
 	"encoding/json"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	"github.com/gofiber/fiber/v2"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	view "github.com/hasmcp/agentrq/backend/internal/data/view/api"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -19,9 +19,9 @@ func FromHTTPRequestToCreateWorkspaceRequestEntity(c *fiber.Ctx) *entity.CreateW
 	}
 	return &entity.CreateWorkspaceRequest{
 		Workspace: entity.Workspace{
-			Name:        payload.Workspace.Name,
-			Description: payload.Workspace.Description,
-			Icon:        payload.Workspace.Icon,
+			Name:                 payload.Workspace.Name,
+			Description:          payload.Workspace.Description,
+			Icon:                 payload.Workspace.Icon,
 			NotificationSettings: fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
 		},
 	}
@@ -96,10 +96,10 @@ func FromUpdateWorkspaceResponseEntityToHTTPResponse(rs *entity.Workspace, mcpUR
 
 func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace {
 	return view.Workspace{
-		ID:          monoflake.ID(p.ID).String(),
-		CreatedAt:   p.CreatedAt,
-		UpdatedAt:   p.UpdatedAt,
-		Name:        p.Name,
+		ID:                   monoflake.ID(p.ID).String(),
+		CreatedAt:            p.CreatedAt,
+		UpdatedAt:            p.UpdatedAt,
+		Name:                 p.Name,
 		Description:          p.Description,
 		Icon:                 p.Icon,
 		ArchivedAt:           p.ArchivedAt,

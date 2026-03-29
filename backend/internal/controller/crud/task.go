@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/mustafaturan/monoflake"
 	"github.com/robfig/cron/v3"
 	"gorm.io/datatypes"
@@ -51,7 +51,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	now := time.Now()
-	
+
 	// Save attachments binary to filesystem and clear Data for metadata DB storage
 	c.saveAttachments(req.Task.Attachments)
 
@@ -176,7 +176,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if len(req.Attachments) > 0 {
 			attsData, _ = json.Marshal(req.Attachments)
 		}
-		
+
 		msg := model.Message{
 			ID:          c.idgen.NextID(),
 			CreatedAt:   time.Now(),
@@ -278,7 +278,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Save attachments
 	c.saveAttachments(req.Attachments)
 
@@ -301,14 +301,14 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		return nil, err
 	}
 	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDMessageCreate)
-	
+
 	m.UpdatedAt = time.Now()
 	updated, err := c.repository.UpdateTask(ctx, m)
 	if err != nil {
 		return nil, err
 	}
 	c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDTaskUpdate)
-	
+
 	// Fetch latest state with messages
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
@@ -419,20 +419,20 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 	}
 
 	return entity.Task{
-		ID:          m.ID,
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
-		WorkspaceID: m.WorkspaceID,
-		UserID:      m.UserID,
-		CreatedBy:   m.CreatedBy,
-		Assignee:    m.Assignee,
-		Status:      m.Status,
-		Title:       m.Title,
-		Body:        m.Body,
-		Response:    m.Response,
-		ReplyText:   m.ReplyText,
-		Attachments: atts,
-		Messages:    msgs,
+		ID:           m.ID,
+		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
+		WorkspaceID:  m.WorkspaceID,
+		UserID:       m.UserID,
+		CreatedBy:    m.CreatedBy,
+		Assignee:     m.Assignee,
+		Status:       m.Status,
+		Title:        m.Title,
+		Body:         m.Body,
+		Response:     m.Response,
+		ReplyText:    m.ReplyText,
+		Attachments:  atts,
+		Messages:     msgs,
 		CronSchedule: m.CronSchedule,
 		ParentID:     m.ParentID,
 		SortOrder:    m.SortOrder,

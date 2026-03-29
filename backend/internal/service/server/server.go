@@ -19,6 +19,8 @@ import (
 
 	"strconv"
 
+	zlog "github.com/rs/zerolog/log"
+
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
 	"github.com/go-acme/lego/v4/lego"
@@ -115,7 +117,7 @@ func (s *service) Run() error {
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 
 	if !s.cfg.SSLEnabled {
-		fmt.Printf("Starting Unified HTTP server on %s\n", addr)
+		zlog.Info().Str("addr", addr).Msg("starting unified HTTP server")
 		s.server = &http.Server{
 			Addr:    addr,
 			Handler: s,
@@ -132,7 +134,7 @@ func (s *service) Run() error {
 	if email == "" {
 		email = "admin@" + domain
 	}
-	fmt.Printf("SSL enabled with Lego/Cloudflare DNS-01 for domain: %s (Email: %s)\n", domain, email)
+	zlog.Info().Str("domain", domain).Str("email", email).Msg("SSL enabled with Lego/Cloudflare DNS-01")
 
 	// 1. Setup Certificate Storage
 	if err := os.MkdirAll(s.cfg.SSLCacheDir, 0700); err != nil {
@@ -143,7 +145,7 @@ func (s *service) Run() error {
 
 	// 2. Load existing cert if available
 	if err := s.loadCertificate(certFile, keyFile); err != nil {
-		fmt.Printf("Could not load existing certificate, will obtain new one: %v\n", err)
+		zlog.Warn().Err(err).Msg("could not load existing certificate, will obtain new one")
 	}
 
 	// 3. Start certificate manager (obtain/renew in background)
@@ -151,7 +153,7 @@ func (s *service) Run() error {
 
 	// 4. Start HTTP -> HTTPS Redirect Server
 	go func() {
-		fmt.Printf("Starting HTTP redirect server on %s\n", addr)
+		zlog.Info().Str("addr", addr).Msg("starting HTTP redirect server")
 		s.acmesrv = &http.Server{
 			Addr: addr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +181,7 @@ func (s *service) Run() error {
 			}),
 		}
 		if err := s.acmesrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("HTTP redirect server error: %v\n", err)
+			zlog.Error().Err(err).Msg("HTTP redirect server error")
 		}
 	}()
 
@@ -229,7 +231,7 @@ func (s *service) Run() error {
 		return fmt.Errorf("TLS listener setup failed: %w", err)
 	}
 
-	fmt.Printf("Starting Secure Unified server on %s (Domain: %s)\n", sslAddr, domain)
+	zlog.Info().Str("addr", sslAddr).Str("domain", domain).Msg("starting secure unified server")
 	s.server = &http.Server{
 		Handler: s,
 	}
@@ -266,7 +268,7 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 
 	client, err := lego.NewClient(config)
 	if err != nil {
-		fmt.Printf("Lego client creation failed: %v\n", err)
+		zlog.Error().Err(err).Msg("lego client creation failed")
 		return
 	}
 
@@ -276,18 +278,18 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 
 	dnsProvider, err := cloudflare.NewDNSProviderConfig(cfConfig)
 	if err != nil {
-		fmt.Printf("Cloudflare provider creation failed: %v\n", err)
+		zlog.Error().Err(err).Msg("cloudflare provider creation failed")
 		return
 	}
 
 	if err := client.Challenge.SetDNS01Provider(dnsProvider); err != nil {
-		fmt.Printf("Failed to set DNS provider: %v\n", err)
+		zlog.Error().Err(err).Msg("failed to set DNS provider")
 		return
 	}
 
 	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
-		fmt.Printf("ACME registration failed: %v\n", err)
+		zlog.Error().Err(err).Msg("ACME registration failed")
 		return
 	}
 	user.Registration = reg
@@ -311,7 +313,7 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 		s.certMu.RUnlock()
 
 		if needsRenewal {
-			fmt.Printf("Obtaining/renewing certificate for domains: %v\n", domains)
+		zlog.Info().Strs("domains", domains).Msg("obtaining/renewing certificate")
 
 			request := certificate.ObtainRequest{
 				Domains: domains,
@@ -320,23 +322,23 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 
 			certs, err := client.Certificate.Obtain(request)
 			if err != nil {
-				fmt.Printf("Failed to obtain certificate: %v\n", err)
+				zlog.Error().Err(err).Msg("failed to obtain certificate")
 			} else {
 				if err := os.WriteFile(certPath, certs.Certificate, 0600); err != nil {
-					fmt.Printf("Failed to save cert file: %v\n", err)
+					zlog.Error().Err(err).Msg("failed to save cert file")
 				}
 				if err := os.WriteFile(keyPath, certs.PrivateKey, 0600); err != nil {
-					fmt.Printf("Failed to save key file: %v\n", err)
+					zlog.Error().Err(err).Msg("failed to save key file")
 				}
 
 				if err := s.loadCertificate(certPath, keyPath); err != nil {
-					fmt.Printf("Failed to reload certificate: %v\n", err)
+					zlog.Error().Err(err).Msg("failed to reload certificate")
 				} else {
-					fmt.Printf("Certificate updated successfully\n")
+					zlog.Info().Msg("certificate updated successfully")
 				}
 			}
 		} else {
-			fmt.Printf("Certificate still valid, skipping renewal\n")
+			zlog.Info().Msg("certificate still valid, skipping renewal")
 		}
 
 		time.Sleep(24 * time.Hour)

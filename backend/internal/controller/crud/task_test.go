@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/golang/mock/gomock"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
 )
-
 
 // ── CreateTask ────────────────────────────────────────────────────────────────
 
@@ -165,13 +164,13 @@ func TestGetTask_Full(t *testing.T) {
 
 	now := time.Now()
 	task := model.Task{
-		ID: 10,
+		ID:          10,
 		WorkspaceID: 1,
-		Title: "t",
-		Body: "b",
-		Status: "ongoing",
-		CreatedAt: now,
-		UpdatedAt: now,
+		Title:       "t",
+		Body:        "b",
+		Status:      "ongoing",
+		CreatedAt:   now,
+		UpdatedAt:   now,
 		Attachments: []byte(`[{"id":"a1"}]`),
 		Messages: []model.Message{
 			{ID: 101, Text: "m1", Attachments: []byte(`[{"id":"a2"}]`)},
@@ -491,7 +490,7 @@ func TestDeleteTask_Success(t *testing.T) {
 	e := newTestController(t)
 
 	task := model.Task{
-		ID: 10,
+		ID:          10,
 		WorkspaceID: 1,
 		Attachments: []byte(`[{"id":"a1"}]`),
 		Messages: []model.Message{

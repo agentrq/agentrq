@@ -3,13 +3,13 @@ package crud
 import (
 	"context"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
-	"github.com/hasmcp/agentrq/backend/internal/service/image"
-	"github.com/hasmcp/agentrq/backend/internal/service/notif"
-	"github.com/hasmcp/agentrq/backend/internal/service/storage"
-	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/image"
+	"github.com/agentrq/agentrq/backend/internal/service/notif"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
 )
 
 type (

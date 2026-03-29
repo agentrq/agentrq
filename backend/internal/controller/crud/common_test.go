@@ -3,14 +3,14 @@ package crud
 import (
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
+	mock_image "github.com/agentrq/agentrq/backend/internal/service/mocks/image"
+	mock_notif "github.com/agentrq/agentrq/backend/internal/service/mocks/notif"
+	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
+	mock_telemetry "github.com/agentrq/agentrq/backend/internal/service/mocks/telemetry"
 	"github.com/golang/mock/gomock"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	mock_idgen "github.com/hasmcp/agentrq/backend/internal/service/mocks/idgen"
-	mock_image "github.com/hasmcp/agentrq/backend/internal/service/mocks/image"
-	mock_notif "github.com/hasmcp/agentrq/backend/internal/service/mocks/notif"
-	mock_repo "github.com/hasmcp/agentrq/backend/internal/service/mocks/repository"
-	mock_storage "github.com/hasmcp/agentrq/backend/internal/service/mocks/storage"
-	mock_telemetry "github.com/hasmcp/agentrq/backend/internal/service/mocks/telemetry"
 	"github.com/mustafaturan/monoflake"
 )
 

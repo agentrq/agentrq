@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/memq"
+	memq_mock "github.com/agentrq/agentrq/backend/internal/service/mocks/memq"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	smtp_mock "github.com/agentrq/agentrq/backend/internal/service/mocks/smtp"
 	"github.com/golang/mock/gomock"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/service/memq"
-	memq_mock "github.com/hasmcp/agentrq/backend/internal/service/mocks/memq"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/repository"
-	smtp_mock "github.com/hasmcp/agentrq/backend/internal/service/mocks/smtp"
 )
 
 func TestNotifyTaskCreated(t *testing.T) {
@@ -247,7 +247,7 @@ func TestHandleEmailTask(t *testing.T) {
 			Body:    "Body",
 		}
 		mockSMTP.EXPECT().Send(gomock.Any(), gomock.Any()).Return(nil)
-		
+
 		err := s.(*service).handleEmailTask(context.Background(), memq.Task{Val: emailT})
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)

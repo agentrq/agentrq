@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 )
 
 // UserController defines user operations.
@@ -49,12 +49,12 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 
 		return &entity.FindOrCreateUserResponse{
 			User: entity.User{
-				ID:         u.ID,
-				CreatedAt:  u.CreatedAt,
-				UpdatedAt:  u.UpdatedAt,
-				Email:      u.Email,
-				Name:       u.Name,
-				Picture:    u.Picture,
+				ID:        u.ID,
+				CreatedAt: u.CreatedAt,
+				UpdatedAt: u.UpdatedAt,
+				Email:     u.Email,
+				Name:      u.Name,
+				Picture:   u.Picture,
 			},
 		}, nil
 	}
@@ -65,12 +65,12 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 
 	// Not found, create new
 	newUser := model.User{
-		ID:         c.idgen.NextID(),
-		Email:      req.Email,
-		Name:       req.Name,
-		Picture:    req.Picture,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:        c.idgen.NextID(),
+		Email:     req.Email,
+		Name:      req.Name,
+		Picture:   req.Picture,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	created, err := c.repository.CreateUser(ctx, newUser)
@@ -80,12 +80,12 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 
 	return &entity.FindOrCreateUserResponse{
 		User: entity.User{
-			ID:         created.ID,
-			CreatedAt:  created.CreatedAt,
-			UpdatedAt:  created.UpdatedAt,
-			Email:      created.Email,
-			Name:       created.Name,
-			Picture:    created.Picture,
+			ID:        created.ID,
+			CreatedAt: created.CreatedAt,
+			UpdatedAt: created.UpdatedAt,
+			Email:     created.Email,
+			Name:      created.Name,
+			Picture:   created.Picture,
 		},
 	}, nil
 }

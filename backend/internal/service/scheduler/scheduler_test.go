@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/telemetry"
 	"github.com/golang/mock/gomock"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/idgen"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/repository"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/telemetry"
 )
 
 func TestScheduler(t *testing.T) {
@@ -57,7 +57,7 @@ func TestScheduler(t *testing.T) {
 			UserID:       1,
 		}
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{task}, nil)
-		
+
 		// Match whatever the current time is
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "notstarted").Return(false, nil).AnyTimes()
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "ongoing").Return(false, nil).AnyTimes()

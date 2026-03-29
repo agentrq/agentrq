@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/golang/mock/gomock"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
 )
 
 func TestCreateWorkspace_WithOptions(t *testing.T) {
@@ -20,10 +20,10 @@ func TestCreateWorkspace_WithOptions(t *testing.T) {
 	e.telemetry.EXPECT().Record(gomock.Any(), testUserID, int64(100), model.ActionIDWorkspaceCreate)
 
 	resp, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
-		UserID:    testUserIDStr,
+		UserID: testUserIDStr,
 		Workspace: entity.Workspace{
-			Name: "W",
-			Icon: "base64icon",
+			Name:                 "W",
+			Icon:                 "base64icon",
 			NotificationSettings: &entity.NotificationSettings{TaskCreated: true},
 		},
 	})
@@ -40,7 +40,7 @@ func TestDeleteWorkspace_Complex(t *testing.T) {
 
 	// Mocking tasks with attachments
 	task := model.Task{
-		ID: 10,
+		ID:          10,
 		Attachments: []byte(`[{"id":"att-1"}]`),
 		Messages: []model.Message{
 			{ID: 101, Attachments: []byte(`[{"id":"att-2"}]`)},

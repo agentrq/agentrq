@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/service/memq"
-	"github.com/hasmcp/agentrq/backend/internal/service/smtp"
+	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/memq"
+	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -172,6 +173,6 @@ func (s *service) enqueueEmail(to, subject, body string) {
 		},
 	})
 	if err != nil {
-		log.Printf("[notif] failed to enqueue email: %v", err)
+		zlog.Error().Err(err).Msg("[notif] failed to enqueue email")
 	}
 }

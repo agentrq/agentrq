@@ -2,15 +2,16 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
-	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
+	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
 	"github.com/robfig/cron/v3"
 )
 
@@ -32,11 +33,11 @@ func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, telemetry
 func (s *scheduler) Start(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
-		fmt.Println("scheduler: background poller started (interval: 1m)")
+		zlog.Info().Msg("scheduler: background poller started (interval: 1m)")
 		for {
 			select {
 			case <-ctx.Done():
-				fmt.Println("scheduler: background poller stopped")
+				zlog.Info().Msg("scheduler: background poller stopped")
 				return
 			case <-ticker.C:
 				s.tick(ctx)
@@ -48,7 +49,7 @@ func (s *scheduler) Start(ctx context.Context) {
 func (s *scheduler) tick(ctx context.Context) {
 	crons, err := s.repo.SystemListTasksByStatus(ctx, "cron")
 	if err != nil {
-		fmt.Printf("scheduler: failed to list crons: %v\n", err)
+		zlog.Error().Err(err).Msg("scheduler: failed to list crons")
 		return
 	}
 
@@ -59,17 +60,17 @@ func (s *scheduler) tick(ctx context.Context) {
 		if c.CronSchedule == "" {
 			continue
 		}
-		
+
 		sched, err := parser.Parse(c.CronSchedule)
 		if err != nil {
-			fmt.Printf("scheduler: invalid cron schedule for task %d: %s\n", c.ID, c.CronSchedule)
+			zlog.Warn().Err(err).Int64("task_id", c.ID).Str("schedule", c.CronSchedule).Msg("scheduler: invalid cron schedule")
 			continue
 		}
 
 		// Calculate the next run time from the last minute
 		// If the next calculated run time is EXACTLY this minute, we spawn.
 		next := sched.Next(now.Add(-1 * time.Second))
-		
+
 		if next.Equal(now) {
 			s.spawn(ctx, c)
 		}
@@ -83,9 +84,9 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 	if err == nil && !exists {
 		exists, err = s.repo.SystemCheckTaskExists(ctx, parent.WorkspaceID, parent.ID, "ongoing")
 	}
-	
+
 	if err != nil {
-		fmt.Printf("scheduler: error checking existence for task %d: %v\n", parent.ID, err)
+		zlog.Error().Err(err).Int64("task_id", parent.ID).Msg("scheduler: error checking existence")
 		return
 	}
 	if exists {
@@ -110,12 +111,12 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 
 	created, err := s.repo.CreateTask(ctx, child)
 	if err != nil {
-		fmt.Printf("scheduler: failed to spawn task from cron %d: %v\n", parent.ID, err)
+		zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to spawn task")
 		return
 	}
 	s.telemetry.Record(ctx, parent.UserID, parent.WorkspaceID, model.ActionIDTaskFromScheduled)
 
-	fmt.Printf("scheduler: spawned task %d from cron %d\n", created.ID, parent.ID)
+	zlog.Info().Int64("task_id", created.ID).Int64("cron_id", parent.ID).Msg("scheduler: spawned task")
 
 	s.bus.Publish(parent.WorkspaceID, eventbus.Event{
 		Type:    "task.created",

@@ -1,8 +1,6 @@
 package idgen
 
 import (
-	"sync"
-
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -11,7 +9,6 @@ type Service interface {
 }
 
 type service struct {
-	mu sync.Mutex
 	mf *monoflake.MonoFlake
 }
 
@@ -24,7 +21,5 @@ func New(nodeID uint16) (Service, error) {
 }
 
 func (s *service) NextID() int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	return s.mf.Next().Int64()
 }

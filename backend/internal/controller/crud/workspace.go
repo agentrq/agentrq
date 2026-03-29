@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/service/security"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -220,16 +220,16 @@ func (c *controller) GetWorkspaceStats(ctx context.Context, req entity.GetWorksp
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 	res := entity.Workspace{
-		ID:          m.ID,
-		CreatedAt:   m.CreatedAt,
-		UpdatedAt:   m.UpdatedAt,
-		UserID:      m.UserID,
-		Name:        m.Name,
-		Description: m.Description,
-		Icon:        m.Icon,
-		ArchivedAt:  m.ArchivedAt,
-		TokenEncrypted: m.TokenEncrypted,
-		TokenNonce:     m.TokenNonce,
+		ID:               m.ID,
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+		UserID:           m.UserID,
+		Name:             m.Name,
+		Description:      m.Description,
+		Icon:             m.Icon,
+		ArchivedAt:       m.ArchivedAt,
+		TokenEncrypted:   m.TokenEncrypted,
+		TokenNonce:       m.TokenNonce,
 		AutoAllowedTools: make([]string, 0),
 	}
 	if len(m.AutoAllowedTools) > 0 {

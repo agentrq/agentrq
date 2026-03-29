@@ -2,14 +2,15 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
+	zlog "github.com/rs/zerolog/log"
+
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 )
 
 type Service interface {
@@ -68,7 +69,7 @@ func (s *service) worker() {
 			return
 		}
 		if err := s.db.Conn(context.Background()).Create(&buffer).Error; err != nil {
-			fmt.Printf("Telemetry flush error: %v\n", err)
+			zlog.Error().Err(err).Msg("telemetry: flush error")
 		}
 		buffer = buffer[:0]
 	}

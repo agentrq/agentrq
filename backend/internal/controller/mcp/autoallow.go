@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	zlog "github.com/rs/zerolog/log"
 )
 
 // isShellTool returns true if the tool name represents a shell/bash execution tool.
@@ -72,7 +74,7 @@ func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *Permissio
 					base := extractBaseCommand(subcommands[0])
 					if base != "" {
 						rule := fmt.Sprintf("%s:%s *", toolName, base)
-						fmt.Printf("SHELL RULE GENERATED: %s (from command: %s)\n", rule, cmd)
+						zlog.Debug().Str("rule", rule).Str("command", cmd).Msg("shell auto-allow rule generated")
 						return rule
 					}
 				}

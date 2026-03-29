@@ -6,16 +6,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	zlog "github.com/rs/zerolog/log"
+
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang-jwt/jwt/v5"
-	mcpctrl "github.com/hasmcp/agentrq/backend/internal/controller/mcp"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/service/auth"
-	"github.com/hasmcp/agentrq/backend/internal/service/security"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -81,11 +82,11 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		// Log all incoming MCP calls with headers
-		fmt.Printf("\n--- MCP CALL: %s %s (Remote: %s) ---\n", r.Method, r.URL.String(), r.RemoteAddr)
+		ev := zlog.Debug().Str("method", r.Method).Str("url", r.URL.String()).Str("remote", r.RemoteAddr)
 		for k, v := range r.Header {
-			fmt.Printf("H %s: %s\n", k, strings.Join(v, ", "))
+			ev = ev.Str("h_"+strings.ToLower(k), strings.Join(v, ", "))
 		}
-		fmt.Println("-------------------------------------------")
+		ev.Msg("MCP call")
 
 		// 1. Mandatory token check if workspace has it in DB
 		queryToken := r.URL.Query().Get("token")
@@ -156,7 +157,7 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		srv := h.mcpManager.Get(workspaceID, userID)
-		println("STREAMABLE HANDLER: workspaceID=", workspaceID, "userID=", userID, "method=", r.Method)
+		zlog.Debug().Int64("workspace_id", workspaceID).Str("user_id", userID).Str("method", r.Method).Msg("MCP streamable handler")
 
 		// Create a new context with claims if we have them
 		ctx := r.Context()

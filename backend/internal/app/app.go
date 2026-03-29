@@ -10,35 +10,35 @@ import (
 	"strings"
 	"time"
 
+	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
+	handlermcp "github.com/agentrq/agentrq/backend/internal/handler/mcp"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	repopg "github.com/agentrq/agentrq/backend/internal/repository/postgres"
+	reposqlite "github.com/agentrq/agentrq/backend/internal/repository/sqlite"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/config"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
+	"github.com/agentrq/agentrq/backend/internal/service/image"
+	"github.com/agentrq/agentrq/backend/internal/service/memq"
+	"github.com/agentrq/agentrq/backend/internal/service/notif"
+	"github.com/agentrq/agentrq/backend/internal/service/scheduler"
+	"github.com/agentrq/agentrq/backend/internal/service/server"
+	"github.com/agentrq/agentrq/backend/internal/service/smtp"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/hasmcp/agentrq/backend/internal/controller/crud"
-	mcpctrl "github.com/hasmcp/agentrq/backend/internal/controller/mcp"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	handlerapi "github.com/hasmcp/agentrq/backend/internal/handler/api"
-	handlermcp "github.com/hasmcp/agentrq/backend/internal/handler/mcp"
-	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
-	"github.com/hasmcp/agentrq/backend/internal/repository/dbconn"
-	repopg "github.com/hasmcp/agentrq/backend/internal/repository/postgres"
-	reposqlite "github.com/hasmcp/agentrq/backend/internal/repository/sqlite"
-	"github.com/hasmcp/agentrq/backend/internal/service/auth"
-	"github.com/hasmcp/agentrq/backend/internal/service/config"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	"github.com/hasmcp/agentrq/backend/internal/service/idgen"
-	"github.com/hasmcp/agentrq/backend/internal/service/image"
-	"github.com/hasmcp/agentrq/backend/internal/service/memq"
-	"github.com/hasmcp/agentrq/backend/internal/service/notif"
-	"github.com/hasmcp/agentrq/backend/internal/service/scheduler"
-	"github.com/hasmcp/agentrq/backend/internal/service/server"
-	"github.com/hasmcp/agentrq/backend/internal/service/smtp"
-	"github.com/hasmcp/agentrq/backend/internal/service/storage"
-	"github.com/hasmcp/agentrq/backend/internal/service/telemetry"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -378,7 +378,18 @@ func New(cfg Config) (*App, error) {
 		AllowHeaders:  "Origin, Content-Type, Accept, mcp-session-id, mcp-protocol-version",
 		ExposeHeaders: "mcp-session-id, mcp-protocol-version",
 	}))
-	fiberApp.Use(logger.New())
+	fiberApp.Use(func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
+		zlog.Info().
+			Int("status", c.Response().StatusCode()).
+			Str("method", c.Method()).
+			Str("path", c.Path()).
+			Str("ip", c.IP()).
+			Dur("latency", time.Since(start)).
+			Msg("HTTP request")
+		return err
+	})
 
 	// No-cache headers for all static/HTML responses
 	fiberApp.Use(func(c *fiber.Ctx) error {

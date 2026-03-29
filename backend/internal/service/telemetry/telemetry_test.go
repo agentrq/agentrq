@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/golang/mock/gomock"
-	"github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/dbconn"
-	"github.com/hasmcp/agentrq/backend/internal/service/mocks/repository"
 )
 
 func TestTelemetry(t *testing.T) {
@@ -21,7 +21,7 @@ func TestTelemetry(t *testing.T) {
 	s := New(mockDB, mockRepo)
 
 	t.Run("RecordAndStop", func(t *testing.T) {
-		// We avoid Record call here because it triggers a flush on Stop, 
+		// We avoid Record call here because it triggers a flush on Stop,
 		// which requires a fully working gorm.DB mock.
 		s.Stop(context.Background())
 	})

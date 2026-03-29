@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/golang/mock/gomock"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	"github.com/hasmcp/agentrq/backend/internal/data/model"
-	"github.com/hasmcp/agentrq/backend/internal/repository/base"
 )
 
 func TestFindOrCreateUser_FoundByEmail_NoUpdate(t *testing.T) {

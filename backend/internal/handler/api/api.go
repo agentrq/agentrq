@@ -8,14 +8,16 @@ import (
 	"strings"
 	"time"
 
+	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
-	"github.com/hasmcp/agentrq/backend/internal/controller/crud"
-	mcpctrl "github.com/hasmcp/agentrq/backend/internal/controller/mcp"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
-	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
-	"github.com/hasmcp/agentrq/backend/internal/service/auth"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	"github.com/hasmcp/agentrq/backend/internal/service/security"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -232,8 +234,8 @@ func (h *handler) rootLogin() fiber.Handler {
 
 		// Issue JWT for root user
 		dbUser, err := h.crud.FindOrCreateUser(context.Background(), entity.FindOrCreateUserRequest{
-			Email:      "root@agentrq.local",
-			Name:       "Root Administrator",
+			Email: "root@agentrq.local",
+			Name:  "Root Administrator",
 		})
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync root user"})
@@ -275,7 +277,7 @@ func (h *handler) googleCallback() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
-		fmt.Printf("OAUTH CODE EXCHANGED: ID=%s, Email=%s, Name=%s, Picture=%s\n", user.ID, user.Email, user.Name, user.Picture)
+		zlog.Info().Str("id", user.ID).Str("email", user.Email).Str("name", user.Name).Msg("OAuth code exchanged")
 
 		sub := user.ID
 		if sub == "" {
@@ -284,9 +286,9 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		// Find or create user in DB
 		dbUser, err := h.crud.FindOrCreateUser(ctx, entity.FindOrCreateUserRequest{
-			Email:      user.Email,
-			Name:       user.Name,
-			Picture:    user.Picture,
+			Email:   user.Email,
+			Name:    user.Name,
+			Picture: user.Picture,
 		})
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync user"})

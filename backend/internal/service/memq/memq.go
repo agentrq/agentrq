@@ -2,10 +2,11 @@ package memq
 
 import (
 	"context"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	zlog "github.com/rs/zerolog/log"
 )
 
 type (
@@ -168,10 +169,10 @@ func (q *queue) processTaskWithRecovery(ctx context.Context, t Task, handle func
 		atomic.AddInt32(&q.stats.processedJobs, 1)
 
 		if r := recover(); r != nil {
-			log.Printf("[memq] worker panic recovered: %v, task ID: %d, queue: %s", r, t.ID, q.name)
+			zlog.Error().Interface("panic", r).Int64("task_id", t.ID).Str("queue", q.name).Msg("[memq] worker panic recovered")
 			atomic.AddInt32(&q.stats.failedJobs, 1)
 		} else if err != nil {
-			log.Printf("[memq] processing task failed: %v, task ID: %d, queue: %s", err, t.ID, q.name)
+			zlog.Error().Err(err).Int64("task_id", t.ID).Str("queue", q.name).Msg("[memq] processing task failed")
 			atomic.AddInt32(&q.stats.failedJobs, 1)
 		}
 	}()
@@ -188,10 +189,12 @@ func (s *service) printStats() {
 		case <-ticker.C:
 			s.queues.Range(func(key, value any) bool {
 				q := value.(*queue)
-				log.Printf("[memq] stats - id: %d, name: %s, enqueued: %d, processed: %d, failed: %d, workers: %d",
-					key.(uint32), q.name, atomic.LoadInt32(&q.stats.enqueuedJobs),
-					atomic.LoadInt32(&q.stats.processedJobs), atomic.LoadInt32(&q.stats.failedJobs),
-					atomic.LoadInt32(&q.stats.workers))
+				zlog.Info().Uint32("id", key.(uint32)).Str("name", q.name).
+					Int32("enqueued", atomic.LoadInt32(&q.stats.enqueuedJobs)).
+					Int32("processed", atomic.LoadInt32(&q.stats.processedJobs)).
+					Int32("failed", atomic.LoadInt32(&q.stats.failedJobs)).
+					Int32("workers", atomic.LoadInt32(&q.stats.workers)).
+					Msg("[memq] stats")
 				return true
 			})
 		case <-s.done:

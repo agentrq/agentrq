@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strings"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/gofiber/fiber/v2"
-	"github.com/hasmcp/agentrq/backend/internal/service/eventbus"
-	mapper "github.com/hasmcp/agentrq/backend/internal/mapper/api"
-	view "github.com/hasmcp/agentrq/backend/internal/data/view/api"
-	entity "github.com/hasmcp/agentrq/backend/internal/data/entity/crud"
 	"github.com/mustafaturan/monoflake"
 )
 

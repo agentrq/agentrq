@@ -1,4 +1,4 @@
-module github.com/hasmcp/agentrq/backend
+module github.com/agentrq/agentrq/backend
 
 go 1.25.0
 
@@ -11,6 +11,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/mustafaturan/monoflake v1.2.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/rs/zerolog v1.35.0
 	golang.org/x/image v0.37.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -38,7 +39,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/kr/text v0.2.0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/miekg/dns v1.1.69 // indirect
