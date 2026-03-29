@@ -13,6 +13,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/mustafaturan/monoflake"
 	"github.com/robfig/cron/v3"
 )
 
@@ -132,7 +133,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 
 	zlog.Info().Int64("task_id", created.ID).Int64("cron_id", parent.ID).Msg("scheduler: spawned task")
 
-	s.bus.Publish(parent.WorkspaceID, eventbus.Event{
+	s.bus.Publish(parent.WorkspaceID, monoflake.ID(parent.UserID).String(), eventbus.Event{
 		Type:    "task.created",
 		Payload: mapper.FromModelTaskToView(created),
 	})

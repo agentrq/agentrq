@@ -5,7 +5,6 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -115,29 +114,29 @@ func (h *handler) streamableHandler() http.Handler {
 			r.Body = io.NopCloser(bytes.NewBuffer(body))
 		}
 
-		isInitializeCall := false
-		if r.Method == "POST" {
-			var rpc struct {
-				Method string `json:"method"`
-			}
-			if err := json.Unmarshal(body, &rpc); err == nil {
-				if rpc.Method == "initialize" {
-					isInitializeCall = true
-					// On initialize, create session ID and return as header
-					newSessID, err := h.tokenSvc.CreateMCPToken(userID, monoflake.ID(workspaceID).String())
-					if err == nil {
-						sessionID = newSessID
-						w.Header().Set("Mcp-Session-Id", sessionID)
-					}
-				}
-			}
-		}
+		// isInitializeCall := false
+		// if r.Method == "POST" {
+		// 	var rpc struct {
+		// 		Method string `json:"method"`
+		// 	}
+		// 	if err := json.Unmarshal(body, &rpc); err == nil {
+		// 		if rpc.Method == "initialize" {
+		// 			isInitializeCall = true
+		// 			// On initialize, create session ID and return as header
+		// 			newSessID, err := h.tokenSvc.CreateMCPToken(userID, monoflake.ID(workspaceID).String())
+		// 			if err == nil {
+		// 				sessionID = newSessID
+		// 				w.Header().Set("Mcp-Session-Id", sessionID)
+		// 			}
+		// 		}
+		// 	}
+		// }
 
-		// Mcp-Session-Id is mandatory for all requests except initialize call
-		if !isInitializeCall && sessionID == "" {
-			http.Error(w, "situational security: mcp-session-id required by MCP spec", http.StatusBadRequest)
-			return
-		}
+		// // Mcp-Session-Id is mandatory for all requests except initialize call
+		// if !isInitializeCall && sessionID == "" {
+		// 	http.Error(w, "situational security: mcp-session-id required by MCP spec", http.StatusBadRequest)
+		// 	return
+		// }
 
 		// Try to identify user if not already set by secret
 		if userID == "" {

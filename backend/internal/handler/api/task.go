@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -72,7 +73,7 @@ func (h *handler) createTask() fiber.Handler {
 		}
 
 		// Push SSE event
-		h.bus.Publish(rq.Task.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.Task.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "task.created",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})
@@ -153,7 +154,7 @@ func (h *handler) respondToTask() fiber.Handler {
 		srv.SendChannelNotification(ctx, rq.TaskID, content)
 
 		// Push SSE event to human subscribers (ack)
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "respond.ack",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})
@@ -182,7 +183,7 @@ func (h *handler) replyToTask() fiber.Handler {
 		}
 
 		// Push reply.received SSE event to human subscribers
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "reply.received",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})
@@ -211,7 +212,7 @@ func (h *handler) updateTaskStatus() fiber.Handler {
 		}
 
 		// Broadcast status update
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "status.updated",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})
@@ -240,7 +241,7 @@ func (h *handler) updateTaskOrder() fiber.Handler {
 		}
 
 		// Broadcast order update
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "task.updated",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})
@@ -268,7 +269,7 @@ func (h *handler) deleteTask() fiber.Handler {
 		}
 
 		// Broadcast task deletion
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "task.deleted",
 			Payload: map[string]string{"id": monoflake.ID(rq.TaskID).String()},
 		})
@@ -294,17 +295,21 @@ func (h *handler) sseEvents() fiber.Handler {
 		c.Set("Connection", "keep-alive")
 		c.Set("X-Accel-Buffering", "no")
 
-		ch := h.bus.Subscribe(workspaceID)
+		userID := c.Locals("user_id").(string)
+		ch := h.bus.Subscribe(workspaceID, userID)
 
 		// Use Fiber's streaming response
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			defer h.bus.Unsubscribe(workspaceID, ch)
+			defer h.bus.Unsubscribe(workspaceID, userID, ch)
 
 			// Send a heartbeat comment to establish the stream
 			_, _ = fmt.Fprintf(w, ": connected to workspace %s events\n\n", workspaceIDParam)
 			_ = w.Flush()
+
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
 
 			for {
 				select {
@@ -313,6 +318,9 @@ func (h *handler) sseEvents() fiber.Handler {
 						return
 					}
 					_, _ = w.Write(data)
+					_ = w.Flush()
+				case <-ticker.C:
+					_, _ = w.Write([]byte(": agentrq\n\n"))
 					_ = w.Flush()
 				case <-ctx.Done():
 					return
@@ -394,7 +402,7 @@ func (h *handler) updateScheduledTask() fiber.Handler {
 		}
 
 		// Broadcast task update
-		h.bus.Publish(rq.WorkspaceID, eventbus.Event{
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
 			Type:    "task.updated",
 			Payload: mapper.FromEntityTaskToView(rs.Task),
 		})

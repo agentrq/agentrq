@@ -284,14 +284,14 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		if isSSE {
 			count := ps.agentConnections.Add(1)
 			if count == 1 {
-				ps.bus.Publish(ps.workspaceID, eventbus.Event{
+				ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 					Type:    "agent.connected",
 					Payload: map[string]bool{"connected": true},
 				})
 			}
 			defer func() {
 				if ps.agentConnections.Add(-1) == 0 {
-					ps.bus.Publish(ps.workspaceID, eventbus.Event{
+					ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 						Type:    "agent.connected",
 						Payload: map[string]bool{"connected": false},
 					})
@@ -538,7 +538,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 	}
 
 	// Push SSE event to human subscribers
-	ps.bus.Publish(ps.workspaceID, eventbus.Event{
+	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 		Type:    "task.created",
 		Payload: mapper.FromModelTaskToView(created),
 	})
@@ -609,7 +609,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 	}
 
 	// Push SSE event to human subscribers
-	ps.bus.Publish(ps.workspaceID, eventbus.Event{
+	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 		Type:    "task.updated",
 		Payload: mapper.FromModelTaskToView(updated),
 	})

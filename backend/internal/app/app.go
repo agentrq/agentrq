@@ -37,10 +37,10 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/server"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -228,7 +228,7 @@ func New(cfg Config) (*App, error) {
 							},
 						})
 					}
-					bus.Publish(workspaceID, eventbus.Event{
+					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.created",
 						Payload: mapper.FromModelTaskToView(res),
 					})
@@ -379,7 +379,7 @@ func New(cfg Config) (*App, error) {
 				uid = monoflake.IDFromBase62(workspaceOwner).Int64()
 				latest, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 				if err == nil {
-					bus.Publish(workspaceID, eventbus.Event{
+					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
 						Payload: mapper.FromModelTaskToView(latest),
 					})
@@ -392,7 +392,7 @@ func New(cfg Config) (*App, error) {
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 					latest, _ := repo.GetTask(ctx, workspaceID, taskID, uid)
-					bus.Publish(workspaceID, eventbus.Event{
+					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
 						Payload: mapper.FromModelTaskToView(latest),
 					})
@@ -504,8 +504,8 @@ func New(cfg Config) (*App, error) {
 	})
 
 	// ── Server Start ─────────────────────────────────────────────────
-	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(bus))
-	mux.Handle("/api/v1/events", eventsHandler(bus))
+	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(bus, tokenSvc))
+	mux.Handle("/api/v1/events", eventsHandler(bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	serverSvc, err := server.New(server.Params{
@@ -527,8 +527,20 @@ func New(cfg Config) (*App, error) {
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc}, nil
 }
 
-func eventsHandler(bus *eventbus.Bus) http.Handler {
+func eventsHandler(bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("at")
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		claims, err := tokenSvc.ValidateToken(cookie.Value)
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		userID := claims.Subject
+
 		workspaceIDParam := r.PathValue("id")
 		var workspaceID int64
 		if workspaceIDParam != "" {
@@ -540,14 +552,17 @@ func eventsHandler(bus *eventbus.Bus) http.Handler {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
-		ch := bus.Subscribe(workspaceID)
-		defer bus.Unsubscribe(workspaceID, ch)
+		ch := bus.Subscribe(workspaceID, userID)
+		defer bus.Unsubscribe(workspaceID, userID, ch)
 
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case data, ok := <-ch:
@@ -555,6 +570,9 @@ func eventsHandler(bus *eventbus.Bus) http.Handler {
 					return
 				}
 				_, _ = w.Write(data)
+				flusher.Flush()
+			case <-ticker.C:
+				_, _ = w.Write([]byte(": agentrq\n\n"))
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
