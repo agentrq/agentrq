@@ -78,6 +78,21 @@ func New(p Params) (Service, error) {
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	sw := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
+
+	defer func() {
+		duration := time.Since(start)
+		zlog.Info().
+			Str("method", r.Method).
+			Str("host", r.Host).
+			Str("path", r.URL.Path).
+			Int("status", sw.status).
+			Dur("duration", duration).
+			Str("remote", r.RemoteAddr).
+			Msg("http request")
+	}()
+
 	domain := strings.ToLower(s.cfg.Domain)
 	host := strings.ToLower(r.Host)
 	if col := strings.IndexByte(host, ':'); col != -1 {
@@ -95,8 +110,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Subdomain is in base36, parse it back to int64
 			id, err := strconv.ParseInt(workspaceID36, 36, 64)
 			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "Invalid workspace ID in subdomain: %s", workspaceID36)
+				sw.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(sw, "Invalid workspace ID in subdomain: %s", workspaceID36)
 				return
 			}
 			// Map it back to the base62 system for internal routing
@@ -104,13 +119,13 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.URL.Path = "/mcp/" + workspaceID
 		} else if host != appHost {
 			// 2. If it's not appHost or an MCP host, reject it
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintf(w, "Host %s not allowed", host)
+			sw.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(sw, "Host %s not allowed", host)
 			return
 		}
 	}
 
-	s.router.ServeHTTP(w, r)
+	s.router.ServeHTTP(sw, r)
 }
 
 func (s *service) Run() error {
@@ -353,4 +368,20 @@ func (s *service) Shutdown(ctx context.Context) error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusResponseWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }

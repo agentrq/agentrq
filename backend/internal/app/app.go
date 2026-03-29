@@ -40,6 +40,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -435,6 +436,20 @@ func New(cfg Config) (*App, error) {
 		AllowOrigins:  "*",
 		AllowHeaders:  "Origin, Content-Type, Accept, mcp-session-id, mcp-protocol-version",
 		ExposeHeaders: "mcp-session-id, mcp-protocol-version",
+	}))
+	fiberApp.Use(fiberzerolog.New(fiberzerolog.Config{
+		Logger: &zlog.Logger,
+		Fields: []string{
+			"ip",
+			"latency",
+			"method",
+			"path",
+			"error",
+			"status",
+		},
+		Next: func(c *fiber.Ctx) bool {
+			return c.Method() == fiber.MethodOptions
+		},
 	}))
 
 	// Static Assets

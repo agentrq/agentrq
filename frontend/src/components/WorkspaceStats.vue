@@ -24,7 +24,7 @@
     </div>
 
     <!-- Summary Cards -->
-    <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-6 gap-4">
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tasks Completed</span>
         <span class="text-3xl font-black text-black">{{ stats.summary.tasks_completed }}</span>
