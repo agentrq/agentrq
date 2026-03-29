@@ -386,7 +386,7 @@ func New(cfg Config) (*App, error) {
 			Str("method", c.Method()).
 			Str("path", c.Path()).
 			Str("ip", c.IP()).
-			Dur("latency", time.Since(start)).
+			Str("latency", time.Since(start).String()).
 			Msg("HTTP request")
 		return err
 	})
