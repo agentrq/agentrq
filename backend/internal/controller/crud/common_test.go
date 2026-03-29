@@ -6,10 +6,10 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_image "github.com/agentrq/agentrq/backend/internal/service/mocks/image"
-	mock_notif "github.com/agentrq/agentrq/backend/internal/service/mocks/notif"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
-	mock_telemetry "github.com/agentrq/agentrq/backend/internal/service/mocks/telemetry"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 )
@@ -20,8 +20,7 @@ type testEnv struct {
 	idgen      *mock_idgen.MockService
 	storage    *mock_storage.MockService
 	image      *mock_image.MockService
-	notif      *mock_notif.MockService
-	telemetry  *mock_telemetry.MockService
+	pubsub     *mock_pubsub.MockService
 }
 
 func newTestController(t *testing.T) *testEnv {
@@ -31,26 +30,27 @@ func newTestController(t *testing.T) *testEnv {
 	idgen := mock_idgen.NewMockService(ctrl)
 	stor := mock_storage.NewMockService(ctrl)
 	img := mock_image.NewMockService(ctrl)
-	notifSvc := mock_notif.NewMockService(ctrl)
-	telSvc := mock_telemetry.NewMockService(ctrl)
+	psSvc := mock_pubsub.NewMockService(ctrl)
+
+	// Default expectation for PubSub Publish since it's called on almost every write
+	psSvc.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	c := New(Params{
 		IDGen:      idgen,
 		Repository: repo,
 		Storage:    stor,
 		Image:      img,
-		Notif:      notifSvc,
-		Telemetry:  telSvc,
+		PubSub:     psSvc,
 		TokenKey:   "test-key",
 	})
+
 	return &testEnv{
 		controller: c,
 		repo:       repo,
 		idgen:      idgen,
 		storage:    stor,
 		image:      img,
-		notif:      notifSvc,
-		telemetry:  telSvc,
+		pubsub:     psSvc,
 	}
 }
 

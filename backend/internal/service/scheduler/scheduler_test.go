@@ -7,9 +7,10 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
-	"github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
-	"github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
-	"github.com/agentrq/agentrq/backend/internal/service/mocks/telemetry"
+	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
 )
 
@@ -19,10 +20,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("StartStop", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		s.Start(ctx)
@@ -33,10 +34,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("TickNoCrons", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{}, nil)
 		s.(*scheduler).tick(context.Background())
@@ -45,10 +46,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("TickWithValidCron", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		task := model.Task{
 			ID:           1,
@@ -58,12 +59,11 @@ func TestScheduler(t *testing.T) {
 		}
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{task}, nil)
 
-		// Match whatever the current time is
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "notstarted").Return(false, nil).AnyTimes()
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "ongoing").Return(false, nil).AnyTimes()
 		mockIdgen.EXPECT().NextID().Return(int64(2)).AnyTimes()
 		mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 2}, nil).AnyTimes()
-		mockTelemetry.EXPECT().Record(gomock.Any(), int64(1), int64(10), model.ActionIDTaskFromScheduled).AnyTimes()
+		mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 		s.(*scheduler).tick(context.Background())
 	})
@@ -71,10 +71,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("TickWithInvalidCron", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		task := model.Task{ID: 1, CronSchedule: "invalid"}
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{task}, nil)
@@ -84,10 +84,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("SpawnExists", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		task := model.Task{ID: 1, WorkspaceID: 10}
 		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "notstarted").Return(true, nil)
@@ -97,10 +97,10 @@ func TestScheduler(t *testing.T) {
 	t.Run("ListError", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
-		mockRepo := repository.NewMockRepository(ctrl)
-		mockIdgen := idgen.NewMockService(ctrl)
-		mockTelemetry := telemetry.NewMockService(ctrl)
-		s := New(mockRepo, mockIdgen, bus, mockTelemetry)
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
 
 		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return(nil, context.DeadlineExceeded)
 		s.(*scheduler).tick(context.Background())

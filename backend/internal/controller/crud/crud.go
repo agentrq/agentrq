@@ -7,9 +7,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/image"
-	"github.com/agentrq/agentrq/backend/internal/service/notif"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
-	"github.com/agentrq/agentrq/backend/internal/service/telemetry"
 )
 
 type (
@@ -18,25 +17,23 @@ type (
 		Repository base.Repository
 		Storage    storage.Service
 		Image      image.Service
-		Notif      notif.Service
+		PubSub     pubsub.Service
 		TokenKey   string
-		Telemetry  telemetry.Service
 	}
 
 	Controller interface {
 		WorkspaceController
-		TaskController
 		UserController
+		TaskController
 	}
 
 	controller struct {
 		idgen      idgen.Service
 		repository base.Repository
 		storage    storage.Service
-		img        image.Service
-		notif      notif.Service
+		image      image.Service
+		pubsub     pubsub.Service
 		tokenKey   string
-		telemetry  telemetry.Service
 	}
 )
 
@@ -45,24 +42,40 @@ func New(p Params) Controller {
 		idgen:      p.IDGen,
 		repository: p.Repository,
 		storage:    p.Storage,
-		img:        p.Image,
-		notif:      p.Notif,
+		image:      p.Image,
+		pubsub:     p.PubSub,
 		tokenKey:   p.TokenKey,
-		telemetry:  p.Telemetry,
 	}
+}
+
+func (c *controller) emitEvent(ctx context.Context, e entity.CRUDEvent) {
+	if c.pubsub == nil {
+		return
+	}
+	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{
+		PubSubID: entity.PubSubTopicCRUD,
+		Event:    e,
+	})
 }
 
 // WorkspaceController defines workspace operations.
 type WorkspaceController interface {
 	CreateWorkspace(ctx context.Context, req entity.CreateWorkspaceRequest) (*entity.CreateWorkspaceResponse, error)
+	DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error
 	GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error)
 	ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error)
-	DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error
 	ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error
 	UnarchiveWorkspace(ctx context.Context, req entity.UnarchiveWorkspaceRequest) error
-	UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.Workspace, error)
+	UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.UpdateWorkspaceResponse, error)
 	UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error
 	GetWorkspaceStats(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceStatsResponse, error)
+}
+
+// UserController defines user operations.
+type UserController interface {
+	CreateUser(ctx context.Context, u entity.User) (entity.User, error)
+	FindUserByEmail(ctx context.Context, email string) (entity.User, error)
+	FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error)
 }
 
 // TaskController defines task operations.
@@ -74,8 +87,8 @@ type TaskController interface {
 	UpdateTaskStatus(ctx context.Context, req entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error)
 	UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskOrderRequest) (*entity.UpdateTaskOrderResponse, error)
 	ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
-	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
-	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
-	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 	UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error)
+	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
+	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
+	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 }

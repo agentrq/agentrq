@@ -3,6 +3,15 @@ package crud
 import "time"
 
 type (
+	// Actor enum for mapping human and agent actions
+	Actor int
+
+	// ResourceType enum for mapping resources
+	ResourceType int
+
+	// Action enum for mapping standard CRUD and system actions
+	Action int
+
 	// Workspace entity
 	Workspace struct {
 		ID          int64
@@ -76,6 +85,10 @@ type (
 		UserID    string
 	}
 
+	UpdateWorkspaceResponse struct {
+		Workspace Workspace
+	}
+
 	UpdateWorkspaceAutoAllowedToolsRequest struct {
 		WorkspaceID int64
 		Tools       []string
@@ -104,12 +117,11 @@ type (
 	// CreatedBy: "human" | "agent"
 	// Status:    "pending" | "done" | "rejected"
 	Task struct {
-		ID        int64
-		CreatedAt time.Time
-		UpdatedAt time.Time
-
+		ID          int64
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
 		UserID      int64
-		WorkspaceID   int64
+		WorkspaceID int64
 		CreatedBy   string
 		Assignee    string
 		Status      string
@@ -135,8 +147,8 @@ type (
 
 	GetTaskRequest struct {
 		WorkspaceID int64
-		TaskID    int64
-		UserID    string
+		TaskID      int64
+		UserID      string
 	}
 
 	GetTaskResponse struct {
@@ -158,7 +170,7 @@ type (
 	}
 
 	RespondToTaskRequest struct {
-		WorkspaceID   int64
+		WorkspaceID int64
 		TaskID      int64
 		Action      string // "allow" | "reject" | "allow_all" | "text"
 		Text        string // optional for "text" action
@@ -172,9 +184,9 @@ type (
 
 	UpdateTaskStatusRequest struct {
 		WorkspaceID int64
-		TaskID    int64
-		Status    string
-		UserID    string
+		TaskID      int64
+		Status      string
+		UserID      string
 	}
 
 	UpdateTaskStatusResponse struct {
@@ -194,7 +206,7 @@ type (
 
 	ReplyToTaskRequest struct {
 		WorkspaceID int64
-		TaskID    int64
+		TaskID      int64
 		Text        string
 		Attachments []Attachment
 		UserID      string
@@ -206,8 +218,8 @@ type (
 
 	DeleteTaskRequest struct {
 		WorkspaceID int64
-		TaskID    int64
-		UserID    string
+		TaskID      int64
+		UserID      string
 	}
 
 	DeleteTaskResponse struct{}
@@ -259,21 +271,116 @@ type (
 	}
 
 	User struct {
-		ID         int64
-		CreatedAt  time.Time
-		UpdatedAt  time.Time
-		Email      string
-		Name       string
-		Picture    string
+		ID        int64
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		Email     string
+		Name      string
+		Picture   string
 	}
 
 	FindOrCreateUserRequest struct {
-		Email      string
-		Name       string
-		Picture    string
+		Email   string
+		Name    string
+		Picture string
 	}
 
 	FindOrCreateUserResponse struct {
 		User User
 	}
+
+	// CRUDEvent is the central structure for all CRUD events published via PubSub
+	CRUDEvent struct {
+		Action       Action       `json:"action"`
+		WorkspaceID  int64        `json:"workspace_id"`
+		UserID       int64        `json:"user_id"`
+		ResourceType ResourceType `json:"resource_type"`
+		ResourceID   int64        `json:"resource_id"`
+		Actor        Actor        `json:"actor"` // 1: Human, 2: Agent
+	}
 )
+
+const (
+	PubSubTopicCRUD int64 = 1
+	PubSubTopicMCP  int64 = 2
+)
+
+const (
+	ActorHuman Actor = 1
+	ActorAgent Actor = 2
+)
+
+const (
+	ResourceUser ResourceType = iota + 1
+	ResourceWorkspace
+	ResourceTask
+	ResourceMessage
+)
+
+func (r ResourceType) String() string {
+	switch r {
+	case ResourceUser:
+		return "user"
+	case ResourceWorkspace:
+		return "workspace"
+	case ResourceTask:
+		return "task"
+	case ResourceMessage:
+		return "message"
+	}
+	return "unknown"
+}
+
+const (
+	ActionUserCreate Action = iota + 1
+	ActionUserUpdate
+	ActionUserDelete
+	ActionWorkspaceCreate
+	ActionWorkspaceUpdate
+	ActionWorkspaceDelete
+	ActionTaskCreate
+	ActionTaskUpdate
+	ActionTaskDelete
+	ActionMessageCreate
+	ActionMessageUpdate
+	ActionMessageDelete
+	ActionTaskComplete
+	ActionTaskApproveManual
+	ActionTaskFromScheduled
+)
+
+func (a Action) String() string {
+	switch a {
+	case ActionUserCreate:
+		return "user_create"
+	case ActionUserUpdate:
+		return "user_update"
+	case ActionUserDelete:
+		return "user_delete"
+	case ActionWorkspaceCreate:
+		return "workspace_create"
+	case ActionWorkspaceUpdate:
+		return "workspace_update"
+	case ActionWorkspaceDelete:
+		return "workspace_delete"
+	case ActionTaskCreate:
+		return "task_create"
+	case ActionTaskUpdate:
+		return "task_update"
+	case ActionTaskDelete:
+		return "task_delete"
+	case ActionMessageCreate:
+		return "message_create"
+	case ActionMessageUpdate:
+		return "message_update"
+	case ActionMessageDelete:
+		return "message_delete"
+	case ActionTaskComplete:
+		return "task_complete"
+	case ActionTaskApproveManual:
+		return "task_approve_manual"
+	case ActionTaskFromScheduled:
+		return "task_from_scheduled"
+	}
+	return "unknown"
+}

@@ -39,7 +39,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		m.NotificationSettings = datatypes.JSON(b)
 	}
 	if req.Workspace.Icon != "" {
-		icon, err := c.img.ResizeBase64(req.Workspace.Icon, 32, 32)
+		icon, err := c.image.ResizeBase64(req.Workspace.Icon, 32, 32)
 		if err == nil {
 			m.Icon = icon
 		} else {
@@ -51,8 +51,14 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
-	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	c.telemetry.Record(ctx, uid, created.ID, model.ActionIDWorkspaceCreate)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceCreate,
+		WorkspaceID:  created.ID,
+		UserID:       created.UserID,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   created.ID,
+		Actor:        entity.ActorHuman,
+	})
 	return &entity.CreateWorkspaceResponse{
 		Workspace: fromModelWorkspaceToEntity(created),
 	}, nil
@@ -118,13 +124,20 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {
 		return err
 	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceDelete,
+		WorkspaceID:  req.ID,
+		UserID:       uid,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   req.ID,
+		Actor:        entity.ActorHuman,
+	})
 
 	// 3. Purge storage files
 	for _, id := range attachmentIDs {
 		_ = c.storage.Delete(id)
 	}
 
-	c.telemetry.Record(ctx, uid, req.ID, model.ActionIDWorkspaceDelete)
 	return nil
 }
 
@@ -138,8 +151,14 @@ func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWor
 	m.ArchivedAt = &now
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
-		c.notif.NotifyWorkspaceArchived(updated)
-		c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionWorkspaceUpdate,
+			WorkspaceID:  updated.ID,
+			UserID:       updated.UserID,
+			ResourceType: entity.ResourceWorkspace,
+			ResourceID:   updated.ID,
+			Actor:        entity.ActorHuman,
+		})
 	}
 	return err
 }
@@ -153,13 +172,19 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 	m.ArchivedAt = nil
 	updated, err := c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
-		c.notif.NotifyWorkspaceUnarchived(updated)
-		c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionWorkspaceUpdate,
+			WorkspaceID:  updated.ID,
+			UserID:       updated.UserID,
+			ResourceType: entity.ResourceWorkspace,
+			ResourceID:   updated.ID,
+			Actor:        entity.ActorHuman,
+		})
 	}
 	return err
 }
 
-func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.Workspace, error) {
+func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.UpdateWorkspaceResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	m, err := c.repository.GetWorkspace(ctx, req.Workspace.ID, uid)
 	if err != nil {
@@ -180,7 +205,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 		m.AutoAllowedTools = datatypes.JSON(b)
 	}
 	if req.Workspace.Icon != "" {
-		icon, err := c.img.ResizeBase64(req.Workspace.Icon, 32, 32)
+		icon, err := c.image.ResizeBase64(req.Workspace.Icon, 32, 32)
 		if err == nil {
 			m.Icon = icon
 		} else {
@@ -193,9 +218,17 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	if err != nil {
 		return nil, err
 	}
-	c.telemetry.Record(ctx, uid, updated.ID, model.ActionIDWorkspaceUpdate)
-	res := fromModelWorkspaceToEntity(updated)
-	return &res, nil
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceUpdate,
+		WorkspaceID:  updated.ID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+	return &entity.UpdateWorkspaceResponse{
+		Workspace: fromModelWorkspaceToEntity(updated),
+	}, nil
 }
 
 func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error {
@@ -209,13 +242,35 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	m.UpdatedAt = time.Now()
 	_, err = c.repository.UpdateWorkspace(ctx, m)
 	if err == nil {
-		c.telemetry.Record(ctx, uid, req.WorkspaceID, model.ActionIDWorkspaceUpdate)
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionWorkspaceUpdate,
+			WorkspaceID:  req.WorkspaceID,
+			UserID:       uid,
+			ResourceType: entity.ResourceWorkspace,
+			ResourceID:   req.WorkspaceID,
+			Actor:        entity.ActorHuman,
+		})
 	}
 	return err
 }
 
 func (c *controller) GetWorkspaceStats(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceStatsResponse, error) {
-	return c.telemetry.GetWorkspaceStats(ctx, req.ID)
+	stats, err := c.repository.GetDailyStats(ctx, req.ID, 30)
+	if err != nil {
+		return nil, err
+	}
+
+	active, total, err := c.repository.GetWorkspaceTaskCounts(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &entity.GetWorkspaceStatsResponse{
+		Stats:       stats,
+		Total:       0, // Aggregated from stats if needed
+		ActiveTasks: active,
+		TotalTasks:  total,
+	}, nil
 }
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {

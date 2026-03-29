@@ -47,7 +47,7 @@ func New(p Params) (dbconn.DBConn, error) {
 
 	if !cfg.Enabled {
 		zlog.Info().Msg(_logPrefix + "postgres repository is not enabled, skipping")
-		return nil, nil
+		return nil, fmt.Errorf("postgres repository is not enabled")
 	}
 
 	db, err := gorm.Open(postgres.New(postgres.Config{

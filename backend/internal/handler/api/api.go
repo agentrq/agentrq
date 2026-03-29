@@ -512,20 +512,20 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		}
 		// Update running MCP server metadata
 		if srv := h.mcpManager.Get(rq.Workspace.ID, rq.UserID); srv != nil {
-			srv.UpdateMetadata(rs.Name, rs.Description, rs.Icon)
-			srv.UpdateAutoAllowedTools(rs.AutoAllowedTools)
+			srv.UpdateMetadata(rs.Workspace.Name, rs.Workspace.Description, rs.Workspace.Icon)
+			srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
 		}
-		rs.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
+		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
-		if rs.TokenEncrypted != "" {
-			dec, _ := security.Decrypt(rs.TokenEncrypted, h.tokenKey, rs.TokenNonce)
+		if rs.Workspace.TokenEncrypted != "" {
+			dec, _ := security.Decrypt(rs.Workspace.TokenEncrypted, h.tokenKey, rs.Workspace.TokenNonce)
 			token = dec
 		}
 
 		c.Status(http.StatusOK)
-		return c.Send(mapper.FromUpdateWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rq.Workspace.ID, token)))
+		return c.Send(mapper.FromUpdateWorkspaceResponseEntityToHTTPResponse(&rs.Workspace, h.mcpURL(rq.Workspace.ID, token)))
 	}
 }
 

@@ -44,31 +44,27 @@ mocks:
 		backend/internal/service/mocks/memq \
 		backend/internal/service/mocks/smtp \
 		backend/internal/service/mocks/idgen \
-		backend/internal/service/mocks/telemetry \
 		backend/internal/service/mocks/scheduler \
 		backend/internal/service/mocks/image \
 		backend/internal/service/mocks/storage \
 		backend/internal/service/mocks/auth \
 		backend/internal/service/mocks/dbconn \
-		backend/internal/service/mocks/notif \
 		backend/internal/service/mocks/pubsub
 	@cd backend && \
 		mockgen -source=internal/repository/base/repository.go -destination=internal/service/mocks/repository/mock_repository.go -package=repository && \
 		mockgen -source=internal/service/memq/memq.go -destination=internal/service/mocks/memq/mock_memq.go -package=memq && \
 		mockgen -source=internal/service/smtp/smtp.go -destination=internal/service/mocks/smtp/mock_smtp.go -package=smtp && \
 		mockgen -source=internal/service/idgen/idgen.go -destination=internal/service/mocks/idgen/mock_idgen.go -package=idgen && \
-		mockgen -source=internal/service/telemetry/telemetry.go -destination=internal/service/mocks/telemetry/mock_telemetry.go -package=telemetry && \
 		mockgen -source=internal/service/scheduler/scheduler.go -destination=internal/service/mocks/scheduler/mock_scheduler.go -package=scheduler && \
 		mockgen -source=internal/service/image/image.go -destination=internal/service/mocks/image/mock_image.go -package=image && \
 		mockgen -source=internal/service/storage/storage.go -destination=internal/service/mocks/storage/mock_storage.go -package=storage && \
 		mockgen -source=internal/service/auth/auth.go -destination=internal/service/mocks/auth/mock_auth.go -package=auth && \
 		mockgen -source=internal/service/auth/jwt.go -destination=internal/service/mocks/auth/mock_jwt.go -package=auth && \
 		mockgen -source=internal/repository/dbconn/dbconn.go -destination=internal/service/mocks/dbconn/mock_dbconn.go -package=dbconn && \
-		mockgen -source=internal/service/notif/notif.go -destination=internal/service/mocks/notif/mock_notif.go -package=notif && \
 		mockgen -source=internal/service/pubsub/pubsub.go -destination=internal/service/mocks/pubsub/mock_pubsub.go -package=pubsub
 
 test: mocks
-	@cd backend && go test ./internal/service/...
+	@cd backend && go test ./internal/service/... ./internal/controller/...
 
 push-build:
 	docker buildx build --platform linux/amd64,linux/arm64 --tag hasmcp/agentrq:latest -f Dockerfile --push .
