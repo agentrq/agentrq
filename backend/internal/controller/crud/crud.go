@@ -53,7 +53,7 @@ func (c *controller) emitEvent(ctx context.Context, e entity.CRUDEvent) {
 		return
 	}
 	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{
-		PubSubID: 0,
+		PubSubID: entity.PubSubTopicCRUD,
 		Event:    e,
 	})
 }

@@ -56,13 +56,13 @@ func New(p Params) Controller {
 
 func (c *controller) Start(ctx context.Context) error {
 	// Subscribe to Topic 0 (CRUD Events)
-	crudRes, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: 0})
+	crudRes, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD})
 	if err != nil {
 		return err
 	}
 
 	// Subscribe to Topic 2 (MCP Events)
-	mcpRes, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: 2})
+	mcpRes, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP})
 	if err != nil {
 		return err
 	}

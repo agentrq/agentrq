@@ -1096,7 +1096,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, toolOrMethod string) {
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	ps.pubsub.Publish(ctx, pubsub.PublishRequest{
-		PubSubID: 2,
+		PubSubID: entity.PubSubTopicMCP,
 		Event: MCPEvent{
 			Action:      action,
 			WorkspaceID: ps.workspaceID,

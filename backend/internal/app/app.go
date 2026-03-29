@@ -135,12 +135,12 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("pubsub: %w", err)
 	}
 
-	// Ensure global topics (0 and 2) exist
-	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: 0}); err != nil {
-		return nil, fmt.Errorf("create global pubsub (id:0): %w", err)
+	// Ensure global topics (1 and 2) exist
+	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: entity.PubSubTopicCRUD}); err != nil {
+		return nil, fmt.Errorf("create global pubsub (id:%d): %w", entity.PubSubTopicCRUD, err)
 	}
-	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: 2}); err != nil {
-		return nil, fmt.Errorf("create global pubsub (id:2): %w", err)
+	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: entity.PubSubTopicMCP}); err != nil {
+		return nil, fmt.Errorf("create global pubsub (id:%d): %w", entity.PubSubTopicMCP, err)
 	}
 
 	// ── Controllers ────────────────────────────────────────────────────────────
@@ -164,7 +164,9 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("notification: %w", err)
 	}
-	notificationSvc.Start(context.Background())
+	if err := notificationSvc.Start(context.Background()); err != nil {
+		zlog.Error().Err(err).Msg("failed to start notification controller")
+	}
 
 	tokenSvc := auth.NewTokenService(auth.TokenConfig{
 		JWTSecret: cfg.Auth.JWTSecret,
@@ -214,7 +216,7 @@ func New(cfg Config) (*App, error) {
 					}
 					if !hasOngoing {
 						pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-							PubSubID: 0,
+							PubSubID: entity.PubSubTopicCRUD,
 							Event: entity.CRUDEvent{
 								Action:       entity.ActionTaskCreate,
 								WorkspaceID:  workspaceID,
@@ -256,7 +258,7 @@ func New(cfg Config) (*App, error) {
 				if err == nil {
 					if updated.Status == "completed" || updated.Status == "done" {
 						pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-							PubSubID: 0,
+							PubSubID: entity.PubSubTopicCRUD,
 							Event: entity.CRUDEvent{
 								Action:       entity.ActionTaskComplete,
 								WorkspaceID:  workspaceID,
@@ -268,7 +270,7 @@ func New(cfg Config) (*App, error) {
 						})
 					}
 					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-						PubSubID: 0,
+						PubSubID: entity.PubSubTopicCRUD,
 						Event: entity.CRUDEvent{
 							Action:       entity.ActionTaskUpdate,
 							WorkspaceID:  workspaceID,
@@ -352,7 +354,7 @@ func New(cfg Config) (*App, error) {
 				isPermissionRequest := len(metadataJSON) > 0 && strings.Contains(string(metadataJSON), `"type":"permission_request"`)
 				if isPermissionRequest {
 					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-						PubSubID: 0,
+						PubSubID: entity.PubSubTopicCRUD,
 						Event: entity.CRUDEvent{
 							Action:       entity.ActionMessageCreate,
 							WorkspaceID:  workspaceID,

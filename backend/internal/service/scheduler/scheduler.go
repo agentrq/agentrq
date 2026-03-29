@@ -118,7 +118,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 
 	if s.pubsub != nil {
 		_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
-			PubSubID: 0,
+			PubSubID: entity.PubSubTopicCRUD,
 			Event: entity.CRUDEvent{
 				Action:       entity.ActionTaskFromScheduled,
 				WorkspaceID:  parent.WorkspaceID,

@@ -46,7 +46,7 @@ func TestNotificationController(t *testing.T) {
 
 		// Start expectation
 		eventsChan := make(chan any, 10)
-		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: 0}).Return(&pubsub.SubscribeResponse{Events: eventsChan}, nil)
+		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).Return(&pubsub.SubscribeResponse{Events: eventsChan}, nil)
 
 		if err := c.Start(ctx); err != nil {
 			t.Fatalf("failed to start: %v", err)

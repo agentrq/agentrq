@@ -301,6 +301,11 @@ type (
 )
 
 const (
+	PubSubTopicCRUD int64 = 1
+	PubSubTopicMCP  int64 = 2
+)
+
+const (
 	ActorHuman Actor = 1
 	ActorAgent Actor = 2
 )

@@ -44,8 +44,8 @@ func TestTelemetryController(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: 0}).Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
-		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: 2}).Return(&pubsub.SubscribeResponse{Events: mcpChan}, nil)
+		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
+		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP}).Return(&pubsub.SubscribeResponse{Events: mcpChan}, nil)
 
 		c := New(Params{
 			DB:        dbConn,
@@ -102,8 +102,8 @@ func TestTelemetryController(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: 0}).Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
-		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: 2}).Return(&pubsub.SubscribeResponse{Events: make(chan any)}, nil)
+		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
+		mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP}).Return(&pubsub.SubscribeResponse{Events: make(chan any)}, nil)
 
 		c := New(Params{
 			DB:        dbConn,

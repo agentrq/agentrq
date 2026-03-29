@@ -70,7 +70,7 @@ func New(p Params) (Controller, error) {
 }
 
 func (c *controller) Start(ctx context.Context) error {
-	res, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: 0})
+	res, err := c.pubsub.Subscribe(ctx, pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD})
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to global topic: %w", err)
 	}
