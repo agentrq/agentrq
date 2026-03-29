@@ -263,11 +263,31 @@ type (
 		Count int64  `json:"count"`
 	}
 
-	GetWorkspaceStatsResponse struct {
-		Stats       []DailyStat `json:"stats"`
-		Total       int64       `json:"total"`
-		ActiveTasks int64       `json:"active_tasks"`
-		TotalTasks  int64       `json:"total_tasks"`
+	GetWorkspaceStatsRequest struct {
+		ID     int64  `json:"id"`
+		UserID string `json:"user_id"`
+		Range  string `json:"range"` // 1d, 7d, week, 30d, month, custom
+		From   int64  `json:"from"`  // unix timestamp for custom range
+		To     int64  `json:"to"`    // unix timestamp for custom range
+	}
+
+	GetDetailedWorkspaceStatsResponse struct {
+		Summary    WorkspaceStatsSummary    `json:"summary"`
+		Timeseries WorkspaceStatsTimeseries `json:"timeseries"`
+	}
+
+	WorkspaceStatsSummary struct {
+		TasksCompleted  int64 `json:"tasks_completed"`
+		TasksScheduled  int64 `json:"tasks_scheduled"`
+		Messages        int64 `json:"messages"`
+		ManualApprovals int64 `json:"manual_approvals"`
+		AutoApprovals   int64 `json:"auto_approvals"`
+		Denies          int64 `json:"denies"`
+	}
+
+	WorkspaceStatsTimeseries struct {
+		TasksCompleted []DailyStat `json:"tasks_completed"`
+		Messages       []DailyStat `json:"messages"`
 	}
 
 	User struct {
@@ -344,9 +364,13 @@ const (
 	ActionMessageCreate
 	ActionMessageUpdate
 	ActionMessageDelete
-	ActionTaskComplete
-	ActionTaskApproveManual
-	ActionTaskFromScheduled
+	ActionTaskComplete        Action = 13
+	ActionTaskApproveManual    Action = 14
+	ActionTaskFromScheduled   Action = 15
+	ActionTaskRejectManual    Action = 16
+	ActionMCPToolCall         Action = 20
+	ActionMCPPermissionManual Action = 21
+	ActionMCPPermissionAuto   Action = 22
 )
 
 func (a Action) String() string {
@@ -381,6 +405,12 @@ func (a Action) String() string {
 		return "task_approve_manual"
 	case ActionTaskFromScheduled:
 		return "task_from_scheduled"
+	case ActionMCPToolCall:
+		return "mcp_tool_call"
+	case ActionMCPPermissionManual:
+		return "mcp_permission_manual"
+	case ActionMCPPermissionAuto:
+		return "mcp_permission_auto"
 	}
 	return "unknown"
 }

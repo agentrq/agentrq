@@ -94,6 +94,8 @@ const (
 	ActionIDTaskApproveManual
 	ActionIDMCPPermissionManual
 	ActionIDMCPPermissionAuto
+	ActionIDMCPPermissionDeny
+	ActionIDTaskRejectManual
 	ActionIDTaskComplete
 	ActionIDTaskFromScheduled
 )

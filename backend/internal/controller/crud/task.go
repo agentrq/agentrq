@@ -167,6 +167,14 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		if msgText == "" {
 			msgText = "Human rejected this task."
 		}
+		c.emitEvent(ctx, entity.CRUDEvent{
+			Action:       entity.ActionTaskRejectManual,
+			WorkspaceID:  req.WorkspaceID,
+			UserID:       uid,
+			ResourceType: entity.ResourceTask,
+			ResourceID:   req.TaskID,
+			Actor:        entity.ActorHuman,
+		})
 	case "text":
 		// Just a message, don't necessarily change status unless indicated
 		createMsg = true

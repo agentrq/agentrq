@@ -66,7 +66,16 @@ func TestTelemetryController(t *testing.T) {
 			Actor:       entity.ActorHuman,
 		}
 
-		// Send MCP Event
+		// Send MCP Notification (Manual Approval)
+		mcpChan <- mcp.MCPEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      mcp.ActionMCPNotification,
+			Method:      "permission_manual_allow",
+			Actor:       uint8(entity.ActorAgent),
+		}
+
+		// Send MCP Tool Call
 		mcpChan <- mcp.MCPEvent{
 			UserID:      1,
 			WorkspaceID: 10,
@@ -74,21 +83,63 @@ func TestTelemetryController(t *testing.T) {
 			Actor:       uint8(entity.ActorAgent),
 		}
 
-		// Wait for batch flush (BatchSize is 2)
-		time.Sleep(200 * time.Millisecond)
+		// Send another MCP Tool Call
+		mcpChan <- mcp.MCPEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      mcp.ActionMCPToolCall,
+			Actor:       uint8(entity.ActorAgent),
+		}
+
+		// Send Rejection (Manual Task)
+		crudChan <- entity.CRUDEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      entity.ActionTaskRejectManual,
+			Actor:       entity.ActorHuman,
+		}
+
+		// Send Permission Deny (MCP)
+		mcpChan <- mcp.MCPEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      mcp.ActionMCPNotification,
+			Method:      "permission_manual_deny",
+			Actor:       uint8(entity.ActorAgent),
+		}
+
+		time.Sleep(300 * time.Millisecond)
 
 		var count int64
 		db.Model(&model.Telemetry{}).Count(&count)
-		if count != 2 {
-			t.Errorf("expected 2 telemetry records, got %d", count)
+		if count != 6 {
+			t.Errorf("expected 6 telemetry records, got %d", count)
 		}
 
 		var records []model.Telemetry
 		db.Find(&records)
+		manualFound := false
+		rejectFound := false
+		denyFound := false
 		for _, r := range records {
-			if r.WorkspaceID != 10 || r.UserID != 1 {
-				t.Errorf("invalid record data: %+v", r)
+			if r.Action == model.ActionIDMCPPermissionManual {
+				manualFound = true
 			}
+			if r.Action == model.ActionIDTaskRejectManual {
+				rejectFound = true
+			}
+			if r.Action == model.ActionIDMCPPermissionDeny {
+				denyFound = true
+			}
+		}
+		if !manualFound {
+			t.Errorf("expected model.ActionIDMCPPermissionManual record, but not found")
+		}
+		if !rejectFound {
+			t.Errorf("expected model.ActionIDTaskRejectManual record, but not found")
+		}
+		if !denyFound {
+			t.Errorf("expected model.ActionIDMCPPermissionDeny record, but not found")
 		}
 	})
 

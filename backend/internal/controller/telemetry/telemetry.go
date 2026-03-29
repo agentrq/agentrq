@@ -136,6 +136,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTaskApproveManual
 	case entity.ActionTaskFromScheduled:
 		action = model.ActionIDTaskFromScheduled
+	case entity.ActionTaskRejectManual:
+		action = model.ActionIDTaskRejectManual
 	default:
 		return
 	}
@@ -154,6 +156,16 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 	switch event.Action {
 	case mcp.ActionMCPToolCall:
 		action = model.ActionIDMCPToolCall
+	case mcp.ActionMCPNotification:
+		if event.Method == "permission_manual_allow" {
+			action = model.ActionIDMCPPermissionManual
+		} else if event.Method == "permission_auto_allow" {
+			action = model.ActionIDMCPPermissionAuto
+		} else if event.Method == "permission_manual_deny" {
+			action = model.ActionIDMCPPermissionDeny
+		} else {
+			return
+		}
 	default:
 		return
 	}

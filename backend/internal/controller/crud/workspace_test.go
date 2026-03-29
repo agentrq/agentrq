@@ -169,18 +169,19 @@ func TestUpdateWorkspaceAutoAllowedTools_Success(t *testing.T) {
 	}
 }
 
-func TestGetWorkspaceStats_Success(t *testing.T) {
+func TestGetDetailedWorkspaceStats_Success(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().GetDailyStats(gomock.Any(), int64(1), 30).Return([]entity.DailyStat{}, nil)
-	e.repo.EXPECT().GetWorkspaceTaskCounts(gomock.Any(), int64(1)).Return(int64(5), int64(10), nil)
+	e.repo.EXPECT().GetDetailedWorkspaceStats(gomock.Any(), int64(1), gomock.Any(), gomock.Any()).Return(entity.GetDetailedWorkspaceStatsResponse{
+		Summary: entity.WorkspaceStatsSummary{TasksCompleted: 10},
+	}, nil)
 
-	resp, err := e.controller.GetWorkspaceStats(context.Background(), entity.GetWorkspaceRequest{ID: 1, UserID: testUserIDStr})
+	resp, err := e.controller.GetDetailedWorkspaceStats(context.Background(), entity.GetWorkspaceStatsRequest{ID: 1, UserID: testUserIDStr, Range: "7d"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.TotalTasks != 10 || resp.ActiveTasks != 5 {
-		t.Errorf("expected task counts 5 and 10")
+	if resp.Summary.TasksCompleted != 10 {
+		t.Errorf("expected 10 tasks completed")
 	}
 }
 

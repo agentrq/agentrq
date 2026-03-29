@@ -3,7 +3,6 @@ package base
 import (
 	"context"
 	"errors"
-	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -39,7 +38,7 @@ type Repository interface {
 	SystemGetUser(ctx context.Context, id int64) (model.User, error)
 	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
-	GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error)
+	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
@@ -277,12 +276,8 @@ func (r *repository) SystemCheckTaskExists(ctx context.Context, workspaceID, par
 	return count > 0, err
 }
 
-func (r *repository) GetDailyStats(ctx context.Context, workspaceID int64, days int) ([]entity.DailyStat, error) {
-	var stats []entity.DailyStat
-	since := time.Now().AddDate(0, 0, -days).Unix()
-
-	query := r.conn(ctx).Model(&model.Telemetry{}).
-		Where("workspace_id = ? AND occurred_at >= ?", workspaceID, since)
+func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+	var res entity.GetDetailedWorkspaceStatsResponse
 
 	// Dialect specific date formatting
 	dialect := r.conn(ctx).Dialector.Name()
@@ -294,12 +289,58 @@ func (r *repository) GetDailyStats(ctx context.Context, workspaceID int64, days 
 		dateExpr = "TO_CHAR(TO_TIMESTAMP(occurred_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
 	}
 
-	err := query.Select(dateExpr + " as date, count(*) as count").
+	// 1. Get Summary Stats
+	type countResult struct {
+		Action uint8
+		Count  int64
+	}
+	var summaryResults []countResult
+	err := r.conn(ctx).Model(&model.Telemetry{}).
+		Select("action, count(*) as count").
+		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ?", workspaceID, startTime, endTime).
+		Group("action").
+		Scan(&summaryResults).Error
+	if err != nil {
+		return res, err
+	}
+
+	for _, row := range summaryResults {
+		switch row.Action {
+		case model.ActionIDTaskComplete:
+			res.Summary.TasksCompleted = row.Count
+		case model.ActionIDTaskFromScheduled:
+			res.Summary.TasksScheduled = row.Count
+		case model.ActionIDMessageCreate:
+			res.Summary.Messages = row.Count
+		case model.ActionIDTaskApproveManual, model.ActionIDMCPPermissionManual:
+			res.Summary.ManualApprovals += row.Count
+		case model.ActionIDMCPPermissionAuto:
+			res.Summary.AutoApprovals += row.Count
+		case model.ActionIDTaskRejectManual, model.ActionIDMCPPermissionDeny:
+			res.Summary.Denies += row.Count
+		}
+	}
+
+	// 2. Get Timeseries for Tasks Completed
+	err = r.conn(ctx).Model(&model.Telemetry{}).
+		Select(dateExpr+" as date, count(*) as count").
+		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDTaskComplete).
 		Group("date").
 		Order("date ASC").
-		Scan(&stats).Error
+		Scan(&res.Timeseries.TasksCompleted).Error
+	if err != nil {
+		return res, err
+	}
 
-	return stats, err
+	// 3. Get Timeseries for Messages
+	err = r.conn(ctx).Model(&model.Telemetry{}).
+		Select(dateExpr+" as date, count(*) as count").
+		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDMessageCreate).
+		Group("date").
+		Order("date ASC").
+		Scan(&res.Timeseries.Messages).Error
+
+	return res, err
 }
 
 func (r *repository) GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error) {

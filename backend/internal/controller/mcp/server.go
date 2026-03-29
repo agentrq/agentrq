@@ -983,8 +983,11 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 		}
 	}
 
-	if effectiveBehavior == "allow" {
+	switch effectiveBehavior {
+	case "allow":
 		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_allow")
+	case "deny":
+		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny")
 	}
 
 	// Notify Claude Code session

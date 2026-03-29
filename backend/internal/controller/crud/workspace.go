@@ -254,23 +254,46 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	return err
 }
 
-func (c *controller) GetWorkspaceStats(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceStatsResponse, error) {
-	stats, err := c.repository.GetDailyStats(ctx, req.ID, 30)
+func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error) {
+	now := time.Now()
+	var startTime, endTime int64
+	endTime = now.Unix()
+
+	switch req.Range {
+	case "1d":
+		startTime = now.AddDate(0, 0, -1).Unix()
+	case "7d":
+		startTime = now.AddDate(0, 0, -7).Unix()
+	case "30d":
+		startTime = now.AddDate(0, 0, -30).Unix()
+	case "week":
+		// Start of current week (Monday)
+		daysSinceMonday := int(now.Weekday()) - 1
+		if daysSinceMonday < 0 {
+			daysSinceMonday = 6
+		}
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -daysSinceMonday)
+		startTime = start.Unix()
+	case "month":
+		// Start of current month
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		startTime = start.Unix()
+	case "custom":
+		startTime = req.From
+		if req.To > 0 {
+			endTime = req.To
+		}
+	default:
+		// Default to 7d
+		startTime = now.AddDate(0, 0, -7).Unix()
+	}
+
+	res, err := c.repository.GetDetailedWorkspaceStats(ctx, req.ID, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
 
-	active, total, err := c.repository.GetWorkspaceTaskCounts(ctx, req.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &entity.GetWorkspaceStatsResponse{
-		Stats:       stats,
-		Total:       0, // Aggregated from stats if needed
-		ActiveTasks: active,
-		TotalTasks:  total,
-	}, nil
+	return &res, nil
 }
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
