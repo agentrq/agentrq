@@ -206,8 +206,13 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
   return res.json();
 }
 
-export async function fetchWorkspaceStats(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/stats`);
+export async function fetchWorkspaceStats(id, range = '7d', from = 0, to = 0) {
+  const params = new URLSearchParams();
+  params.append('range', range);
+  if (from) params.append('from', from);
+  if (to) params.append('to', to);
+  
+  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/stats?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch workspace stats');
   return res.json();
 }

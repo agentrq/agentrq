@@ -545,16 +545,28 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 func (h *handler) getWorkspaceStats() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
-		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-		if workspaceID == 0 {
+		workspace64 := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if workspace64 == 0 {
 			c.Status(http.StatusUnprocessableEntity)
 			return c.Send(_invalidPayload)
 		}
 		userID := c.Locals("user_id").(string)
-		rq := entity.GetWorkspaceRequest{ID: workspaceID, UserID: userID}
+
+		rng := c.Query("range", "7d")
+		from, _ := strconv.ParseInt(c.Query("from"), 10, 64)
+		to, _ := strconv.ParseInt(c.Query("to"), 10, 64)
+
+		rq := entity.GetWorkspaceStatsRequest{
+			ID:     workspace64,
+			UserID: userID,
+			Range:  rng,
+			From:   from,
+			To:     to,
+		}
+
 		ctx, cancel := newContext(c)
 		defer cancel()
-		rs, err := h.crud.GetWorkspaceStats(ctx, rq)
+		rs, err := h.crud.GetDetailedWorkspaceStats(ctx, rq)
 		if err != nil {
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)

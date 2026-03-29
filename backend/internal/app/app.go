@@ -280,6 +280,18 @@ func New(cfg Config) (*App, error) {
 							Actor:        entity.ActorAgent,
 						},
 					})
+					// Emit message event for the status update text
+					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+						PubSubID: entity.PubSubTopicCRUD,
+						Event: entity.CRUDEvent{
+							Action:       entity.ActionMessageCreate,
+							WorkspaceID:  workspaceID,
+							UserID:       uid,
+							ResourceType: entity.ResourceMessage,
+							ResourceID:   ids.NextID(), // Approximate
+							Actor:        entity.ActorAgent,
+						},
+					})
 				}
 				return updated, err
 			},
@@ -351,20 +363,17 @@ func New(cfg Config) (*App, error) {
 					return 0, err
 				}
 
-				isPermissionRequest := len(metadataJSON) > 0 && strings.Contains(string(metadataJSON), `"type":"permission_request"`)
-				if isPermissionRequest {
-					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-						PubSubID: entity.PubSubTopicCRUD,
-						Event: entity.CRUDEvent{
-							Action:       entity.ActionMessageCreate,
-							WorkspaceID:  workspaceID,
-							UserID:       uid,
-							ResourceType: entity.ResourceMessage,
-							ResourceID:   msg.ID,
-							Actor:        entity.ActorAgent,
-						},
-					})
-				}
+				pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+					PubSubID: entity.PubSubTopicCRUD,
+					Event: entity.CRUDEvent{
+						Action:       entity.ActionMessageCreate,
+						WorkspaceID:  workspaceID,
+						UserID:       uid,
+						ResourceType: entity.ResourceMessage,
+						ResourceID:   msgID,
+						Actor:        entity.ActorAgent,
+					},
+				})
 
 				uid = monoflake.IDFromBase62(workspaceOwner).Int64()
 				latest, err := repo.GetTask(ctx, workspaceID, taskID, uid)
