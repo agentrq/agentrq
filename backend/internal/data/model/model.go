@@ -33,7 +33,7 @@ type (
 		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id"`
 		CreatedBy   string `gorm:"type:varchar(16)"` // "human" | "agent"
 		Assignee    string `gorm:"type:varchar(16)"` // "human" | "agent"
-		Status      string `gorm:"type:varchar(16)"` // "pending" | "completed" | "rejected"
+		Status      string `json:"status" gorm:"index"` // notstarted, ongoing, completed, rejected, cron, blocked
 		Title       string `gorm:"type:varchar(255)"`
 		Body        string `gorm:"type:text"`
 		Response    string `gorm:"type:text"`

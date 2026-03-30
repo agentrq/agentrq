@@ -350,6 +350,28 @@ func TestUpdateTaskStatus_OngoingConflict(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskStatus_ToBlocked(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
+	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "blocked"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
+	// Default pubsub expectation is already in newTestController
+
+	resp, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "blocked", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.Status != "blocked" {
+		t.Errorf("expected status 'blocked', got %s", resp.Task.Status)
+	}
+}
+
 func TestUpdateTaskStatus_InvalidStatus(t *testing.T) {
 	e := newTestController(t)
 

@@ -82,7 +82,7 @@ claude --dangerously-load-development-channels server:agentrq
 ### 2. Capabilities
 When connected, the AI agent has access to:
 - `create_task`: Assign a task to the human user.
-- `update_task_status`: Move tasks through 'not started', 'ongoing', 'blocked', and 'done'.
+- `update_task_status`: Move tasks through 'notstarted', 'ongoing', 'blocked', and 'completed'.
 - `reply`: Send messages back to the AgentRQ dashboard in real-time.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 

@@ -97,7 +97,7 @@ type CreateTaskParams struct {
 // UpdateTaskStatusParams is the input to the update_task_status tool.
 type UpdateTaskStatusParams struct {
 	TaskID string `json:"task_id" jsonschema:"The ID of the task to update"`
-	Status string `json:"status" jsonschema:"New status: 'ongoing', 'completed', 'rejected', or 'notstarted'"`
+	Status string `json:"status" jsonschema:"New status: 'ongoing', 'completed', 'blocked', 'rejected', or 'notstarted'"`
 }
 
 // ReplyParams is the input to the reply tool.
@@ -210,7 +210,7 @@ func NewWorkspaceServer(
 					"   - \"Tests pass (12/12). Moving on to the frontend changes.\"\n"+
 					"   - \"I ran `npm run build` and got this error: [error]. Investigating.\"\n\n"+
 					"4. **ASK VIA REPLY**: If you need permission, clarification, or more info, use `reply` to ask. Do NOT ask in your text output — the human won't see it.\n\n"+
-					"5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to 'completed'.\n",
+					"5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to 'completed'. Use 'blocked' if you are stuck and need human help.\n",
 				workspaceIDStr,
 			),
 		},
@@ -732,10 +732,11 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 	}
 
 	stats := map[string]int{
-		"not_started": 0,
-		"ongoing":     0,
-		"completed":   0,
-		"rejected":    0,
+		"notstarted": 0,
+		"ongoing":    0,
+		"completed":  0,
+		"rejected":   0,
+		"blocked":    0,
 	}
 
 	for _, t := range tasks {
@@ -744,8 +745,8 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 		}
 	}
 
-	content := fmt.Sprintf("Workspace: %s\nDescription: %s\n\nTask Statistics:\n- Not Started: %d\n- Ongoing: %d\n- Completed: %d\n- Rejected: %d",
-		name, desc, stats["not_started"], stats["ongoing"], stats["completed"], stats["rejected"])
+	content := fmt.Sprintf("Workspace: %s\nDescription: %s\n\nTask Statistics:\n- Not Started: %d\n- Ongoing: %d\n- Completed: %d\n- Rejected: %d\n- Blocked: %d",
+		name, desc, stats["notstarted"], stats["ongoing"], stats["completed"], stats["rejected"], stats["blocked"])
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: content}},

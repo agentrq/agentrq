@@ -211,15 +211,6 @@
                     </button>
                   </div>
               <div class="flex items-center justify-end gap-3 shrink-0">
-                 <div v-if="!isArchived && t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')" class="hidden md:flex items-center gap-1.5 mr-2">
-                                           <button @click.stop.prevent="respond(t.id, 'allow')" 
-                              :disabled="!isAgentConnected"
-                              class="px-3 py-1 bg-black text-white hover:bg-zinc-800 text-[10px] font-black uppercase tracking-widest border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Approve</button>
-
-                                           <button @click.stop.prevent="respond(t.id, 'reject')" 
-                              :disabled="!isAgentConnected"
-                              class="px-3 py-1 bg-white text-red-600 hover:bg-red-50 text-[10px] font-black uppercase tracking-widest border-2 border-red-200 shadow-[2px_2px_0px_0px_rgba(254,204,203,1)] active:shadow-none active:translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0">Reject</button>
-                 </div>
                  <div class="hidden md:block relative group/status shrink-0">
                     <div v-if="t.status === 'cron'"
                          class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 border-2" 
@@ -450,8 +441,8 @@ const displayGroups = computed(() => {
     return grps;
   }
 
-  const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked', 'requires_action'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
-  const notStarted = localTasks.value.filter(t => ['notstarted', 'pending'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const notStarted = localTasks.value.filter(t => ['notstarted'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
   const completed = localTasks.value.filter(t => ['completed', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
 
   const groups = [];
@@ -471,7 +462,7 @@ const displayGroups = computed(() => {
 });
 
 const pendingInputCount = computed(() => {
-  return localTasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted' || t.status === 'pending')).length;
+  return localTasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted')).length;
 });
 
 const scheduledCount = computed(() => {
@@ -484,27 +475,27 @@ const activeTaskCount = computed(() => {
 
 function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';
-  if (status === 'blocked' || status === 'requires_action') return 'bg-red-50 border-black';
+  if (status === 'blocked') return 'bg-red-50 border-black';
   if (status === 'completed') return 'bg-green-50 border-black';
   if (status === 'cron') return 'bg-indigo-50 border-indigo-200';
   return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
 }
 function getTaskDotStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-400';
-  if (status === 'blocked' || status === 'requires_action') return 'bg-red-500';
+  if (status === 'blocked') return 'bg-red-500';
   if (status === 'completed') return 'bg-green-500';
   if (status === 'cron') return 'bg-indigo-500 border-indigo-600';
   return 'bg-gray-300 border-gray-400';
 }
 function getTaskBadgeStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-200 border-black text-black border-2';
-  if (status === 'blocked' || status === 'requires_action') return 'bg-red-200 border-black text-black border-2';
+  if (status === 'blocked') return 'bg-red-200 border-black text-black border-2';
   if (status === 'completed') return 'bg-green-200 border-black text-black border-2';
   if (status === 'cron') return 'bg-indigo-200 border-indigo-400 text-indigo-800 border-2';
   return 'bg-gray-100 border-gray-300 text-gray-500 font-bold border-2';
 }
 function getTaskLabel(status) {
-  if (status === 'notstarted' || status === 'pending') return 'NOT STARTED';
+  if (status === 'notstarted') return 'NOT STARTED';
   if (status === 'cron') return 'CHRONIC';
   return status;
 }

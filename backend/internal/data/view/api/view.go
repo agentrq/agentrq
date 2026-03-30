@@ -70,7 +70,7 @@ type (
 	}
 
 	// CreatedBy: "human" | "agent"
-	// Status:    "pending" | "completed" | "rejected"
+	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {
 		ID        string    `json:"id"`
 		CreatedAt time.Time `json:"created_at"`
