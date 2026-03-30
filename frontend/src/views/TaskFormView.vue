@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-white flex flex-col w-full max-w-full overflow-x-hidden">
     <!-- Breadcrumb Header -->
-    <header class="px-4 py-3 border-b-2 border-black shrink-0 flex items-center justify-between gap-4 bg-white sticky top-0 z-30">
+    <header class="py-3 border-b-2 border-black shrink-0 flex items-center justify-between gap-4 bg-white sticky top-0 z-30">
       <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0 flex-1">
         <router-link :to="'/workspaces/' + workspaceId" class="text-gray-400 hover:text-black transition-colors shrink-0">
           {{ workspace?.name || 'Workspace' }}

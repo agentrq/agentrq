@@ -43,7 +43,7 @@
     </div>
 
     <!-- Single List Area -->
-    <div class="flex-1 overflow-y-auto pt-4 pb-6 custom-scrollbar pr-2 md:pr-4">
+    <div class="flex-1 overflow-y-auto pt-4 pb-6 custom-scrollbar">
       <div v-if="localTasks.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50 mt-2">
         <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
         <span class="text-xs font-black uppercase tracking-widest text-gray-500">No tasks found in workspace</span>

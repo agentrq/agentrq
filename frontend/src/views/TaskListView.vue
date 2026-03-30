@@ -7,7 +7,7 @@
     </div>
 
     <!-- Task List -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 min-h-0">
+    <div class="flex-1 overflow-y-auto custom-scrollbar min-h-0">
       <div v-if="loading && tasks.length === 0" class="text-center py-12 text-sm font-black text-gray-400 uppercase tracking-widest animate-pulse">
         Loading tasks...
       </div>

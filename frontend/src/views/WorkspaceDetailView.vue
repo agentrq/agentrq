@@ -123,7 +123,7 @@
         />
       </div>
 
-      <div v-if="activeTab === 'stats'" class="flex-1 overflow-y-auto pr-2">
+      <div v-if="activeTab === 'stats'" class="flex-1 overflow-y-auto">
         <WorkspaceStats :workspaceId="workspace.id" />
       </div>
     </div>
