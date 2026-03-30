@@ -249,7 +249,7 @@
                           <div class="w-1.5 h-1.5 rounded-full bg-[#00FF88]"></div>
                           Start
                         </button>
-                        <button v-if="t.status !== 'done'" @click.stop="respond(t.id, 'done'); activeStatusMenuId = null"
+                        <button v-if="t.status !== 'completed'" @click.stop="respond(t.id, 'completed'); activeStatusMenuId = null"
                                 class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-0.5 pt-1.5">
                           <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
                           Complete
@@ -452,7 +452,7 @@ const displayGroups = computed(() => {
 
   const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked', 'requires_action'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
   const notStarted = localTasks.value.filter(t => ['notstarted', 'pending'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
-  const completed = localTasks.value.filter(t => ['completed', 'done', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const completed = localTasks.value.filter(t => ['completed', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
 
   const groups = [];
   if (ongoing.length > 0) groups.push({ title: 'Ongoing', tasks: ongoing });
@@ -485,21 +485,21 @@ const activeTaskCount = computed(() => {
 function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';
   if (status === 'blocked' || status === 'requires_action') return 'bg-red-50 border-black';
-  if (status === 'completed' || status === 'done') return 'bg-green-50 border-black';
+  if (status === 'completed') return 'bg-green-50 border-black';
   if (status === 'cron') return 'bg-indigo-50 border-indigo-200';
   return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
 }
 function getTaskDotStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-400';
   if (status === 'blocked' || status === 'requires_action') return 'bg-red-500';
-  if (status === 'completed' || status === 'done') return 'bg-green-500';
+  if (status === 'completed') return 'bg-green-500';
   if (status === 'cron') return 'bg-indigo-500 border-indigo-600';
   return 'bg-gray-300 border-gray-400';
 }
 function getTaskBadgeStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-200 border-black text-black border-2';
   if (status === 'blocked' || status === 'requires_action') return 'bg-red-200 border-black text-black border-2';
-  if (status === 'completed' || status === 'done') return 'bg-green-200 border-black text-black border-2';
+  if (status === 'completed') return 'bg-green-200 border-black text-black border-2';
   if (status === 'cron') return 'bg-indigo-200 border-indigo-400 text-indigo-800 border-2';
   return 'bg-gray-100 border-gray-300 text-gray-500 font-bold border-2';
 }
@@ -613,7 +613,7 @@ async function respond(taskId, action) {
   try {
     let res;
     // Check if it's a direct status update (allowed by clicking badge) or a response to agent
-    if (['notstarted', 'ongoing', 'done', 'rejected'].includes(action)) {
+    if (['notstarted', 'ongoing', 'completed', 'rejected'].includes(action)) {
         res = await updateTaskStatus(props.workspaceId, taskId, action);
     } else {
         res = await respondToTask(props.workspaceId, taskId, action, text);

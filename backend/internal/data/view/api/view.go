@@ -70,7 +70,7 @@ type (
 	}
 
 	// CreatedBy: "human" | "agent"
-	// Status:    "pending" | "done" | "rejected"
+	// Status:    "pending" | "completed" | "rejected"
 	Task struct {
 		ID        string    `json:"id"`
 		CreatedAt time.Time `json:"created_at"`

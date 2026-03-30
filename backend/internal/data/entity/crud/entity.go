@@ -115,7 +115,7 @@ type (
 
 	// Task entity
 	// CreatedBy: "human" | "agent"
-	// Status:    "pending" | "done" | "rejected"
+	// Status:    "pending" | "completed" | "rejected"
 	Task struct {
 		ID          int64
 		CreatedAt   time.Time

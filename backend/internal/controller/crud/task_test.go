@@ -300,20 +300,20 @@ func TestUpdateTaskStatus_Success(t *testing.T) {
 	e := newTestController(t)
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
-	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "done"}
+	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "completed"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 
 	resp, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
-		WorkspaceID: 1, TaskID: 10, Status: "done", UserID: testUserIDStr,
+		WorkspaceID: 1, TaskID: 10, Status: "completed", UserID: testUserIDStr,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Task.Status != "done" {
-		t.Errorf("expected status done, got %s", resp.Task.Status)
+	if resp.Task.Status != "completed" {
+		t.Errorf("expected status completed, got %s", resp.Task.Status)
 	}
 }
 
@@ -347,6 +347,21 @@ func TestUpdateTaskStatus_OngoingConflict(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "another task is already ongoing") {
 		t.Fatalf("expected ongoing conflict error, got %v", err)
+	}
+}
+
+func TestUpdateTaskStatus_InvalidStatus(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+
+	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "bad_status", UserID: testUserIDStr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid task status") {
+		t.Fatalf("expected invalid status error, got %v", err)
 	}
 }
 

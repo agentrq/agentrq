@@ -269,7 +269,7 @@ const getBackendParams = (filter) => {
   if (filter === 'pending') return { filter: 'pending_approval' };
   if (filter === 'notstarted') return { status: 'notstarted,pending' };
   if (filter === 'ongoing') return { status: 'ongoing,blocked,requires_action' };
-  if (filter === 'completed') return { status: 'completed,done,rejected' };
+  if (filter === 'completed') return { status: 'completed,rejected' };
   return {};
 };
 
@@ -299,7 +299,7 @@ const formatTime = (dateStr) => {
 const getTaskBadgeStyle = (status) => {
   if (status === 'ongoing') return 'bg-yellow-50 text-yellow-600 border-yellow-200';
   if (status === 'blocked' || status === 'requires_action') return 'bg-red-50 text-red-600 border-red-200';
-  if (status === 'completed' || status === 'done') return 'bg-green-50 text-green-600 border-green-200';
+  if (status === 'completed') return 'bg-green-50 text-green-600 border-green-200';
   if (status === 'notstarted' || status === 'pending') return 'bg-gray-50 text-gray-500 border-gray-200';
   return 'bg-white text-gray-400 border-gray-100';
 };

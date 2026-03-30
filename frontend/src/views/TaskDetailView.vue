@@ -12,11 +12,11 @@
         <div class="relative group/status">
           <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
                   class="flex items-center gap-1.5 border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0 transition-all hover:translate-y-px active:translate-y-0.5"
-                  :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : task.status === 'completed' || task.status === 'done' ? 'bg-black text-white shadow-[2px_2px_1px_0px_rgba(0,255,136,0.3)]' : task.status === 'rejected' ? 'bg-red-500 text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white text-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'">
+                  :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : task.status === 'completed' ? 'bg-black text-white shadow-[2px_2px_1px_0px_rgba(0,255,136,0.3)]' : task.status === 'rejected' ? 'bg-red-500 text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white text-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'">
             
             <!-- Icons based on status -->
             <svg v-if="task.status === 'ongoing'" class="w-3 h-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 3l14 9-14 9V3z" /></svg>
-            <svg v-else-if="task.status === 'completed' || task.status === 'done'" class="w-3 h-3 text-[#00FF88]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path d="M5 13l4 4L19 7" /></svg>
+            <svg v-else-if="task.status === 'completed'" class="w-3 h-3 text-[#00FF88]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path d="M5 13l4 4L19 7" /></svg>
             <svg v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             <svg v-else-if="task.status === 'rejected'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M6 18L18 6M6 6l12 12" /></svg>
 
@@ -39,7 +39,7 @@
                 <div class="w-2 h-2 rounded-full bg-[#00FF88]"></div>
                 Start
               </button>
-              <button v-if="task.status !== 'done' && task.status !== 'completed'" @click="updateStatus('done'); isStatusMenuOpen = false"
+              <button v-if="task.status !== 'completed'" @click="updateStatus('completed'); isStatusMenuOpen = false"
                       class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-1 pt-2">
                 <div class="w-2 h-2 rounded-full bg-green-500"></div>
                 Complete
@@ -419,7 +419,7 @@ const statusClass = computed(() => {
   if (!task.value) return '';
   switch(task.value.status) {
     case 'ongoing': return 'bg-indigo-50 text-indigo-700 border-indigo-100';
-    case 'done': return 'bg-green-50 text-green-700 border-green-100';
+    case 'completed': return 'bg-green-50 text-green-700 border-green-100';
     case 'rejected': return 'bg-red-50 text-red-700 border-red-100';
     default: return 'bg-gray-50 text-gray-600 border-gray-100';
   }

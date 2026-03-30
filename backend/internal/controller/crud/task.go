@@ -38,6 +38,9 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	if status == "" {
 		status = "notstarted"
 	}
+	if !isValidTaskStatus(status) {
+		return nil, fmt.Errorf("invalid task status: %s", status)
+	}
 
 	if status == "cron" {
 		if req.Task.CronSchedule == "" {
@@ -247,6 +250,10 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	}
 	if m.Status == "cron" {
 		return nil, fmt.Errorf("cannot update status of a chronic task template; it must remain in 'cron' state")
+	}
+
+	if !isValidTaskStatus(req.Status) {
+		return nil, fmt.Errorf("invalid task status: %s", req.Status)
 	}
 
 	if req.Status == "ongoing" {
@@ -606,4 +613,12 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		Actor:        entity.ActorHuman,
 	})
 	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+}
+
+func isValidTaskStatus(status string) bool {
+	switch status {
+	case "notstarted", "ongoing", "completed", "rejected", "cron", "pending":
+		return true
+	}
+	return false
 }
