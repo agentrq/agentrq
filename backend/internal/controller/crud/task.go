@@ -328,6 +328,40 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	return &entity.UpdateTaskOrderResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
+func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
+	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	if req.Assignee != "human" && req.Assignee != "agent" {
+		return nil, fmt.Errorf("invalid assignee: %s", req.Assignee)
+	}
+
+	m.Assignee = req.Assignee
+	m.UpdatedAt = time.Now()
+
+	updated, err := c.repository.UpdateTask(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+
+	return &entity.UpdateTaskAssigneeResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+}
+
 func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err

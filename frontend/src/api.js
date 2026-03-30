@@ -130,6 +130,16 @@ export async function updateTaskOrder(workspaceId, taskId, value) {
   return res.json();
 }
 
+export async function updateTaskAssignee(workspaceId, taskId, value) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/assignee`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignee: { value } })
+  });
+  if (!res.ok) throw new Error('Failed to update task assignee');
+  return res.json();
+}
+
 export async function deleteTask(workspaceId, taskId) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`, {
     method: 'DELETE'

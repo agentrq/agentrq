@@ -204,6 +204,17 @@ type (
 		Task Task
 	}
 
+	UpdateTaskAssigneeRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		Assignee    string
+		UserID      string
+	}
+
+	UpdateTaskAssigneeResponse struct {
+		Task Task
+	}
+
 	ReplyToTaskRequest struct {
 		WorkspaceID int64
 		TaskID      int64

@@ -79,6 +79,11 @@
               </div>
               <span class="text-[10px] font-black text-white uppercase tracking-widest">Task Definition</span>
               <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
+              <button v-if="task.assignee === 'human'" 
+                      @click="reassignToAgent"
+                      class="ml-2 px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)]">
+                Reassign to Agent
+              </button>
             </div>
             <div class="flex items-center gap-3">
               <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ formatDateTime(task.created_at) }}</span>
@@ -360,7 +365,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, getAttachmentUrl, sendPermissionVerdict } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 
@@ -474,6 +479,16 @@ async function updateStatus(newStatus) {
     notifySuccess(`Status updated to ${newStatus}`);
   } catch (err) {
     notifyError("Failed to update status: " + err.message);
+  }
+}
+
+async function reassignToAgent() {
+  try {
+    const res = await updateTaskAssignee(workspaceId, taskId, 'agent');
+    task.value = res.task;
+    notifySuccess("Task reassigned to agent");
+  } catch (err) {
+    notifyError("Failed to reassign task: " + err.message);
   }
 }
 

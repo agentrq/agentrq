@@ -176,6 +176,28 @@ func FromUpdateTaskOrderResponseEntityToHTTPResponse(rs *entity.UpdateTaskOrderR
 	return payload
 }
 
+func FromHTTPRequestToUpdateTaskAssigneeRequestEntity(c *fiber.Ctx) *entity.UpdateTaskAssigneeRequest {
+	var payload view.UpdateTaskAssigneeRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	if workspaceID == 0 || taskID == 0 || payload.Assignee.Value == "" {
+		return nil
+	}
+	return &entity.UpdateTaskAssigneeRequest{
+		WorkspaceID: workspaceID,
+		TaskID:      taskID,
+		Assignee:    payload.Assignee.Value,
+	}
+}
+
+func FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs *entity.UpdateTaskAssigneeResponse) []byte {
+	payload, _ := json.Marshal(view.UpdateTaskAssigneeResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
 func FromHTTPRequestToReplyToTaskRequestEntity(c *fiber.Ctx) *entity.ReplyToTaskRequest {
 	var payload view.ReplyToTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {

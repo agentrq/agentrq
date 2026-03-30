@@ -147,6 +147,18 @@ type (
 		Task Task `json:"task"`
 	}
 
+	UpdateTaskAssigneeRequest struct {
+		Assignee TaskAssigneeUpdate `json:"assignee"`
+	}
+
+	TaskAssigneeUpdate struct {
+		Value string `json:"value"` // "human" | "agent"
+	}
+
+	UpdateTaskAssigneeResponse struct {
+		Task Task `json:"task"`
+	}
+
 	ReplyToTaskRequest struct {
 		Reply TaskReply `json:"reply"`
 	}
