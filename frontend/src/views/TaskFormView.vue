@@ -103,7 +103,11 @@
                         <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Frequency</label>
                         <select v-model="repeatPreset" 
                                 class="bg-white border-2 border-black px-2 py-2 text-[10px] font-black uppercase tracking-widest text-black outline-none">
+                          <option value="15min">Every 15 mins</option>
+                          <option value="30min">Every 30 mins</option>
                           <option value="hourly">Hourly</option>
+                          <option value="2hour">Bi-hourly</option>
+                          <option value="12hour">Twice a day</option>
                           <option value="daily">Daily</option>
                           <option value="weekly">Weekly</option>
                           <option value="monthly">Monthly</option>
@@ -123,7 +127,7 @@
                          </div>
                       </div>
 
-                      <div v-if="repeatPreset !== 'hourly'" class="flex flex-col gap-2">
+                      <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-2">
                         <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Launch Time</label>
                         <input type="time" v-model="repeatTime"
                                class="bg-white border-2 border-black px-3 py-2 text-xs font-black uppercase tracking-widest text-black outline-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" />
@@ -249,22 +253,51 @@ function parseCronToUI(cron) {
   const parts = cron.split(' ');
   if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
     scheduleType.value = 'onetime';
-    const now = new Date();
-    oneTimeDate.value = `${now.getFullYear()}-${String(parts[3]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}T${String(parts[1]).padStart(2, '0')}:${String(parts[0]).padStart(2, '0')}`;
+    const [min, hour, dom, month] = parts;
+    const currentYear = new Date().getFullYear();
+    const utcDate = new Date(Date.UTC(currentYear, month - 1, dom, hour, min));
+    const year = utcDate.getFullYear();
+    const mon = String(utcDate.getMonth() + 1).padStart(2, '0');
+    const day = String(utcDate.getDate()).padStart(2, '0');
+    const hh = String(utcDate.getHours()).padStart(2, '0');
+    const mm = String(utcDate.getMinutes()).padStart(2, '0');
+    oneTimeDate.value = `${year}-${mon}-${day}T${hh}:${mm}`;
   } else {
     scheduleType.value = 'repeated';
-    if (cron === '0 * * * *') {
+    if (cron === '*/15 * * * *') {
+      repeatPreset.value = '15min';
+    } else if (cron === '*/30 * * * *') {
+      repeatPreset.value = '30min';
+    } else if (cron === '0 * * * *') {
       repeatPreset.value = 'hourly';
+    } else if (cron === '0 */2 * * *') {
+      repeatPreset.value = '2hour';
     } else {
       const [min, hour, dom, month, dow] = parts;
-      repeatTime.value = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-      if (dow !== '*' && dom === '*' && month === '*') {
-        repeatPreset.value = 'custom';
-        selectedDays.value = dow.split(',').map(Number);
-      } else if (dom === '*' && month === '*' && dow === '*') {
-        repeatPreset.value = 'daily';
-      } else if (dom === '*' && month === '*' && dow === '0') {
-        repeatPreset.value = 'weekly';
+      const firstHour = Number(hour.split(',')[0]);
+      // Use a reference UTC date to extract local time
+      const d = new Date(Date.UTC(2000, 0, 10, firstHour, min)); 
+      repeatTime.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      
+      if (dom === '*' && month === '*' && dow === '*') {
+        const hoursArr = hour.split(',').map(Number);
+        if (hoursArr.length === 2 && Math.abs(hoursArr[1] - hoursArr[0]) === 12) {
+          repeatPreset.value = '12hour';
+        } else {
+          repeatPreset.value = 'daily';
+        }
+      } else if (dom === '1' && month === '*' && dow === '*') {
+        repeatPreset.value = 'monthly';
+      } else if (dow !== '*' && dom === '*' && month === '*') {
+        // Handle weekly/custom mapping from UTC days
+        const utcDays = dow.split(',').map(Number);
+        const localDays = utcDays.map(ud => {
+           // 2000-01-09 was a Sunday (0)
+           const temp = new Date(Date.UTC(2000, 0, 9 + ud, firstHour, min));
+           return temp.getDay();
+        });
+        selectedDays.value = localDays;
+        repeatPreset.value = (localDays.length === 1 && localDays[0] === 0) ? 'weekly' : 'custom';
       } else {
         repeatPreset.value = 'custom';
       }
@@ -275,7 +308,7 @@ function parseCronToUI(cron) {
 const nextRunPreview = computed(() => {
   if (scheduleType.value === 'none' || !newTask.value.cronSchedule) return '';
   try {
-    const interval = cronParser.parseExpression(newTask.value.cronSchedule);
+    const interval = cronParser.parseExpression(newTask.value.cronSchedule, { utc: true });
     const next = interval.next().toDate();
     return formatRelativeTime(next);
   } catch (e) { return ''; }
@@ -305,21 +338,52 @@ watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays], () =>
   if (scheduleType.value === 'onetime') {
     if (!oneTimeDate.value) { newTask.value.cronSchedule = ''; return; }
     const d = new Date(oneTimeDate.value);
-    newTask.value.cronSchedule = `${d.getMinutes()} ${d.getHours()} ${d.getDate()} ${d.getMonth() + 1} *`;
+    newTask.value.cronSchedule = `${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`;
     return;
   }
 
-  const [hours, minutes] = repeatTime.value.split(':').map(Number);
-  if (repeatPreset.value === 'hourly') {
+  const [localHours, localMinutes] = repeatTime.value.split(':').map(Number);
+  const d = new Date();
+  d.setHours(localHours, localMinutes, 0, 0);
+  const minutes = d.getUTCMinutes();
+  const hours = d.getUTCHours();
+
+  if (repeatPreset.value === '15min') {
+    newTask.value.cronSchedule = '*/15 * * * *';
+  } else if (repeatPreset.value === '30min') {
+    newTask.value.cronSchedule = '*/30 * * * *';
+  } else if (repeatPreset.value === 'hourly') {
     newTask.value.cronSchedule = `0 * * * *`;
+  } else if (repeatPreset.value === '2hour') {
+    newTask.value.cronSchedule = `0 */2 * * *`;
+  } else if (repeatPreset.value === '12hour') {
+    const h1 = d.getUTCHours();
+    const tempD = new Date(d);
+    tempD.setHours(tempD.getHours() + 12);
+    const h2 = tempD.getUTCHours();
+    const hoursStr = [h1, h2].sort((a,b)=>a-b).join(',');
+    newTask.value.cronSchedule = `${minutes} ${hoursStr} * * *`;
   } else if (repeatPreset.value === 'daily') {
     newTask.value.cronSchedule = `${minutes} ${hours} * * *`;
   } else if (repeatPreset.value === 'weekly') {
-    newTask.value.cronSchedule = `${minutes} ${hours} * * 0`;
+    const utcDay = d.getUTCDay();
+    newTask.value.cronSchedule = `${minutes} ${hours} * * ${utcDay}`;
   } else if (repeatPreset.value === 'monthly') {
-    newTask.value.cronSchedule = `${minutes} ${hours} 1 * *`;
+    const dd = new Date();
+    dd.setHours(localHours, localMinutes, 0, 0);
+    dd.setDate(1);
+    newTask.value.cronSchedule = `${minutes} ${hours} ${dd.getUTCDate()} * *`;
   } else if (repeatPreset.value === 'custom') {
-    const days = [...selectedDays.value].sort().join(',');
+    const utcDays = new Set();
+    selectedDays.value.forEach(day => {
+      const dd = new Date();
+      dd.setHours(localHours, localMinutes, 0, 0);
+      const currentDay = dd.getDay();
+      // Adjust date to the selected local day
+      dd.setDate(dd.getDate() + (day - currentDay));
+      utcDays.add(dd.getUTCDay());
+    });
+    const days = [...utcDays].sort().join(',');
     newTask.value.cronSchedule = `${minutes} ${hours} * * ${days}`;
   }
 }, { deep: true });
@@ -351,7 +415,7 @@ async function submitHumanTask() {
       status, newTask.value.cronSchedule
     );
     notifySuccess('Mission Protocol Initialized');
-    goBack();
+    goBack(status === 'cron');
   } catch(err) {
     notifyError("Dispatch Error: " + err.message);
   } finally { sending.value = false; }
@@ -365,14 +429,18 @@ async function submitEditProtocol() {
       newTask.value.assignee, newTask.value.cronSchedule
     );
     notifySuccess('Scheduled Protocol Updated');
-    goBack();
+    goBack(true);
   } catch(err) {
     notifyError("Update Error: " + err.message);
   } finally { sending.value = false; }
 }
 
-function goBack() {
-  router.push(`/workspaces/${workspaceId}`);
+function goBack(isScheduled = false) {
+  if (isScheduled) {
+    router.push({ path: `/workspaces/${workspaceId}`, query: { scheduled: 'true' } });
+  } else {
+    router.push(`/workspaces/${workspaceId}`);
+  }
 }
 </script>
 

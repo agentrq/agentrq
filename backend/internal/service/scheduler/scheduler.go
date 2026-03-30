@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
@@ -56,7 +57,7 @@ func (s *scheduler) tick(ctx context.Context) {
 	}
 
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	now := time.Now().Truncate(time.Minute)
+	now := time.Now().UTC().Truncate(time.Minute)
 
 	for _, c := range crons {
 		if c.CronSchedule == "" {
@@ -137,4 +138,28 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		Type:    "task.created",
 		Payload: mapper.FromModelTaskToView(created),
 	})
+
+	// If this is a one-time schedule, delete the parent template now that we've spawned it
+	parts := strings.Fields(parent.CronSchedule)
+	if len(parts) == 5 && parts[3] != "*" {
+		err := s.repo.DeleteTask(ctx, parent.WorkspaceID, parent.ID, parent.UserID)
+		if err != nil {
+			zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to delete one-time parent task")
+		} else {
+			zlog.Info().Int64("cron_id", parent.ID).Msg("scheduler: deleted one-time parent task")
+			if s.pubsub != nil {
+				_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
+					PubSubID: entity.PubSubTopicCRUD,
+					Event: entity.CRUDEvent{
+						Action:       entity.ActionTaskDelete,
+						WorkspaceID:  parent.WorkspaceID,
+						UserID:       parent.UserID,
+						ResourceType: entity.ResourceTask,
+						ResourceID:   parent.ID,
+						Actor:        entity.ActorHuman, 
+					},
+				})
+			}
+		}
+	}
 }

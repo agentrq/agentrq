@@ -182,7 +182,7 @@ const isDescriptionExpanded = ref(false);
 const showSetupModal = ref(false);
 const showEditModal = ref(false);
 const isUpdating = ref(false);
-const showScheduledOnly = ref(false);
+const showScheduledOnly = ref(route.query.scheduled === 'true');
 const taskFeed = ref(null);
 const activeTab = ref('tasks');
 
