@@ -40,6 +40,7 @@ type Repository interface {
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
+	GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error)
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
@@ -356,6 +357,24 @@ func (r *repository) GetWorkspaceTaskCounts(ctx context.Context, workspaceID int
 		Where("workspace_id = ? AND status NOT IN ?", workspaceID, []string{"completed", "archived"}).
 		Count(&active).Error
 	return active, total, err
+}
+
+func (r *repository) GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error) {
+	type countResult struct {
+		Action uint8
+		Count  int64
+	}
+	var results []countResult
+	err := r.conn(ctx).Model(&model.Telemetry{}).
+		Select("action, count(*) as count").
+		Group("action").
+		Scan(&results).Error
+
+	m := make(map[uint8]int64)
+	for _, rr := range results {
+		m[rr.Action] = rr.Count
+	}
+	return m, err
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────

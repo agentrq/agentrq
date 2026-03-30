@@ -14,8 +14,9 @@ import (
 	"gorm.io/datatypes"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
+	"github.com/agentrq/agentrq/backend/internal/controller/pub"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -182,6 +183,15 @@ func New(cfg Config) (*App, error) {
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 	})
 
+	// ── Pub/Stats ─────────────────────────────────────────────────────────────
+	pubStatsCtrl := pub.NewStatsController(pub.Params{
+		Repository: repo,
+		PubSub:     pubsubSvc,
+	})
+	if err := pubStatsCtrl.Start(context.Background()); err != nil {
+		zlog.Error().Err(err).Msg("failed to start pub stats controller")
+	}
+
 	// ── Scheduler ─────────────────────────────────────────────────────────────
 	schedSvc := scheduler.New(repo, ids, bus, pubsubSvc)
 	schedSvc.Start(context.Background())
@@ -190,7 +200,7 @@ func New(cfg Config) (*App, error) {
 	authSvc := auth.New(cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, fmt.Sprintf("%s/api/v1/auth/google/callback", cfg.App.BaseURL))
 
 	// ── MCP manager ───────────────────────────────────────────────────────────
-	mcpManager := mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
+	mcpManager := mcp.NewManager(func(workspaceID int64, userID string) *mcp.WorkspaceServer {
 		var workspaceOwner string
 		workspace, err := repo.SystemGetWorkspace(context.Background(), workspaceID)
 		if err == nil {
@@ -199,7 +209,7 @@ func New(cfg Config) (*App, error) {
 			workspaceOwner = userID
 		}
 
-		srv := mcpctrl.NewWorkspaceServer(
+		srv := mcp.NewWorkspaceServer(
 			workspaceID,
 			workspaceOwner,
 			cfg.App.BaseURL,
@@ -504,6 +514,7 @@ func New(cfg Config) (*App, error) {
 	})
 
 	// ── Server Start ─────────────────────────────────────────────────
+	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(bus, tokenSvc))
 	mux.Handle("/api/v1/events", eventsHandler(bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
@@ -525,6 +536,39 @@ func New(cfg Config) (*App, error) {
 	}
 
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc}, nil
+}
+
+func pubStatsHandler(ctrl pub.StatsController) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "https://agentrq.com")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		ch := ctrl.Subscribe()
+		defer ctrl.Unsubscribe(ch)
+
+		for {
+			select {
+			case data, ok := <-ch:
+				if !ok {
+					return
+				}
+				_, _ = w.Write([]byte("data: "))
+				_, _ = w.Write(data)
+				_, _ = w.Write([]byte("\n\n"))
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			}
+		}
+	})
 }
 
 func eventsHandler(bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
