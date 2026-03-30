@@ -98,4 +98,5 @@ const (
 	ActionIDTaskRejectManual
 	ActionIDTaskComplete
 	ActionIDTaskFromScheduled
+	ActionIDUserCreate
 )

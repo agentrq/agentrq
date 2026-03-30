@@ -132,11 +132,7 @@ func (c *statsController) Subscribe() chan []byte {
 func (c *statsController) Unsubscribe(ch chan []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, ok := c.clients[ch]; ok {
-		delete(c.clients, ch)
-		// we don't close the channel here to avoid panic on send, or we handle send safely if closed.
-		// actually, safer to just delete and let garbage collection handle it since sender won't reference it anymore.
-	}
+	delete(c.clients, ch)
 }
 
 func (c *statsController) broadcastLoop(ctx context.Context) {
@@ -231,6 +227,8 @@ func (c *statsController) handleCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTaskFromScheduled
 	case entity.ActionTaskRejectManual:
 		action = model.ActionIDTaskRejectManual
+	case entity.ActionUserCreate:
+		action = model.ActionIDUserCreate
 	}
 	c.recordAction(action)
 }
@@ -289,6 +287,8 @@ func actionName(action uint8) string {
 		return "task_complete"
 	case model.ActionIDTaskFromScheduled:
 		return "task_from_scheduled"
+	case model.ActionIDUserCreate:
+		return "user_create"
 	default:
 		return "unknown"
 	}
