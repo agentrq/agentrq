@@ -81,8 +81,12 @@
               <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
               <button v-if="task.assignee === 'human'" 
                       @click="reassignToAgent"
-                      class="ml-2 px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)]">
-                Reassign to Agent
+                      class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)] flex items-center gap-1"
+                      title="Reassign to Agent">
+                <svg class="w-3.5 h-3.5 md:w-2.5 md:h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" stroke-width="2.5" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" stroke-width="2.5" />
+                </svg>
+                <span class="hidden md:inline">Reassign to Agent</span>
               </button>
             </div>
             <div class="flex items-center gap-3">
