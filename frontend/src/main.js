@@ -12,6 +12,8 @@ const routes = [
   { path: '/', component: () => import('./views/HomeView.vue') },
   { path: '/tasks/:filter', component: () => import('./views/TaskListView.vue') },
   { path: '/workspaces/:id', component: () => import('./views/WorkspaceDetailView.vue') },
+  { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
+  { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
   { path: '/workspaces/:workspaceId/tasks/:taskId', component: () => import('./views/TaskDetailView.vue'), meta: { fullPage: true } },
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
@@ -23,7 +25,7 @@ const router = createRouter({
 
 router.beforeEach(async (to, from, next) => {
   if (to.meta.public) return next()
-  
+
   try {
     const user = await fetchUser()
     if (!user) return next('/login')

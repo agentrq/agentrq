@@ -35,107 +35,12 @@
          </button>
           <button @click="startCreate" 
                   class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
-                  title="New Task">
+                   title="New Task">
             <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
             <span class="hidden md:inline">New Task</span>
          </button>
        </div>
     </div>
-
-    <!-- Create/Edit Task Inline Form -->
-    <Transition name="fade-down">
-      <div v-if="isFormOpen" class="fixed inset-0 z-40 flex items-center justify-center p-4 md:relative md:inset-auto md:p-0 md:bg-transparent md:z-10 md:block">
-        <!-- Backdrop for mobile -->
-        <div class="fixed inset-0 bg-black/60 md:hidden" @click="isFormOpen = false"></div>
-        
-        <div class="bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full max-w-2xl md:mb-6 shrink-0 z-10 relative flex flex-col max-h-[90vh] md:max-h-none">
-        <div class="px-6 py-4 border-b-2 border-black bg-black flex justify-between items-center shrink-0">
-            <h2 class="text-sm font-black text-white uppercase tracking-widest">{{ isEditMode ? 'Edit Chronic Task' : 'Define New Task' }}</h2>
-            <button @click="isFormOpen = false" class="text-white/60 hover:text-[#00FF88] transition-colors p-1 border border-white/20 hover:border-[#00FF88]">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-        </div>
-        <form @submit.prevent="isEditMode ? submitEditTask() : submitHumanTask()" class="p-6 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
-            <div class="flex flex-col gap-1.5">
-               <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Title</label>
-               <input v-model="newTask.title" placeholder="Requirement summary..." class="w-full bg-white border-2 border-black px-4 py-2 text-sm outline-none font-bold text-gray-900 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" required />
-            </div>
-            <div class="flex flex-col gap-1.5">
-               <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Description / Instructions</label>
-               <textarea v-model="newTask.body" placeholder="Provide detailed context for the agent..." class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-medium text-gray-800 transition-all resize-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-h-[100px]" required></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="flex flex-col gap-1.5">
-                 <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Assignee</label>
-                 <div class="flex p-1 bg-gray-100 border-2 border-black w-fit">
-                    <button type="button" 
-                            @click="newTask.assignee = 'agent'"
-                            :class="newTask.assignee === 'agent' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
-                            class="px-5 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all">
-                      Agent
-                    </button>
-                    <button type="button" 
-                            @click="newTask.assignee = 'human'"
-                            :class="newTask.assignee === 'human' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
-                            class="px-5 py-1.5 text-[10px] font-black uppercase tracking-widest transition-all">
-                      Human
-                    </button>
-                 </div>
-              </div>
-
-              <div class="flex flex-col gap-1.5">
-                  <div class="flex items-center gap-2 mb-1">
-                     <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Chronic Task (Recurring)</label>
-                     <button type="button" @click="newTask.isRecurring = !newTask.isRecurring" 
-                             class="w-10 h-5 flex items-center transition-all duration-300 border-2 border-black p-0.5"
-                             :class="newTask.isRecurring ? 'bg-[#00FF88]' : 'bg-gray-200'">
-                        <div class="w-3 h-3 bg-black transform transition-all duration-300"
-                             :class="newTask.isRecurring ? 'translate-x-[18px]' : 'translate-x-0'"></div>
-                     </button>
-                  </div>
-                  
-                  <div v-if="newTask.isRecurring" class="flex gap-2">
-                     <select v-model="newTask.cronSchedule" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-black uppercase tracking-widest text-black outline-none h-8">
-                      <option value="*/15 * * * *">Every 15 Min</option>
-                      <option value="*/30 * * * *">Every 30 Min</option>
-                      <option value="0 * * * *">Hourly</option>
-                      <option value="0 0 * * *">Daily</option>
-                      <option value="0 0 * * 0">Weekly</option>
-                      <option value="0 0 1 * *">Monthly</option>
-                    </select>
-                    <input v-model="newTask.cronSchedule" placeholder="Cron: * * * * *" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-mono font-bold text-black outline-none h-8" />
-                  </div>
-               </div>
-            </div>
-
-            <div v-if="!isEditMode" class="flex flex-col gap-2 pt-2">
-               <div class="flex items-center justify-between">
-                  <h3 class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Attachments ({{ newTaskAttachments.length }})</h3>
-                  <button type="button" @click="$refs.fileInput.click()" class="text-[10px] font-black text-black border-b-2 border-black hover:text-[#00FF88] hover:bg-black uppercase tracking-widest transition-colors">Add Files</button>
-               </div>
-               <div v-if="newTaskAttachments.length > 0" class="flex flex-wrap gap-2 p-3 bg-gray-50 border-2 border-black min-h-[50px]">
-                  <div v-for="(att, i) in newTaskAttachments" :key="i" class="flex items-center text-[10px] bg-white border-2 border-black px-3 py-1 font-black uppercase tracking-widest">
-                    <span class="truncate max-w-[140px]">{{ att.filename }}</span>
-                    <button @click.prevent="newTaskAttachments.splice(i, 1)" class="ml-2 text-gray-400 hover:text-red-500">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M6 18L18 6M6 6l12 12"></path></svg>
-                    </button>
-                  </div>
-               </div>
-               <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
-            </div>
-
-            <div class="mt-2 flex gap-3 flex-row-reverse">
-               <button type="submit" :disabled="sending || !newTask.title || !newTask.body" class="bg-black text-white px-6 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px] flex items-center justify-center gap-2 disabled:opacity-50">
-                  <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                  {{ sending ? (isEditMode ? 'Saving...' : 'Dispatching...') : (isEditMode ? 'Save Changes' : 'Create Task') }}
-               </button>
-               <button type="button" @click="isFormOpen = false" class="px-5 py-2.5 border-2 border-black bg-white text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all ml-auto">Cancel</button>
-            </div>
-        </form>
-        </div>
-      </div>
-    </Transition>
 
     <!-- Single List Area -->
     <div class="flex-1 overflow-y-auto pt-4 pb-6 custom-scrollbar pr-2 md:pr-4">
@@ -182,7 +87,10 @@
                      </span>
 
                      <span v-if="t.status === 'cron'" class="text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.5">
-                       CRON: {{ formatCron(t.cron_schedule) }}
+                       ⏰ {{ formatCron(t.cron_schedule) }}
+                     </span>
+                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-indigo-600 font-bold">
+                       • NEXT: {{ getNextRunLabel(t.cron_schedule) }}
                      </span>
 
                      <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.Messages && t.Messages.length > 0">
@@ -304,8 +212,9 @@
 
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import cronParser from 'cron-parser';
 import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder, updateTaskStatus } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
@@ -325,15 +234,11 @@ const router = useRouter();
 const { notifyError, notifySuccess, notifyInfo } = useToasts();
 const fileInput = ref(null);
 const responses = ref({});
-const newTask = ref({ title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' });
-const newTaskAttachments = ref([]);
 const activeStatusMenuId = ref(null);
 const sending = ref(false);
 const toastMessage = ref('');
 
-const isFormOpen = ref(false);
-const isEditMode = ref(false);
-const editingTaskId = ref(null);
+
 
 const showDeleteModal = ref(false);
 const taskToDeleteId = ref(null);
@@ -385,15 +290,60 @@ function formatTime(dateStr) {
 
 function formatCron(cron) {
   if (!cron) return '';
+  
+  // Detect one-time (has specific date parts and NO wildcards in DOM/Month)
+  const parts = cron.split(' ');
+  if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
+    return `ONE-TIME`;
+  }
+
   const presets = {
+    '0 * * * *': 'Hourly',
     '*/15 * * * *': 'Every 15m',
     '*/30 * * * *': 'Every 30m',
-    '0 * * * *': 'Hourly',
-    '0 0 * * *': 'Daily',
-    '0 0 * * 0': 'Weekly',
-    '0 0 1 * *': 'Monthly'
   };
-  return presets[cron] || cron;
+  if (presets[cron]) return presets[cron];
+
+  try {
+    const [min, hour, dom, month, dow] = parts;
+    if (dow !== '*' && dom === '*' && month === '*') {
+      const days = dow.split(',').map(d => daysOptions.find(o => o.value == d)?.label || d).join(',');
+      return `Weekly (${days}) at ${hour}:${min.padStart(2, '0')}`;
+    }
+    if (dom !== '*' && month === '*' && dow === '*') {
+      return `Monthly (Day ${dom}) at ${hour}:${min.padStart(2, '0')}`;
+    }
+    if (dom === '*' && month === '*' && dow === '*') {
+      return `Daily at ${hour}:${min.padStart(2, '0')}`;
+    }
+  } catch (e) {}
+
+  return cron;
+}
+
+function getNextRunLabel(cron) {
+  if (!cron) return '';
+  try {
+    const interval = cronParser.parseExpression(cron);
+    const next = interval.next().toDate();
+    return formatRelativeTime(next);
+  } catch (e) {
+    return '';
+  }
+}
+
+function formatRelativeTime(date) {
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffDay > 0) return `In ${diffDay}d ${diffHour % 24}h`;
+  if (diffHour > 0) return `In ${diffHour}h ${diffMin % 60}m`;
+  if (diffMin > 0) return `In ${diffMin}m`;
+  return 'Just now';
 }
 
 function getTaskOrder(t) {
@@ -473,6 +423,18 @@ const activeTaskCount = computed(() => {
   return localTasks.value.length - scheduledCount.value;
 });
 
+// Timer for updating relative times
+const now = ref(new Date());
+let timer = null;
+onMounted(() => {
+  timer = setInterval(() => {
+    now.value = new Date();
+  }, 30000); // 30s
+});
+onUnmounted(() => {
+  if (timer) clearInterval(timer);
+});
+
 function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';
   if (status === 'blocked') return 'bg-red-50 border-black';
@@ -500,86 +462,9 @@ function getTaskLabel(status) {
   return status;
 }
 
-function handleFileUpload(event) {
-  const files = event.target.files;
-  if (!files || files.length === 0) return;
-
-  for (let i = 0; i < files.length; i++) {
-    const fn = files[i];
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64Str = e.target.result.split(',')[1];
-      newTaskAttachments.value.push({
-        filename: fn.name,
-        mimeType: fn.type || 'application/octet-stream',
-        data: base64Str
-      });
-    };
-    reader.readAsDataURL(fn);
-  }
-  if (fileInput.value) fileInput.value.value = '';
-}
-
-async function submitHumanTask() {
-  if (!newTask.value.title.trim() || !newTask.value.body.trim()) return;
-  sending.value = true;
-  try {
-    const status = newTask.value.isRecurring ? 'cron' : 'notstarted';
-    const cronSched = newTask.value.isRecurring ? newTask.value.cronSchedule : '';
-    
-    const res = await createTask(
-      props.workspaceId, 
-      newTask.value.title, 
-      newTask.value.body, 
-      newTask.value.assignee, 
-      newTaskAttachments.value,
-      status,
-      cronSched
-    );
-    const idx = localTasks.value.findIndex(x => x.id === res.task.id);
-    if (idx === -1) localTasks.value.push(res.task);
-    newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
-    newTaskAttachments.value = [];
-    isFormOpen.value = false;
-    notifySuccess(status === 'cron' ? 'Chronic task scheduled successfully' : 'Task dispatched to pipeline');
-  } catch(err) {
-    notifyError("Dispatch Error: " + err.message);
-  } finally {
-    sending.value = false;
-  }
-}
-
-async function submitEditTask() {
-  if (!newTask.value.title.trim() || !newTask.value.body.trim()) return;
-  sending.value = true;
-  try {
-    const res = await updateScheduledTask(
-      props.workspaceId,
-      editingTaskId.value,
-      newTask.value.title,
-      newTask.value.body,
-      newTask.value.assignee,
-      newTask.value.cronSchedule
-    );
-    const idx = localTasks.value.findIndex(x => x.id === res.task.id);
-    if (idx !== -1) localTasks.value[idx] = res.task;
-    isFormOpen.value = false;
-    isEditMode.value = false;
-    editingTaskId.value = null;
-    notifySuccess('Chronic task updated');
-  } catch(err) {
-    notifyError("Update Error: " + err.message);
-  } finally {
-    sending.value = false;
-  }
-}
 
 function startCreate() {
-  isEditMode.value = false;
-  editingTaskId.value = null;
-  newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
-  newTaskAttachments.value = [];
-  isFormOpen.value = true;
+  router.push(`/workspaces/${props.workspaceId}/tasks/new`);
 }
 
 function openTask(task) {
@@ -588,16 +473,7 @@ function openTask(task) {
 }
 
 function triggerEdit(task) {
-  isEditMode.value = true;
-  editingTaskId.value = task.id;
-  newTask.value = { 
-    title: task.title, 
-    body: task.body, 
-    assignee: task.assignee, 
-    isRecurring: true, 
-    cronSchedule: task.cron_schedule 
-  };
-  isFormOpen.value = true;
+  router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}/edit`);
 }
 async function respond(taskId, action) {
   const text = responses.value[taskId] || '';
