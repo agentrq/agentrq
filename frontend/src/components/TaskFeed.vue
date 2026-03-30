@@ -82,31 +82,82 @@
                       Human
                     </button>
                  </div>
-              </div>
-
-              <div class="flex flex-col gap-1.5">
-                  <div class="flex items-center gap-2 mb-1">
-                     <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Chronic Task (Recurring)</label>
-                     <button type="button" @click="newTask.isRecurring = !newTask.isRecurring" 
-                             class="w-10 h-5 flex items-center transition-all duration-300 border-2 border-black p-0.5"
-                             :class="newTask.isRecurring ? 'bg-[#00FF88]' : 'bg-gray-200'">
-                        <div class="w-3 h-3 bg-black transform transition-all duration-300"
-                             :class="newTask.isRecurring ? 'translate-x-[18px]' : 'translate-x-0'"></div>
-                     </button>
+              </div>              <div class="flex flex-col gap-2">
+                  <label class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Schedule Type</label>
+                  <div class="flex p-1 bg-gray-100 border-2 border-black w-fit">
+                    <button type="button" 
+                            @click="scheduleType = 'none'"
+                            :class="scheduleType === 'none' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                            class="px-4 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all">
+                      None
+                    </button>
+                    <button type="button" 
+                            @click="scheduleType = 'onetime'"
+                            :class="scheduleType === 'onetime' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                            class="px-4 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all">
+                      One-time
+                    </button>
+                    <button type="button" 
+                            @click="scheduleType = 'repeated'"
+                            :class="scheduleType === 'repeated' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                            class="px-4 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all">
+                      Repeated
+                    </button>
                   </div>
-                  
-                  <div v-if="newTask.isRecurring" class="flex gap-2">
-                     <select v-model="newTask.cronSchedule" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-black uppercase tracking-widest text-black outline-none h-8">
-                      <option value="*/15 * * * *">Every 15 Min</option>
-                      <option value="*/30 * * * *">Every 30 Min</option>
-                      <option value="0 * * * *">Hourly</option>
-                      <option value="0 0 * * *">Daily</option>
-                      <option value="0 0 * * 0">Weekly</option>
-                      <option value="0 0 1 * *">Monthly</option>
-                    </select>
-                    <input v-model="newTask.cronSchedule" placeholder="Cron: * * * * *" class="flex-1 bg-white border-2 border-black px-2 py-1 text-[11px] font-mono font-bold text-black outline-none h-8" />
+
+                  <!-- One-time specific UI -->
+                  <div v-if="scheduleType === 'onetime'" class="mt-2 flex flex-col gap-1.5">
+                    <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Execution Date & Time</label>
+                    <input type="datetime-local" 
+                           v-model="oneTimeDate"
+                           class="bg-white border-2 border-black px-3 py-1.5 text-xs font-black uppercase tracking-widest text-black outline-none h-9 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" />
+                  </div>
+
+                  <!-- Repeated specific UI -->
+                  <div v-if="scheduleType === 'repeated'" class="mt-2 flex flex-col gap-3">
+                    <div class="flex flex-col gap-1.5">
+                      <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Frequency</label>
+                      <select v-model="repeatPreset" 
+                              class="bg-white border-2 border-black px-2 py-1.5 text-[10px] font-black uppercase tracking-widest text-black outline-none h-9">
+                        <option value="hourly">Hourly</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="custom">Custom Repeat...</option>
+                      </select>
+                    </div>
+
+                    <!-- Custom repeat days/time -->
+                    <div v-if="repeatPreset === 'custom'" class="flex flex-col gap-2 bg-gray-50 p-3 border-2 border-black border-dashed">
+                       <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Select Days</label>
+                       <div class="flex flex-wrap gap-1">
+                         <button v-for="d in daysOptions" :key="d.value"
+                                 type="button"
+                                 @click="toggleDay(d.value)"
+                                 :class="selectedDays.includes(d.value) ? 'bg-[#00FF88] border-black' : 'bg-white border-gray-200 text-gray-400'"
+                                 class="w-7 h-7 border-2 text-[10px] font-black flex items-center justify-center transition-all hover:border-black">
+                           {{ d.label }}
+                         </button>
+                       </div>
+                    </div>
+
+                    <div v-if="repeatPreset !== 'hourly'" class="flex flex-col gap-1.5">
+                      <label class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Time of Day</label>
+                      <input type="time" v-model="repeatTime"
+                             class="bg-white border-2 border-black px-3 py-1.5 text-xs font-black uppercase tracking-widest text-black outline-none h-9 focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all" />
+                    </div>
+                  </div>
+
+                  <!-- Cron Preview (Debug/Expert Mode) -->
+                  <div v-if="scheduleType !== 'none'" class="mt-3 p-2 bg-gray-900 border border-gray-700">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Generated Cron</span>
+                      <span v-if="nextRunPreview" class="text-[8px] font-black text-[#00FF88] uppercase tracking-widest">Next Run: {{ nextRunPreview }}</span>
+                    </div>
+                    <code class="text-[10px] font-mono text-white block">{{ newTask.cronSchedule }}</code>
                   </div>
                </div>
+>
             </div>
 
             <div v-if="!isEditMode" class="flex flex-col gap-2 pt-2">
@@ -182,7 +233,10 @@
                      </span>
 
                      <span v-if="t.status === 'cron'" class="text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.5">
-                       CRON: {{ formatCron(t.cron_schedule) }}
+                       ⏰ {{ formatCron(t.cron_schedule) }}
+                     </span>
+                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-indigo-600 font-bold">
+                       • NEXT: {{ getNextRunLabel(t.cron_schedule) }}
                      </span>
 
                      <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.Messages && t.Messages.length > 0">
@@ -304,8 +358,9 @@
 
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import cronParser from 'cron-parser';
 import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder, updateTaskStatus } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
@@ -330,6 +385,75 @@ const newTaskAttachments = ref([]);
 const activeStatusMenuId = ref(null);
 const sending = ref(false);
 const toastMessage = ref('');
+
+// Scheduling state
+const scheduleType = ref('none'); // 'none' | 'onetime' | 'repeated'
+const oneTimeDate = ref('');
+const repeatPreset = ref('daily');
+const repeatTime = ref('09:00');
+const selectedDays = ref([1, 2, 3, 4, 5]); // Mon-Fri
+const daysOptions = [
+  { label: 'M', value: 1 },
+  { label: 'T', value: 2 },
+  { label: 'W', value: 3 },
+  { label: 'T', value: 4 },
+  { label: 'F', value: 5 },
+  { label: 'S', value: 6 },
+  { label: 'S', value: 0 },
+];
+
+const nextRunPreview = computed(() => {
+  if (scheduleType.value === 'none' || !newTask.value.cronSchedule) return '';
+  try {
+    const interval = cronParser.parseExpression(newTask.value.cronSchedule);
+    const next = interval.next().toDate();
+    return formatRelativeTime(next);
+  } catch (e) {
+    return '';
+  }
+});
+
+function toggleDay(day) {
+  const idx = selectedDays.value.indexOf(day);
+  if (idx === -1) selectedDays.value.push(day);
+  else if (selectedDays.value.length > 1) selectedDays.value.splice(idx, 1);
+}
+
+// Watchers to build cron string
+watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays], () => {
+  if (scheduleType.value === 'none') {
+    newTask.value.cronSchedule = '';
+    return;
+  }
+
+  if (scheduleType.value === 'onetime') {
+    if (!oneTimeDate.value) {
+      newTask.value.cronSchedule = '';
+      return;
+    }
+    const d = new Date(oneTimeDate.value);
+    // min hour dom month *
+    newTask.value.cronSchedule = `${d.getMinutes()} ${d.getHours()} ${d.getDate()} ${d.getMonth() + 1} *`;
+    return;
+  }
+
+  if (scheduleType.value === 'repeated') {
+    const [hours, minutes] = repeatTime.value.split(':').map(Number);
+    
+    if (repeatPreset.value === 'hourly') {
+      newTask.value.cronSchedule = `0 * * * *`;
+    } else if (repeatPreset.value === 'daily') {
+      newTask.value.cronSchedule = `${minutes} ${hours} * * *`;
+    } else if (repeatPreset.value === 'weekly') {
+      newTask.value.cronSchedule = `${minutes} ${hours} * * 0`;
+    } else if (repeatPreset.value === 'monthly') {
+      newTask.value.cronSchedule = `${minutes} ${hours} 1 * *`;
+    } else if (repeatPreset.value === 'custom') {
+      const days = [...selectedDays.value].sort().join(',');
+      newTask.value.cronSchedule = `${minutes} ${hours} * * ${days}`;
+    }
+  }
+}, { deep: true });
 
 const isFormOpen = ref(false);
 const isEditMode = ref(false);
@@ -385,15 +509,60 @@ function formatTime(dateStr) {
 
 function formatCron(cron) {
   if (!cron) return '';
+  
+  // Detect one-time (has specific date parts and NO wildcards in DOM/Month)
+  const parts = cron.split(' ');
+  if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
+    return `ONE-TIME`;
+  }
+
   const presets = {
+    '0 * * * *': 'Hourly',
     '*/15 * * * *': 'Every 15m',
     '*/30 * * * *': 'Every 30m',
-    '0 * * * *': 'Hourly',
-    '0 0 * * *': 'Daily',
-    '0 0 * * 0': 'Weekly',
-    '0 0 1 * *': 'Monthly'
   };
-  return presets[cron] || cron;
+  if (presets[cron]) return presets[cron];
+
+  try {
+    const [min, hour, dom, month, dow] = parts;
+    if (dow !== '*' && dom === '*' && month === '*') {
+      const days = dow.split(',').map(d => daysOptions.find(o => o.value == d)?.label || d).join(',');
+      return `Weekly (${days}) at ${hour}:${min.padStart(2, '0')}`;
+    }
+    if (dom !== '*' && month === '*' && dow === '*') {
+      return `Monthly (Day ${dom}) at ${hour}:${min.padStart(2, '0')}`;
+    }
+    if (dom === '*' && month === '*' && dow === '*') {
+      return `Daily at ${hour}:${min.padStart(2, '0')}`;
+    }
+  } catch (e) {}
+
+  return cron;
+}
+
+function getNextRunLabel(cron) {
+  if (!cron) return '';
+  try {
+    const interval = cronParser.parseExpression(cron);
+    const next = interval.next().toDate();
+    return formatRelativeTime(next);
+  } catch (e) {
+    return '';
+  }
+}
+
+function formatRelativeTime(date) {
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffDay > 0) return `In ${diffDay}d ${diffHour % 24}h`;
+  if (diffHour > 0) return `In ${diffHour}h ${diffMin % 60}m`;
+  if (diffMin > 0) return `In ${diffMin}m`;
+  return 'Just now';
 }
 
 function getTaskOrder(t) {
@@ -473,6 +642,18 @@ const activeTaskCount = computed(() => {
   return localTasks.value.length - scheduledCount.value;
 });
 
+// Timer for updating relative times
+const now = ref(new Date());
+let timer = null;
+onMounted(() => {
+  timer = setInterval(() => {
+    now.value = new Date();
+  }, 30000); // 30s
+});
+onUnmounted(() => {
+  if (timer) clearInterval(timer);
+});
+
 function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';
   if (status === 'blocked') return 'bg-red-50 border-black';
@@ -524,8 +705,8 @@ async function submitHumanTask() {
   if (!newTask.value.title.trim() || !newTask.value.body.trim()) return;
   sending.value = true;
   try {
-    const status = newTask.value.isRecurring ? 'cron' : 'notstarted';
-    const cronSched = newTask.value.isRecurring ? newTask.value.cronSchedule : '';
+    const status = scheduleType.value !== 'none' ? 'cron' : 'notstarted';
+    const cronSched = newTask.value.cronSchedule;
     
     const res = await createTask(
       props.workspaceId, 
@@ -538,10 +719,11 @@ async function submitHumanTask() {
     );
     const idx = localTasks.value.findIndex(x => x.id === res.task.id);
     if (idx === -1) localTasks.value.push(res.task);
-    newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
+    newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '' };
+    scheduleType.value = 'none';
     newTaskAttachments.value = [];
     isFormOpen.value = false;
-    notifySuccess(status === 'cron' ? 'Chronic task scheduled successfully' : 'Task dispatched to pipeline');
+    notifySuccess(status === 'cron' ? 'Task scheduled successfully' : 'Task dispatched to pipeline');
   } catch(err) {
     notifyError("Dispatch Error: " + err.message);
   } finally {
@@ -577,7 +759,12 @@ async function submitEditTask() {
 function startCreate() {
   isEditMode.value = false;
   editingTaskId.value = null;
-  newTask.value = { title: '', body: '', assignee: 'agent', isRecurring: false, cronSchedule: '0 * * * *' };
+  newTask.value = { title: '', body: '', assignee: 'agent', cronSchedule: '' };
+  scheduleType.value = 'none';
+  oneTimeDate.value = '';
+  repeatPreset.value = 'daily';
+  repeatTime.value = '09:00';
+  selectedDays.value = [1, 2, 3, 4, 5];
   newTaskAttachments.value = [];
   isFormOpen.value = true;
 }
@@ -594,9 +781,41 @@ function triggerEdit(task) {
     title: task.title, 
     body: task.body, 
     assignee: task.assignee, 
-    isRecurring: true, 
     cronSchedule: task.cron_schedule 
   };
+
+  // Attempt to parse existing cron into UI state
+  if (task.cron_schedule) {
+    const parts = task.cron_schedule.split(' ');
+    if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
+      scheduleType.value = 'onetime';
+      // Approximate date-time (for display mostly, since Year is missing in cron)
+      // We'll leave it blank or set to current year
+      const now = new Date();
+      oneTimeDate.value = `${now.getFullYear()}-${String(parts[3]).padStart(2, '0')}-${String(parts[2]).padStart(2, '0')}T${String(parts[1]).padStart(2, '0')}:${String(parts[0]).padStart(2, '0')}`;
+    } else {
+      scheduleType.value = 'repeated';
+      if (task.cron_schedule === '0 * * * *') {
+        repeatPreset.value = 'hourly';
+      } else {
+        const [min, hour, dom, month, dow] = parts;
+        repeatTime.value = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+        if (dow !== '*' && dom === '*' && month === '*') {
+          repeatPreset.value = 'custom';
+          selectedDays.value = dow.split(',').map(Number);
+        } else if (dom === '*' && month === '*' && dow === '*') {
+          repeatPreset.value = 'daily';
+        } else if (dom === '*' && month === '*' && dow === '0') {
+          repeatPreset.value = 'weekly';
+        } else {
+          repeatPreset.value = 'custom';
+        }
+      }
+    }
+  } else {
+    scheduleType.value = 'none';
+  }
+
   isFormOpen.value = true;
 }
 async function respond(taskId, action) {
