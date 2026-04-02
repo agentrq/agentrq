@@ -256,8 +256,9 @@ func New(cfg Config) (*App, error) {
 				}
 				m.Status = status
 
+				msgID := ids.NextID()
 				_ = repo.CreateMessage(ctx, model.Message{
-					ID:        ids.NextID(),
+					ID:        msgID,
 					CreatedAt: time.Now(),
 					TaskID:    taskID,
 					UserID:    monoflake.IDFromBase62(workspaceOwner).Int64(),
@@ -299,7 +300,7 @@ func New(cfg Config) (*App, error) {
 							WorkspaceID:  workspaceID,
 							UserID:       uid,
 							ResourceType: entity.ResourceMessage,
-							ResourceID:   ids.NextID(), // Approximate
+							ResourceID:   msgID,
 							Actor:        entity.ActorAgent,
 						},
 					})

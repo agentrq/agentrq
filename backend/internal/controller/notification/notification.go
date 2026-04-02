@@ -131,7 +131,7 @@ func (c *controller) handleTaskEvent(ctx context.Context, event entity.CRUDEvent
 	switch event.Action {
 	case entity.ActionTaskCreate:
 		c.NotifyTaskCreated(workspace, task)
-	case entity.ActionTaskUpdate:
+	case entity.ActionTaskUpdate, entity.ActionTaskComplete:
 		c.NotifyTaskStatusUpdated(workspace, task)
 	}
 }
