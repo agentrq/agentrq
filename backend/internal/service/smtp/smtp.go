@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/mail"
 	"net/smtp"
 	"strings"
 )
@@ -52,15 +53,29 @@ func (s *service) Send(ctx context.Context, req SendRequest) error {
 	auth := smtp.PlainAuth("", s.cfg.Username, s.cfg.Password, s.cfg.Host)
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 
-	// Custom dialer to handle TLS if port 465
-	if s.cfg.Port == 465 {
-		return s.sendWithTLS(ctx, addr, auth, req.To, []byte(msg))
+	fromAddr := s.cfg.From
+	if parsed, err := mail.ParseAddress(fromAddr); err == nil {
+		fromAddr = parsed.Address
 	}
 
-	return smtp.SendMail(addr, auth, s.cfg.From, req.To, []byte(msg))
+	var toAddrs []string
+	for _, t := range req.To {
+		if parsed, err := mail.ParseAddress(t); err == nil {
+			toAddrs = append(toAddrs, parsed.Address)
+		} else {
+			toAddrs = append(toAddrs, t)
+		}
+	}
+
+	// Custom dialer to handle TLS if port 465
+	if s.cfg.Port == 465 {
+		return s.sendWithTLS(ctx, addr, auth, fromAddr, toAddrs, []byte(msg))
+	}
+
+	return smtp.SendMail(addr, auth, fromAddr, toAddrs, []byte(msg))
 }
 
-func (s *service) sendWithTLS(ctx context.Context, addr string, auth smtp.Auth, to []string, msg []byte) error {
+func (s *service) sendWithTLS(ctx context.Context, addr string, auth smtp.Auth, fromAddr string, to []string, msg []byte) error {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: false,
 		ServerName:         s.cfg.Host,
@@ -82,7 +97,7 @@ func (s *service) sendWithTLS(ctx context.Context, addr string, auth smtp.Auth, 
 		return err
 	}
 
-	if err = client.Mail(s.cfg.From); err != nil {
+	if err = client.Mail(fromAddr); err != nil {
 		return err
 	}
 
