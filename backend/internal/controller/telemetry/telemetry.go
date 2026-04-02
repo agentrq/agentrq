@@ -159,13 +159,14 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 	case mcp.ActionMCPToolCall:
 		action = model.ActionIDMCPToolCall
 	case mcp.ActionMCPNotification:
-		if event.Method == "permission_manual_allow" {
+		switch event.Method {
+		case "permission_manual_allow":
 			action = model.ActionIDMCPPermissionManual
-		} else if event.Method == "permission_auto_allow" {
+		case "permission_auto_allow":
 			action = model.ActionIDMCPPermissionAuto
-		} else if event.Method == "permission_manual_deny" {
+		case "permission_manual_deny":
 			action = model.ActionIDMCPPermissionDeny
-		} else {
+		default:
 			return
 		}
 	default:
