@@ -5,12 +5,12 @@
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-3 flex-nowrap min-w-0">
           <!-- Icon -->
-          <div class="w-10 h-10 bg-white flex items-center justify-center overflow-hidden shrink-0">
+          <div class="w-6 h-6 bg-white flex items-center justify-center overflow-hidden shrink-0">
             <template v-if="workspace.icon">
               <img v-if="workspace.icon.startsWith('data:image')" :src="workspace.icon" class="w-full h-full object-cover" />
-              <span v-else class="text-lg">{{ workspace.icon }}</span>
+              <span v-else class="text-sm">{{ workspace.icon }}</span>
             </template>
-            <svg v-else viewBox="0 0 24 24" class="w-5 h-5 text-black" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-else viewBox="0 0 24 24" class="w-3.5 h-3.5 text-black" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
               <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
             </svg>

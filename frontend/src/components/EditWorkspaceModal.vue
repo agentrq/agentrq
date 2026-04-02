@@ -27,8 +27,8 @@
                   <div class="relative group">
                     <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleIconUpload" />
                     <div @click="$refs.fileInput.click()" class="w-full bg-gray-50 border-2 border-dashed border-gray-200 rounded-lg h-[46px] flex items-center justify-center cursor-pointer hover:border-black transition-all overflow-hidden group">
-                      <img v-if="form.icon" :src="form.icon" class="w-8 h-8 object-contain" />
-                      <svg v-else class="w-5 h-5 text-gray-300 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                      <img v-if="form.icon" :src="form.icon" class="w-6 h-6 object-contain" />
+                      <svg v-else class="w-4 h-4 text-gray-300 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     </div>
                   </div>
                   <p v-if="error" class="text-[9px] font-bold text-red-500 mt-1 uppercase tracking-widest">{{ error }}</p>
