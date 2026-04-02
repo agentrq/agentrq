@@ -39,9 +39,7 @@
                       class="p-1.5 border-2 transition-all" title="Toggle Scheduled">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </button>
-              <button @click="handleArchive" class="p-1.5 text-gray-400 hover:text-red-500 border-2 border-transparent transition-all" title="Archive Mission">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-              </button>
+
               <button @click="taskFeed?.startCreate()" class="p-1.5 text-black bg-[#00FF88] border-2 border-black transition-all shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none" title="New Task">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
               </button>
@@ -106,7 +104,6 @@
             <p class="text-[10px] text-black/60 font-bold">This workspace is archived and read-only.</p>
           </div>
         </div>
-        <button @click="handleUnarchive" class="px-4 py-2 bg-black text-white border-2 border-black text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">Unarchive</button>
       </div>
 
       <div v-show="activeTab === 'tasks'" class="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -118,7 +115,6 @@
           :isArchived="!!workspace.archived_at"
           :isAgentConnected="isAgentConnected"
           :filterScheduled="showScheduledOnly"
-          @archive="handleArchive"
           @toggleScheduled="showScheduledOnly = !showScheduledOnly"
         />
       </div>
@@ -144,6 +140,17 @@
     :loading="isUpdating"
     @close="showEditModal = false"
     @submit="handleUpdate"
+    @archive="handleArchive"
+    @unarchive="handleUnarchive"
+    @delete="handleDelete"
+  />
+
+  <DeleteModal
+    :show="showPurgeModal"
+    :taskTitle="workspace?.name || ''"
+    title="Purge Workspace"
+    @close="showPurgeModal = false"
+    @confirm="doDelete"
   />
 
   <SetupModal
@@ -158,7 +165,7 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, deleteWorkspace } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import TaskFeed from '../components/TaskFeed.vue';
@@ -166,6 +173,7 @@ import WorkspaceStats from '../components/WorkspaceStats.vue';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import SetupModal from '../components/SetupModal.vue';
 import EditWorkspaceModal from '../components/EditWorkspaceModal.vue';
+import DeleteModal from '../components/DeleteModal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -178,6 +186,7 @@ const loading = ref(true);
 const error = ref(null);
 const isCopied = ref(false);
 const showArchiveModal = ref(false);
+const showPurgeModal = ref(false);
 const isDescriptionExpanded = ref(false);
 const showSetupModal = ref(false);
 const showEditModal = ref(false);
@@ -250,6 +259,21 @@ async function doArchive() {
     router.push('/');
   } catch (err) {
     notifyError("Failed to archive workspace: " + err.message);
+  }
+}
+
+async function handleDelete() {
+  showPurgeModal.value = true;
+}
+
+async function doDelete() {
+  showPurgeModal.value = false;
+  try {
+    await deleteWorkspace(workspaceId);
+    notifySuccess('Workspace and all data purged', 'Purge Complete');
+    router.push('/');
+  } catch (err) {
+    notifyError("Failed to purge workspace: " + err.message);
   }
 }
 

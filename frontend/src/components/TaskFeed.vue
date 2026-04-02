@@ -27,12 +27,6 @@
         </button>
        
        <div class="flex items-center gap-2 ml-auto">
-         <button @click="$emit('archive')"
-                 class="flex items-center gap-1.5 px-3 py-2 bg-white border-2 border-black text-[10px] font-black text-gray-500 hover:text-red-500 hover:bg-gray-50 transition-all uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
-                 title="Archive Mission">
-            <svg class="w-3.5 h-3.5 font-bold" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
-            <span class="hidden md:inline">Archive</span>
-         </button>
           <button @click="startCreate" 
                   class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
                    title="New Task">
@@ -228,7 +222,7 @@ const props = defineProps({
   filterScheduled: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['archive', 'toggleScheduled']);
+const emit = defineEmits(['toggleScheduled']);
 
 const router = useRouter();
 const { notifyError, notifySuccess, notifyInfo } = useToasts();

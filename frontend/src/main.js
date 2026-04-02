@@ -9,7 +9,7 @@ import App from './App.vue'
 import { fetchUser } from './api'
 
 const routes = [
-  { path: '/', component: () => import('./views/HomeView.vue') },
+  { path: '/', component: () => import('./views/WorkspaceView.vue') },
   { path: '/tasks/:filter', component: () => import('./views/TaskListView.vue') },
   { path: '/workspaces/:id', component: () => import('./views/WorkspaceDetailView.vue') },
   { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },

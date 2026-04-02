@@ -15,6 +15,7 @@
           <button @click="activeTab = 'general'" :class="activeTab === 'general' ? 'border-black text-black' : 'border-transparent text-gray-400'" class="py-4 text-[10px] font-black uppercase tracking-widest border-b-2 mr-8 transition-all">General</button>
           <button @click="activeTab = 'automations'" :class="activeTab === 'automations' ? 'border-black text-black' : 'border-transparent text-gray-400'" class="py-4 text-[10px] font-black uppercase tracking-widest border-b-2 mr-8 transition-all">Automations</button>
           <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-black text-black' : 'border-transparent text-gray-400'" class="py-4 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all">Notifications</button>
+          <button @click="activeTab = 'danger'" :class="activeTab === 'danger' ? 'border-red-600 text-red-600' : 'border-transparent text-gray-400'" class="py-4 text-[10px] font-black uppercase tracking-widest border-b-2 ml-auto transition-all hover:text-red-500 hover:border-red-500">Danger Zone</button>
         </div>
 
         <div class="p-8 max-h-[70vh] overflow-y-auto">
@@ -119,6 +120,34 @@
                </div>
             </div>
 
+            <div v-if="activeTab === 'danger'" class="space-y-6 animate-in fade-in duration-300">
+               <div>
+                  <h3 class="text-sm font-bold text-red-600 mb-4">Destructive Actions</h3>
+                  
+                  <div class="space-y-4">
+                    <div class="p-5 border border-red-100 bg-red-50/50 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 class="text-sm font-bold text-gray-900">{{ workspace?.archived_at ? 'Restore Workspace' : 'Archive Workspace' }}</h4>
+                        <p class="text-[11px] text-gray-600 mt-1">{{ workspace?.archived_at ? 'Restore this workspace to allow modifications and reactivate connections.' : 'Move this workspace to the archive. It will become read-only.' }}</p>
+                      </div>
+                      <button type="button" @click="$emit(workspace?.archived_at ? 'unarchive' : 'archive')" class="px-5 py-2.5 bg-white border border-gray-200 text-xs font-black uppercase tracking-widest text-black hover:border-black transition-all shadow-sm rounded-lg whitespace-nowrap">
+                        {{ workspace?.archived_at ? 'Unarchive' : 'Archive' }}
+                      </button>
+                    </div>
+
+                    <div class="p-5 border border-red-200 bg-red-50 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <h4 class="text-sm font-bold text-gray-900">Delete Workspace</h4>
+                        <p class="text-[11px] text-gray-600 mt-1">Permanently delete this workspace and all associated tasks. This action cannot be undone.</p>
+                      </div>
+                      <button type="button" @click="$emit('delete')" class="px-6 py-2.5 bg-red-600 text-white border border-red-700 text-xs font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-sm rounded-lg whitespace-nowrap">
+                        Purge Workspace
+                      </button>
+                    </div>
+                  </div>
+               </div>
+            </div>
+
             <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-4">
               <button type="button" @click="close" class="px-6 py-3.5 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-black transition-colors">Cancel</button>
               <button type="submit" class="bg-black text-white px-8 py-3.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-zinc-800 shadow-xl shadow-black/10 transition-all active:scale-95 flex items-center gap-2" :disabled="loading">
@@ -142,7 +171,7 @@ const props = defineProps({
   loading: Boolean
 });
 
-const emit = defineEmits(['close', 'submit']);
+const emit = defineEmits(['close', 'submit', 'archive', 'unarchive', 'delete']);
 
 const activeTab = ref('general');
 const fileInput = ref(null);

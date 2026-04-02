@@ -54,14 +54,14 @@ func (s *service) ResizeBase64(dataBase64 string, width, height int) (string, er
 
 	// Resizing
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.BiLinear.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
+	draw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
 
 	var buf bytes.Buffer
 	switch fmtName {
 	case "png":
 		err = png.Encode(&buf, dst)
 	case "jpeg":
-		err = jpeg.Encode(&buf, dst, nil)
+		err = jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 100})
 	default:
 		// Fallback to PNG if unknown (should not happen with standard image/xxx imports)
 		err = png.Encode(&buf, dst)

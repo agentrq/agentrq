@@ -24,7 +24,7 @@ const confirmDelete = () => {
 
 <template>
   <Transition name="fade">
-    <div v-if="show" class="fixed inset-0 z-[60] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div v-if="show" class="fixed inset-0 z-[100] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
       <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
         <!-- Overlay -->
         <div class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" aria-hidden="true" @click="closeModal"></div>
@@ -33,7 +33,7 @@ const confirmDelete = () => {
 
         <!-- Modal Content -->
         <Transition name="modal">
-          <div v-if="show" class="inline-block relative z-[70] align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-gray-100">
+          <div v-if="show" class="inline-block relative z-[110] align-bottom bg-white rounded-3xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-gray-100">
             <div class="bg-white px-6 pt-7 pb-6 sm:p-8 sm:pb-7">
               <div class="sm:flex sm:items-start">
                 <div class="mx-auto shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-50 sm:mx-0 sm:h-10 sm:w-10 border border-red-100 mb-4 sm:mb-0">

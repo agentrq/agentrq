@@ -113,20 +113,18 @@
       <!-- Active Workspaces -->
       <section v-if="filteredActiveWorkspaces.length > 0">
         <div class="text-[9px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Your workspaces</div>
-        <div class="space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div v-for="p in filteredActiveWorkspaces"
                :key="p.id"
-               class="border-2 border-black p-4 cursor-pointer group flex flex-col justify-between transition-all duration-150 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
-               :class="'bg-white'"
+               class="border-2 border-black p-4 cursor-pointer group flex items-center justify-between transition-all duration-150 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 bg-white"
                @click="goToWorkspace(p.id)">
 
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-3 min-w-0">
                 <!-- Status dot -->
-                <div class="w-3 h-3 rounded-full border border-black"
+                <div class="w-3 h-3 rounded-full border border-black shrink-0"
                      :class="p.agent_connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
                 <!-- Icon -->
-                <div class="w-8 h-8 bg-white flex items-center justify-center overflow-hidden shrink-0">
+                <div class="w-6 h-6 bg-white flex items-center justify-center overflow-hidden shrink-0">
                   <template v-if="p.icon">
                     <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
                     <span v-else class="text-sm">{{ p.icon }}</span>
@@ -136,41 +134,8 @@
                     <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
                   </svg>
                 </div>
-                <span class="font-black text-sm uppercase tracking-tight">{{ p.name }}</span>
+                <span class="font-black text-sm uppercase tracking-tight truncate">{{ p.name }}</span>
               </div>
-              <div class="flex items-center gap-2">
-                <span v-if="p.agent_connected" class="text-[10px] font-black bg-black text-white px-2 py-0.5 uppercase tracking-widest">Claude connected</span>
-                <span v-else class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Idle</span>
-                
-                <div class="flex items-center border-l-2 border-black/5 ml-1 pl-2 gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                  <button @click.stop="toggleArchive(p)" 
-                          class="p-1 hover:bg-gray-100 border border-transparent hover:border-black transition-all"
-                          title="Archive workspace">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                    </svg>
-                  </button>
-                  <button @click.stop="removeWorkspace(p.id)" 
-                          class="p-1 hover:bg-red-50 border border-transparent hover:border-red-600 group/del transition-all"
-                          title="Delete workspace">
-                    <svg class="w-3.5 h-3.5 text-gray-400 group-hover/del:text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <p v-if="p.description" class="text-[11px] font-medium line-clamp-2 leading-relaxed pl-1 text-black/50 mb-3"
-            >{{ p.description }}</p>
-
-            <div class="mt-4 pt-4 border-t-2 border-black/10 flex items-center justify-between text-[9px] uppercase font-black tracking-widest">
-              <span class="text-black/30">{{ new Date(p.created_at).toLocaleDateString() }}</span>
-              <div class="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
-                Open
-                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M9 5l7 7-7 7" /></svg>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -197,13 +162,13 @@
           <div class="flex-1 h-0.5 bg-gray-200"></div>
         </div>
 
-        <div v-if="filteredArchivedWorkspaces.length > 0" class="space-y-2">
+        <div v-if="filteredArchivedWorkspaces.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div v-for="p in filteredArchivedWorkspaces"
                :key="p.id"
                class="border-2 border-gray-300 bg-gray-50 p-4 opacity-60 hover:opacity-100 hover:border-black hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer group flex items-center justify-between"
                @click="goToWorkspace(p.id)">
-            <div class="flex items-center gap-3">
-              <div class="w-7 h-7 bg-white flex items-center justify-center overflow-hidden">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-6 h-6 bg-white flex items-center justify-center overflow-hidden shrink-0">
                 <template v-if="p.icon">
                   <img v-if="p.icon.startsWith('data:image')" :src="p.icon" class="w-full h-full object-cover" />
                   <span v-else class="text-sm">{{ p.icon }}</span>
@@ -213,17 +178,14 @@
                   <path d="M12 7l-3.5 8" /><path d="M12 7l3.5 8" /><path d="M9.5 12h5" />
                 </svg>
               </div>
-              <div>
-                <span class="font-black text-sm text-gray-600 group-hover:text-black uppercase tracking-tight transition-colors">{{ p.name }}</span>
-                <div class="text-[9px] font-black text-red-400 uppercase tracking-widest">Archived {{ new Date(p.ArchivedAt).toLocaleDateString() }}</div>
+              <div class="min-w-0">
+                <div class="font-black text-sm text-gray-600 group-hover:text-black uppercase tracking-tight transition-colors truncate">{{ p.name }}</div>
+                <div class="text-[9px] font-black text-red-400 uppercase tracking-widest truncate">Archived {{ new Date(p.archived_at).toLocaleDateString() }}</div>
               </div>
             </div>
             <div class="flex items-center gap-1">
               <button @click.stop="toggleArchive(p)" class="text-gray-400 hover:text-black transition-all p-1.5 border border-transparent hover:border-black" title="Restore Workspace">
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M3 10h10a5 5 0 015 5v2M3 10l5-5M3 10l5 5"/></svg>
-              </button>
-              <button @click.stop="removeWorkspace(p.id)" class="text-gray-400 hover:text-red-600 transition-all p-1.5 border border-transparent hover:border-red-300">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
               </button>
             </div>
           </div>
@@ -233,24 +195,14 @@
         </div>
       </section>
     </div>
-
-    <!-- Purge Confirmation Modal -->
-    <DeleteModal
-      :show="showPurgeModal"
-      :taskTitle="workspaceToPurge?.name || ''"
-      title="Purge Workspace"
-      @close="closePurgeModal"
-      @confirm="onPurgeConfirm"
-    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchWorkspaces, createWorkspace, deleteWorkspace, archiveWorkspace, unarchiveWorkspace } from '../api';
+import { fetchWorkspaces, createWorkspace, unarchiveWorkspace } from '../api';
 import { useToasts } from '../composables/useToasts';
-import DeleteModal from '../components/DeleteModal.vue';
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
@@ -262,18 +214,16 @@ const loading = ref(false);
 const loadingWorkspaces = ref(true);
 const iconError = ref('');
 const createFileInput = ref(null);
-const showPurgeModal = ref(false);
-const workspaceToPurge = ref(null);
 const error = ref(null);
 
 const form = ref({ name: '', description: '', icon: '' });
 
 const activeWorkspaces = computed(() => {
-  return workspaces.value.filter(p => !p.ArchivedAt);
+  return workspaces.value.filter(p => !p.archived_at);
 });
 
 const archivedWorkspaces = computed(() => {
-  return workspaces.value.filter(p => !!p.ArchivedAt);
+  return workspaces.value.filter(p => !!p.archived_at);
 });
 
 const filteredActiveWorkspaces = computed(() => {
@@ -360,43 +310,13 @@ async function submit() {
 
 async function toggleArchive(p) {
   try {
-    if (p.ArchivedAt) {
+    if (p.archived_at) {
       await unarchiveWorkspace(p.id);
       notifySuccess('Workspace protocol restored');
-    } else {
-      await archiveWorkspace(p.id);
-      notifySuccess('Workspace archived');
     }
     await loadWorkspaces();
   } catch (err) {
     notifyError(err.message, 'Operation Failed');
-  }
-}
-
-async function removeWorkspace(id) {
-  const p = workspaces.value.find(x => x.id === id);
-  if (!p) return;
-  workspaceToPurge.value = p;
-  showPurgeModal.value = true;
-}
-
-function closePurgeModal() {
-  showPurgeModal.value = false;
-  workspaceToPurge.value = null;
-}
-
-async function onPurgeConfirm() {
-  const id = workspaceToPurge.value?.id;
-  if (!id) return;
-  
-  try {
-    await deleteWorkspace(id);
-    await loadWorkspaces();
-    notifySuccess('Workspace and all data purged', 'Purge Complete');
-  } catch (err) {
-    notifyError('Failed to purge workspace: ' + err.message, 'Purge Error');
-  } finally {
-    closePurgeModal();
   }
 }
 
