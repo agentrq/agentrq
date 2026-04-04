@@ -1,7 +1,7 @@
 .PHONY: dev backend frontend install stop mocks test
 
 remote-claude:
-	claude --dangerously-load-development-channels server:agentrq-0ZSxLpLjsBt
+	claude --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
 
 # Default command to start everything in development mode
 dev:

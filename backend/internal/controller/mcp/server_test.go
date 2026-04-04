@@ -403,6 +403,173 @@ func TestWorkspaceServer_HandleReply_Errors(t *testing.T) {
 	}
 }
 
+func TestWorkspaceServer_HandleCreateTask_WithCronSchedule(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+
+	var capturedTask model.Task
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+		idgen:       mockIdgen,
+		bus:         eventbus.New(),
+		createTask: func(ctx context.Context, task model.Task) (model.Task, error) {
+			capturedTask = task
+			task.ID = 456
+			return task, nil
+		},
+	}
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen.EXPECT().NextID().Return(int64(456))
+
+	params := CreateTaskParams{
+		Title:        "Daily Report",
+		Body:         "Generate daily report",
+		CronSchedule: "0 9 * * *",
+	}
+	res, _, err := ps.handleCreateTask(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("expected no error, got: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+
+	if capturedTask.Status != "cron" {
+		t.Errorf("expected status=cron, got: %s", capturedTask.Status)
+	}
+	if capturedTask.CronSchedule != "0 9 * * *" {
+		t.Errorf("expected cron_schedule='0 9 * * *', got: %s", capturedTask.CronSchedule)
+	}
+
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, "task created with id=") {
+		t.Errorf("unexpected content: %s", text)
+	}
+}
+
+func TestWorkspaceServer_HandleCreateTask_InvalidCron(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+		idgen:       mockIdgen,
+		bus:         eventbus.New(),
+	}
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
+	cases := []struct {
+		name     string
+		schedule string
+		errFrag  string
+	}{
+		{
+			name:     "every minute wildcard",
+			schedule: "* * * * *",
+			errFrag:  "granularity too fine",
+		},
+		{
+			name:     "every 5 minutes step",
+			schedule: "*/5 * * * *",
+			errFrag:  "granularity too fine",
+		},
+		{
+			name:     "comma list minutes",
+			schedule: "0,30 * * * *",
+			errFrag:  "granularity too fine",
+		},
+		{
+			name:     "minute range",
+			schedule: "0-30 * * * *",
+			errFrag:  "granularity too fine",
+		},
+		{
+			name:     "invalid syntax",
+			schedule: "not-a-cron",
+			errFrag:  "cron schedule must have exactly 5 fields",
+		},
+		{
+			name:     "minute out of range",
+			schedule: "60 * * * *",
+			errFrag:  "minute field must be a valid integer",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			params := CreateTaskParams{
+				Title:        "Test",
+				Body:         "Body",
+				CronSchedule: tc.schedule,
+			}
+			res, _, err := ps.handleCreateTask(context.Background(), nil, params)
+			if err != nil {
+				t.Fatalf("unexpected Go error: %v", err)
+			}
+			if !res.IsError {
+				t.Fatalf("expected error result for schedule %q", tc.schedule)
+			}
+			text := res.Content[0].(*mcp.TextContent).Text
+			if !contains(text, tc.errFrag) {
+				t.Errorf("expected error containing %q, got: %s", tc.errFrag, text)
+			}
+		})
+	}
+}
+
+func TestValidateCronGranularity(t *testing.T) {
+	validCases := []string{
+		"0 * * * *",   // every hour at :00
+		"30 * * * *",  // every hour at :30
+		"0 9 * * *",   // daily at 9am
+		"0 9 * * 1",   // weekly Monday at 9am
+		"0 9 1 * *",   // monthly on the 1st at 9am
+		"59 23 * * *", // daily at 23:59
+		"0 */2 * * *", // every 2 hours at :00
+		"30 9 * * 1-5",// weekdays at 9:30
+	}
+
+	for _, s := range validCases {
+		if err := validateCronGranularity(s); err != nil {
+			t.Errorf("expected valid for %q, got error: %v", s, err)
+		}
+	}
+
+	invalidCases := []struct {
+		schedule string
+		errFrag  string
+	}{
+		{"* * * * *", "granularity too fine"},
+		{"*/5 * * * *", "granularity too fine"},
+		{"*/1 * * * *", "granularity too fine"},
+		{"0,30 * * * *", "granularity too fine"},
+		{"0-5 * * * *", "granularity too fine"},
+		{"60 * * * *", "must be a valid integer"},
+		{"-1 * * * *", "granularity too fine"},    // "-" in minute field caught as range-like
+		{"abc * * * *", "must be a valid integer"},
+		{"not a cron at all", "must be a valid integer"}, // 5 tokens; "not" fails Atoi
+	}
+
+	for _, tc := range invalidCases {
+		if err := validateCronGranularity(tc.schedule); err == nil {
+			t.Errorf("expected error for %q, got nil", tc.schedule)
+		} else if !contains(err.Error(), tc.errFrag) {
+			t.Errorf("expected error containing %q for %q, got: %v", tc.errFrag, tc.schedule, err)
+		}
+	}
+}
+
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }

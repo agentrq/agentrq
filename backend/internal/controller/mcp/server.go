@@ -8,11 +8,13 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
+	"github.com/robfig/cron/v3"
 	zlog "github.com/rs/zerolog/log"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -88,10 +90,11 @@ type WorkspaceServer struct {
 
 // CreateTaskParams is the input to the create_task tool.
 type CreateTaskParams struct {
-	Title       string `json:"title" jsonschema:"Short title of the task"`
-	Body        string `json:"body" jsonschema:"Detailed description of the task or action needed"`
-	Assignee    string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
-	Attachments []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	Title        string `json:"title" jsonschema:"Short title of the task"`
+	Body         string `json:"body" jsonschema:"Detailed description of the task or action needed"`
+	Assignee     string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
+	Attachments  []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	CronSchedule string `json:"cron_schedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). When set, creates a recurring cron task. Minimum granularity is hourly (e.g. '30 * * * *'). Sub-hourly schedules are not allowed."`
 }
 
 // UpdateTaskStatusParams is the input to the update_task_status tool.
@@ -491,6 +494,15 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		}, nil, nil
 	}
 
+	if params.CronSchedule != "" {
+		if err := validateCronGranularity(params.CronSchedule); err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+	}
+
 	var attachmentsJSON string
 	if len(params.Attachments) > 0 {
 		if b, err := json.Marshal(params.Attachments); err == nil {
@@ -504,17 +516,23 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		assignee = "agent"
 	}
 
+	status := "notstarted"
+	if params.CronSchedule != "" {
+		status = "cron"
+	}
+
 	t := model.Task{
-		ID:          ps.idgen.NextID(),
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		WorkspaceID: ps.workspaceID,
-		UserID:      monoflake.IDFromBase62(ps.userID).Int64(),
-		CreatedBy:   "agent",
-		Assignee:    assignee,
-		Status:      "notstarted",
-		Title:       params.Title,
-		Body:        params.Body,
+		ID:           ps.idgen.NextID(),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		WorkspaceID:  ps.workspaceID,
+		UserID:       monoflake.IDFromBase62(ps.userID).Int64(),
+		CreatedBy:    "agent",
+		Assignee:     assignee,
+		Status:       status,
+		Title:        params.Title,
+		Body:         params.Body,
+		CronSchedule: params.CronSchedule,
 	}
 
 	if attachmentsJSON != "" {
@@ -1110,4 +1128,39 @@ func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, too
 			Actor:       2, // Agent
 		},
 	})
+}
+
+// validateCronGranularity validates that the cron schedule is syntactically valid
+// and has a minimum repeat interval of one hour (no sub-hourly schedules).
+// The minute field must be a single fixed value (0-59); wildcards, steps, ranges,
+// and comma-lists in the minute field are all rejected because they would cause
+// the job to fire more than once per hour.
+func validateCronGranularity(schedule string) error {
+	fields := strings.Fields(schedule)
+	if len(fields) != 5 {
+		return fmt.Errorf("cron schedule must have exactly 5 fields (minute hour dom month dow)")
+	}
+
+	minuteField := fields[0]
+
+	// Reject wildcards, steps (*/n), ranges (a-b), and comma-lists in the minute field.
+	if minuteField == "*" ||
+		strings.Contains(minuteField, "/") ||
+		strings.Contains(minuteField, "-") ||
+		strings.Contains(minuteField, ",") {
+		return fmt.Errorf("cron schedule granularity too fine: minute field must be a single fixed value (0-59), not %q — only hourly or coarser schedules are allowed", minuteField)
+	}
+
+	minute, err := strconv.Atoi(minuteField)
+	if err != nil || minute < 0 || minute > 59 {
+		return fmt.Errorf("cron schedule minute field must be a valid integer between 0 and 59, got %q", minuteField)
+	}
+
+	// Validate overall syntax using the standard 5-field parser.
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	if _, err := parser.Parse(schedule); err != nil {
+		return fmt.Errorf("invalid cron schedule: %w", err)
+	}
+
+	return nil
 }
