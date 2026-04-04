@@ -57,33 +57,62 @@ The frontend will be available at `http://localhost:5173`.
 
 AgentRQ is designed for seamless integration as a **Claude Channel**. This allows your AI agents to see tasks assigned to them and respond directly within your Claude session.
 
-### 1. Integration with Claude Code
-To add an AgentRQ workspace to your Claude Code workspace:
+Each workspace has its own MCP URL and token (visible in the workspace setup modal). Replace `YOUR_MCP_URL` below with the full URL shown there (e.g. `https://your-host/mcp/WORKSPACE_ID?token=TOKEN`).
 
-1. Create or update a `.mcp.json` file in your repository:
+### Step 1 — `.mcp.json`
+
+Create a `.mcp.json` file in your local project directory (the leading dot is required). Each project gets its own file so Claude instances stay isolated per workspace.
 
 ```json
 {
   "mcpServers": {
-    "agentrq": {
-      "command": "sh",
-      "args": ["-c", "curl -s http://localhost:3000/mcp/YOUR_WORKSPACE_ID_BASE62"]
+    "agentrq-WORKSPACE_ID": {
+      "type": "http",
+      "url": "YOUR_MCP_URL"
     }
   }
 }
 ```
 
-2. Start Claude with the AgentRQ channel enabled:
+### Step 2 — `.claude/settings.local.json`
 
-```bash
-claude --dangerously-load-development-channels server:agentrq
+Add a `.claude/settings.local.json` file in the same project directory to pre-approve the AgentRQ tools and avoid permission prompts on every action:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__agentrq-WORKSPACE_ID__updateTaskStatus",
+      "mcp__agentrq-WORKSPACE_ID__getWorkspace",
+      "mcp__agentrq-WORKSPACE_ID__reply",
+      "mcp__agentrq-WORKSPACE_ID__createTask",
+      "mcp__agentrq-WORKSPACE_ID__downloadAttachment",
+      "mcp__agentrq-WORKSPACE_ID__getTaskMessages"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["agentrq-WORKSPACE_ID"]
+}
 ```
 
-### 2. Capabilities
+### Step 3 — Start Claude
+
+Once both files are in place, launch Claude Code from that project directory:
+
+```bash
+claude --dangerously-load-development-channels server:agentrq-WORKSPACE_ID
+```
+
+> **Tip:** The workspace ID, full MCP URL (with token), and ready-to-paste config snippets are all available in the **Setup** modal inside each AgentRQ workspace.
+
+### Available MCP Tools
 When connected, the AI agent has access to:
-- `create_task`: Assign a task to the human user.
-- `update_task_status`: Move tasks through 'notstarted', 'ongoing', 'blocked', and 'completed'.
+- `createTask`: Assign a task to the human user (supports optional `cron_schedule` for recurring tasks).
+- `updateTaskStatus`: Move tasks through `notstarted`, `ongoing`, `blocked`, and `completed`.
 - `reply`: Send messages back to the AgentRQ dashboard in real-time.
+- `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
+- `getTaskMessages`: Read the chat history of a task with cursor-based pagination.
+- `downloadAttachment`: Retrieve an attachment by its ID.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
 
