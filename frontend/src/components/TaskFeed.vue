@@ -452,7 +452,7 @@ function getTaskBadgeStyle(status) {
 }
 function getTaskLabel(status) {
   if (status === 'notstarted') return 'NOT STARTED';
-  if (status === 'cron') return 'CHRONIC';
+  if (status === 'cron') return 'SCHEDULED';
   return status;
 }
 

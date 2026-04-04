@@ -137,7 +137,7 @@
               </div>
               <div v-if="scheduleType !== 'none'" class="bg-gray-50 p-4 border-t-2 border-black flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div class="flex flex-col gap-1">
-                     <span class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Cron Signature</span>
+                     <span class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Schedule</span>
                      <code class="text-xs font-mono text-black select-all tracking-wider">{{ newTask.cronSchedule || '----' }}</code>
                   </div>
                   <div v-if="nextRunPreview" class="flex flex-col sm:items-end gap-1">
