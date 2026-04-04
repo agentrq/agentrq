@@ -462,7 +462,10 @@ function startCreate() {
 }
 
 function openTask(task) {
-  if (task.status === 'cron') return;
+  if (task.status === 'cron') {
+    router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}/instances`);
+    return;
+  }
   router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}`);
 }
 
