@@ -61,8 +61,8 @@
 
       <div class="mt-12 flex items-center justify-between w-full px-2 text-[11px] uppercase font-black tracking-widest text-gray-500">
         <div class="flex gap-6">
-          <a href="/terms.html" class="hover:text-black transition-colors underline decoration-gray-200 underline-offset-4">Terms</a>
-          <a href="/privacy.html" class="hover:text-black transition-colors underline decoration-gray-200 underline-offset-4">Privacy</a>
+          <a href="https://agentrq.com/tos" target="_blank" rel="noopener" class="hover:text-black transition-colors underline decoration-gray-200 underline-offset-4">Terms</a>
+          <a href="https://agentrq.com/privacy" target="_blank" rel="noopener" class="hover:text-black transition-colors underline decoration-gray-200 underline-offset-4">Privacy</a>
         </div>
         <span class="opacity-40">&copy; 2026 AgentRQ</span>
       </div>
