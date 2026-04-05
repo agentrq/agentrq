@@ -142,7 +142,7 @@
                   </div>
                   <div v-if="nextRunPreview" class="flex flex-col sm:items-end gap-1">
                      <span class="text-[8px] font-black text-gray-400 uppercase tracking-widest">Next Execution</span>
-                     <span class="text-xs font-black text-indigo-600 uppercase tracking-widest">{{ nextRunPreview }}</span>
+                     <span class="text-xs font-black text-sky-600 uppercase tracking-widest">{{ nextRunPreview }}</span>
                   </div>
               </div>
             </div>

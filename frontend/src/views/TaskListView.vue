@@ -75,7 +75,7 @@
                 <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black uppercase tracking-widest shrink-0" :class="getTaskBadgeStyle(task.status)">
                   {{ task.status }}
                 </span>
-                <span v-if="task.cron_schedule" class="text-[9px] font-black px-2 py-0.5 bg-indigo-50 border-2 border-indigo-200 text-indigo-700 uppercase tracking-widest shrink-0">Scheduled</span>
+                <span v-if="task.cron_schedule" class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
               </div>
               
               <h3 class="text-sm font-black text-black group-hover:text-indigo-600 transition-colors uppercase truncate mb-1">{{ task.title }}</h3>

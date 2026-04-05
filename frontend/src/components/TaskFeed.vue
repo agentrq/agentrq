@@ -80,10 +80,10 @@
                        <span :class="t.assignee === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.assignee === 'human' ? 'YOU' : 'AGENT' }}</span>
                      </span>
 
-                     <span v-if="t.status === 'cron'" class="text-indigo-800 bg-indigo-100 border border-indigo-300 px-1 py-0.5">
+                     <span v-if="t.status === 'cron'" class="text-sky-800 bg-sky-100 border border-sky-300 px-1 py-0.5">
                        ⏰ {{ formatCron(t.cron_schedule) }}
                      </span>
-                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-indigo-600 font-bold">
+                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-sky-600 font-bold">
                        • NEXT: {{ getNextRunLabel(t.cron_schedule) }}
                      </span>
 
@@ -155,7 +155,7 @@
                      </div>
                    </div>
                  </div>
-                  <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
+                  <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-sky-600 hover:bg-sky-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   </button>
                   <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
@@ -433,21 +433,21 @@ function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';
   if (status === 'blocked') return 'bg-red-50 border-black';
   if (status === 'completed') return 'bg-green-50 border-black';
-  if (status === 'cron') return 'bg-indigo-50 border-indigo-200';
+  if (status === 'cron') return 'bg-sky-50 border-sky-200';
   return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
 }
 function getTaskDotStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-400';
   if (status === 'blocked') return 'bg-red-500';
   if (status === 'completed') return 'bg-green-500';
-  if (status === 'cron') return 'bg-indigo-500 border-indigo-600';
+  if (status === 'cron') return 'bg-sky-500 border-sky-600';
   return 'bg-gray-300 border-gray-400';
 }
 function getTaskBadgeStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-200 border-black text-black border-2';
   if (status === 'blocked') return 'bg-red-200 border-black text-black border-2';
   if (status === 'completed') return 'bg-green-200 border-black text-black border-2';
-  if (status === 'cron') return 'bg-indigo-200 border-indigo-400 text-indigo-800 border-2';
+  if (status === 'cron') return 'bg-sky-200 border-sky-400 text-sky-800 border-2';
   return 'bg-gray-100 border-gray-300 text-gray-500 font-bold border-2';
 }
 function getTaskLabel(status) {

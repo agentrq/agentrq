@@ -25,29 +25,29 @@
     <div v-else class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-4 pb-6 custom-scrollbar space-y-6">
 
       <!-- Scheduled Task Card -->
-      <div v-if="scheduledTask" class="border-2 border-indigo-400 bg-indigo-50 shadow-[4px_4px_0px_0px_rgba(99,102,241,1)]">
-        <div class="bg-indigo-600 px-4 py-2 flex items-center justify-between">
+      <div v-if="scheduledTask" class="border-2 border-sky-400 bg-sky-50 shadow-[4px_4px_0px_0px_rgba(14,165,233,1)]">
+        <div class="bg-sky-600 px-4 py-2 flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <svg class="w-3.5 h-3.5 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <svg class="w-3.5 h-3.5 text-sky-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span class="text-[10px] font-black text-indigo-100 uppercase tracking-widest">Scheduled Task</span>
+            <span class="text-[10px] font-black text-sky-100 uppercase tracking-widest">Scheduled Task</span>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-[9px] font-black text-indigo-300 uppercase tracking-widest bg-indigo-800 px-2 py-0.5">
+            <span class="text-[9px] font-black text-sky-300 uppercase tracking-widest bg-sky-800 px-2 py-0.5">
               ⏰ {{ formatCron(scheduledTask.cron_schedule) }}
             </span>
-            <span v-if="nextRunLabel" class="text-[9px] font-black text-indigo-200 uppercase tracking-widest">
+            <span v-if="nextRunLabel" class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
               NEXT: {{ nextRunLabel }}
             </span>
           </div>
         </div>
         <div class="px-4 py-3">
-          <p class="font-black text-sm text-indigo-900 leading-snug">{{ scheduledTask.title }}</p>
-          <p v-if="scheduledTask.body" class="text-xs text-indigo-700 mt-1 leading-relaxed line-clamp-2">{{ scheduledTask.body }}</p>
-          <div class="flex flex-wrap items-center gap-3 mt-2 text-[9px] font-black uppercase tracking-widest text-indigo-500">
+          <p class="font-black text-sm text-sky-900 leading-snug">{{ scheduledTask.title }}</p>
+          <p v-if="scheduledTask.body" class="text-xs text-sky-700 mt-1 leading-relaxed line-clamp-2">{{ scheduledTask.body }}</p>
+          <div class="flex flex-wrap items-center gap-3 mt-2 text-[9px] font-black uppercase tracking-widest text-sky-500">
             <span>Created {{ formatDate(scheduledTask.created_at) }}</span>
-            <span class="border-l border-indigo-300 pl-3">{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
+            <span class="border-l border-sky-300 pl-3">{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
           </div>
         </div>
       </div>
