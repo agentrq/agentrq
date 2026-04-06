@@ -478,6 +478,7 @@ func New(cfg Config) (*App, error) {
 		Repository: repo,
 		TokenSvc:   tokenSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
+		BaseURL:    cfg.App.BaseURL,
 		Mux:        mux,
 	}); err != nil {
 		return nil, fmt.Errorf("mcp handler: %w", err)
@@ -505,7 +506,7 @@ func New(cfg Config) (*App, error) {
 
 	// SPA Fallback
 	fiberApp.Get("/*", func(c *fiber.Ctx) error {
-		if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp") {
+		if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp") || strings.HasPrefix(c.Path(), "/.well-known/") {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Not Found"})
 		}
 		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")

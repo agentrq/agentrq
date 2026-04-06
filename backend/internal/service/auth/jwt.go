@@ -27,7 +27,8 @@ type Claims struct {
 
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
-	CreateMCPToken(userID, workspaceID string) (string, error)
+	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
+	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
 }
 
@@ -60,7 +61,7 @@ func (s *tokenService) CreateToken(userID, email, name, picture string) (string,
 	return token.SignedString(s.secret)
 }
 
-func (s *tokenService) CreateMCPToken(userID, workspaceID string) (string, error) {
+func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
@@ -71,6 +72,26 @@ func (s *tokenService) CreateMCPToken(userID, workspaceID string) (string, error
 	if workspaceID != "" {
 		claims.Audience = jwt.ClaimStrings{workspaceID}
 	}
+	if tokenType != "" {
+		claims.Audience = append(claims.Audience, tokenType)
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(2 * time.Minute)), // 2 minutes short lived
+		},
+	}
+
+	if workspaceID != "" {
+		claims.Audience = jwt.ClaimStrings{workspaceID}
+	}
+	claims.Audience = append(claims.Audience, "authorization_code")
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)

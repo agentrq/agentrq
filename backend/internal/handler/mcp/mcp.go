@@ -5,8 +5,11 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	zlog "github.com/rs/zerolog/log"
@@ -24,6 +27,7 @@ type Params struct {
 	Repository base.Repository
 	TokenSvc   auth.TokenService
 	TokenKey   string
+	BaseURL    string
 	Mux        *http.ServeMux
 }
 
@@ -34,6 +38,7 @@ type handler struct {
 	repo       base.Repository
 	tokenSvc   auth.TokenService
 	tokenKey   string
+	baseURL    string
 }
 
 func corsWrapper(h http.Handler) http.Handler {
@@ -57,11 +62,18 @@ func New(p Params) (Handler, error) {
 		repo:       p.Repository,
 		tokenSvc:   p.TokenSvc,
 		tokenKey:   p.TokenKey,
+		baseURL:    p.BaseURL,
 	}
 
 	// Mount the unified Streamable HTTP endpoint natively.
 	// We handle both exact and trailing slash versions to be robust.
 	p.Mux.Handle("/mcp/{workspaceID}", corsWrapper(h.streamableHandler()))
+
+	// OAuth2 and CIMD endpoints
+	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
+	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 
 	return h, nil
 }
@@ -71,12 +83,36 @@ func workspaceIDFromParam(r *http.Request) int64 {
 	return monoflake.IDFromBase62(r.PathValue("workspaceID")).Int64()
 }
 
+func getTokenVal(r *http.Request) string {
+	if token := r.URL.Query().Get("token"); token != "" {
+		return token
+	}
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+	return ""
+}
+
+func sendJSONRPCError(w http.ResponseWriter, message string, httpStatus int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      nil,
+		"error": map[string]interface{}{
+			"code":    -32000,
+			"message": message,
+		},
+	})
+}
+
 // streamableHandler serves both GET (Stream) and POST (Messages) via mcp-go StreamableHTTPServer.
 func (h *handler) streamableHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromParam(r)
 		if workspaceID == 0 {
-			http.Error(w, "invalid workspace id", http.StatusBadRequest)
+			sendJSONRPCError(w, "invalid workspace id", http.StatusBadRequest)
 			return
 		}
 
@@ -88,22 +124,29 @@ func (h *handler) streamableHandler() http.Handler {
 		ev.Msg("MCP call")
 
 		// 1. Mandatory token check if workspace has it in DB
-		queryToken := r.URL.Query().Get("token")
+		queryToken := getTokenVal(r)
 		workspace, err := h.repo.SystemGetWorkspace(r.Context(), workspaceID)
+		if err != nil {
+			sendJSONRPCError(w, "situational security: workspace not found", http.StatusNotFound)
+			return
+		}
 
 		userID := ""
-		if err == nil && workspace.TokenEncrypted != "" {
-			if queryToken == "" {
-				http.Error(w, "situational security: mission token required", http.StatusUnauthorized)
-				return
-			}
+		if queryToken == "" {
+			sendJSONRPCError(w, "situational security: mission token required", http.StatusUnauthorized)
+			return
+		}
+
+		// If it's a 16-character mission token, decrypt and check
+		if len(queryToken) == 16 {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
 			if decErr != nil || dec != queryToken {
-				http.Error(w, "situational security: invalid mission token", http.StatusUnauthorized)
+				sendJSONRPCError(w, "situational security: invalid mission token", http.StatusUnauthorized)
 				return
 			}
 			userID = monoflake.ID(workspace.UserID).String()
 		}
+		// If length is not 16, it might be a valid JWT OAuth token. It will be checked via identifyUser below.
 
 		// 2. Mandatory Mcp-Session-Id for non-initialize requests
 		sessionID := r.Header.Get("Mcp-Session-Id")
@@ -113,30 +156,6 @@ func (h *handler) streamableHandler() http.Handler {
 			body, _ = io.ReadAll(r.Body)
 			r.Body = io.NopCloser(bytes.NewBuffer(body))
 		}
-
-		// isInitializeCall := false
-		// if r.Method == "POST" {
-		// 	var rpc struct {
-		// 		Method string `json:"method"`
-		// 	}
-		// 	if err := json.Unmarshal(body, &rpc); err == nil {
-		// 		if rpc.Method == "initialize" {
-		// 			isInitializeCall = true
-		// 			// On initialize, create session ID and return as header
-		// 			newSessID, err := h.tokenSvc.CreateMCPToken(userID, monoflake.ID(workspaceID).String())
-		// 			if err == nil {
-		// 				sessionID = newSessID
-		// 				w.Header().Set("Mcp-Session-Id", sessionID)
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		// // Mcp-Session-Id is mandatory for all requests except initialize call
-		// if !isInitializeCall && sessionID == "" {
-		// 	http.Error(w, "situational security: mcp-session-id required by MCP spec", http.StatusBadRequest)
-		// 	return
-		// }
 
 		// Try to identify user if not already set by secret
 		if userID == "" {
@@ -150,8 +169,8 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		// Final check: if workspace has token, userID must be set
-		if err == nil && workspace.TokenEncrypted != "" && userID == "" {
-			http.Error(w, "situational security: unauthorized", http.StatusUnauthorized)
+		if workspace.TokenEncrypted != "" && userID == "" {
+			sendJSONRPCError(w, "situational security: unauthorized", http.StatusUnauthorized)
 			return
 		}
 
@@ -210,9 +229,168 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 		}
 
 		if isWorkspaceValid {
-			return claims.Subject
+			hasInvalidAudience := false
+			for _, aud := range claims.Audience {
+				if aud == "refresh" || aud == "authorization_code" {
+					hasInvalidAudience = true
+					break
+				}
+			}
+			if !hasInvalidAudience {
+				return claims.Subject
+			}
 		}
 	}
 
 	return ""
+}
+
+func (h *handler) oauthMetadataHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		proto := "https://"
+		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+			proto = "http://"
+		}
+
+		baseURL := proto + r.Host
+
+		authEndpoint := baseURL + "/oauth2/authorize"
+		tokenEndpoint := baseURL + "/oauth2/token"
+
+		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
+		if !strings.Contains(r.Host, ".mcp.") {
+			workspaceID := workspaceIDFromParam(r)
+			if workspaceID != 0 {
+				workspaceIDBase62 := monoflake.ID(workspaceID).String()
+				authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
+				tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
+			}
+		}
+
+		metadata := map[string]interface{}{
+			"issuer":                                baseURL,
+			"authorization_endpoint":                authEndpoint,
+			"token_endpoint":                        tokenEndpoint,
+			"client_id_metadata_document_supported": true,
+			"response_types_supported":              []string{"code"},
+			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
+		}
+
+		importJson := json.NewEncoder(w)
+		importJson.Encode(metadata)
+	})
+}
+
+func (h *handler) oauthAuthorizeHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		workspaceID := workspaceIDFromParam(r)
+
+		// 1. Is user logged in?
+		var userID string
+		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
+			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && claims != nil {
+				userID = claims.Subject
+			}
+		}
+
+		// Optional clientID validation can be added here
+		_ = r.URL.Query().Get("client_id")
+		redirectURI := r.URL.Query().Get("redirect_uri")
+		state := r.URL.Query().Get("state")
+
+		if userID == "" {
+			// Not authenticated, redirect to main login with 'redirect_url'
+			// To return back, building the current full URL:
+			proto := "https://"
+			if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+				proto = "http://"
+			}
+			returnURL := proto + r.Host + r.URL.RequestURI()
+			loginURL := fmt.Sprintf("%s/api/v1/auth/google/login?redirect_url=%s", h.baseURL, url.QueryEscape(returnURL))
+			http.Redirect(w, r, loginURL, http.StatusFound)
+			return
+		}
+
+		// User is logged in.
+		// If auto-appproval or basic form required:
+		// We'll proceed with granting a short-lived authorization code directly since they visited here.
+		workspaceIDBase62 := monoflake.ID(workspaceID).String()
+		code, err := h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// Redirect back to client
+		finalRedirect := fmt.Sprintf("%s?code=%s&state=%s", redirectURI, url.QueryEscape(code), url.QueryEscape(state))
+		http.Redirect(w, r, finalRedirect, http.StatusFound)
+	})
+}
+
+func (h *handler) oauthTokenHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+
+		grantType := r.Form.Get("grant_type")
+
+		var tokenStr string
+		switch grantType {
+		case "authorization_code":
+			tokenStr = r.Form.Get("code")
+		case "refresh_token":
+			tokenStr = r.Form.Get("refresh_token")
+		default:
+			http.Error(w, `{"error": "unsupported_grant_type"}`, http.StatusBadRequest)
+			return
+		}
+
+		claims, err := h.tokenSvc.ValidateToken(tokenStr)
+		if err != nil || claims == nil {
+			http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if grantType == "refresh_token" {
+			hasRefresh := false
+			for _, aud := range claims.Audience {
+				if aud == "refresh" {
+					hasRefresh = true
+					break
+				}
+			}
+			if !hasRefresh {
+				http.Error(w, `{"error": "invalid_grant"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
+		userID := claims.Subject
+		var workspaceIDBase62 string
+		if len(claims.Audience) > 0 {
+			workspaceIDBase62 = claims.Audience[0]
+		}
+
+		accessToken, err := h.tokenSvc.CreateMCPToken(userID, workspaceIDBase62, "access")
+		if err != nil {
+			http.Error(w, `{"error": "server_error"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// The refresh token can just be the same token format for our stateless needs
+		refreshToken, err := h.tokenSvc.CreateMCPToken(userID, workspaceIDBase62, "refresh")
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
+			"token_type":    "bearer",
+			"expires_in":    2592000, // 30 days
+		})
+	})
 }
