@@ -339,7 +339,24 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
 				proto = "http://"
 			}
-			returnURL := proto + r.Host + r.URL.RequestURI()
+
+			returnPath := r.URL.Path
+			if strings.Contains(r.Host, ".mcp.") {
+				prefix := "/mcp/" + monoflake.ID(workspaceID).String()
+				if strings.HasPrefix(returnPath, prefix) {
+					returnPath = strings.TrimPrefix(returnPath, prefix)
+					if returnPath == "" {
+						returnPath = "/"
+					}
+				}
+			}
+
+			returnQuery := ""
+			if r.URL.RawQuery != "" {
+				returnQuery = "?" + r.URL.RawQuery
+			}
+
+			returnURL := proto + r.Host + returnPath + returnQuery
 			loginURL := fmt.Sprintf("%s/api/v1/auth/google/login?redirect_url=%s", h.baseURL, url.QueryEscape(returnURL))
 			http.Redirect(w, r, loginURL, http.StatusFound)
 			return
