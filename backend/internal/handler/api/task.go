@@ -71,6 +71,9 @@ func (h *handler) createTask() fiber.Handler {
 		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
 			srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
 			content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(rs.Task.ID).String(), rs.Task.Title, rs.Task.Body)
+			if atts := formatAttachments(rs.Task.Attachments); atts != "" {
+				content += "\n" + atts
+			}
 			srv.SendChannelNotification(ctx, rs.Task.ID, content)
 		}
 
@@ -153,6 +156,9 @@ func (h *handler) respondToTask() fiber.Handler {
 		if rq.Text != "" {
 			content += ": " + rq.Text
 		}
+		if atts := formatAttachments(rq.Attachments); atts != "" {
+			content += "\n" + atts
+		}
 		srv.SendChannelNotification(ctx, rq.TaskID, content)
 
 		// Push SSE event to human subscribers (ack)
@@ -183,6 +189,14 @@ func (h *handler) replyToTask() fiber.Handler {
 			c.Status(status)
 			return c.Send(e)
 		}
+
+		// Notify LLM of the human's reply via MCP channel
+		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
+		content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(rq.TaskID).String(), rq.Text)
+		if atts := formatAttachments(rq.Attachments); atts != "" {
+			content += "\n" + atts
+		}
+		srv.SendChannelNotification(ctx, rq.TaskID, content)
 
 		// Push reply.received SSE event to human subscribers
 		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
@@ -448,4 +462,22 @@ func (h *handler) updateScheduledTask() fiber.Handler {
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromUpdateScheduledTaskResponseEntityToHTTPResponse(rs))
 	}
+}
+
+// formatAttachments builds a compact attachment summary for LLM notifications,
+// listing each attachment ID and filename so the agent can call downloadAttachment.
+func formatAttachments(atts []entity.Attachment) string {
+	if len(atts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(atts))
+	for _, a := range atts {
+		if a.ID != "" {
+			parts = append(parts, fmt.Sprintf("  - id=%s filename=%s", a.ID, a.Filename))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Attachments:\n" + strings.Join(parts, "\n")
 }

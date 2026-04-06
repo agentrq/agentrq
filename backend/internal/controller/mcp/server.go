@@ -439,6 +439,9 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 				})
 				nextTask := pendingTasks[0]
 				msg := fmt.Sprintf("Next assigned task:\nTitle: %s\nDetails: %s", nextTask.Title, nextTask.Body)
+				if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
+					msg += "\n" + atts
+				}
 				ps.SendChannelNotification(context.Background(), nextTask.ID, msg)
 			}
 		}
@@ -1128,6 +1131,28 @@ func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, too
 			Actor:       2, // Agent
 		},
 	})
+}
+
+// formatModelAttachments builds an attachment summary from raw JSON (model.Task.Attachments)
+// for inclusion in LLM notifications so the agent can call downloadAttachment.
+func formatModelAttachments(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var atts []entity.Attachment
+	if err := json.Unmarshal(raw, &atts); err != nil {
+		return ""
+	}
+	parts := make([]string, 0, len(atts))
+	for _, a := range atts {
+		if a.ID != "" {
+			parts = append(parts, fmt.Sprintf("  - id=%s filename=%s", a.ID, a.Filename))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Attachments:\n" + strings.Join(parts, "\n")
 }
 
 // validateCronGranularity validates that the cron schedule is syntactically valid
