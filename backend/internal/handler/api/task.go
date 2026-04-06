@@ -465,7 +465,7 @@ func (h *handler) updateScheduledTask() fiber.Handler {
 }
 
 // formatAttachments builds a compact attachment summary for LLM notifications,
-// listing each attachment ID and filename so the agent can call downloadAttachment.
+// listing each attachment id, name, and type so the agent can call downloadAttachment.
 func formatAttachments(atts []entity.Attachment) string {
 	if len(atts) == 0 {
 		return ""
@@ -473,7 +473,7 @@ func formatAttachments(atts []entity.Attachment) string {
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {
-			parts = append(parts, fmt.Sprintf("  - id=%s filename=%s", a.ID, a.Filename))
+			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
 		}
 	}
 	if len(parts) == 0 {

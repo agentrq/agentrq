@@ -1146,7 +1146,7 @@ func formatModelAttachments(raw []byte) string {
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {
-			parts = append(parts, fmt.Sprintf("  - id=%s filename=%s", a.ID, a.Filename))
+			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
 		}
 	}
 	if len(parts) == 0 {
