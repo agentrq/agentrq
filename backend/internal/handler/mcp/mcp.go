@@ -19,6 +19,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -94,14 +95,14 @@ func getTokenVal(r *http.Request) string {
 	return ""
 }
 
-func sendJSONRPCError(w http.ResponseWriter, message string, httpStatus int) {
+func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatus int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      nil,
 		"error": map[string]interface{}{
-			"code":    -32000,
+			"code":    code,
 			"message": message,
 		},
 	})
@@ -112,7 +113,7 @@ func (h *handler) streamableHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromParam(r)
 		if workspaceID == 0 {
-			sendJSONRPCError(w, "invalid workspace id", http.StatusBadRequest)
+			sendJSONRPCError(w, "invalid workspace id", jsonrpc.CodeInvalidParams, http.StatusBadRequest)
 			return
 		}
 
@@ -127,13 +128,13 @@ func (h *handler) streamableHandler() http.Handler {
 		queryToken := getTokenVal(r)
 		workspace, err := h.repo.SystemGetWorkspace(r.Context(), workspaceID)
 		if err != nil {
-			sendJSONRPCError(w, "situational security: workspace not found", http.StatusNotFound)
+			sendJSONRPCError(w, "situational security: workspace not found", jsonrpc.CodeInvalidParams, http.StatusNotFound)
 			return
 		}
 
 		userID := ""
 		if queryToken == "" {
-			sendJSONRPCError(w, "situational security: mission token required", http.StatusUnauthorized)
+			sendJSONRPCError(w, "situational security: mission token required", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 			return
 		}
 
@@ -141,7 +142,7 @@ func (h *handler) streamableHandler() http.Handler {
 		if len(queryToken) == 16 {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
 			if decErr != nil || dec != queryToken {
-				sendJSONRPCError(w, "situational security: invalid mission token", http.StatusUnauthorized)
+				sendJSONRPCError(w, "situational security: invalid mission token", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 				return
 			}
 			userID = monoflake.ID(workspace.UserID).String()
@@ -170,7 +171,7 @@ func (h *handler) streamableHandler() http.Handler {
 
 		// Final check: if workspace has token, userID must be set
 		if workspace.TokenEncrypted != "" && userID == "" {
-			sendJSONRPCError(w, "situational security: unauthorized", http.StatusUnauthorized)
+			sendJSONRPCError(w, "situational security: unauthorized", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 			return
 		}
 
