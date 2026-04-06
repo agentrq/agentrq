@@ -169,8 +169,8 @@ func (h *handler) streamableHandler() http.Handler {
 			}
 		}
 
-		// Final check: if workspace has token, userID must be set
-		if workspace.TokenEncrypted != "" && userID == "" {
+		// Final check: userID must be set
+		if userID == "" {
 			sendJSONRPCError(w, "situational security: unauthorized", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 			return
 		}
