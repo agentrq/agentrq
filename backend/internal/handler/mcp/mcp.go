@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	zlog "github.com/rs/zerolog/log"
 
@@ -75,6 +76,7 @@ func New(p Params) (Handler, error) {
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthMetadataHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
+	p.Mux.Handle("/mcp/{workspaceID}/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
 
 	return h, nil
 }
@@ -105,6 +107,33 @@ func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatu
 			"code":    code,
 			"message": message,
 		},
+	})
+}
+
+func (h *handler) oauthRegisterHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var payload map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+
+		if payload == nil {
+			payload = make(map[string]interface{})
+		}
+
+		// Strictly stateless/stateless-like: issue a dynamic auto-generated PKCE clientId string
+		clientID := "dynamic-" + monoflake.ID(time.Now().UnixNano()).String()
+		payload["client_id"] = clientID
+		payload["client_id_issued_at"] = time.Now().Unix()
+		// Implicitly public clients, so no strictly enforced client_secret, but we set expires_at=0 to satisfy strict SDK parsers
+		payload["client_secret_expires_at"] = 0
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(payload)
 	})
 }
 
@@ -258,6 +287,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 
 		authEndpoint := baseURL + "/oauth2/authorize"
 		tokenEndpoint := baseURL + "/oauth2/token"
+		regEndpoint := baseURL + "/oauth2/register"
 
 		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
 		if !strings.Contains(r.Host, ".mcp.") {
@@ -266,6 +296,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 				workspaceIDBase62 := monoflake.ID(workspaceID).String()
 				authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
 				tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
+				regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
 			}
 		}
 
@@ -273,6 +304,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			"issuer":                                baseURL,
 			"authorization_endpoint":                authEndpoint,
 			"token_endpoint":                        tokenEndpoint,
+			"registration_endpoint":                 regEndpoint,
 			"client_id_metadata_document_supported": true,
 			"response_types_supported":              []string{"code"},
 			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
