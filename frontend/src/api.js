@@ -1,5 +1,23 @@
 export const API_BASE_URL = '/api/v1';
 
+export async function fetchSecrets() {
+  const res = await fetch(`${API_BASE_URL}/secrets`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch secrets');
+  }
+  return res.json();
+}
+
+export async function createSecret(key, value) {
+  const res = await fetch(`${API_BASE_URL}/secrets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value })
+  });
+  if (!res.ok) throw new Error('Failed to create secret');
+  return res.json();
+}
+
 export async function fetchWorkspaces(includeArchived = false) {
   const url = includeArchived ? `${API_BASE_URL}/workspaces?archived=true` : `${API_BASE_URL}/workspaces`;
   const res = await fetch(url);

@@ -78,16 +78,13 @@
                 {{ task.created_by === 'human' ? 'H' : 'A' }}
               </div>
               <span class="text-[10px] font-black text-white uppercase tracking-widest">Task Definition</span>
-              <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
-              <button v-if="task.assignee === 'human'" 
-                      @click="reassignToAgent"
-                      class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)] flex items-center gap-1"
-                      title="Reassign to Agent">
-                <svg class="w-3.5 h-3.5 md:w-2.5 md:h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" stroke-width="2.5" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" stroke-width="2.5" />
-                </svg>
-                <span class="hidden md:inline">Reassign to Agent</span>
-              </button>
+              <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-2">→ {{ task.assignee }}</span>
+
+              <select v-model="task.assignee" @change="reassignTo" class="bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)] px-1.5 py-0.5 outline-none cursor-pointer">
+                 <option value="human">Assign Human</option>
+                 <option value="agent">Assign Agent</option>
+                 <option value="jules" v-if="hasJulesKey">Assign Jules</option>
+              </select>
             </div>
             <div class="flex items-center gap-3">
               <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ formatDateTime(task.created_at) }}</span>
@@ -369,7 +366,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, fetchSecrets } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 
@@ -382,6 +379,7 @@ const taskId = route.params.taskId;
 const workspace = ref(null);
 const task = ref(null);
 const descExpanded = ref(false);
+const hasJulesKey = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
 const scrollContainer = ref(null);
@@ -496,6 +494,17 @@ async function reassignToAgent() {
   }
 }
 
+async function reassignTo(event) {
+  const newAssignee = event.target.value;
+  try {
+    const res = await updateTaskAssignee(workspaceId, taskId, newAssignee);
+    task.value = res.task;
+    notifySuccess(`Reassigned to ${newAssignee.toUpperCase()}`);
+  } catch (err) {
+    notifyError("Failed to reassign: " + err.message);
+  }
+}
+
 async function submitReply() {
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
   const text = replyText.value;
@@ -579,7 +588,15 @@ watch(() => task.value?.title, (title) => {
   if (title) document.title = `${title} | AgentRQ`;
 }, { immediate: true });
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const secretsRes = await fetchSecrets();
+    if (secretsRes.secrets && secretsRes.secrets.find(s => s.key === 'GOOGLE_JULES_API_KEY')) {
+      hasJulesKey.value = true;
+    }
+  } catch (err) {
+    // Ignore secrets error
+  }
   load();
   scrollToBottom();
 });

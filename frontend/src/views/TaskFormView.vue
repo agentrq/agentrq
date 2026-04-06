@@ -72,6 +72,12 @@
                                class="px-6 py-2 text-[10px] font-black uppercase tracking-widest transition-all">
                          Human
                        </button>
+                       <button v-if="hasJulesKey" type="button"
+                               @click="newTask.assignee = 'jules'"
+                               :class="newTask.assignee === 'jules' ? 'bg-black text-[#00FF88]' : 'text-gray-500 hover:text-black'"
+                               class="px-6 py-2 text-[10px] font-black uppercase tracking-widest transition-all">
+                         Jules
+                       </button>
                     </div>
                  </div>
 
@@ -194,7 +200,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { getWorkspace, createTask, updateScheduledTask, getTask } from '../api';
+import { getWorkspace, createTask, updateScheduledTask, getTask, fetchSecrets } from '../api';
 import { useToasts } from '../composables/useToasts';
 
 const route = useRoute();
@@ -211,6 +217,7 @@ const fileInput = ref(null);
 
 const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '' });
 const newTaskAttachments = ref([]);
+const hasJulesKey = ref(false);
 
 // Scheduling state
 const scheduleType = ref('none');
@@ -228,6 +235,14 @@ onMounted(async () => {
   try {
     const res = await getWorkspace(workspaceId);
     workspace.value = res.workspace;
+
+    // Check if jules key exists
+    try {
+      const secretsRes = await fetchSecrets();
+      hasJulesKey.value = secretsRes.secrets?.some(s => s.key === 'GOOGLE_JULES_API_KEY') || false;
+    } catch (err) {
+      console.error('Failed to fetch secrets:', err);
+    }
 
     if (isEditMode.value) {
       const taskRes = await getTask(workspaceId, taskId);

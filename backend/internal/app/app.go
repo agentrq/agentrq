@@ -105,7 +105,7 @@ func New(cfg Config) (*App, error) {
 		return nil, errors.New("neither postgres nor sqlite must be enabled in config")
 	}
 
-	if err := db.Conn(context.Background()).AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.Telemetry{}, &model.User{}); err != nil {
+	if err := db.Conn(context.Background()).AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.Telemetry{}, &model.User{}, &model.Secret{}); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 

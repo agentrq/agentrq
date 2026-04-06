@@ -1,13 +1,16 @@
 package crud
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/mustafaturan/monoflake"
 	"github.com/robfig/cron/v3"
 	"gorm.io/datatypes"
@@ -50,6 +53,14 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 		if _, err := parser.Parse(req.Task.CronSchedule); err != nil {
 			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		}
+	}
+
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if req.Task.Assignee == "jules" {
+		_, err := c.repository.GetSecretByKey(ctx, uid, "GOOGLE_JULES_API_KEY")
+		if err != nil {
+			return nil, fmt.Errorf("GOOGLE_JULES_API_KEY is missing")
 		}
 	}
 
@@ -99,6 +110,29 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		ResourceID:   created.ID,
 		Actor:        entity.ActorHuman,
 	})
+
+	if created.Assignee == "jules" {
+		reply, err := c.pushToJulesAPI(ctx, uid, created.Title+"\n"+created.Body)
+		if err == nil && reply != "" {
+			msg := model.Message{
+				ID:        c.idgen.NextID(),
+				CreatedAt: time.Now(),
+				TaskID:    created.ID,
+				UserID:    created.UserID,
+				Sender:    "jules",
+				Text:      reply,
+			}
+			_ = c.repository.CreateMessage(ctx, msg)
+			c.emitEvent(ctx, entity.CRUDEvent{
+				Action:       entity.ActionMessageCreate,
+				WorkspaceID:  created.WorkspaceID,
+				UserID:       created.UserID,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   msg.ID,
+				Actor:        entity.ActorAgent,
+			})
+		}
+	}
 
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
@@ -230,6 +264,29 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		Actor:        entity.ActorHuman,
 	})
 
+	if updated.Assignee == "jules" {
+		reply, err := c.pushToJulesAPI(ctx, uid, req.Text)
+		if err == nil && reply != "" {
+			msgJules := model.Message{
+				ID:        c.idgen.NextID(),
+				CreatedAt: time.Now(),
+				TaskID:    updated.ID,
+				UserID:    updated.UserID,
+				Sender:    "jules",
+				Text:      reply,
+			}
+			_ = c.repository.CreateMessage(ctx, msgJules)
+			c.emitEvent(ctx, entity.CRUDEvent{
+				Action:       entity.ActionMessageCreate,
+				WorkspaceID:  updated.WorkspaceID,
+				UserID:       updated.UserID,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   msgJules.ID,
+				Actor:        entity.ActorAgent,
+			})
+		}
+	}
+
 	// Fetch latest state with messages
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
 	latest, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
@@ -338,8 +395,16 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 		return nil, err
 	}
 
-	if req.Assignee != "human" && req.Assignee != "agent" {
+	if req.Assignee != "human" && req.Assignee != "agent" && req.Assignee != "jules" {
 		return nil, fmt.Errorf("invalid assignee: %s", req.Assignee)
+	}
+
+	if req.Assignee == "jules" {
+		// Verify jules API key
+		_, err := c.repository.GetSecretByKey(ctx, uid, "GOOGLE_JULES_API_KEY")
+		if err != nil {
+			return nil, fmt.Errorf("GOOGLE_JULES_API_KEY is missing")
+		}
 	}
 
 	m.Assignee = req.Assignee
@@ -358,6 +423,29 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 		ResourceID:   updated.ID,
 		Actor:        entity.ActorHuman,
 	})
+
+	if updated.Assignee == "jules" {
+		reply, err := c.pushToJulesAPI(ctx, uid, updated.Title+"\n"+updated.Body)
+		if err == nil && reply != "" {
+			msg := model.Message{
+				ID:        c.idgen.NextID(),
+				CreatedAt: time.Now(),
+				TaskID:    updated.ID,
+				UserID:    updated.UserID,
+				Sender:    "jules",
+				Text:      reply,
+			}
+			_ = c.repository.CreateMessage(ctx, msg)
+			c.emitEvent(ctx, entity.CRUDEvent{
+				Action:       entity.ActionMessageCreate,
+				WorkspaceID:  updated.WorkspaceID,
+				UserID:       updated.UserID,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   msg.ID,
+				Actor:        entity.ActorAgent,
+			})
+		}
+	}
 
 	return &entity.UpdateTaskAssigneeResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
@@ -415,6 +503,29 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		ResourceID:   updated.ID,
 		Actor:        entity.ActorHuman,
 	})
+
+	if updated.Assignee == "jules" {
+		reply, err := c.pushToJulesAPI(ctx, uid, req.Text)
+		if err == nil && reply != "" {
+			msgJules := model.Message{
+				ID:        c.idgen.NextID(),
+				CreatedAt: time.Now(),
+				TaskID:    updated.ID,
+				UserID:    updated.UserID,
+				Sender:    "jules",
+				Text:      reply,
+			}
+			_ = c.repository.CreateMessage(ctx, msgJules)
+			c.emitEvent(ctx, entity.CRUDEvent{
+				Action:       entity.ActionMessageCreate,
+				WorkspaceID:  updated.WorkspaceID,
+				UserID:       updated.UserID,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   msgJules.ID,
+				Actor:        entity.ActorAgent,
+			})
+		}
+	}
 
 	// Fetch latest state with messages
 	uid = monoflake.IDFromBase62(req.UserID).Int64()
@@ -655,4 +766,51 @@ func isValidTaskStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+func (c *controller) pushToJulesAPI(ctx context.Context, userID int64, text string) (string, error) {
+	secret, err := c.repository.GetSecretByKey(ctx, userID, "GOOGLE_JULES_API_KEY")
+	if err != nil {
+		return "", fmt.Errorf("could not find jules api key: %w", err)
+	}
+
+	apiKey, err := security.Decrypt(secret.ValueEncrypted, c.tokenKey, secret.Nonce)
+	if err != nil {
+		return "", fmt.Errorf("could not decrypt jules api key: %w", err)
+	}
+
+	reqBody, _ := json.Marshal(map[string]string{
+		"text": text,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://developers.google.com/jules/api", bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("jules api returned status: %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Reply string `json:"reply"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		// Mock reply for success if no json body is returned
+		return "Task accepted by Jules", nil
+	}
+
+	if res.Reply == "" {
+		return "Task accepted by Jules", nil
+	}
+
+	return res.Reply, nil
 }

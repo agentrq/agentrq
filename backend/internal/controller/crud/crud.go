@@ -25,6 +25,7 @@ type (
 		WorkspaceController
 		UserController
 		TaskController
+		SecretController
 	}
 
 	controller struct {
@@ -76,6 +77,12 @@ type UserController interface {
 	CreateUser(ctx context.Context, u entity.User) (entity.User, error)
 	FindUserByEmail(ctx context.Context, email string) (entity.User, error)
 	FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error)
+}
+
+// SecretController defines secret operations.
+type SecretController interface {
+	CreateSecret(ctx context.Context, req entity.CreateSecretRequest) (*entity.CreateSecretResponse, error)
+	ListSecrets(ctx context.Context, userID string) (*entity.ListSecretsResponse, error)
 }
 
 // TaskController defines task operations.

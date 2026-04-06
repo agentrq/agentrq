@@ -16,6 +16,7 @@ const routes = [
   { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
   { path: '/workspaces/:workspaceId/tasks/:taskId', component: () => import('./views/TaskDetailView.vue'), meta: { fullPage: true } },
   { path: '/workspaces/:workspaceId/tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue'), meta: { fullPage: true } },
+  { path: '/secrets', component: () => import('./views/SecretsView.vue') },
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
 

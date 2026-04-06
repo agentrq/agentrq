@@ -96,6 +96,23 @@
           </router-link>
 
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-1 mt-6 mb-3">
+            <span class="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Settings</span>
+          </div>
+
+          <router-link to="/secrets"
+              @mouseenter="showTooltip($event, 'Secrets')" @mouseleave="hideTooltip"
+              class="flex items-center gap-3 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all border-2 border-transparent"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-0' : '',
+                $route.path === '/secrets' ? 'bg-[#00FF88] text-black border-[#00FF88]' : 'text-white/60 hover:text-white hover:border-white/20 hover:bg-white/5'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+               <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Secrets</span>
+          </router-link>
+
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-1 mt-6 mb-3">
             <span class="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Tasks</span>
           </div>
 

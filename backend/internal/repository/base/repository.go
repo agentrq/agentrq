@@ -44,6 +44,10 @@ type Repository interface {
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
+
+	CreateSecret(ctx context.Context, s model.Secret) error
+	GetSecretByKey(ctx context.Context, userID int64, key string) (model.Secret, error)
+	ListSecrets(ctx context.Context, userID int64) ([]model.Secret, error)
 }
 
 type repository struct {
@@ -393,6 +397,25 @@ func (r *repository) CreateUser(ctx context.Context, u model.User) (model.User, 
 		return model.User{}, err
 	}
 	return u, nil
+}
+
+func (r *repository) CreateSecret(ctx context.Context, s model.Secret) error {
+	return r.conn(ctx).Save(&s).Error
+}
+
+func (r *repository) GetSecretByKey(ctx context.Context, userID int64, key string) (model.Secret, error) {
+	var s model.Secret
+	err := r.conn(ctx).Where("user_id = ? AND key = ?", userID, key).First(&s).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Secret{}, ErrNotFound
+	}
+	return s, err
+}
+
+func (r *repository) ListSecrets(ctx context.Context, userID int64) ([]model.Secret, error) {
+	var secrets []model.Secret
+	err := r.conn(ctx).Where("user_id = ?", userID).Find(&secrets).Error
+	return secrets, err
 }
 
 func (r *repository) UpdateUser(ctx context.Context, u model.User) (model.User, error) {

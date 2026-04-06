@@ -77,6 +77,17 @@ type (
 		Name       string `gorm:"type:varchar(255)"`
 		Picture    string `gorm:"type:text"`
 	}
+
+	// Secret holds encrypted user secrets
+	Secret struct {
+		ID             int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt      time.Time
+		UpdatedAt      time.Time
+		UserID         int64  `gorm:"index:idx_secrets_user_id"`
+		Key            string `gorm:"type:varchar(255);index:idx_secrets_user_key,unique"`
+		ValueEncrypted string `gorm:"type:text"`
+		Nonce          string `gorm:"type:varchar(64)"`
+	}
 )
 
 const (

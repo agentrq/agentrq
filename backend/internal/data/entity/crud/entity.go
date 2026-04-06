@@ -320,6 +320,27 @@ type (
 		User User
 	}
 
+	CreateSecretRequest struct {
+		Key    string
+		Value  string
+		UserID string
+	}
+
+	CreateSecretResponse struct {
+		Key string
+	}
+
+	Secret struct {
+		ID        int64    `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Key       string   `json:"key"`
+	}
+
+	ListSecretsResponse struct {
+		Secrets []Secret `json:"secrets"`
+	}
+
 	// CRUDEvent is the central structure for all CRUD events published via PubSub
 	CRUDEvent struct {
 		Action       Action       `json:"action"`

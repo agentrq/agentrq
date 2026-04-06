@@ -91,6 +91,8 @@ func New(p Params) (Handler, error) {
 
 	h.registerProtectedAuthRoutes()
 
+	h.registerSecretRoutes()
+
 	if err := h.registerWorkspaceRoutes(); err != nil {
 		return nil, err
 	}
@@ -99,6 +101,64 @@ func New(p Params) (Handler, error) {
 	}
 
 	return h, nil
+}
+
+func (h *handler) registerSecretRoutes() {
+	r := h.router.Group("/secrets")
+	r.Post("", h.createSecret())
+	r.Get("", h.listSecrets())
+}
+
+func (h *handler) listSecrets() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		userID := c.Locals("user_id").(string)
+		rs, err := h.crud.ListSecrets(ctx, userID)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		c.Status(http.StatusOK)
+		return c.JSON(rs)
+	}
+}
+
+func (h *handler) createSecret() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+
+		var req struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		}
+		if err := c.BodyParser(&req); err != nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		userID := c.Locals("user_id").(string)
+		_, err := h.crud.CreateSecret(ctx, entity.CreateSecretRequest{
+			Key:    req.Key,
+			Value:  req.Value,
+			UserID: userID,
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		c.Status(http.StatusCreated)
+		return c.JSON(fiber.Map{"status": "ok"})
+	}
 }
 
 func newContext(c *fiber.Ctx) (context.Context, context.CancelFunc) {
