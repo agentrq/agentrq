@@ -47,7 +47,7 @@ func TestTokenService(t *testing.T) {
 		userID := "user123"
 		workspaceID := "ws456"
 
-		token, err := s.CreateMCPToken(userID, workspaceID)
+		token, err := s.CreateMCPToken(userID, workspaceID, "access")
 		if err != nil {
 			t.Fatalf("failed to create MCP token: %v", err)
 		}
@@ -62,6 +62,34 @@ func TestTokenService(t *testing.T) {
 		}
 		if len(claims.Audience) == 0 || claims.Audience[0] != workspaceID {
 			t.Errorf("expected audience %s, got %v", workspaceID, claims.Audience)
+		}
+	})
+
+	t.Run("CreateOAuthCodeToken", func(t *testing.T) {
+		userID := "user123"
+		workspaceID := "ws456"
+
+		token, err := s.CreateOAuthCodeToken(userID, workspaceID)
+		if err != nil {
+			t.Fatalf("failed to create OAuth code token: %v", err)
+		}
+
+		claims, err := s.ValidateToken(token)
+		if err != nil {
+			t.Fatalf("failed to validate OAuth code token: %v", err)
+		}
+
+		if claims.Subject != userID {
+			t.Errorf("expected userID %s, got %s", userID, claims.Subject)
+		}
+		if len(claims.Audience) == 0 || claims.Audience[0] != workspaceID {
+			t.Errorf("expected audience %s, got %v", workspaceID, claims.Audience)
+		}
+
+		// Check expiry is within bounds ~ 2 mins
+		expiry := claims.ExpiresAt.Time
+		if expiry.Sub(time.Now()) > 2*time.Minute+time.Second {
+			t.Errorf("expected expiry to be <= 2 mins, got %v", expiry.Sub(time.Now()))
 		}
 	})
 

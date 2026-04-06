@@ -248,13 +248,17 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
 		}
 
-		c.Cookie(&fiber.Cookie{
+		cookie := &fiber.Cookie{
 			Name:     "at",
 			Value:    tokenString,
 			Expires:  time.Now().Add(24 * time.Hour),
 			HTTPOnly: true,
 			Path:     "/",
-		})
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
 
 		return c.JSON(fiber.Map{"status": "ok"})
 	}
@@ -262,7 +266,8 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		return c.Redirect(h.auth.GetAuthURL("state"))
+		state := c.Query("redirect_url", "state")
+		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
 
@@ -303,15 +308,25 @@ func (h *handler) googleCallback() fiber.Handler {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
 		}
 
-		c.Cookie(&fiber.Cookie{
+		cookie := &fiber.Cookie{
 			Name:     "at",
 			Value:    tokenString,
 			Expires:  time.Now().Add(24 * time.Hour),
 			HTTPOnly: true,
 			Path:     "/",
-		})
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
 
-		return c.Redirect("/")
+		state := c.Query("state")
+		redirectURL := "/"
+		if state != "" && state != "state" && strings.HasPrefix(state, "http") {
+			redirectURL = state
+		}
+
+		return c.Redirect(redirectURL)
 	}
 }
 
@@ -534,7 +549,7 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 		workspaceID := c.Params("id")
 		userID := c.Locals("user_id").(string)
 
-		token, err := h.tokenSvc.CreateMCPToken(userID, workspaceID)
+		token, err := h.tokenSvc.CreateMCPToken(userID, workspaceID, "access")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate workspace token"})
 		}

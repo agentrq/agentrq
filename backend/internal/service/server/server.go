@@ -116,7 +116,12 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// Map it back to the base62 system for internal routing
 			workspaceID := monoflake.ID(id).String()
-			r.URL.Path = "/mcp/" + workspaceID
+			
+			if r.URL.Path == "/" || r.URL.Path == "" {
+				r.URL.Path = "/mcp/" + workspaceID
+			} else {
+				r.URL.Path = "/mcp/" + workspaceID + r.URL.Path
+			}
 		} else if host != appHost {
 			// 2. If it's not appHost or an MCP host, reject it
 			sw.WriteHeader(http.StatusNotFound)
