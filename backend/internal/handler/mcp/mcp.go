@@ -319,6 +319,12 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromParam(r)
 
+		workspace, err := h.repo.SystemGetWorkspace(r.Context(), workspaceID)
+		if err != nil {
+			http.Error(w, "workspace not found", http.StatusNotFound)
+			return
+		}
+
 		// 1. Is user logged in?
 		var userID string
 		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
@@ -362,9 +368,11 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			return
 		}
 
-		// User is logged in.
-		// If auto-appproval or basic form required:
-		// We'll proceed with granting a short-lived authorization code directly since they visited here.
+		if monoflake.ID(workspace.UserID).String() != userID {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
 		workspaceIDBase62 := monoflake.ID(workspaceID).String()
 		code, err := h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62)
 		if err != nil {
