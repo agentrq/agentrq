@@ -324,7 +324,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 			"ts":         time.Now().Format(time.RFC3339),
 		},
 	}
-	zlog.Debug().Interface("params", params).Msg("sending MCP notification params")
+	//zlog.Debug().Interface("params", params).Msg("sending MCP notification params")
 
 	// as the official SDK does not yet expose a public API for generic notifications.
 	sessionCount := 0
