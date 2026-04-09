@@ -48,12 +48,12 @@
             <div v-if="activeTab === 'automations'" class="space-y-6 animate-in fade-in duration-300">
               <div class="space-y-4">
                 <div class="flex items-center justify-between">
-                  <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Auto-Approve Whitelist</label>
+                  <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Auto-Allow List</label>
                   <span class="text-[9px] font-bold text-gray-300 uppercase tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{{ form.auto_allowed_tools.length }} Tools</span>
                 </div>
                 
                 <p class="text-[11px] text-gray-500 leading-relaxed px-1">
-                  These tools will execute autonomously without requiring manual confirmation. whitelisting trusted tools speeds up agent execution.
+                  These tools will execute autonomously without requiring manual confirmation. Auto-approving trusted tools speeds up agent execution.
                 </p>
 
                 <div v-if="form.auto_allowed_tools.length > 0" class="grid grid-cols-1 gap-2 mt-4">
@@ -81,8 +81,8 @@
                   <div class="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-4 border border-gray-100">
                     <svg class="w-6 h-6 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                   </div>
-                  <p class="text-[10px] font-black uppercase tracking-widest text-gray-300">No tools whitelisted</p>
-                  <p class="text-[11px] text-gray-400 mt-2">Tools can be added to the whitelist during task confirmation.</p>
+                  <p class="text-[10px] font-black uppercase tracking-widest text-gray-300">No tools auto approved yet</p>
+                  <p class="text-[11px] text-gray-400 mt-2">Tools are added here automatically when you select 'Allow All' during a permission request for the workspace tasks.</p>
                 </div>
               </div>
             </div>
