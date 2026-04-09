@@ -149,6 +149,10 @@ func (h *handler) streamableHandler() http.Handler {
 		// Log all incoming MCP calls with headers
 		ev := zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("remote", r.RemoteAddr)
 		for k, v := range r.Header {
+			if strings.ToLower(k) == "authorization" {
+				ev = ev.Str("h_"+strings.ToLower(k), "[REDACTED]")
+				continue
+			}
 			ev = ev.Str("h_"+strings.ToLower(k), strings.Join(v, ", "))
 		}
 		ev.Msg("MCP call")
