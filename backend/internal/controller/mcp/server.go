@@ -919,6 +919,17 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			ps.sessionTasksMu.RUnlock()
 
 			if ok {
+				task, err := ps.getTask(ctx, taskID)
+				if err == nil && task.AllowAllCommands {
+					zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("auto-allowing permission request (task level)")
+					go func() {
+						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
+						_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
+					}()
+					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+					return nil, nil
+				}
+
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("relaying permission request")
 				// Type "permission_request" helps UI render buttons
 				metadata := map[string]any{
@@ -1097,6 +1108,17 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		ps.sessionTasksMu.RUnlock()
 
 		if ok {
+			task, err := ps.getTask(ctx, taskID)
+			if err == nil && task.AllowAllCommands {
+				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					_ = ps.SendPermissionVerdict(context.Background(), p.RequestID, "allow")
+				}()
+				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+				return
+			}
+
 			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
 			metadata := map[string]any{
 				"type":          "permission_request",

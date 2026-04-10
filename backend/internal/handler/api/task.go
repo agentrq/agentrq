@@ -25,6 +25,7 @@ const (
 	_routePathOrder      = "/workspaces/:id/tasks/:taskID/order"
 	_routePathScheduled  = "/workspaces/:id/tasks/:taskID/scheduled"
 	_routePathAssignee   = "/workspaces/:id/tasks/:taskID/assignee"
+	_routePathAllowAll   = "/workspaces/:id/tasks/:taskID/allow_all"
 	_routePathPermission = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathEvents     = "/workspaces/:id/events"
 	_routePathAttachment = "/workspaces/:id/attachments/:attachmentID"
@@ -40,6 +41,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Patch(_routePathStatus, h.updateTaskStatus())
 	h.router.Patch(_routePathOrder, h.updateTaskOrder())
 	h.router.Patch(_routePathAssignee, h.updateTaskAssignee())
+	h.router.Patch(_routePathAllowAll, h.updateTaskAllowAllCommands())
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
 	h.router.Delete(_routePathTask, h.deleteTask())
@@ -300,6 +302,35 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) updateTaskAllowAllCommands() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.UpdateTaskAllowAllCommands(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		// Broadcast task update
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "task.updated",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromUpdateTaskAllowAllCommandsResponseEntityToHTTPResponse(rs))
 	}
 }
 

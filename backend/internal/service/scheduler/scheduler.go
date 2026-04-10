@@ -110,6 +110,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		Body:        parent.Body,
 		Attachments: parent.Attachments,
 		ParentID:    parent.ID,
+		AllowAllCommands: parent.AllowAllCommands,
 	}
 
 	created, err := s.repo.CreateTask(ctx, child)

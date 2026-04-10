@@ -44,6 +44,7 @@ type (
 		CronSchedule string `gorm:"type:varchar(64)"`
 		ParentID     int64  `gorm:"index:idx_tasks_parent_id"`
 		SortOrder    float64 `gorm:"type:real;default:0"`
+		AllowAllCommands bool `gorm:"default:false"`
 	}
 
 	// Message is an entry in a task's chat history
