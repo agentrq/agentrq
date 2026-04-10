@@ -90,6 +90,7 @@ type (
 		CronSchedule string      `json:"cron_schedule,omitempty"`
 		ParentID     string      `json:"parent_id,omitempty"`
 		SortOrder    float64     `json:"sort_order"`
+		AllowAllCommands bool    `json:"allow_all_commands"`
 	}
 
 	CreateTaskRequest struct {
@@ -141,6 +142,18 @@ type (
 
 	TaskOrderUpdate struct {
 		Value float64 `json:"value"`
+	}
+
+	UpdateTaskAllowAllCommandsRequest struct {
+		AllowAll TaskAllowAllUpdate `json:"allow_all"`
+	}
+
+	TaskAllowAllUpdate struct {
+		Value bool `json:"value"`
+	}
+
+	UpdateTaskAllowAllCommandsResponse struct {
+		Task Task `json:"task"`
 	}
 
 	UpdateTaskOrderResponse struct {

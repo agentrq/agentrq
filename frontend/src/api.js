@@ -80,7 +80,7 @@ export async function getTask(workspaceId, taskId) {
   return res.json();
 }
 
-export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '') {
+export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -92,7 +92,8 @@ export async function createTask(workspaceId, title, body, assignee = 'agent', a
         assignee, 
         attachments, 
         status, 
-        cron_schedule: cronSchedule 
+        cron_schedule: cronSchedule,
+        allow_all_commands: allowAllCommands
       } 
     })
   });
@@ -137,6 +138,16 @@ export async function updateTaskAssignee(workspaceId, taskId, value) {
     body: JSON.stringify({ assignee: { value } })
   });
   if (!res.ok) throw new Error('Failed to update task assignee');
+  return res.json();
+}
+
+export async function updateTaskAllowAllCommands(workspaceId, taskId, value) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/allow_all`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allow_all: { value } })
+  });
+  if (!res.ok) throw new Error('Failed to update task allow all commands flag');
   return res.json();
 }
 
@@ -199,7 +210,7 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   if (!res.ok) throw new Error('Failed to send verdict');
   return res;
 }
-export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule) {
+export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -208,7 +219,8 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
         title,
         body,
         assignee,
-        cron_schedule: cronSchedule
+        cron_schedule: cronSchedule,
+        allow_all_commands: allowAllCommands
       }
     })
   });

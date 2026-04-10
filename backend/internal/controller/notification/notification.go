@@ -133,6 +133,8 @@ func (c *controller) handleTaskEvent(ctx context.Context, event entity.CRUDEvent
 		c.NotifyTaskCreated(workspace, task)
 	case entity.ActionTaskUpdate, entity.ActionTaskComplete:
 		c.NotifyTaskStatusUpdated(workspace, task)
+	case entity.ActionTaskAllowAllCommandsToggle:
+		c.NotifyTaskAllowAllCommandsToggled(workspace, task)
 	}
 }
 
@@ -233,6 +235,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		CronSchedule: m.CronSchedule,
 		ParentID:     m.ParentID,
 		SortOrder:    m.SortOrder,
+		AllowAllCommands: m.AllowAllCommands,
 	}
 }
 

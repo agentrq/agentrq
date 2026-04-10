@@ -44,6 +44,7 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 			Attachments:  entityAttachments,
 			CronSchedule: payload.Task.CronSchedule,
 			SortOrder:    payload.Task.SortOrder,
+			AllowAllCommands: payload.Task.AllowAllCommands,
 		},
 	}
 }
@@ -198,6 +199,28 @@ func FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs *entity.UpdateTaskAss
 	return payload
 }
 
+func FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c *fiber.Ctx) *entity.UpdateTaskAllowAllCommandsRequest {
+	var payload view.UpdateTaskAllowAllCommandsRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	if workspaceID == 0 || taskID == 0 {
+		return nil
+	}
+	return &entity.UpdateTaskAllowAllCommandsRequest{
+		WorkspaceID:      workspaceID,
+		TaskID:           taskID,
+		AllowAllCommands: payload.AllowAll.Value,
+	}
+}
+
+func FromUpdateTaskAllowAllCommandsResponseEntityToHTTPResponse(rs *entity.UpdateTaskAllowAllCommandsResponse) []byte {
+	payload, _ := json.Marshal(view.UpdateTaskAllowAllCommandsResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
 func FromHTTPRequestToReplyToTaskRequestEntity(c *fiber.Ctx) *entity.ReplyToTaskRequest {
 	var payload view.ReplyToTaskRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
@@ -261,6 +284,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		Messages:     fromEntityMessagesToView(t.Messages),
 		CronSchedule: t.CronSchedule,
 		SortOrder:    t.SortOrder,
+		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
@@ -346,6 +370,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 		Messages:     msgs,
 		CronSchedule: t.CronSchedule,
 		SortOrder:    t.SortOrder,
+		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
@@ -369,6 +394,7 @@ func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.Upd
 		Body:         payload.Task.Body,
 		Assignee:     payload.Task.Assignee,
 		CronSchedule: payload.Task.CronSchedule,
+		AllowAllCommands: payload.Task.AllowAllCommands,
 	}
 }
 

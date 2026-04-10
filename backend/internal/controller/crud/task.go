@@ -362,6 +362,36 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 	return &entity.UpdateTaskAssigneeResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
+func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.UpdateTaskAllowAllCommandsRequest) (*entity.UpdateTaskAllowAllCommandsResponse, error) {
+	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	m.AllowAllCommands = req.AllowAllCommands
+	m.UpdatedAt = time.Now()
+
+	updated, err := c.repository.UpdateTask(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskAllowAllCommandsToggle,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+
+	return &entity.UpdateTaskAllowAllCommandsResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+}
+
 func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
 	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
@@ -556,6 +586,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		CronSchedule: m.CronSchedule,
 		ParentID:     m.ParentID,
 		SortOrder:    m.SortOrder,
+		AllowAllCommands: m.AllowAllCommands,
 	}
 }
 

@@ -134,6 +134,7 @@ type (
 		CronSchedule string
 		ParentID     int64
 		SortOrder    float64
+		AllowAllCommands bool
 	}
 
 	CreateTaskRequest struct {
@@ -215,6 +216,17 @@ type (
 		Task Task
 	}
 
+	UpdateTaskAllowAllCommandsRequest struct {
+		WorkspaceID      int64
+		TaskID           int64
+		AllowAllCommands bool
+		UserID           string
+	}
+
+	UpdateTaskAllowAllCommandsResponse struct {
+		Task Task
+	}
+
 	ReplyToTaskRequest struct {
 		WorkspaceID int64
 		TaskID      int64
@@ -262,6 +274,7 @@ type (
 		Body         string
 		Assignee     string
 		CronSchedule string
+		AllowAllCommands bool
 		UserID       string
 	}
 
@@ -382,6 +395,7 @@ const (
 	ActionMCPToolCall         Action = 20
 	ActionMCPPermissionManual Action = 21
 	ActionMCPPermissionAuto   Action = 22
+	ActionTaskAllowAllCommandsToggle Action = 23
 )
 
 func (a Action) String() string {
@@ -422,6 +436,8 @@ func (a Action) String() string {
 		return "mcp_permission_manual"
 	case ActionMCPPermissionAuto:
 		return "mcp_permission_auto"
+	case ActionTaskAllowAllCommandsToggle:
+		return "task_allow_all_commands_toggle"
 	}
 	return "unknown"
 }

@@ -79,6 +79,20 @@
               </div>
               <span class="text-[10px] font-black text-white uppercase tracking-widest">Task Definition</span>
               <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
+              <button v-if="task.assignee === 'agent' && (task.status === 'ongoing' || task.status === 'notstarted' || task.status === 'pending')"
+                      @click="toggleAllowAllCommands"
+                      @mouseenter="showTooltip($event, 'Toggle auto-allow all tool executions for this task')" @mouseleave="hideTooltip"
+                      class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 border text-[8px] font-black uppercase tracking-widest transition-all active:translate-y-0.5 flex items-center gap-1 shrink-0"
+                      :class="task.allow_all_commands ? 'bg-[#00FF88] text-black border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-800 text-gray-400 border-gray-600 hover:border-[#00FF88] hover:text-[#00FF88] shadow-none'">
+                <svg v-if="task.allow_all_commands" class="w-3 h-3 md:w-2.5 md:h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                <div v-else class="w-2.5 h-2.5 border border-gray-500 bg-transparent rounded-sm"></div>
+                <span class="hidden md:inline">YOLO</span>
+              </button>
+              <span v-else-if="task.allow_all_commands" 
+                    @mouseenter="showTooltip($event, 'This task automatically approves all tool calls')" @mouseleave="hideTooltip"
+                    class="hidden sm:inline-block ml-1.5 md:ml-2 px-1.5 py-0.5 bg-[#00FF88] text-black text-[8px] font-black uppercase tracking-widest border border-[#00FF88]/50 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] truncate">
+                YOLO
+              </span>
               <button v-if="task.assignee === 'human'" 
                       @click="reassignToAgent"
                       class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)] flex items-center gap-1"
@@ -352,6 +366,13 @@
       </div>
     </div>
 
+    <!-- Custom Tooltip -->
+    <div v-if="tooltip.visible"
+      class="fixed z-[100] px-2.5 py-1.5 text-[9px] font-black text-black bg-[#00FF88] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] pointer-events-none transform -translate-x-1/2 whitespace-nowrap uppercase tracking-widest"
+      :style="tooltip.style">
+      {{ tooltip.text }}
+      <div class="absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-0 border-x-[5px] border-x-transparent border-b-[5px] border-b-black mb-[-1px]"></div>
+    </div>
   </div>
 
   <!-- Loading State -->
@@ -369,7 +390,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, updateTaskAllowAllCommands } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 
@@ -388,6 +409,28 @@ const scrollContainer = ref(null);
 const autoscrollEnabled = ref(true);
 const isFullscreen = ref(false);
 const isStatusMenuOpen = ref(false);
+
+const tooltip = ref({
+  visible: false,
+  text: '',
+  style: { top: '0px', left: '0px' }
+});
+
+const showTooltip = (event, text) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  tooltip.value = {
+    visible: true,
+    text: text,
+    style: {
+      top: `${rect.bottom + 8}px`,
+      left: `${rect.left + (rect.width / 2)}px`
+    }
+  };
+};
+
+const hideTooltip = () => {
+  tooltip.value.visible = false;
+};
 
 const isMobile = computed(() => window.innerWidth < 768);
 const showHeader = ref(true);
@@ -483,6 +526,18 @@ async function updateStatus(newStatus) {
     notifySuccess(`Status updated to ${newStatus}`);
   } catch (err) {
     notifyError("Failed to update status: " + err.message);
+  }
+}
+
+async function toggleAllowAllCommands() {
+  if (!task.value) return;
+  const newValue = !task.value.allow_all_commands;
+  try {
+    const res = await updateTaskAllowAllCommands(workspaceId, taskId, newValue);
+    task.value = res.task;
+    notifySuccess(newValue ? "Auto-Allow enabled" : "Auto-Allow disabled");
+  } catch (err) {
+    notifyError("Failed to update auto-allow setting: " + err.message);
   }
 }
 

@@ -52,6 +52,22 @@ func (c *controller) NotifyTaskStatusUpdated(workspace entity.Workspace, task en
 			workspace.Name, task.Title, task.Status, c.baseURL, workspace.ID))
 }
 
+func (c *controller) NotifyTaskAllowAllCommandsToggled(workspace entity.Workspace, task entity.Task) {
+	settings := workspace.NotificationSettings
+	if settings == nil || !settings.TaskStatusUpdated || !c.hasChannel(settings, "email") {
+		return
+	}
+
+	state := "OFF"
+	if task.AllowAllCommands {
+		state = "ON"
+	}
+
+	c.enqueueEmail(monoflake.ID(workspace.UserID).String(), fmt.Sprintf("Auto-Allow Commands Toggled: %s [%s]", task.Title, workspace.Name),
+		fmt.Sprintf("Workspace: %s\n\nThe Auto-Allow Commands (YOLO) setting for task %s has been turned %s.\n\nView Mission: %s/workspaces/%d",
+			workspace.Name, task.Title, state, c.baseURL, workspace.ID))
+}
+
 func (c *controller) NotifyTaskReceivedMessage(workspace entity.Workspace, task entity.Task, msg entity.Message) {
 	settings := workspace.NotificationSettings
 	if settings == nil || !settings.TaskReceivedMessage || !c.hasChannel(settings, "email") || msg.Sender == "human" {
