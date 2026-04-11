@@ -813,10 +813,24 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		}, nil, nil
 	}
 
-	messages := task.Messages
-	sort.Slice(messages, func(i, j int) bool {
-		return messages[i].ID < messages[j].ID
+	allMessages := task.Messages
+	sort.Slice(allMessages, func(i, j int) bool {
+		return allMessages[i].ID < allMessages[j].ID
 	})
+
+	// Filter out permission_request messages (allow/deny history) — the LLM doesn't need these.
+	messages := make([]model.Message, 0, len(allMessages))
+	for _, m := range allMessages {
+		if len(m.Metadata) > 0 {
+			var meta map[string]any
+			if err := json.Unmarshal(m.Metadata, &meta); err == nil {
+				if meta["type"] == "permission_request" {
+					continue
+				}
+			}
+		}
+		messages = append(messages, m)
+	}
 
 	total := len(messages)
 	start := params.Cursor

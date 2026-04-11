@@ -297,6 +297,55 @@ func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
 	}
 }
 
+func TestWorkspaceServer_HandleGetTaskMessages_FiltersPermissionRequests(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
+			return model.Task{
+				ID: 42,
+				Messages: []model.Message{
+					{ID: 1001, Sender: "human", Text: "please run the tests"},
+					{ID: 1002, Sender: "agent", Text: "Permission requested for bash: run tests", Metadata: []byte(`{"type":"permission_request","request_id":"req-1","tool_name":"bash","status":"allow"}`)},
+					{ID: 1003, Sender: "agent", Text: "tests passed"},
+				},
+			}, nil
+		},
+	}
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
+	params := GetTaskMessagesParams{
+		TaskID: monoflake.ID(42).String(),
+		Limit:  10,
+		Cursor: 0,
+	}
+	res, _, err := ps.handleGetTaskMessages(context.Background(), nil, params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatal("expected no error")
+	}
+
+	text := res.Content[0].(*mcp.TextContent).Text
+	// Should only see 2 messages (the permission_request one is filtered)
+	if !contains(text, `"total":2`) {
+		t.Errorf("expected total=2 (permission_request filtered), got: %s", text)
+	}
+	if contains(text, "permission_request") || contains(text, "Permission requested") {
+		t.Errorf("expected permission_request messages to be filtered out, got: %s", text)
+	}
+	if !contains(text, "please run the tests") || !contains(text, "tests passed") {
+		t.Errorf("expected regular messages to remain, got: %s", text)
+	}
+}
+
 func TestWorkspaceServer_HandleCreateTask_Errors(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

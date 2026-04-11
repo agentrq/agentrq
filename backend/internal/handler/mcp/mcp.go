@@ -196,10 +196,6 @@ func (h *handler) streamableHandler() http.Handler {
 			if queryToken != "" {
 				userID = h.identifyUser(r.Context(), workspaceID, queryToken)
 			}
-			if userID == "" && sessionID != "" {
-				// The session ID is a JWT — validate it and extract user
-				userID = h.identifyUser(r.Context(), workspaceID, sessionID)
-			}
 		}
 
 		// Final check: userID must be set
