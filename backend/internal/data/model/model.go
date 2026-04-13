@@ -21,6 +21,7 @@ type (
 		TokenEncrypted       string         `gorm:"type:text"`
 		TokenNonce           string         `gorm:"type:varchar(64)"`
 		AutoAllowedTools     datatypes.JSON `gorm:"type:text"`
+		AllowAllCommands     bool           `gorm:"default:false"`
 	}
 
 	// Task hosts a task created by a human or an agent within a workspace

@@ -85,6 +85,29 @@
                   <p class="text-[11px] text-gray-400 mt-2">Tools are added here automatically when you select 'Allow All' during a permission request for the workspace tasks.</p>
                 </div>
               </div>
+
+              <!-- YOLO Mode Toggle -->
+              <div class="pt-6 border-t border-gray-100">
+                <label v-for="evt in yoloEvent" :key="evt.key" 
+                       class="flex items-center justify-between p-4 bg-red-50/30 rounded-xl cursor-pointer hover:bg-red-50/50 transition-all border border-red-100/50 hover:border-red-200">
+                  <div class="flex items-center gap-3">
+                    <div class="p-2 bg-white rounded-lg shadow-sm border border-red-100">
+                      <svg v-html="evt.icon" class="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"></svg>
+                    </div>
+                    <div class="flex flex-col">
+                      <span class="text-xs font-bold text-gray-700">{{ evt.label }}</span>
+                      <span class="text-[10px] text-red-500 font-bold uppercase tracking-tight mt-0.5">Dangerous: Agent will not ask for permission</span>
+                    </div>
+                  </div>
+                  <div class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" v-model="form.allow_all_commands" class="sr-only peer" />
+                    <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
+                  </div>
+                </label>
+                <p class="text-[10px] text-gray-400 mt-3 px-1 leading-relaxed">
+                  When enabled, all tasks in this workspace will inherit this setting by default. This allows the agent to execute any tool or command without manual approval.
+                </p>
+              </div>
             </div>
 
             <div v-if="activeTab === 'notifications'" class="space-y-8 animate-in fade-in duration-300">
@@ -188,13 +211,20 @@ const form = ref({
     workspace_unarchived: false,
     channels: ['email']
   },
-  auto_allowed_tools: []
+  auto_allowed_tools: [],
+  allow_all_commands: false
 });
 
 const eventTypes = [
   { key: 'task_created', label: 'Task Created', icon: '<path d="M12 4v16m8-8H4" />' },
-  { key: 'task_status_updated', label: 'Status Change', icon: '<path d="M4 4h16M4 12h16M4 20h16" />' },
-  { key: 'task_received_message', label: 'New Message', icon: '<path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />' },
+  { key: 'task_status_updated', label: 'Status Update', icon: '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />' },
+  { key: 'task_received_message', label: 'New Message', icon: '<path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />' },
+  { key: 'workspace_archived', label: 'Archived', icon: '<path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />' },
+  { key: 'workspace_unarchived', label: 'Unarchived', icon: '<path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />' },
+];
+
+const yoloEvent = [
+  { key: 'allow_all_commands', label: 'Allow All Commands (YOLO)', icon: '<path d="M13 10V3L4 14h7v7l9-11h-7z" />' }
 ];
 
 watch(() => props.workspace, (newVal) => {
@@ -211,7 +241,8 @@ watch(() => props.workspace, (newVal) => {
         workspace_unarchived: newVal.notification_settings?.workspace_unarchived || false,
         channels: newVal.notification_settings?.channels || ['email']
       },
-      auto_allowed_tools: newVal.auto_allowed_tools || []
+      auto_allowed_tools: newVal.auto_allowed_tools || [],
+      allow_all_commands: newVal.allow_all_commands || false
     };
   }
 }, { immediate: true });

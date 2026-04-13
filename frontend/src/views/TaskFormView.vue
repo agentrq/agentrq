@@ -253,6 +253,9 @@ onMounted(async () => {
       if (t.cron_schedule) {
         parseCronToUI(t.cron_schedule);
       }
+    } else {
+      // Default to workspace setting for new tasks
+      newTask.value.allow_all_commands = res.workspace.allow_all_commands || false;
     }
   } catch (err) {
     notifyError("Access Error: " + err.message);

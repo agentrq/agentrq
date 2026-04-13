@@ -141,7 +141,7 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 
 	resp, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
 		UserID:    testUserIDStr,
-		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}},
+		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}, AllowAllCommands: true},
 	})
 
 	if err != nil {
@@ -149,6 +149,9 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 	}
 	if resp.Workspace.Description != "desc" {
 		t.Errorf("expected description updated")
+	}
+	if !resp.Workspace.AllowAllCommands {
+		t.Errorf("expected AllowAllCommands to be true")
 	}
 }
 
