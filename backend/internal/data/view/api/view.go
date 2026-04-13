@@ -18,6 +18,7 @@ type (
 		MCPURL               string                `json:"mcp_url"`
 		MCPToken             string                `json:"mcp_token,omitempty"`
 		AutoAllowedTools     []string              `json:"auto_allowed_tools,omitempty"`
+		AllowAllCommands     bool                  `json:"allow_all_commands"`
 	}
 
 	NotificationSettings struct {

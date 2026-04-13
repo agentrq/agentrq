@@ -27,6 +27,7 @@ type (
 		TokenEncrypted       string
 		TokenNonce           string
 		AutoAllowedTools     []string
+		AllowAllCommands     bool
 	}
 
 	NotificationSettings struct {

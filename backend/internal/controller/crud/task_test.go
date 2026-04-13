@@ -40,6 +40,67 @@ func TestCreateTask_Success(t *testing.T) {
 	}
 }
 
+func TestCreateTask_AgentInheritYOLO(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.AllowAllCommands = true
+
+	created := model.Task{ID: 43, WorkspaceID: 1, CreatedBy: "agent", AllowAllCommands: true}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(43))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if !m.AllowAllCommands {
+			return model.Task{}, fmt.Errorf("expected AllowAllCommands to be inherited from workspace")
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Agent Task", CreatedBy: "agent", AllowAllCommands: false},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resp.Task.AllowAllCommands {
+		t.Errorf("expected task to have AllowAllCommands=true")
+	}
+}
+
+func TestCreateTask_HumanOverrideYOLO(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.AllowAllCommands = true
+
+	// Human explicitly sets AllowAllCommands to false
+	created := model.Task{ID: 44, WorkspaceID: 1, CreatedBy: "human", AllowAllCommands: false}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(44))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.AllowAllCommands {
+			return model.Task{}, fmt.Errorf("expected AllowAllCommands to stay false as requested by human")
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Human Task", CreatedBy: "human", AllowAllCommands: false},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.AllowAllCommands {
+		t.Errorf("expected task to have AllowAllCommands=false")
+	}
+}
+
 func TestCreateTask_EmptyTitle(t *testing.T) {
 	e := newTestController(t)
 

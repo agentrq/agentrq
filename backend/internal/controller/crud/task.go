@@ -13,20 +13,21 @@ import (
 	"gorm.io/datatypes"
 )
 
-func (c *controller) ensureActiveWorkspace(ctx context.Context, id int64, userID string) error {
+func (c *controller) ensureActiveWorkspace(ctx context.Context, id int64, userID string) (model.Workspace, error) {
 	uid := monoflake.IDFromBase62(userID).Int64()
 	w, err := c.repository.GetWorkspace(ctx, id, uid)
 	if err != nil {
-		return err
+		return model.Workspace{}, err
 	}
 	if w.ArchivedAt != nil {
-		return fmt.Errorf("workspace is archived and read-only")
+		return model.Workspace{}, fmt.Errorf("workspace is archived and read-only")
 	}
-	return nil
+	return w, nil
 }
 
 func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.Task.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.Task.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 	// Validation
@@ -70,6 +71,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		sortOrder = float64(now.UnixMilli()) / 1000.0
 	}
 
+	allowAll := req.Task.AllowAllCommands
+	if req.Task.CreatedBy == "agent" && !allowAll {
+		allowAll = w.AllowAllCommands
+	}
+
 	m := model.Task{
 		ID:           c.idgen.NextID(),
 		CreatedAt:    now,
@@ -85,6 +91,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		CronSchedule: req.Task.CronSchedule,
 		ParentID:     req.Task.ParentID,
 		SortOrder:    sortOrder,
+		AllowAllCommands: allowAll,
 	}
 	created, err := c.repository.CreateTask(ctx, m)
 	if err != nil {
@@ -126,7 +133,7 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 }
 
 func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -240,7 +247,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 }
 
 func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -301,7 +308,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 }
 
 func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskOrderRequest) (*entity.UpdateTaskOrderResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -329,7 +336,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 }
 
 func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -363,7 +370,7 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 }
 
 func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.UpdateTaskAllowAllCommandsRequest) (*entity.UpdateTaskAllowAllCommandsResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -393,7 +400,7 @@ func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.
 }
 
 func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -456,7 +463,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 }
 
 func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 
@@ -641,7 +648,7 @@ func (c *controller) saveAttachments(atts []entity.Attachment) {
 	}
 }
 func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error) {
-	if err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
