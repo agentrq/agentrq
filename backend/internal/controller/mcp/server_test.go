@@ -9,6 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
@@ -616,6 +617,78 @@ func TestValidateCronGranularity(t *testing.T) {
 		} else if !contains(err.Error(), tc.errFrag) {
 			t.Errorf("expected error containing %q for %q, got: %v", tc.errFrag, tc.schedule, err)
 		}
+	}
+}
+
+func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+	}
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
+	// Case 1: Success
+	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
+		return model.Task{
+			ID:    42,
+			Title: "Test Task",
+			Body:  "Test Body",
+		}, nil
+	}
+
+	res, _, err := ps.handleGetNextTask(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatal("expected no error")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, "Next assigned task:") || !contains(text, "ID: "+monoflake.ID(42).String()) || !contains(text, "Title: Test Task") {
+		t.Errorf("unexpected content: %s", text)
+	}
+
+	// Case 1b: Success with attachments
+	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
+		return model.Task{
+			ID:          43,
+			Title:       "Task with Attachments",
+			Body:        "Body",
+			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"}]`),
+		}, nil
+	}
+	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	text = res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, "file.txt") {
+		t.Errorf("expected attachments to be formatted, got: %s", text)
+	}
+
+	// Case 2: Not Found
+	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
+		return model.Task{}, base.ErrNotFound
+	}
+	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	if res.IsError {
+		t.Fatal("expected no error result for NotFound")
+	}
+	text = res.Content[0].(*mcp.TextContent).Text
+	if text != "no pending tasks exist" {
+		t.Errorf("expected 'no pending tasks exist', got: %s", text)
+	}
+
+	// Case 3: Error
+	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
+		return model.Task{}, fmt.Errorf("db error")
+	}
+	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "db error") {
+		t.Errorf("expected error result, got: %v", res)
 	}
 }
 
