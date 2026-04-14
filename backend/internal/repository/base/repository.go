@@ -3,6 +3,7 @@ package base
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -44,6 +45,7 @@ type Repository interface {
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
+	GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error)
 }
 
 type repository struct {
@@ -184,6 +186,28 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 
 	err := q.Order(orderBy).Find(&tasks).Error
 	return tasks, err
+}
+
+func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error) {
+	var t model.Task
+	dialect := r.conn(ctx).Dialector.Name()
+	var sortExpr string
+	if dialect == "sqlite" {
+		sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE CAST(strftime('%s', created_at) AS REAL) END)"
+	} else {
+		// Assume Postgres
+		sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE EXTRACT(EPOCH FROM created_at) END)"
+	}
+
+	err := r.conn(ctx).
+		Where("workspace_id = ? AND user_id = ? AND status = ? AND assignee = ?", workspaceID, userID, "notstarted", "agent").
+		Order(fmt.Sprintf("%s ASC, id ASC", sortExpr)).
+		First(&t).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Task{}, ErrNotFound
+	}
+	return t, err
 }
 
 func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {

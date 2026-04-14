@@ -217,27 +217,17 @@ func New(cfg Config) (*App, error) {
 				res, err := repo.CreateTask(ctx, task)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-					existingTasks, _ := repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID}, uid)
-					hasOngoing := false
-					for _, t := range existingTasks {
-						if t.Status == "ongoing" && t.ID != res.ID {
-							hasOngoing = true
-							break
-						}
-					}
-					if !hasOngoing {
-						pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-							PubSubID: entity.PubSubTopicCRUD,
-							Event: entity.CRUDEvent{
-								Action:       entity.ActionTaskCreate,
-								WorkspaceID:  workspaceID,
-								UserID:       uid,
-								ResourceType: entity.ResourceTask,
-								ResourceID:   res.ID,
-								Actor:        entity.ActorAgent,
-							},
-						})
-					}
+					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+						PubSubID: entity.PubSubTopicCRUD,
+						Event: entity.CRUDEvent{
+							Action:       entity.ActionTaskCreate,
+							WorkspaceID:  workspaceID,
+							UserID:       uid,
+							ResourceType: entity.ResourceTask,
+							ResourceID:   res.ID,
+							Actor:        entity.ActorAgent,
+						},
+					})
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.created",
 						Payload: mapper.FromModelTaskToView(res),
@@ -314,6 +304,10 @@ func New(cfg Config) (*App, error) {
 			func(ctx context.Context) ([]model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				return repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID, UserID: workspaceOwner}, uid)
+			},
+			func(ctx context.Context) (model.Task, error) {
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				return repo.GetNextTask(ctx, workspaceID, uid)
 			},
 			func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 				id := monoflake.IDFromBase62(chatID)

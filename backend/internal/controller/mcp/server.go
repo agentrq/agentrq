@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -37,6 +38,7 @@ type CreateTaskFunc func(ctx context.Context, task model.Task) (model.Task, erro
 type UpdateTaskStatusFunc func(ctx context.Context, taskID int64, status string) (model.Task, error)
 type GetTaskFunc func(ctx context.Context, taskID int64) (model.Task, error)
 type ListTasksFunc func(ctx context.Context) ([]model.Task, error)
+type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
@@ -58,6 +60,7 @@ type WorkspaceServer struct {
 	updateStatus          UpdateTaskStatusFunc
 	getTask               GetTaskFunc
 	listTasks             ListTasksFunc
+	getNextTask           GetNextTaskFunc
 	reply                 ReplyFunc
 	updateMessageMetadata UpdateMessageMetadataFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
@@ -130,6 +133,7 @@ func NewWorkspaceServer(
 	updateStatus UpdateTaskStatusFunc,
 	getTask GetTaskFunc,
 	listTasks ListTasksFunc,
+	getNextTask GetNextTaskFunc,
 	reply ReplyFunc,
 	updateMessageMetadata UpdateMessageMetadataFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
@@ -152,6 +156,7 @@ func NewWorkspaceServer(
 		updateStatus:          updateStatus,
 		getTask:               getTask,
 		listTasks:             listTasks,
+		getNextTask:           getNextTask,
 		reply:                 reply,
 		updateMessageMetadata: updateMessageMetadata,
 		updateAutoAllowed:     updateAutoAllowed,
@@ -249,6 +254,11 @@ func NewWorkspaceServer(
 		Name:        "getTaskMessages",
 		Description: "Read the chat history and messages of a task. Returns messages ordered from oldest to newest with cursor-based pagination.",
 	}, ps.handleGetTaskMessages)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "getNextTask",
+		Description: "Get the next available \"not started\" task assigned to the agent.",
+	}, ps.handleGetNextTask)
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware)
@@ -887,6 +897,34 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
 	}, nil, nil
 }
+
+func (ps *WorkspaceServer) handleGetNextTask(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getNextTask")
+
+	t, err := ps.getNextTask(ctx)
+	if err != nil {
+		if errors.Is(err, base.ErrNotFound) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "no pending tasks exist"}},
+			}, nil, nil
+		}
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get next task: %v", err)}},
+		}, nil, nil
+	}
+
+	content := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s",
+		monoflake.ID(t.ID).String(), t.Title, t.Body)
+	if atts := formatModelAttachments(t.Attachments); atts != "" {
+		content += "\n" + atts
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: content}},
+	}, nil, nil
+}
+
 func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		zlog.Debug().Str("method", method).Msg("MCP incoming")
