@@ -153,6 +153,7 @@ const permissionsConfig = computed(() => ({
       `mcp__${serverName.value}__createTask`,
       `mcp__${serverName.value}__downloadAttachment`,
       `mcp__${serverName.value}__getTaskMessages`,
+      `mcp__${serverName.value}__getNextTask`,
     ]
   },
   enableAllProjectMcpServers: true,
