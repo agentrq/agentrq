@@ -87,7 +87,8 @@ Add a `.claude/settings.local.json` file in the same project directory to pre-ap
       "mcp__agentrq-WORKSPACE_ID__reply",
       "mcp__agentrq-WORKSPACE_ID__createTask",
       "mcp__agentrq-WORKSPACE_ID__downloadAttachment",
-      "mcp__agentrq-WORKSPACE_ID__getTaskMessages"
+      "mcp__agentrq-WORKSPACE_ID__getTaskMessages",
+      "mcp__agentrq-WORKSPACE_ID__getNextTask"
     ]
   },
   "enableAllProjectMcpServers": true,
@@ -112,6 +113,7 @@ When connected, the AI agent has access to:
 - `reply`: Send messages back to the AgentRQ dashboard in real-time.
 - `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
 - `getTaskMessages`: Read the chat history of a task with cursor-based pagination.
+- `getNextTask`: Efficiently retrieve the next "not started" task assigned to the agent.
 - `downloadAttachment`: Retrieve an attachment by its ID.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
