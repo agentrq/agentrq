@@ -427,7 +427,7 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 			}
 
 			if hasOngoing {
-				if time.Since(ps.lastUpdateCheckAt) > 5*time.Minute {
+				if time.Since(ps.lastUpdateCheckAt) > time.Hour {
 					msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
 					ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
 					ps.lastUpdateCheckAt = time.Now()
