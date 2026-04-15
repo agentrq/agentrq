@@ -286,17 +286,17 @@
               rows="1"
               :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
               :placeholder="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions or response...'"
-              class="flex-1 px-3 py-2 md:px-4 md:py-3 text-sm md:text-base font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
+              class="flex-1 px-3 py-2 md:px-4 md:py-3 text-xs md:text-sm font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
                     :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
-                    class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center border-l-2 border-transparent group-focus-within:border-black group-focus-within:border-dashed disabled:opacity-30 self-end">
+                    class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center disabled:opacity-30 self-end">
               <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
            <button type="submit"
                    :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'))"
-                   class="h-[38px] w-[32px] md:h-[46px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
+                   class="h-[42px] w-[32px] md:h-[50px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
                    title="Send Instruction">
              <svg class="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
