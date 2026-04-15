@@ -175,6 +175,7 @@ func NewWorkspaceServer(
 		description:           description,
 		archivedAt:            archivedAt,
 		pubsub:                pubsub,
+		lastUpdateCheckAt:     time.Now(), // defer first status check by a full hour
 	}
 
 	workspaceIDStr := monoflake.ID(workspaceID).String()
