@@ -16,11 +16,23 @@ export function useEventBus(workspaceId) {
       isConnected.value = true;
     };
     
-    eventSource.onerror = (error) => {
+    eventSource.onerror = async (error) => {
       console.error('EventSource failed:', error);
       isConnected.value = false;
       eventSource.close();
       eventSource = null;
+      
+      try {
+        const res = await fetch('/api/v1/auth/user');
+        if (res.status === 401) {
+          console.warn('Not authenticated. Stopping EventSource reconnection and redirecting to login.');
+          window.location.href = '/login';
+          return;
+        }
+      } catch (err) {
+        // Ignore fetch errors (e.g. network down) and allow reconnect
+      }
+
       // Reconnect with backoff in real apps; simple 3s timeout here
       setTimeout(connect, 3000);
     };
