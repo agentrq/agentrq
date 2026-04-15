@@ -97,7 +97,7 @@ type CreateTaskParams struct {
 	Body         string `json:"body" jsonschema:"Detailed description of the task or action needed"`
 	Assignee     string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
 	Attachments  []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
-	CronSchedule string `json:"cron_schedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). When set, creates a recurring cron task. Minimum granularity is hourly (e.g. '30 * * * *'). Sub-hourly schedules are not allowed."`
+	CronSchedule string `json:"cron_schedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
 }
 
 // UpdateTaskStatusParams is the input to the update_task_status tool.
@@ -1229,11 +1229,12 @@ func formatModelAttachments(raw []byte) string {
 	return "Attachments:\n" + strings.Join(parts, "\n")
 }
 
-// validateCronGranularity validates that the cron schedule is syntactically valid
-// and has a minimum repeat interval of one hour (no sub-hourly schedules).
-// The minute field must be a single fixed value (0-59); wildcards, steps, ranges,
-// and comma-lists in the minute field are all rejected because they would cause
-// the job to fire more than once per hour.
+// validateCronGranularity validates that the cron schedule is syntactically valid.
+// For RECURRING schedules (dom or month field is "*"), the minimum granularity is
+// hourly: the minute field must be a single fixed integer 0-59 (no wildcards, steps,
+// ranges, or comma-lists), because sub-hourly recurring tasks are not supported.
+// For ONE-TIME schedules (both dom and month are fixed integers, e.g. "30 14 25 4 *"),
+// any fixed minute value 0-59 is accepted — enabling minute-level precision.
 func validateCronGranularity(schedule string) error {
 	fields := strings.Fields(schedule)
 	if len(fields) != 5 {
