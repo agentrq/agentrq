@@ -378,15 +378,27 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 }
 
 // StartPing pings all connected MCP client sessions every 30 seconds to keep connections alive.
+// If a session's underlying stream is already closed, it is explicitly closed so the SDK
+// removes it from its session registry, preventing repeated errors on future ping attempts.
 func (ps *WorkspaceServer) StartPing() {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			for sess := range ps.mcpServer.Sessions() {
 				if err := sess.Ping(ctx, nil); err != nil {
-					zlog.Warn().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP ping error")
+					errStr := err.Error()
+					if strings.Contains(errStr, "stream not connected") || strings.Contains(errStr, "already closed") {
+						// The transport is already gone — close the session so the SDK
+						// calls its disconnect() hook and removes it from s.sessions.
+						zlog.Debug().Str("session_id", sess.ID()).Msg("MCP session stream closed; evicting from registry")
+						if closeErr := sess.Close(); closeErr != nil {
+							zlog.Debug().Err(closeErr).Str("session_id", sess.ID()).Msg("MCP session close error (expected)")
+						}
+					} else {
+						zlog.Warn().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP ping error")
+					}
 				}
 			}
 			cancel()
