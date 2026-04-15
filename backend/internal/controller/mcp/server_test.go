@@ -580,14 +580,19 @@ func TestWorkspaceServer_HandleCreateTask_InvalidCron(t *testing.T) {
 
 func TestValidateCronGranularity(t *testing.T) {
 	validCases := []string{
-		"0 * * * *",   // every hour at :00
-		"30 * * * *",  // every hour at :30
-		"0 9 * * *",   // daily at 9am
-		"0 9 * * 1",   // weekly Monday at 9am
-		"0 9 1 * *",   // monthly on the 1st at 9am
-		"59 23 * * *", // daily at 23:59
-		"0 */2 * * *", // every 2 hours at :00
-		"30 9 * * 1-5",// weekdays at 9:30
+		"0 * * * *",    // every hour at :00
+		"30 * * * *",   // every hour at :30
+		"0 9 * * *",    // daily at 9am
+		"0 9 * * 1",    // weekly Monday at 9am
+		"0 9 1 * *",    // monthly on the 1st at 9am
+		"59 23 * * *",  // daily at 23:59
+		"0 */2 * * *",  // every 2 hours at :00
+		"30 9 * * 1-5", // weekdays at 9:30
+		// One-time tasks (fixed dom+month): minute-precision is allowed
+		"30 14 25 4 *",  // one-time: April 25 at 14:30
+		"5 9 1 1 *",     // one-time: Jan 1 at 09:05
+		"59 23 31 12 *", // one-time: Dec 31 at 23:59
+		"1 0 15 6 *",    // one-time: June 15 at 00:01
 	}
 
 	for _, s := range validCases {
