@@ -289,8 +289,8 @@ function parseCronToUI(cron) {
     } else {
       const [min, hour, dom, month, dow] = parts;
       const firstHour = Number(hour.split(',')[0]);
-      // Use a reference UTC date to extract local time
-      const d = new Date(Date.UTC(2000, 0, 10, firstHour, min)); 
+      const now = new Date();
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), firstHour, min));
       repeatTime.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       
       if (dom === '*' && month === '*' && dow === '*') {
@@ -300,14 +300,16 @@ function parseCronToUI(cron) {
         } else {
           repeatPreset.value = 'daily';
         }
-      } else if (dom === '1' && month === '*' && dow === '*') {
-        repeatPreset.value = 'monthly';
       } else if (dow !== '*' && dom === '*' && month === '*') {
-        // Handle weekly/custom mapping from UTC days
+        const now = new Date();
         const utcDays = dow.split(',').map(Number);
         const localDays = utcDays.map(ud => {
-           // 2000-01-09 was a Sunday (0)
-           const temp = new Date(Date.UTC(2000, 0, 9 + ud, firstHour, min));
+           // Find the target day by taking a known Sunday in the current month/year context
+           // so that we handle the current DST transition correctly.
+           const base = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+           const currentUTCDay = base.getUTCDay();
+           const offset = ud - currentUTCDay;
+           const temp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + offset, firstHour, min));
            return temp.getDay();
         });
         selectedDays.value = localDays;
