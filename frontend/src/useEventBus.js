@@ -26,7 +26,9 @@ export function useEventBus(workspaceId) {
         const res = await fetch('/api/v1/auth/user');
         if (res.status === 401) {
           console.warn('Not authenticated. Stopping EventSource reconnection and redirecting to login.');
-          window.location.href = '/login';
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
           return;
         }
       } catch (err) {
