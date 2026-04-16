@@ -670,6 +670,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	m.Body = req.Body
 	m.Assignee = req.Assignee
 	m.CronSchedule = req.CronSchedule
+	m.AllowAllCommands = req.AllowAllCommands
 	m.UpdatedAt = time.Now()
 
 	updated, err := c.repository.UpdateTask(ctx, m)

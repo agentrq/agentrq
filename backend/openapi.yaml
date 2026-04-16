@@ -412,6 +412,8 @@ components:
           type: string
         sort_order:
           type: number
+        allow_all_commands:
+          type: boolean
 
     CreateTaskRequest:
       type: object
