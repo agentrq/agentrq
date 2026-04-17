@@ -214,6 +214,7 @@ func New(cfg Config) (*App, error) {
 			workspaceOwner,
 			cfg.App.BaseURL,
 			func(ctx context.Context, task model.Task) (model.Task, error) {
+				task.AllowAllCommands = workspace.AllowAllCommands
 				res, err := repo.CreateTask(ctx, task)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
