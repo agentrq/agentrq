@@ -10,7 +10,7 @@
         <span class="text-black truncate flex-1 min-w-0 text-sm">{{ isEditMode ? 'Edit Protocol' : 'New Task Definition' }}</span>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <button @click="goBack" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
+        <button @click="() => goBack()" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -192,7 +192,7 @@
                   <svg v-else class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7" /></svg>
                   {{ sending ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Task' : 'Create Task') }}
                </button>
-               <button type="button" @click="goBack" class="px-8 py-4 border-2 border-black bg-white text-xs font-black uppercase tracking-[0.2em] hover:bg-gray-100 transition-all font-bold">Cancel</button>
+               <button type="button" @click="() => goBack()" class="px-8 py-4 border-2 border-black bg-white text-xs font-black uppercase tracking-[0.2em] hover:bg-gray-100 transition-all font-bold">Cancel</button>
             </div>
         </form>
       </div>
