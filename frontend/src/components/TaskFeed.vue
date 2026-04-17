@@ -69,8 +69,11 @@
                    
                    <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
                      <template v-if="t.status === 'cron'">
-                       <span class="text-sky-600 font-bold" v-if="getNextRunDateTime(t.cronSchedule)">
-                         {{ getNextRunDateTime(t.cronSchedule).toUpperCase() }}
+                       <span class="text-sky-600 font-bold" v-if="getNextRunLabel(t.cronSchedule)">
+                         {{ getNextRunLabel(t.cronSchedule).toUpperCase() }}
+                       </span>
+                       <span class="text-gray-400 font-bold italic" v-else>
+                         DUE
                        </span>
                      </template>
                      <span class="text-gray-500" v-else>{{ formatTime(t.createdAt) }}</span>
@@ -87,9 +90,6 @@
 
                      <span v-if="t.status === 'cron'" class="text-sky-800 bg-sky-100 border border-sky-300 px-1 py-0.5">
                        ⏰ {{ formatCron(t.cronSchedule) }}
-                     </span>
-                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cronSchedule)" class="text-sky-600 font-bold">
-                       • {{ getNextRunLabel(t.cronSchedule) }}
                      </span>
 
                      <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.messages && t.messages.length > 0">
@@ -215,8 +215,11 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder, updateTaskStatus } from '../api';
+import { useCron } from '../composables/useCron';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
+
+const { formatCron, getNextRunDateTime, getNextRunLabel } = useCron();
 
 const props = defineProps({
   workspaceId: { type: [String, Number], required: true },
@@ -287,74 +290,6 @@ function formatTime(dateStr) {
   return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 }
 
-function formatCron(cron) {
-  if (!cron) return '';
-  
-  // Detect one-time (has specific date parts and NO wildcards in DOM/Month)
-  const parts = cron.split(' ');
-  if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
-    return `ONE-TIME`;
-  }
-
-  const presets = {
-    '0 * * * *': 'Hourly',
-    '*/15 * * * *': 'Every 15m',
-    '*/30 * * * *': 'Every 30m',
-  };
-  if (presets[cron]) return presets[cron];
-
-  try {
-    const [min, hour, dom, month, dow] = parts;
-    if (dow !== '*' && dom === '*' && month === '*') {
-      const days = dow.split(',').map(d => daysOptions.find(o => o.value == d)?.label || d).join(',');
-      return `Weekly (${days}) at ${hour}:${min.padStart(2, '0')}`;
-    }
-    if (dom !== '*' && month === '*' && dow === '*') {
-      return `Monthly (Day ${dom}) at ${hour}:${min.padStart(2, '0')}`;
-    }
-    if (dom === '*' && month === '*' && dow === '*') {
-      return `Daily at ${hour}:${min.padStart(2, '0')}`;
-    }
-  } catch (e) {}
-
-  return cron;
-}
-
-function getNextRunDateTime(cron) {
-  if (!cron) return '';
-  try {
-    const interval = cronParser.parseExpression(cron, { utc: true });
-    const next = interval.next().toDate();
-    return next.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch (e) {
-    return '';
-  }
-}
-
-function getNextRunLabel(cron) {
-  if (!cron) return '';
-  try {
-    const interval = cronParser.parseExpression(cron, { utc: true });
-    const next = interval.next().toDate();
-    return formatRelativeTime(next);
-  } catch (e) {
-    return '';
-  }
-}
-
-function formatRelativeTime(date) {
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffDay > 0) return `In ${diffDay}d ${diffHour % 24}h`;
-  if (diffHour > 0) return `In ${diffHour}h ${diffMin % 60}m`;
-  if (diffMin > 0) return `In ${diffMin}m`;
-  return 'Just now';
-}
 
 function getTaskOrder(t) {
   if (t.sortOrder) return t.sortOrder;

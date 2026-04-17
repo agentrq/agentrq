@@ -37,17 +37,26 @@
             <span class="text-[9px] font-black text-sky-300 uppercase tracking-widest bg-sky-800 px-2 py-0.5">
               ⏰ {{ formatCron(scheduledTask.cronSchedule) }}
             </span>
-            <span v-if="nextRunLabel" class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
-              NEXT: {{ nextRunLabel }}
-            </span>
+            <div v-if="nextRunLabel" class="flex flex-col gap-0.5">
+              <span class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
+                {{ nextRunLabel.toUpperCase() }}
+              </span>
+              <span v-if="nextRunDateTime" class="text-[8px] font-bold text-sky-400/80 uppercase tracking-tighter">
+                ({{ nextRunDateTime.toUpperCase() }})
+              </span>
+            </div>
+            <div v-else class="flex flex-col gap-0.5">
+              <span class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
+                NEXT: DUE
+              </span>
+            </div>
           </div>
         </div>
         <div class="px-4 py-3">
           <p class="font-black text-sm text-sky-900 leading-snug">{{ scheduledTask.title }}</p>
           <p v-if="scheduledTask.body" class="text-xs text-sky-700 mt-1 leading-relaxed line-clamp-2">{{ scheduledTask.body }}</p>
           <div class="flex flex-wrap items-center gap-3 mt-2 text-[9px] font-black uppercase tracking-widest text-sky-500">
-            <span>Created {{ formatDate(scheduledTask.createdAt) }}</span>
-            <span class="border-l border-sky-300 pl-3">{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
+            <span>{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
           </div>
         </div>
       </div>
@@ -114,6 +123,9 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { fetchTasks, getWorkspace } from '../api';
+import { useCron } from '../composables/useCron';
+
+const { formatCron, getNextRunLabel } = useCron();
 
 const route = useRoute();
 const router = useRouter();
@@ -164,49 +176,6 @@ function formatDate(dateStr) {
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function formatCron(cron) {
-  if (!cron) return '';
-  const parts = cron.split(' ');
-  if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') return 'One-time';
-  const presets = {
-    '0 * * * *': 'Hourly',
-    '*/15 * * * *': 'Every 15m',
-    '*/30 * * * *': 'Every 30m',
-  };
-  if (presets[cron]) return presets[cron];
-  try {
-    const [min, hour, dom, month, dow] = parts;
-    if (dow !== '*' && dom === '*' && month === '*') {
-      return `Weekly at ${hour}:${min.padStart(2, '0')}`;
-    }
-    if (dom !== '*' && month === '*' && dow === '*') {
-      return `Monthly (Day ${dom}) at ${hour}:${min.padStart(2, '0')}`;
-    }
-    if (dom === '*' && month === '*' && dow === '*') {
-      return `Daily at ${hour}:${min.padStart(2, '0')}`;
-    }
-  } catch (e) {}
-  return cron;
-}
-
-function getNextRunLabel(cron) {
-  if (!cron) return '';
-  try {
-    const interval = cronParser.parseExpression(cron);
-    const next = interval.next().toDate();
-    const now = new Date();
-    const diffMs = next.getTime() - now.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    const diffHour = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHour / 24);
-    if (diffDay > 0) return `In ${diffDay}d ${diffHour % 24}h`;
-    if (diffHour > 0) return `In ${diffHour}h ${diffMin % 60}m`;
-    if (diffMin > 0) return `In ${diffMin}m`;
-    return 'Soon';
-  } catch (e) {
-    return '';
-  }
-}
 
 function getTaskBgStyle(status) {
   if (status === 'ongoing') return 'bg-yellow-50 border-black';

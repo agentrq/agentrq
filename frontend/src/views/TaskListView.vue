@@ -73,14 +73,23 @@
                   {{ getWorkspaceName(task.workspaceId) }}
                 </span>
                 <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black uppercase tracking-widest shrink-0" :class="getTaskBadgeStyle(task.status)">
-                  {{ task.status }}
+                  {{ getTaskLabel(task.status) }}
                 </span>
-                <span v-if="task.cronSchedule" class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
+                <div v-if="task.cronSchedule" class="flex items-center gap-2 flex-nowrap">
+                  <span class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
+                  <template v-if="task.status === 'cron'">
+                    <span v-if="getNextRunLabel(task.cronSchedule)" class="text-[9px] font-black text-sky-600 uppercase tracking-widest truncate">Next: {{ getNextRunLabel(task.cronSchedule) }} ({{ getNextRunDateTime(task.cronSchedule) }})</span>
+                    <span v-else class="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">Next: DUE</span>
+                  </template>
+                </div>
               </div>
               
               <h3 class="text-sm font-black text-black group-hover:text-indigo-600 transition-colors uppercase truncate mb-1">{{ task.title }}</h3>
               <p class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                {{ formatTime(task.createdAt) }} • BY {{ task.createdBy.toUpperCase() }}
+                <template v-if="task.status !== 'cron'">
+                  {{ formatTime(task.createdAt) }} • 
+                </template>
+                BY {{ task.createdBy.toUpperCase() }}
               </p>
             </div>
 
@@ -139,8 +148,10 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { useCron } from '../composables/useCron';
 import { useEventBus } from '../useEventBus';
 
+const { getNextRunLabel, getNextRunDateTime } = useCron();
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
@@ -301,7 +312,13 @@ const getTaskBadgeStyle = (status) => {
   if (status === 'blocked') return 'bg-red-50 text-red-600 border-red-200';
   if (status === 'completed') return 'bg-green-50 text-green-600 border-green-200';
   if (status === 'notstarted') return 'bg-gray-50 text-gray-500 border-gray-200';
+  if (status === 'cron') return 'bg-sky-50 text-sky-700 border-sky-200';
   return 'bg-white text-gray-400 border-gray-100';
+};
+
+const getTaskLabel = (status) => {
+  if (status === 'cron') return 'SCHEDULED';
+  return status.toUpperCase();
 };
 
 watch(() => route.params.filter, () => {
