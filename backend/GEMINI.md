@@ -61,7 +61,8 @@ Entities are standard Go structs that specify the data passing between the contr
 
 ### Views (`internal/data/view/`)
 Views define the external structures, like JSON inputs/outputs.
-- Structs use `json:"fieldName"` struct tags for serialization properties.
+- Structs use `json:"fieldName"` struct tags with **camelCase** naming (e.g., `workspaceId`, `createdAt`).
+- **CRITICAL**: No `snake_case` is allowed in the JSON API surface.
 - Do not contain behavior/business logic or persistence details here.
 
 ## 3. General Best Practices

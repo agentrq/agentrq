@@ -88,12 +88,12 @@ export async function createTask(workspaceId, title, body, assignee = 'agent', a
       task: { 
         title, 
         body, 
-        created_by: 'human', 
+        createdBy: 'human', 
         assignee, 
         attachments, 
         status, 
-        cron_schedule: cronSchedule,
-        allow_all_commands: allowAllCommands
+        cronSchedule,
+        allowAllCommands: allowAllCommands
       } 
     })
   });
@@ -145,7 +145,7 @@ export async function updateTaskAllowAllCommands(workspaceId, taskId, value) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/allow_all`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ allow_all: { value } })
+    body: JSON.stringify({ allowAll: { value } })
   });
   if (!res.ok) throw new Error('Failed to update task allow all commands flag');
   return res.json();
@@ -205,7 +205,7 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/permission`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_id: requestId, behavior })
+    body: JSON.stringify({ requestId, behavior })
   });
   if (!res.ok) throw new Error('Failed to send verdict');
   return res;
@@ -219,8 +219,8 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
         title,
         body,
         assignee,
-        cron_schedule: cronSchedule,
-        allow_all_commands: allowAllCommands
+        cronSchedule,
+        allowAllCommands
       }
     })
   });

@@ -49,15 +49,15 @@
               <div class="space-y-4">
                 <div class="flex items-center justify-between">
                   <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Auto-Allow List</label>
-                  <span class="text-[9px] font-bold text-gray-300 uppercase tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{{ form.auto_allowed_tools.length }} Tools</span>
+                  <span class="text-[9px] font-bold text-gray-300 uppercase tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{{ form.autoAllowedTools.length }} Tools</span>
                 </div>
                 
                 <p class="text-[11px] text-gray-500 leading-relaxed px-1">
                   These tools will execute autonomously without requiring manual confirmation. Auto-approving trusted tools speeds up agent execution.
                 </p>
 
-                <div v-if="form.auto_allowed_tools.length > 0" class="grid grid-cols-1 gap-2 mt-4">
-                  <div v-for="tool in form.auto_allowed_tools" :key="tool" class="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-white hover:border-gray-200 transition-all">
+                <div v-if="form.autoAllowedTools.length > 0" class="grid grid-cols-1 gap-2 mt-4">
+                  <div v-for="tool in form.autoAllowedTools" :key="tool" class="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl border border-gray-100 group hover:bg-white hover:border-gray-200 transition-all">
                     <div class="flex items-center gap-3">
                       <div class="p-2 bg-white rounded-lg shadow-sm border border-gray-100">
                         <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -72,7 +72,7 @@
                       </div>
                       <span v-else class="text-xs font-bold text-gray-800">{{ tool }}</span>
                     </div>
-                    <button type="button" @click="form.auto_allowed_tools = form.auto_allowed_tools.filter(t => t !== tool)" class="text-gray-300 hover:text-red-500 transition-colors p-1.5 opacity-0 group-hover:opacity-100">
+                    <button type="button" @click="form.autoAllowedTools = form.autoAllowedTools.filter(t => t !== tool)" class="text-gray-300 hover:text-red-500 transition-colors p-1.5 opacity-0 group-hover:opacity-100">
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </div>
@@ -100,7 +100,7 @@
                     </div>
                   </div>
                   <div class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" v-model="form.allow_all_commands" class="sr-only peer" />
+                    <input type="checkbox" v-model="form.allowAllCommands" class="sr-only peer" />
                     <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-500"></div>
                   </div>
                 </label>
@@ -211,8 +211,8 @@ const form = ref({
     workspace_unarchived: false,
     channels: ['email']
   },
-  auto_allowed_tools: [],
-  allow_all_commands: false
+  autoAllowedTools: [],
+  allowAllCommands: false
 });
 
 const eventTypes = [
@@ -224,7 +224,7 @@ const eventTypes = [
 ];
 
 const yoloEvent = [
-  { key: 'allow_all_commands', label: 'Allow All Commands (YOLO)', icon: '<path d="M13 10V3L4 14h7v7l9-11h-7z" />' }
+  { key: 'allowAllCommands', label: 'Allow All Commands (YOLO)', icon: '<path d="M13 10V3L4 14h7v7l9-11h-7z" />' }
 ];
 
 watch(() => props.workspace, (newVal) => {
@@ -241,8 +241,8 @@ watch(() => props.workspace, (newVal) => {
         workspace_unarchived: newVal.notification_settings?.workspace_unarchived || false,
         channels: newVal.notification_settings?.channels || ['email']
       },
-      auto_allowed_tools: newVal.auto_allowed_tools || [],
-      allow_all_commands: newVal.allow_all_commands || false
+      autoAllowedTools: newVal.autoAllowedTools || [],
+      allowAllCommands: newVal.allowAllCommands || false
     };
   }
 }, { immediate: true });

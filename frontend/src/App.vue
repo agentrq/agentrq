@@ -268,7 +268,7 @@ watch(events, (newEvents) => {
   if (newEvents.length === 0) return
   const event = newEvents[newEvents.length - 1]
   
-  if (event.type === 'task.created' && event.payload.created_by === 'agent') {
+  if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
     notifySuccess(`Agent started a new task: ${event.payload.title}`)
   } else if (event.type === 'task.updated') {
     const task = event.payload

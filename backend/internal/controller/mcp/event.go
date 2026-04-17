@@ -26,10 +26,10 @@ func (a Action) String() string {
 
 type MCPEvent struct {
 	Action      Action `json:"action"`
-	WorkspaceID int64  `json:"workspace_id"`
-	UserID      int64  `json:"user_id"`
+	WorkspaceID int64  `json:"workspaceId"`
+	UserID      int64  `json:"userId"`
 	Method      string `json:"method,omitempty"`
-	ToolName    string `json:"tool_name,omitempty"`
+	ToolName    string `json:"toolName,omitempty"`
 	Actor       uint8  `json:"actor"` // 1: Human, 2: Agent
 }
 

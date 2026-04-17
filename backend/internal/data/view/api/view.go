@@ -7,26 +7,26 @@ type (
 
 	Workspace struct {
 		ID          string `json:"id"`
-		CreatedAt   time.Time `json:"created_at"`
-		UpdatedAt   time.Time `json:"updated_at"`
+		CreatedAt   time.Time `json:"createdAt"`
+		UpdatedAt   time.Time `json:"updatedAt"`
 		Name        string    `json:"name"`
 		Description string    `json:"description"`
-		ArchivedAt           *time.Time            `json:"archived_at,omitempty"`
+		ArchivedAt           *time.Time            `json:"archivedAt,omitempty"`
 		Icon                 string                `json:"icon,omitempty"`
-		NotificationSettings *NotificationSettings `json:"notification_settings,omitempty"`
-		AgentConnected       bool                  `json:"agent_connected"`
-		MCPURL               string                `json:"mcp_url"`
-		MCPToken             string                `json:"mcp_token,omitempty"`
-		AutoAllowedTools     []string              `json:"auto_allowed_tools,omitempty"`
-		AllowAllCommands     bool                  `json:"allow_all_commands"`
+		NotificationSettings *NotificationSettings `json:"notificationSettings,omitempty"`
+		AgentConnected       bool                  `json:"agentConnected"`
+		MCPURL               string                `json:"mcpUrl"`
+		MCPToken             string                `json:"mcpToken,omitempty"`
+		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
+		AllowAllCommands     bool                  `json:"allowAllCommands"`
 	}
 
 	NotificationSettings struct {
-		TaskCreated         bool     `json:"task_created"`
-		TaskStatusUpdated   bool     `json:"task_status_updated"`
-		TaskReceivedMessage bool     `json:"task_received_message"`
-		WorkspaceArchived   bool     `json:"workspace_archived"`
-		WorkspaceUnarchived bool     `json:"workspace_unarchived"`
+		TaskCreated         bool     `json:"taskCreated"`
+		TaskStatusUpdated   bool     `json:"taskStatusUpdated"`
+		TaskReceivedMessage bool     `json:"taskReceivedMessage"`
+		WorkspaceArchived   bool     `json:"workspaceArchived"`
+		WorkspaceUnarchived bool     `json:"workspaceUnarchived"`
 		Channels            []string `json:"channels"` // e.g. ["email"]
 	}
 
@@ -61,9 +61,9 @@ type (
 
 	Message struct {
 		ID          string       `json:"id"`
-		CreatedAt   time.Time    `json:"created_at"`
-		TaskID      string       `json:"task_id"`
-		UserID      string       `json:"user_id"`
+		CreatedAt   time.Time    `json:"createdAt"`
+		TaskID      string       `json:"taskId"`
+		UserID      string       `json:"userId"`
 		Sender      string       `json:"sender"`
 		Text        string       `json:"text"`
 		Attachments []Attachment `json:"attachments,omitempty"`
@@ -74,24 +74,24 @@ type (
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {
 		ID        string    `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
+		CreatedAt time.Time `json:"createdAt"`
+		UpdatedAt time.Time `json:"updatedAt"`
 
-		WorkspaceID   string       `json:"workspace_id"`
-		CreatedBy     string       `json:"created_by"`
+		WorkspaceID   string       `json:"workspaceId"`
+		CreatedBy     string       `json:"createdBy"`
 		Assignee      string       `json:"assignee"`
 		Status        string       `json:"status"`
 		Title       string       `json:"title"`
 		Body        string       `json:"body"`
 		Response    string       `json:"response,omitempty"`
-		ReplyText   string       `json:"reply_text,omitempty"`
+		ReplyText   string       `json:"replyText,omitempty"`
 		Attachments []Attachment `json:"attachments,omitempty"`
 		Metadata    any          `json:"metadata,omitempty"`
 		Messages    []Message    `json:"messages,omitempty"`
-		CronSchedule string      `json:"cron_schedule,omitempty"`
-		ParentID     string      `json:"parent_id,omitempty"`
-		SortOrder    float64     `json:"sort_order"`
-		AllowAllCommands bool    `json:"allow_all_commands"`
+		CronSchedule string      `json:"cronSchedule,omitempty"`
+		ParentID     string      `json:"parentId,omitempty"`
+		SortOrder    float64     `json:"sortOrder"`
+		AllowAllCommands bool    `json:"allowAllCommands"`
 	}
 
 	CreateTaskRequest struct {
@@ -146,7 +146,7 @@ type (
 	}
 
 	UpdateTaskAllowAllCommandsRequest struct {
-		AllowAll TaskAllowAllUpdate `json:"allow_all"`
+		AllowAll TaskAllowAllUpdate `json:"allowAll"`
 	}
 
 	TaskAllowAllUpdate struct {
@@ -188,7 +188,7 @@ type (
 	}
 
 	SendPermissionVerdictRequest struct {
-		RequestID string `json:"request_id"`
+		RequestID string `json:"requestId"`
 		Behavior  string `json:"behavior"` // "allow" | "deny"
 	}
 

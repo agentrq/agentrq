@@ -44,10 +44,10 @@ type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 
 type PermissionRequestParams struct {
-	RequestID    string `json:"request_id"`
-	ToolName     string `json:"tool_name"`
+	RequestID    string `json:"requestId"`
+	ToolName     string `json:"toolName"`
 	Description  string `json:"description"`
-	InputPreview string `json:"input_preview"`
+	InputPreview string `json:"inputPreview"`
 }
 
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
@@ -97,30 +97,30 @@ type CreateTaskParams struct {
 	Body         string `json:"body" jsonschema:"Detailed description of the task or action needed"`
 	Assignee     string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
 	Attachments  []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
-	CronSchedule string `json:"cron_schedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
+	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
 }
 
 // UpdateTaskStatusParams is the input to the update_task_status tool.
 type UpdateTaskStatusParams struct {
-	TaskID string `json:"task_id" jsonschema:"The ID of the task to update"`
+	TaskID string `json:"taskId" jsonschema:"The ID of the task to update"`
 	Status string `json:"status" jsonschema:"New status: 'ongoing', 'completed', 'blocked', 'rejected', or 'notstarted'"`
 }
 
 // ReplyParams is the input to the reply tool.
 type ReplyParams struct {
-	ChatID      string              `json:"chat_id" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
+	ChatID      string              `json:"chatId" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
 	Text        string              `json:"text" jsonschema:"The message text to send"`
 	Attachments []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
 }
 
 // DownloadAttachmentParams is the input to the download_attachment tool.
 type DownloadAttachmentParams struct {
-	AttachmentID string `json:"attachment_id" jsonschema:"The ID of the attachment to download"`
+	AttachmentID string `json:"attachmentId" jsonschema:"The ID of the attachment to download"`
 }
 
 // GetTaskMessagesParams is the input to the getTaskMessages tool.
 type GetTaskMessagesParams struct {
-	TaskID string `json:"task_id" jsonschema:"The ID of the task to get messages for"`
+	TaskID string `json:"taskId" jsonschema:"The ID of the task to get messages for"`
 	Cursor int    `json:"cursor,omitempty" jsonschema:"The offset cursor. Default is 0."`
 	Limit  int    `json:"limit,omitempty" jsonschema:"The maximum items to return. Default is 5."`
 }
