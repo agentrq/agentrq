@@ -21,6 +21,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
+	handlercoremcp "github.com/agentrq/agentrq/backend/internal/handler/coremcp"
 	handlermcp "github.com/agentrq/agentrq/backend/internal/handler/mcp"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -466,8 +467,20 @@ func New(cfg Config) (*App, error) {
 		},
 	})
 
-	// MCP Handler
 	mux := http.NewServeMux()
+
+	// CoreMCP Handler
+	if _, err := handlercoremcp.New(handlercoremcp.Params{
+		Crud:     crudCtrl,
+		TokenSvc: tokenSvc,
+		BaseURL:  cfg.App.BaseURL,
+		Domain:   cfg.App.Domain,
+		Mux:      mux,
+	}); err != nil {
+		return nil, fmt.Errorf("coremcp handler: %w", err)
+	}
+
+	// MCP Handler
 	if _, err := handlermcp.New(handlermcp.Params{
 		MCPManager: mcpManager,
 		Repository: repo,

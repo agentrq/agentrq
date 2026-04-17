@@ -102,10 +102,14 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Skip hostname checks for localhost
 	if domain != "" && !strings.HasPrefix(host, "localhost") && !strings.HasPrefix(host, "127.0.0.1") {
 		mcpSuffix := ".mcp." + domain
+		coreMCPHost := "mcp." + domain
 		appHost := "app." + domain
 
-		// 1. Check if it's an MCP subdomain
-		if strings.HasSuffix(host, mcpSuffix) {
+		// 1. Check if it's the CoreMCP subdomain
+		if host == coreMCPHost {
+			// Allow it through. Paths starting with /coremcp are expected.
+		} else if strings.HasSuffix(host, mcpSuffix) {
+			// 2. Check if it's a workspace-specific MCP subdomain
 			workspaceID36 := strings.TrimSuffix(host, mcpSuffix)
 			// Subdomain is in base36, parse it back to int64
 			id, err := strconv.ParseInt(workspaceID36, 36, 64)
@@ -123,7 +127,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				r.URL.Path = "/mcp/" + workspaceID + r.URL.Path
 			}
 		} else if host != appHost {
-			// 2. If it's not appHost or an MCP host, reject it
+			// 3. If it's not appHost, CoreMCP host, or an MCP host, reject it
 			sw.WriteHeader(http.StatusNotFound)
 			fmt.Fprintf(sw, "Host %s not allowed", host)
 			return
@@ -184,10 +188,11 @@ func (s *service) Run() error {
 				}
 
 				mcpSuffix := ".mcp." + domain
+				coreMCPHost := "mcp." + domain
 				appHost := "app." + domain
 
 				// Only redirect authorized hostnames
-				if strings.HasSuffix(host, mcpSuffix) || host == appHost {
+				if strings.HasSuffix(host, mcpSuffix) || host == appHost || host == coreMCPHost {
 					target := "https://" + host
 					if s.cfg.SSLPort != 443 && s.cfg.SSLPort != 0 {
 						target += fmt.Sprintf(":%d", s.cfg.SSLPort)
@@ -218,9 +223,10 @@ func (s *service) Run() error {
 			// Ensure requested host is in our allowed list
 			serverName := strings.ToLower(hello.ServerName)
 			mcpSuffix := ".mcp." + domain
+			coreMCPHost := "mcp." + domain
 			appHost := "app." + domain
 
-			if !strings.HasSuffix(serverName, mcpSuffix) && serverName != appHost {
+			if !strings.HasSuffix(serverName, mcpSuffix) && serverName != appHost && serverName != coreMCPHost {
 				return nil, fmt.Errorf("certificate request for unauthorized host: %s", serverName)
 			}
 
@@ -318,6 +324,7 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 	domains := []string{
 		// domain,
 		"app." + domain,
+		"mcp." + domain,
 		"*.mcp." + domain,
 	}
 
