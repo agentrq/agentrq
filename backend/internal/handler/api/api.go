@@ -221,7 +221,7 @@ func (h *handler) rootLogin() fiber.Handler {
 		}
 
 		type RootLoginRequest struct {
-			RootToken string `json:"root_token"`
+			RootToken string `json:"rootToken"`
 		}
 		var req RootLoginRequest
 		if err := c.BodyParser(&req); err != nil {

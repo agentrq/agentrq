@@ -69,15 +69,15 @@
                    
                    <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
                      <template v-if="t.status === 'cron'">
-                       <span class="text-sky-600 font-bold" v-if="getNextRunDateTime(t.cron_schedule)">
-                         {{ getNextRunDateTime(t.cron_schedule).toUpperCase() }}
+                       <span class="text-sky-600 font-bold" v-if="getNextRunDateTime(t.cronSchedule)">
+                         {{ getNextRunDateTime(t.cronSchedule).toUpperCase() }}
                        </span>
                      </template>
-                     <span class="text-gray-500" v-else>{{ formatTime(t.created_at) }}</span>
+                     <span class="text-gray-500" v-else>{{ formatTime(t.createdAt) }}</span>
                      
                      <span class="flex items-center gap-1">
                        <span class="text-gray-400">BY</span>
-                       <span :class="t.created_by === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.created_by === 'human' ? 'YOU' : 'AGENT' }}</span>
+                       <span :class="t.createdBy === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.createdBy === 'human' ? 'YOU' : 'AGENT' }}</span>
                      </span>
                      
                      <span class="flex items-center gap-1" v-if="t.assignee">
@@ -86,15 +86,15 @@
                      </span>
 
                      <span v-if="t.status === 'cron'" class="text-sky-800 bg-sky-100 border border-sky-300 px-1 py-0.5">
-                       ⏰ {{ formatCron(t.cron_schedule) }}
+                       ⏰ {{ formatCron(t.cronSchedule) }}
                      </span>
-                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-sky-600 font-bold">
-                       • {{ getNextRunLabel(t.cron_schedule) }}
+                     <span v-if="t.status === 'cron' && getNextRunLabel(t.cronSchedule)" class="text-sky-600 font-bold">
+                       • {{ getNextRunLabel(t.cronSchedule) }}
                      </span>
 
-                     <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.Messages && t.Messages.length > 0">
+                     <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.messages && t.messages.length > 0">
                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                       {{ t.Messages.length }}
+                       {{ t.messages.length }}
                      </span>
                      
                      <div v-if="t.attachments && t.attachments.length > 0" class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600">
@@ -271,7 +271,7 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
         } else {
           localTasks.value.push(t);
           // Trigger notification if it's an agent task
-          if (t.created_by === 'agent') {
+          if (t.createdBy === 'agent') {
             notifyInfo(`Agent defined a new task: ${t.title}`, 'New Task');
           }
         }
@@ -357,9 +357,9 @@ function formatRelativeTime(date) {
 }
 
 function getTaskOrder(t) {
-  if (t.sort_order) return t.sort_order;
-  if (!t.created_at) return Date.now();
-  return new Date(t.created_at).getTime() / 1000.0;
+  if (t.sortOrder) return t.sortOrder;
+  if (!t.createdAt) return Date.now();
+  return new Date(t.createdAt).getTime() / 1000.0;
 }
 
 const allTasks = computed(() => {
@@ -386,7 +386,7 @@ const displayGroups = computed(() => {
     const handledIds = new Set();
 
     categories.forEach(cat => {
-      const matched = cronTasks.filter(t => cat.values.includes(t.cron_schedule));
+      const matched = cronTasks.filter(t => cat.values.includes(t.cronSchedule));
       if (matched.length > 0) {
         grps.push({ title: cat.label, tasks: matched });
         matched.forEach(t => handledIds.add(t.id));
@@ -422,7 +422,7 @@ const displayGroups = computed(() => {
 });
 
 const pendingInputCount = computed(() => {
-  return localTasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted')).length;
+  return localTasks.value.filter(t => t.createdBy === 'agent' && (t.status === 'notstarted')).length;
 });
 
 const scheduledCount = computed(() => {

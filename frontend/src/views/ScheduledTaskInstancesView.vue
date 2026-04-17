@@ -35,7 +35,7 @@
           </div>
           <div class="flex items-center gap-2">
             <span class="text-[9px] font-black text-sky-300 uppercase tracking-widest bg-sky-800 px-2 py-0.5">
-              ⏰ {{ formatCron(scheduledTask.cron_schedule) }}
+              ⏰ {{ formatCron(scheduledTask.cronSchedule) }}
             </span>
             <span v-if="nextRunLabel" class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
               NEXT: {{ nextRunLabel }}
@@ -46,7 +46,7 @@
           <p class="font-black text-sm text-sky-900 leading-snug">{{ scheduledTask.title }}</p>
           <p v-if="scheduledTask.body" class="text-xs text-sky-700 mt-1 leading-relaxed line-clamp-2">{{ scheduledTask.body }}</p>
           <div class="flex flex-wrap items-center gap-3 mt-2 text-[9px] font-black uppercase tracking-widest text-sky-500">
-            <span>Created {{ formatDate(scheduledTask.created_at) }}</span>
+            <span>Created {{ formatDate(scheduledTask.createdAt) }}</span>
             <span class="border-l border-sky-300 pl-3">{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
           </div>
         </div>
@@ -81,10 +81,10 @@
                   {{ instance.title }}
                 </span>
                 <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
-                  <span class="text-gray-500">{{ formatDate(instance.created_at) }}</span>
-                  <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="instance.Messages && instance.Messages.length > 0">
+                  <span class="text-gray-500">{{ formatDate(instance.createdAt) }}</span>
+                  <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="instance.messages && instance.messages.length > 0">
                     <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                    {{ instance.Messages.length }}
+                    {{ instance.messages.length }}
                   </span>
                 </div>
               </div>
@@ -140,10 +140,10 @@ onMounted(async () => {
 
     scheduledTask.value = allTasks.find(t => t.id === taskId) || null;
 
-    // Find instances: tasks whose parent_id matches this task's id, sorted newest first, limit 5
+    // Find instances: tasks whose parentId matches this task's id, sorted newest first, limit 5
     instances.value = allTasks
-      .filter(t => t.parent_id === taskId)
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .filter(t => t.parentId === taskId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 5);
   } catch (err) {
     error.value = err.message || 'Failed to load instances';
@@ -153,8 +153,8 @@ onMounted(async () => {
 });
 
 const nextRunLabel = computed(() => {
-  if (!scheduledTask.value?.cron_schedule) return '';
-  return getNextRunLabel(scheduledTask.value.cron_schedule);
+  if (!scheduledTask.value?.cronSchedule) return '';
+  return getNextRunLabel(scheduledTask.value.cronSchedule);
 });
 
 function formatDate(dateStr) {

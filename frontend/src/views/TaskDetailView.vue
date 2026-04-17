@@ -54,7 +54,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <span v-if="workspace.archived_at" class="border-2 border-yellow-500 bg-yellow-300 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">Archived</span>
+        <span v-if="workspace.archivedAt" class="border-2 border-yellow-500 bg-yellow-300 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">Archived</span>
         <span class="hidden md:inline text-[9px] font-black text-gray-300 uppercase tracking-widest">{{ task.id }}</span>
         <button @click="router.push('/workspaces/' + workspaceId)" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -74,8 +74,8 @@
           <div class="bg-black px-4 py-2 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <div class="w-5 h-5 flex items-center justify-center text-[9px] font-black"
-                   :class="task.created_by === 'human' ? 'bg-[#00FF88] text-black' : 'bg-gray-600 text-[#00FF88]'">
-                {{ task.created_by === 'human' ? 'H' : 'A' }}
+                   :class="task.createdBy === 'human' ? 'bg-[#00FF88] text-black' : 'bg-gray-600 text-[#00FF88]'">
+                {{ task.createdBy === 'human' ? 'H' : 'A' }}
               </div>
               <span class="text-[10px] font-black text-white uppercase tracking-widest">Task Definition</span>
               <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
@@ -83,12 +83,12 @@
                       @click="toggleAllowAllCommands"
                       @mouseenter="showTooltip($event, 'Toggle auto-allow all tool executions for this task')" @mouseleave="hideTooltip"
                       class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 border text-[8px] font-black uppercase tracking-widest transition-all active:translate-y-0.5 flex items-center gap-1 shrink-0"
-                      :class="task.allow_all_commands ? 'bg-[#00FF88] text-black border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-800 text-gray-400 border-gray-600 hover:border-[#00FF88] hover:text-[#00FF88] shadow-none'">
-                <svg v-if="task.allow_all_commands" class="w-3 h-3 md:w-2.5 md:h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      :class="task.allowAllCommands ? 'bg-[#00FF88] text-black border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-800 text-gray-400 border-gray-600 hover:border-[#00FF88] hover:text-[#00FF88] shadow-none'">
+                <svg v-if="task.allowAllCommands" class="w-3 h-3 md:w-2.5 md:h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
                 <div v-else class="w-2.5 h-2.5 border border-gray-500 bg-transparent rounded-sm"></div>
                 <span class="hidden md:inline">YOLO</span>
               </button>
-              <span v-else-if="task.allow_all_commands" 
+              <span v-else-if="task.allowAllCommands" 
                     @mouseenter="showTooltip($event, 'This task automatically approves all tool calls')" @mouseleave="hideTooltip"
                     class="hidden sm:inline-block ml-1.5 md:ml-2 px-1.5 py-0.5 bg-[#00FF88] text-black text-[8px] font-black uppercase tracking-widest border border-[#00FF88]/50 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] truncate">
                 YOLO
@@ -104,7 +104,7 @@
               </button>
             </div>
             <div class="flex items-center gap-3">
-              <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ formatDateTime(task.created_at) }}</span>
+              <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ formatDateTime(task.createdAt) }}</span>
               <button @click="descExpanded = !descExpanded" class="text-[9px] font-black text-gray-400 hover:text-[#00FF88] uppercase tracking-widest flex items-center gap-1 transition-colors">
                 {{ descExpanded ? 'Collapse' : 'Expand' }}
                 <svg class="w-3 h-3 transition-transform duration-200" :class="descExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
@@ -153,7 +153,7 @@
             </div>
             <div class="bg-gray-50 border-2 border-black flex-1 p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-w-0">
               <span class="text-[10px] font-black text-gray-700 block mb-1.5 uppercase tracking-widest">
-                Claude Agent · {{ formatDateTime(m.created_at) }}
+                Claude Agent · {{ formatDateTime(m.createdAt) }}
               </span>
               <div class="text-xs font-medium text-gray-800 leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
 
@@ -164,15 +164,15 @@
                     <svg class="w-3.5 h-3.5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                     <span class="text-[10px] font-black text-white uppercase tracking-widest">Agent Authorization Required</span>
                   </div>
-                  <span class="text-[9px] font-bold text-gray-400 uppercase tracking-tight">{{ m.metadata.request_id }}</span>
+                  <span class="text-[9px] font-bold text-gray-400 uppercase tracking-tight">{{ m.metadata.requestId }}</span>
                 </div>
                 <div class="p-3 flex flex-col gap-3">
                   <div>
                     <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Tool / Action</span>
-                    <p class="text-xs font-black text-gray-900 mt-0.5 break-all">{{ m.metadata.tool_name }}</p>
+                    <p class="text-xs font-black text-gray-900 mt-0.5 break-all">{{ m.metadata.toolName }}</p>
                   </div>
                   <p v-if="m.metadata.description" class="text-xs text-gray-600 font-medium italic border-l-2 border-black pl-3">"{{ m.metadata.description }}"</p>
-                  <pre v-if="m.metadata.input_preview" class="text-[10px] font-mono bg-gray-950 text-[#00FF88] p-3 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 custom-scrollbar">{{ m.metadata.input_preview }}</pre>
+                  <pre v-if="m.metadata.inputPreview" class="text-[10px] font-mono bg-gray-950 text-[#00FF88] p-3 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 custom-scrollbar">{{ m.metadata.inputPreview }}</pre>
 
                   <!-- Pending verdict buttons -->
                   <div v-if="m.metadata.status === 'pending'" class="flex flex-wrap gap-2 pt-2">
@@ -203,7 +203,7 @@
                       <svg v-else class="w-3.5 h-3.5 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" /></svg>
                       <span class="text-[10px] font-black uppercase tracking-widest flex-1 truncate break-all"
                             :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-green-800' : 'text-red-700'">
-                        {{ m.metadata.tool_name }}
+                        {{ m.metadata.toolName }}
                       </span>
                       <span v-if="m.metadata.status === 'allow_always'" class="text-[8px] font-black text-green-700 bg-[#00FF88] border border-green-700 px-1.5 py-0.5 uppercase tracking-widest shrink-0">Auto</span>
                       <span class="text-[9px] font-black uppercase tracking-widest shrink-0"
@@ -215,8 +215,8 @@
                     <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t-2 border-dashed"
                          :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-[#00FF88]' : 'border-red-300'">
                       <p v-if="m.metadata.description" class="text-[11px] text-gray-600 italic mb-2">"{{ m.metadata.description }}"</p>
-                      <pre v-if="m.metadata.input_preview" class="text-[9px] font-mono bg-gray-950 text-[#00FF88] p-2 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 mb-2">{{ m.metadata.input_preview }}</pre>
-                      <span class="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">ID: {{ m.metadata.request_id }}</span>
+                      <pre v-if="m.metadata.inputPreview" class="text-[9px] font-mono bg-gray-950 text-[#00FF88] p-2 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 mb-2">{{ m.metadata.inputPreview }}</pre>
+                      <span class="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">ID: {{ m.metadata.requestId }}</span>
                     </div>
                   </div>
                 </div>
@@ -241,7 +241,7 @@
             </div>
             <div class="bg-[#00FF88] border-2 border-black flex-1 p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-w-0">
               <span class="text-[10px] font-black text-black block mb-1.5 uppercase tracking-widest text-right">
-                You · {{ formatDateTime(m.created_at) }}
+                You · {{ formatDateTime(m.createdAt) }}
               </span>
               <div class="text-xs font-medium text-black leading-relaxed whitespace-pre-wrap text-right break-all">{{ m.text }}</div>
               <!-- Attachments on human message -->
@@ -261,7 +261,7 @@
     </div>
 
     <!-- Reply Box -->
-    <footer v-if="!workspace.archived_at" class="border-t-2 border-dashed border-gray-200 pt-4 shrink-0 z-20">
+    <footer v-if="!workspace.archivedAt" class="border-t-2 border-dashed border-gray-200 pt-4 shrink-0 z-20">
 
       <!-- Attachment previews -->
       <div v-if="replyAttachments.length > 0" class="flex flex-wrap gap-2 mb-3">
@@ -284,18 +284,18 @@
               v-model="replyText"
               @input="adjustTextareaHeight"
               rows="1"
-              :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
-              :placeholder="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions or response...'"
+              :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+              :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions or response...'"
               class="flex-1 px-3 py-2 md:px-4 md:py-3 text-xs md:text-sm font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
-                    :disabled="(!workspace.agent_connected && task.assignee !== 'human' && task.status !== 'pending')"
+                    :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
                     class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center disabled:opacity-30 self-end">
               <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
            <button type="submit"
-                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agent_connected || task.status === 'notstarted' || task.status === 'pending'))"
+                   :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
                    class="h-[42px] w-[32px] md:h-[50px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
                    title="Send Instruction">
              <svg class="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -305,7 +305,7 @@
         </div>
 
         <!-- Status Warning Messages -->
-        <div v-if="!workspace.agent_connected && task.assignee !== 'human'" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-red-50 border-2 border-red-200 border-dashed">
+        <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-red-50 border-2 border-red-200 border-dashed">
            <div class="flex items-center gap-2">
              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse border border-black/10"></span>
              <span class="text-[10px] font-black text-red-700 uppercase tracking-[0.2em]">Agent Offline</span>
@@ -321,7 +321,7 @@
            <p class="text-[9px] text-yellow-600 font-bold uppercase tracking-tight text-center italic">Please wait for the task to start or be accepted before sending messages.</p>
         </div>
 
-        <div v-if="(workspace.agent_connected || task.assignee === 'human') && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
+        <div v-if="(workspace.agentConnected || task.assignee === 'human') && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
           <div class="h-px bg-gray-200 grow"></div>
           <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Shift+Enter for newline · Secure Agent Sync</span>
           <div class="h-px bg-gray-200 grow"></div>
@@ -452,7 +452,7 @@ const { connect, disconnect, events } = useEventBus(workspaceId);
 
 const sortedMessages = computed(() => {
   if (!task.value || !task.value.messages) return [];
-  return [...task.value.messages].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+  return [...task.value.messages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
 
 function scrollToBottom() {
@@ -531,7 +531,7 @@ async function updateStatus(newStatus) {
 
 async function toggleAllowAllCommands() {
   if (!task.value) return;
-  const newValue = !task.value.allow_all_commands;
+  const newValue = !task.value.allowAllCommands;
   try {
     const res = await updateTaskAllowAllCommands(workspaceId, taskId, newValue);
     task.value = res.task;

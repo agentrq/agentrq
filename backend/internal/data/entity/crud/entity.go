@@ -290,7 +290,7 @@ type (
 
 	GetWorkspaceStatsRequest struct {
 		ID     int64  `json:"id"`
-		UserID string `json:"user_id"`
+		UserID string `json:"userId"`
 		Range  string `json:"range"` // 1d, 7d, week, 30d, month, custom
 		From   int64  `json:"from"`  // unix timestamp for custom range
 		To     int64  `json:"to"`    // unix timestamp for custom range
@@ -302,16 +302,16 @@ type (
 	}
 
 	WorkspaceStatsSummary struct {
-		TasksCompleted  int64 `json:"tasks_completed"`
-		TasksScheduled  int64 `json:"tasks_scheduled"`
+		TasksCompleted  int64 `json:"tasksCompleted"`
+		TasksScheduled  int64 `json:"tasksScheduled"`
 		Messages        int64 `json:"messages"`
-		ManualApprovals int64 `json:"manual_approvals"`
-		AutoApprovals   int64 `json:"auto_approvals"`
+		ManualApprovals int64 `json:"manualApprovals"`
+		AutoApprovals   int64 `json:"autoApprovals"`
 		Denies          int64 `json:"denies"`
 	}
 
 	WorkspaceStatsTimeseries struct {
-		TasksCompleted []DailyStat `json:"tasks_completed"`
+		TasksCompleted []DailyStat `json:"tasksCompleted"`
 		Messages       []DailyStat `json:"messages"`
 	}
 
@@ -337,10 +337,10 @@ type (
 	// CRUDEvent is the central structure for all CRUD events published via PubSub
 	CRUDEvent struct {
 		Action       Action       `json:"action"`
-		WorkspaceID  int64        `json:"workspace_id"`
-		UserID       int64        `json:"user_id"`
-		ResourceType ResourceType `json:"resource_type"`
-		ResourceID   int64        `json:"resource_id"`
+		WorkspaceID  int64        `json:"workspaceId"`
+		UserID       int64        `json:"userId"`
+		ResourceType ResourceType `json:"resourceType"`
+		ResourceID   int64        `json:"resourceId"`
 		Actor        Actor        `json:"actor"` // 1: Human, 2: Agent
 	}
 )

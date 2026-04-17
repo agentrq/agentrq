@@ -122,7 +122,7 @@
               <div class="flex items-center gap-3 min-w-0">
                 <!-- Status dot -->
                 <div class="w-3 h-3 rounded-full border border-black shrink-0"
-                     :class="p.agent_connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
+                     :class="p.agentConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'"></div>
                 <!-- Icon -->
                 <div class="w-6 h-6 bg-white flex items-center justify-center overflow-hidden shrink-0">
                   <template v-if="p.icon">
@@ -180,7 +180,7 @@
               </div>
               <div class="min-w-0">
                 <div class="font-black text-sm text-gray-600 group-hover:text-black uppercase tracking-tight transition-colors truncate">{{ p.name }}</div>
-                <div class="text-[9px] font-black text-red-400 uppercase tracking-widest truncate">Archived {{ new Date(p.archived_at).toLocaleDateString() }}</div>
+                <div class="text-[9px] font-black text-red-400 uppercase tracking-widest truncate">Archived {{ new Date(p.archivedAt).toLocaleDateString() }}</div>
               </div>
             </div>
             <div class="flex items-center gap-1">
@@ -219,11 +219,11 @@ const error = ref(null);
 const form = ref({ name: '', description: '', icon: '' });
 
 const activeWorkspaces = computed(() => {
-  return workspaces.value.filter(p => !p.archived_at);
+  return workspaces.value.filter(p => !p.archivedAt);
 });
 
 const archivedWorkspaces = computed(() => {
-  return workspaces.value.filter(p => !!p.archived_at);
+  return workspaces.value.filter(p => !!p.archivedAt);
 });
 
 const filteredActiveWorkspaces = computed(() => {
@@ -310,7 +310,7 @@ async function submit() {
 
 async function toggleArchive(p) {
   try {
-    if (p.archived_at) {
+    if (p.archivedAt) {
       await unarchiveWorkspace(p.id);
       notifySuccess('Workspace protocol restored');
     }

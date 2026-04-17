@@ -77,12 +77,12 @@
                     <!-- Allow all commands toggle -->
                     <div v-if="newTask.assignee === 'agent'" class="mt-4 flex items-center gap-3">
                         <label class="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" v-model="newTask.allow_all_commands" class="sr-only peer">
+                          <input type="checkbox" v-model="newTask.allowAllCommands" class="sr-only peer">
                           <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#00FF88] border-2 border-black border-transparent"></div>
                         </label>
                         <span class="text-[10px] font-black text-gray-700 uppercase tracking-widest">Allow All Commands</span>
                     </div>
-                    <p v-if="newTask.assignee === 'agent' && newTask.allow_all_commands" class="text-[9px] font-bold text-gray-500 mt-1 max-w-xs">Warning: the agent will execute commands without asking for permission.</p>
+                    <p v-if="newTask.assignee === 'agent' && newTask.allowAllCommands" class="text-[9px] font-bold text-gray-500 mt-1 max-w-xs">Warning: the agent will execute commands without asking for permission.</p>
                  </div>
 
                  <!-- Schedule Type -->
@@ -219,7 +219,7 @@ const workspace = ref(null);
 const sending = ref(false);
 const fileInput = ref(null);
 
-const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allow_all_commands: false });
+const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });
 const newTaskAttachments = ref([]);
 
 // Scheduling state
@@ -246,16 +246,16 @@ onMounted(async () => {
         title: t.title, 
         body: t.body, 
         assignee: t.assignee, 
-        cronSchedule: t.cron_schedule,
-        allow_all_commands: t.allow_all_commands || false
+        cronSchedule: t.cronSchedule,
+        allowAllCommands: t.allowAllCommands || false
       };
       
-      if (t.cron_schedule) {
-        parseCronToUI(t.cron_schedule);
+      if (t.cronSchedule) {
+        parseCronToUI(t.cronSchedule);
       }
     } else {
       // Default to workspace setting for new tasks
-      newTask.value.allow_all_commands = res.workspace.allow_all_commands || false;
+      newTask.value.allowAllCommands = res.workspace.allowAllCommands || false;
     }
   } catch (err) {
     notifyError("Access Error: " + err.message);
@@ -428,7 +428,7 @@ async function submitHumanTask() {
     await createTask(
       workspaceId, newTask.value.title, newTask.value.body, 
       newTask.value.assignee, newTaskAttachments.value,
-      status, newTask.value.cronSchedule, newTask.value.allow_all_commands
+      status, newTask.value.cronSchedule, newTask.value.allowAllCommands
     );
     notifySuccess('Mission Protocol Initialized');
     goBack(status === 'cron');
@@ -443,7 +443,7 @@ async function submitEditProtocol() {
     await updateScheduledTask(
       workspaceId, taskId, newTask.value.title, newTask.value.body,
       newTask.value.assignee, newTask.value.cronSchedule,
-      newTask.value.allow_all_commands
+      newTask.value.allowAllCommands
     );
     notifySuccess('Scheduled Protocol Updated');
     goBack(newTask.value.cronSchedule !== '');

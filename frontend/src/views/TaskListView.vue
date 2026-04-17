@@ -29,20 +29,20 @@
               <div class="flex flex-col gap-1.5 min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black bg-black text-white uppercase tracking-widest">
-                    {{ getWorkspaceName(task.workspace_id) }}
+                    {{ getWorkspaceName(task.workspaceId) }}
                   </span>
                   <span class="text-xs font-bold bg-yellow-200 border border-black px-2 py-0.5 mr-2 uppercase shrink-0">Pending</span>
                 </div>
                 <h3 class="font-black text-sm text-black truncate">{{ task.title }}</h3>
               </div>
-              <span class="text-xs text-gray-400 shrink-0 font-bold uppercase">{{ formatTime(task.created_at) }}</span>
+              <span class="text-xs text-gray-400 shrink-0 font-bold uppercase">{{ formatTime(task.createdAt) }}</span>
             </div>
             
             <p class="text-xs text-gray-600 mb-3 line-clamp-2">
               {{ getLastMessageText(task) }}
             </p>
             
-            <div class="flex gap-2" @click.stop v-if="isAgentConnected(task.workspace_id)">
+            <div class="flex gap-2" @click.stop v-if="isAgentConnected(task.workspaceId)">
               <button @click="handleAction(task, 'allow')"
                       class="px-3 py-1 bg-[#00FF88] border-2 border-black text-xs font-bold hover:bg-[#00e07a] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
                 Allow
@@ -70,17 +70,17 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-2 flex-wrap">
                 <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black bg-black text-white uppercase tracking-widest">
-                  {{ getWorkspaceName(task.workspace_id) }}
+                  {{ getWorkspaceName(task.workspaceId) }}
                 </span>
                 <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black uppercase tracking-widest shrink-0" :class="getTaskBadgeStyle(task.status)">
                   {{ task.status }}
                 </span>
-                <span v-if="task.cron_schedule" class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
+                <span v-if="task.cronSchedule" class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
               </div>
               
               <h3 class="text-sm font-black text-black group-hover:text-indigo-600 transition-colors uppercase truncate mb-1">{{ task.title }}</h3>
               <p class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                {{ formatTime(task.created_at) }} • BY {{ task.created_by.toUpperCase() }}
+                {{ formatTime(task.createdAt) }} • BY {{ task.createdBy.toUpperCase() }}
               </p>
             </div>
 
@@ -180,7 +180,7 @@ const title = computed(() => {
 
 const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cron').length);
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
-const pendingInputCount = computed(() => tasks.value.filter(t => t.created_by === 'agent' && (t.status === 'notstarted')).length);
+const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy === 'agent' && (t.status === 'notstarted')).length);
 
 const getWorkspaceName = (workspaceId) => {
   const ws = workspaces.value.find(w => w.id === workspaceId);
@@ -189,7 +189,7 @@ const getWorkspaceName = (workspaceId) => {
 
 const isAgentConnected = (workspaceId) => {
   const ws = workspaces.value.find(w => w.id === workspaceId);
-  return ws ? ws.agent_connected : false;
+  return ws ? ws.agentConnected : false;
 };
 
 const getLastMessageText = (task) => {
@@ -207,11 +207,11 @@ const handleAction = async (task, action) => {
       m.metadata?.status !== 'deny'
     );
     
-    const requestId = pendingMsg?.metadata?.request_id;
+    const requestId = pendingMsg?.metadata?.requestId;
     if (!requestId) throw new Error('No pending permission request found');
     
     const behavior = action === 'allow' ? 'allow' : 'deny';
-    await sendPermissionVerdict(task.workspace_id, task.id, requestId, behavior);
+    await sendPermissionVerdict(task.workspaceId, task.id, requestId, behavior);
     notifySuccess(`Permission ${action === 'allow' ? 'allowed' : 'denied'}`);
     // Refresh the list to remove the acted task
     await fetchInitial();
@@ -274,7 +274,7 @@ const getBackendParams = (filter) => {
 };
 
 const openTask = (task) => {
-  router.push(`/workspaces/${task.workspace_id}/tasks/${task.id}`);
+  router.push(`/workspaces/${task.workspaceId}/tasks/${task.id}`);
 };
 
 const formatTime = (dateStr) => {

@@ -155,7 +155,7 @@
 
   <SetupModal
     :show="showSetupModal"
-    :mcpUrl="workspace?.mcp_url"
+    :mcpUrl="workspace?.mcpUrl"
     :workspaceId="workspace?.id"
     @close="showSetupModal = false"
   />
@@ -200,9 +200,9 @@ const isAgentConnected = ref(false);
 const token = ref('');
 
 const authenticatedUrl = computed(() => {
-  if (!workspace.value || !workspace.value.mcp_url) return '';
-  if (!token.value) return workspace.value.mcp_url;
-  return `${workspace.value.mcp_url}?token=${token.value}`;
+  if (!workspace.value || !workspace.value.mcpUrl) return '';
+  if (!token.value) return workspace.value.mcpUrl;
+  return `${workspace.value.mcpUrl}?token=${token.value}`;
 });
 
 async function fetchToken() {
@@ -233,7 +233,7 @@ async function load() {
   try {
     const pRes = await getWorkspace(workspaceId);
     workspace.value = pRes.workspace;
-    isAgentConnected.value = workspace.value.agent_connected;
+    isAgentConnected.value = workspace.value.agentConnected;
     const tRes = await fetchTasks(workspaceId);
     tasks.value = tRes.tasks || [];
     // Fetch token for display
@@ -304,11 +304,11 @@ async function handleUpdate(updatedForm) {
 }
 
 async function copyUrl() {
-  if (workspace.value && workspace.value.mcp_url) {
+  if (workspace.value && workspace.value.mcpUrl) {
     try {
       const res = await getWorkspaceToken(workspaceId);
       const token = res.token;
-      let url = workspace.value.mcp_url;
+      let url = workspace.value.mcpUrl;
       if (token) {
         url += `?token=${token}`;
       }
