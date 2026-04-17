@@ -146,7 +146,7 @@ type ListTasksParams struct {
 	Filter      string `json:"filter,omitempty"`
 	Status      string `json:"status,omitempty"`
 	CreatedBy   string `json:"createdBy,omitempty"`
-	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, capped at 50"`
+	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset      int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
 
@@ -154,7 +154,7 @@ type ListAllTasksParams struct {
 	Filter    string `json:"filter,omitempty"`
 	Status    string `json:"status,omitempty"`
 	CreatedBy string `json:"createdBy,omitempty"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, capped at 50"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"Maximum number of tasks to return, default 5, capped at 50"`
 	Offset    int    `json:"offset,omitempty" jsonschema:"Number of tasks to skip"`
 }
 
@@ -380,13 +380,18 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 		statuses = []string{args.Status}
 	}
 
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
 		UserID:      userID,
 		WorkspaceID: parseID(args.WorkspaceID),
 		Filter:      args.Filter,
 		Status:      statuses,
 		CreatedBy:   args.CreatedBy,
-		Limit:       args.Limit,
+		Limit:       limit,
 		Offset:      args.Offset,
 	})
 	if err != nil {
@@ -405,12 +410,17 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 		statuses = []string{args.Status}
 	}
 
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 5
+	}
+
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
 		UserID:    userID,
 		Filter:    args.Filter,
 		Status:    statuses,
 		CreatedBy: args.CreatedBy,
-		Limit:     args.Limit,
+		Limit:     limit,
 		Offset:    args.Offset,
 		// WorkspaceID = 0 implies all
 	})
