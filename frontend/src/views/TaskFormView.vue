@@ -206,6 +206,9 @@ import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { getWorkspace, createTask, updateScheduledTask, getTask } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { useCron } from '../composables/useCron';
+
+const { getNextRunLabel, daysOptions } = useCron();
 
 const route = useRoute();
 const router = useRouter();
@@ -228,11 +231,6 @@ const oneTimeDate = ref('');
 const repeatPreset = ref('daily');
 const repeatTime = ref('09:00');
 const selectedDays = ref([1, 2, 3, 4, 5]); // Mon-Fri
-const daysOptions = [
-  { label: 'M', value: 1 }, { label: 'T', value: 2 }, { label: 'W', value: 3 },
-  { label: 'T', value: 4 }, { label: 'F', value: 5 }, { label: 'S', value: 6 },
-  { label: 'S', value: 0 },
-];
 
 onMounted(async () => {
   try {
@@ -323,24 +321,9 @@ function parseCronToUI(cron) {
 
 const nextRunPreview = computed(() => {
   if (scheduleType.value === 'none' || !newTask.value.cronSchedule) return '';
-  try {
-    const interval = cronParser.parseExpression(newTask.value.cronSchedule, { utc: true });
-    const next = interval.next().toDate();
-    return formatRelativeTime(next);
-  } catch (e) { return ''; }
+  return getNextRunLabel(newTask.value.cronSchedule);
 });
 
-function formatRelativeTime(date) {
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffDay > 0) return `In ${diffDay}d ${diffHour % 24}h`;
-  if (diffHour > 0) return `In ${diffHour}h ${diffMin % 60}m`;
-  return `In ${diffMin}m`;
-}
 
 function toggleDay(day) {
   const idx = selectedDays.value.indexOf(day);
