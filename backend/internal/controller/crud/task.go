@@ -660,16 +660,21 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		return nil, fmt.Errorf("only chronic tasks can be edited this way")
 	}
 
-	// Validate Cron Schedule
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	if _, err := parser.Parse(req.CronSchedule); err != nil {
-		return nil, fmt.Errorf("invalid cron schedule: %w", err)
+	if req.CronSchedule == "" {
+		m.Status = "notstarted"
+		m.CronSchedule = ""
+	} else {
+		// Validate Cron Schedule
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		if _, err := parser.Parse(req.CronSchedule); err != nil {
+			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		}
+		m.CronSchedule = req.CronSchedule
 	}
 
 	m.Title = req.Title
 	m.Body = req.Body
 	m.Assignee = req.Assignee
-	m.CronSchedule = req.CronSchedule
 	m.AllowAllCommands = req.AllowAllCommands
 	m.UpdatedAt = time.Now()
 

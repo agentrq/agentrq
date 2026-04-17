@@ -446,7 +446,7 @@ async function submitEditProtocol() {
       newTask.value.allow_all_commands
     );
     notifySuccess('Scheduled Protocol Updated');
-    goBack(true);
+    goBack(newTask.value.cronSchedule !== '');
   } catch(err) {
     notifyError("Update Error: " + err.message);
   } finally { sending.value = false; }
