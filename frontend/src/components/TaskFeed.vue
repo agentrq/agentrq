@@ -68,7 +68,12 @@
                    <span class="font-black text-[14px] text-gray-900 leading-snug truncate group-hover:text-indigo-700 transition-colors w-full font-bold text-sm">{{ t.title }}</span>
                    
                    <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
-                     <span class="text-gray-500">{{ formatTime(t.created_at) }}</span>
+                     <template v-if="t.status === 'cron'">
+                       <span class="text-sky-600 font-bold" v-if="getNextRunDateTime(t.cron_schedule)">
+                         {{ getNextRunDateTime(t.cron_schedule).toUpperCase() }}
+                       </span>
+                     </template>
+                     <span class="text-gray-500" v-else>{{ formatTime(t.created_at) }}</span>
                      
                      <span class="flex items-center gap-1">
                        <span class="text-gray-400">BY</span>
@@ -84,7 +89,7 @@
                        ⏰ {{ formatCron(t.cron_schedule) }}
                      </span>
                      <span v-if="t.status === 'cron' && getNextRunLabel(t.cron_schedule)" class="text-sky-600 font-bold">
-                       • NEXT: {{ getNextRunLabel(t.cron_schedule) }}
+                       • {{ getNextRunLabel(t.cron_schedule) }}
                      </span>
 
                      <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.Messages && t.Messages.length > 0">
@@ -315,10 +320,21 @@ function formatCron(cron) {
   return cron;
 }
 
+function getNextRunDateTime(cron) {
+  if (!cron) return '';
+  try {
+    const interval = cronParser.parseExpression(cron, { utc: true });
+    const next = interval.next().toDate();
+    return next.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return '';
+  }
+}
+
 function getNextRunLabel(cron) {
   if (!cron) return '';
   try {
-    const interval = cronParser.parseExpression(cron);
+    const interval = cronParser.parseExpression(cron, { utc: true });
     const next = interval.next().toDate();
     return formatRelativeTime(next);
   } catch (e) {
