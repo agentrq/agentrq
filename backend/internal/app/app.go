@@ -303,9 +303,14 @@ func New(cfg Config) (*App, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				return repo.GetTask(ctx, workspaceID, taskID, uid)
 			},
-			func(ctx context.Context) ([]model.Task, error) {
+			func(ctx context.Context, filter mcp.ListTasksFilter) ([]model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				return repo.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: workspaceID, UserID: workspaceOwner}, uid)
+				return repo.ListTasks(ctx, entity.ListTasksRequest{
+					WorkspaceID: workspaceID,
+					UserID:      workspaceOwner,
+					Status:      filter.Status,
+					Limit:       filter.Limit,
+				}, uid)
 			},
 			func(ctx context.Context) (model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()

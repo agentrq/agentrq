@@ -81,7 +81,7 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 		name:        "My Workspace",
 		description: "My Description",
 		pubsub:      mockPS,
-		listTasks: func(ctx context.Context) ([]model.Task, error) {
+		listTasks: func(ctx context.Context, _ ListTasksFilter) ([]model.Task, error) {
 			return []model.Task{
 				{Status: "ongoing"},
 				{Status: "completed"},
@@ -105,7 +105,7 @@ func TestWorkspaceServer_HandleGetWorkspace(t *testing.T) {
 	}
 
 	// Error case: listTasks fails
-	ps.listTasks = func(ctx context.Context) ([]model.Task, error) {
+	ps.listTasks = func(ctx context.Context, _ ListTasksFilter) ([]model.Task, error) {
 		return nil, fmt.Errorf("db error")
 	}
 	res, _, _ = ps.handleGetWorkspace(context.Background(), nil, nil)
@@ -125,7 +125,7 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 		userID:      monoflake.ID(15264777).String(),
 		pubsub:      mockPS,
 		storage:     mockStor,
-		listTasks: func(ctx context.Context) ([]model.Task, error) {
+		listTasks: func(ctx context.Context, _ ListTasksFilter) ([]model.Task, error) {
 			return []model.Task{
 				{
 					ID:          1,
