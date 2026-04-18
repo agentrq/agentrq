@@ -37,17 +37,23 @@ import (
 type CreateTaskFunc func(ctx context.Context, task model.Task) (model.Task, error)
 type UpdateTaskStatusFunc func(ctx context.Context, taskID int64, status string) (model.Task, error)
 type GetTaskFunc func(ctx context.Context, taskID int64) (model.Task, error)
-type ListTasksFunc func(ctx context.Context) ([]model.Task, error)
+// ListTasksFilter specifies optional filters for listing tasks.
+type ListTasksFilter struct {
+	Status []string
+	Limit  int
+}
+
+type ListTasksFunc func(ctx context.Context, filter ListTasksFilter) ([]model.Task, error)
 type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 
 type PermissionRequestParams struct {
-	RequestID    string `json:"requestId"`
-	ToolName     string `json:"toolName"`
+	RequestID    string `json:"request_id"`
+	ToolName     string `json:"tool_name"`
 	Description  string `json:"description"`
-	InputPreview string `json:"inputPreview"`
+	InputPreview string `json:"input_preview"`
 }
 
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
@@ -713,7 +719,7 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 		}, nil, nil
 	}
 
-	tasks, err := ps.listTasks(ctx)
+	tasks, err := ps.listTasks(ctx, ListTasksFilter{})
 	if err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -767,7 +773,7 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 	desc := ps.description
 	ps.metadataMu.RUnlock()
 
-	tasks, err := ps.listTasks(ctx)
+	tasks, err := ps.listTasks(ctx, ListTasksFilter{})
 	if err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -927,6 +933,15 @@ func (ps *WorkspaceServer) handleGetNextTask(ctx context.Context, req *mcp.CallT
 		}, nil, nil
 	}
 
+	// Associate session with the task ID for context-aware routing (like permissions)
+	if req != nil && req.GetSession() != nil {
+		sessID := req.GetSession().ID()
+		ps.sessionTasksMu.Lock()
+		ps.sessionTasks[sessID] = t.ID
+		ps.sessionTasksMu.Unlock()
+		zlog.Debug().Str("session_id", sessID).Int64("task_id", t.ID).Msg("Associated session with task in getNextTask")
+	}
+
 	content := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s",
 		monoflake.ID(t.ID).String(), t.Title, t.Body)
 	if atts := formatModelAttachments(t.Attachments); atts != "" {
@@ -982,6 +997,24 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			ps.sessionTasksMu.RLock()
 			taskID, ok := ps.sessionTasks[sessID]
 			ps.sessionTasksMu.RUnlock()
+
+			// Fallback: after a server restart the sessionTasks map is empty.
+			// Query the DB for the workspace's current ongoing task — there can only be one.
+			if !ok {
+				if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing"}, Limit: 1}); err == nil {
+					for _, t := range tasks {
+						if t.Status == "ongoing" {
+							taskID = t.ID
+							ok = true
+							ps.sessionTasksMu.Lock()
+							ps.sessionTasks[sessID] = taskID
+							ps.sessionTasksMu.Unlock()
+							zlog.Debug().Str("session_id", sessID).Int64("task_id", taskID).Msg("Session not found; resolved ongoing task from DB")
+							break
+						}
+					}
+				}
+			}
 
 			if ok {
 				task, err := ps.getTask(ctx, taskID)
@@ -1136,8 +1169,11 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		Params PermissionRequestParams `json:"params"`
 	}
 	if err := json.Unmarshal(data, &msg); err != nil {
+		zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal custom MCP notification")
 		return
 	}
+
+	zlog.Debug().Str("method", msg.Method).Str("session_id", sessionID).Msg("HandleCustomNotification received method")
 
 	if msg.Method == "notifications/claude/channel/permission_request" {
 		p := msg.Params
@@ -1172,6 +1208,28 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		taskID, ok := ps.sessionTasks[sessionID]
 		ps.sessionTasksMu.RUnlock()
 
+		// Fallback: if session mapping is missing (e.g. after a server restart),
+		// query the DB for the workspace's current ongoing task.
+		// Only one ongoing task is allowed, so this is always unambiguous.
+		if !ok {
+			if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing"}, Limit: 1}); err == nil {
+				for _, t := range tasks {
+					if t.Status == "ongoing" {
+						taskID = t.ID
+						ok = true
+						// Re-populate the session mapping to avoid future DB hits.
+						ps.sessionTasksMu.Lock()
+						ps.sessionTasks[sessionID] = taskID
+						ps.sessionTasksMu.Unlock()
+						zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Msg("Session not found; resolved ongoing task from DB")
+						break
+					}
+				}
+			}
+		}
+
+		zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Bool("found", ok).Msg("Session to task mapping lookup")
+
 		if ok {
 			task, err := ps.getTask(ctx, taskID)
 			if err == nil && task.AllowAllCommands {
@@ -1200,7 +1258,13 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				ps.permissionResponsesMu.Unlock()
 			}
 		} else {
-			zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessionID).Msg("could not relay permission request: no active task (custom notification)")
+			ps.sessionTasksMu.RLock()
+			var currentSessions []string
+			for k := range ps.sessionTasks {
+				currentSessions = append(currentSessions, k)
+			}
+			ps.sessionTasksMu.RUnlock()
+			zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessionID).Strs("active_sessions", currentSessions).Msg("could not relay permission request: no active task (custom notification)")
 		}
 	}
 }

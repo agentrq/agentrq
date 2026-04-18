@@ -219,7 +219,11 @@ func (h *handler) streamableHandler() http.Handler {
 			// Custom handling for notifications/claude/channel/permission_request
 			// because mcp-go (SDK) rejects them as unsupported methods.
 			if strings.Contains(string(body), "notifications/claude/channel/permission_request") {
+				zlog.Debug().Str("session_id", sessionID).Str("body", string(body)).Msg("Handling custom permission notification")
 				srv.HandleCustomNotification(ctx, sessionID, body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				return
 			}
 		}
 		srv.Handler().ServeHTTP(w, r.WithContext(ctx))
