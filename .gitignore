@@ -12,5 +12,6 @@ main
 backend/internal/service/mocks
 coverage.out
 agentrq.db
-acpcli/coverage
-acpcli/dist
+acp-gateway
+acp-gateway/coverage
+acp-gateway/dist
