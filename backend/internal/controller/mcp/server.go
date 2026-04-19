@@ -122,6 +122,7 @@ type ReplyParams struct {
 // DownloadAttachmentParams is the input to the download_attachment tool.
 type DownloadAttachmentParams struct {
 	AttachmentID string `json:"attachmentId" jsonschema:"The ID of the attachment to download"`
+	TaskID       string `json:"taskId" jsonschema:"The ID of the task containing the attachment"`
 }
 
 // GetTaskMessagesParams is the input to the getTaskMessages tool.
@@ -615,7 +616,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "task_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 	if params.Status == "" {
@@ -625,22 +626,14 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 		}, nil, nil
 	}
 
-	var taskID int64
-	// Try parsing as Base62 first (standard for this app)
 	id := monoflake.IDFromBase62(params.TaskID)
-	if id != 0 {
-		taskID = id.Int64()
-	} else {
-		// Fallback to numeric if Base62 fails and it's purely digits
-		if tid, err := strconv.ParseInt(params.TaskID, 10, 64); err == nil {
-			taskID = tid
-		} else {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid task_id format"}},
-			}, nil, nil
-		}
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
 	}
+	taskID := id.Int64()
 
 	updated, err := ps.updateStatus(ctx, taskID, params.Status)
 	if err != nil {
@@ -715,45 +708,59 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "attachment_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "attachmentId is required"}},
+		}, nil, nil
+	}
+	if params.TaskID == "" {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 
-	tasks, err := ps.listTasks(ctx, ListTasksFilter{})
+	id := monoflake.IDFromBase62(params.TaskID)
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
+	}
+	taskID := id.Int64()
+
+	task, err := ps.getTask(ctx, taskID)
 	if err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to list tasks: %v", err)}},
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get task: %v", err)}},
 		}, nil, nil
 	}
 
-	for _, t := range tasks {
-		// Check task attachments
-		if len(t.Attachments) > 0 {
+	// Check task attachments
+	if len(task.Attachments) > 0 {
+		var atts []entity.Attachment
+		if err := json.Unmarshal(task.Attachments, &atts); err == nil {
+			for _, a := range atts {
+				if a.ID == params.AttachmentID {
+					data, _ := ps.storage.Load(a.ID)
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: data}}, // Return base64 data
+					}, nil, nil
+				}
+			}
+		}
+	}
+
+	// Check message attachments
+	for _, m := range task.Messages {
+		if len(m.Attachments) > 0 {
 			var atts []entity.Attachment
-			if err := json.Unmarshal(t.Attachments, &atts); err == nil {
+			if err := json.Unmarshal(m.Attachments, &atts); err == nil {
 				for _, a := range atts {
 					if a.ID == params.AttachmentID {
 						data, _ := ps.storage.Load(a.ID)
 						return &mcp.CallToolResult{
-							Content: []mcp.Content{&mcp.TextContent{Text: data}}, // Return base64 data
+							Content: []mcp.Content{&mcp.TextContent{Text: data}},
 						}, nil, nil
-					}
-				}
-			}
-		}
-		// Check message attachments
-		for _, m := range t.Messages {
-			if len(m.Attachments) > 0 {
-				var atts []entity.Attachment
-				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
-					for _, a := range atts {
-						if a.ID == params.AttachmentID {
-							data, _ := ps.storage.Load(a.ID)
-							return &mcp.CallToolResult{
-								Content: []mcp.Content{&mcp.TextContent{Text: data}},
-							}, nil, nil
-						}
 					}
 				}
 			}
@@ -762,7 +769,7 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 
 	return &mcp.CallToolResult{
 		IsError: true,
-		Content: []mcp.Content{&mcp.TextContent{Text: "attachment not found"}},
+		Content: []mcp.Content{&mcp.TextContent{Text: "attachment not found in task"}},
 	}, nil, nil
 }
 
@@ -808,7 +815,7 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "task_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 
@@ -819,20 +826,14 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		params.Cursor = 0
 	}
 
-	var taskID int64
 	id := monoflake.IDFromBase62(params.TaskID)
-	if id != 0 {
-		taskID = id.Int64()
-	} else {
-		if tid, err := strconv.ParseInt(params.TaskID, 10, 64); err == nil {
-			taskID = tid
-		} else {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid task_id format"}},
-			}, nil, nil
-		}
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
 	}
+	taskID := id.Int64()
 
 	task, err := ps.getTask(ctx, taskID)
 	if err != nil {
