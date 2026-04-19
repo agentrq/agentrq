@@ -126,9 +126,9 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 		pubsub:      mockPS,
 		storage:     mockStor,
 		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
-			if taskID == 1 {
+			if taskID == 42 {
 				return model.Task{
-					ID:          1,
+					ID:          42,
 					Attachments: []byte(`[{"id":"att-1","filename":"test.txt"}]`),
 				}, nil
 			}
@@ -139,7 +139,7 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockStor.EXPECT().Load("att-1").Return("content in base64", nil)
 
-	params := DownloadAttachmentParams{AttachmentID: "att-1", TaskID: "1"}
+	params := DownloadAttachmentParams{AttachmentID: "att-1", TaskID: monoflake.ID(42).String()}
 	res, _, err := ps.handleDownloadAttachment(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -393,7 +393,7 @@ func TestWorkspaceServer_HandleUpdateTaskStatus_Errors(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	// Case 1: Archived workspace
-	res, _, _ := ps.handleUpdateTaskStatus(context.Background(), nil, UpdateTaskStatusParams{TaskID: "1", Status: "ongoing"})
+	res, _, _ := ps.handleUpdateTaskStatus(context.Background(), nil, UpdateTaskStatusParams{TaskID: monoflake.ID(42).String(), Status: "ongoing"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "archived") {
 		t.Errorf("expected archived error, got: %v", res)
 	}

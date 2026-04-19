@@ -626,22 +626,14 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 		}, nil, nil
 	}
 
-	var taskID int64
-	// Try parsing as Base62 first (standard for this app)
 	id := monoflake.IDFromBase62(params.TaskID)
-	if id != 0 {
-		taskID = id.Int64()
-	} else {
-		// Fallback to numeric if Base62 fails and it's purely digits
-		if tid, err := strconv.ParseInt(params.TaskID, 10, 64); err == nil {
-			taskID = tid
-		} else {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
-			}, nil, nil
-		}
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
 	}
+	taskID := id.Int64()
 
 	updated, err := ps.updateStatus(ctx, taskID, params.Status)
 	if err != nil {
@@ -726,20 +718,14 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 		}, nil, nil
 	}
 
-	var taskID int64
 	id := monoflake.IDFromBase62(params.TaskID)
-	if id != 0 {
-		taskID = id.Int64()
-	} else {
-		if tid, err := strconv.ParseInt(params.TaskID, 10, 64); err == nil {
-			taskID = tid
-		} else {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
-			}, nil, nil
-		}
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
 	}
+	taskID := id.Int64()
 
 	task, err := ps.getTask(ctx, taskID)
 	if err != nil {
@@ -840,20 +826,14 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		params.Cursor = 0
 	}
 
-	var taskID int64
 	id := monoflake.IDFromBase62(params.TaskID)
-	if id != 0 {
-		taskID = id.Int64()
-	} else {
-		if tid, err := strconv.ParseInt(params.TaskID, 10, 64); err == nil {
-			taskID = tid
-		} else {
-			return &mcp.CallToolResult{
-				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
-			}, nil, nil
-		}
+	if id == 0 {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+		}, nil, nil
 	}
+	taskID := id.Int64()
 
 	task, err := ps.getTask(ctx, taskID)
 	if err != nil {
