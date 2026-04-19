@@ -616,7 +616,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "task_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 	if params.Status == "" {
@@ -638,7 +638,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 		} else {
 			return &mcp.CallToolResult{
 				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid task_id format"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
 			}, nil, nil
 		}
 	}
@@ -716,13 +716,13 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "attachment_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "attachmentId is required"}},
 		}, nil, nil
 	}
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "task_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 
@@ -736,7 +736,7 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 		} else {
 			return &mcp.CallToolResult{
 				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid task_id format"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
 			}, nil, nil
 		}
 	}
@@ -829,7 +829,7 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 	if params.TaskID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "task_id is required"}},
+			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
 		}, nil, nil
 	}
 
@@ -850,7 +850,7 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		} else {
 			return &mcp.CallToolResult{
 				IsError: true,
-				Content: []mcp.Content{&mcp.TextContent{Text: "invalid task_id format"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
 			}, nil, nil
 		}
 	}

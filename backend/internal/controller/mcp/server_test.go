@@ -398,11 +398,11 @@ func TestWorkspaceServer_HandleUpdateTaskStatus_Errors(t *testing.T) {
 		t.Errorf("expected archived error, got: %v", res)
 	}
 
-	// Case 2: Missing task_id
+	// Case 2: Missing taskId
 	ps.archivedAt = nil
 	res, _, _ = ps.handleUpdateTaskStatus(context.Background(), nil, UpdateTaskStatusParams{Status: "ongoing"})
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "task_id is required") {
-		t.Errorf("expected missing task_id error, got: %v", res)
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "taskId is required") {
+		t.Errorf("expected missing taskId error, got: %v", res)
 	}
 }
 
@@ -420,13 +420,13 @@ func TestWorkspaceServer_HandleDownloadAttachment_Errors(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	res, _, _ := ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{})
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "attachment_id is required") {
-		t.Errorf("expected missing attachment_id error, got: %v", res)
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "attachmentId is required") {
+		t.Errorf("expected missing attachmentId error, got: %v", res)
 	}
 
 	res, _, _ = ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{AttachmentID: "att-1"})
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "task_id is required") {
-		t.Errorf("expected missing task_id error, got: %v", res)
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "taskId is required") {
+		t.Errorf("expected missing taskId error, got: %v", res)
 	}
 }
 
