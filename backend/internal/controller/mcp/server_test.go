@@ -125,20 +125,21 @@ func TestWorkspaceServer_HandleDownloadAttachment(t *testing.T) {
 		userID:      monoflake.ID(15264777).String(),
 		pubsub:      mockPS,
 		storage:     mockStor,
-		listTasks: func(ctx context.Context, _ ListTasksFilter) ([]model.Task, error) {
-			return []model.Task{
-				{
+		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
+			if taskID == 1 {
+				return model.Task{
 					ID:          1,
 					Attachments: []byte(`[{"id":"att-1","filename":"test.txt"}]`),
-				},
-			}, nil
+				}, nil
+			}
+			return model.Task{}, fmt.Errorf("task not found")
 		},
 	}
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockStor.EXPECT().Load("att-1").Return("content in base64", nil)
 
-	params := DownloadAttachmentParams{AttachmentID: "att-1"}
+	params := DownloadAttachmentParams{AttachmentID: "att-1", TaskID: "1"}
 	res, _, err := ps.handleDownloadAttachment(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -419,8 +420,13 @@ func TestWorkspaceServer_HandleDownloadAttachment_Errors(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	res, _, _ := ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{})
-	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "required") {
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "attachment_id is required") {
 		t.Errorf("expected missing attachment_id error, got: %v", res)
+	}
+
+	res, _, _ = ps.handleDownloadAttachment(context.Background(), nil, DownloadAttachmentParams{AttachmentID: "att-1"})
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "task_id is required") {
+		t.Errorf("expected missing task_id error, got: %v", res)
 	}
 }
 
