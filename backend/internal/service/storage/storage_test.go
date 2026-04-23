@@ -72,4 +72,39 @@ func TestStorage(t *testing.T) {
 			t.Error("expected error for existing file as baseDir")
 		}
 	})
+
+	t.Run("PathTraversalProtection", func(t *testing.T) {
+		traversalIDs := []string{
+			"../traversal-test",
+			"sub/dir/id",
+			"/absolute/path",
+			"..",
+			".",
+			"",
+		}
+		content := "traversal"
+		contentB64 := base64.StdEncoding.EncodeToString([]byte(content))
+
+		for _, id := range traversalIDs {
+			err := s.Save(id, contentB64)
+			if err == nil {
+				t.Errorf("expected error for path traversal id: %s", id)
+			}
+
+			_, err = s.Load(id)
+			if err == nil {
+				t.Errorf("expected error for path traversal id: %s", id)
+			}
+
+			_, err = s.LoadRaw(id)
+			if err == nil {
+				t.Errorf("expected error for path traversal id: %s", id)
+			}
+
+			err = s.Delete(id)
+			if err == nil {
+				t.Errorf("expected error for path traversal id: %s", id)
+			}
+		}
+	})
 }

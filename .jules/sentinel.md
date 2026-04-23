@@ -1,0 +1,4 @@
+## 2025-02-11 - [Path Traversal in Storage Service]
+**Vulnerability:** The `storage` service used `filepath.Join(baseDir, id)` without validating the `id` parameter. This allowed an attacker (or a compromised agent) to provide a malicious `id` like `../../etc/passwd` to read or write files outside the intended storage directory.
+**Learning:** Even internal utility services like storage should validate inputs that are used in file system operations. `filepath.Join` on its own does not prevent path traversal if the second argument starts with `..` or is an absolute path.
+**Prevention:** Always validate that an untrusted file identifier is a plain filename (e.g., using `filepath.Base(id) == id`) and does not contain path separators or traversal sequences before joining it with a base directory.
