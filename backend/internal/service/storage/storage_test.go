@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/base64"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -70,6 +71,40 @@ func TestStorage(t *testing.T) {
 		_, err := New(f.Name())
 		if err == nil {
 			t.Error("expected error for existing file as baseDir")
+		}
+	})
+
+	t.Run("PathTraversal", func(t *testing.T) {
+		// Create a file outside the baseDir to try to overwrite/read
+		outsideFile := filepath.Join(os.TempDir(), "sentinel_test_outside.txt")
+		_ = os.WriteFile(outsideFile, []byte("original"), 0644)
+		defer os.Remove(outsideFile)
+
+		// The malicious ID
+		relPath, _ := filepath.Rel(tmpDir, outsideFile)
+
+		// Try to save
+		err := s.Save(relPath, base64.StdEncoding.EncodeToString([]byte("overwritten")))
+		if err == nil {
+			// Vulnerable!
+			data, _ := os.ReadFile(outsideFile)
+			if string(data) == "overwritten" {
+				t.Errorf("Vulnerability: successfully overwrote file outside baseDir")
+			}
+		}
+
+		// Try to load
+		_, err = s.Load(relPath)
+		if err == nil {
+			t.Errorf("Vulnerability: successfully loaded file outside baseDir")
+		}
+
+		// Try to delete
+		err = s.Delete(relPath)
+		if err == nil {
+			if _, err := os.Stat(outsideFile); os.IsNotExist(err) {
+				t.Errorf("Vulnerability: successfully deleted file outside baseDir")
+			}
 		}
 	})
 }
