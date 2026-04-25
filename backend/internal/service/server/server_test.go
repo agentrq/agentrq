@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -63,6 +64,13 @@ func TestServeHTTP(t *testing.T) {
 			wantBody:   "Host attacker.com not allowed",
 		},
 		{
+			name:       "CoreMCPHost",
+			host:       "mcp.example.com",
+			path:       "/coremcp/sse",
+			wantStatus: http.StatusOK,
+			wantBody:   "path:/coremcp/sse",
+		},
+		{
 			name:       "LocalhostAllowed",
 			host:       "localhost:8080",
 			path:       "/ping",
@@ -97,6 +105,43 @@ func TestLegoUser(t *testing.T) {
 	}
 	if u.GetPrivateKey() != nil {
 		t.Error("key should be nil initially")
+	}
+}
+
+func TestCertificateCoversDomains(t *testing.T) {
+	s := &service{}
+	cert := &x509.Certificate{
+		DNSNames: []string{"app.ex.com", "mcp.ex.com", "*.mcp.ex.com"},
+	}
+
+	tests := []struct {
+		name    string
+		domains []string
+		want    bool
+	}{
+		{
+			name:    "MatchAll",
+			domains: []string{"app.ex.com", "mcp.ex.com", "*.mcp.ex.com"},
+			want:    true,
+		},
+		{
+			name:    "MissingOne",
+			domains: []string{"app.ex.com", "mcp.ex.com", "extra.ex.com"},
+			want:    false,
+		},
+		{
+			name:    "WildcardMismatch",
+			domains: []string{"*.other.ex.com"},
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := s.certificateCoversDomains(cert, tt.domains); got != tt.want {
+				t.Errorf("got %v want %v", got, tt.want)
+			}
+		})
 	}
 }
 

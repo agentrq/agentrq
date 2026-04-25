@@ -120,7 +120,7 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			// Map it back to the base62 system for internal routing
 			workspaceID := monoflake.ID(id).String()
-			
+
 			if r.URL.Path == "/" || r.URL.Path == "" {
 				r.URL.Path = "/mcp/" + workspaceID
 			} else {
@@ -333,14 +333,20 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 		s.certMu.RLock()
 		if s.currCert != nil && len(s.currCert.Certificate) > 0 {
 			x509Cert, err := x509.ParseCertificate(s.currCert.Certificate[0])
-			if err == nil && time.Until(x509Cert.NotAfter) > 30*24*time.Hour {
-				needsRenewal = false
+			if err == nil {
+				// Check if certificate is still valid for at least 30 days
+				needsRenewal = time.Until(x509Cert.NotAfter) < 30*24*time.Hour
+
+				// Also check if all requested domains are covered
+				if !needsRenewal && !s.certificateCoversDomains(x509Cert, domains) {
+					needsRenewal = true
+				}
 			}
 		}
 		s.certMu.RUnlock()
 
 		if needsRenewal {
-		zlog.Info().Strs("domains", domains).Msg("obtaining/renewing certificate")
+			zlog.Info().Strs("domains", domains).Msg("obtaining/renewing certificate")
 
 			request := certificate.ObtainRequest{
 				Domains: domains,
@@ -380,6 +386,23 @@ func (s *service) Shutdown(ctx context.Context) error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *service) certificateCoversDomains(cert *x509.Certificate, domains []string) bool {
+	for _, d := range domains {
+		found := false
+		for _, name := range cert.DNSNames {
+			if name == d {
+				found = true
+				break
+			}
+		}
+		if !found {
+			zlog.Info().Str("missing_domain", d).Msg("certificate does not cover required domain, triggering renewal")
+			return false
+		}
+	}
+	return true
 }
 
 type statusResponseWriter struct {
