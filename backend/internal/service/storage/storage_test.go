@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/base64"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -70,6 +71,50 @@ func TestStorage(t *testing.T) {
 		_, err := New(f.Name())
 		if err == nil {
 			t.Error("expected error for existing file as baseDir")
+		}
+	})
+}
+
+func TestStoragePathTraversal(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "storage_traversal_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	s, err := New(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+
+	// Create a file outside the storage directory
+	outsideFile := filepath.Join(filepath.Dir(tmpDir), "outside.txt")
+	err = os.WriteFile(outsideFile, []byte("sensitive data"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(outsideFile)
+
+	traversalID := "../outside.txt"
+
+	t.Run("LoadTraversal", func(t *testing.T) {
+		_, err := s.Load(traversalID)
+		if err == nil {
+			t.Error("expected error for path traversal in Load, but got nil")
+		}
+	})
+
+	t.Run("SaveTraversal", func(t *testing.T) {
+		err := s.Save(traversalID, base64.StdEncoding.EncodeToString([]byte("new data")))
+		if err == nil {
+			t.Error("expected error for path traversal in Save, but got nil")
+		}
+	})
+
+	t.Run("DeleteTraversal", func(t *testing.T) {
+		err := s.Delete(traversalID)
+		if err == nil {
+			t.Error("expected error for path traversal in Delete, but got nil")
 		}
 	})
 }

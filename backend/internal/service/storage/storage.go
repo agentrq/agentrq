@@ -25,18 +25,35 @@ func New(baseDir string) (Service, error) {
 	return &service{baseDir: baseDir}, nil
 }
 
+func (s *service) fullPath(id string) (string, error) {
+	if id == "" || id == "." || id == ".." {
+		return "", fmt.Errorf("invalid id")
+	}
+	// Ensure the id is just a filename, no path separators
+	if filepath.Base(id) != id {
+		return "", fmt.Errorf("invalid id: must be a filename")
+	}
+	return filepath.Join(s.baseDir, id), nil
+}
+
 func (s *service) Save(id string, dataBase64 string) error {
 	data, err := base64.StdEncoding.DecodeString(dataBase64)
 	if err != nil {
 		return fmt.Errorf("decode base64: %w", err)
 	}
 
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, 0644)
 }
 
 func (s *service) Load(id string) (string, error) {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -44,11 +61,17 @@ func (s *service) Load(id string) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 func (s *service) LoadRaw(id string) ([]byte, error) {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return nil, err
+	}
 	return os.ReadFile(path)
 }
 
 func (s *service) Delete(id string) error {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return err
+	}
 	return os.Remove(path)
 }
