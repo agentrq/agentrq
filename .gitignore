@@ -1,0 +1,17 @@
+node_modules
+frontend/dist
+*.db
+.env
+.DS_Store
+*_binary
+*.pid
+*.log
+*.tmp
+main
+.mcp.json
+backend/internal/service/mocks
+coverage.out
+agentrq.db
+acp-gateway
+acp-gateway/coverage
+acp-gateway/dist

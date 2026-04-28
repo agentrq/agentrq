@@ -1,0 +1,486 @@
+openapi: 3.0.3
+info:
+  title: AgentRQ API
+  version: 1.0.0
+  description: OpenAPI Specification for AgentRQ Backend API
+servers:
+  - url: /api/v1
+paths:
+  /workspaces:
+    get:
+      summary: List Workspaces
+      parameters:
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListWorkspacesResponse'
+    post:
+      summary: Create Workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWorkspaceResponse'
+
+  /workspaces/{id}:
+    get:
+      summary: Get Workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetWorkspaceResponse'
+    patch:
+      summary: Update Workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetWorkspaceResponse'
+    delete:
+      summary: Delete Workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+
+  /workspaces/{id}/stats:
+    get:
+      summary: Get Workspace Stats (Metrics)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: range
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: integer
+        - name: to
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetDetailedWorkspaceStatsResponse'
+
+  /tasks:
+    get:
+      summary: List all tasks globally
+      parameters:
+        - name: filter
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: created_by
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTasksResponse'
+
+  /workspaces/{id}/tasks:
+    get:
+      summary: List Tasks in Workspace
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filter
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: created_by
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTasksResponse'
+    post:
+      summary: Create Task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTaskResponse'
+
+  /workspaces/{id}/tasks/{taskID}:
+    get:
+      summary: Get Task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetTaskResponse'
+    delete:
+      summary: Delete Task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: No Content
+
+  /workspaces/{id}/attachments/{attachmentID}:
+    get:
+      summary: Get Attachment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: attachmentID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  schemas:
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        name:
+          type: string
+        description:
+          type: string
+        archived_at:
+          type: string
+          format: date-time
+        icon:
+          type: string
+        notification_settings:
+          $ref: '#/components/schemas/NotificationSettings'
+        agent_connected:
+          type: boolean
+        mcp_url:
+          type: string
+        mcp_token:
+          type: string
+        auto_allowed_tools:
+          type: array
+          items:
+            type: string
+
+    NotificationSettings:
+      type: object
+      properties:
+        task_created:
+          type: boolean
+        task_status_updated:
+          type: boolean
+        task_received_message:
+          type: boolean
+        channels:
+          type: array
+          items:
+            type: string
+            enum:
+              - email
+          example: ["email"]
+
+    CreateWorkspaceRequest:
+      type: object
+      properties:
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+
+    CreateWorkspaceResponse:
+      type: object
+      properties:
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+
+    GetWorkspaceResponse:
+      type: object
+      properties:
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+
+    ListWorkspacesResponse:
+      type: object
+      properties:
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        data:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        task_id:
+          type: string
+        user_id:
+          type: string
+        sender:
+          type: string
+        text:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        metadata:
+          type: object
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        workspace_id:
+          type: string
+        created_by:
+          type: string
+        assignee:
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        response:
+          type: string
+        reply_text:
+          type: string
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        metadata:
+          type: object
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+        cron_schedule:
+          type: string
+        parent_id:
+          type: string
+        sort_order:
+          type: number
+        allow_all_commands:
+          type: boolean
+
+    CreateTaskRequest:
+      type: object
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+
+    CreateTaskResponse:
+      type: object
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+
+    GetTaskResponse:
+      type: object
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+
+    ListTasksResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+
+    DailyStat:
+      type: object
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+
+    WorkspaceStatsSummary:
+      type: object
+      properties:
+        tasks_completed:
+          type: integer
+        tasks_scheduled:
+          type: integer
+        messages:
+          type: integer
+        manual_approvals:
+          type: integer
+        auto_approvals:
+          type: integer
+        denies:
+          type: integer
+
+    WorkspaceStatsTimeseries:
+      type: object
+      properties:
+        tasks_completed:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyStat'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyStat'
+
+    GetDetailedWorkspaceStatsResponse:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/WorkspaceStatsSummary'
+        timeseries:
+          $ref: '#/components/schemas/WorkspaceStatsTimeseries'

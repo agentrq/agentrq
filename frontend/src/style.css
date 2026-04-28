@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Monospace font for neobrutalist design */
+@theme {
+  --font-sans: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+::selection {
+  background-color: #bbf7d0;
+  color: #000;
+}
