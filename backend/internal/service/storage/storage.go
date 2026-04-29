@@ -31,24 +31,51 @@ func (s *service) Save(id string, dataBase64 string) error {
 		return fmt.Errorf("decode base64: %w", err)
 	}
 
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, data, 0644)
 }
 
 func (s *service) Load(id string) (string, error) {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return "", err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(data), nil
 }
+
 func (s *service) LoadRaw(id string) ([]byte, error) {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return nil, err
+	}
 	return os.ReadFile(path)
 }
 
 func (s *service) Delete(id string) error {
-	path := filepath.Join(s.baseDir, id)
+	path, err := s.fullPath(id)
+	if err != nil {
+		return err
+	}
 	return os.Remove(path)
+}
+
+// fullPath validates the ID and returns the absolute path within the base directory.
+// It prevents path traversal by ensuring the ID is a simple filename.
+func (s *service) fullPath(id string) (string, error) {
+	if id == "" || id == "." || id == ".." {
+		return "", fmt.Errorf("invalid storage id")
+	}
+	// filepath.Base returns the last element of path.
+	// If ID contains any path separators or traversal sequences, Base(id) will not equal id.
+	if filepath.Base(id) != id {
+		return "", fmt.Errorf("invalid storage id: path traversal detected or invalid format")
+	}
+	return filepath.Join(s.baseDir, id), nil
 }
