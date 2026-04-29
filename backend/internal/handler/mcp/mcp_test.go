@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,8 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/mustafaturan/monoflake"
 )
 
 type mockTokenSvc struct {
@@ -22,8 +26,8 @@ func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	if tokenStr == "valid-auth-cookie" || tokenStr == m.validCode || tokenStr == "valid-refresh-token" {
 		return &auth.Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
-				Subject: "user123",
-				Audience: jwt.ClaimStrings{"ws123"},
+				Subject: monoflake.IDFromBase62("user123").String(),
+				Audience: jwt.ClaimStrings{"ws123", "authorization_code"},
 			},
 		}, nil
 	}
@@ -40,14 +44,25 @@ func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	return m.validToken, nil
 }
 
+type mockRepo struct {
+	base.Repository
+}
+
+func (m *mockRepo) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {
+	return model.Workspace{
+		UserID: int64(monoflake.IDFromBase62("user123").Int64()),
+	}, nil
+}
+
 func setupTestRouter() (*http.ServeMux, *mockTokenSvc) {
 	mux := http.NewServeMux()
 	tokenSvc := &mockTokenSvc{}
 	
 	New(Params{
-		TokenSvc: tokenSvc,
-		BaseURL:  "https://agentrq.com",
-		Mux:      mux,
+		TokenSvc:   tokenSvc,
+		Repository: &mockRepo{},
+		BaseURL:    "https://agentrq.com",
+		Mux:        mux,
 	})
 	
 	return mux, tokenSvc
@@ -57,6 +72,7 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	mux, _ := setupTestRouter()
 
 	req := httptest.NewRequest("GET", "/mcp/12345/.well-known/oauth-authorization-server", nil)
+	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
 	
@@ -81,6 +97,7 @@ func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 
 	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=http://localhost/callback&state=somestate", nil)
+	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	
 	w := httptest.NewRecorder()
@@ -103,6 +120,7 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 
 	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=http://localhost/callback&state=somestate", nil)
+	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
 	
@@ -139,6 +157,7 @@ func TestOAuthTokenHandler(t *testing.T) {
 	}
 	
 	req := httptest.NewRequest("POST", "/mcp/12345/oauth2/token", strings.NewReader(formData.Encode()))
+	req.SetPathValue("workspaceID", "12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	
 	w := httptest.NewRecorder()
