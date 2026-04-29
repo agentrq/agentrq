@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -322,8 +323,18 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		state := c.Query("state")
 		redirectURL := "/"
-		if state != "" && state != "state" && strings.HasPrefix(state, "http") {
-			redirectURL = state
+		if state != "" && state != "state" {
+			// Only allow relative redirects (starts with / but not //) or redirects to the same domain
+			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") {
+				redirectURL = state
+			} else if strings.HasPrefix(state, "http") {
+				if u, err := url.Parse(state); err == nil {
+					// In production, validate against the configured domain. In dev, allow localhost.
+					if u.Host == h.domain || (h.domain == "" && (u.Host == "localhost" || strings.HasPrefix(u.Host, "localhost:"))) {
+						redirectURL = state
+					}
+				}
+			}
 		}
 
 		return c.Redirect(redirectURL)
