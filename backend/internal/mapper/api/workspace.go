@@ -24,6 +24,7 @@ func FromHTTPRequestToCreateWorkspaceRequestEntity(c *fiber.Ctx) *entity.CreateW
 			Icon:                 payload.Workspace.Icon,
 			NotificationSettings: fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
 			AllowAllCommands:     payload.Workspace.AllowAllCommands,
+			SelfLearningLoopNote: payload.Workspace.SelfLearningLoopNote,
 		},
 	}
 }
@@ -85,6 +86,7 @@ func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateW
 			NotificationSettings: fromViewNotificationSettingsToEntity(payload.Workspace.NotificationSettings),
 			AutoAllowedTools:     payload.Workspace.AutoAllowedTools,
 			AllowAllCommands:     payload.Workspace.AllowAllCommands,
+			SelfLearningLoopNote: payload.Workspace.SelfLearningLoopNote,
 		},
 	}
 }
@@ -110,6 +112,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		MCPURL:               mcpURL,
 		AutoAllowedTools:     p.AutoAllowedTools,
 		AllowAllCommands:     p.AllowAllCommands,
+		SelfLearningLoopNote: p.SelfLearningLoopNote,
 	}
 }
 

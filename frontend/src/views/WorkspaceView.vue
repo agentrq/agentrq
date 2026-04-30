@@ -86,6 +86,10 @@
               <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Mission / Description</label>
               <textarea v-model="form.description" rows="3" class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-medium text-gray-800 transition-all resize-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
             </div>
+            <div class="space-y-1.5">
+              <label class="block text-[10px] font-black text-gray-500 uppercase tracking-widest">Self Learning Loop Note</label>
+              <textarea v-model="form.selfLearningLoopNote" rows="4" class="w-full bg-white border-2 border-black px-4 py-2.5 text-sm outline-none font-medium text-gray-800 transition-all resize-none focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" placeholder="Upon completing the task, evaluate your execution path. If you encountered friction—such as repeated errors, failed tool calls, or requiring multiple iterations to find a solution—extract the successful workaround. Create/update skills md files to record this optimized strategy for future use."></textarea>
+            </div>
             <div class="flex justify-end gap-3 pt-2">
               <button type="button" @click="showCreate = false" class="px-5 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-gray-100 transition-all">Cancel</button>
               <button type="submit" class="bg-black text-white px-6 py-2.5 border-2 border-black text-xs font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center gap-2" :disabled="loading">
@@ -216,7 +220,7 @@ const iconError = ref('');
 const createFileInput = ref(null);
 const error = ref(null);
 
-const form = ref({ name: '', description: '', icon: '' });
+const form = ref({ name: '', description: '', icon: '', selfLearningLoopNote: '' });
 
 const activeWorkspaces = computed(() => {
   return workspaces.value.filter(p => !p.archivedAt);
@@ -261,7 +265,7 @@ async function loadWorkspaces() {
 
 watch(showCreate, (val) => {
   if (!val) {
-    form.value = { name: '', description: '', icon: '' };
+    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '' };
     iconError.value = '';
   }
 });
@@ -296,9 +300,9 @@ async function submit() {
   loading.value = true;
   error.value = null;
   try {
-    await createWorkspace(form.value.name, form.value.description, form.value.icon);
+    await createWorkspace(form.value.name, form.value.description, form.value.icon, form.value.selfLearningLoopNote);
     showCreate.value = false;
-    form.value = { name: '', description: '', icon: '' };
+    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '' };
     iconError.value = ''; // Clear icon error on successful submission
     await loadWorkspaces();
   } catch (err) {

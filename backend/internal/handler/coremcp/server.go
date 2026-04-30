@@ -120,6 +120,7 @@ type CreateWorkspaceParams struct {
 	Description          *string        `json:"description,omitempty"`
 	Icon                 *string        `json:"icon,omitempty"`
 	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
+	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
 }
 
 type GetWorkspaceParams struct {
@@ -132,6 +133,7 @@ type UpdateWorkspaceParams struct {
 	Description          *string        `json:"description,omitempty"`
 	Icon                 *string        `json:"icon,omitempty"`
 	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
+	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
 }
 
 type GetWorkspaceStatsParams struct {
@@ -276,6 +278,9 @@ func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.Ca
 	if args.Icon != nil {
 		workspace.Icon = *args.Icon
 	}
+	if args.SelfLearningLoopNote != nil {
+		workspace.SelfLearningLoopNote = *args.SelfLearningLoopNote
+	}
 
 	if args.NotificationSettings != nil {
 		b, _ := json.Marshal(args.NotificationSettings)
@@ -330,6 +335,9 @@ func (s *WorkspaceServer) handleUpdateWorkspace(ctx context.Context, req *mcp.Ca
 	}
 	if args.Icon != nil {
 		workspace.Icon = *args.Icon
+	}
+	if args.SelfLearningLoopNote != nil {
+		workspace.SelfLearningLoopNote = *args.SelfLearningLoopNote
 	}
 	if args.NotificationSettings != nil {
 		b, _ := json.Marshal(args.NotificationSettings)

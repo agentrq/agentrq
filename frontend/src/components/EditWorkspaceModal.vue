@@ -43,6 +43,11 @@
                 <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Vision / Description</label>
                 <textarea v-model="form.description" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none font-medium text-gray-800 transition-all resize-none" placeholder="What are we building together? Describe the mission of this workspace..."></textarea>
               </div>
+
+              <div class="space-y-2">
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Self Learning Loop Note</label>
+                <textarea v-model="form.selfLearningLoopNote" rows="4" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:ring-1 focus:ring-black focus:border-black outline-none font-medium text-gray-800 transition-all resize-none" placeholder="Upon completing the task, evaluate your execution path. If you encountered friction—such as repeated errors, failed tool calls, or requiring multiple iterations to find a solution—extract the successful workaround. Create/update skills md files to record this optimized strategy for future use."></textarea>
+              </div>
             </div>
 
             <div v-if="activeTab === 'automations'" class="space-y-6 animate-in fade-in duration-300">
@@ -212,7 +217,8 @@ const form = ref({
     channels: ['email']
   },
   autoAllowedTools: [],
-  allowAllCommands: false
+  allowAllCommands: false,
+  selfLearningLoopNote: ''
 });
 
 const eventTypes = [
@@ -242,7 +248,8 @@ watch(() => props.workspace, (newVal) => {
         channels: newVal.notification_settings?.channels || ['email']
       },
       autoAllowedTools: newVal.autoAllowedTools || [],
-      allowAllCommands: newVal.allowAllCommands || false
+      allowAllCommands: newVal.allowAllCommands || false,
+      selfLearningLoopNote: newVal.selfLearningLoopNote || ''
     };
   }
 }, { immediate: true });

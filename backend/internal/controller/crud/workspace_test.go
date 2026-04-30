@@ -24,6 +24,7 @@ func TestCreateWorkspace_WithOptions(t *testing.T) {
 			Name:                 "W",
 			Icon:                 "base64icon",
 			NotificationSettings: &entity.NotificationSettings{TaskCreated: true},
+			SelfLearningLoopNote: "always think before acting",
 		},
 	})
 	if err != nil {
@@ -136,12 +137,13 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 	e.repo.EXPECT().UpdateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
 		w.Description = "desc"
 		w.Icon = "icon"
+		w.SelfLearningLoopNote = "Be mindful."
 		return w, nil
 	})
 
 	resp, err := e.controller.UpdateWorkspace(context.Background(), entity.UpdateWorkspaceRequest{
 		UserID:    testUserIDStr,
-		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}, AllowAllCommands: true},
+		Workspace: entity.Workspace{ID: 1, Name: "updated", Description: "desc", AutoAllowedTools: []string{"*"}, NotificationSettings: &entity.NotificationSettings{TaskCreated: true}, AllowAllCommands: true, SelfLearningLoopNote: "Be mindful."},
 	})
 
 	if err != nil {
@@ -152,6 +154,9 @@ func TestUpdateWorkspace_Full(t *testing.T) {
 	}
 	if !resp.Workspace.AllowAllCommands {
 		t.Errorf("expected AllowAllCommands to be true")
+	}
+	if resp.Workspace.SelfLearningLoopNote != "Be mindful." {
+		t.Errorf("expected SelfLearningLoopNote to be updated")
 	}
 }
 
