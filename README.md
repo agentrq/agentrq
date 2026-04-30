@@ -1,5 +1,11 @@
 # AgentRQ ── Agent-Human Collaboration Platform
 
+<p align="center">
+  <video src="./demos/demo.mp4" width="480" controls="controls"></video>
+  <br />
+  <a href="https://www.youtube.com/watch?v=GBAoSpuCzrU">Watch on YouTube in HD</a>
+</p>
+
 AgentRQ is a modern, high-performance platform designed for seamless collaboration between human operators and AI agents. It leverages the **Model Context Protocol (MCP)** to allow AI models (like Claude) to interact directly with your workspace's task management system.
 
 ## 🚀 Overview
@@ -131,11 +137,30 @@ The Supervisor is accessible at `https://mcp.agentrq.com/mcp`. It uses **OAuth2*
 - **Unified Statistics**: Access detailed statistics and health metrics for any workspace.
 
 ### Available Supervisor Tools
-In addition to the standard workspace tools, the Supervisor includes:
+The Supervisor provides a comprehensive suite of tools for global management, requiring `workspaceId` parameters where applicable:
+
+**Workspace Management**
 - `listWorkspaces`: Overview of all active and archived workspaces.
 - `createWorkspace`: Bootstrap new project environments.
+- `getWorkspace`: Retrieve details of a specific workspace by ID.
+- `updateWorkspace`: Modify workspace settings and metadata.
+- `getWorkspaceStats`: Retrieve high-level analytics and performance data for a workspace.
+
+**Task Management**
 - `listAllTasks`: Search and filter tasks across the entire platform.
-- `getWorkspaceStats`: Retrieve high-level analytics and performance data.
+- `listTasks`: List tasks within a specific workspace.
+- `createTask`: Create a new task in a specific workspace.
+- `getTask`: Retrieve details of a specific task.
+- `updateTaskStatus`: Change a task's status.
+- `updateTaskOrder`: Reorder a task in the list.
+- `updateTaskAssignee`: Change the assignee of a task.
+- `updateTaskAllowAll`: Toggle `allow_all_commands` permission for a task.
+- `updateScheduledTask`: Modify a scheduled/cron task.
+
+**Communication & Files**
+- `replyToTask`: Post a message to a task's chat thread.
+- `respondToTask`: Submit an allow/deny verdict for a permission request.
+- `getAttachment`: Retrieve metadata for a specific attachment.
 
 ### Connecting to Supervisor (Claude Code)
 Since the Supervisor uses OAuth2, you can connect it using the following configuration in your `~/.mcp.json`:
