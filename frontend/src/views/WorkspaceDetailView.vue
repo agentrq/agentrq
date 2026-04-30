@@ -231,11 +231,13 @@ watch(isConnected, (val, old) => {
 
 async function load() {
   try {
-    const pRes = await getWorkspace(workspaceId);
+    const [pRes, tRes] = await Promise.all([
+      getWorkspace(workspaceId),
+      fetchTasks(workspaceId)
+    ]);
+    tasks.value = tRes.tasks || [];
     workspace.value = pRes.workspace;
     isAgentConnected.value = workspace.value.agentConnected;
-    const tRes = await fetchTasks(workspaceId);
-    tasks.value = tRes.tasks || [];
     // Fetch token for display
     fetchToken();
     // Start SSE stream
