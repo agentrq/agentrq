@@ -253,6 +253,8 @@ func (h *handler) rootLogin() fiber.Handler {
 			Value:    tokenString,
 			Expires:  time.Now().Add(24 * time.Hour),
 			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
 			Path:     "/",
 		}
 		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
@@ -313,6 +315,8 @@ func (h *handler) googleCallback() fiber.Handler {
 			Value:    tokenString,
 			Expires:  time.Now().Add(24 * time.Hour),
 			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
 			Path:     "/",
 		}
 		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
@@ -322,8 +326,13 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		state := c.Query("state")
 		redirectURL := "/"
-		if state != "" && state != "state" && strings.HasPrefix(state, "http") {
-			redirectURL = state
+		// Situational security: validate redirect URL to prevent open redirect
+		if state != "" && state != "state" {
+			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") {
+				redirectURL = state
+			} else if strings.HasPrefix(state, h.baseURL) {
+				redirectURL = state
+			}
 		}
 
 		return c.Redirect(redirectURL)
