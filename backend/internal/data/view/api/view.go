@@ -19,6 +19,7 @@ type (
 		MCPToken             string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
 		AllowAllCommands     bool                  `json:"allowAllCommands"`
+		SelfLearningLoopNote string                `json:"selfLearningLoopNote,omitempty"`
 	}
 
 	NotificationSettings struct {

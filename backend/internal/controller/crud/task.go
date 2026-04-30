@@ -76,6 +76,14 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		allowAll = w.AllowAllCommands
 	}
 
+	if req.Task.Assignee == "agent" && w.SelfLearningLoopNote != "" {
+		if req.Task.Body != "" {
+			req.Task.Body += "\n\n" + w.SelfLearningLoopNote
+		} else {
+			req.Task.Body = w.SelfLearningLoopNote
+		}
+	}
+
 	m := model.Task{
 		ID:           c.idgen.NextID(),
 		CreatedAt:    now,
@@ -336,7 +344,8 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 }
 
 func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error) {
-	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+	w, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
@@ -347,6 +356,16 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 
 	if req.Assignee != "human" && req.Assignee != "agent" {
 		return nil, fmt.Errorf("invalid assignee: %s", req.Assignee)
+	}
+
+	if req.Assignee == "agent" && m.Assignee != "agent" {
+		if w.SelfLearningLoopNote != "" {
+			if m.Body != "" {
+				m.Body += "\n\n" + w.SelfLearningLoopNote
+			} else {
+				m.Body = w.SelfLearningLoopNote
+			}
+		}
 	}
 
 	m.Assignee = req.Assignee

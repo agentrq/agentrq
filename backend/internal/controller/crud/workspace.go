@@ -20,9 +20,10 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		UserID:      monoflake.IDFromBase62(req.UserID).Int64(),
-		Name:             req.Workspace.Name,
-		Description:      req.Workspace.Description,
-		AllowAllCommands: req.Workspace.AllowAllCommands,
+		Name:                 req.Workspace.Name,
+		Description:          req.Workspace.Description,
+		AllowAllCommands:     req.Workspace.AllowAllCommands,
+		SelfLearningLoopNote: req.Workspace.SelfLearningLoopNote,
 	}
 
 	// Generate and encrypt token for new workspace
@@ -198,6 +199,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	m.Name = req.Workspace.Name
 	m.Description = req.Workspace.Description
 	m.AllowAllCommands = req.Workspace.AllowAllCommands
+	m.SelfLearningLoopNote = req.Workspace.SelfLearningLoopNote
 	if req.Workspace.NotificationSettings != nil {
 		b, _ := json.Marshal(req.Workspace.NotificationSettings)
 		m.NotificationSettings = datatypes.JSON(b)
@@ -310,8 +312,9 @@ func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 		ArchivedAt:       m.ArchivedAt,
 		TokenEncrypted:   m.TokenEncrypted,
 		TokenNonce:       m.TokenNonce,
-		AutoAllowedTools: make([]string, 0),
-		AllowAllCommands: m.AllowAllCommands,
+		AutoAllowedTools:     make([]string, 0),
+		AllowAllCommands:     m.AllowAllCommands,
+		SelfLearningLoopNote: m.SelfLearningLoopNote,
 	}
 	if len(m.AutoAllowedTools) > 0 {
 		_ = json.Unmarshal(m.AutoAllowedTools, &res.AutoAllowedTools)

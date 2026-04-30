@@ -28,6 +28,7 @@ type (
 		TokenNonce           string
 		AutoAllowedTools     []string
 		AllowAllCommands     bool
+		SelfLearningLoopNote string
 	}
 
 	NotificationSettings struct {
