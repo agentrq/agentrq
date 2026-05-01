@@ -116,15 +116,13 @@ func TestTokenService(t *testing.T) {
 		}
 	})
 
-	t.Run("DefaultSecret", func(t *testing.T) {
-		s2 := NewTokenService(TokenConfig{})
-		token, err := s2.CreateToken("id", "e", "n", "p")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = s2.ValidateToken(token)
-		if err != nil {
-			t.Errorf("failed to validate with default secret: %v", err)
-		}
+	t.Run("PanicsWhenSecretMissing", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("The code did not panic")
+			}
+		}()
+
+		NewTokenService(TokenConfig{})
 	})
 }

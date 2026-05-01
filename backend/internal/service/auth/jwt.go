@@ -7,11 +7,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var (
-	// In a real app, this should be moved to configuration/environment variables
-	JWTSecret = []byte("agentrq-secret-change-me")
-)
-
 const ClaimsContextKey = "mcp_claims"
 
 type TokenConfig struct {
@@ -38,8 +33,9 @@ type tokenService struct {
 
 func NewTokenService(cfg TokenConfig) TokenService {
 	if cfg.JWTSecret == "" {
-		// Fallback for safety if not provided in config
-		cfg.JWTSecret = "agentrq-secret-change-me"
+		// Critical: fallback to an empty secret is not allowed.
+		// In production, the app should fail to start if JWTSecret is missing.
+		panic("situational security: JWT secret is required but not provided in configuration")
 	}
 	return &tokenService{
 		secret: []byte(cfg.JWTSecret),
