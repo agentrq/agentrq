@@ -27,11 +27,11 @@
     <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-6 gap-4">
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tasks Completed</span>
-        <span class="text-3xl font-black text-black">{{ stats.summary.tasks_completed }}</span>
+        <span class="text-3xl font-black text-black">{{ stats.summary.tasksCompleted }}</span>
       </div>
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scheduled Tasks</span>
-        <span class="text-3xl font-black text-black">{{ stats.summary.tasks_scheduled }}</span>
+        <span class="text-3xl font-black text-black">{{ stats.summary.tasksScheduled }}</span>
       </div>
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Messages</span>
@@ -39,11 +39,11 @@
       </div>
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Manual Appr.</span>
-        <span class="text-3xl font-black text-black">{{ stats.summary.manual_approvals }}</span>
+        <span class="text-3xl font-black text-black">{{ stats.summary.manualApprovals }}</span>
       </div>
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auto Appr.</span>
-        <span class="text-3xl font-black text-black">{{ stats.summary.auto_approvals }}</span>
+        <span class="text-3xl font-black text-black">{{ stats.summary.autoApprovals }}</span>
       </div>
       <div class="bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex flex-col gap-1">
         <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Denies</span>
@@ -64,8 +64,8 @@
             <div class="text-[10px] font-black uppercase animate-pulse">Computing...</div>
           </div>
           <ChartSVG 
-            v-if="stats && stats.timeseries && stats.timeseries.tasks_completed"
-            :data="stats.timeseries.tasks_completed" 
+            v-if="stats && stats.timeseries && stats.timeseries.tasksCompleted"
+            :data="stats.timeseries.tasksCompleted" 
             color="#00FF88" 
           />
         </div>
