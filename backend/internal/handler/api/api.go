@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -328,10 +329,19 @@ func (h *handler) googleCallback() fiber.Handler {
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
 		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") {
-				redirectURL = state
-			} else if strings.HasPrefix(state, h.baseURL) {
-				redirectURL = state
+			parsedBase, _ := url.Parse(h.baseURL)
+			parsedRedirect, err := url.Parse(state)
+			if err == nil {
+				if parsedRedirect.IsAbs() {
+					if parsedRedirect.Scheme == parsedBase.Scheme && parsedRedirect.Host == parsedBase.Host {
+						redirectURL = state
+					}
+				} else {
+					// Relative path validation: block // and /\ to prevent protocol-relative and Windows-style bypasses
+					if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
+						redirectURL = state
+					}
+				}
 			}
 		}
 

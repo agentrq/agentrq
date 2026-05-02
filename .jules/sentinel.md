@@ -7,3 +7,8 @@
 **Vulnerability:** The application had a hardcoded default JWT secret ("agentrq-secret-change-me") as a fallback, and the Google OAuth callback allowed redirects to any absolute URL starting with "http".
 **Learning:** Fallback secrets can lead to insecure production deployments if configuration is missed. Weak validation of redirect parameters in OAuth flows is a common entry point for phishing.
 **Prevention:** Remove all hardcoded security defaults; the application should fail to start if critical secrets are missing. Always validate redirect URLs against a whitelist or ensure they are local paths.
+
+## 2025-05-15 - Open Redirect in OAuth Flow
+**Vulnerability:** The MCP OAuth2 authorize handler used the `redirect_uri` parameter directly without validation, allowing attackers to redirect users to malicious domains. The Google OAuth handler also had weak prefix-based validation that could be bypassed.
+**Learning:** String-prefix matching for URL validation is dangerous (e.g., `http://baseurl.com.malicious.com`). `url.Parse` should be used to explicitly verify host and scheme.
+**Prevention:** Use `url.Parse` to validate redirect URLs against the application's base URL. For relative paths, explicitly block protocol-relative (`//`) and Windows-style paths (`/\`).

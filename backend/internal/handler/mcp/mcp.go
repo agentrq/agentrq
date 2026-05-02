@@ -342,6 +342,25 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
 
+		// Validate redirect_uri to prevent open redirects
+		finalRedirectURI := "/"
+		if redirectURI != "" {
+			parsedBase, _ := url.Parse(h.baseURL)
+			parsedRedirect, err := url.Parse(redirectURI)
+			if err == nil {
+				if parsedRedirect.IsAbs() {
+					if parsedRedirect.Scheme == parsedBase.Scheme && parsedRedirect.Host == parsedBase.Host {
+						finalRedirectURI = redirectURI
+					}
+				} else {
+					// Relative path validation
+					if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
+						finalRedirectURI = redirectURI
+					}
+				}
+			}
+		}
+
 		if userID == "" {
 			// Not authenticated, redirect to main login with 'redirect_url'
 			// To return back, building the current full URL:
@@ -385,7 +404,11 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		}
 
 		// Redirect back to client
-		finalRedirect := fmt.Sprintf("%s?code=%s&state=%s", redirectURI, url.QueryEscape(code), url.QueryEscape(state))
+		connector := "?"
+		if strings.Contains(finalRedirectURI, "?") {
+			connector = "&"
+		}
+		finalRedirect := fmt.Sprintf("%s%scode=%s&state=%s", finalRedirectURI, connector, url.QueryEscape(code), url.QueryEscape(state))
 		http.Redirect(w, r, finalRedirect, http.StatusFound)
 	})
 }

@@ -57,14 +57,28 @@ func (m *mockRepo) SystemGetWorkspace(ctx context.Context, id int64) (model.Work
 func setupTestRouter() (*http.ServeMux, *mockTokenSvc) {
 	mux := http.NewServeMux()
 	tokenSvc := &mockTokenSvc{}
-	
+
 	New(Params{
 		TokenSvc:   tokenSvc,
 		Repository: &mockRepo{},
 		BaseURL:    "https://agentrq.com",
 		Mux:        mux,
 	})
-	
+
+	return mux, tokenSvc
+}
+
+func setupTestRouterWithRedirect(redirectURI string) (*http.ServeMux, *mockTokenSvc) {
+	mux := http.NewServeMux()
+	tokenSvc := &mockTokenSvc{}
+
+	New(Params{
+		TokenSvc:   tokenSvc,
+		Repository: &mockRepo{},
+		BaseURL:    redirectURI,
+		Mux:        mux,
+	})
+
 	return mux, tokenSvc
 }
 
@@ -117,13 +131,15 @@ func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 }
 
 func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
-	mux, _ := setupTestRouter()
+	// Use baseURL that matches the redirect_uri to satisfy validation
+	redirectURI := "http://localhost/callback"
+	mux, _ := setupTestRouterWithRedirect("http://localhost")
 
-	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=http://localhost/callback&state=somestate", nil)
+	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri="+url.QueryEscape(redirectURI)+"&state=somestate", nil)
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
-	
+
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -132,16 +148,39 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	}
 
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "http://localhost/callback") {
+	if !strings.HasPrefix(loc, redirectURI) {
 		t.Errorf("Expected redirect to client redirect_uri, got %s", loc)
 	}
-	
+
 	u, _ := url.Parse(loc)
 	if u.Query().Get("code") == "" {
 		t.Errorf("Expected code in redirect query")
 	}
 	if u.Query().Get("state") != "somestate" {
 		t.Errorf("Expected state=somestate, got %s", u.Query().Get("state"))
+	}
+}
+
+func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
+	mux, _ := setupTestRouter()
+
+	// Malicious redirect URI
+	maliciousURI := "http://malicious.com/callback"
+	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri="+url.QueryEscape(maliciousURI)+"&state=somestate", nil)
+	req.SetPathValue("workspaceID", "12345")
+	req.Host = "12345.mcp.agentrq.com"
+	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("Expected 302 Found, got %d", w.Code)
+	}
+
+	loc := w.Header().Get("Location")
+	if strings.HasPrefix(loc, maliciousURI) {
+		t.Errorf("VULNERABILITY DETECTED: Open redirect to %s", loc)
 	}
 }
 
