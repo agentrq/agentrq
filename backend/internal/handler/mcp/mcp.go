@@ -342,6 +342,35 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
 
+		// Validate redirectURI to prevent open redirect
+		if redirectURI != "" {
+			if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
+				// OK: local path
+			} else {
+				// Parse absolute URL and validate against baseURL
+				pRedirect, err := url.Parse(redirectURI)
+				if err != nil {
+					http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+					return
+				}
+				if pRedirect.IsAbs() {
+					pBase, err := url.Parse(h.baseURL)
+					if err != nil {
+						http.Error(w, "internal server error", http.StatusInternalServerError)
+						return
+					}
+					if pRedirect.Host != pBase.Host || pRedirect.Scheme != pBase.Scheme {
+						http.Error(w, "invalid redirect_uri: host/scheme mismatch", http.StatusBadRequest)
+						return
+					}
+				} else {
+					// It's not absolute and doesn't start with /
+					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+
 		if userID == "" {
 			// Not authenticated, redirect to main login with 'redirect_url'
 			// To return back, building the current full URL:

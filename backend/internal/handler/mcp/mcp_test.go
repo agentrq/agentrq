@@ -96,7 +96,7 @@ func TestOAuthMetadataHandler(t *testing.T) {
 func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 
-	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=http://localhost/callback&state=somestate", nil)
+	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=https://agentrq.com/callback&state=somestate", nil)
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	
@@ -119,7 +119,7 @@ func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 
-	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=http://localhost/callback&state=somestate", nil)
+	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=https://agentrq.com/callback&state=somestate", nil)
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
@@ -132,7 +132,7 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	}
 
 	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "http://localhost/callback") {
+	if !strings.HasPrefix(loc, "https://agentrq.com/callback") {
 		t.Errorf("Expected redirect to client redirect_uri, got %s", loc)
 	}
 	
@@ -142,6 +142,63 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	}
 	if u.Query().Get("state") != "somestate" {
 		t.Errorf("Expected state=somestate, got %s", u.Query().Get("state"))
+	}
+}
+
+func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
+	mux, _ := setupTestRouter()
+
+	tests := []struct {
+		name        string
+		redirectURI string
+		expectedCode int
+	}{
+		{
+			name:         "Safe relative redirect",
+			redirectURI:  "/callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "Safe absolute redirect",
+			redirectURI:  "https://agentrq.com/callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "Malicious absolute redirect",
+			redirectURI:  "https://evil.com/callback",
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Malicious relative redirect //",
+			redirectURI:  "//evil.com",
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Malicious relative redirect /\\",
+			redirectURI:  "/\\evil.com",
+			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Host mismatch in absolute redirect",
+			redirectURI:  "https://agentrq.com.evil.com/callback",
+			expectedCode: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri="+url.QueryEscape(tt.redirectURI), nil)
+			req.SetPathValue("workspaceID", "12345")
+			req.Host = "12345.mcp.agentrq.com"
+			req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
+
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedCode {
+				t.Errorf("Expected status %d, got %d", tt.expectedCode, w.Code)
+			}
+		})
 	}
 }
 
