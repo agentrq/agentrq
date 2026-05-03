@@ -178,6 +178,27 @@ Since the Supervisor uses OAuth2, you can connect it using the following configu
 
 When you first run Claude with this server, it will provide a link to authenticate via your browser.
 
+## 🧩 Official Extensions
+
+AgentRQ provides official extensions for major AI agent CLI tools to simplify setup and integration with its supervisor MCP. The sub agents MCPs should use their own workspace specific MCP server URLs.
+
+### 🍊 Claude Code
+The AgentRQ plugin for Claude Code is distributed via our official marketplace. It provides built-in skills and pre-configured MCP access.
+
+**Installation:**
+```bash
+/plugin marketplace add https://github.com/agentrq/agentrq-claude-extension
+/plugin install agentrq@agentrq
+```
+
+### ♊ Gemini CLI
+The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks directly from your terminal using Google's Gemini models.
+
+**Installation:**
+```bash
+gemini extensions install https://github.com/agentrq/agentrq-gemini-extension
+```
+
 ## 🤝 Credits
 
 - [AgentRQ](https://agentrq.com) — The official Agent-Human collaboration platform.

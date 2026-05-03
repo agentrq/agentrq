@@ -16,3 +16,4 @@ acp-gateway
 acp-gateway/coverage
 acp-gateway/dist
 gemini-extension/
+claude-extension/
