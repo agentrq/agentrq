@@ -105,7 +105,7 @@ const submitRootLogin = async () => {
     const res = await fetch('/api/v1/auth/root/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root_token: rootToken.value })
+      body: JSON.stringify({ rootToken: rootToken.value })
     })
     
     if (res.ok) {
