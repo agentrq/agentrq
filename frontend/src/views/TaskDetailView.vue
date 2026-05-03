@@ -153,7 +153,7 @@
             </div>
             <div class="bg-gray-50 border-2 border-black flex-1 p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-w-0">
               <span class="text-[10px] font-black text-gray-700 block mb-1.5 uppercase tracking-widest">
-                Claude Agent · {{ formatDateTime(m.createdAt) }}
+                Agent · {{ formatDateTime(m.createdAt) }}
               </span>
               <div class="text-xs font-medium text-gray-800 leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
 
