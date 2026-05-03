@@ -72,7 +72,6 @@ func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *Permissio
 					base := extractBaseCommand(subcommands[0])
 					if base != "" {
 						rule := fmt.Sprintf("%s:%s *", toolName, base)
-						//zlog.Debug().Str("rule", rule).Str("command", cmd).Msg("shell auto-allow rule generated")
 						return rule
 					}
 				}
