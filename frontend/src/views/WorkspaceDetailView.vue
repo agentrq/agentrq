@@ -23,7 +23,7 @@
             </button>
             <button @click="showSetupModal = true"
                     class="md:hidden p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all"
-                    title="How to connect Claude">
+                    title="Connection Guide">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </button>
 
@@ -87,7 +87,7 @@
             </button>
             <button @click="showSetupModal = true"
                     class="p-1 text-gray-500 hover:text-white border border-transparent hover:border-gray-600 transition-all"
-                    title="How to connect Claude">
+                    title="Connection Guide">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </button>
           </div>
