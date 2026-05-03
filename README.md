@@ -180,7 +180,7 @@ When you first run Claude with this server, it will provide a link to authentica
 
 ## 🧩 Official Extensions
 
-AgentRQ provides official extensions for major AI agent CLI tools to simplify setup and integration.
+AgentRQ provides official extensions for major AI agent CLI tools to simplify setup and integration with its supervisor MCP. The sub agents MCPs should use their own workspace specific MCP server URLs.
 
 ### 🍊 Claude Code
 The AgentRQ plugin for Claude Code is distributed via our official marketplace. It provides built-in skills and pre-configured MCP access.
