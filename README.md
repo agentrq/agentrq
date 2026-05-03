@@ -1,7 +1,7 @@
 # AgentRQ ── Agent-Human Collaboration Platform
 
 <p align="center">
-  <video src="./demos/demo.mp4" width="480" controls="controls"></video>
+  <video src="demos/demo.mp4" width="480" controls="controls"></video>
   <br />
   <a href="https://www.youtube.com/watch?v=GBAoSpuCzrU">Watch on YouTube in HD</a>
 </p>
@@ -160,7 +160,7 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 **Communication & Files**
 - `replyToTask`: Post a message to a task's chat thread.
 - `respondToTask`: Submit an allow/deny verdict for a permission request.
-- `getAttachment`: Retrieve metadata for a specific attachment.
+- `getAttachment`: Retrieve data as base64 and metadata for a specific attachment.
 
 ### Connecting to Supervisor (Claude Code)
 Since the Supervisor uses OAuth2, you can connect it using the following configuration in your `~/.mcp.json`:
@@ -168,7 +168,7 @@ Since the Supervisor uses OAuth2, you can connect it using the following configu
 ```json
 {
   "mcpServers": {
-    "agentrq-supervisor": {
+    "agentrq": {
       "type": "http",
       "url": "https://mcp.agentrq.com/mcp"
     }

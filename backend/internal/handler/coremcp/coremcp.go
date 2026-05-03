@@ -243,9 +243,6 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 
 		resource := baseURL + "/mcp"
 		authServer := baseURL + "/.well-known/oauth-authorization-server"
-		if strings.Contains(r.Host, "mcp.") {
-			resource = baseURL + "/"
-		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"resource":             resource,
