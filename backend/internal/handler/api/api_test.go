@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/gofiber/fiber/v2"
 )
@@ -27,11 +28,16 @@ func (m *mockAuthService) Exchange(ctx context.Context, code string) (*auth.User
 
 type mockTokenSvc struct {
 	auth.TokenService
-	createTokenFunc func(userID, email, name, picture string) (string, error)
+	createTokenFunc    func(userID, email, name, picture string) (string, error)
+	createMCPTokenFunc func(userID, workspaceID, tokenType string) (string, error)
 }
 
 func (m *mockTokenSvc) CreateToken(userID, email, name, picture string) (string, error) {
 	return m.createTokenFunc(userID, email, name, picture)
+}
+
+func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
+	return m.createMCPTokenFunc(userID, workspaceID, tokenType)
 }
 
 type mockCrudController struct {
@@ -116,4 +122,61 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockCrudGetWorkspace struct {
+	crud.Controller
+	getWorkspaceFunc func(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error)
+}
+
+func (m *mockCrudGetWorkspace) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+	return m.getWorkspaceFunc(ctx, req)
+}
+
+func TestGetWorkspaceToken_Unauthorized(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudGetWorkspace{}
+	tokenSvc := &mockTokenSvc{}
+
+	h := &handler{
+		crud:     crudCtrl,
+		tokenSvc: tokenSvc,
+	}
+
+	app.Get("/api/v1/workspaces/:id/token", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.getWorkspaceToken()(c)
+	})
+
+	t.Run("Unauthorized access to workspace", func(t *testing.T) {
+		workspaceID := "work1"
+		crudCtrl.getWorkspaceFunc = func(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+			// Simulate "not found" or "no access" from repository
+			return nil, base.ErrNotFound // Using a known error that maps to 404
+		}
+
+		req := httptest.NewRequest("GET", "/api/v1/workspaces/"+workspaceID+"/token", nil)
+		resp, _ := app.Test(req)
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("Expected status 404, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Authorized access to workspace", func(t *testing.T) {
+		workspaceID := "work1"
+		crudCtrl.getWorkspaceFunc = func(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+			return &entity.GetWorkspaceResponse{}, nil
+		}
+		tokenSvc.createMCPTokenFunc = func(userID, workspaceID, tokenType string) (string, error) {
+			return "token123", nil
+		}
+
+		req := httptest.NewRequest("GET", "/api/v1/workspaces/"+workspaceID+"/token", nil)
+		resp, _ := app.Test(req)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		}
+	})
 }

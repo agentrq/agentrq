@@ -7,3 +7,8 @@
 **Vulnerability:** The application had a hardcoded default JWT secret ("agentrq-secret-change-me") as a fallback, and the Google OAuth callback allowed redirects to any absolute URL starting with "http".
 **Learning:** Fallback secrets can lead to insecure production deployments if configuration is missed. Weak validation of redirect parameters in OAuth flows is a common entry point for phishing.
 **Prevention:** Remove all hardcoded security defaults; the application should fail to start if critical secrets are missing. Always validate redirect URLs against a whitelist or ensure they are local paths.
+
+## 2024-05-20 - IDOR in Workspace Endpoints
+**Vulnerability:** The `getWorkspaceToken` endpoint allowed any authenticated user to generate access tokens for any workspace by providing its ID, lacking an ownership check.
+**Learning:** Endpoints that operate on specific resources must always verify that the authenticated user has the necessary permissions/ownership for that resource ID, even if they are already authenticated.
+**Prevention:** Always include a user-specific identifier (e.g., `userID`) in repository/controller queries for resource-specific operations to ensure implicit authorization.
