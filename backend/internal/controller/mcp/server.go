@@ -1111,7 +1111,7 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 				}
 			}
 			ps.autoAllowedToolsMu.Unlock()
-			zlog.Info().Str("rule", rule).Msg("auto-allow rule saved")
+			zlog.Info().Msg("auto-allow rule saved")
 		}
 	}
 
