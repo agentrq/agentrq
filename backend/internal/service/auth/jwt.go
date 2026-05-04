@@ -61,7 +61,7 @@ func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(30 * 24 * time.Hour)), // 30 days
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // 365 days
 		},
 	}
 
