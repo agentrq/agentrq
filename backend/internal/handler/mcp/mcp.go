@@ -72,12 +72,19 @@ func New(p Params) (Handler, error) {
 	// We handle both exact and trailing slash versions to be robust.
 	p.Mux.Handle("/mcp/{workspaceID}", corsWrapper(h.streamableHandler()))
 
-	// OAuth2 and discovery endpoints
+	// discovery endpoints (both path-based and root-level for subdomains)
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
+	p.Mux.Handle("/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
+
+	// OAuth2 endpoints (both path-based and root-level for subdomains)
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
+	p.Mux.Handle("/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
+	p.Mux.Handle("/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+	p.Mux.Handle("/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
 
 	return h, nil
 }
@@ -332,6 +339,12 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 func (h *handler) oauthMetadataHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		workspaceID := workspaceIDFromParam(r)
+		if workspaceID == 0 {
+			http.Error(w, "workspace not found", http.StatusNotFound)
+			return
+		}
+
 		proto := "https://"
 		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
 			proto = "http://"
@@ -345,13 +358,10 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 
 		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
 		if !strings.Contains(r.Host, ".mcp.") {
-			workspaceID := workspaceIDFromParam(r)
-			if workspaceID != 0 {
-				workspaceIDBase62 := monoflake.ID(workspaceID).String()
-				authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
-				tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
-				regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
-			}
+			workspaceIDBase62 := monoflake.ID(workspaceID).String()
+			authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
+			tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
+			regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
 		}
 
 		metadata := map[string]interface{}{
