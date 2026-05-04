@@ -410,16 +410,26 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 					return
 				}
 				if pRedirect.IsAbs() {
+					pBase, err := url.Parse(h.baseURL)
+					if err != nil {
+						http.Error(w, "internal server error", http.StatusInternalServerError)
+						return
+					}
+
 					// Require https for absolute URLs unless it's localhost
 					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
 						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
+
 					if pRedirect.Scheme != "https" && !isLocal {
 						http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
 						return
 					}
 
-					// For MCP we allow external redirects to support various clients (Claude, etc.)
-					// In the future, we might want to validate against a list of allowed domains or registered redirect URIs.
+					// Allow host mismatch ONLY for localhost/127.0.0.1
+					if pRedirect.Host != pBase.Host && !isLocal {
+						http.Error(w, "invalid redirect_uri: host mismatch", http.StatusBadRequest)
+						return
+					}
 				} else {
 					// It's not absolute and doesn't start with /
 					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)
