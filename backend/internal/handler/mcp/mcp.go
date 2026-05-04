@@ -74,6 +74,7 @@ func New(p Params) (Handler, error) {
 
 	// discovery endpoints (path-based)
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
 
 	// OAuth2 endpoints (path-based)
