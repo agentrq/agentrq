@@ -72,15 +72,20 @@ func New(p Params) (Handler, error) {
 	// We handle both exact and trailing slash versions to be robust.
 	p.Mux.Handle("/mcp/{workspaceID}", corsWrapper(h.streamableHandler()))
 
-	// discovery endpoints (path-based)
+	// discovery endpoints (both path-based and root-level for subdomains)
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
+	p.Mux.Handle("/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
 
-	// OAuth2 endpoints (path-based)
+	// OAuth2 endpoints (both path-based and root-level for subdomains)
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
+	p.Mux.Handle("/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
+	p.Mux.Handle("/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+	p.Mux.Handle("/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
 
 	return h, nil
 }

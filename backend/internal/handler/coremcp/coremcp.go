@@ -75,9 +75,7 @@ func New(p Params) (Handler, error) {
 	}
 
 	// Localhost distinct paths
-	p.Mux.Handle("/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
 	p.Mux.Handle("/mcp/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
-	p.Mux.Handle("/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/mcp/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/oauth2/token", corsWrapper(h.oauthTokenHandler()))
