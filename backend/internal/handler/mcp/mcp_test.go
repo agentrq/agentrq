@@ -93,6 +93,16 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIDFromSubdomain(t *testing.T) {
+	req := httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil)
+	req.Host = "12345.mcp.agentrq.com"
+	
+	id := workspaceIDFromParam(req)
+	if id != monoflake.IDFromBase62("12345").Int64() {
+		t.Errorf("Expected workspace ID for 12345, got %d", id)
+	}
+}
+
 func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 

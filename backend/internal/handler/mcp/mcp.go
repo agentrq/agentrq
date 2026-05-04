@@ -71,9 +71,9 @@ func New(p Params) (Handler, error) {
 	// We handle both exact and trailing slash versions to be robust.
 	p.Mux.Handle("/mcp/{workspaceID}", corsWrapper(h.streamableHandler()))
 
-	// OAuth2 and CIMD endpoints
+	// OAuth2 and discovery endpoints
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
-	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
@@ -81,9 +81,17 @@ func New(p Params) (Handler, error) {
 	return h, nil
 }
 
-// workspaceIDFromParam parses the base62 workspace ID from the route.
+// workspaceIDFromParam parses the base62 workspace ID from the route or host.
 func workspaceIDFromParam(r *http.Request) int64 {
-	return monoflake.IDFromBase62(r.PathValue("workspaceID")).Int64()
+	idStr := r.PathValue("workspaceID")
+	if idStr == "" {
+		// Try extracting from subdomain: {workspaceID}.mcp.{domain}
+		parts := strings.Split(r.Host, ".")
+		if len(parts) >= 3 && parts[1] == "mcp" {
+			idStr = parts[0]
+		}
+	}
+	return monoflake.IDFromBase62(idStr).Int64()
 }
 
 func getTokenVal(r *http.Request) string {
@@ -277,6 +285,41 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 	}
 
 	return ""
+}
+
+func (h *handler) oauthProtectedResourceHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		workspaceID := workspaceIDFromParam(r)
+		if workspaceID == 0 {
+			http.Error(w, "workspace not found", http.StatusNotFound)
+			return
+		}
+
+		workspaceIDBase62 := monoflake.ID(workspaceID).String()
+
+		proto := "https://"
+		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+			proto = "http://"
+		}
+
+		baseURL := proto + r.Host
+
+		resource := baseURL + "/mcp/" + workspaceIDBase62
+		if strings.Contains(r.Host, ".mcp.") {
+			resource = baseURL
+		}
+
+		authServer := baseURL + "/.well-known/oauth-authorization-server"
+		if !strings.Contains(r.Host, ".mcp.") {
+			authServer = baseURL + "/mcp/" + workspaceIDBase62 + "/.well-known/oauth-authorization-server"
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"resource":             resource,
+			"authorization_server": authServer,
+		})
+	})
 }
 
 func (h *handler) oauthMetadataHandler() http.Handler {
