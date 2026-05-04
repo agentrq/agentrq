@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -81,17 +82,23 @@ func New(p Params) (Handler, error) {
 	return h, nil
 }
 
-// workspaceIDFromParam parses the base62 workspace ID from the route or host.
+// workspaceIDFromParam parses the base62 workspace ID from the route or base36 from host.
 func workspaceIDFromParam(r *http.Request) int64 {
 	idStr := r.PathValue("workspaceID")
-	if idStr == "" {
-		// Try extracting from subdomain: {workspaceID}.mcp.{domain}
-		parts := strings.Split(r.Host, ".")
-		if len(parts) >= 3 && parts[1] == "mcp" {
-			idStr = parts[0]
+	if idStr != "" {
+		return monoflake.IDFromBase62(idStr).Int64()
+	}
+
+	// Try extracting from subdomain: {workspaceID}.mcp.{domain}
+	parts := strings.Split(r.Host, ".")
+	if len(parts) >= 3 && parts[1] == "mcp" {
+		// Subdomain is in base36 for case-insensitive DNS compatibility
+		if id, err := strconv.ParseInt(parts[0], 36, 64); err == nil {
+			return id
 		}
 	}
-	return monoflake.IDFromBase62(idStr).Int64()
+
+	return 0
 }
 
 func getTokenVal(r *http.Request) string {
