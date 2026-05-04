@@ -566,6 +566,26 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 		workspaceID := c.Params("id")
 		userID := c.Locals("user_id").(string)
 
+		// Authorization: verify that the user has access to this workspace
+		workspace64 := monoflake.IDFromBase62(workspaceID).Int64()
+		if workspace64 == 0 {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		_, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
+			ID:     workspace64,
+			UserID: userID,
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
 		token, err := h.tokenSvc.CreateMCPToken(userID, workspaceID, "access")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate workspace token"})
