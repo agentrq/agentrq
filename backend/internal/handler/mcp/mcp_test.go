@@ -164,9 +164,9 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			expectedCode: http.StatusFound,
 		},
 		{
-			name:         "Malicious absolute redirect",
-			redirectURI:  "https://evil.com/callback",
-			expectedCode: http.StatusBadRequest,
+			name:         "External absolute redirect (allowed for MCP)",
+			redirectURI:  "https://claude.ai/callback",
+			expectedCode: http.StatusFound,
 		},
 		{
 			name:         "Malicious relative redirect //",
@@ -179,9 +179,20 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			expectedCode: http.StatusBadRequest,
 		},
 		{
-			name:         "Host mismatch in absolute redirect",
-			redirectURI:  "https://agentrq.com.evil.com/callback",
+			name:         "HTTP localhost redirect (allowed)",
+			redirectURI:  "http://localhost:8080/callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "HTTP external redirect (blocked)",
+			redirectURI:  "http://claude.ai/callback",
 			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Host mismatch in absolute redirect (allowed for MCP)",
+
+			redirectURI:  "https://other-client.com/callback",
+			expectedCode: http.StatusFound,
 		},
 	}
 

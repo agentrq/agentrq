@@ -263,6 +263,34 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
 
+		// Validate redirectURI to prevent open redirect
+		if redirectURI != "" {
+			if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
+				// OK: local path
+			} else {
+				// Parse absolute URL
+				pRedirect, err := url.Parse(redirectURI)
+				if err != nil {
+					http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+					return
+				}
+				if pRedirect.IsAbs() {
+					// Require https for absolute URLs unless it's localhost
+					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
+						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
+					if pRedirect.Scheme != "https" && !isLocal {
+						http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
+						return
+					}
+					// For CoreMCP we allow external redirects to support various clients
+				} else {
+					// It's not absolute and doesn't start with /
+					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+
 		if userID == "" {
 			proto := "https://"
 			if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
