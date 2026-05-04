@@ -12,3 +12,8 @@
 **Vulnerability:** The `getWorkspaceToken` endpoint allowed any authenticated user to generate access tokens for any workspace by providing its ID, lacking an ownership check.
 **Learning:** Endpoints that operate on specific resources must always verify that the authenticated user has the necessary permissions/ownership for that resource ID, even if they are already authenticated.
 **Prevention:** Always include a user-specific identifier (e.g., `userID`) in repository/controller queries for resource-specific operations to ensure implicit authorization.
+
+## 2024-05-21 - IDOR in Workspace Stats Endpoint
+**Vulnerability:** The `GetDetailedWorkspaceStats` controller method retrieved statistics for any workspace ID provided in the request without verifying if the authenticated user owned or had access to that workspace.
+**Learning:** Even when handlers correctly extract and pass the `userID`, the business logic layer must explicitly use it to authorize access to the requested resource. Simply passing it to a downstream service that ignores it leaves the application vulnerable to IDOR.
+**Prevention:** Always perform an ownership check (e.g., fetching the resource with both `resourceID` and `userID`) before executing any operations on specific resources, including read-only operations like fetching statistics.

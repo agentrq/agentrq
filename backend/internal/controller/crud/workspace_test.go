@@ -180,6 +180,7 @@ func TestUpdateWorkspaceAutoAllowedTools_Success(t *testing.T) {
 func TestGetDetailedWorkspaceStats_Success(t *testing.T) {
 	e := newTestController(t)
 
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{ID: 1, UserID: testUserID}, nil)
 	e.repo.EXPECT().GetDetailedWorkspaceStats(gomock.Any(), int64(1), gomock.Any(), gomock.Any()).Return(entity.GetDetailedWorkspaceStatsResponse{
 		Summary: entity.WorkspaceStatsSummary{TasksCompleted: 10},
 	}, nil)
