@@ -93,6 +93,17 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIDFromSubdomain(t *testing.T) {
+	req := httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil)
+	// '1j' in base36 is 1*36 + 19 = 55
+	req.Host = "1j.mcp.agentrq.com"
+	
+	id := workspaceIDFromParam(req)
+	if id != 55 {
+		t.Errorf("Expected workspace ID 55, got %d", id)
+	}
+}
+
 func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 	mux, _ := setupTestRouter()
 
@@ -164,9 +175,9 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			expectedCode: http.StatusFound,
 		},
 		{
-			name:         "Malicious absolute redirect",
-			redirectURI:  "https://evil.com/callback",
-			expectedCode: http.StatusBadRequest,
+			name:         "External absolute redirect (allowed for MCP)",
+			redirectURI:  "https://claude.ai/callback",
+			expectedCode: http.StatusFound,
 		},
 		{
 			name:         "Malicious relative redirect //",
@@ -179,9 +190,20 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			expectedCode: http.StatusBadRequest,
 		},
 		{
-			name:         "Host mismatch in absolute redirect",
-			redirectURI:  "https://agentrq.com.evil.com/callback",
+			name:         "HTTP localhost redirect (allowed)",
+			redirectURI:  "http://localhost:8080/callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "HTTP external redirect (blocked)",
+			redirectURI:  "http://claude.ai/callback",
 			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Host mismatch in absolute redirect (allowed for MCP)",
+
+			redirectURI:  "https://other-client.com/callback",
+			expectedCode: http.StatusFound,
 		},
 	}
 

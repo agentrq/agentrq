@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,9 +72,12 @@ func New(p Params) (Handler, error) {
 	// We handle both exact and trailing slash versions to be robust.
 	p.Mux.Handle("/mcp/{workspaceID}", corsWrapper(h.streamableHandler()))
 
-	// OAuth2 and CIMD endpoints
+	// discovery endpoints (path-based)
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
-	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthMetadataHandler()))
+	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
+	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
+
+	// OAuth2 endpoints (path-based)
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
@@ -81,9 +85,23 @@ func New(p Params) (Handler, error) {
 	return h, nil
 }
 
-// workspaceIDFromParam parses the base62 workspace ID from the route.
+// workspaceIDFromParam parses the base62 workspace ID from the route or base36 from host.
 func workspaceIDFromParam(r *http.Request) int64 {
-	return monoflake.IDFromBase62(r.PathValue("workspaceID")).Int64()
+	idStr := r.PathValue("workspaceID")
+	if idStr != "" {
+		return monoflake.IDFromBase62(idStr).Int64()
+	}
+
+	// Try extracting from subdomain: {workspaceID}.mcp.{domain}
+	parts := strings.Split(r.Host, ".")
+	if len(parts) >= 3 && parts[1] == "mcp" {
+		// Subdomain is in base36 for case-insensitive DNS compatibility
+		if id, err := strconv.ParseInt(parts[0], 36, 64); err == nil {
+			return id
+		}
+	}
+
+	return 0
 }
 
 func getTokenVal(r *http.Request) string {
@@ -279,9 +297,50 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 	return ""
 }
 
+func (h *handler) oauthProtectedResourceHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		workspaceID := workspaceIDFromParam(r)
+		if workspaceID == 0 {
+			http.Error(w, "workspace not found", http.StatusNotFound)
+			return
+		}
+
+		workspaceIDBase62 := monoflake.ID(workspaceID).String()
+
+		proto := "https://"
+		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+			proto = "http://"
+		}
+
+		baseURL := proto + r.Host
+
+		resource := baseURL + "/mcp/" + workspaceIDBase62
+		if strings.Contains(r.Host, ".mcp.") {
+			resource = baseURL
+		}
+
+		authServer := baseURL + "/.well-known/oauth-authorization-server"
+		if !strings.Contains(r.Host, ".mcp.") {
+			authServer = baseURL + "/mcp/" + workspaceIDBase62 + "/.well-known/oauth-authorization-server"
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"resource":             resource,
+			"authorization_server": authServer,
+		})
+	})
+}
+
 func (h *handler) oauthMetadataHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		workspaceID := workspaceIDFromParam(r)
+		if workspaceID == 0 {
+			http.Error(w, "workspace not found", http.StatusNotFound)
+			return
+		}
+
 		proto := "https://"
 		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
 			proto = "http://"
@@ -295,13 +354,10 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 
 		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
 		if !strings.Contains(r.Host, ".mcp.") {
-			workspaceID := workspaceIDFromParam(r)
-			if workspaceID != 0 {
-				workspaceIDBase62 := monoflake.ID(workspaceID).String()
-				authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
-				tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
-				regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
-			}
+			workspaceIDBase62 := monoflake.ID(workspaceID).String()
+			authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
+			tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
+			regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
 		}
 
 		metadata := map[string]interface{}{
@@ -354,15 +410,16 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 					return
 				}
 				if pRedirect.IsAbs() {
-					pBase, err := url.Parse(h.baseURL)
-					if err != nil {
-						http.Error(w, "internal server error", http.StatusInternalServerError)
+					// Require https for absolute URLs unless it's localhost
+					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
+						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
+					if pRedirect.Scheme != "https" && !isLocal {
+						http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
 						return
 					}
-					if pRedirect.Host != pBase.Host || pRedirect.Scheme != pBase.Scheme {
-						http.Error(w, "invalid redirect_uri: host/scheme mismatch", http.StatusBadRequest)
-						return
-					}
+
+					// For MCP we allow external redirects to support various clients (Claude, etc.)
+					// In the future, we might want to validate against a list of allowed domains or registered redirect URIs.
 				} else {
 					// It's not absolute and doesn't start with /
 					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)

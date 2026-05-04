@@ -87,6 +87,7 @@ func New(p Params) (Handler, error) {
 	if hostPattern != "" {
 		p.Mux.Handle(hostPattern+"/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
 		p.Mux.Handle(hostPattern+"/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
+		p.Mux.Handle(hostPattern+"/.well-known/oauth-protected-resource/mcp", corsWrapper(h.oauthProtectedResourceHandler()))
 		p.Mux.Handle(hostPattern+"/oauth2/authorize", h.oauthAuthorizeHandler())
 		p.Mux.Handle(hostPattern+"/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 		p.Mux.Handle(hostPattern+"/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
@@ -210,6 +211,9 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 		pathPrefix := ""
 		if !strings.Contains(r.Host, "mcp.") {
 			pathPrefix = "/mcp"
+		} else if strings.Contains(r.Host, ".mcp.") {
+			// If it's a workspace subdomain, endpoints are at the root
+			pathPrefix = ""
 		}
 
 		authEndpoint := baseURL + pathPrefix + "/oauth2/authorize"
@@ -242,6 +246,11 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 		baseURL := proto + r.Host
 
 		resource := baseURL + "/mcp"
+		if strings.Contains(r.Host, ".mcp.") {
+			// If it's a workspace subdomain, the resource is the root
+			resource = baseURL
+		}
+
 		authServer := baseURL + "/.well-known/oauth-authorization-server"
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -262,6 +271,34 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
+
+		// Validate redirectURI to prevent open redirect
+		if redirectURI != "" {
+			if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
+				// OK: local path
+			} else {
+				// Parse absolute URL
+				pRedirect, err := url.Parse(redirectURI)
+				if err != nil {
+					http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
+					return
+				}
+				if pRedirect.IsAbs() {
+					// Require https for absolute URLs unless it's localhost
+					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
+						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
+					if pRedirect.Scheme != "https" && !isLocal {
+						http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
+						return
+					}
+					// For CoreMCP we allow external redirects to support various clients
+				} else {
+					// It's not absolute and doesn't start with /
+					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)
+					return
+				}
+			}
+		}
 
 		if userID == "" {
 			proto := "https://"
