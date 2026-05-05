@@ -384,31 +384,35 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
 }
 
-// StartPing pings all connected MCP client sessions every 30 seconds to keep connections alive.
-// If a session's underlying stream is already closed, it is explicitly closed so the SDK
-// removes it from its session registry, preventing repeated errors on future ping attempts.
+// StartPing pings all connected MCP client sessions every minute to keep connections alive.
+// If a session's underlying stream is already closed or times out, it is explicitly closed
+// so the SDK removes it from its session registry, preventing repeated errors.
 func (ps *WorkspaceServer) StartPing() {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			for sess := range ps.mcpServer.Sessions() {
-				if err := sess.Ping(ctx, nil); err != nil {
-					errStr := err.Error()
-					if strings.Contains(errStr, "stream not connected") || strings.Contains(errStr, "already closed") {
-						// The transport is already gone — close the session so the SDK
-						// calls its disconnect() hook and removes it from s.sessions.
-						zlog.Debug().Str("session_id", sess.ID()).Msg("MCP session stream closed; evicting from registry")
-						if closeErr := sess.Close(); closeErr != nil {
-							zlog.Debug().Err(closeErr).Str("session_id", sess.ID()).Msg("MCP session close error (expected)")
+				sess := sess // shadow for closure capture
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+					defer cancel()
+					if err := sess.Ping(ctx, nil); err != nil {
+						errStr := err.Error()
+						// Treat timeout, stream closed, or already closed as reasons to evict
+						if errors.Is(err, context.DeadlineExceeded) ||
+							strings.Contains(errStr, "stream not connected") ||
+							strings.Contains(errStr, "already closed") {
+							zlog.Debug().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP session unhealthy; evicting from registry")
+							if closeErr := sess.Close(); closeErr != nil {
+								zlog.Debug().Err(closeErr).Str("session_id", sess.ID()).Msg("MCP session close error (expected)")
+							}
+						} else {
+							zlog.Warn().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP ping error")
 						}
-					} else {
-						zlog.Warn().Err(err).Int64("workspace_id", ps.workspaceID).Str("session_id", sess.ID()).Msg("MCP ping error")
 					}
-				}
+				}()
 			}
-			cancel()
 		}
 	}()
 }
