@@ -292,6 +292,12 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 		startTime = now.AddDate(0, 0, -7).Unix()
 	}
 
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	// Verify user ownership to prevent IDOR
+	if _, err := c.repository.GetWorkspace(ctx, req.ID, uid); err != nil {
+		return nil, err
+	}
+
 	res, err := c.repository.GetDetailedWorkspaceStats(ctx, req.ID, startTime, endTime)
 	if err != nil {
 		return nil, err
