@@ -615,7 +615,7 @@ func TestUpdateMessageMetadata_Success(t *testing.T) {
 	e := newTestController(t)
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, nil)
-	e.repo.EXPECT().UpdateMessageMetadata(gomock.Any(), int64(500), gomock.Any()).Return(nil)
+	e.repo.EXPECT().UpdateMessageMetadata(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(nil)
 
 	err := e.controller.UpdateMessageMetadata(context.Background(), entity.UpdateMessageMetadataRequest{
 		WorkspaceID: 1,

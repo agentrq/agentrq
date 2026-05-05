@@ -31,7 +31,7 @@ type Repository interface {
 	// Message
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
-	UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error
+	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -247,8 +247,8 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 	return msgs, err
 }
 
-func (r *repository) UpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error {
-	return r.conn(ctx).Model(&model.Message{}).Where("id = ?", messageID).Update("metadata", metadata).Error
+func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
+	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
 }
 
 func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {

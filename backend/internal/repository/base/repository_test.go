@@ -126,3 +126,46 @@ func TestRepository_GetNextTask(t *testing.T) {
 		t.Errorf("expected task 11 (tie-break by ID), got %d", task.ID)
 	}
 }
+
+func TestRepository_UpdateMessageMetadata(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(100)
+	messageID := int64(500)
+
+	db.Create(&model.Message{
+		ID:     messageID,
+		TaskID: taskID,
+		Text:   "Initial text",
+	})
+
+	// Case 1: Success update with correct taskID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	var m model.Message
+	db.First(&m, messageID)
+	if string(m.Metadata) != `{"updated":true}` {
+		t.Errorf("expected metadata to be updated, got %s", string(m.Metadata))
+	}
+
+	// Case 2: Update with WRONG taskID (IDOR)
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	if err != nil {
+		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"hacked":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+}

@@ -552,7 +552,7 @@ func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.Updat
 		return err
 	}
 
-	if err := c.repository.UpdateMessageMetadata(ctx, req.MessageID, b); err != nil {
+	if err := c.repository.UpdateMessageMetadata(ctx, req.TaskID, req.MessageID, b); err != nil {
 		return err
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
