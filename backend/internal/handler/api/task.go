@@ -379,10 +379,23 @@ func (h *handler) sseEvents() fiber.Handler {
 		c.Set("X-Accel-Buffering", "no")
 
 		userID := c.Locals("user_id").(string)
+
+		// Verify workspace access
+		// Use request context for the immediate authorization check
+		authCtx, cancelAuth := newContext(c)
+		defer cancelAuth()
+		if _, err := h.crud.GetWorkspace(authCtx, entity.GetWorkspaceRequest{
+			ID:     workspaceID,
+			UserID: userID,
+		}); err != nil {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
 		ch := h.bus.Subscribe(workspaceID, userID)
 
 		// Use Fiber's streaming response
 		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+			// Inside the stream writer, create a long-lived context
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			defer h.bus.Unsubscribe(workspaceID, userID, ch)

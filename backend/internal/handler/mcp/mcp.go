@@ -222,6 +222,13 @@ func (h *handler) streamableHandler() http.Handler {
 			return
 		}
 
+		// Authorization: verify that the user has access to this workspace
+		uid := monoflake.IDFromBase62(userID).Int64()
+		if _, err := h.repo.GetWorkspace(r.Context(), workspaceID, uid); err != nil {
+			sendJSONRPCError(w, "situational security: forbidden", jsonrpc.CodeInvalidRequest, http.StatusForbidden)
+			return
+		}
+
 		srv := h.mcpManager.Get(workspaceID, userID)
 		zlog.Debug().Int64("workspace_id", workspaceID).Str("user_id", userID).Str("method", r.Method).Msg("MCP streamable handler")
 
