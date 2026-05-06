@@ -400,7 +400,7 @@ func New(cfg Config) (*App, error) {
 			},
 			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 				b, _ := json.Marshal(metadata)
-				err := repo.UpdateMessageMetadata(ctx, messageID, b)
+				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, b)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 					latest, _ := repo.GetTask(ctx, workspaceID, taskID, uid)
