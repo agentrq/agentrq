@@ -609,10 +609,7 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 				return
 			}
 
-			if _, err := ctrl.GetWorkspace(r.Context(), entity.GetWorkspaceRequest{
-				ID:     workspaceID,
-				UserID: userID,
-			}); err != nil {
+			if ok, err := ctrl.CheckWorkspaceAccess(r.Context(), workspaceID, userID); err != nil || !ok {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}

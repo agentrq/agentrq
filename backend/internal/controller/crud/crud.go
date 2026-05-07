@@ -63,6 +63,7 @@ type WorkspaceController interface {
 	CreateWorkspace(ctx context.Context, req entity.CreateWorkspaceRequest) (*entity.CreateWorkspaceResponse, error)
 	DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error
 	GetWorkspace(ctx context.Context, req entity.GetWorkspaceRequest) (*entity.GetWorkspaceResponse, error)
+	CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error)
 	ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error)
 	ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error
 	UnarchiveWorkspace(ctx context.Context, req entity.UnarchiveWorkspaceRequest) error

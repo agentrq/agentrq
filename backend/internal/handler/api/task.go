@@ -384,10 +384,7 @@ func (h *handler) sseEvents() fiber.Handler {
 		// Use request context for the immediate authorization check
 		authCtx, cancelAuth := newContext(c)
 		defer cancelAuth()
-		if _, err := h.crud.GetWorkspace(authCtx, entity.GetWorkspaceRequest{
-			ID:     workspaceID,
-			UserID: userID,
-		}); err != nil {
+		if ok, err := h.crud.CheckWorkspaceAccess(authCtx, workspaceID, userID); err != nil || !ok {
 			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
 		}
 

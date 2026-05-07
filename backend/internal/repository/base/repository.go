@@ -17,6 +17,7 @@ type Repository interface {
 	// Workspace
 	CreateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
 	GetWorkspace(ctx context.Context, id int64, userID int64) (model.Workspace, error)
+	CheckWorkspaceAccess(ctx context.Context, id int64, userID int64) (bool, error)
 	ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error)
 	DeleteWorkspace(ctx context.Context, id int64, userID int64) error
 	UpdateWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
@@ -76,6 +77,12 @@ func (r *repository) GetWorkspace(ctx context.Context, id int64, userID int64) (
 		return model.Workspace{}, ErrNotFound
 	}
 	return p, err
+}
+
+func (r *repository) CheckWorkspaceAccess(ctx context.Context, id int64, userID int64) (bool, error) {
+	var count int64
+	err := r.conn(ctx).Model(&model.Workspace{}).Where("id = ? AND user_id = ?", id, userID).Count(&count).Error
+	return count > 0, err
 }
 
 func (r *repository) ListWorkspaces(ctx context.Context, userID int64, includeArchived bool) ([]model.Workspace, error) {
