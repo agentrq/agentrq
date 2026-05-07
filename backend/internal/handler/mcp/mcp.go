@@ -16,8 +16,9 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
-	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang-jwt/jwt/v5"
@@ -27,7 +28,7 @@ import (
 
 type Params struct {
 	MCPManager *mcpctrl.Manager
-	Repository base.Repository
+	Crud       crud.Controller
 	TokenSvc   auth.TokenService
 	TokenKey   string
 	BaseURL    string
@@ -38,7 +39,7 @@ type Handler interface{}
 
 type handler struct {
 	mcpManager *mcpctrl.Manager
-	repo       base.Repository
+	crud       crud.Controller
 	tokenSvc   auth.TokenService
 	tokenKey   string
 	baseURL    string
@@ -62,7 +63,7 @@ func corsWrapper(h http.Handler) http.Handler {
 func New(p Params) (Handler, error) {
 	h := &handler{
 		mcpManager: p.MCPManager,
-		repo:       p.Repository,
+		crud:       p.Crud,
 		tokenSvc:   p.TokenSvc,
 		tokenKey:   p.TokenKey,
 		baseURL:    p.BaseURL,
@@ -177,7 +178,7 @@ func (h *handler) streamableHandler() http.Handler {
 
 		// 1. Mandatory token check if workspace has it in DB
 		queryToken := getTokenVal(r)
-		workspace, err := h.repo.SystemGetWorkspace(r.Context(), workspaceID)
+		workspace, err := h.crud.SystemGetWorkspace(r.Context(), workspaceID)
 		if err != nil {
 			sendJSONRPCError(w, "situational security: workspace not found", jsonrpc.CodeInvalidParams, http.StatusNotFound)
 			return
@@ -222,6 +223,12 @@ func (h *handler) streamableHandler() http.Handler {
 			return
 		}
 
+		// Authorization: verify that the user has access to this workspace
+		if ok, err := h.crud.CheckWorkspaceAccess(r.Context(), workspaceID, userID); err != nil || !ok {
+			sendJSONRPCError(w, "situational security: forbidden", jsonrpc.CodeInvalidRequest, http.StatusForbidden)
+			return
+		}
+
 		srv := h.mcpManager.Get(workspaceID, userID)
 		zlog.Debug().Int64("workspace_id", workspaceID).Str("user_id", userID).Str("method", r.Method).Msg("MCP streamable handler")
 
@@ -255,7 +262,7 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 
 	// 1. Try situational secret (16-chars)
 	if len(tokenStr) == 16 {
-		workspace, err := h.repo.SystemGetWorkspace(ctx, workspaceID)
+		workspace, err := h.crud.SystemGetWorkspace(ctx, workspaceID)
 		if err == nil && workspace.TokenEncrypted != "" {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
 			if decErr == nil && dec == tokenStr {
@@ -379,7 +386,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		workspaceID := workspaceIDFromParam(r)
 
-		workspace, err := h.repo.SystemGetWorkspace(r.Context(), workspaceID)
+		workspace, err := h.crud.SystemGetWorkspace(r.Context(), workspaceID)
 		if err != nil {
 			http.Error(w, "workspace not found", http.StatusNotFound)
 			return

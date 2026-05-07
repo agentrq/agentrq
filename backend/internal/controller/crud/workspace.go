@@ -75,6 +75,11 @@ func (c *controller) GetWorkspace(ctx context.Context, req entity.GetWorkspaceRe
 	return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(m)}, nil
 }
 
+func (c *controller) CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error) {
+	uid := monoflake.IDFromBase62(userID).Int64()
+	return c.repository.CheckWorkspaceAccess(ctx, id, uid)
+}
+
 func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	ms, err := c.repository.ListWorkspaces(ctx, uid, req.IncludeArchived)
@@ -304,6 +309,14 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 	}
 
 	return &res, nil
+}
+
+func (c *controller) SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error) {
+	m, err := c.repository.SystemGetWorkspace(ctx, id)
+	if err != nil {
+		return entity.Workspace{}, err
+	}
+	return fromModelWorkspaceToEntity(m), nil
 }
 
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {

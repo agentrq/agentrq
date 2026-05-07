@@ -488,7 +488,7 @@ func New(cfg Config) (*App, error) {
 	// MCP Handler
 	if _, err := handlermcp.New(handlermcp.Params{
 		MCPManager: mcpManager,
-		Repository: repo,
+		Crud:       crudCtrl,
 		TokenSvc:   tokenSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		BaseURL:    cfg.App.BaseURL,
@@ -530,8 +530,8 @@ func New(cfg Config) (*App, error) {
 
 	// ── Server Start ─────────────────────────────────────────────────
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
-	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(bus, tokenSvc))
-	mux.Handle("/api/v1/events", eventsHandler(bus, tokenSvc))
+	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
+	mux.Handle("/api/v1/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	serverSvc, err := server.New(server.Params{
@@ -586,7 +586,7 @@ func pubStatsHandler(ctrl pub.StatsController) http.Handler {
 	})
 }
 
-func eventsHandler(bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
+func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("at")
 		if err != nil {
@@ -604,6 +604,15 @@ func eventsHandler(bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
 		var workspaceID int64
 		if workspaceIDParam != "" {
 			workspaceID = monoflake.IDFromBase62(workspaceIDParam).Int64()
+			if workspaceID == 0 {
+				http.Error(w, "Invalid workspace ID", http.StatusUnprocessableEntity)
+				return
+			}
+
+			if ok, err := ctrl.CheckWorkspaceAccess(r.Context(), workspaceID, userID); err != nil || !ok {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
