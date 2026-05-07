@@ -25,4 +25,4 @@ Include `Task: <taskID>` in the commit body for traceability.
 
 ## Coding Standards
 - **API Naming**: All JSON fields in API requests and responses MUST use `camelCase` (e.g., `workspaceId`, `createdAt`). Never use `snake_case` in the API surface.
-- **Backend Layers**: Follow view-entity-model separation; only `view` structs define the API schema.
+- **Backend Layers**: Follow view-entity-model separation; only `view` structs define the API schema. Avoid using repository directly from handlers; use controller methods instead.

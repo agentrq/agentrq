@@ -530,8 +530,8 @@ func New(cfg Config) (*App, error) {
 
 	// ── Server Start ─────────────────────────────────────────────────
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
-	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(repo, bus, tokenSvc))
-	mux.Handle("/api/v1/events", eventsHandler(repo, bus, tokenSvc))
+	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
+	mux.Handle("/api/v1/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	serverSvc, err := server.New(server.Params{
@@ -586,7 +586,7 @@ func pubStatsHandler(ctrl pub.StatsController) http.Handler {
 	})
 }
 
-func eventsHandler(repo base.Repository, bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
+func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("at")
 		if err != nil {
@@ -609,8 +609,10 @@ func eventsHandler(repo base.Repository, bus *eventbus.Bus, tokenSvc auth.TokenS
 				return
 			}
 
-			uidInt := monoflake.IDFromBase62(userID).Int64()
-			if _, err := repo.GetWorkspace(r.Context(), workspaceID, uidInt); err != nil {
+			if _, err := ctrl.GetWorkspace(r.Context(), entity.GetWorkspaceRequest{
+				ID:     workspaceID,
+				UserID: userID,
+			}); err != nil {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
