@@ -311,6 +311,14 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 	return &res, nil
 }
 
+func (c *controller) SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error) {
+	m, err := c.repository.SystemGetWorkspace(ctx, id)
+	if err != nil {
+		return entity.Workspace{}, err
+	}
+	return fromModelWorkspaceToEntity(m), nil
+}
+
 func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 	res := entity.Workspace{
 		ID:               m.ID,

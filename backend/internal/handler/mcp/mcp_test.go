@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -54,15 +56,29 @@ func (m *mockRepo) SystemGetWorkspace(ctx context.Context, id int64) (model.Work
 	}, nil
 }
 
+type mockCrud struct {
+	crud.Controller
+}
+
+func (m *mockCrud) SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error) {
+	return entity.Workspace{
+		UserID: int64(monoflake.IDFromBase62("user123").Int64()),
+	}, nil
+}
+
+func (m *mockCrud) CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error) {
+	return true, nil
+}
+
 func setupTestRouter() (*http.ServeMux, *mockTokenSvc) {
 	mux := http.NewServeMux()
 	tokenSvc := &mockTokenSvc{}
 	
 	New(Params{
-		TokenSvc:   tokenSvc,
-		Repository: &mockRepo{},
-		BaseURL:    "https://agentrq.com",
-		Mux:        mux,
+		TokenSvc: tokenSvc,
+		Crud:     &mockCrud{},
+		BaseURL:  "https://agentrq.com",
+		Mux:      mux,
 	})
 	
 	return mux, tokenSvc

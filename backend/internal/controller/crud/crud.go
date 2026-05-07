@@ -70,6 +70,7 @@ type WorkspaceController interface {
 	UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.UpdateWorkspaceResponse, error)
 	UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error
 	GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error)
+	SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error)
 }
 
 // UserController defines user operations.

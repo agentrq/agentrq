@@ -488,7 +488,7 @@ func New(cfg Config) (*App, error) {
 	// MCP Handler
 	if _, err := handlermcp.New(handlermcp.Params{
 		MCPManager: mcpManager,
-		Repository: repo,
+		Crud:       crudCtrl,
 		TokenSvc:   tokenSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		BaseURL:    cfg.App.BaseURL,
