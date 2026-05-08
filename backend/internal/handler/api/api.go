@@ -149,13 +149,19 @@ func (h *handler) registerProtectedAuthRoutes() {
 
 func (h *handler) logout() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		c.Cookie(&fiber.Cookie{
+		cookie := &fiber.Cookie{
 			Name:     "at",
 			Value:    "",
 			Expires:  time.Now().Add(-1 * time.Hour),
 			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
 			Path:     "/",
-		})
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 }
@@ -229,7 +235,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 		}
 
-		if req.RootToken != h.rootToken {
+		if h.rootToken == "" || req.RootToken != h.rootToken {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid root token"})
 		}
 
