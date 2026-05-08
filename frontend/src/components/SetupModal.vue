@@ -1,33 +1,33 @@
 <template>
   <Transition name="fade">
     <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div class="bg-white rounded-xl border border-gray-200 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+      <div class="bg-white dark:bg-zinc-900 rounded-sm border border-gray-200 dark:border-zinc-800 w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <!-- Header -->
-        <div class="px-8 py-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+        <div class="px-8 py-6 border-b border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-800/50 flex justify-between items-center">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white">
+            <div class="w-10 h-10 rounded-sm bg-black dark:bg-white flex items-center justify-center text-white dark:text-black">
               <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             </div>
             <div>
               <h2 class="text-xl font-bold text-gray-900 leading-tight">Connect Agent</h2>
-              <p class="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Setup Guide & Best Practices</p>
+              <p class="text-[11px] font-bold text-gray-500 mt-0.5">Setup Guide & Best Practices</p>
             </div>
           </div>
-          <button @click="$emit('close')" class="text-gray-400 hover:text-black transition-colors p-2 rounded-lg hover:bg-gray-100">
+          <button @click="$emit('close')" class="text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors p-2 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800">
             <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
         <!-- Tabs -->
-        <div class="px-8 pt-4 flex gap-6 border-b border-gray-100">
+        <div class="px-8 pt-4 flex gap-6 border-b border-gray-100 dark:border-zinc-800">
           <button @click="activeTab = 'claude'" 
-                  :class="activeTab === 'claude' ? 'text-black border-black font-black' : 'text-gray-400 border-transparent font-bold hover:text-gray-600'"
-                  class="pb-3 text-[11px] uppercase tracking-[0.2em] border-b-2 transition-all">
+                  :class="activeTab === 'claude' ? 'text-black border-black font-bold' : 'text-gray-500 border-transparent font-bold hover:text-gray-600'"
+                  class="pb-3 text-[11px] border-b-2 transition-all">
             Claude
           </button>
           <button @click="activeTab = 'gemini'" 
-                  :class="activeTab === 'gemini' ? 'text-black border-black font-black' : 'text-gray-400 border-transparent font-bold hover:text-gray-600'"
-                  class="pb-3 text-[11px] uppercase tracking-[0.2em] border-b-2 transition-all">
+                  :class="activeTab === 'gemini' ? 'text-black border-black font-bold' : 'text-gray-500 border-transparent font-bold hover:text-gray-600'"
+                  class="pb-3 text-[11px] border-b-2 transition-all">
             Gemini / ACP
           </button>
         </div>
@@ -35,7 +35,7 @@
         <!-- Content -->
         <div class="p-8 space-y-8 overflow-y-auto max-h-[60vh] custom-scrollbar">
           <section class="space-y-4">
-            <h3 class="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+            <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2">
               <span class="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px]">1</span>
               Recommended Strategy
             </h3>
@@ -45,15 +45,15 @@
           </section>
 
           <section class="space-y-4">
-            <h3 class="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+            <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2">
               <span class="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px]">2</span>
               Configuration
             </h3>
-            <div class="bg-zinc-900 rounded-xl p-5 relative group">
+            <div class="bg-zinc-900 rounded-sm p-5 relative group">
               <div class="flex justify-between items-center mb-4">
-                <span class="text-[10px] font-black text-zinc-500 uppercase tracking-widest">.mcp.json</span>
+                <span class="text-[10px] font-semibold text-zinc-500">.mcp.json</span>
                 <div class="flex items-center gap-3">
-                  <button @click="copyConfig" class="text-[10px] font-black text-zinc-400 hover:text-white uppercase tracking-widest transition-colors flex items-center gap-1.5">
+                  <button @click="copyConfig" class="text-[10px] font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5">
                     {{ isCopied ? 'Copied!' : 'Copy Config' }}
                   </button>
                 </div>
@@ -63,7 +63,7 @@
           </section>
 
           <section v-if="activeTab === 'claude'" class="space-y-4">
-            <h3 class="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+            <h3 class="text-sm font-bold text-gray-900 flex items-center gap-2">
               <span class="w-5 h-5 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px]">3</span>
               Claude Permissions
             </h3>
@@ -72,10 +72,10 @@
               <code class="bg-gray-100 px-1.5 py-0.5 rounded text-indigo-600 font-bold">.claude/settings.local.json</code>
               file in your project directory:
             </p>
-            <div class="bg-zinc-900 rounded-xl p-5 relative group">
+            <div class="bg-zinc-900 rounded-sm p-5 relative group">
               <div class="flex justify-between items-center mb-4">
-                <span class="text-[10px] font-black text-zinc-500 uppercase tracking-widest">.claude/settings.local.json</span>
-                <button @click="copyPermissionsConfig" class="text-[10px] font-black text-zinc-400 hover:text-white uppercase tracking-widest transition-colors flex items-center gap-1.5">
+                <span class="text-[10px] font-semibold text-zinc-500">.claude/settings.local.json</span>
+                <button @click="copyPermissionsConfig" class="text-[10px] font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5">
                   {{ isPermissionsCopied ? 'Copied!' : 'Copy Config' }}
                 </button>
               </div>
@@ -83,9 +83,9 @@
             </div>
           </section>
 
-          <section class="space-y-4 bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100/50">
-            <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          <section class="space-y-4 bg-indigo-50/50 p-6 rounded-sm border border-indigo-100/50">
+            <h3 class="text-xs font-semibold text-indigo-600 flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               Quick Startup
             </h3>
             
@@ -93,9 +93,9 @@
               <p class="text-[13px] text-indigo-950/70 font-medium leading-relaxed">
                 Once the files are created, run the following command in your terminal:
               </p>
-              <div class="bg-white/80 p-3 rounded-lg border border-indigo-100 flex items-center justify-between group">
+              <div class="bg-white/80 p-3 rounded-sm border border-indigo-100 flex items-center justify-between group">
                 <code class="text-[11px] text-indigo-600 font-bold overflow-hidden text-ellipsis">{{ startCommand }}</code>
-                <button @click="copyCommand" class="group-hover:opacity-100 text-[9px] font-black uppercase tracking-widest pl-2 transition-all"
+                <button @click="copyCommand" class="group-hover:opacity-100 text-[9px] font-semibold pl-2 transition-all"
                         :class="isCommandCopied ? 'text-green-500 opacity-100' : 'opacity-0 text-indigo-500'">
                   {{ isCommandCopied ? 'Copied!' : 'Copy' }}
                 </button>
@@ -107,18 +107,18 @@
                 Run these commands to install and start the AgentRQ ACP Gateway with gemini cli:
               </p>
               <div class="space-y-2">
-                <div class="bg-white/80 p-3 rounded-lg border border-indigo-100 flex items-center justify-between group">
+                <div class="bg-white/80 p-3 rounded-sm border border-indigo-100 flex items-center justify-between group">
                   <code class="text-[11px] text-indigo-600 font-bold overflow-hidden text-ellipsis">npm install -g @agentrq/acp-gateway@latest</code>
                   <button @click="copyToClipboard('npm install -g @agentrq/acp-gateway@latest', 'isGatewayInstalled')" 
-                          class="group-hover:opacity-100 text-[9px] font-black uppercase tracking-widest pl-2 transition-all"
+                          class="group-hover:opacity-100 text-[9px] font-semibold pl-2 transition-all"
                           :class="isGatewayInstalled ? 'text-green-500 opacity-100' : 'opacity-0 text-indigo-500'">
                     {{ isGatewayInstalled ? 'Copied!' : 'Copy' }}
                   </button>
                 </div>
-                <div class="bg-white/80 p-3 rounded-lg border border-indigo-100 flex items-center justify-between group">
+                <div class="bg-white/80 p-3 rounded-sm border border-indigo-100 flex items-center justify-between group">
                   <code class="text-[11px] text-indigo-600 font-bold overflow-hidden text-ellipsis">npx @agentrq/acp-gateway -- gemini acp</code>
                   <button @click="copyToClipboard('npx @agentrq/acp-gateway -- gemini acp', 'isGatewayStarted')" 
-                          class="group-hover:opacity-100 text-[9px] font-black uppercase tracking-widest pl-2 transition-all"
+                          class="group-hover:opacity-100 text-[9px] font-semibold pl-2 transition-all"
                           :class="isGatewayStarted ? 'text-green-500 opacity-100' : 'opacity-0 text-indigo-500'">
                     {{ isGatewayStarted ? 'Copied!' : 'Copy' }}
                   </button>
@@ -129,9 +129,9 @@
         </div>
 
         <!-- Footer -->
-        <div class="px-8 py-6 bg-gray-50/50 border-t border-gray-100 flex justify-end items-center gap-4">
-           <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex-1">Isolated. Secure. Collaborative.</span>
-           <button @click="$emit('close')" class="bg-black text-white px-8 py-3 rounded-lg text-[11px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all active:scale-95">
+        <div class="px-8 py-6 bg-gray-50/50 dark:bg-zinc-800/50 border-t border-gray-100 dark:border-zinc-800 flex justify-end items-center gap-4">
+           <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500 flex-1">Isolated. Secure. Collaborative.</span>
+           <button @click="$emit('close')" class="bg-black dark:bg-white text-white dark:text-zinc-900 px-8 py-3 rounded-sm text-[11px] font-bold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all active:scale-95">
              Got it
            </button>
         </div>

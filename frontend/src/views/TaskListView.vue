@@ -1,144 +1,133 @@
 <template>
-  <div class="h-full flex flex-col gap-6">
-    <!-- Header -->
-    <div class="border-b-2 border-black pb-4">
-      <h1 class="text-2xl font-black text-black uppercase tracking-tight">{{ title }}</h1>
-      <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mt-1">Cross-workspace task management</p>
-    </div>
-
-    <!-- Task List -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-      <div v-if="loading && tasks.length === 0" class="text-center py-12 text-sm font-black text-gray-400 uppercase tracking-widest animate-pulse">
-        Loading tasks...
-      </div>
-      
-      <div v-else-if="tasks.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50">
-        <svg class="w-12 h-12 mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-        </svg>
-        <span class="text-sm font-black uppercase tracking-widest text-gray-500">No tasks found for this category</span>
+  <div class="flex flex-col h-full w-full bg-transparent">
+    <!-- Global Header -->
+    <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-center justify-between gap-4"
+         :class="{'hidden sm:flex': selectedTaskId}">
+      <div class="flex flex-col min-w-0 flex-1">
+        <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ title }}</h1>
       </div>
 
-      <div v-else class="space-y-4 pb-6">
-        <template v-for="task in tasks" :key="task.id">
-          <!-- Specialized Pending Card -->
-          <div v-if="filterType === 'pending'"
-               class="border-2 border-black bg-yellow-50 p-4 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all cursor-pointer"
-               @click="openTask(task)">
-            <div class="flex items-start justify-between gap-3 mb-2">
-              <div class="flex flex-col gap-1.5 min-w-0 flex-1">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black bg-black text-white uppercase tracking-widest">
-                    {{ getWorkspaceName(task.workspaceId) }}
-                  </span>
-                  <span class="text-xs font-bold bg-yellow-200 border border-black px-2 py-0.5 mr-2 uppercase shrink-0">Pending</span>
-                </div>
-                <h3 class="font-black text-sm text-black truncate">{{ task.title }}</h3>
-              </div>
-              <span class="text-xs text-gray-400 shrink-0 font-bold uppercase">{{ formatTime(task.createdAt) }}</span>
-            </div>
-            
-            <p class="text-xs text-gray-600 mb-3 line-clamp-2">
-              {{ getLastMessageText(task) }}
-            </p>
-            
-            <div class="flex gap-2" @click.stop v-if="isAgentConnected(task.workspaceId)">
-              <button @click="handleAction(task, 'allow')"
-                      class="px-3 py-1 bg-[#00FF88] border-2 border-black text-xs font-bold hover:bg-[#00e07a] shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
-                Allow
-              </button>
-              <button @click="openTask(task)"
-                      class="px-3 py-1 bg-white border-2 border-black text-xs font-bold hover:bg-gray-100 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
-                Reply
-              </button>
-              <button @click="handleAction(task, 'reject')"
-                      class="px-3 py-1 bg-red-100 border-2 border-black text-xs font-bold hover:bg-red-200 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[1px] transition-all">
-                Deny
-              </button>
-            </div>
-            <div v-else class="flex items-center gap-2 mt-2 px-3 py-1 bg-gray-100 border-2 border-black border-dashed w-fit">
-              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-              <span class="text-[10px] font-black text-gray-500 uppercase tracking-widest">Waiting for Agent Arrival</span>
-            </div>
-          </div>
 
-          <!-- Standard Task Card -->
-          <div v-else 
-               @click="openTask(task)"
-               class="group p-4 bg-white border-2 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] hover:shadow-[6px_6px_0_0_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4">
-            
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 mb-2 flex-wrap">
-                <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black bg-black text-white uppercase tracking-widest">
-                  {{ getWorkspaceName(task.workspaceId) }}
-                </span>
-                <span class="text-[9px] font-black px-2 py-0.5 border-2 border-black uppercase tracking-widest shrink-0" :class="getTaskBadgeStyle(task.status)">
-                  {{ getTaskLabel(task.status) }}
-                </span>
-                <div v-if="task.cronSchedule" class="flex items-center gap-2 flex-nowrap">
-                  <span class="text-[9px] font-black px-2 py-0.5 bg-sky-50 border-2 border-sky-200 text-sky-700 uppercase tracking-widest shrink-0">Scheduled</span>
-                  <template v-if="task.status === 'cron'">
-                    <span v-if="getNextRunLabel(task.cronSchedule)" class="text-[9px] font-black text-sky-600 uppercase tracking-widest truncate">Next: {{ getNextRunLabel(task.cronSchedule) }} ({{ getNextRunDateTime(task.cronSchedule) }})</span>
-                    <span v-else class="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">Next: DUE</span>
-                  </template>
-                </div>
-              </div>
-              
-              <h3 class="text-sm font-black text-black group-hover:text-indigo-600 transition-colors uppercase truncate mb-1">{{ task.title }}</h3>
-              <p class="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                <template v-if="task.status !== 'cron'">
-                  {{ formatTime(task.createdAt) }} • 
-                </template>
-                BY {{ task.createdBy.toUpperCase() }}
-              </p>
-            </div>
 
-            <div class="flex items-center gap-3 shrink-0">
-               <div class="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border-2 border-black" v-if="task.messages && task.messages.length > 0">
-                  <svg class="w-3.5 h-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                  <span class="text-[10px] font-black">{{ task.messages.length }}</span>
-               </div>
-               <svg class="w-4 h-4 text-black/20 group-hover:text-black transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-               </svg>
-            </div>
-          </div>
-        </template>
+      <!-- Filters Segment Control (Top Right) -->
+      <div class="flex items-center gap-2">
+        <!-- Filters Toggle (Mobile) -->
+        <button @click="showMobileFilters = !showMobileFilters" 
+                class="md:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
+                :class="{'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white': showMobileFilters}"
+                title="Filters">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
+        </button>
 
-        <!-- Load More -->
-        <div v-if="hasMore" class="pt-4 flex justify-center">
-          <button @click="loadMore" :disabled="loading" 
-                  class="bg-white text-black border-2 border-black px-8 py-3 text-xs font-black uppercase tracking-widest hover:bg-black hover:text-white transition-all shadow-[4px_4px_0_0_rgba(0,0,0,1)] hover:shadow-[2px_2px_0_0_rgba(0,0,0,1)] active:shadow-none translate-y-0 active:translate-y-[4px]">
-            {{ loading ? 'Loading...' : 'Load More Entries' }}
+        <div v-if="showMobileFilters || !isMobile" 
+             class="p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner flex overflow-x-auto no-scrollbar"
+             :class="[showMobileFilters ? 'fixed top-[70px] right-4 z-50 flex shadow-xl border-gray-900 dark:border-white animate-in fade-in slide-in-from-top-2' : 'hidden md:flex']">
+          <button v-for="f in filters" :key="f.id"
+                  @click="router.push(`/tasks/${f.id}`); isMobile && (showMobileFilters = false)"
+                  @mouseenter="tooltipStore.show($event, f.label, 'bottom')"
+                  @mouseleave="tooltipStore.hide()"
+                  :class="[filterType === f.id ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300']"
+                  class="p-2 rounded-sm transition-all duration-200 whitespace-nowrap">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" :d="f.icon" />
+            </svg>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Stats Footer -->
-    <div v-if="tasks.length > 0" class="mt-4 pt-4 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0">
-        <div class="flex items-center gap-4">
-           <div class="flex items-center gap-1.5" title="Active Tasks">
-             <span class="hidden md:inline">Active Tasks</span>
-             <span class="md:hidden">⚡</span>
-             <span class="text-black font-black">{{ activeTaskCount }}</span>
-           </div>
-           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4" title="Scheduled Runs">
-             <span class="hidden md:inline">Scheduled</span>
-             <span class="md:hidden">⏰</span>
-             <span class="text-black font-black">{{ scheduledCount }}</span>
-           </div>
-           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 transition-all" 
-                :class="pendingInputCount > 0 ? 'bg-yellow-400 text-black px-2 -my-1 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : ''"
-                title="Your Attention Needed">
-             <span class="hidden md:inline">{{ pendingInputCount > 0 ? 'Action Required' : 'Pending on Me' }}</span>
-             <span class="md:hidden">!</span>
-             <span class="font-black" :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-300'">{{ pendingInputCount }}</span>
-           </div>
+
+    <!-- Content Area (Split Pane) -->
+    <div class="flex flex-col md:flex-row flex-1 min-h-0 w-full bg-transparent">
+      <!-- Tasks Sidebar (Left Pane) -->
+      <div v-show="!selectedTaskId || !isMobile" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
+        
+        <!-- Task List -->
+        <div v-if="loading" class="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2 pb-20 relative">
+          Loading tasks...
         </div>
-        <div class="hidden md:flex items-center gap-1.5 text-[9px] font-black text-gray-300">
-          GLOBAL VIEW · SYNCED
+        
+        <div v-else class="space-y-6 pb-6 overflow-y-auto custom-scrollbar px-4">
+          <div v-for="grp in displayGroups" :key="grp.title" class="mb-4">
+            <div class="mb-3 flex items-center gap-3">
+              <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">{{ grp.title }}</h3>
+              <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm">{{ grp.tasks.length }}</span>
+            </div>
+            
+            <div v-if="grp.tasks.length === 0" class="py-4 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-[11px] text-gray-500 dark:text-zinc-500 font-medium">
+              No {{ grp.title.toLowerCase() }} tasks found.
+            </div>
+
+            <div v-else class="space-y-2">
+              <template v-for="task in grp.tasks" :key="task.id">
+                <!-- Consistent Compact Task Item (KeywordInbox Style) -->
+                <div @click="openTask(task)"
+                     :class="[ 'p-4 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(task.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
+                  
+                  <div v-if="String(selectedTaskId) === String(task.id)" class="absolute left-0 top-4 bottom-4 w-1 bg-black dark:bg-white rounded-full"></div>
+                  
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(task)"></div>
+                      <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded uppercase tracking-tight group-hover:bg-gray-100 dark:group-hover:bg-zinc-700 group-hover:text-black dark:group-hover:text-white transition-colors">
+                        {{ getWorkspaceName(task.workspaceId) }}
+                      </span>
+                    </div>
+                    <div class="flex items-center gap-2 relative">
+                       <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-bold uppercase tracking-wider tabular-nums shrink-0">{{ formatTime(task.createdAt) }}</span>
+                    </div>
+                  </div>
+
+                  <h3 :class="[ 'text-[13px] leading-relaxed line-clamp-2 transition-colors', 
+                                 String(selectedTaskId) === String(task.id) ? 'text-gray-800 dark:text-zinc-200 font-bold' : 
+                                 task.status === 'completed' ? 'text-gray-500 dark:text-zinc-500 font-light' : 
+                                 'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white font-semibold' ]">
+                    {{ task.title }}
+                  </h3>
+                  
+                  <!-- Quick actions for Pending -->
+                  <div v-if="filterType === 'pending'" class="mt-3" @click.stop>
+                    <div class="flex flex-wrap gap-2" v-if="isAgentConnected(task.workspaceId)">
+                      <button @click="handleAction(task, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
+                        Allow
+                      </button>
+                      <button @click="openTask(task)" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all shadow-sm">
+                        Review
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
+
+          <!-- Sticky Load More -->
+          <div v-if="hasMore && tasks.length > 0" class="sticky bottom-0 left-0 right-0 p-4 flex justify-center bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-30">
+            <button @click="loadMore" :disabled="loading" 
+                    class="bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded-sm px-8 py-3 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-white transition-all shadow-sm active:scale-95 flex items-center gap-2">
+              <svg v-if="loading" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+              {{ loading ? 'Loading...' : 'Load More Entries' }}
+            </button>
+          </div>
+        </div>
+      
+
+      <!-- Task Detail Pane (Right) -->
+      <div v-show="selectedTaskId || !isMobile" class="flex-1 min-w-0 flex flex-col h-full bg-transparent">
+        <router-view v-if="selectedTaskId" />
+        
+        <!-- Empty state when no task is selected -->
+        <div v-else class="flex-1 flex flex-col items-center justify-center m-4 p-8 text-center h-full bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800">
+          <div class="w-16 h-16 bg-white dark:bg-zinc-800 rounded-sm border border-gray-100 dark:border-zinc-700 flex items-center justify-center mb-4 shadow-sm">
+            <svg class="w-8 h-8 text-gray-300 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+          </div>
+          <p class="text-lg font-bold text-gray-800 dark:text-zinc-200 tracking-tight">Select a task</p>
+          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[300px] leading-relaxed">Choose a task from the list to view its details, conversation history, and take actions.</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -148,13 +137,16 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
 import { useEventBus } from '../useEventBus';
+import { useViewport } from '../composables/useViewport';
 
 const { getNextRunLabel, getNextRunDateTime } = useCron();
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
+const { isMobile } = useViewport();
 
 const tasks = ref([]);
 const workspaces = ref([]);
@@ -162,6 +154,8 @@ const loading = ref(false);
 const offset = ref(0);
 const limit = 10;
 const hasMore = ref(true);
+const tooltipStore = useTooltipStore();
+const showMobileFilters = ref(false);
 
 // Setup Global Event Bus
 const { connect, disconnect, events } = useEventBus();
@@ -181,17 +175,90 @@ const filterType = computed(() => route.params.filter);
 
 const title = computed(() => {
   const map = {
+    active: 'Active Tasks',
+    scheduled: 'Scheduled',
     pending: 'Pending on Me',
     notstarted: 'Not Started',
     ongoing: 'Ongoing Tasks',
     completed: 'Completed Tasks'
   };
-  return map[filterType.value] || 'Global Tasks';
+  return map[filterType.value] || 'Active';
+});
+
+const emptyStateLabel = computed(() => {
+  switch (filterType.value) {
+    case 'active':
+      return 'No active tasks found (includes not started and ongoing).';
+    case 'notstarted':
+      return 'No tasks waiting to start.';
+    case 'pending':
+      return 'No tasks pending your attention.';
+    case 'ongoing':
+      return 'No tasks currently in progress.';
+    case 'completed':
+      return 'No completed tasks found.';
+    case 'scheduled':
+      return 'No scheduled tasks configured.';
+    default:
+      return 'No tasks match this category across your workspaces.';
+  }
+});
+
+const filters = [
+  { id: 'active', label: 'Active', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
+  { id: 'notstarted', label: 'Not Started', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
+  { id: 'pending', label: 'Pending on Me', icon: 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { id: 'ongoing', label: 'Ongoing', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+  { id: 'completed', label: 'Completed', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { id: 'scheduled', label: 'Scheduled', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
+];
+
+const displayGroups = computed(() => {
+  const f = filterType.value || 'active';
+  
+  const ongoing = tasks.value.filter(t => t.status === 'ongoing');
+  const blocked = tasks.value.filter(t => t.status === 'blocked');
+  const notStarted = tasks.value.filter(t => t.status === 'notstarted');
+  const completed = tasks.value.filter(t => t.status === 'completed');
+  const rejected = tasks.value.filter(t => t.status === 'rejected');
+  const cron = tasks.value.filter(t => t.status === 'cron');
+
+  const groups = [];
+  if (f === 'active' || f === 'ongoing') {
+    groups.push({ title: 'Ongoing', tasks: ongoing });
+    if (blocked.length > 0) groups.push({ title: 'Blocked', tasks: blocked });
+  }
+  if (f === 'active' || f === 'notstarted') {
+    groups.push({ title: 'Not Started', tasks: notStarted });
+  }
+  if (f === 'pending') {
+    const pendingActions = tasks.value.filter(t => 
+      t.status !== 'completed' && t.status !== 'rejected' && (
+        (t.status === 'notstarted' && t.assignee === 'human') ||
+        (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+      )
+    );
+    groups.push({ title: 'Action Required', tasks: pendingActions });
+  }
+  if (f === 'completed') {
+    groups.push({ title: 'Completed', tasks: completed });
+    if (rejected.length > 0) groups.push({ title: 'Rejected', tasks: rejected });
+  }
+  if (f === 'scheduled') {
+    groups.push({ title: 'Scheduled', tasks: cron });
+  }
+
+  return groups;
 });
 
 const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cron').length);
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
-const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy === 'agent' && (t.status === 'notstarted')).length);
+const pendingInputCount = computed(() => tasks.value.filter(t => 
+  t.status !== 'completed' && t.status !== 'rejected' && (
+    (t.status === 'notstarted' && t.assignee === 'human') ||
+    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+  )
+).length);
 
 const getWorkspaceName = (workspaceId) => {
   const ws = workspaces.value.find(w => w.id === workspaceId);
@@ -277,15 +344,23 @@ const loadMore = async () => {
 };
 
 const getBackendParams = (filter) => {
+  if (filter === 'active') return { status: 'ongoing,blocked,notstarted' };
+  if (filter === 'scheduled') return { status: 'cron' };
   if (filter === 'pending') return { filter: 'pending_approval' };
   if (filter === 'notstarted') return { status: 'notstarted' };
   if (filter === 'ongoing') return { status: 'ongoing,blocked' };
   if (filter === 'completed') return { status: 'completed,rejected' };
-  return {};
+  return { status: 'ongoing,blocked,notstarted' };
 };
 
+const selectedTaskId = computed(() => route.params.taskId);
+
 const openTask = (task) => {
-  router.push(`/workspaces/${task.workspaceId}/tasks/${task.id}`);
+  if (task.status === 'cron') {
+    router.push(`/tasks/${filterType.value}/${task.workspaceId}/${task.id}/instances`);
+  } else {
+    router.push(`/tasks/${filterType.value}/${task.workspaceId}/${task.id}`);
+  }
 };
 
 const formatTime = (dateStr) => {
@@ -299,26 +374,86 @@ const formatTime = (dateStr) => {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (minutes < 1) return 'JUST NOW';
-  if (minutes < 60) return `${minutes}M AGO`;
-  if (hours < 24) return `${hours}H AGO`;
-  if (days < 7) return `${days}D AGO`;
+  if (minutes < 1) return 'Just Now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
   
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase();
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
-const getTaskBadgeStyle = (status) => {
-  if (status === 'ongoing') return 'bg-yellow-50 text-yellow-600 border-yellow-200';
-  if (status === 'blocked') return 'bg-red-50 text-red-600 border-red-200';
-  if (status === 'completed') return 'bg-green-50 text-green-600 border-green-200';
-  if (status === 'notstarted') return 'bg-gray-50 text-gray-500 border-gray-200';
-  if (status === 'cron') return 'bg-sky-50 text-sky-700 border-sky-200';
-  return 'bg-white text-gray-400 border-gray-100';
+const headerIconPath = computed(() => {
+  switch (filterType.value) {
+    case 'scheduled':
+      return 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z';
+    case 'pending':
+      return 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z';
+    case 'notstarted':
+      return 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2';
+    case 'ongoing':
+      return 'M13 10V3L4 14h7v7l9-11h-7z';
+    case 'completed':
+      return 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z';
+    default:
+      return 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z';
+  }
+});
+
+const headerIconClass = computed(() => {
+  return 'text-gray-700 dark:text-zinc-400';
+});
+
+function getTaskDotStyle(t) {
+  const status = typeof t === 'string' ? t : t.status;
+  // If it's the task object, check if it's "Pending on Me"
+  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
+    (t.status === 'notstarted' && t.assignee === 'human') ||
+    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+  );
+
+  if (isPendingOnMe) {
+    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
+  }
+
+  switch (status) {
+    case 'ongoing':
+      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
+    case 'notstarted':
+      return 'bg-gray-400 dark:bg-zinc-500';
+    case 'completed':
+      return 'bg-green-500';
+    case 'rejected':
+      return 'bg-red-500';
+    case 'blocked':
+      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
+    case 'cron':
+      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
+    default:
+      return 'bg-gray-300 dark:bg-zinc-600';
+  }
+}
+
+const getTaskBgStyle = (t) => {
+  const isSelected = String(selectedTaskId.value) === String(t.id);
+  if (isSelected) {
+    if (t.status === 'ongoing') return 'bg-yellow-50 dark:bg-yellow-900/10 border-l-yellow-400 dark:border-l-yellow-500 shadow-sm';
+    if (t.status === 'blocked') return 'bg-red-50 dark:bg-red-900/10 border-l-red-400 dark:border-l-red-500 shadow-sm';
+    if (t.status === 'completed') return 'bg-gray-50 dark:bg-zinc-900 border-l-gray-900 dark:border-l-zinc-100 shadow-sm';
+    if (t.status === 'cron') return 'bg-sky-50 dark:bg-sky-900/10 border-l-sky-400 dark:border-l-sky-500 shadow-sm';
+    return 'bg-white dark:bg-zinc-800 border-l-gray-400 dark:border-l-gray-500 shadow-sm';
+  }
+  
+  if (t.status === 'ongoing') return 'bg-yellow-50/50 dark:bg-yellow-900/5 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 hover:shadow-sm';
+  if (t.status === 'blocked') return 'bg-red-50/50 dark:bg-red-900/5 hover:bg-red-50 dark:hover:bg-red-900/20 hover:shadow-sm';
+  if (t.status === 'completed') return 'bg-gray-50/50 dark:bg-zinc-900/5 hover:bg-gray-100 dark:hover:bg-zinc-800/80 hover:shadow-sm';
+  if (t.status === 'cron') return 'bg-sky-50/50 dark:bg-sky-900/5 hover:bg-sky-50 dark:hover:bg-sky-900/20 hover:shadow-sm';
+  return 'bg-white/40 dark:bg-zinc-900/30 hover:bg-white dark:hover:bg-zinc-900/80 hover:shadow-sm';
 };
 
 const getTaskLabel = (status) => {
-  if (status === 'cron') return 'SCHEDULED';
-  return status.toUpperCase();
+  if (status === 'cron') return 'Scheduled';
+  if (status === 'notstarted') return 'Not Started';
+  return status;
 };
 
 watch(() => route.params.filter, () => {

@@ -1,9 +1,9 @@
 <template>
-  <div class="flex-1 flex flex-col min-h-0 w-full bg-gray-50/30">
+  <div class="flex-1 flex flex-col min-h-0 w-full bg-transparent relative">
 
-    <div v-if="isArchived" class="p-3 bg-amber-50 border-b border-amber-100 flex items-center justify-center gap-2">
-      <svg class="w-3.5 h-3.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-      <span class="text-[10px] font-black text-amber-900 uppercase tracking-widest">Archived Workspace • Read Only</span>
+    <div v-if="isArchived" class="p-3 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-100 dark:border-amber-500/20 flex items-center justify-center gap-2">
+      <svg class="w-3.5 h-3.5 text-amber-600 dark:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+      <span class="text-[10px] font-semibold text-amber-900 dark:text-amber-500">Archived Workspace • Read Only</span>
     </div>
     
     <!-- Delete Confirmation Modal -->
@@ -14,212 +14,88 @@
       @close="closeDeleteModal" 
       @confirm="onDeleteConfirm" 
     />
-    <!-- Action Bar -->
-    <div v-if="!isArchived" class="hidden md:flex pt-2 pb-4 flex-row items-center justify-between gap-2 shrink-0 flex-wrap">
-        <button @click="$emit('toggleScheduled')"
-                class="flex items-center gap-1.5 px-2.5 py-2 border-2 border-black text-[10px] font-black uppercase tracking-widest transition-all w-max shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
-                :class="showScheduledOnly ? 'bg-[#00FF88] text-black translate-y-[1px]' : 'bg-white text-gray-500 hover:bg-[#00FF88]/20 hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]'"
-                title="Toggle Scheduled">
-           <svg class="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-           </svg>
-           <span class="hidden md:inline">Scheduled</span>
-        </button>
-       
-       <div class="flex items-center gap-2 ml-auto">
-          <button @click="startCreate" 
-                  class="group flex items-center gap-2 bg-[#00FF88] text-black border-2 border-black hover:bg-black hover:text-[#00FF88] px-3 py-2 text-[10px] font-black uppercase tracking-widest shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all hover:translate-y-[1px] hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-y-[2px]"
-                   title="New Task">
-            <svg class="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-            <span class="hidden md:inline">New Task</span>
-         </button>
-       </div>
-    </div>
+
+    <!-- Action Bar moved to parent for better layout consistency -->
 
     <!-- Single List Area -->
-    <div class="flex-1 overflow-y-auto pt-4 pb-6 custom-scrollbar">
-      <div v-if="localTasks.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50 mt-2">
-        <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-        <span class="text-xs font-black uppercase tracking-widest text-gray-500">No tasks found in workspace</span>
-      </div>
-
-      <div v-else-if="displayGroups.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50 mt-2">
-        <svg class="w-8 h-8 mb-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-        <span class="text-xs font-black uppercase tracking-widest text-gray-500">No tasks match filter</span>
-      </div>
-
-      <div v-else class="space-y-8">
-        <div v-for="grp in displayGroups" :key="grp.title">
-          <div class="mb-3 flex items-center gap-2">
-            <h3 class="text-xs font-black uppercase tracking-widest text-black">{{ grp.title }}</h3>
-            <span class="text-[10px] font-bold text-gray-400 border border-gray-200 bg-white px-1 shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)]">{{ grp.title === 'Completed' ? grp.totalCompleted : grp.tasks.length }}</span>
-            <div class="h-px bg-gray-200 flex-1 ml-2"></div>
+    <div class="flex-1 overflow-y-auto pb-20 custom-scrollbar relative px-4">
+      <div class="space-y-6">
+        <div v-for="grp in displayGroups" :key="grp.title" class="mb-4">
+          <div class="mb-3 flex items-center gap-3">
+            <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">{{ grp.title }}</h3>
+            <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm">{{ grp.title === 'Completed' ? grp.totalCompleted : grp.tasks.length }}</span>
           </div>
           
-          <div class="space-y-3">
+          <div v-if="grp.tasks.length === 0" class="py-4 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-[11px] text-gray-500 dark:text-zinc-500 font-medium">
+            No {{ grp.title.toLowerCase() }} tasks found.
+          </div>
+
+          <div v-else class="space-y-2">
             <div v-for="(t, idx) in grp.tasks" :key="t.id"
                  @click="openTask(t)"
-                 class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm relative"
-                 :class="[getTaskBgStyle(t.status), activeStatusMenuId === t.id ? 'z-50' : 'z-0']">
-                 
-              <div class="flex items-center gap-3.5 flex-1 min-w-0 pr-4">
-                 <span class="w-2.5 h-2.5 rounded-full border border-black shrink-0" :class="getTaskDotStyle(t.status)"></span>
-                 <div class="flex flex-col gap-1 w-full relative">
-                   <span class="font-black text-[14px] text-gray-900 leading-snug truncate group-hover:text-indigo-700 transition-colors w-full font-bold text-sm">{{ t.title }}</span>
-                   
-                   <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
-                     <template v-if="t.status === 'cron'">
-                       <span class="text-sky-600 font-bold" v-if="getNextRunLabel(t.cronSchedule)">
-                         {{ getNextRunLabel(t.cronSchedule).toUpperCase() }}
-                       </span>
-                       <span class="text-gray-400 font-bold italic" v-else>
-                         DUE
-                       </span>
-                     </template>
-                     <span class="text-gray-500" v-else>{{ formatTime(t.createdAt) }}</span>
-                     
-                     <span class="flex items-center gap-1">
-                       <span class="text-gray-400">BY</span>
-                       <span :class="t.createdBy === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.createdBy === 'human' ? 'YOU' : 'AGENT' }}</span>
-                     </span>
-                     
-                     <span class="flex items-center gap-1" v-if="t.assignee">
-                       <span class="text-gray-400">FOR</span>
-                       <span :class="t.assignee === 'human' ? 'text-black' : 'text-indigo-600'">{{ t.assignee === 'human' ? 'YOU' : 'AGENT' }}</span>
-                     </span>
-
-                     <span v-if="t.status === 'cron'" class="text-sky-800 bg-sky-100 border border-sky-300 px-1 py-0.5">
-                       ⏰ {{ formatCron(t.cronSchedule) }}
-                     </span>
-
-                     <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="t.messages && t.messages.length > 0">
-                       <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                       {{ t.messages.length }}
-                     </span>
-                     
-                     <div v-if="t.attachments && t.attachments.length > 0" class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600">
-                        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                        {{ t.attachments.length }}
-                     </div>
+                 :class="[ 'p-4 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(t.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
+              
+              <div v-if="String(selectedTaskId) === String(t.id)" class="absolute left-0 top-4 bottom-4 w-1 bg-black dark:bg-white rounded-full"></div>
+              
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <div class="w-1.5 h-1.5 rounded-full" :class="getTaskDotStyle(t)"></div>
+                  <span class="text-[10px] font-medium text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded uppercase tracking-tight group-hover:bg-gray-100 dark:group-hover:bg-zinc-700 group-hover:text-black dark:group-hover:text-white transition-colors">{{ t.assignee === 'agent' ? 'Agent' : 'Human' }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                   <!-- Action Menu (Hover) -->
+                   <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                      <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      </button>
+                      <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
                    </div>
-                 </div>
+                   <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums shrink-0">{{ formatTime(t.createdAt) }}</span>
+                </div>
               </div>
-               
-               <div v-if="!isArchived && grp.title === 'Not Started'" class="flex flex-col gap-0.5 mr-1 shrink-0">
-                    <button @click.stop="reorderTask(t, -1)" 
-                            :disabled="idx === 0"
-                            class="p-1 text-gray-400 hover:text-black hover:bg-gray-100 disabled:opacity-20 transition-all rounded-sm" title="Move Up">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 15l7-7 7 7" /></svg>
-                    </button>
-                    <button @click.stop="reorderTask(t, 1)" 
-                            :disabled="idx === grp.tasks.length - 1"
-                            class="p-1 text-gray-400 hover:text-black hover:bg-gray-100 disabled:opacity-20 transition-all rounded-sm" title="Move Down">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M19 9l-7 7-7-7" /></svg>
-                    </button>
-                  </div>
-              <div class="flex items-center justify-end gap-3 shrink-0">
-                 <div class="hidden md:block relative group/status shrink-0">
-                    <div v-if="t.status === 'cron'"
-                         class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 border-2" 
-                         :class="getTaskBadgeStyle(t.status)">
-                      {{ getTaskLabel(t.status) }}
-                    </div>
-                    <button v-else
-                            @click.stop="activeStatusMenuId = activeStatusMenuId === t.id ? null : t.id"
-                            class="text-[10px] font-black uppercase tracking-widest px-2 py-1 flex items-center justify-center min-w-[90px] gap-1 transition-all hover:translate-y-px active:translate-y-0.5" 
-                            :class="getTaskBadgeStyle(t.status)">
-                      {{ getTaskLabel(t.status) }}
-                      <svg class="w-2.5 h-2.5 ml-0.5 transition-transform duration-200" :class="activeStatusMenuId === t.id ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" /></svg>
-                    </button>
- 
-                   <!-- Status Dropdown (Feed) -->
-                   <div v-if="activeStatusMenuId === t.id" 
-                        v-click-outside="() => activeStatusMenuId = null"
-                        class="absolute right-0 top-full mt-1 w-36 bg-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] z-50 animate-in slide-in-from-top-1 duration-150">
-                     <div class="p-1 flex flex-col gap-0.5">
-                        <button v-if="t.status !== 'notstarted'" @click.stop="respond(t.id, 'notstarted'); activeStatusMenuId = null"
-                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-gray-100 text-gray-500 transition-colors text-left">
-                          <div class="w-1.5 h-1.5 rounded-full bg-gray-300"></div>
-                          Queue
-                        </button>
-                        <button v-if="t.status !== 'ongoing'" @click.stop="respond(t.id, 'ongoing'); activeStatusMenuId = null"
-                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-[#00FF88]/10 text-black transition-colors text-left">
-                          <div class="w-1.5 h-1.5 rounded-full bg-[#00FF88]"></div>
-                          Start
-                        </button>
-                        <button v-if="t.status !== 'completed'" @click.stop="respond(t.id, 'completed'); activeStatusMenuId = null"
-                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-0.5 pt-1.5">
-                          <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                          Complete
-                        </button>
-                        <button v-if="t.status !== 'rejected'" @click.stop="respond(t.id, 'rejected'); activeStatusMenuId = null"
-                                class="flex items-center gap-2 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest hover:bg-red-50 text-red-600 transition-colors text-left">
-                          <div class="w-1.5 h-1.5 rounded-full bg-red-500"></div>
-                          Reject
-                        </button>
-                     </div>
-                   </div>
-                 </div>
-                  <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-sky-600 hover:bg-sky-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                  </button>
-                  <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-sm transition-all shrink-0 ml-1">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+
+              <h3 :class="[ 'text-[13px] leading-relaxed line-clamp-2 transition-colors font-medium', 
+                             String(selectedTaskId) === String(t.id) ? 'text-gray-800 dark:text-zinc-200' : 
+                             t.status === 'completed' ? 'text-gray-500 dark:text-zinc-500' : 
+                             'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white' ]">
+                {{ t.title }}
+              </h3>
+
+              <div v-if="t.status === 'cron' && t.cronSchedule" class="mt-2 flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-zinc-500 font-medium uppercase tracking-tight">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>{{ getNextRunLabel(t.cronSchedule) }}</span>
               </div>
             </div>
           </div>
-          
-          <button v-if="grp.hasMore" @click.stop="completedLimit += 5" class="w-full mt-3 py-3 border-2 border-dashed border-gray-300 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:border-black hover:text-black hover:bg-white transition-all shadow-none hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+        </div>
+      </div>
+      
+      <!-- Sticky Load More Footer -->
+      <div v-if="displayGroups.find(g => g.hasMore)" class="sticky bottom-0 left-0 right-0 p-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-t border-gray-100 dark:border-zinc-800 z-30">
+        <template v-for="grp in displayGroups" :key="'more-' + grp.title">
+          <button v-if="grp.hasMore" @click.stop="completedLimit += 5" class="w-full py-1.5 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 text-[10px] font-semibold hover:border-gray-300 dark:hover:border-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-all shadow-sm">
             Load More ({{ grp.totalCompleted - completedLimit }} remaining)
           </button>
-        </div>
+        </template>
       </div>
     </div>
     
-    <!-- Refined Stats Footer -->
-    <div v-if="localTasks.length > 0 && !isArchived" class="mt-4 pt-4 pb-2 border-t-2 border-dashed border-gray-200 flex items-center justify-between text-[11px] md:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0">
-        <div class="flex items-center gap-4">
-           <div class="flex items-center gap-1.5" title="Active Tasks">
-             <span class="hidden md:inline">Active Tasks</span>
-             <span class="md:hidden">⚡</span>
-             <span class="text-black font-black">{{ activeTaskCount }}</span>
-           </div>
-           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4" title="Scheduled Runs">
-             <span class="hidden md:inline">Scheduled</span>
-             <span class="md:hidden">⏰</span>
-             <span class="text-black font-black">{{ scheduledCount }}</span>
-           </div>
-           <div class="flex items-center gap-1.5 border-l-2 border-gray-100 pl-4 transition-all" 
-                :class="pendingInputCount > 0 ? 'bg-yellow-400 text-black px-2 -my-1 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : ''"
-                title="Your Attention Needed">
-             <span class="hidden md:inline">{{ pendingInputCount > 0 ? 'Action Required' : 'Pending on Me' }}</span>
-             <span class="md:hidden">!</span>
-             <span class="font-black" :class="pendingInputCount > 0 ? 'text-black' : 'text-gray-300'">{{ pendingInputCount }}</span>
-           </div>
-        </div>
-        <div class="flex items-center gap-2 group/status">
-            <div class="flex items-center gap-1.5 px-2 py-1 border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-              <span class="w-2 h-2 rounded-full border border-black shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)] transition-colors duration-500" 
-                    :class="isAgentConnected ? 'bg-[#00FF88] shadow-[#00FF88]/40' : 'bg-red-500 animate-pulse'"></span>
-              <span class="text-[9px] font-black text-black">{{ isAgentConnected ? 'Live' : 'Offline' }}</span>
-            </div>
-        </div>
-    </div>
+
   </div>
 </template>
-
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { createTask, respondToTask, deleteTask, getAttachmentUrl, updateScheduledTask, updateTaskOrder, updateTaskStatus } from '../api';
+import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus } from '../api';
 import { useCron } from '../composables/useCron';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
 
-const { formatCron, getNextRunDateTime, getNextRunLabel } = useCron();
+const { formatCron, getNextRunLabel } = useCron();
 
 const props = defineProps({
   workspaceId: { type: [String, Number], required: true },
@@ -227,35 +103,27 @@ const props = defineProps({
   liveEvents: { type: Array, default: () => [] },
   isArchived: { type: Boolean, default: false },
   isAgentConnected: { type: Boolean, default: false },
-  filterScheduled: { type: Boolean, default: false }
+  filter: { type: String, default: 'active' },
+  selectedTaskId: { type: [String, Number], default: null }
 });
 
-const emit = defineEmits(['toggleScheduled']);
+const emit = defineEmits(['filter-change']);
 
 const router = useRouter();
 const { notifyError, notifySuccess, notifyInfo } = useToasts();
-const fileInput = ref(null);
-const responses = ref({});
 const activeStatusMenuId = ref(null);
-const sending = ref(false);
-const toastMessage = ref('');
-
-
 
 const showDeleteModal = ref(false);
 const taskToDeleteId = ref(null);
 const taskToDeleteTitle = ref('');
 
 const localTasks = ref([...props.initialTasks]);
-const showScheduledOnly = computed(() => props.filterScheduled);
 const completedLimit = ref(5);
 
-// Sync with initial loads or reloads
 watch(() => props.initialTasks, (newTasks) => {
   localTasks.value = [...newTasks];
 }, { deep: true });
 
-// Listen to stream events and update the local list
 watch(() => props.liveEvents.length, (newLen, oldLen) => {
   if (newLen > oldLen) {
     const fresh = props.liveEvents.slice(oldLen);
@@ -273,7 +141,6 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
           localTasks.value[idx] = t;
         } else {
           localTasks.value.push(t);
-          // Trigger notification if it's an agent task
           if (t.createdBy === 'agent') {
             notifyInfo(`Agent defined a new task: ${t.title}`, 'New Task');
           }
@@ -290,24 +157,38 @@ function formatTime(dateStr) {
   return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 }
 
-
 function getTaskOrder(t) {
   if (t.sortOrder) return t.sortOrder;
   if (!t.createdAt) return Date.now();
   return new Date(t.createdAt).getTime() / 1000.0;
 }
 
-const allTasks = computed(() => {
-  return [...localTasks.value].sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
+const emptyStateLabel = computed(() => {
+  switch (props.filter) {
+    case 'active':
+      return 'No active tasks found (includes not started and ongoing).';
+    case 'notstarted':
+      return 'No tasks waiting to start.';
+    case 'pending':
+      return 'No tasks pending your attention.';
+    case 'ongoing':
+      return 'No tasks currently in progress.';
+    case 'completed':
+      return 'No completed tasks found.';
+    case 'scheduled':
+      return 'No scheduled tasks configured.';
+    default:
+      return 'No tasks match this category.';
+  }
 });
 
 const displayGroups = computed(() => {
-  if (showScheduledOnly.value) {
-    const cronTasks = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
-    if (cronTasks.length === 0) {
-      return [{ title: 'Scheduled Tasks', tasks: [], totalCompleted: 0 }];
-    }
+  const f = props.filter;
 
+  if (f === 'scheduled') {
+    const cronTasks = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
+    if (cronTasks.length === 0) return [];
+    
     const categories = [
       { label: 'Every 15 mins', values: ['*/15 * * * *'] },
       { label: 'Every 30 mins', values: ['*/30 * * * *'] },
@@ -329,22 +210,47 @@ const displayGroups = computed(() => {
     });
 
     const other = cronTasks.filter(t => !handledIds.has(t.id));
-    if (other.length > 0) {
-      grps.push({ title: 'Other', tasks: other });
-    }
+    if (other.length > 0) grps.push({ title: 'Other', tasks: other });
 
     return grps;
   }
 
-  const ongoing = localTasks.value.filter(t => ['ongoing', 'blocked'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
-  const notStarted = localTasks.value.filter(t => ['notstarted'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
-  const completed = localTasks.value.filter(t => ['completed', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  // Filter tasks based on status
+  let filtered = localTasks.value.filter(t => t.status !== 'cron');
+  
+  if (f === 'active') {
+    filtered = filtered.filter(t => ['ongoing', 'blocked', 'notstarted'].includes(t.status));
+  } else if (f === 'notstarted') {
+    filtered = filtered.filter(t => t.status === 'notstarted');
+  } else if (f === 'ongoing') {
+    filtered = filtered.filter(t => ['ongoing', 'blocked'].includes(t.status));
+    filtered = filtered.filter(t => 
+      t.status !== 'completed' && t.status !== 'rejected' && (
+        (t.status === 'notstarted' && t.assignee === 'human') ||
+        (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+      )
+    );
+  } else if (f === 'completed') {
+    filtered = filtered.filter(t => ['completed', 'rejected'].includes(t.status));
+  }
+
+  const ongoing = filtered.filter(t => ['ongoing', 'blocked'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const notStarted = filtered.filter(t => ['notstarted'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
+  const completed = filtered.filter(t => ['completed', 'rejected'].includes(t.status)).sort((a,b) => getTaskOrder(b) - getTaskOrder(a));
 
   const groups = [];
-  if (ongoing.length > 0) groups.push({ title: 'Ongoing', tasks: ongoing });
-  if (notStarted.length > 0) groups.push({ title: 'Not Started', tasks: notStarted });
+  if (f === 'active' || f === 'ongoing') {
+    groups.push({ title: 'Ongoing', tasks: ongoing });
+  }
+  if (f === 'active' || f === 'notstarted') {
+    groups.push({ title: 'Not Started', tasks: notStarted });
+  }
 
-  if (completed.length > 0) {
+  if (f === 'pending') {
+    groups.push({ title: 'Action Required', tasks: filtered.sort((a,b) => getTaskOrder(b) - getTaskOrder(a)) });
+  }
+
+  if (f === 'completed') {
     groups.push({
       title: 'Completed',
       tasks: completed.slice(0, completedLimit.value),
@@ -357,7 +263,12 @@ const displayGroups = computed(() => {
 });
 
 const pendingInputCount = computed(() => {
-  return localTasks.value.filter(t => t.createdBy === 'agent' && (t.status === 'notstarted')).length;
+  return localTasks.value.filter(t => 
+    t.status !== 'completed' && t.status !== 'rejected' && (
+      (t.status === 'notstarted' && t.assignee === 'human') ||
+      (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+    )
+  ).length;
 });
 
 const scheduledCount = computed(() => {
@@ -368,45 +279,66 @@ const activeTaskCount = computed(() => {
   return localTasks.value.length - scheduledCount.value;
 });
 
-// Timer for updating relative times
-const now = ref(new Date());
-let timer = null;
-onMounted(() => {
-  timer = setInterval(() => {
-    now.value = new Date();
-  }, 30000); // 30s
-});
-onUnmounted(() => {
-  if (timer) clearInterval(timer);
-});
+function getTaskBgStyle(t) {
+  const isSelected = String(props.selectedTaskId) === String(t.id);
+  if (isSelected) {
+    if (t.status === 'ongoing') return 'bg-yellow-50 dark:bg-yellow-900/10 border-l-yellow-400 dark:border-l-yellow-500 shadow-sm';
+    if (t.status === 'blocked') return 'bg-red-50 dark:bg-red-900/10 border-l-red-400 dark:border-l-red-500 shadow-sm';
+    if (t.status === 'completed') return 'bg-gray-50 dark:bg-zinc-900 border-l-gray-900 dark:border-l-zinc-100 shadow-sm';
+    if (t.status === 'cron') return 'bg-sky-50 dark:bg-sky-900/10 border-l-sky-400 dark:border-l-sky-500 shadow-sm';
+    return 'bg-white dark:bg-zinc-800 border-l-gray-400 dark:border-l-gray-500 shadow-sm';
+  }
+  
+  if (t.status === 'ongoing') return 'bg-yellow-50/50 dark:bg-yellow-900/5 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 hover:shadow-sm';
+  if (t.status === 'blocked') return 'bg-red-50/50 dark:bg-red-900/5 hover:bg-red-50 dark:hover:bg-red-900/20 hover:shadow-sm';
+  if (t.status === 'completed') return 'bg-gray-50/50 dark:bg-zinc-900/5 hover:bg-gray-100 dark:hover:bg-zinc-800/80 hover:shadow-sm';
+  if (t.status === 'cron') return 'bg-sky-50/50 dark:bg-sky-900/5 hover:bg-sky-50 dark:hover:bg-sky-900/20 hover:shadow-sm';
+  return 'bg-white/40 dark:bg-zinc-900/30 hover:bg-white dark:hover:bg-zinc-900/80 hover:shadow-sm';
+}
 
-function getTaskBgStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-50 border-black';
-  if (status === 'blocked') return 'bg-red-50 border-black';
-  if (status === 'completed') return 'bg-green-50 border-black';
-  if (status === 'cron') return 'bg-sky-50 border-sky-200';
-  return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
+function getTaskDotStyle(t) {
+  const status = typeof t === 'string' ? t : t.status;
+  // If it's the task object, check if it's "Pending on Me"
+  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
+    (t.status === 'notstarted' && t.assignee === 'human') ||
+    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+  );
+
+  if (isPendingOnMe) {
+    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
+  }
+
+  switch (status) {
+    case 'ongoing':
+      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
+    case 'notstarted':
+      return 'bg-gray-400 dark:bg-zinc-500';
+    case 'completed':
+      return 'bg-green-500';
+    case 'rejected':
+      return 'bg-red-500';
+    case 'blocked':
+      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
+    case 'cron':
+      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
+    default:
+      return 'bg-gray-300 dark:bg-zinc-600';
+  }
 }
-function getTaskDotStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-400';
-  if (status === 'blocked') return 'bg-red-500';
-  if (status === 'completed') return 'bg-green-500';
-  if (status === 'cron') return 'bg-sky-500 border-sky-600';
-  return 'bg-gray-300 border-gray-400';
-}
+
 function getTaskBadgeStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-200 border-black text-black border-2';
-  if (status === 'blocked') return 'bg-red-200 border-black text-black border-2';
-  if (status === 'completed') return 'bg-green-200 border-black text-black border-2';
-  if (status === 'cron') return 'bg-sky-200 border-sky-400 text-sky-800 border-2';
-  return 'bg-gray-100 border-gray-300 text-gray-500 font-bold border-2';
+  if (status === 'ongoing') return 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-500 border-yellow-200 dark:border-yellow-500/30';
+  if (status === 'blocked') return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-500 border-red-200 dark:border-red-500/30';
+  if (status === 'completed') return 'bg-gray-900 dark:bg-white text-white dark:text-black border-black dark:border-white';
+  if (status === 'cron') return 'bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-500 border-sky-200 dark:border-sky-500/30';
+  return 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700';
 }
+
 function getTaskLabel(status) {
   if (status === 'notstarted') return 'NOT STARTED';
   if (status === 'cron') return 'SCHEDULED';
   return status;
 }
-
 
 function startCreate() {
   router.push(`/workspaces/${props.workspaceId}/tasks/new`);
@@ -417,27 +349,24 @@ function openTask(task) {
     router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}/instances`);
     return;
   }
+  // This router push will now load inside the WorkspaceDetailView's router-view
   router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}`);
 }
 
 function triggerEdit(task) {
   router.push(`/workspaces/${props.workspaceId}/tasks/${task.id}/edit`);
 }
+
 async function respond(taskId, action) {
-  const text = responses.value[taskId] || '';
   try {
     let res;
-    // Check if it's a direct status update (allowed by clicking badge) or a response to agent
     if (['notstarted', 'ongoing', 'completed', 'rejected'].includes(action)) {
         res = await updateTaskStatus(props.workspaceId, taskId, action);
     } else {
-        res = await respondToTask(props.workspaceId, taskId, action, text);
+        res = await respondToTask(props.workspaceId, taskId, action, '');
     }
     const idx = localTasks.value.findIndex(x => x.id === taskId);
-    if (idx !== -1) {
-      localTasks.value[idx] = res.task;
-    }
-    delete responses.value[taskId];
+    if (idx !== -1) localTasks.value[idx] = res.task;
     notifySuccess('Status updated successfully');
   } catch(err) {
     notifyError("Failed to update status: " + err.message);
@@ -459,11 +388,13 @@ function closeDeleteModal() {
 async function onDeleteConfirm() {
   const taskId = taskToDeleteId.value;
   if (!taskId) return;
-  
   try {
     await deleteTask(props.workspaceId, taskId);
     localTasks.value = localTasks.value.filter(x => x.id !== taskId);
-    notifySuccess('Task purged');
+    notifySuccess('Task deleted');
+    if (String(props.selectedTaskId) === String(taskId)) {
+      router.push(`/workspaces/${props.workspaceId}`);
+    }
   } catch(err) {
     notifyError('Delete Error: ' + err.message);
   } finally {
@@ -482,47 +413,17 @@ async function reorderTask(task, direction) {
   if (targetIdx < 0 || targetIdx >= group.tasks.length) return;
   
   const neighbor = group.tasks[targetIdx];
-  // Sort is DESC so: UP = idx decreases relative to list but order value should INCREASE
-  // actually index 0 is at the top.
-  // Move UP (direction -1) to targetIdx (idx - 1)
-  // Move DOWN (direction 1) to targetIdx (idx + 1)
-  
   const neighborOrder = getTaskOrder(neighbor);
-  let newOrder;
-  if (direction === -1) {
-    // Moving UP above neighbor: order must be > neighborOrder
-    newOrder = neighborOrder + 0.001; 
-  } else {
-    // Moving DOWN below neighbor: order must be < neighborOrder
-    newOrder = neighborOrder - 0.001;
-  }
+  let newOrder = direction === -1 ? neighborOrder + 0.001 : neighborOrder - 0.001;
   
   try {
     const res = await updateTaskOrder(props.workspaceId, task.id, newOrder);
     const localIdx = localTasks.value.findIndex(x => x.id === task.id);
-    if (localIdx !== -1) {
-      localTasks.value[localIdx] = res.task;
-    }
+    if (localIdx !== -1) localTasks.value[localIdx] = res.task;
   } catch (err) {
     notifyError('Reorder Error: ' + err.message);
   }
 }
+
 defineExpose({ startCreate });
 </script>
-
-<style scoped>
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition: all 0.3s ease-out;
-}
-
-.fade-slide-enter-from {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-</style>

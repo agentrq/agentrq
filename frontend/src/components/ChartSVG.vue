@@ -7,18 +7,24 @@
       @mousemove="handleMouseMove"
       @mouseleave="hoveredPoint = null"
     >
+      <defs>
+        <linearGradient :id="gradientId" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" :stop-color="color" stop-opacity="0.2" />
+          <stop offset="100%" :stop-color="color" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+
       <!-- Grid Lines -->
-      <line x1="0" y1="0" x2="100" y2="0" stroke="#f1f5f9" stroke-width="0.5" />
-      <line x1="0" y1="25" x2="100" y2="25" stroke="#f1f5f9" stroke-width="0.5" />
-      <line x1="0" y1="50" x2="100" y2="50" stroke="#f1f5f9" stroke-width="0.5" />
-      <line x1="0" y1="75" x2="100" y2="75" stroke="#f1f5f9" stroke-width="0.5" />
+      <line x1="0" y1="0" x2="100" y2="0" stroke="currentColor" class="text-gray-100 dark:text-zinc-400" stroke-width="0.5" />
+      <line x1="0" y1="25" x2="100" y2="25" stroke="currentColor" class="text-gray-100 dark:text-zinc-400" stroke-width="0.5" />
+      <line x1="0" y1="50" x2="100" y2="50" stroke="currentColor" class="text-gray-100 dark:text-zinc-400" stroke-width="0.5" />
+      <line x1="0" y1="75" x2="100" y2="75" stroke="currentColor" class="text-gray-100 dark:text-zinc-400" stroke-width="0.5" />
 
       <!-- Area -->
       <path 
         v-if="areaPath"
         :d="areaPath"
-        :fill="color"
-        fill-opacity="0.1"
+        :fill="`url(#${gradientId})`"
       />
 
       <!-- Line -->
@@ -26,7 +32,7 @@
         v-if="linePath"
         :d="linePath"
         :stroke="color"
-        stroke-width="2.5"
+        stroke-width="2"
         fill="none"
         stroke-linecap="round"
         stroke-linejoin="round"
@@ -38,9 +44,10 @@
         :key="i"
         :cx="p.x" 
         :cy="p.y" 
-        r="1"
+        r="0.8"
         :fill="color"
         stroke="white"
+        class="dark:stroke-zinc-900"
         stroke-width="0.5"
       />
 
@@ -48,22 +55,25 @@
       <line 
         v-if="hoveredPoint"
         :x1="hoveredPoint.x" y1="0" :x2="hoveredPoint.x" y2="100"
-        stroke="black" stroke-width="0.5" stroke-dasharray="2,2"
+        stroke="currentColor" class="text-gray-300 dark:text-zinc-400" stroke-width="0.5" stroke-dasharray="2,2"
       />
     </svg>
 
     <!-- Label / Tooltip -->
     <div 
       v-if="hoveredPoint" 
-      class="absolute z-20 bg-black text-white px-2 py-1 text-[9px] font-black uppercase tracking-widest pointer-events-none shadow-[2px_2px_0px_0px_rgba(255,255,255,1)]"
-      :style="{ left: `${hoveredPoint.x}%`, top: `${hoveredPoint.y - 10}%`, transform: 'translate(-50%, -100%)' }"
+      class="absolute z-20 bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-2.5 py-1.5 rounded-lg shadow-xl text-[10px] font-black pointer-events-none transition-all duration-75 border border-transparent dark:border-zinc-200"
+      :style="{ left: `${hoveredPoint.x}%`, top: `${hoveredPoint.y - 12}%`, transform: 'translate(-50%, -100%)' }"
     >
-      {{ hoveredPoint.date }}: {{ hoveredPoint.count }}
+      <div class="flex flex-col gap-0.5 text-center">
+        <span class="text-[8px] opacity-60 leading-none">{{ hoveredPoint.date }}</span>
+        <span class="leading-none">{{ hoveredPoint.count.toLocaleString() }}</span>
+      </div>
     </div>
 
     <!-- Empty State -->
     <div v-if="points.length === 0" class="absolute inset-0 flex items-center justify-center">
-      <span class="text-[9px] font-black text-gray-300 uppercase tracking-widest italic">Insufficient data points</span>
+      <span class="text-[10px] font-black text-gray-300 dark:text-zinc-400 italic">No Data</span>
     </div>
   </div>
 </template>
@@ -77,6 +87,7 @@ const props = defineProps({
 });
 
 const hoveredPoint = ref(null);
+const gradientId = `gradient-${Math.random().toString(36).substr(2, 9)}`;
 
 const points = computed(() => {
   if (!props.data || props.data.length === 0) return [];

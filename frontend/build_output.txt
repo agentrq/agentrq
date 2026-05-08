@@ -1,0 +1,32 @@
+
+> agentrq-frontend@0.0.0 build
+> vite build
+
+vite v6.4.1 building for production...
+transforming...
+✓ 100 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                              0.54 kB │ gzip:  0.36 kB
+dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2     10.25 kB
+dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2      11.23 kB
+dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2       18.75 kB
+dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2          19.00 kB
+dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2   25.96 kB
+dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2          48.26 kB
+dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2      85.07 kB
+dist/assets/WorkspaceView-Cj4kzzfI.css                       0.24 kB │ gzip:  0.16 kB
+dist/assets/WorkspaceDetailView-Z5pbccD6.css                 1.65 kB │ gzip:  0.38 kB
+dist/assets/index-B_5C9zEy.css                              81.34 kB │ gzip: 13.85 kB
+dist/assets/useCron-Del-TD5t.js                              2.01 kB │ gzip:  0.88 kB
+dist/assets/LoginView-CmzHEiUZ.js                            5.62 kB │ gzip:  2.54 kB
+dist/assets/ScheduledTaskInstancesView-Bc2NpJLP.js           9.85 kB │ gzip:  3.04 kB
+dist/assets/WorkspaceAnalyticsView-Bc64CV8q.js              12.45 kB │ gzip:  3.68 kB
+dist/assets/TaskListView-CYWG0973.js                        14.58 kB │ gzip:  4.51 kB
+dist/assets/TaskFormView-CUzVjfks.js                        20.25 kB │ gzip:  5.38 kB
+dist/assets/WorkspaceView-xkjaxj3I.js                       20.84 kB │ gzip:  5.59 kB
+dist/assets/TaskDetailView-LpiV9Bg-.js                      31.67 kB │ gzip:  7.95 kB
+dist/assets/WorkspaceDetailView-B4GeeY7D.js                 57.62 kB │ gzip: 14.97 kB
+dist/assets/index-Cj30xN1s.js                              103.71 kB │ gzip: 32.24 kB
+dist/assets/index-DJFRK1Jg.js                              133.78 kB │ gzip: 48.94 kB
+✓ built in 867ms
