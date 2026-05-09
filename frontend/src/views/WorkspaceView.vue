@@ -211,10 +211,12 @@ import { useRouter } from 'vue-router';
 import { fetchWorkspaces, createWorkspace, unarchiveWorkspace } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useEventBus } from '../useEventBus';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
-const workspaces = ref([]);
+const workspaceStore = useWorkspaceStore();
+const workspaces = computed(() => workspaceStore.workspaces);
 const showCreate = ref(false);
 const showArchived = ref(false);
 const searchQuery = ref('');
@@ -254,8 +256,7 @@ const filteredArchivedWorkspaces = computed(() => {
 
 async function loadWorkspaces() {
   try {
-    const res = await fetchWorkspaces(true); // Include archived
-    workspaces.value = res.workspaces || [];
+    await workspaceStore.fetchWorkspaces();
     if (workspaces.value.length === 0) {
       showCreate.value = true;
     }

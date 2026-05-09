@@ -293,6 +293,7 @@ import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, de
 import { useToasts } from '../composables/useToasts';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const route = useRoute();
 const router = useRouter();
@@ -302,6 +303,7 @@ const workspaceId = computed(() => route.params.id);
 const workspace = ref(null);
 const loading = ref(true);
 const saving = ref(false);
+const workspaceStore = useWorkspaceStore();
 const activeTab = ref('general');
 const fileInput = ref(null);
 const iconError = ref('');
@@ -427,6 +429,7 @@ async function save() {
   try {
     const res = await updateWorkspace(workspaceId.value, form.value);
     workspace.value = res.workspace;
+    workspaceStore.updateWorkspaceMetadata(res.workspace);
     notifySuccess("Workspace settings updated");
     try {
       const tokenRes = await getWorkspaceToken(workspaceId.value);

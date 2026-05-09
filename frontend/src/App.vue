@@ -262,13 +262,13 @@ import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
+import { useWorkspaceStore } from './stores/workspaceStore'
 import Toast from './components/Toast.vue'
 
 const route = useRoute()
 const { notifySuccess, notifyInfo, notifyError } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
 const user = ref(null)
-const workspaces = ref([])
 const isUserMenuOpen = ref(false)
 const isWorkspaceDropdownOpen = ref(false)
 const isCollapsed = ref(true);
@@ -276,6 +276,8 @@ const isMobileMenuOpen = ref(false);
 const workspaceDropdownRef = ref(null)
 const themeStore = useThemeStore()
 const tooltipStore = useTooltipStore()
+const workspaceStore = useWorkspaceStore()
+const workspaces = computed(() => workspaceStore.workspaces)
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
 
@@ -290,19 +292,12 @@ watch(events, (newEvents) => {
   // Handle agent connection status updates globally
   if (event.type === 'agent.connected') {
     const { connected, workspaceId } = event.payload
-    const ws = workspaces.value.find(w => w.id === workspaceId)
-    if (ws) {
-      ws.agentConnected = connected
-    }
+    workspaceStore.updateAgentStatus(workspaceId, connected)
   }
 
   // Handle workspace metadata updates
   if (event.type === 'workspace.updated') {
-    const updatedWs = event.payload
-    const idx = workspaces.value.findIndex(w => w.id === updatedWs.id)
-    if (idx !== -1) {
-      workspaces.value[idx] = { ...workspaces.value[idx], ...updatedWs }
-    }
+    workspaceStore.updateWorkspaceMetadata(event.payload)
   }
   
   if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
@@ -326,7 +321,7 @@ watch(events, (newEvents) => {
 onMounted(() => {
   themeStore.init()
   loadUser()
-  loadWorkspaces()
+  workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
   document.addEventListener('click', handleClickOutside)
 })
@@ -345,15 +340,7 @@ async function logout() {
   window.location.href = '/login'
 }
 
-const loadWorkspaces = async () => {
-  if (isLoginPage.value) return;
-  try {
-    const res = await fetchWorkspaces()
-    workspaces.value = res.workspaces || []
-  } catch (err) {
-    console.error('Failed to fetch workspaces:', err)
-  }
-}
+const loadWorkspaces = () => workspaceStore.fetchWorkspaces()
 
 const loadUser = async () => {
   if (isLoginPage.value) return;
