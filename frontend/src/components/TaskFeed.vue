@@ -224,6 +224,7 @@ const displayGroups = computed(() => {
     filtered = filtered.filter(t => t.status === 'notstarted');
   } else if (f === 'ongoing') {
     filtered = filtered.filter(t => ['ongoing', 'blocked'].includes(t.status));
+  } else if (f === 'pending') {
     filtered = filtered.filter(t => 
       t.status !== 'completed' && t.status !== 'rejected' && (
         (t.status === 'notstarted' && t.assignee === 'human') ||

@@ -121,7 +121,7 @@
                 <div class="flex items-start justify-between gap-4">
                   <div class="flex items-center gap-4 min-w-0">
                     <div class="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full shrink-0 mt-1" 
-                         :class="p.agentConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse' : 'bg-gray-300 dark:bg-zinc-600'"></div>
+                         :class="p.agentConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"></div>
                     <div class="min-w-0">
                       <h3 class="font-black text-base text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors">{{ p.name }}</h3>
                       <div class="flex items-center gap-1.5 mt-0.5">
@@ -206,10 +206,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchWorkspaces, createWorkspace, unarchiveWorkspace } from '../api';
 import { useToasts } from '../composables/useToasts';
+import { useEventBus } from '../useEventBus';
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
@@ -264,7 +265,6 @@ async function loadWorkspaces() {
     loadingWorkspaces.value = false;
   }
 }
-
 
 watch(showCreate, (val) => {
   if (!val) {
@@ -338,7 +338,37 @@ function goToWorkspace(id) {
   router.push(`/workspaces/${id}`);
 }
 
-onMounted(loadWorkspaces);
+const { connect, disconnect, events } = useEventBus();
+
+watch(events, (newEvents) => {
+  if (newEvents.length === 0) return;
+  const event = newEvents[newEvents.length - 1];
+
+  if (event.type === 'agent.connected') {
+    const { connected, workspaceId } = event.payload;
+    const ws = workspaces.value.find(w => w.id === workspaceId);
+    if (ws) {
+      ws.agentConnected = connected;
+    }
+  }
+
+  if (event.type === 'workspace.updated') {
+    const updatedWs = event.payload;
+    const idx = workspaces.value.findIndex(w => w.id === updatedWs.id);
+    if (idx !== -1) {
+      workspaces.value[idx] = { ...workspaces.value[idx], ...updatedWs };
+    }
+  }
+}, { deep: true });
+
+onMounted(async () => {
+  await loadWorkspaces();
+  connect();
+});
+
+onUnmounted(() => {
+  disconnect();
+});
 </script>
 
 <style scoped>

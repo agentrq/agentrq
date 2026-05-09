@@ -307,14 +307,14 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 			if count == 1 {
 				ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 					Type:    "agent.connected",
-					Payload: map[string]bool{"connected": true},
+					Payload: map[string]any{"connected": true, "workspaceId": ps.workspaceID},
 				})
 			}
 			defer func() {
 				if ps.agentConnections.Add(-1) == 0 {
 					ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 						Type:    "agent.connected",
-						Payload: map[string]bool{"connected": false},
+						Payload: map[string]any{"connected": false, "workspaceId": ps.workspaceID},
 					})
 				}
 			}()
