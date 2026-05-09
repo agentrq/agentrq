@@ -167,6 +167,7 @@ import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useViewport } from '../composables/useViewport';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import TaskFeed from '../components/TaskFeed.vue';
 
 const route = useRoute();
@@ -176,7 +177,9 @@ const { isMobile } = useViewport();
 const workspaceId = computed(() => route.params.id);
 const selectedTaskId = computed(() => route.params.taskId);
 
-const workspace = ref(null);
+const workspaceStore = useWorkspaceStore();
+const workspace = computed(() => workspaceStore.workspaces.find(w => w.id == workspaceId.value) || localWorkspace.value);
+const localWorkspace = ref(null);
 const tasks = ref([]);
 const loading = ref(true);
 const error = ref(null);
@@ -253,8 +256,9 @@ async function load(showLoading = true) {
       fetchTasks(workspaceId.value)
     ]);
     tasks.value = tRes.tasks || [];
-    workspace.value = pRes.workspace;
-    isAgentConnected.value = workspace.value.agentConnected;
+    localWorkspace.value = pRes.workspace;
+    workspaceStore.updateWorkspaceMetadata(pRes.workspace);
+    isAgentConnected.value = workspace.value?.agentConnected;
     if (!isConnected.value) connect();
   } catch (err) {
     error.value = err.message;

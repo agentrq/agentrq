@@ -85,7 +85,7 @@
                   $route.path.startsWith(`/workspaces/${ws.id}`) ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white font-semibold' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
                 ]">
               <div class="w-1.5 h-1.5 rounded-full shrink-0"
-                   :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
+                   :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
                    :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
               <span class="truncate flex-1">{{ ws.name }}</span>
             </router-link>
@@ -262,13 +262,13 @@ import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
+import { useWorkspaceStore } from './stores/workspaceStore'
 import Toast from './components/Toast.vue'
 
 const route = useRoute()
 const { notifySuccess, notifyInfo, notifyError } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
 const user = ref(null)
-const workspaces = ref([])
 const isUserMenuOpen = ref(false)
 const isWorkspaceDropdownOpen = ref(false)
 const isCollapsed = ref(true);
@@ -276,21 +276,29 @@ const isMobileMenuOpen = ref(false);
 const workspaceDropdownRef = ref(null)
 const themeStore = useThemeStore()
 const tooltipStore = useTooltipStore()
+const workspaceStore = useWorkspaceStore()
+const workspaces = computed(() => workspaceStore.workspaces)
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
 
-// Setup Global Event Bus for current workspace
-const { connect, disconnect, events } = useEventBus(currentWorkspaceId)
-
-watch(currentWorkspaceId, (newId) => {
-  disconnect()
-  connect()
-}, { immediate: true })
+// Setup Global Event Bus (Global stream receives events for all workspaces)
+const { connect, disconnect, events } = useEventBus()
 
 // Watch for noteworthy events
 watch(events, (newEvents) => {
   if (newEvents.length === 0) return
   const event = newEvents[newEvents.length - 1]
+  
+  // Handle agent connection status updates globally
+  if (event.type === 'agent.connected') {
+    const { connected, workspaceId } = event.payload
+    workspaceStore.updateAgentStatus(workspaceId, connected)
+  }
+
+  // Handle workspace metadata updates
+  if (event.type === 'workspace.updated') {
+    workspaceStore.updateWorkspaceMetadata(event.payload)
+  }
   
   if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
     notifySuccess(`Agent started a new task: ${event.payload.title}`)
@@ -310,6 +318,14 @@ watch(events, (newEvents) => {
   }
 }, { deep: true })
 
+onMounted(() => {
+  themeStore.init()
+  loadUser()
+  workspaceStore.fetchWorkspaces()
+  connect() // Connect to global event stream
+  document.addEventListener('click', handleClickOutside)
+})
+
 const showTooltip = (event, text) => {
   if (!isCollapsed.value || window.innerWidth < 1024) return;
   tooltipStore.show(event, text);
@@ -324,15 +340,7 @@ async function logout() {
   window.location.href = '/login'
 }
 
-const loadWorkspaces = async () => {
-  if (isLoginPage.value) return;
-  try {
-    const res = await fetchWorkspaces()
-    workspaces.value = res.workspaces || []
-  } catch (err) {
-    console.error('Failed to fetch workspaces:', err)
-  }
-}
+const loadWorkspaces = () => workspaceStore.fetchWorkspaces()
 
 const loadUser = async () => {
   if (isLoginPage.value) return;
@@ -349,12 +357,6 @@ const handleClickOutside = (e) => {
   }
 }
 
-onMounted(() => {
-  themeStore.init()
-  loadUser()
-  loadWorkspaces()
-  document.addEventListener('click', handleClickOutside)
-})
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
