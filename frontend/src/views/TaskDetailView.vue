@@ -47,6 +47,15 @@
                <span class="hidden sm:inline text-[8px] font-black uppercase tracking-tighter">YOLO</span>
             </button>
 
+            <!-- Edit Button (For Scheduled Tasks) -->
+            <button v-if="task.cron" @click="router.push(`/workspaces/${workspaceId}/tasks/${taskId}/edit`)"
+                    @mouseenter="tooltipStore.show($event, 'Edit Scheduled Task', 'bottom')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="h-7 px-2 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center gap-1.5" title="Edit Task">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              <span class="hidden sm:inline text-[8px] font-black uppercase tracking-tighter">Edit</span>
+            </button>
+
             <!-- Status Selector -->
             <div class="relative">
               <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
