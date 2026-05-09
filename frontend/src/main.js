@@ -10,12 +10,27 @@ import { fetchUser } from './api'
 
 const routes = [
   { path: '/', component: () => import('./views/WorkspaceView.vue') },
-  { path: '/tasks/:filter', component: () => import('./views/TaskListView.vue') },
-  { path: '/workspaces/:id', component: () => import('./views/WorkspaceDetailView.vue') },
+  { 
+    path: '/tasks/:filter', 
+    component: () => import('./views/TaskListView.vue'),
+    children: [
+      { path: ':workspaceId/:taskId', component: () => import('./views/TaskDetailView.vue') },
+      { path: ':workspaceId/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
+    ]
+  },
+  { 
+    path: '/workspaces/:id', 
+    component: () => import('./views/WorkspaceDetailView.vue'),
+    children: [
+      { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
+      { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
+      { path: 'tasks/:taskId', component: () => import('./views/TaskDetailView.vue') },
+      { path: 'tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
+    ]
+  },
   { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
   { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
-  { path: '/workspaces/:workspaceId/tasks/:taskId', component: () => import('./views/TaskDetailView.vue'), meta: { fullPage: true } },
-  { path: '/workspaces/:workspaceId/tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue'), meta: { fullPage: true } },
+
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
 

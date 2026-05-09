@@ -1,19 +1,79 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+@import '@fontsource-variable/inter';
 
-/* Monospace font for neobrutalist design */
+:root {
+  --accent: #000000;
+  --accent-bg: rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+  --accent: #ffffff;
+  --accent-bg: rgba(255, 255, 255, 0.1);
+}
+
 @theme {
-  --font-sans: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-inter: "Inter Variable", "Inter", sans-serif;
+  --color-accent: var(--accent);
+}
+
+@layer base {
+  :root {
+    font-family: "Inter Variable", "Inter", sans-serif;
+    font-feature-settings: "liga" 1, "calt" 1, "ss01" 1, "cv03" 1, "cv04" 1;
+    font-optical-sizing: auto;
+  }
 }
 
 html, body, #app {
   height: 100%;
   width: 100%;
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: "Inter Variable", "Inter", sans-serif;
+  font-feature-settings: "liga" 1, "calt" 1, "ss01" 1, "cv03" 1, "cv04" 1;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
 
 ::selection {
-  background-color: #bbf7d0;
+  background-color: #fef08a;
   color: #000;
+}
+
+/* Custom scrollbar for a cleaner look */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d1d5db;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
 }

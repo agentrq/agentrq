@@ -1,365 +1,318 @@
 <template>
-  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden" v-if="task && workspace">
+  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-900" v-if="task && workspace">
 
-    <!-- Breadcrumb Header -->
-    <header v-if="showHeader" class="pb-2 border-b-2 border-black shrink-0 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0 flex-1">
-        <router-link :to="'/workspaces/' + workspaceId" class="hidden md:block text-gray-400 hover:text-black transition-colors shrink-0">
-          {{ workspace.name }}
-        </router-link>
-        <svg class="hidden md:block w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
-        <span class="text-black truncate flex-1 min-w-0 text-sm">{{ task.title }}</span>
-        <div class="relative group/status">
-          <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
-                  class="flex items-center gap-1.5 border-2 border-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest shrink-0 transition-all hover:translate-y-px active:translate-y-0.5"
-                  :class="task.status === 'ongoing' ? 'bg-[#00FF88] text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : task.status === 'completed' ? 'bg-black text-white shadow-[2px_2px_1px_0px_rgba(0,255,136,0.3)]' : task.status === 'rejected' ? 'bg-red-500 text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-white text-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'">
-            
-            <!-- Icons based on status -->
-            <svg v-if="task.status === 'ongoing'" class="w-3 h-3 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 3l14 9-14 9V3z" /></svg>
-            <svg v-else-if="task.status === 'completed'" class="w-3 h-3 text-[#00FF88]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path d="M5 13l4 4L19 7" /></svg>
-            <svg v-else-if="task.status === 'notstarted' || task.status === 'pending'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <svg v-else-if="task.status === 'rejected'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M6 18L18 6M6 6l12 12" /></svg>
+    <!-- Main Header Section (Matching KeywordInbox Design) -->
+    <div class="px-1.5 md:px-4 pt-1 pb-1 shrink-0">
+      <div class="flex flex-col gap-1">
+        <!-- Title & Status Row -->
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
+            <button @click="router.back()" class="md:hidden h-7 w-7 -ml-1.5 text-gray-500 hover:text-black dark:hover:text-white transition-colors flex items-center justify-center" title="Go Back">
+              <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <!-- Removed workspace name on mobile per user request -->
+            <h1 class="text-lg md:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
+              {{ task.title }}
+            </h1>
+          </div>
 
-            <span class="hidden sm:inline">{{ task.status }}</span>
-            <svg class="w-3 h-3 ml-0.5 transition-transform duration-200" :class="isStatusMenuOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" /></svg>
-          </button>
+          <div class="flex items-center gap-1.5 shrink-0 relative z-10">
+            <!-- Assignee Toggle -->
+            <div class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg h-7">
+              <button @click.stop="updateAssignee('agent')"
+                      @mouseenter="tooltipStore.show($event, 'Assign to Agent', 'bottom')"
+                      @mouseleave="tooltipStore.hide()"
+                      :class="task.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                      class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
+                <span class="hidden sm:inline">Agent</span>
+                <svg class="sm:hidden w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+              </button>
+              <button @click.stop="updateAssignee('human')"
+                      @mouseenter="tooltipStore.show($event, 'Assign to Human (Stop Agent)', 'bottom')"
+                      @mouseleave="tooltipStore.hide()"
+                      :class="task.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                      class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
+                <span class="hidden sm:inline">Human</span>
+                <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </button>
+            </div>
 
-          <!-- Dropdown Menu -->
-          <div v-if="isStatusMenuOpen" 
-               v-click-outside="() => isStatusMenuOpen = false"
-               class="absolute right-0 top-full mt-2 w-40 bg-white border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-[100] animate-in slide-in-from-top-2 duration-150">
-            <div class="p-1 flex flex-col gap-0.5">
-              <button v-if="task.status !== 'notstarted'" @click="updateStatus('notstarted'); isStatusMenuOpen = false"
-                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 text-gray-500 transition-colors text-left">
-                <div class="w-2 h-2 rounded-full bg-gray-300"></div>
-                Queue
+            <!-- YOLO Toggle -->
+            <button @click.stop="toggleYOLO"
+                    @mouseenter="tooltipStore.show($event, task.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'bottom')"
+                    @mouseleave="tooltipStore.hide()"
+                    :class="task.allowAllCommands ? 'bg-orange-500 text-white shadow-orange-500/20 shadow-lg border-transparent' : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 border-transparent'"
+                    class="flex items-center gap-1 px-2 rounded-lg border transition-all h-7">
+               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
+               <span class="hidden sm:inline text-[8px] font-black uppercase tracking-tighter">YOLO</span>
+            </button>
+
+            <!-- Status Selector -->
+            <div class="relative">
+              <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
+                      @mouseenter="tooltipStore.show($event, 'Change Task Status', 'bottom')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="px-2 md:px-4 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg border border-transparent hover:border-black/10 transition-all flex items-center gap-1.5 shadow-sm uppercase tracking-tighter h-7">
+                <div class="w-1.5 h-1.5 rounded-full" :class="getTaskDotStyle(task.status)"></div>
+                <span class="hidden md:inline">{{ task.status }}</span>
+                <svg class="w-2.5 h-2.5 transition-transform" :class="isStatusMenuOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
               </button>
-              <button v-if="task.status !== 'ongoing'" @click="updateStatus('ongoing'); isStatusMenuOpen = false"
-                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-[#00FF88]/10 text-black transition-colors text-left">
-                <div class="w-2 h-2 rounded-full bg-[#00FF88]"></div>
-                Start
-              </button>
-              <button v-if="task.status !== 'completed'" @click="updateStatus('completed'); isStatusMenuOpen = false"
-                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-black hover:text-white transition-colors text-left border-t border-gray-100 mt-1 pt-2">
-                <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                Complete
-              </button>
-              <button v-if="task.status !== 'rejected'" @click="updateStatus('rejected'); isStatusMenuOpen = false"
-                      class="flex items-center gap-2 px-3 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 text-red-600 transition-colors text-left">
-                <div class="w-2 h-2 rounded-full bg-red-500"></div>
-                Reject
-              </button>
+              <!-- Status Menu -->
+              <div v-if="isStatusMenuOpen" v-click-outside="() => isStatusMenuOpen = false"
+                   class="absolute right-0 top-full mt-2 w-12 md:w-40 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-1 md:p-2 animate-in fade-in slide-in-from-top-2">
+                <button v-for="s in ['notstarted', 'ongoing', 'completed', 'rejected']" :key="s"
+                        @click="updateStatus(s); isStatusMenuOpen = false"
+                        class="w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:py-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+                        :title="s">
+                  <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(s)"></div>
+                  <span class="hidden md:inline text-gray-900 dark:text-zinc-100">{{ s }}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span v-if="workspace.archivedAt" class="border-2 border-yellow-500 bg-yellow-300 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">Archived</span>
-        <span class="hidden md:inline text-[9px] font-black text-gray-300 uppercase tracking-widest">{{ task.id }}</span>
-        <button @click="router.push('/workspaces/' + workspaceId)" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-    </header>
 
-    <!-- Navigation Toggle removed in favor of global experiment -->
-
-    <!-- Scrollable chat area -->
-    <div ref="scrollContainer" class="flex-1 overflow-y-auto pt-2 pb-6 flex flex-col gap-0 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
-
-      <!-- Context Header (Not Sticky) -->
-      <div class="pt-2 pb-3 bg-white border-b border-gray-100/50 mb-3">
-        <!-- Task Definition box -->
-        <div class="border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white">
-          <div class="bg-black px-4 py-2 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <div class="w-5 h-5 flex items-center justify-center text-[9px] font-black"
-                   :class="task.createdBy === 'human' ? 'bg-[#00FF88] text-black' : 'bg-gray-600 text-[#00FF88]'">
-                {{ task.createdBy === 'human' ? 'H' : 'A' }}
-              </div>
-              <span class="text-[10px] font-black text-white uppercase tracking-widest">Task Definition</span>
-              <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">→ {{ task.assignee }}</span>
-              <button v-if="task.assignee === 'agent' && (task.status === 'ongoing' || task.status === 'notstarted' || task.status === 'pending')"
-                      @click="toggleAllowAllCommands"
-                      @mouseenter="showTooltip($event, 'Toggle auto-allow all tool executions for this task')" @mouseleave="hideTooltip"
-                      class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 border text-[8px] font-black uppercase tracking-widest transition-all active:translate-y-0.5 flex items-center gap-1 shrink-0"
-                      :class="task.allowAllCommands ? 'bg-[#00FF88] text-black border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'bg-gray-800 text-gray-400 border-gray-600 hover:border-[#00FF88] hover:text-[#00FF88] shadow-none'">
-                <svg v-if="task.allowAllCommands" class="w-3 h-3 md:w-2.5 md:h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                <div v-else class="w-2.5 h-2.5 border border-gray-500 bg-transparent rounded-sm"></div>
-                <span class="hidden md:inline">YOLO</span>
-              </button>
-              <span v-else-if="task.allowAllCommands" 
-                    @mouseenter="showTooltip($event, 'This task automatically approves all tool calls')" @mouseleave="hideTooltip"
-                    class="hidden sm:inline-block ml-1.5 md:ml-2 px-1.5 py-0.5 bg-[#00FF88] text-black text-[8px] font-black uppercase tracking-widest border border-[#00FF88]/50 shadow-[1px_1px_0px_0px_rgba(255,255,255,0.4)] truncate">
-                YOLO
-              </span>
-              <button v-if="task.assignee === 'human'" 
-                      @click="reassignToAgent"
-                      class="ml-1.5 md:ml-2 px-1.5 md:px-2 py-0.5 bg-black text-[#00FF88] border border-[#00FF88] text-[8px] font-black uppercase tracking-widest hover:bg-[#00FF88] hover:text-black transition-all active:translate-y-0.5 shadow-[2px_2px_0px_0px_rgba(0,255,136,0.2)] flex items-center gap-1"
-                      title="Reassign to Agent">
-                <svg class="w-3.5 h-3.5 md:w-2.5 md:h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" stroke-width="2.5" /><path d="M2 14h2M20 14h2M15 13v2M9 13v2" stroke-width="2.5" />
-                </svg>
-                <span class="hidden md:inline">Reassign to Agent</span>
-              </button>
-            </div>
-            <div class="flex items-center gap-3">
-              <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{{ formatDateTime(task.createdAt) }}</span>
-              <button @click="descExpanded = !descExpanded" class="text-[9px] font-black text-gray-400 hover:text-[#00FF88] uppercase tracking-widest flex items-center gap-1 transition-colors">
-                {{ descExpanded ? 'Collapse' : 'Expand' }}
-                <svg class="w-3 h-3 transition-transform duration-200" :class="descExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
-              </button>
-            </div>
+        <!-- Body Content (Collapsed) -->
+        <div class="mt-0.5">
+          <div v-if="task.body" class="mb-1">
+            <p @click="isDescriptionCollapsed = !isDescriptionCollapsed"
+               :class="[
+                 isDescriptionCollapsed 
+                   ? 'truncate text-[11px] text-gray-500 dark:text-zinc-500 py-1' 
+                   : 'whitespace-pre-wrap p-3 bg-gray-50/50 dark:bg-zinc-800/30 rounded-xl border border-gray-100 dark:border-zinc-800 text-[13px] text-gray-600 dark:text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-200'
+               ]"
+               class="cursor-pointer font-medium leading-relaxed transition-all hover:text-gray-800 dark:hover:text-zinc-100">
+              {{ isDescriptionCollapsed ? stripNote(task.body) : task.body }}
+            </p>
           </div>
-          <div v-if="descExpanded" class="p-4 bg-white">
-            <p class="text-sm font-medium text-gray-700 leading-relaxed whitespace-pre-wrap break-all">{{ task.body }}</p>
-            <!-- Initial Attachments -->
-            <div v-if="task.attachments && task.attachments.length > 0" class="mt-4 pt-4 border-t-2 border-dashed border-gray-200 flex flex-wrap gap-2">
-              <div v-for="(att, i) in task.attachments" :key="i"
-                   @click="previewAttachment(att)"
-                   class="flex items-center gap-2 px-3 py-1.5 border-2 border-black bg-white hover:bg-[#00FF88] transition-colors cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                <div class="w-5 h-5 flex items-center justify-center overflow-hidden">
-                  <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="getAttachmentUrl(workspaceId, att.id)" class="w-full h-full object-cover" />
-                  <svg v-else class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                </div>
-                <span class="text-[10px] font-black uppercase tracking-tight truncate max-w-[120px]">{{ att.filename }}</span>
+          
+          <!-- Attachments -->
+          <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
+            <div v-for="(att, i) in task.attachments" :key="i"
+                 @click="previewAttachment(att)"
+                 class="flex items-center gap-3 px-4 py-2 rounded-xl border border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-all cursor-pointer group shadow-sm">
+              <div class="w-6 h-6 flex items-center justify-center overflow-hidden rounded-lg">
+                <img v-if="att.mimeType && att.mimeType.startsWith('image/')" :src="getAttachmentUrl(workspaceId, att.id)" class="w-full h-full object-cover" />
+                <svg v-else class="w-4 h-4 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               </div>
+              <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors uppercase tracking-widest">{{ att.filename }}</span>
             </div>
-          </div>
-          <div v-else class="px-4 py-2 bg-gray-50 cursor-pointer hover:bg-white transition-colors" @click="descExpanded = true">
-            <p class="text-xs font-medium text-gray-500 line-clamp-1">{{ task.body }}</p>
           </div>
         </div>
-
-        <!-- Autoscroll toggle -->
-        <div v-if="sortedMessages.length > 0" class="flex justify-end mt-3">
-          <button @click="autoscrollEnabled = !autoscrollEnabled"
-                  class="flex items-center gap-1.5 px-3 py-1 border-2 border-black text-[9px] font-black uppercase tracking-widest transition-all"
-                  :class="autoscrollEnabled ? 'bg-black text-[#00FF88]' : 'bg-white text-gray-400 hover:border-black hover:text-black'">
-            <div class="w-1.5 h-1.5 rounded-full" :class="autoscrollEnabled ? 'bg-[#00FF88] animate-pulse' : 'bg-gray-300'"></div>
-            Autoscroll
-          </button>
-        </div>
-      </div>
-
-      <!-- Messages -->
-      <div class="flex flex-col gap-3">
-        <template v-for="m in sortedMessages" :key="m.id">
-
-          <!-- Agent message — left aligned, gray bubble -->
-          <div v-if="m.sender === 'agent'" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div class="w-7 h-7 bg-black border-2 border-black flex items-center justify-center shrink-0 mt-0.5">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="bot" aria-hidden="true" class="lucide lucide-bot w-4 h-4 text-[#00FF88]"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
-            </div>
-            <div class="bg-gray-50 border-2 border-black flex-1 p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-w-0">
-              <span class="text-[10px] font-black text-gray-700 block mb-1.5 uppercase tracking-widest">
-                Agent · {{ formatDateTime(m.createdAt) }}
-              </span>
-              <div class="text-xs font-medium text-gray-800 leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
-
-              <!-- Permission Request (agent message) -->
-              <div v-if="m.metadata?.type === 'permission_request'" class="mt-3 border-2 border-black bg-white">
-                <div class="bg-black px-3 py-2 flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <svg class="w-3.5 h-3.5 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                    <span class="text-[10px] font-black text-white uppercase tracking-widest">Agent Authorization Required</span>
-                  </div>
-                  <span class="text-[9px] font-bold text-gray-400 uppercase tracking-tight">{{ m.metadata.requestId }}</span>
-                </div>
-                <div class="p-3 flex flex-col gap-3">
-                  <div>
-                    <span class="text-[9px] font-black text-gray-400 uppercase tracking-widest">Tool / Action</span>
-                    <p class="text-xs font-black text-gray-900 mt-0.5 break-all">{{ m.metadata.toolName }}</p>
-                  </div>
-                  <p v-if="m.metadata.description" class="text-xs text-gray-600 font-medium italic border-l-2 border-black pl-3">"{{ m.metadata.description }}"</p>
-                  <pre v-if="m.metadata.inputPreview" class="text-[10px] font-mono bg-gray-950 text-[#00FF88] p-3 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 custom-scrollbar">{{ m.metadata.inputPreview }}</pre>
-
-                  <!-- Pending verdict buttons -->
-                  <div v-if="m.metadata.status === 'pending'" class="flex flex-wrap gap-2 pt-2">
-                     <button @click="handleVerdict(m.metadata.request_id, 'allow')"
-                             :disabled="!!workspace.archived_at"
-                             class="px-3 py-1 bg-[#00FF88] border-2 border-black text-xs font-bold transition-all hover:translate-y-px active:translate-y-0.5 disabled:opacity-50">
-                       Allow
-                     </button>
-                     <button @click="handleVerdict(m.metadata.request_id, 'allow_always')"
-                             :disabled="!!workspace.archived_at"
-                             class="px-3 py-1 bg-blue-100 border-2 border-black text-xs font-bold transition-all hover:translate-y-px active:translate-y-0.5 disabled:opacity-50">
-                       Allow All
-                     </button>
-                     <button @click="handleVerdict(m.metadata.request_id, 'deny')"
-                             :disabled="!!workspace.archived_at"
-                             class="px-3 py-1 bg-red-100 border-2 border-black text-xs font-bold transition-all hover:translate-y-px active:translate-y-0.5 disabled:opacity-50">
-                       Deny
-                     </button>
-                  </div>
-
-                  <!-- Resolved verdict (collapsible) -->
-                  <div v-else
-                       @click="m._detailsExpanded = !m._detailsExpanded"
-                       class="border-2 cursor-pointer transition-all select-none"
-                       :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-[#00FF88] bg-[#00FF88]/10' : 'border-red-400 bg-red-50'">
-                    <div class="flex items-center gap-2.5 px-3 py-2">
-                      <svg v-if="m.metadata.status === 'allow' || m.metadata.status === 'allow_always'" class="w-3.5 h-3.5 text-green-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
-                      <svg v-else class="w-3.5 h-3.5 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" /></svg>
-                      <span class="text-[10px] font-black uppercase tracking-widest flex-1 truncate break-all"
-                            :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-green-800' : 'text-red-700'">
-                        {{ m.metadata.toolName }}
-                      </span>
-                      <span v-if="m.metadata.status === 'allow_always'" class="text-[8px] font-black text-green-700 bg-[#00FF88] border border-green-700 px-1.5 py-0.5 uppercase tracking-widest shrink-0">Auto</span>
-                      <span class="text-[9px] font-black uppercase tracking-widest shrink-0"
-                            :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-green-700' : 'text-red-600'">
-                        {{ m.metadata.status === 'deny' ? 'Denied' : m.metadata.status === 'allow_always' ? 'Always Allowed' : 'Allowed' }}
-                      </span>
-                      <svg class="w-3 h-3 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" /></svg>
-                    </div>
-                    <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t-2 border-dashed"
-                         :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-[#00FF88]' : 'border-red-300'">
-                      <p v-if="m.metadata.description" class="text-[11px] text-gray-600 italic mb-2">"{{ m.metadata.description }}"</p>
-                      <pre v-if="m.metadata.inputPreview" class="text-[9px] font-mono bg-gray-950 text-[#00FF88] p-2 overflow-x-auto whitespace-pre-wrap break-all border border-gray-700 mb-2">{{ m.metadata.inputPreview }}</pre>
-                      <span class="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">ID: {{ m.metadata.requestId }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Attachments on agent message -->
-              <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t-2 border-dashed border-gray-200">
-                <div v-for="(att, i) in m.attachments" :key="i"
-                     @click="previewAttachment(att)"
-                     class="flex items-center gap-1.5 px-2.5 py-1 border-2 border-black bg-white hover:bg-[#00FF88] transition-colors cursor-pointer text-[10px] font-black uppercase tracking-tight">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                  <span class="truncate max-w-[140px]">{{ att.filename }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Human message — right aligned, green bubble -->
-          <div v-else class="flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div class="w-7 h-7 bg-[#00FF88] border-2 border-black flex items-center justify-center shrink-0 mt-0.5">
-              <svg class="w-4 h-4 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-            </div>
-            <div class="bg-[#00FF88] border-2 border-black flex-1 p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] min-w-0">
-              <span class="text-[10px] font-black text-black block mb-1.5 uppercase tracking-widest text-right">
-                You · {{ formatDateTime(m.createdAt) }}
-              </span>
-              <div class="text-xs font-medium text-black leading-relaxed whitespace-pre-wrap text-right break-all">{{ m.text }}</div>
-              <!-- Attachments on human message -->
-              <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t-2 border-dashed border-black/20 justify-end">
-                <div v-for="(att, i) in m.attachments" :key="i"
-                     @click="previewAttachment(att)"
-                     class="flex items-center gap-1.5 px-2.5 py-1 border-2 border-black bg-white hover:bg-black hover:text-white transition-colors cursor-pointer text-[10px] font-black uppercase tracking-tight">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                  <span class="truncate max-w-[140px]">{{ att.filename }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </template>
       </div>
     </div>
 
+    <!-- Scrollable chat area -->
+    <div ref="scrollContainer" class="flex-1 overflow-y-auto pl-4 pr-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden" style="overscroll-behavior-y: contain;">
+
+      <!-- Messages -->
+      <template v-for="m in sortedMessages" :key="m.id">
+
+        <!-- Agent message — left aligned -->
+        <div v-if="m.sender === 'agent'" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-[90%]">
+          <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center shrink-0 mt-0.5">
+            <svg class="w-4 h-4 text-gray-700 dark:text-zinc-100" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+          </div>
+          <div class="flex flex-col items-start min-w-0">
+             <div class="bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+               <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 block mb-1.5">
+                 Agent · {{ formatDateTime(m.createdAt) }}
+               </span>
+               <div class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+
+               <!-- Permission Request (agent message) -->
+               <div v-if="m.metadata?.type === 'permission_request'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
+                 <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center justify-between gap-3">
+                   <div class="flex items-center gap-2">
+                     <svg class="w-3.5 h-3.5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                     <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Authorization Required</span>
+                   </div>
+                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ m.metadata.requestId }}</span>
+                 </div>
+                 <div class="p-3 flex flex-col gap-3">
+                   <div>
+                     <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500">Action</span>
+                     <p class="text-xs font-semibold text-gray-800 dark:text-zinc-200 mt-0.5 break-all">{{ m.metadata.toolName }}</p>
+                   </div>
+                   <p v-if="m.metadata.description" class="text-xs text-gray-600 dark:text-zinc-400 font-medium italic border-l-2 border-gray-300 dark:border-zinc-600 pl-2">"{{ m.metadata.description }}"</p>
+                   <pre v-if="m.metadata.inputPreview" class="text-[10px] font-mono bg-zinc-950 text-zinc-300 p-3 rounded-sm overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar">{{ m.metadata.inputPreview }}</pre>
+
+                   <!-- Pending verdict buttons -->
+                   <div v-if="m.metadata.status === 'pending'" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                      <button @click="handleVerdict(m.metadata.request_id, 'allow')"
+                              :disabled="!!workspace.archived_at"
+                              class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                        Allow Once
+                      </button>
+                      <button @click="handleVerdict(m.metadata.request_id, 'allow_always')"
+                              :disabled="!!workspace.archived_at"
+                              class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                        Always Allow
+                      </button>
+                      <button @click="handleVerdict(m.metadata.request_id, 'deny')"
+                              :disabled="!!workspace.archived_at"
+                              class="px-3 py-1.5 rounded-sm bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-700 dark:text-red-500 text-[10px] font-semibold transition-all disabled:opacity-50 border border-red-100 dark:border-red-500/20">
+                        Deny
+                      </button>
+                   </div>
+
+                   <!-- Resolved verdict (collapsible) -->
+                   <div v-else
+                        @click="m._detailsExpanded = !m._detailsExpanded"
+                        class="border rounded-sm cursor-pointer transition-all select-none overflow-hidden"
+                        :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/5'">
+                     <div class="flex items-center gap-2.5 px-3 py-2">
+                       <svg v-if="m.metadata.status === 'allow' || m.metadata.status === 'allow_always'" class="w-3.5 h-3.5 text-gray-700 dark:text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                       <svg v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                       <span class="text-[10px] font-semibold flex-1 truncate break-all"
+                             :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-700 dark:text-zinc-100' : 'text-red-700 dark:text-red-500'">
+                         {{ m.metadata.toolName }}
+                       </span>
+                       <span class="text-[9px] font-semibold shrink-0"
+                             :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-500 dark:text-zinc-400' : 'text-red-600 dark:text-red-500'">
+                         {{ m.metadata.status === 'deny' ? 'Denied' : m.metadata.status === 'allow_always' ? 'Always' : 'Allowed' }}
+                       </span>
+                       <svg class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                     </div>
+                     <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed"
+                          :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'border-gray-200 dark:border-zinc-700' : 'border-red-200 dark:border-red-500/20'">
+                       <p v-if="m.metadata.description" class="text-[11px] text-gray-600 dark:text-zinc-400 italic mb-2">"{{ m.metadata.description }}"</p>
+                       <pre v-if="m.metadata.inputPreview" class="text-[9px] font-mono bg-zinc-950 text-gray-300 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all mb-2">{{ m.metadata.inputPreview }}</pre>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
+               <!-- Attachments on agent message -->
+               <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-zinc-700">
+                 <div v-for="(att, i) in m.attachments" :key="i"
+                      @click="previewAttachment(att)"
+                      class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold text-gray-700 dark:text-zinc-200 shadow-sm">
+                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                   <span class="truncate max-w-[140px]">{{ att.filename }}</span>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+
+        <!-- Human message — right aligned -->
+        <div v-else class="flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%]">
+          <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center shrink-0 mt-0.5 overflow-hidden">
+             <svg class="w-4 h-4 text-gray-600 dark:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+          </div>
+          <div class="flex flex-col items-end min-w-0">
+             <div class="bg-gray-900 text-white dark:bg-zinc-800 dark:text-zinc-100 border border-transparent dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+               <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 block mb-1.5 text-right">
+                 You · {{ formatDateTime(m.createdAt) }}
+               </span>
+               <div class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-all">{{ m.text }}</div>
+               <!-- Attachments on human message -->
+               <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-700 dark:border-zinc-600 justify-end">
+                 <div v-for="(att, i) in m.attachments" :key="i"
+                      @click="previewAttachment(att)"
+                      class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-700 dark:border-zinc-600 bg-gray-800 dark:bg-zinc-700 hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold">
+                   <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                   <span class="truncate max-w-[140px] text-gray-200">{{ att.filename }}</span>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+
+      </template>
+    </div>
+
     <!-- Reply Box -->
-    <footer v-if="!workspace.archivedAt" class="border-t-2 border-dashed border-gray-200 pt-4 shrink-0 z-20">
+    <footer v-if="!workspace.archivedAt" class="px-2 sm:px-4 py-2 sm:py-4 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
 
       <!-- Attachment previews -->
       <div v-if="replyAttachments.length > 0" class="flex flex-wrap gap-2 mb-3">
         <div v-for="(att, i) in replyAttachments" :key="i"
-             class="flex items-center text-[10px] bg-black text-[#00FF88] border-2 border-black px-3 py-1 font-black tracking-tight uppercase">
-          <span class="truncate max-w-[180px]">{{ att.filename }}</span>
-          <button @click="replyAttachments.splice(i, 1)" class="ml-2 hover:text-white transition-colors">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+             class="flex items-center text-[10px] bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 font-bold shadow-sm">
+          <span class="truncate max-w-[150px]">{{ att.filename }}</span>
+          <button @click="replyAttachments.splice(i, 1)" class="ml-2 text-gray-500 hover:text-red-500 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"></path></svg>
           </button>
         </div>
       </div>
 
       <form @submit.prevent="submitReply">
-        <div class="flex items-end gap-2 w-full flex-nowrap">
+        <div class="flex items-end gap-1.5 sm:gap-2 w-full flex-nowrap">
           <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
-          <div class="flex-1 flex items-center border-2 border-black bg-white focus-within:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all group relative min-w-0">
+          <div class="flex-1 flex items-center bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm focus-within:border-gray-900 dark:focus-within:border-white focus-within:ring-0 transition-all group relative min-w-0 shadow-sm">
             <textarea
               ref="textareaRef"
               v-model="replyText"
               @input="adjustTextareaHeight"
+              @keydown.meta.enter="submitReply"
+              @keydown.ctrl.enter="submitReply"
               rows="1"
               :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-              :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions or response...'"
-              class="flex-1 px-3 py-2 md:px-4 md:py-3 text-xs md:text-sm font-medium text-gray-900 bg-transparent outline-none placeholder-gray-400 disabled:opacity-50 resize-none min-h-[38px] md:min-h-[46px] max-h-[150px] custom-scrollbar"
+              :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions...'"
+              class="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none placeholder-gray-400 dark:placeholder-zinc-500 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
             ></textarea>
             <button type="button" @click="$refs.fileInput.click()"
                     :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-                    class="h-[38px] md:h-[46px] px-2.5 md:px-3 text-gray-400 hover:text-black transition-colors flex items-center justify-center disabled:opacity-30 self-end">
-              <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                    class="h-[46px] px-2 sm:px-3 text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-50 transition-colors flex items-center justify-center disabled:opacity-30 self-end">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
             </button>
           </div>
            <button type="submit"
                    :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
-                   class="h-[42px] w-[32px] md:h-[50px] md:w-[46px] bg-transparent md:bg-black text-black md:text-white border-0 md:border-2 md:border-black hover:text-[#00FF88] md:hover:bg-[#00FF88] md:hover:text-black shadow-none md:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
-                   title="Send Instruction">
-             <svg class="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                   class="h-[46px] w-[46px] rounded-sm bg-gray-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-100 shadow-sm disabled:opacity-30 transition-all shrink-0 flex items-center justify-center"
+                   title="Send Message">
+             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
              </svg>
            </button>
         </div>
 
         <!-- Status Warning Messages -->
-        <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-red-50 border-2 border-red-200 border-dashed">
-           <div class="flex items-center gap-2">
-             <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse border border-black/10"></span>
-             <span class="text-[10px] font-black text-red-700 uppercase tracking-[0.2em]">Agent Offline</span>
-           </div>
-           <p class="text-[9px] text-red-600 font-bold uppercase tracking-tight text-center italic">Delivery of instructions requires an active agent connection.</p>
-        </div>
-        
-        <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex flex-col items-center gap-2 mt-4 px-4 py-3 bg-yellow-50 border-2 border-yellow-200 border-dashed">
-           <div class="flex items-center gap-2">
-             <span class="w-2.5 h-2.5 rounded-full bg-yellow-400 border border-black/10"></span>
-             <span class="text-[10px] font-black text-yellow-700 uppercase tracking-[0.2em]">Task Not Started</span>
-           </div>
-           <p class="text-[9px] text-yellow-600 font-bold uppercase tracking-tight text-center italic">Please wait for the task to start or be accepted before sending messages.</p>
+        <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex items-center gap-3 mt-2 px-3 py-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-sm">
+             <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
+             <p class="text-[10px] text-red-700 dark:text-red-400 font-bold">Agent Offline. Messages cannot be delivered.</p>
         </div>
 
-        <div v-if="(workspace.agentConnected || task.assignee === 'human') && task.status !== 'notstarted' && task.status !== 'pending'" class="hidden md:flex items-center justify-center gap-2 mt-3">
-          <div class="h-px bg-gray-200 grow"></div>
-          <span class="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">Shift+Enter for newline · Secure Agent Sync</span>
-          <div class="h-px bg-gray-200 grow"></div>
+        <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex items-center gap-3 mt-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm">
+             <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
+             <p class="text-[10px] text-amber-700 dark:text-amber-400 font-bold">Task must be started before messaging.</p>
         </div>
       </form>
     </footer>
 
     <!-- Attachment Preview Modal -->
-    <div v-if="selectedAtt" class="fixed inset-0 z-[100] flex items-center justify-center" @keydown.esc="selectedAtt = null">
-      <div class="absolute inset-0 bg-black/90" @click="selectedAtt = null"></div>
-      <button @click="selectedAtt = null" class="absolute top-6 right-6 text-white/50 hover:text-white z-20 p-2 border-2 border-white/20 hover:border-white transition-all">
+    <div v-if="selectedAtt" class="fixed inset-0 z-[110] flex items-center justify-center" @keydown.esc="selectedAtt = null">
+      <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="selectedAtt = null"></div>
+      <button @click="selectedAtt = null" class="absolute top-6 right-6 text-white/50 hover:text-white z-20 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all">
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
       <div class="relative max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-4 z-10">
-        <div class="border-2 border-white/20 overflow-hidden flex items-center justify-center min-w-[300px] bg-white/5">
+        <div class="rounded-sm overflow-hidden flex items-center justify-center min-w-[300px] bg-black shadow-2xl border border-white/10">
           <img v-if="selectedAtt.mimeType?.startsWith('image/')" :src="getAttachmentUrl(workspaceId, selectedAtt.id)" class="max-w-full max-h-[70vh] object-scale-down" />
           <video v-else-if="selectedAtt.mimeType?.startsWith('video/')" controls autoplay :src="getAttachmentUrl(workspaceId, selectedAtt.id)" class="max-w-full max-h-[70vh]" />
           <div v-else-if="selectedAtt.mimeType?.startsWith('audio/')" class="p-16 flex flex-col items-center gap-6">
-            <div class="w-20 h-20 bg-[#00FF88] border-2 border-white flex items-center justify-center">
-              <svg class="w-10 h-10 text-black" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <div class="w-20 h-20 rounded-full bg-gray-900 dark:bg-white flex items-center justify-center shadow-lg">
+              <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
             </div>
             <audio controls autoplay :src="getAttachmentUrl(workspaceId, selectedAtt.id)" class="w-[400px]" />
           </div>
           <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="getAttachmentUrl(workspaceId, selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
           <div v-else class="p-20 flex flex-col items-center gap-4">
             <svg class="w-24 h-24 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-            <p class="text-white font-black uppercase tracking-widest text-sm">{{ selectedAtt.filename }}</p>
+            <p class="text-white font-bold text-sm">{{ selectedAtt.filename }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-4 px-6 py-3 bg-black border-2 border-white/20">
+        <div class="flex items-center gap-4 px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-sm shadow-xl">
           <div class="flex flex-col">
-            <p class="text-xs font-black text-white truncate max-w-[250px]">{{ selectedAtt.filename }}</p>
-            <p class="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">{{ selectedAtt.mimeType }}</p>
+            <p class="text-xs font-semibold text-white truncate max-w-[250px]">{{ selectedAtt.filename }}</p>
+            <p class="text-[9px] font-semibold text-zinc-400">{{ selectedAtt.mimeType }}</p>
           </div>
-          <div class="w-px h-8 bg-white/10"></div>
+          <div class="w-px h-8 bg-zinc-700"></div>
           <a :href="getAttachmentUrl(workspaceId, selectedAtt.id)" :download="selectedAtt.filename"
-             class="flex items-center gap-2 px-4 py-2 bg-[#00FF88] text-black border-2 border-[#00FF88] text-[10px] font-black uppercase tracking-widest hover:bg-white transition-all shadow-[2px_2px_0px_0px_rgba(255,255,255,0.3)]">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+             class="flex items-center gap-2 px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             Download
           </a>
         </div>
@@ -368,21 +321,17 @@
 
     <!-- Custom Tooltip -->
     <div v-if="tooltip.visible"
-      class="fixed z-[100] px-2.5 py-1.5 text-[9px] font-black text-black bg-[#00FF88] border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] pointer-events-none transform -translate-x-1/2 whitespace-nowrap uppercase tracking-widest"
+      class="fixed z-[100] px-3 py-1.5 text-[9px] font-semibold text-black dark:text-white bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm shadow-lg pointer-events-none transform -translate-x-1/2 whitespace-nowrap"
       :style="tooltip.style">
       {{ tooltip.text }}
-      <div class="absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-0 border-x-[5px] border-x-transparent border-b-[5px] border-b-black mb-[-1px]"></div>
     </div>
   </div>
 
   <!-- Loading State -->
-  <div v-else class="h-full flex flex-col items-center justify-center bg-white">
-    <div class="border-2 border-black p-8 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] flex flex-col items-center gap-4">
-      <div class="w-16 h-16 bg-black flex items-center justify-center">
-        <svg class="w-8 h-8 text-[#00FF88] animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-      </div>
-      <p class="text-xs font-black text-gray-900 uppercase tracking-widest">Syncing Task Context</p>
-      <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Retrieving workspace and message history...</p>
+  <div v-else class="h-full flex flex-col items-center justify-center bg-transparent">
+    <div class="p-8 flex flex-col items-center gap-4 opacity-50">
+      <div class="w-12 h-12 rounded-full border-4 border-gray-200 dark:border-zinc-700 border-t-gray-900 dark:border-t-white animate-spin"></div>
+      <p class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500">Loading Context...</p>
     </div>
   </div>
 </template>
@@ -390,25 +339,28 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, updateTaskAllowAllCommands } from '../api';
-import { useEventBus } from '../useEventBus';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, updateTaskAllowAllCommands, fetchUser } from '../api';
+import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
+import { useViewport } from '../composables/useViewport';
+import { useEventBus } from '../useEventBus';
 
 const { notifyError, notifySuccess } = useToasts();
 const route = useRoute();
 const router = useRouter();
-const workspaceId = route.params.workspaceId;
-const taskId = route.params.taskId;
+const workspaceId = computed(() => route.params.id || route.params.workspaceId);
+const taskId = computed(() => route.params.taskId);
 
 const workspace = ref(null);
 const task = ref(null);
+const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
 const scrollContainer = ref(null);
-const autoscrollEnabled = ref(true);
-const isFullscreen = ref(false);
 const isStatusMenuOpen = ref(false);
+const isDescriptionCollapsed = ref(true);
+
 
 const tooltip = ref({
   visible: false,
@@ -432,21 +384,8 @@ const hideTooltip = () => {
   tooltip.value.visible = false;
 };
 
-const isMobile = computed(() => window.innerWidth < 768);
+const { isMobile } = useViewport();
 const showHeader = ref(true);
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().then(() => {
-      isFullscreen.value = true;
-    }).catch(err => {
-      notifyError("Fullscreen not supported or blocked");
-    });
-  } else {
-    document.exitFullscreen();
-    isFullscreen.value = false;
-  }
-}
 
 const { connect, disconnect, events } = useEventBus(workspaceId);
 
@@ -455,8 +394,14 @@ const sortedMessages = computed(() => {
   return [...task.value.messages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
 
+watch(() => sortedMessages.value.length, (count) => {
+  if (count === 0 && task.value?.body) {
+    isDescriptionCollapsed.value = false;
+  }
+}, { immediate: true });
+
 function scrollToBottom() {
-  if (autoscrollEnabled.value && scrollContainer.value) {
+  if (scrollContainer.value) {
     nextTick(() => {
       scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight;
     });
@@ -467,21 +412,12 @@ watch(sortedMessages, () => {
   scrollToBottom();
 }, { deep: true });
 
-const statusClass = computed(() => {
-  if (!task.value) return '';
-  switch(task.value.status) {
-    case 'ongoing': return 'bg-indigo-50 text-indigo-700 border-indigo-100';
-    case 'completed': return 'bg-green-50 text-green-700 border-green-100';
-    case 'rejected': return 'bg-red-50 text-red-700 border-red-100';
-    default: return 'bg-gray-50 text-gray-600 border-gray-100';
-  }
-});
-
 async function load() {
   try {
-    const pRes = await getWorkspace(workspaceId);
+    user.value = await fetchUser();
+    const pRes = await getWorkspace(workspaceId.value);
     workspace.value = pRes.workspace;
-    const tRes = await getTask(workspaceId, taskId);
+    const tRes = await getTask(workspaceId.value, taskId.value);
     task.value = tRes.task;
     connect();
     nextTick(() => {
@@ -492,6 +428,14 @@ async function load() {
     notifyError("Failed to load task context: " + err.message);
   }
 }
+
+// Automatically reload task when route param changes (important for nested routes)
+watch(() => route.params.taskId, (newTaskId) => {
+  if (newTaskId && newTaskId !== task.value?.id) {
+    disconnect();
+    load();
+  }
+});
 
 async function handleFileUpload(e) {
   const files = e.target.files;
@@ -512,7 +456,7 @@ async function handleFileUpload(e) {
 
 const handleVerdict = async (requestId, behavior) => {
   try {
-    await sendPermissionVerdict(workspaceId, taskId, requestId, behavior);
+    await sendPermissionVerdict(workspaceId.value, taskId.value, requestId, behavior);
     notifySuccess("Verdict sent successfully");
   } catch (err) {
     notifyError('Failed to send verdict: ' + err.message);
@@ -521,7 +465,7 @@ const handleVerdict = async (requestId, behavior) => {
 
 async function updateStatus(newStatus) {
   try {
-    const res = await updateTaskStatus(workspaceId, taskId, newStatus);
+    const res = await updateTaskStatus(workspaceId.value, taskId.value, newStatus);
     task.value = res.task;
     notifySuccess(`Status updated to ${newStatus}`);
   } catch (err) {
@@ -529,27 +473,28 @@ async function updateStatus(newStatus) {
   }
 }
 
-async function toggleAllowAllCommands() {
-  if (!task.value) return;
-  const newValue = !task.value.allowAllCommands;
+const updateAssignee = async (newAssignee) => {
   try {
-    const res = await updateTaskAllowAllCommands(workspaceId, taskId, newValue);
+    const res = await updateTaskAssignee(workspaceId.value, taskId.value, newAssignee);
     task.value = res.task;
-    notifySuccess(newValue ? "Auto-Allow enabled" : "Auto-Allow disabled");
-  } catch (err) {
-    notifyError("Failed to update auto-allow setting: " + err.message);
-  }
-}
-
-async function reassignToAgent() {
-  try {
-    const res = await updateTaskAssignee(workspaceId, taskId, 'agent');
-    task.value = res.task;
-    notifySuccess("Task reassigned to agent");
+    notifySuccess(`Task reassigned to ${newAssignee}`);
   } catch (err) {
     notifyError("Failed to reassign task: " + err.message);
   }
-}
+};
+
+const toggleYOLO = async () => {
+  if (!task.value) return;
+  const newVal = !task.value.allowAllCommands;
+  try {
+    const res = await updateTaskAllowAllCommands(workspaceId.value, taskId.value, newVal);
+    task.value = res.task;
+    if (newVal) notifySuccess("YOLO mode active: Agent will execute commands without approval.");
+    else notifySuccess("YOLO mode disabled: Approval required for sensitive commands.");
+  } catch (err) {
+    notifyError("Failed to update YOLO mode: " + err.message);
+  }
+};
 
 async function submitReply() {
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
@@ -561,9 +506,8 @@ async function submitReply() {
     adjustTextareaHeight();
   });
   try {
-    const res = await respondToTask(workspaceId, taskId, 'text', text, atts);
+    const res = await respondToTask(workspaceId.value, taskId.value, 'text', text, atts);
     task.value = res.task;
-    notifySuccess("Message sent");
   } catch(err) {
     notifyError("Failed to deliver message: " + err.message);
     replyText.value = text;
@@ -579,9 +523,39 @@ const textareaRef = ref(null);
 function adjustTextareaHeight() {
   const el = textareaRef.value;
   if (!el) return;
-  el.style.height = isMobile.value ? '38px' : '46px';
+  el.style.height = '46px';
   const newHeight = Math.min(el.scrollHeight, 150);
   el.style.height = newHeight + 'px';
+}
+
+function getTaskDotStyle(t) {
+  const status = typeof t === 'string' ? t : t.status;
+  // If it's the task object, check if it's "Pending on Me"
+  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
+    (t.status === 'notstarted' && t.assignee === 'human') ||
+    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+  );
+
+  if (isPendingOnMe) {
+    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
+  }
+
+  switch (status) {
+    case 'ongoing':
+      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
+    case 'notstarted':
+      return 'bg-gray-400 dark:bg-zinc-500';
+    case 'completed':
+      return 'bg-green-500';
+    case 'rejected':
+      return 'bg-red-500';
+    case 'blocked':
+      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
+    case 'cron':
+      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
+    default:
+      return 'bg-gray-300 dark:bg-zinc-600';
+  }
 }
 
 function formatDateTime(dateStr) {
@@ -614,7 +588,7 @@ watch(events, (evts) => {
   if (!last) return;
   
   if (['task.updated', 'task.created'].includes(last.type)) {
-    if (last.payload && last.payload.id === taskId) {
+    if (last.payload && last.payload.id === taskId.value) {
       task.value = last.payload;
     }
   }
@@ -626,36 +600,21 @@ function previewAttachment(att) {
   selectedAtt.value = att;
 }
 
-function openAttachment(attId) {
-  window.open(getAttachmentUrl(workspaceId, attId), '_blank');
-}
-
 watch(() => task.value?.title, (title) => {
   if (title) document.title = `${title} | AgentRQ`;
 }, { immediate: true });
 
 onMounted(() => {
   load();
-  scrollToBottom();
 });
 onUnmounted(disconnect);
+function stripNote(body) {
+  if (!body) return '';
+  const markerRegex = /\n\n(Self[\s-]Learning[\s-]Loop[\s-]Note|\[Self[\s-]Learning[\s-]Loop[\s-]Note\]|Self[\s-]Learning[\s-]Loop:)/i;
+  const match = body.match(markerRegex);
+  if (match) {
+    return body.substring(0, match.index).trim();
+  }
+  return body;
+}
 </script>
-
-<style>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #f3f4f6;
-  border-radius: 20px;
-}
-.custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: #e5e7eb;
-}
-.shadow-soft {
-  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);
-}
-</style>

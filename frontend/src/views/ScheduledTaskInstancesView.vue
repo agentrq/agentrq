@@ -1,110 +1,89 @@
 <template>
-  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden" v-if="!loading">
+  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden bg-transparent" v-if="!loading">
 
-    <!-- Breadcrumb Header -->
-    <header class="pb-2 border-b-2 border-black shrink-0 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-2 text-xs font-black uppercase tracking-widest min-w-0 flex-1">
-        <router-link :to="'/workspaces/' + workspaceId" class="hidden md:block text-gray-400 hover:text-black transition-colors shrink-0">
-          {{ workspaceName }}
-        </router-link>
-        <svg class="hidden md:block w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
-        <span class="text-gray-400 truncate flex-1 min-w-0 hidden sm:block">{{ scheduledTask?.title }}</span>
-        <svg class="hidden sm:block w-3 h-3 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7" /></svg>
-        <span class="text-black text-sm shrink-0">Instances</span>
-      </div>
-      <button @click="router.push('/workspaces/' + workspaceId)" class="p-1.5 text-gray-400 hover:text-black border-2 border-transparent hover:border-black transition-all shrink-0">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
-    </header>
 
     <!-- Error -->
-    <div v-if="error" class="mt-6 text-center py-8 text-sm font-black text-red-600 uppercase tracking-widest border-2 border-red-300 bg-red-50 p-6">
+    <div v-if="error" class="mt-6 text-center py-8 text-sm font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 rounded-sm m-6">
       {{ error }}
     </div>
 
-    <div v-else class="flex-1 flex flex-col min-h-0 overflow-y-auto pt-4 pb-6 custom-scrollbar space-y-6">
+    <div v-else class="flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar w-full">
+      <!-- Main Detail Section (Matching KeywordInbox Design) -->
+      <div v-if="scheduledTask" class="px-4 py-2 mb-6">
+        <div class="flex flex-col gap-1">
+          <!-- Top Metadata Row -->
 
-      <!-- Scheduled Task Card -->
-      <div v-if="scheduledTask" class="border-2 border-sky-400 bg-sky-50 shadow-[4px_4px_0px_0px_rgba(14,165,233,1)]">
-        <div class="bg-sky-600 px-4 py-2 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <svg class="w-3.5 h-3.5 text-sky-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span class="text-[10px] font-black text-sky-100 uppercase tracking-widest">Scheduled Task</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="text-[9px] font-black text-sky-300 uppercase tracking-widest bg-sky-800 px-2 py-0.5">
-              ⏰ {{ formatCron(scheduledTask.cronSchedule) }}
-            </span>
-            <div v-if="nextRunLabel" class="flex flex-col gap-0.5">
-              <span class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
-                {{ nextRunLabel.toUpperCase() }}
-              </span>
-              <span v-if="nextRunDateTime" class="text-[8px] font-bold text-sky-400/80 uppercase tracking-tighter">
-                ({{ nextRunDateTime.toUpperCase() }})
-              </span>
+          <!-- Title -->
+          <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <h1 class="text-lg md:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
+                {{ scheduledTask.title }}
+              </h1>
             </div>
-            <div v-else class="flex flex-col gap-0.5">
-              <span class="text-[9px] font-black text-sky-200 uppercase tracking-widest">
-                NEXT: DUE
-              </span>
+            <div class="flex items-center gap-3 shrink-0">
+              <div class="flex items-center gap-2 px-4 py-2 text-[10px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-sm border border-transparent h-8">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span>RUNS {{ formatCron(scheduledTask.cronSchedule).toUpperCase() }}</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="px-4 py-3">
-          <p class="font-black text-sm text-sky-900 leading-snug">{{ scheduledTask.title }}</p>
-          <p v-if="scheduledTask.body" class="text-xs text-sky-700 mt-1 leading-relaxed line-clamp-2">{{ scheduledTask.body }}</p>
-          <div class="flex flex-wrap items-center gap-3 mt-2 text-[9px] font-black uppercase tracking-widest text-sky-500">
-            <span>{{ instances.length }} instance{{ instances.length !== 1 ? 's' : '' }} found</span>
+
+          <!-- Secondary Metadata -->
+          <div class="flex flex-wrap items-center gap-4 text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider">
+            <div class="flex items-center gap-2">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              <span>NEXT RUN: {{ getNextRunDateTime(scheduledTask.cronSchedule) }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16" /></svg>
+              <span>{{ workspaceName }}</span>
+            </div>
+          </div>
+
+          <div v-if="scheduledTask.body" class="mt-1">
+            <p @click="isDescriptionCollapsed = !isDescriptionCollapsed"
+               :class="[
+                 isDescriptionCollapsed 
+                   ? 'truncate text-[11px] text-gray-500 dark:text-zinc-500 py-1' 
+                   : 'whitespace-pre-wrap p-4 bg-gray-50/50 dark:bg-zinc-800/30 rounded-xl border border-gray-100 dark:border-zinc-800 text-[13px] text-gray-600 dark:text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-200'
+               ]"
+               class="cursor-pointer font-medium leading-relaxed transition-all hover:text-gray-800 dark:hover:text-zinc-100">
+              {{ isDescriptionCollapsed ? stripNote(scheduledTask.body) : scheduledTask.body }}
+            </p>
           </div>
         </div>
       </div>
 
-      <!-- Instances List -->
-      <div>
-        <div class="mb-3 flex items-center gap-2">
-          <h3 class="text-xs font-black uppercase tracking-widest text-black">Recent Instances</h3>
-          <span class="text-[10px] font-bold text-gray-400 border border-gray-200 bg-white px-1 shadow-[1px_1px_0px_0px_rgba(0,0,0,0.1)]">{{ instances.length }}</span>
-          <div class="h-px bg-gray-200 flex-1 ml-2"></div>
+      <!-- Instances List Section -->
+      <div class="px-4 pb-8">
+        <div class="flex items-center justify-between mb-8">
+          <div class="flex items-center gap-3">
+            <h3 class="text-xs font-black text-gray-900 dark:text-zinc-100 uppercase tracking-widest">Recent Instances</h3>
+            <span class="text-[10px] font-black text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-zinc-800 rounded-md px-2 py-0.5 border border-gray-200 dark:border-zinc-700 shadow-sm">{{ instances.length }}</span>
+          </div>
         </div>
 
-        <div v-if="instances.length === 0" class="flex flex-col items-center justify-center text-gray-300 opacity-80 py-16 border-2 border-dashed border-gray-200 bg-gray-50">
-          <svg class="w-8 h-8 mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <div v-if="instances.length === 0" class="flex flex-col items-center justify-center text-gray-500 dark:text-zinc-500 opacity-80 py-20 border border-dashed border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 rounded-3xl">
+          <svg class="w-10 h-10 mb-4 text-gray-300 dark:text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4m6 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span class="text-xs font-black uppercase tracking-widest text-gray-400">No instances yet</span>
-          <p class="text-[10px] text-gray-400 mt-1">This scheduled task hasn't run yet.</p>
+          <span class="text-sm font-bold">No instances yet</span>
+          <p class="text-[11px] mt-2 text-gray-500 dark:text-zinc-500">This scheduled task hasn't run yet.</p>
         </div>
 
-        <div v-else class="space-y-3">
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
           <div v-for="instance in instances" :key="instance.id"
                @click="router.push(`/workspaces/${workspaceId}/tasks/${instance.id}`)"
-               class="flex items-center justify-between p-3.5 border-2 cursor-pointer bg-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] transition-all group rounded-sm"
-               :class="getTaskBgStyle(instance.status)">
-
-            <div class="flex items-center gap-3.5 flex-1 min-w-0 pr-4">
-              <span class="w-2.5 h-2.5 rounded-full border border-black shrink-0" :class="getTaskDotStyle(instance.status)"></span>
-              <div class="flex flex-col gap-1 w-full relative">
-                <span class="font-black text-[14px] text-gray-900 leading-snug truncate group-hover:text-black transition-colors w-full font-bold text-sm">
-                  {{ instance.title }}
-                </span>
-                <div class="flex flex-wrap items-center gap-2 md:gap-3 text-[9px] font-black uppercase tracking-widest mt-0.5">
-                  <span class="text-gray-500">{{ formatDate(instance.createdAt) }}</span>
-                  <span class="flex items-center gap-1 bg-white border border-gray-200 px-1 text-gray-600" v-if="instance.messages && instance.messages.length > 0">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-                    {{ instance.messages.length }}
-                  </span>
-                </div>
-              </div>
+               class="flex items-center justify-between p-3 cursor-pointer border border-gray-100 dark:border-zinc-800/50 bg-gray-50/30 dark:bg-zinc-900/30 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-sm group transition-all">
+            
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(instance)"></div>
+              <span class="text-[11px] font-bold text-gray-700 dark:text-zinc-200 truncate uppercase tracking-tight group-hover:text-black dark:group-hover:text-white">{{ formatDateShort(instance.createdAt) }}</span>
             </div>
-
-            <div class="flex items-center gap-3 shrink-0">
-              <div class="hidden md:block text-[10px] font-black uppercase tracking-widest px-2 py-1 border-2 min-w-[90px] text-center"
-                   :class="getTaskBadgeStyle(instance.status)">
-                {{ getTaskLabel(instance.status) }}
-              </div>
-              <svg class="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" /></svg>
+            
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[9px] font-black text-gray-400 dark:text-zinc-500 tracking-tighter">#{{ instance.id.toString().slice(-4) }}</span>
+              <svg class="w-3 h-3 text-gray-300 dark:text-zinc-600 group-hover:text-gray-900 dark:group-hover:text-zinc-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
             </div>
           </div>
         </div>
@@ -113,56 +92,62 @@
     </div>
   </div>
 
-  <div v-else class="text-center py-12 text-sm font-black text-gray-400 uppercase tracking-widest animate-pulse">
-    Loading...
+  <div v-else class="h-full flex items-center justify-center bg-transparent">
+    <div class="p-8 flex flex-col items-center gap-4 opacity-50">
+      <div class="w-12 h-12 rounded-full border-4 border-gray-200 dark:border-zinc-700 border-t-gray-900 dark:border-t-white animate-spin"></div>
+      <p class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500">Loading Instances...</p>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { fetchTasks, getWorkspace } from '../api';
 import { useCron } from '../composables/useCron';
 
-const { formatCron, getNextRunLabel } = useCron();
+const { formatCron, getNextRunLabel, getNextRunDateTime } = useCron();
 
 const route = useRoute();
 const router = useRouter();
 
-const workspaceId = route.params.workspaceId;
-const taskId = route.params.taskId;
+const workspaceId = computed(() => route.params.id || route.params.workspaceId);
+const taskId = computed(() => route.params.taskId);
 
 const loading = ref(true);
 const error = ref('');
 const workspaceName = ref('');
 const scheduledTask = ref(null);
 const instances = ref([]);
+const isDescriptionCollapsed = ref(true);
 
-onMounted(async () => {
+async function loadData() {
+  loading.value = true;
   try {
     const [wsData, tasksData] = await Promise.all([
-      getWorkspace(workspaceId),
-      fetchTasks(workspaceId)
+      getWorkspace(workspaceId.value),
+      fetchTasks(workspaceId.value)
     ]);
 
     workspaceName.value = wsData.workspace?.name || wsData.name || '';
-
     const allTasks = tasksData.tasks || tasksData || [];
+    scheduledTask.value = allTasks.find(t => t.id === taskId.value) || null;
 
-    scheduledTask.value = allTasks.find(t => t.id === taskId) || null;
-
-    // Find instances: tasks whose parentId matches this task's id, sorted newest first, limit 5
+    // Find instances: tasks whose parentId matches this task's id, sorted newest first, limit 24
     instances.value = allTasks
-      .filter(t => t.parentId === taskId)
+      .filter(t => t.parentId === taskId.value)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 5);
+      .slice(0, 24);
   } catch (err) {
     error.value = err.message || 'Failed to load instances';
   } finally {
     loading.value = false;
   }
-});
+}
+
+onMounted(loadData);
+watch(taskId, loadData);
 
 const nextRunLabel = computed(() => {
   if (!scheduledTask.value?.cronSchedule) return '';
@@ -176,31 +161,71 @@ function formatDate(dateStr) {
   return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-
-function getTaskBgStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-50 border-black';
-  if (status === 'blocked') return 'bg-red-50 border-black';
-  if (status === 'completed') return 'bg-green-50 border-black';
-  return 'bg-gray-50 border-gray-300 border-dashed shadow-none text-gray-500 hover:border-gray-400 hover:bg-gray-100';
+function formatDateShort(dateStr) {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const dateStrShort = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${dateStrShort} ${timeStr}`;
 }
 
-function getTaskDotStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-400';
-  if (status === 'blocked') return 'bg-red-500';
-  if (status === 'completed') return 'bg-green-500';
-  return 'bg-gray-300 border-gray-400';
+
+function getTaskBgStyle(status) {
+  if (status === 'ongoing') return 'border-yellow-200 dark:border-yellow-500/30';
+  if (status === 'blocked') return 'border-red-200 dark:border-red-500/30';
+  if (status === 'completed') return 'border-gray-900 dark:border-white';
+  return 'border-gray-200 dark:border-zinc-800';
+}
+
+function getTaskDotStyle(t) {
+  const status = typeof t === 'string' ? t : t.status;
+  // If it's the task object, check if it's "Pending on Me"
+  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
+    (t.status === 'notstarted' && t.assignee === 'human') ||
+    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
+  );
+
+  if (isPendingOnMe) {
+    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
+  }
+
+  switch (status) {
+    case 'ongoing':
+      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
+    case 'notstarted':
+      return 'bg-gray-400 dark:bg-zinc-500';
+    case 'completed':
+      return 'bg-green-500';
+    case 'rejected':
+      return 'bg-red-500';
+    case 'blocked':
+      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
+    case 'cron':
+      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
+    default:
+      return 'bg-gray-300 dark:bg-zinc-600';
+  }
 }
 
 function getTaskBadgeStyle(status) {
-  if (status === 'ongoing') return 'bg-yellow-200 border-black text-black';
-  if (status === 'blocked') return 'bg-red-200 border-black text-black';
-  if (status === 'completed') return 'bg-green-200 border-black text-black';
-  if (status === 'rejected') return 'bg-red-100 border-red-400 text-red-700';
-  return 'bg-gray-100 border-gray-300 text-gray-500 font-bold';
+  if (status === 'ongoing') return 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-500 border-yellow-200 dark:border-yellow-500/30';
+  if (status === 'blocked') return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-500 border-red-200 dark:border-red-500/30';
+  if (status === 'completed') return 'bg-gray-900 dark:bg-white text-white dark:text-black border-black dark:border-white';
+  if (status === 'rejected') return 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-500 border-red-200 dark:border-red-500/30';
+  return 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700';
 }
 
 function getTaskLabel(status) {
   if (status === 'notstarted') return 'NOT STARTED';
   return status.toUpperCase();
+}
+function stripNote(body) {
+  if (!body) return '';
+  const markerRegex = /\n\n(Self[\s-]Learning[\s-]Loop[\s-]Note|\[Self[\s-]Learning[\s-]Loop[\s-]Note\]|Self[\s-]Learning[\s-]Loop:)/i;
+  const match = body.match(markerRegex);
+  if (match) {
+    return body.substring(0, match.index).trim();
+  }
+  return body;
 }
 </script>
