@@ -17,3 +17,8 @@
 **Vulnerability:** The `GetDetailedWorkspaceStats` controller method retrieved statistics for any workspace ID provided in the request without verifying if the authenticated user owned or had access to that workspace.
 **Learning:** Even when handlers correctly extract and pass the `userID`, the business logic layer must explicitly use it to authorize access to the requested resource. Simply passing it to a downstream service that ignores it leaves the application vulnerable to IDOR.
 **Prevention:** Always perform an ownership check (e.g., fetching the resource with both `resourceID` and `userID`) before executing any operations on specific resources, including read-only operations like fetching statistics.
+
+## 2025-05-22 - Timing Attacks in Token Validation
+**Vulnerability:** Sensitive tokens (Root Access Token and Workspace Mission Tokens) were validated using standard string comparison operators (`==` and `!=`). This can leak information about the secret via timing differences.
+**Learning:** Standard string comparison in Go (and many other languages) returns as soon as it finds a mismatching character. An attacker can use this to perform a timing attack to guess tokens character by character.
+**Prevention:** Use `crypto/subtle.ConstantTimeCompare` for all sensitive token or secret comparisons to ensure that the time taken to validate is independent of the value of the provided token.
