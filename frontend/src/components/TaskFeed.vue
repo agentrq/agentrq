@@ -45,6 +45,16 @@
                 <div class="flex items-center gap-2">
                    <!-- Action Menu (Hover) -->
                    <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                      <!-- Task Reordering -->
+                      <template v-if="!isArchived && t.status === 'notstarted' && grp.title === 'Not Started'">
+                        <button @click.stop="reorderTask(t, -1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Up">
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+                        </button>
+                        <button @click.stop="reorderTask(t, 1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Down">
+                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                      </template>
+
                       <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
@@ -171,7 +181,7 @@ function formatTime(dateStr) {
 
 function getTaskOrder(t) {
   if (t.sortOrder) return t.sortOrder;
-  if (!t.createdAt) return Date.now();
+  if (!t.createdAt) return Date.now() / 1000.0;
   return new Date(t.createdAt).getTime() / 1000.0;
 }
 
