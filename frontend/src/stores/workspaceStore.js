@@ -10,7 +10,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     loading.value = true;
     try {
       const res = await apiFetchWorkspaces();
-      workspaces.value = res.workspaces || [];
+      const list = res.workspaces || [];
+      workspaces.value = list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     } catch (err) {
       console.error('Failed to fetch workspaces:', err);
     } finally {
@@ -22,6 +23,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const idx = workspaces.value.findIndex(w => w.id == updatedWs.id);
     if (idx !== -1) {
       workspaces.value[idx] = { ...workspaces.value[idx], ...updatedWs };
+      workspaces.value.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     }
   }
 
