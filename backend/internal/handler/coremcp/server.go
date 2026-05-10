@@ -118,7 +118,6 @@ type ListWorkspacesParams struct {
 type CreateWorkspaceParams struct {
 	Name                 string         `json:"name"`
 	Description          *string        `json:"description,omitempty"`
-	Icon                 *string        `json:"icon,omitempty"`
 	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
 	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
 }
@@ -131,7 +130,6 @@ type UpdateWorkspaceParams struct {
 	ID                   string         `json:"id"`
 	Name                 *string        `json:"name,omitempty"`
 	Description          *string        `json:"description,omitempty"`
-	Icon                 *string        `json:"icon,omitempty"`
 	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
 	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
 }
@@ -263,7 +261,7 @@ func (s *WorkspaceServer) handleListWorkspaces(ctx context.Context, req *mcp.Cal
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromListWorkspacesResponseEntityToHTTPResponse(res, s.mcpURL)
+	b := apiMapper.FromListWorkspacesResponseEntityToMCPResponse(res, s.mcpURL)
 	return textResponse(string(b)), nil, nil
 }
 
@@ -274,9 +272,6 @@ func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.Ca
 	}
 	if args.Description != nil {
 		workspace.Description = *args.Description
-	}
-	if args.Icon != nil {
-		workspace.Icon = *args.Icon
 	}
 	if args.SelfLearningLoopNote != nil {
 		workspace.SelfLearningLoopNote = *args.SelfLearningLoopNote
@@ -298,7 +293,7 @@ func (s *WorkspaceServer) handleCreateWorkspace(ctx context.Context, req *mcp.Ca
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromCreateWorkspaceResponseEntityToHTTPResponse(res, s.mcpURL(res.Workspace.ID))
+	b := apiMapper.FromCreateWorkspaceResponseEntityToMCPResponse(res, s.mcpURL(res.Workspace.ID))
 	return textResponse(string(b)), nil, nil
 }
 
@@ -312,7 +307,7 @@ func (s *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallT
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromGetWorkspaceResponseEntityToHTTPResponse(res, s.mcpURL(res.Workspace.ID))
+	b := apiMapper.FromGetWorkspaceResponseEntityToMCPResponse(res, s.mcpURL(res.Workspace.ID))
 	return textResponse(string(b)), nil, nil
 }
 
@@ -333,9 +328,6 @@ func (s *WorkspaceServer) handleUpdateWorkspace(ctx context.Context, req *mcp.Ca
 	if args.Description != nil {
 		workspace.Description = *args.Description
 	}
-	if args.Icon != nil {
-		workspace.Icon = *args.Icon
-	}
 	if args.SelfLearningLoopNote != nil {
 		workspace.SelfLearningLoopNote = *args.SelfLearningLoopNote
 	}
@@ -355,7 +347,7 @@ func (s *WorkspaceServer) handleUpdateWorkspace(ctx context.Context, req *mcp.Ca
 		return errorResponse(err), nil, nil
 	}
 
-	b := apiMapper.FromUpdateWorkspaceResponseEntityToHTTPResponse(&res.Workspace, s.mcpURL(res.Workspace.ID))
+	b := apiMapper.FromUpdateWorkspaceResponseEntityToMCPResponse(&res.Workspace, s.mcpURL(res.Workspace.ID))
 	return textResponse(string(b)), nil, nil
 }
 
