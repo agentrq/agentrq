@@ -187,7 +187,7 @@ const displayGroups = computed(() => {
 
   if (f === 'scheduled') {
     const cronTasks = localTasks.value.filter(t => t.status === 'cron').sort((a,b) => getTaskOrder(a) - getTaskOrder(b));
-    if (cronTasks.length === 0) return [];
+    if (cronTasks.length === 0) return [{ title: 'Scheduled', tasks: [] }];
     
     const categories = [
       { label: 'Every 15 mins', values: ['*/15 * * * *'] },
