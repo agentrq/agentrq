@@ -36,9 +36,27 @@ func FromCreateWorkspaceResponseEntityToHTTPResponse(rs *entity.CreateWorkspaceR
 	return payload
 }
 
+func FromCreateWorkspaceResponseEntityToMCPResponse(rs *entity.CreateWorkspaceResponse, mcpURL string) []byte {
+	w := fromEntityWorkspaceToView(rs.Workspace, mcpURL)
+	w.Icon = ""
+	payload, _ := json.Marshal(view.CreateWorkspaceResponse{
+		Workspace: w,
+	})
+	return payload
+}
+
 func FromGetWorkspaceResponseEntityToHTTPResponse(rs *entity.GetWorkspaceResponse, mcpURL string) []byte {
 	payload, _ := json.Marshal(view.GetWorkspaceResponse{
 		Workspace: fromEntityWorkspaceToView(rs.Workspace, mcpURL),
+	})
+	return payload
+}
+
+func FromGetWorkspaceResponseEntityToMCPResponse(rs *entity.GetWorkspaceResponse, mcpURL string) []byte {
+	w := fromEntityWorkspaceToView(rs.Workspace, mcpURL)
+	w.Icon = ""
+	payload, _ := json.Marshal(view.GetWorkspaceResponse{
+		Workspace: w,
 	})
 	return payload
 }
@@ -47,6 +65,17 @@ func FromListWorkspacesResponseEntityToHTTPResponse(rs *entity.ListWorkspacesRes
 	workspaces := make([]view.Workspace, len(rs.Workspaces))
 	for i, p := range rs.Workspaces {
 		workspaces[i] = fromEntityWorkspaceToView(p, mcpURLFn(p.ID))
+	}
+	payload, _ := json.Marshal(view.ListWorkspacesResponse{Workspaces: workspaces})
+	return payload
+}
+
+func FromListWorkspacesResponseEntityToMCPResponse(rs *entity.ListWorkspacesResponse, mcpURLFn func(int64) string) []byte {
+	workspaces := make([]view.Workspace, len(rs.Workspaces))
+	for i, p := range rs.Workspaces {
+		w := fromEntityWorkspaceToView(p, mcpURLFn(p.ID))
+		w.Icon = ""
+		workspaces[i] = w
 	}
 	payload, _ := json.Marshal(view.ListWorkspacesResponse{Workspaces: workspaces})
 	return payload
@@ -94,6 +123,15 @@ func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateW
 func FromUpdateWorkspaceResponseEntityToHTTPResponse(rs *entity.Workspace, mcpURL string) []byte {
 	payload, _ := json.Marshal(view.GetWorkspaceResponse{
 		Workspace: fromEntityWorkspaceToView(*rs, mcpURL),
+	})
+	return payload
+}
+
+func FromUpdateWorkspaceResponseEntityToMCPResponse(rs *entity.Workspace, mcpURL string) []byte {
+	w := fromEntityWorkspaceToView(*rs, mcpURL)
+	w.Icon = ""
+	payload, _ := json.Marshal(view.GetWorkspaceResponse{
+		Workspace: w,
 	})
 	return payload
 }
