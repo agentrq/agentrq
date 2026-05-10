@@ -120,7 +120,7 @@
              </svg>
            </div>
            <h3 class="text-xl font-black text-gray-800 dark:text-zinc-100 tracking-tight">{{ tasks.length === 0 ? 'Connect your first Agent' : 'Agent is Offline' }}</h3>
-           <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[320px] leading-relaxed font-medium">
+           <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed font-medium">
              {{ tasks.length === 0 ? 'This workspace is currently offline. Connect Claude or Gemini via MCP to start automating tasks.' : 'This workspace is currently offline. Reconnect Claude or Gemini via MCP to start automating tasks.' }}
            </p>
            <button @click="router.push({ path: `/workspaces/${workspaceId}/settings`, query: { tab: 'setup' } })" class="mt-8 px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all">
@@ -135,7 +135,7 @@
              </svg>
            </div>
            <h3 class="text-xl font-black text-gray-800 dark:text-zinc-100 tracking-tight">No tasks yet</h3>
-           <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[320px] leading-relaxed font-medium">Agent is connected and ready. Create your first task to see the agent in action.</p>
+           <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed font-medium">Agent is connected and ready. Create your first task to see the agent in action.</p>
            <button @click="router.push(`/workspaces/${workspaceId}/tasks/new`)" class="mt-8 px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all">
              Create First Task
            </button>
@@ -148,7 +148,7 @@
             </svg>
           </div>
           <h3 class="text-xl font-black text-gray-800 dark:text-zinc-100 tracking-tight">Select a task</h3>
-          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[320px] leading-relaxed font-medium">Choose a task from the list to view its details, conversation history, and take actions.</p>
+          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed font-medium">Choose a task from the list to view its details, conversation history, and take actions.</p>
         </template>
       </div>
     </div>
