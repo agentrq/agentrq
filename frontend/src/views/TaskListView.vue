@@ -91,6 +91,9 @@
                       <button @click="handleAction(task, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
                         Allow
                       </button>
+                      <button @click="handleAction(task, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
+                        Deny
+                      </button>
                       <button @click="openTask(task)" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all shadow-sm">
                         Review
                       </button>
@@ -135,7 +138,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict } from '../api';
+import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
@@ -278,6 +281,19 @@ const getLastMessageText = (task) => {
 
 const handleAction = async (task, action) => {
   try {
+    if (task.status === 'notstarted' && task.assignee === 'human') {
+      if (action === 'allow') {
+        await updateTaskAssignee(task.workspaceId, task.id, 'agent');
+        await updateTaskStatus(task.workspaceId, task.id, 'ongoing');
+        notifySuccess('Task started and assigned to agent');
+      } else {
+        await updateTaskStatus(task.workspaceId, task.id, 'rejected');
+        notifySuccess('Task rejected');
+      }
+      await fetchInitial();
+      return;
+    }
+
     // Find the latest message that is a permission_request and has no verdict yet
     const pendingMsg = [...(task.messages || [])].reverse().find(m => 
       m.metadata?.type === 'permission_request' && 
@@ -285,7 +301,7 @@ const handleAction = async (task, action) => {
       m.metadata?.status !== 'deny'
     );
     
-    const requestId = pendingMsg?.metadata?.requestId;
+    const requestId = pendingMsg?.metadata?.request_id || pendingMsg?.metadata?.requestId;
     if (!requestId) throw new Error('No pending permission request found');
     
     const behavior = action === 'allow' ? 'allow' : 'deny';

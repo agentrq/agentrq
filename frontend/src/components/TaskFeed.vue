@@ -63,6 +63,18 @@
                 {{ t.title }}
               </h3>
 
+              <!-- Quick actions for Pending -->
+              <div v-if="grp.title === 'Action Required'" class="mt-3" @click.stop>
+                <div class="flex flex-wrap gap-2" v-if="isAgentConnected">
+                  <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
+                    Allow
+                  </button>
+                  <button @click="handleAction(t, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
+                    Deny
+                  </button>
+                </div>
+              </div>
+
               <div v-if="t.status === 'cron' && t.cronSchedule" class="mt-2 flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-zinc-500 font-medium uppercase tracking-tight">
                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 <span>{{ getNextRunLabel(t.cronSchedule) }}</span>
@@ -90,7 +102,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus } from '../api';
+import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee } from '../api';
 import { useCron } from '../composables/useCron';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
@@ -162,6 +174,38 @@ function getTaskOrder(t) {
   if (!t.createdAt) return Date.now();
   return new Date(t.createdAt).getTime() / 1000.0;
 }
+
+const handleAction = async (task, action) => {
+  try {
+    if (task.status === 'notstarted' && task.assignee === 'human') {
+      if (action === 'allow') {
+        await updateTaskAssignee(task.workspaceId, task.id, 'agent');
+        await updateTaskStatus(task.workspaceId, task.id, 'ongoing');
+        notifySuccess('Task started and assigned to agent');
+      } else {
+        await updateTaskStatus(task.workspaceId, task.id, 'rejected');
+        notifySuccess('Task rejected');
+      }
+      return;
+    }
+
+    // Find the latest message that is a permission_request and has no verdict yet
+    const pendingMsg = [...(task.messages || [])].reverse().find(m => 
+      m.metadata?.type === 'permission_request' && 
+      m.metadata?.status !== 'allow' && 
+      m.metadata?.status !== 'deny'
+    );
+    
+    const requestId = pendingMsg?.metadata?.request_id || pendingMsg?.metadata?.requestId;
+    if (!requestId) throw new Error('No pending permission request found');
+    
+    const behavior = action === 'allow' ? 'allow' : 'deny';
+    await sendPermissionVerdict(task.workspaceId, task.id, requestId, behavior);
+    notifySuccess(`Permission ${action === 'allow' ? 'allowed' : 'denied'}`);
+  } catch (err) {
+    notifyError(`Failed to ${action} task: ` + err.message);
+  }
+};
 
 const emptyStateLabel = computed(() => {
   switch (props.filter) {
