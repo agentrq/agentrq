@@ -122,7 +122,7 @@
               </button>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div v-for="p in filteredActiveWorkspaces"
                  :key="p.id"
                  class="group relative bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-4 cursor-pointer transition-all duration-300 hover:border-gray-400 dark:hover:border-zinc-600 shadow-sm hover:shadow-md"
@@ -183,7 +183,7 @@
             <div class="flex-1 h-px bg-gray-200 dark:bg-zinc-800"></div>
           </div>
 
-          <div v-if="filteredArchivedWorkspaces.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div v-if="filteredArchivedWorkspaces.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div v-for="p in filteredArchivedWorkspaces"
                  :key="p.id"
                  class="group relative border border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 rounded-sm p-4 opacity-60 hover:opacity-100 hover:border-gray-300 dark:hover:border-zinc-700 transition-all cursor-pointer shadow-sm hover:shadow-md"
