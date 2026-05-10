@@ -91,7 +91,7 @@
                    : 'whitespace-pre-wrap p-3 bg-gray-50/50 dark:bg-zinc-800/30 rounded-xl border border-gray-100 dark:border-zinc-800 text-[13px] text-gray-600 dark:text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-200'
                ]"
                class="cursor-pointer font-medium leading-relaxed transition-all hover:text-gray-800 dark:hover:text-zinc-100">
-              {{ isDescriptionCollapsed ? stripNote(task.body) : task.body }}
+              {{ stripNote(task.body) }}
             </p>
           </div>
           
@@ -619,7 +619,7 @@ onMounted(() => {
 onUnmounted(disconnect);
 function stripNote(body) {
   if (!body) return '';
-  const markerRegex = /\n\n(Self[\s-]Learning[\s-]Loop[\s-]Note|\[Self[\s-]Learning[\s-]Loop[\s-]Note\]|Self[\s-]Learning[\s-]Loop:)/i;
+  const markerRegex = /\n\n(Self[\s-]Learning[\s-]Loop[\s-]Note|\[Self[\s-]Learning[\s-]Loop[\s-]Note\]|Self[\s-]Learning[\s-]Loop):/i;
   const match = body.match(markerRegex);
   if (match) {
     return body.substring(0, match.index).trim();

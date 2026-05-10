@@ -125,7 +125,7 @@
             </svg>
           </div>
           <p class="text-lg font-bold text-gray-800 dark:text-zinc-200 tracking-tight">Select a task</p>
-          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[300px] leading-relaxed">Choose a task from the list to view its details, conversation history, and take actions.</p>
+          <p class="text-sm text-gray-500 dark:text-zinc-400 mt-2 max-w-[420px] leading-relaxed">Choose a task from the list to view its details, conversation history, and take actions.</p>
         </div>
       </div>
     </div>
