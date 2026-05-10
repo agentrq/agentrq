@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -235,7 +236,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 		}
 
-		if h.rootToken == "" || req.RootToken != h.rootToken {
+		if h.rootToken == "" || subtle.ConstantTimeCompare([]byte(req.RootToken), []byte(h.rootToken)) != 1 {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid root token"})
 		}
 

@@ -107,12 +107,13 @@ func TestCreateTask_AgentAppendLoopNote(t *testing.T) {
 	ws := activeWorkspace()
 	ws.SelfLearningLoopNote = "Be concise."
 
-	created := model.Task{ID: 45, WorkspaceID: 1, Assignee: "agent", Body: "Hello world.\n\nBe concise."}
+	createdBody := "Hello world.\n\nSelf Learning Loop Note:\nBe concise."
+	created := model.Task{ID: 45, WorkspaceID: 1, Assignee: "agent", Body: createdBody}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
 	e.idgen.EXPECT().NextID().Return(int64(45))
 	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
-		if m.Body != "Hello world.\n\nBe concise." {
+		if m.Body != createdBody {
 			return model.Task{}, fmt.Errorf("expected Body to have loop note appended, got %q", m.Body)
 		}
 		return created, nil
@@ -126,8 +127,8 @@ func TestCreateTask_AgentAppendLoopNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Task.Body != "Hello world.\n\nBe concise." {
-		t.Errorf("expected task body with note")
+	if resp.Task.Body != createdBody {
+		t.Errorf("expected task body with note, got %q", resp.Task.Body)
 	}
 }
 
@@ -508,13 +509,14 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	ws.SelfLearningLoopNote = "Be concise."
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Assignee: "human", Body: "Original body."}
-	updated := model.Task{ID: 10, WorkspaceID: 1, Assignee: "agent", Body: "Original body.\n\nBe concise."}
+	updatedBody := "Original body.\n\nSelf Learning Loop Note:\nBe concise."
+	updated := model.Task{ID: 10, WorkspaceID: 1, Assignee: "agent", Body: updatedBody}
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-	
+
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
-		if m.Body != "Original body.\n\nBe concise." {
+		if m.Body != updatedBody {
 			return model.Task{}, fmt.Errorf("expected Body to have loop note appended, got %q", m.Body)
 		}
 		return updated, nil
@@ -529,8 +531,8 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	if resp.Task.Assignee != "agent" {
 		t.Errorf("expected assignee agent, got %s", resp.Task.Assignee)
 	}
-	if resp.Task.Body != "Original body.\n\nBe concise." {
-		t.Errorf("expected task body to be updated")
+	if resp.Task.Body != updatedBody {
+		t.Errorf("expected task body to be updated, got %q", resp.Task.Body)
 	}
 }
 
