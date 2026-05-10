@@ -74,6 +74,15 @@
                       </span>
                     </div>
                     <div class="flex items-center gap-2 relative">
+                       <!-- Reorder buttons for not started -->
+                       <div v-if="filterType === 'notstarted'" class="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button @click.stop="reorderTask(grp.tasks, task, -1)" class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded text-gray-400 hover:text-black dark:hover:text-white transition-colors" title="Move Up">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+                          </button>
+                          <button @click.stop="reorderTask(grp.tasks, task, 1)" class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded text-gray-400 hover:text-black dark:hover:text-white transition-colors" title="Move Down">
+                            <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                          </button>
+                       </div>
                        <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-bold uppercase tracking-wider tabular-nums shrink-0">{{ formatTime(task.createdAt) }}</span>
                     </div>
                   </div>
@@ -144,7 +153,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus } from '../api';
+import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
@@ -317,6 +326,31 @@ const handleAction = async (task, action) => {
     await fetchInitial();
   } catch (err) {
     notifyError(`Failed to ${action} task: ` + err.message);
+  }
+};
+
+const getTaskOrder = (t) => {
+  if (t.sortOrder) return t.sortOrder;
+  if (!t.createdAt) return Date.now() / 1000.0;
+  return new Date(t.createdAt).getTime() / 1000.0;
+};
+
+const reorderTask = async (groupTasks, task, direction) => {
+  const idx = groupTasks.findIndex(x => x.id === task.id);
+  if (idx === -1) return;
+  
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= groupTasks.length) return;
+  
+  const neighbor = groupTasks[targetIdx];
+  const neighborOrder = getTaskOrder(neighbor);
+  let newOrder = direction === -1 ? neighborOrder + 0.001 : neighborOrder - 0.001;
+  
+  try {
+    await updateTaskOrder(task.workspaceId, task.id, newOrder);
+    await fetchInitial();
+  } catch (err) {
+    notifyError('Reorder Error: ' + err.message);
   }
 };
 

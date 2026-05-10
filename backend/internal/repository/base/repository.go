@@ -179,7 +179,9 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 		orderBy = "created_at asc"
 	} else if len(req.Status) > 0 {
 		status := req.Status[0]
-		if status != "notstarted" && status != "cron" {
+		if status == "notstarted" {
+			orderBy = "sort_order desc, created_at desc"
+		} else if status != "cron" {
 			orderBy = "updated_at desc"
 		}
 	}
