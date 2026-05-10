@@ -124,6 +124,31 @@ When connected, the AI agent has access to:
 - `downloadAttachment`: Retrieve an attachment by its ID.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
+## 🌉 ACP Gateway (Bridge for ACP Agents)
+
+While Claude Code has native support for `claude/notifications`, other agents like **Gemini CLI** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` bridges the [Agent Client Protocol (ACP)](https://agentclientprotocol.com) with MCP to enable this.
+
+### Installation
+
+```bash
+npm install -g @agentrq/acp-gateway
+```
+
+### Usage
+
+1. Ensure you have a [`.mcp.json`](#step-1--mcpjson) in your project root.
+2. Run the gateway followed by your agent's ACP command:
+
+```bash
+# Using Gemini CLI
+acp-gateway -- gemini --acp
+```
+
+The gateway will automatically:
+- Connect to your AgentRQ workspace via the URL in `.mcp.json`.
+- Spawn the agent subprocess and bridge standard I/O.
+- Forward task assignments, messages, and permission requests in real-time.
+
 ## 👑 Supervisor (CoreMCP)
 
 While individual workspaces provide a scoped view for specific projects, the **Supervisor (CoreMCP)** is a global MCP server that grants an agent bird's-eye view and management capabilities across your entire AgentRQ account.
@@ -193,6 +218,8 @@ The AgentRQ plugin for Claude Code is distributed via our official marketplace. 
 
 ### ♊ Gemini CLI
 The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks directly from your terminal using Google's Gemini models.
+
+> **Tip:** To enable real-time task notifications with Gemini, use the [ACP Gateway](#-acp-gateway-bridge-for-acp-agents).
 
 **Installation:**
 ```bash
