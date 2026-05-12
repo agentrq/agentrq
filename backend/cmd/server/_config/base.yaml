@@ -24,8 +24,8 @@ postgres:
   maxConnLifetime: 1h
 
 auth:
-  jwtSecret: ${AGENTRQ_AUTH_JWT_SECRET:agentrq-secret-change-me}
-  rootAccessToken: ${AGENTRQ_AUTH_ROOT_ACCESS_TOKEN:agentrq}
+  jwtSecret: ${AGENTRQ_AUTH_JWT_SECRET}
+  rootAccessToken: ${AGENTRQ_AUTH_ROOT_ACCESS_TOKEN}
   rootLoginEnabled: ${AGENTRQ_AUTH_ROOT_LOGIN_ENABLED:false}
   google:
     clientId: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_ID}

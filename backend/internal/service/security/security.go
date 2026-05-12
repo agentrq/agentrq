@@ -70,14 +70,26 @@ func Decrypt(ciphertextHex, key, nonceHex string) (string, error) {
 }
 
 // GenerateSecret generates a random base62 string of a certain length.
+// It uses rejection sampling to eliminate modulo bias.
 func GenerateSecret(n int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	for i := 0; i < n; i++ {
-		b[i] = charset[int(b[i])%len(charset)]
+	max := 256 - (256 % len(charset))
+	i := 0
+	for i < n {
+		rb := make([]byte, n-i)
+		if _, err := rand.Read(rb); err != nil {
+			return "", err
+		}
+		for _, val := range rb {
+			if int(val) < max {
+				b[i] = charset[int(val)%len(charset)]
+				i++
+				if i == n {
+					break
+				}
+			}
+		}
 	}
 	return string(b), nil
 }

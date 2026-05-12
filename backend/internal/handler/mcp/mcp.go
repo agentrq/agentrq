@@ -5,6 +5,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -193,7 +194,7 @@ func (h *handler) streamableHandler() http.Handler {
 		// If it's a 16-character mission token, decrypt and check
 		if len(queryToken) == 16 {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
-			if decErr != nil || dec != queryToken {
+			if decErr != nil || subtle.ConstantTimeCompare([]byte(dec), []byte(queryToken)) != 1 {
 				sendJSONRPCError(w, "situational security: invalid mission token", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 				return
 			}
@@ -265,7 +266,7 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 		workspace, err := h.crud.SystemGetWorkspace(ctx, workspaceID)
 		if err == nil && workspace.TokenEncrypted != "" {
 			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
-			if decErr == nil && dec == tokenStr {
+			if decErr == nil && subtle.ConstantTimeCompare([]byte(dec), []byte(tokenStr)) == 1 {
 				return monoflake.ID(workspace.UserID).String()
 			}
 		}
