@@ -83,7 +83,9 @@
                             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
                           </button>
                        </div>
-                       <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-bold uppercase tracking-wider tabular-nums shrink-0">{{ formatTime(task.createdAt) }}</span>
+                       <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-bold uppercase tracking-wider tabular-nums shrink-0">
+                         {{ task.status === 'cron' ? formatDate(task.createdAt) : formatTime(task.createdAt) }}
+                       </span>
                     </div>
                   </div>
 
@@ -160,7 +162,7 @@ import { useCron } from '../composables/useCron';
 import { useEventBus } from '../useEventBus';
 import { useViewport } from '../composables/useViewport';
 
-const { getNextRunLabel, getNextRunDateTime } = useCron();
+const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
@@ -262,8 +264,17 @@ const displayGroups = computed(() => {
     groups.push({ title: 'Completed', tasks: completed });
     if (rejected.length > 0) groups.push({ title: 'Rejected', tasks: rejected });
   }
-  if (f === 'scheduled') {
-    groups.push({ title: 'Scheduled', tasks: cron });
+  if (f === 'active' || f === 'scheduled') {
+    // Sort cron tasks by next run time
+    const sortedCron = [...cron].sort((a, b) => {
+      const aTime = getNextRunDate(a.cronSchedule).getTime();
+      const bTime = getNextRunDate(b.cronSchedule).getTime();
+      return aTime - bTime;
+    });
+    
+    if (sortedCron.length > 0) {
+      groups.push({ title: 'Scheduled', tasks: sortedCron });
+    }
   }
 
   return groups;
@@ -400,7 +411,7 @@ const loadMore = async () => {
 };
 
 const getBackendParams = (filter) => {
-  if (filter === 'active') return { status: 'ongoing,blocked,notstarted' };
+  if (filter === 'active') return { status: 'ongoing,blocked,notstarted,cron' };
   if (filter === 'scheduled') return { status: 'cron' };
   if (filter === 'pending') return { filter: 'pending_approval' };
   if (filter === 'notstarted') return { status: 'notstarted' };
@@ -417,6 +428,13 @@ const openTask = (task) => {
   } else {
     router.push(`/tasks/${filterType.value}/${task.workspaceId}/${task.id}`);
   }
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 const formatTime = (dateStr) => {

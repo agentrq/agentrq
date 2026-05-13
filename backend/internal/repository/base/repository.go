@@ -177,7 +177,11 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	orderBy := "created_at desc"
 	if req.Filter == "pending_approval" {
 		orderBy = "created_at asc"
-	} else if len(req.Status) > 0 {
+	} else if len(req.Status) > 1 {
+		// Mixed statuses, likely "active" view (ongoing, blocked, notstarted, cron)
+		// We prioritize status: ongoing (0) > blocked (1) > cron (2) > notstarted (3)
+		orderBy = "CASE WHEN status = 'ongoing' THEN 0 WHEN status = 'blocked' THEN 1 WHEN status = 'cron' THEN 2 ELSE 3 END, updated_at DESC"
+	} else if len(req.Status) == 1 {
 		status := req.Status[0]
 		if status == "notstarted" {
 			orderBy = "sort_order desc, created_at desc"
