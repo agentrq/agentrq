@@ -121,8 +121,24 @@ export function useCron() {
     return 'Soon'; 
   }
 
+  function getNextRunDate(cron) {
+    if (!cron) return new Date(8640000000000000); // Far future
+    try {
+      let interval;
+      try {
+        interval = CronExpressionParser.parse(cron, { tz: 'UTC' });
+      } catch (e) {
+        interval = CronExpressionParser.parse(cron);
+      }
+      return interval.next().toDate();
+    } catch (e) {
+      return new Date(8640000000000000); // Far future
+    }
+  }
+
   return {
     formatCron,
+    getNextRunDate,
     getNextRunDateTime,
     getNextRunLabel,
     daysOptions
