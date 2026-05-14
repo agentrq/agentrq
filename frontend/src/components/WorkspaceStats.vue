@@ -77,8 +77,8 @@
             <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
           </div>
           <ChartSVG 
-            v-if="stats && stats.timeseries && stats.timeseries.tasksCompleted"
-            :data="stats.timeseries.tasksCompleted" 
+            v-if="stats && stats.timeseries"
+            :data="stats.timeseries.tasksCompleted || []" 
             :color="isDark ? '#d4d4d8' : '#27272a'" 
             :fixed-length="chartFixedLength"
           />
@@ -96,8 +96,8 @@
             <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
           </div>
           <ChartSVG 
-            v-if="stats && stats.timeseries && stats.timeseries.messages"
-            :data="stats.timeseries.messages" 
+            v-if="stats && stats.timeseries"
+            :data="stats.timeseries.messages || []" 
             :color="isDark ? '#d4d4d8' : '#27272a'" 
             :fixed-length="chartFixedLength"
           />
@@ -161,7 +161,19 @@ async function load() {
 const chartFixedLength = computed(() => {
   if (activeRange.value === '7d' || activeRange.value === 'week') return 7;
   if (activeRange.value === '30d' || activeRange.value === 'month') return 30;
+  if (activeRange.value === 'custom' && customFrom.value && customTo.value) {
+    const f = new Date(customFrom.value);
+    const t = new Date(customTo.value);
+    const diff = Math.ceil((t - f) / (1000 * 60 * 60 * 24));
+    return diff >= 0 ? diff + 1 : 0;
+  }
   return 0;
+});
+
+watch([customFrom, customTo], () => {
+  if (activeRange.value === 'custom' && customFrom.value && customTo.value) {
+    load();
+  }
 });
 
 function setRange(range) {
