@@ -124,13 +124,11 @@ const points = computed(() => {
   if (props.fixedLength > 0 && props.lastDate && len > 0) {
     const lastDataDate = props.data[len - 1].date;
     if (lastDataDate !== props.lastDate) {
-      // Calculate how many days separate the last data point from the target end date
-      const d1 = new Date();
-      const [m1, day1] = lastDataDate.split('-').map(Number);
-      const [m2, day2] = props.lastDate.split('-').map(Number);
+      // Use proper Date parsing for accurate day difference
+      const d1 = new Date(lastDataDate);
+      const d2 = new Date(props.lastDate);
       
-      // Simple day diff (doesn't need to be perfect across months for this UI hint)
-      const dayDiff = (m2 * 31 + day2) - (m1 * 31 + day1);
+      const dayDiff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
       if (dayDiff > 0) {
         baseOffset = Math.max(0, props.fixedLength - len - dayDiff);
       }

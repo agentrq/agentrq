@@ -162,15 +162,13 @@ async function load() {
 
 const chartEndDate = computed(() => {
   if (activeRange.value === 'custom' && customTo.value) {
-    const d = new Date(customTo.value);
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${m}-${day}`;
+    return customTo.value; // Already YYYY-MM-DD from input[type=date]
   }
   const now = new Date();
+  const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${m}-${day}`;
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 });
 
 const chartFixedLength = computed(() => {
