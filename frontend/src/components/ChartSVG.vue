@@ -97,7 +97,8 @@ import { computed, ref } from 'vue';
 const props = defineProps({
   data: { type: Array, default: () => [] },
   color: { type: String, default: 'currentColor' },
-  fixedLength: { type: Number, default: 0 }
+  fixedLength: { type: Number, default: 0 },
+  lastDate: { type: String, default: '' } // Expected format matching data: e.g. "05-14"
 });
 
 const uid = ref(Math.random().toString(36).substring(2, 9));
@@ -117,12 +118,28 @@ const points = computed(() => {
   const displayLen = Math.max(len, props.fixedLength);
   const step = 100 / (displayLen || 1);
   
-  // If we have fixed length but fewer data points, they should be at the end (most recent)
-  const offset = props.fixedLength > len ? props.fixedLength - len : 0;
+  // If we have a fixed length and an explicit end date, calculate the offset accurately
+  let baseOffset = props.fixedLength > len ? props.fixedLength - len : 0;
+  
+  if (props.fixedLength > 0 && props.lastDate && len > 0) {
+    const lastDataDate = props.data[len - 1].date;
+    if (lastDataDate !== props.lastDate) {
+      // Calculate how many days separate the last data point from the target end date
+      const d1 = new Date();
+      const [m1, day1] = lastDataDate.split('-').map(Number);
+      const [m2, day2] = props.lastDate.split('-').map(Number);
+      
+      // Simple day diff (doesn't need to be perfect across months for this UI hint)
+      const dayDiff = (m2 * 31 + day2) - (m1 * 31 + day1);
+      if (dayDiff > 0) {
+        baseOffset = Math.max(0, props.fixedLength - len - dayDiff);
+      }
+    }
+  }
 
   return props.data.map((d, i) => {
     // Center the bar in its slot, offset by missing slots
-    const x = ((i + offset) * step) + (step / 2);
+    const x = ((i + baseOffset) * step) + (step / 2);
     // Add 15% vertical padding for better clearance
     const y = 85 - (d.count / max) * 70;
     return { x, y, date: d.date, count: d.count };

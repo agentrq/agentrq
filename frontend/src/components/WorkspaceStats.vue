@@ -81,6 +81,7 @@
             :data="stats.timeseries.tasksCompleted || []" 
             :color="isDark ? '#d4d4d8' : '#27272a'" 
             :fixed-length="chartFixedLength"
+            :last-date="chartEndDate"
           />
         </div>
       </div>
@@ -100,6 +101,7 @@
             :data="stats.timeseries.messages || []" 
             :color="isDark ? '#d4d4d8' : '#27272a'" 
             :fixed-length="chartFixedLength"
+            :last-date="chartEndDate"
           />
         </div>
       </div>
@@ -157,6 +159,19 @@ async function load() {
     loading.value = false;
   }
 }
+
+const chartEndDate = computed(() => {
+  if (activeRange.value === 'custom' && customTo.value) {
+    const d = new Date(customTo.value);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${m}-${day}`;
+  }
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${m}-${day}`;
+});
 
 const chartFixedLength = computed(() => {
   if (activeRange.value === '7d' || activeRange.value === 'week') return 7;
