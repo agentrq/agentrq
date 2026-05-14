@@ -6,7 +6,7 @@
         v-for="opt in rangeOptions" 
         :key="opt.id"
         @click="setRange(opt.id)"
-        class="px-3 py-1.5 text-[10px] font-black rounded-sm transition-all"
+        class="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all"
         :class="activeRange === opt.id 
           ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700 rounded-sm'
           : 'text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-50 rounded-sm'"
@@ -29,38 +29,38 @@
     <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <!-- Tasks Completed -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Completed</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksCompleted.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Completed</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksCompleted.toLocaleString() }}</span>
       </div>
 
       <!-- Scheduled -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Scheduled</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksScheduled.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Scheduled</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksScheduled.toLocaleString() }}</span>
       </div>
 
       <!-- Messages -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Messages</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.messages.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Messages</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.messages.toLocaleString() }}</span>
       </div>
 
       <!-- Manual -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Manual</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.manualApprovals.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Manual</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.manualApprovals.toLocaleString() }}</span>
       </div>
 
       <!-- Auto -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Auto</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.autoApprovals.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Auto</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.autoApprovals.toLocaleString() }}</span>
       </div>
 
       <!-- Denies -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500">Denies</span>
-        <span class="text-2xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.denies.toLocaleString() }}</span>
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Denies</span>
+        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.denies.toLocaleString() }}</span>
       </div>
     </div>
 
@@ -69,8 +69,8 @@
       <!-- Task Chart -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black text-gray-900 dark:text-zinc-50">Task Completion Velocity</h3>
-          <div class="text-gray-500 dark:text-zinc-500 text-[9px] font-black">Daily Trend</div>
+          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Completion Velocity</h3>
+          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Daily Trend</div>
         </div>
         <div class="h-56 w-full relative">
           <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
@@ -79,7 +79,8 @@
           <ChartSVG 
             v-if="stats && stats.timeseries && stats.timeseries.tasksCompleted"
             :data="stats.timeseries.tasksCompleted" 
-            :color="isDark ? '#e4e4e7' : '#000000'" 
+            :color="isDark ? '#d4d4d8' : '#27272a'" 
+            :fixed-length="chartFixedLength"
           />
         </div>
       </div>
@@ -87,8 +88,8 @@
       <!-- Message Chart -->
       <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black text-gray-900 dark:text-zinc-50">Communication Volume</h3>
-          <div class="text-gray-500 dark:text-zinc-500 text-[9px] font-black">Total Messages</div>
+          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Communication Volume</h3>
+          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Total Messages</div>
         </div>
         <div class="h-56 w-full relative">
           <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
@@ -97,7 +98,8 @@
           <ChartSVG 
             v-if="stats && stats.timeseries && stats.timeseries.messages"
             :data="stats.timeseries.messages" 
-            :color="isDark ? '#a1a1aa' : '#52525b'" 
+            :color="isDark ? '#d4d4d8' : '#27272a'" 
+            :fixed-length="chartFixedLength"
           />
         </div>
       </div>
@@ -155,6 +157,12 @@ async function load() {
     loading.value = false;
   }
 }
+
+const chartFixedLength = computed(() => {
+  if (activeRange.value === '7d' || activeRange.value === 'week') return 7;
+  if (activeRange.value === '30d' || activeRange.value === 'month') return 30;
+  return 0;
+});
 
 function setRange(range) {
   activeRange.value = range;
