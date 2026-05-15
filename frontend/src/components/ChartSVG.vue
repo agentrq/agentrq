@@ -29,10 +29,10 @@
             :x="p.x - (barWidth / 2)"
             :y="p.y"
             :width="barWidth"
-            :height="Math.max(90 - p.y, 2)"
+            :height="p.count > 0 ? Math.max(90 - p.y, 2) : 0"
             :fill="color"
             :fill-opacity="1"
-            rx="2"
+            rx="0.5"
             class="transition-all duration-200"
             :class="{'brightness-90': hoveredPoint === p}"
             :filter="hoveredPoint === p ? 'url(#glow-' + uid + ')' : ''"
@@ -80,12 +80,15 @@
     </div>
 
     <!-- X-axis labels -->
-    <div v-if="points.length > 1" class="relative h-5 mt-0.5 flex-shrink-0">
+    <div v-if="xAxisLabels.length > 0" class="relative h-5 mt-0.5 flex-shrink-0">
       <span
         v-for="lbl in xAxisLabels"
         :key="lbl.x"
-        class="absolute bottom-0 text-[9px] font-black text-gray-400 dark:text-zinc-500 tabular-nums leading-none uppercase"
-        :style="{ left: `${lbl.x}%`, transform: 'translateX(-50%)' }"
+        class="absolute bottom-0 text-[9px] font-black text-gray-400 dark:text-zinc-500 tabular-nums leading-none uppercase whitespace-nowrap"
+        :style="{ 
+          left: `${lbl.x}%`, 
+          transform: lbl.x > 80 ? 'translateX(-100%)' : lbl.x < 20 ? 'translateX(0)' : 'translateX(-50%)' 
+        }"
       >{{ lbl.label }}</span>
     </div>
   </div>
@@ -148,8 +151,18 @@ const barWidth = computed(() => {
   const len = props.data.length;
   const displayLen = Math.max(len, props.fixedLength);
   if (displayLen === 0) return 0;
+  
   const step = 100 / displayLen;
-  return step * 0.7; // 70% width, 30% gap
+  // Sleek, minimal width
+  let width = step * 0.3; 
+  
+  // Cap the absolute width to maintain a clean vertical line aesthetic
+  const maxAbsWidth = 1.5; 
+  if (width > maxAbsWidth) {
+    width = maxAbsWidth;
+  }
+  
+  return width;
 });
 
 // Unused in bar chart mode
@@ -157,34 +170,42 @@ const linePath = computed(() => '');
 const areaPath = computed(() => '');
 
 const xAxisLabels = computed(() => {
-  if (points.value.length < 1) return [];
-  const all = points.value;
-
-  // If we only have one point (centered at 50%), show it
-  if (all.length === 1) {
-    return [{ x: all[0].x, label: formatDate(all[0].date) }];
-  }
-
-  const maxLabels = 6;
-  if (all.length <= maxLabels) {
-    const res = [];
-    all.forEach(p => {
-      if (!res.find(r => r.label === formatDate(p.date))) {
-        res.push({ x: p.x, label: formatDate(p.date) });
-      }
-    });
-    return res;
-  }
-
   const result = [];
-  const step = (all.length - 1) / (maxLabels - 1);
-  for (let i = 0; i < maxLabels; i++) {
-    const idx = Math.min(Math.round(i * step), all.length - 1);
-    const lbl = { x: all[idx].x, label: formatDate(all[idx].date) };
-    if (!result.find(r => r.label === lbl.label)) {
-      result.push(lbl);
+  
+  if (props.fixedLength > 0 && props.lastDate) {
+    const len = props.fixedLength;
+    const step = 100 / len;
+    
+    // Dynamically choose number of labels to show
+    const numLabels = len <= 7 ? 3 : (len <= 14 ? 4 : 6);
+    
+    for (let i = 0; i < numLabels; i++) {
+      const fraction = i / (numLabels - 1);
+      const daysBack = Math.round((1 - fraction) * (len - 1));
+      
+      const d = new Date(props.lastDate);
+      d.setDate(d.getDate() - daysBack);
+      const dateStr = d.toISOString().split('T')[0];
+      
+      // Calculate x position centered on the specific day's slot
+      const x = (fraction * (100 - step)) + (step / 2);
+      const lbl = formatDate(dateStr);
+      
+      if (!result.find(r => r.label === lbl)) {
+        result.push({ x, label: lbl });
+      }
+    }
+    result.sort((a, b) => a.x - b.x);
+  } else if (points.value.length > 0) {
+    const all = points.value;
+    if (all.length === 1) {
+      result.push({ x: all[0].x, label: formatDate(all[0].date) });
+    } else {
+      result.push({ x: all[0].x, label: formatDate(all[0].date) });
+      result.push({ x: all[all.length - 1].x, label: formatDate(all[all.length - 1].date) });
     }
   }
+  
   return result;
 });
 
