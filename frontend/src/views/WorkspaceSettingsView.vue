@@ -42,7 +42,7 @@
                   <div class="space-y-6">
                     <div class="space-y-2">
                       <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Workspace Name</label>
-                      <input v-model="form.name" type="text" required class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-bold text-gray-900 dark:text-zinc-100 transition-all shadow-sm" placeholder="e.g. Project Redstone" />
+                      <input v-model="form.name" @blur="form.name = toKebabCase(form.name)" type="text" required class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-bold text-gray-900 dark:text-zinc-100 transition-all shadow-sm" placeholder="e.g. project-redstone" />
                     </div>
                     <div class="space-y-2">
                       <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Mission Description</label>
@@ -294,6 +294,9 @@ import { useToasts } from '../composables/useToasts';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useFormat } from '../composables/useFormat';
+
+const { toKebabCase, liveKebabCase } = useFormat();
 
 const route = useRoute();
 const router = useRouter();
@@ -390,6 +393,15 @@ const form = ref({
   autoAllowedTools: [],
   allowAllCommands: false,
   selfLearningLoopNote: ''
+});
+
+watch(() => form.value.name, (newVal) => {
+  if (newVal) {
+    const formatted = liveKebabCase(newVal);
+    if (formatted !== newVal) {
+      form.value.name = formatted;
+    }
+  }
 });
 
 async function load() {

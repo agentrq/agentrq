@@ -29,8 +29,8 @@
 
           <div class="flex flex-col min-w-0 flex-1">
             <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
-              <span v-if="$route.path.includes('/settings') || $route.path.includes('/analytics')" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ workspace?.name }}</span>
-              <span v-else>{{ workspace?.name || 'Workspace' }}</span>
+              <span v-if="$route.path.includes('/settings') || $route.path.includes('/analytics')" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ toKebabCase(workspace?.name) }}</span>
+              <span v-else>{{ toKebabCase(workspace?.name) || 'Workspace' }}</span>
               <template v-if="$route.path.includes('/settings') || $route.path.includes('/analytics')">
                 <span class="mx-1.5 text-gray-300 dark:text-zinc-700 font-medium">/</span>
                 <span class="text-gray-400 dark:text-zinc-500">{{ $route.path.includes('/settings') ? 'Settings' : 'Analytics' }}</span>
@@ -168,7 +168,10 @@ import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useViewport } from '../composables/useViewport';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useFormat } from '../composables/useFormat';
 import TaskFeed from '../components/TaskFeed.vue';
+
+const { toKebabCase } = useFormat();
 
 const route = useRoute();
 const router = useRouter();

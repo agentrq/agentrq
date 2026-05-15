@@ -62,12 +62,12 @@
           </div>
           <router-link to="/"
               @mouseenter="showTooltip($event, 'Overview')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Overview</span>
@@ -87,7 +87,7 @@
               <div class="w-1.5 h-1.5 rounded-full shrink-0"
                    :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
                    :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
-              <span class="truncate flex-1">{{ ws.name }}</span>
+              <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
             </router-link>
           </template>
 
@@ -97,12 +97,12 @@
 
           <router-link to="/tasks/scheduled"
               @mouseenter="showTooltip($event, 'Scheduled')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/tasks/scheduled' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/tasks/scheduled' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Scheduled</span>
@@ -110,12 +110,12 @@
 
           <router-link to="/tasks/pending"
               @mouseenter="showTooltip($event, 'Pending on Me')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/tasks/pending' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/tasks/pending' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Pending on Me</span>
@@ -123,12 +123,12 @@
 
           <router-link to="/tasks/notstarted"
               @mouseenter="showTooltip($event, 'Not Started')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/tasks/notstarted' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/tasks/notstarted' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Not Started</span>
@@ -136,12 +136,12 @@
 
           <router-link to="/tasks/ongoing"
               @mouseenter="showTooltip($event, 'Ongoing')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/tasks/ongoing' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/tasks/ongoing' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Ongoing</span>
@@ -149,12 +149,12 @@
 
           <router-link to="/tasks/completed"
               @mouseenter="showTooltip($event, 'Completed')" @mouseleave="hideTooltip"
-              class="flex items-center gap-2.5 px-2 py-1.5 text-sm transition-all duration-150 rounded-md"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
               :class="[
                 (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
-                $route.path === '/tasks/completed' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+                $route.path === '/tasks/completed' ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
-            <svg class="w-4.5 h-4.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Completed</span>
@@ -263,7 +263,10 @@ import { useEventBus } from './useEventBus'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
+import { useFormat } from './composables/useFormat'
 import Toast from './components/Toast.vue'
+
+const { toKebabCase } = useFormat()
 
 const route = useRoute()
 const { notifySuccess, notifyInfo, notifyError } = useToasts()
