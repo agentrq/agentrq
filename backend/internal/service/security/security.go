@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -70,14 +71,31 @@ func Decrypt(ciphertextHex, key, nonceHex string) (string, error) {
 }
 
 // GenerateSecret generates a random base62 string of a certain length.
+// It uses rejection sampling to ensure a uniform distribution and avoid modulo bias.
 func GenerateSecret(n int) (string, error) {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	for i := 0; i < n; i++ {
-		b[i] = charset[int(b[i])%len(charset)]
+	maxIdx := 256 - (256 % len(charset))
+	rb := make([]byte, n+(n/4)+5) // Buffer with extra space to minimize rand.Read calls
+	for i := 0; i < n; {
+		if _, err := rand.Read(rb); err != nil {
+			return "", err
+		}
+		for _, v := range rb {
+			if int(v) < maxIdx {
+				b[i] = charset[int(v)%len(charset)]
+				i++
+				if i == n {
+					return string(b), nil
+				}
+			}
+		}
 	}
 	return string(b), nil
+}
+
+// SecureCompare performs a constant-time comparison of two strings.
+// This is used to prevent timing attacks when comparing sensitive tokens.
+func SecureCompare(s1, s2 string) bool {
+	return subtle.ConstantTimeCompare([]byte(s1), []byte(s2)) == 1
 }
