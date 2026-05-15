@@ -7,6 +7,10 @@ defineProps({
   }
 })
 
+import { useFormat } from '../composables/useFormat';
+
+const { toKebabCase } = useFormat();
+
 const emit = defineEmits(['close', 'confirm'])
 
 const closeModal = () => {
@@ -44,7 +48,7 @@ const confirmArchive = () => {
                   </h3>
                   <div class="mt-2 text-sm">
                     <p class="text-[14px] leading-relaxed text-gray-500 dark:text-zinc-400 font-medium">
-                      Are you sure you want to archive <span class="text-black dark:text-white font-semibold">{{ workspaceName }}</span>?
+                      Are you sure you want to archive <span class="text-black dark:text-white font-semibold">{{ toKebabCase(workspaceName) }}</span>?
                       It will be hidden from the active workspaces list, but you can still access it via direct link.
                     </p>
                   </div>

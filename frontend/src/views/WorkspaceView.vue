@@ -31,7 +31,7 @@
             <form @submit.prevent="submit" class="grid grid-cols-1 gap-6">
               <div class="space-y-2">
                 <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400">Workspace Name</label>
-                <input v-model="form.name" type="text" required class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-black text-gray-800 dark:text-zinc-200 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm" placeholder="e.g. my-saas-backend" />
+                <input v-model="form.name" @blur="form.name = toKebabCase(form.name)" type="text" required class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-black text-gray-800 dark:text-zinc-200 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm" placeholder="e.g. my-saas-backend" />
               </div>
               <div class="space-y-2">
                 <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400">Mission / Description</label>
@@ -79,6 +79,11 @@
         <span class="text-[9px] font-black text-gray-500 dark:text-zinc-500 uppercase tracking-widest">Scheduled Tasks</span>
         <span class="text-xl font-black text-gray-900 dark:text-zinc-50">{{ globalStats.scheduledTasks }}</span>
       </div>
+    </div>
+ 
+    <!-- Separator -->
+    <div v-if="!loadingWorkspaces && workspaces.length > 0" class="flex justify-center py-2">
+      <div class="h-px w-64 bg-gray-200 dark:bg-zinc-800/60"></div>
     </div>
 
     <!-- Workspace list -->
@@ -138,7 +143,7 @@
                      </div>
                      
                      <div class="min-w-0">
-                       <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none">{{ p.name }}</h3>
+                       <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none">{{ toKebabCase(p.name) }}</h3>
                        <div class="flex items-center gap-1.5 mt-1">
                          <span class="text-[8px] font-black uppercase tracking-widest transition-colors"
                                :class="p.agentConnected ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'">
@@ -193,7 +198,7 @@
                 <div class="flex items-center gap-3 min-w-0">
                   <div class="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-zinc-600 shrink-0"></div>
                   <div class="min-w-0">
-                    <div class="font-black text-sm text-gray-500 dark:text-zinc-400 group-hover:text-gray-900 dark:group-hover:text-zinc-100 transition-colors truncate leading-none">{{ p.name }}</div>
+                    <div class="font-black text-sm text-gray-500 dark:text-zinc-400 group-hover:text-gray-900 dark:group-hover:text-zinc-100 transition-colors truncate leading-none">{{ toKebabCase(p.name) }}</div>
                     <div class="text-[8px] font-black text-amber-600/70 truncate mt-1 uppercase tracking-widest">Archived {{ new Date(p.archivedAt).toLocaleDateString() }}</div>
                   </div>
                 </div>
@@ -222,6 +227,9 @@ import { fetchWorkspaces, createWorkspace, unarchiveWorkspace, fetchGlobalTasks 
 import { useToasts } from '../composables/useToasts';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useFormat } from '../composables/useFormat';
+
+const { toKebabCase, liveKebabCase } = useFormat();
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
@@ -295,6 +303,15 @@ async function loadWorkspaces() {
     loadingWorkspaces.value = false;
   }
 }
+
+watch(() => form.value.name, (newVal) => {
+  if (newVal) {
+    const formatted = liveKebabCase(newVal);
+    if (formatted !== newVal) {
+      form.value.name = formatted;
+    }
+  }
+});
 
 watch(showCreate, (val) => {
   if (!val) {
