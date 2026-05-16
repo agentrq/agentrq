@@ -81,7 +81,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		if req.Task.Body != "" {
 			req.Task.Body += note
 		} else {
-			req.Task.Body = w.SelfLearningLoopNote
+			req.Task.Body = note
 		}
 	}
 
@@ -361,10 +361,11 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 
 	if req.Assignee == "agent" && m.Assignee != "agent" {
 		if w.SelfLearningLoopNote != "" {
+			note := "\n\nSelf Learning Loop Note:\n" + w.SelfLearningLoopNote
 			if m.Body != "" {
-				m.Body += "\n\n" + w.SelfLearningLoopNote
+				m.Body += note
 			} else {
-				m.Body = w.SelfLearningLoopNote
+				m.Body = note
 			}
 		}
 	}
