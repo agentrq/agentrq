@@ -73,5 +73,23 @@ func TestSecurity(t *testing.T) {
 				t.Errorf("secret contains invalid character: %c", c)
 			}
 		}
+
+		// Ensure different calls produce different results
+		s2, _ := GenerateSecret(16)
+		if s == s2 {
+			t.Error("GenerateSecret produced same result twice")
+		}
+	})
+
+	t.Run("SecureCompare", func(t *testing.T) {
+		if !SecureCompare("hello", "hello") {
+			t.Error("SecureCompare failed for identical strings")
+		}
+		if SecureCompare("hello", "world") {
+			t.Error("SecureCompare succeeded for different strings")
+		}
+		if SecureCompare("hello", "hell") {
+			t.Error("SecureCompare succeeded for strings of different length")
+		}
 	})
 }

@@ -77,7 +77,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	if req.Task.Assignee == "agent" && w.SelfLearningLoopNote != "" {
-		note := "\n\nSelf Learning Loop Note:\n" + w.SelfLearningLoopNote
+		note := "\n\n" + w.SelfLearningLoopNote
 		if req.Task.Body != "" {
 			req.Task.Body += note
 		} else {
