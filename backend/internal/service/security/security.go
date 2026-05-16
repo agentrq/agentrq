@@ -4,10 +4,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
 )
+
+// SecureCompare performs a constant-time comparison of two strings to prevent timing attacks.
+func SecureCompare(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
 
 // Encrypt encrypts a plain text string using AES-256 GCM with the provided key.
 // It returns the hex-encoded ciphertext and the hex-encoded nonce.

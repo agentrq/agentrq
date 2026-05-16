@@ -59,6 +59,18 @@ func TestSecurity(t *testing.T) {
 		}
 	})
 
+	t.Run("SecureCompare", func(t *testing.T) {
+		if !SecureCompare("hello", "hello") {
+			t.Error("expected SecureCompare to return true for identical strings")
+		}
+		if SecureCompare("hello", "world") {
+			t.Error("expected SecureCompare to return false for different strings")
+		}
+		if SecureCompare("hello", "hell") {
+			t.Error("expected SecureCompare to return false for strings with different lengths")
+		}
+	})
+
 	t.Run("GenerateSecret", func(t *testing.T) {
 		s, err := GenerateSecret(16)
 		if err != nil {

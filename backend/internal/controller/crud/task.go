@@ -77,11 +77,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	if req.Task.Assignee == "agent" && w.SelfLearningLoopNote != "" {
-		note := "\n\nSelf Learning Loop Note:\n" + w.SelfLearningLoopNote
+		note := "Self Learning Loop Note:\n" + w.SelfLearningLoopNote
 		if req.Task.Body != "" {
-			req.Task.Body += note
+			req.Task.Body += "\n\n" + note
 		} else {
-			req.Task.Body = w.SelfLearningLoopNote
+			req.Task.Body = note
 		}
 	}
 
@@ -361,10 +361,11 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 
 	if req.Assignee == "agent" && m.Assignee != "agent" {
 		if w.SelfLearningLoopNote != "" {
+			note := "Self Learning Loop Note:\n" + w.SelfLearningLoopNote
 			if m.Body != "" {
-				m.Body += "\n\n" + w.SelfLearningLoopNote
+				m.Body += "\n\n" + note
 			} else {
-				m.Body = w.SelfLearningLoopNote
+				m.Body = note
 			}
 		}
 	}
