@@ -10,7 +10,9 @@ AgentRQ is a modern, high-performance platform designed for seamless collaborati
 
 ## 🚀 Overview
 
-The platform allows users to create workspaces, manage tasks, and delegate work to AI agents. Agents can "see" the workspace state via MCP, receive notifications when new tasks are assigned, and reply back to the human operator—all in real-time.
+Think of AgentRQ as a shared workspace where humans and AI agents work together seamlessly. You can break down complex goals into manageable tasks, and delegate work directly to your AI agents. 
+
+Because agents "see" the workspace state via MCP, they can autonomously pull their assigned tasks, update statuses, request permissions for sensitive actions, and communicate with you—all synchronized instantly across the platform in real-time.
 
 ## 🏛 Architecture
 
