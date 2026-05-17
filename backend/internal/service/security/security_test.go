@@ -74,4 +74,16 @@ func TestSecurity(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("SecureCompare", func(t *testing.T) {
+		if !SecureCompare("abc", "abc") {
+			t.Error("expected true for identical strings")
+		}
+		if SecureCompare("abc", "abd") {
+			t.Error("expected false for different strings")
+		}
+		if SecureCompare("abc", "abcd") {
+			t.Error("expected false for different lengths")
+		}
+	})
 }

@@ -235,7 +235,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 		}
 
-		if h.rootToken == "" || req.RootToken != h.rootToken {
+		if h.rootToken == "" || !security.SecureCompare(req.RootToken, h.rootToken) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid root token"})
 		}
 
