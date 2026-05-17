@@ -206,7 +206,7 @@ Create a `.mcp.json` in your project root so `codex-gateway` can connect to the 
   "mcpServers": {
     "agentrq": {
       "type": "http",
-      "url": "https://<WORKSPACEID>.mcp.agentrq.com/mcp?token=<TOKEN>"
+      "url": "https://<WORKSPACEID>.mcp.agentrq.com/?token=<TOKEN>"
     }
   }
 }
