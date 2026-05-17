@@ -1041,8 +1041,14 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					"tool_name":     p.ToolName,
 					"description":   p.Description,
 					"input_preview": p.InputPreview,
+					"status":        "pending",
 				}
-				_, _ = ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
+				msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
+				if msgID != 0 {
+					ps.permissionResponsesMu.Lock()
+					ps.permissionResponses[p.RequestID] = msgID
+					ps.permissionResponsesMu.Unlock()
+				}
 			} else {
 				zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessID).Msg("could not relay permission request: no active task")
 			}
