@@ -441,7 +441,9 @@ func (h *handler) getAttachment() fiber.Handler {
 			UserID:       userID,
 		})
 		if err != nil {
-			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		c.Set("Content-Type", res.MimeType)
@@ -469,7 +471,9 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			if strings.Contains(err.Error(), "(expired)") {
 				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This action request has expired (server was likely restarted). The agent must re-request this action."})
 			}
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		return c.SendStatus(http.StatusOK)

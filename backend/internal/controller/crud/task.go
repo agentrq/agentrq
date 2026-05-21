@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/mustafaturan/monoflake"
@@ -652,7 +653,7 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 		}
 	}
 
-	return nil, fmt.Errorf("attachment not found or access denied")
+	return nil, base.ErrNotFound
 }
 
 func (c *controller) saveAttachments(atts []entity.Attachment) {
