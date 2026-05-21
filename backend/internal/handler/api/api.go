@@ -288,7 +288,9 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		user, err := h.auth.Exchange(ctx, code)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		zlog.Info().Str("id", user.ID).Str("email", user.Email).Str("name", user.Name).Msg("OAuth code exchanged")
