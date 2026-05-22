@@ -37,12 +37,9 @@ func TestImageService(t *testing.T) {
 
 	t.Run("NotABase64Image", func(t *testing.T) {
 		input := "not a base64 image"
-		output, err := s.ResizeBase64(input, 50, 50)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if output != input {
-			t.Errorf("expected original input, got %s", output)
+		_, err := s.ResizeBase64(input, 50, 50)
+		if err == nil {
+			t.Fatal("expected error for non-base64 image, got nil")
 		}
 	})
 

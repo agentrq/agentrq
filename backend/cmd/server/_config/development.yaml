@@ -4,3 +4,8 @@ app:
 sqlite:
   enabled: true
   dsn: ./_storage/agentrq.db
+
+auth:
+  jwtSecret: agentrq-secret-change-me
+  rootAccessToken: agentrq
+  workspaceTokenKey: agentrq-workspace-token-key-32-len
