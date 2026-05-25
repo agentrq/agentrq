@@ -17,3 +17,4 @@ acp-gateway/coverage
 acp-gateway/dist
 gemini-extension/
 claude-extension/
+.antigravitycli/

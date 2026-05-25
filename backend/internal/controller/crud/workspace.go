@@ -94,38 +94,9 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 }
 
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {
-	// 1. Get all tasks for this workspace to collect attachment IDs
+	// 1. Get all task and message attachment IDs directly from DB
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.ID}, uid)
-	if err != nil {
-		// If workspace doesn't exist etc, repository delete will handle it below
-	}
-
-	var attachmentIDs []string
-	for _, t := range tasks {
-		var atts []entity.Attachment
-		if len(t.Attachments) > 0 {
-			if err := json.Unmarshal(t.Attachments, &atts); err == nil {
-				for _, a := range atts {
-					if a.ID != "" {
-						attachmentIDs = append(attachmentIDs, a.ID)
-					}
-				}
-			}
-		}
-		for _, m := range t.Messages {
-			var mAtts []entity.Attachment
-			if len(m.Attachments) > 0 {
-				if err := json.Unmarshal(m.Attachments, &mAtts); err == nil {
-					for _, a := range mAtts {
-						if a.ID != "" {
-							attachmentIDs = append(attachmentIDs, a.ID)
-						}
-					}
-				}
-			}
-		}
-	}
+	attachmentIDs, _ := c.repository.GetWorkspaceAttachmentIDs(ctx, req.ID)
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
 	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {

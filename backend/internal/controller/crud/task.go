@@ -617,42 +617,31 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 }
 
 func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
-	// Need to check if user has access to the workspace
-	// we just list all tasks for user and workspace and search attachmentid inside them
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
+
+	// 1. Verify workspace access
+	ok, err := c.repository.CheckWorkspaceAccess(ctx, req.WorkspaceID, uid)
+	if err != nil || !ok {
+		return nil, fmt.Errorf("attachment not found or access denied")
+	}
+
+	// 2. Load attachment file data from disk
+	data, err := c.storage.LoadRaw(req.AttachmentID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch tasks for attachment verification: %w", err)
+		return nil, fmt.Errorf("attachment not found or access denied")
 	}
 
-	for _, t := range tasks {
-		if len(t.Attachments) > 0 {
-			var atts []entity.Attachment
-			if err := json.Unmarshal(t.Attachments, &atts); err == nil {
-				for _, a := range atts {
-					if a.ID == req.AttachmentID {
-						data, _ := c.storage.LoadRaw(a.ID)
-						return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-					}
-				}
-			}
-		}
-		for _, m := range t.Messages {
-			if len(m.Attachments) > 0 {
-				var atts []entity.Attachment
-				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
-					for _, a := range atts {
-						if a.ID == req.AttachmentID {
-							data, _ := c.storage.LoadRaw(a.ID)
-							return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-						}
-					}
-				}
-			}
-		}
+	// 3. Query attachment metadata directly from DB
+	filename, mimeType, err := c.repository.FindAttachmentMetadata(ctx, req.WorkspaceID, req.AttachmentID)
+	if err != nil {
+		return nil, fmt.Errorf("attachment not found or access denied")
 	}
 
-	return nil, fmt.Errorf("attachment not found or access denied")
+	return &entity.GetAttachmentResponse{
+		Data:     data,
+		Filename: filename,
+		MimeType: mimeType,
+	}, nil
 }
 
 func (c *controller) saveAttachments(atts []entity.Attachment) {

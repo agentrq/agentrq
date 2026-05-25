@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -33,6 +34,8 @@ type Repository interface {
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
+	FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (filename string, mimeType string, err error)
+	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -149,7 +152,19 @@ func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, use
 
 func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	var tasks []model.Task
-	q := r.conn(ctx).Preload("Messages").Where("user_id = ?", userID)
+	q := r.conn(ctx).Where("user_id = ?", userID)
+
+	if req.PreloadMessages {
+		var metadataExpr string
+		if r.conn(ctx).Dialector.Name() == "postgres" {
+			metadataExpr = "metadata @> '{\"type\":\"permission_request\",\"status\":\"pending\"}'::jsonb"
+		} else {
+			metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%' AND metadata LIKE '%\"status\":\"pending\"%'"
+		}
+		q = q.Preload("Messages", func(db *gorm.DB) *gorm.DB {
+			return db.Where("id = (SELECT MAX(id) FROM messages m2 WHERE m2.task_id = messages.task_id) OR (" + metadataExpr + ")").Order("created_at asc")
+		})
+	}
 
 	if req.WorkspaceID != 0 {
 		q = q.Where("workspace_id = ?", req.WorkspaceID)
@@ -262,6 +277,93 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 
 func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
 	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+}
+
+func (r *repository) FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (string, string, error) {
+	// Search in tasks of this workspace
+	var tasks []model.Task
+	likeExpr := "%" + attachmentID + "%"
+	err := r.conn(ctx).Where("workspace_id = ? AND attachments LIKE ?", workspaceID, likeExpr).Find(&tasks).Error
+	if err == nil && len(tasks) > 0 {
+		for _, t := range tasks {
+			var atts []entity.Attachment
+			if len(t.Attachments) > 0 {
+				if err := json.Unmarshal(t.Attachments, &atts); err == nil {
+					for _, a := range atts {
+						if a.ID == attachmentID {
+							return a.Filename, a.MimeType, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Search in messages of tasks in this workspace
+	var msgs []model.Message
+	err = r.conn(ctx).Joins("JOIN tasks ON tasks.id = messages.task_id").
+		Where("tasks.workspace_id = ? AND messages.attachments LIKE ?", workspaceID, likeExpr).Find(&msgs).Error
+	if err == nil && len(msgs) > 0 {
+		for _, m := range msgs {
+			var atts []entity.Attachment
+			if len(m.Attachments) > 0 {
+				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
+					for _, a := range atts {
+						if a.ID == attachmentID {
+							return a.Filename, a.MimeType, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("attachment metadata not found")
+}
+
+func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {
+	var attachmentIDs []string
+
+	// 1. Get attachments from tasks
+	var taskAttachments []string
+	err := r.conn(ctx).Model(&model.Task{}).Where("workspace_id = ?", workspaceID).Pluck("attachments", &taskAttachments).Error
+	if err == nil {
+		for _, ta := range taskAttachments {
+			if len(ta) > 0 {
+				var atts []entity.Attachment
+				if err := json.Unmarshal([]byte(ta), &atts); err == nil {
+					for _, a := range atts {
+						if a.ID != "" {
+							attachmentIDs = append(attachmentIDs, a.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Get attachments from messages
+	var msgAttachments []string
+	err = r.conn(ctx).Model(&model.Message{}).
+		Joins("JOIN tasks ON tasks.id = messages.task_id").
+		Where("tasks.workspace_id = ?", workspaceID).
+		Pluck("messages.attachments", &msgAttachments).Error
+	if err == nil {
+		for _, ma := range msgAttachments {
+			if len(ma) > 0 {
+				var atts []entity.Attachment
+				if err := json.Unmarshal([]byte(ma), &atts); err == nil {
+					for _, a := range atts {
+						if a.ID != "" {
+							attachmentIDs = append(attachmentIDs, a.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return attachmentIDs, nil
 }
 
 func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {

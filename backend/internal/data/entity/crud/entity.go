@@ -159,13 +159,14 @@ type (
 	}
 
 	ListTasksRequest struct {
-		WorkspaceID int64
-		CreatedBy   string   // optional filter
-		Status      []string // optional filter
-		Filter      string   // e.g. "pending_approval"
-		Limit       int
-		Offset      int
-		UserID      string
+		WorkspaceID     int64
+		CreatedBy       string   // optional filter
+		Status          []string // optional filter
+		Filter          string   // e.g. "pending_approval"
+		Limit           int
+		Offset          int
+		UserID          string
+		PreloadMessages bool
 	}
 
 	ListTasksResponse struct {
