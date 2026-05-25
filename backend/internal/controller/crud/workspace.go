@@ -44,10 +44,8 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		icon, err := c.image.ResizeBase64(req.Workspace.Icon, 32, 32)
 		if err == nil {
 			m.Icon = icon
-		} else {
-			// Fallback to original if resize fails (maybe not base64)
-			m.Icon = req.Workspace.Icon
 		}
+		// If resize fails (invalid format or malicious string), we don't store it.
 	}
 	created, err := c.repository.CreateWorkspace(ctx, m)
 	if err != nil {
@@ -188,9 +186,8 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 		icon, err := c.image.ResizeBase64(req.Workspace.Icon, 32, 32)
 		if err == nil {
 			m.Icon = icon
-		} else {
-			m.Icon = req.Workspace.Icon
 		}
+		// If resize fails, we don't update/store the icon.
 	}
 	m.UpdatedAt = time.Now()
 
