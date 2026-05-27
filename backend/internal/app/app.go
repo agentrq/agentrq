@@ -46,6 +46,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -575,6 +576,21 @@ func New(cfg Config) (*App, error) {
 	fiberApp := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
 	})
+
+	// Global Rate Limiter: 100 requests per 60 seconds per IP
+	fiberApp.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 60 * time.Second,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many requests, please try again later",
+			})
+		},
+	}))
+
 	fiberApp.Use(cors.New(cors.Config{
 		AllowOrigins:  "*",
 		AllowHeaders:  "Origin, Content-Type, Accept, mcp-session-id, mcp-protocol-version",
@@ -638,6 +654,22 @@ func New(cfg Config) (*App, error) {
 
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
+
+	// Stricter Rate Limiter for root login: 5 attempts per 60 seconds per IP
+	apiGroup.Use("/auth/root/login", limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 60 * time.Second,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			zlog.Warn().Str("ip", c.IP()).Msg("Root login rate limit reached")
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many login attempts, please try again later",
+			})
+		},
+	}))
+
 	if _, err := handlerapi.New(handlerapi.Params{
 		Crud:             crudCtrl,
 		Auth:             authSvc,
