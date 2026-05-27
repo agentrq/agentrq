@@ -97,3 +97,16 @@ Restart your backend server (`make dev`) to load the new settings.
 - **Create a Task**: In your connected Slack channel, type `/t "Create a user login screen" "Include email and Google login buttons"`.
 - **Add Replies**: Use `<@bot-name> <message>` (or `@agentrq <message>`) in any task thread. Messages, including uploaded private file attachments, will instantly sync to the AgentRQ dashboard in real-time.
 - **Approve Permissions**: When an agent requests a manual action (like writing a file), Allowance buttons (Allow/Deny) will automatically appear in the task's Slack thread. Click them to grant authorization instantly!
+
+---
+
+## 🔍 Troubleshooting
+
+### Error: `invalid_team_for_non_distributed_app`
+This error occurs when you attempt to authorize or install a custom Slack App in a workspace different from the one where it was originally created, while public distribution is disabled.
+
+#### Solution:
+1. Go to the [Slack App Console](https://api.slack.com/apps), select your app, and navigate to **Manage Distribution** in the sidebar.
+2. Complete the required checklist items (ensure your redirect URLs, scopes, and app details are set).
+3. Scroll down and click **Activate Public Distribution**. This allows your app to be securely installed on other Slack workspaces.
+4. If you do not want to make your app publicly distributed, ensure that when you click **Link Slack Channel** in AgentRQ, you are authorizing it into the **exact same development workspace** where the app was created.
