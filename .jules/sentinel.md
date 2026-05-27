@@ -17,3 +17,8 @@
 **Vulnerability:** The `GetDetailedWorkspaceStats` controller method retrieved statistics for any workspace ID provided in the request without verifying if the authenticated user owned or had access to that workspace.
 **Learning:** Even when handlers correctly extract and pass the `userID`, the business logic layer must explicitly use it to authorize access to the requested resource. Simply passing it to a downstream service that ignores it leaves the application vulnerable to IDOR.
 **Prevention:** Always perform an ownership check (e.g., fetching the resource with both `resourceID` and `userID`) before executing any operations on specific resources, including read-only operations like fetching statistics.
+
+## 2025-05-22 - Stored XSS via Workspace Icon
+**Vulnerability:** The `ResizeBase64` service returned the original input string if the `data:image/` prefix was missing. The CRUD controller then stored this unsanitized string in the database. Since the frontend rendered some icons using `v-html`, this allowed for Stored XSS (e.g., using `javascript:` or malicious SVG).
+**Learning:** Fallback mechanisms that return unvalidated user input when processing fails are dangerous. If a service is designed to process/sanitize input, it must fail explicitly if the input doesn't meet the expected format.
+**Prevention:** Enforce strict input validation (e.g., prefix checks) and remove "fallback to original" logic in data processing services. Ensure that only successfully processed and sanitized data reaches the persistence layer.
