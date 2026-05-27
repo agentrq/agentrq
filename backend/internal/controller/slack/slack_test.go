@@ -643,3 +643,136 @@ func TestOnMessageCreated_HumanUserName(t *testing.T) {
 	}
 }
 
+type stubSlackServiceWithUpdateTracking struct {
+	stubSlackService
+	updateMessageCalled bool
+	capturedChannelID   string
+	capturedTS          string
+}
+
+func (s *stubSlackServiceWithUpdateTracking) UpdateMessage(ctx context.Context, token, channelID, ts string, blocks []slackapi.Block) error {
+	s.updateMessageCalled = true
+	s.capturedChannelID = channelID
+	s.capturedTS = ts
+	return nil
+}
+
+func TestOnMessageUpdated_Success(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	stubSlack := &stubSlackServiceWithUpdateTracking{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   stubSlack,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	decToken := "xoxb-test-token"
+	encToken, nonceStr, err := security.Encrypt(decToken, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("failed to encrypt token: %v", err)
+	}
+
+	msg := entity.Message{
+		ID:     1,
+		TaskID: 99,
+		Sender: "agent",
+		Metadata: map[string]any{
+			"type":             "permission_request",
+			"status":           "allow",
+			"slack_channel_id": "C_TEST",
+			"slack_message_ts": "12345678.90",
+		},
+	}
+
+	task := entity.Task{
+		ID:          99,
+		WorkspaceID: 42,
+	}
+
+	// Expect SlackWorkspaceLink lookup
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), int64(42)).
+		Return(model.SlackWorkspaceLink{
+			WorkspaceID:    42,
+			AccessToken:    encToken,
+			TokenNonce:     nonceStr,
+			SlackChannelID: "C123",
+		}, nil)
+
+	err = c.OnMessageUpdated(context.Background(), msg, task)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !stubSlack.updateMessageCalled {
+		t.Fatal("expected UpdateMessage to be called")
+	}
+	if stubSlack.capturedChannelID != "C_TEST" {
+		t.Errorf("expected channel ID 'C_TEST', got %q", stubSlack.capturedChannelID)
+	}
+	if stubSlack.capturedTS != "12345678.90" {
+		t.Errorf("expected message ts '12345678.90', got %q", stubSlack.capturedTS)
+	}
+}
+
+func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	stubSlack := &stubSlackServiceWithUpdateTracking{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   stubSlack,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	msg := entity.Message{
+		ID:     1,
+		TaskID: 99,
+		Sender: "agent",
+		Metadata: map[string]any{
+			"type":             "permission_request",
+			"status":           "allow",
+			"decided_in_slack": true,
+			"slack_channel_id": "C_TEST",
+			"slack_message_ts": "12345678.90",
+		},
+	}
+
+	task := entity.Task{
+		ID:          99,
+		WorkspaceID: 42,
+	}
+
+	err := c.OnMessageUpdated(context.Background(), msg, task)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if stubSlack.updateMessageCalled {
+		t.Fatal("expected UpdateMessage to be skipped because decided_in_slack is true")
+	}
+}
+

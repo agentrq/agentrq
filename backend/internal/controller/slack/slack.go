@@ -56,6 +56,7 @@ type Controller interface {
 	OnWorkspaceCreated(ctx context.Context, workspace entity.Workspace) error
 	OnTaskCreated(ctx context.Context, task entity.Task) error
 	OnMessageCreated(ctx context.Context, msg entity.Message, task entity.Task) error
+	OnMessageUpdated(ctx context.Context, msg entity.Message, task entity.Task) error
 
 	// Channel assignment (called from API handler)
 	SetWorkspaceChannel(ctx context.Context, req entity.SetWorkspaceSlackChannelRequest) error
@@ -234,13 +235,88 @@ func (c *controller) OnMessageCreated(ctx context.Context, msg entity.Message, t
 			workspaceID62 := monoflake.ID(task.WorkspaceID).String()
 			taskID62 := monoflake.ID(task.ID).String()
 			permBlocks := slacksvc.BuildPermissionRequestBlocks(workspaceID62, taskID62, requestID, toolDesc)
-			if _, err := c.slack.PostThreadReply(ctx, decryptedToken, thread.SlackChannelID, thread.ThreadTS, permBlocks); err != nil {
+			ts, err := c.slack.PostThreadReply(ctx, decryptedToken, thread.SlackChannelID, thread.ThreadTS, permBlocks)
+			if err != nil {
 				zlog.Warn().Err(err).Msg("[slack] failed to post permission request buttons")
 				c.handleSlackError(ctx, task.WorkspaceID, err)
+			} else if ts != "" {
+				// Save the channel ID and message timestamp of the permission request block back to metadata in GORM
+				metaMap, _ := msg.Metadata.(map[string]any)
+				if metaMap == nil {
+					metaMap = make(map[string]any)
+				}
+				metaMap["slack_channel_id"] = thread.SlackChannelID
+				metaMap["slack_message_ts"] = ts
+				msg.Metadata = metaMap
+				b, marshalErr := json.Marshal(metaMap)
+				if marshalErr == nil {
+					if updateErr := c.repo.UpdateMessageMetadata(ctx, task.ID, msg.ID, b); updateErr != nil {
+						zlog.Error().Err(updateErr).Int64("messageID", msg.ID).Msg("[slack] failed to update message metadata with slack details")
+					}
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// OnMessageUpdated processes updates to permission request messages (verdicts) and replaces Slack buttons with static text.
+func (c *controller) OnMessageUpdated(ctx context.Context, msg entity.Message, task entity.Task) error {
+	if !c.slack.IsEnabled() {
+		return nil
+	}
+
+	if msg.Metadata == nil {
+		return nil
+	}
+
+	metaMap, _ := msg.Metadata.(map[string]any)
+	if metaMap == nil {
+		return nil
+	}
+
+	mType, _ := metaMap["type"].(string)
+	status, _ := metaMap["status"].(string)
+	if mType != "permission_request" || (status != "allow" && status != "allow_always" && status != "deny") {
+		return nil
+	}
+
+	// Skip if the decision was already executed/marked in Slack
+	if decidedInSlack, _ := metaMap["decided_in_slack"].(bool); decidedInSlack {
+		return nil
+	}
+
+	slackChannelID, _ := metaMap["slack_channel_id"].(string)
+	slackMessageTS, _ := metaMap["slack_message_ts"].(string)
+	if slackChannelID == "" || slackMessageTS == "" {
+		zlog.Debug().Int64("messageID", msg.ID).Msg("[slack] skipping message update because slack coordinates are missing")
+		return nil
+	}
+
+	link, err := c.repo.GetSlackWorkspaceLink(ctx, task.WorkspaceID)
+	if err != nil || link.AccessToken == "" {
+		return nil
+	}
+
+	decryptedToken, err := security.Decrypt(link.AccessToken, c.tokenKey, link.TokenNonce)
+	if err != nil {
+		zlog.Error().Err(err).Int64("workspaceID", task.WorkspaceID).Msg("[slack] failed to decrypt workspace bot token in OnMessageUpdated")
+		return err
+	}
+
+	label := map[string]string{
+		"allow":        "✅ Allowed by operator (via Web UI)",
+		"allow_always": "✅ Allowed by operator (via Web UI)",
+		"deny":         "❌ Denied by operator (via Web UI)",
+	}[status]
+	if label == "" {
+		label = "Done"
+	}
+
+	updateErr := c.slack.UpdateMessage(ctx, decryptedToken, slackChannelID, slackMessageTS,
+		slacksvc.BuildResultBlocks(label))
+	c.handleSlackError(ctx, task.WorkspaceID, updateErr)
+	return updateErr
 }
 
 // ─── Channel assignment ────────────────────────────────────────────────────────
@@ -627,6 +703,35 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 	if c.mcp == nil {
 		return fmt.Errorf("slack: MCP manager not available")
 	}
+
+	// Try to find the permission request message and save the slack decision flag in its metadata first,
+	// so that OnMessageUpdated can skip overwriting the slack-initiated UI update.
+	messages, listErr := c.repo.ListMessages(ctx, taskID)
+	if listErr == nil {
+		for _, m := range messages {
+			var metadata map[string]any
+			if len(m.Metadata) > 0 {
+				_ = json.Unmarshal(m.Metadata, &metadata)
+			}
+			if metadata != nil && metadata["type"] == "permission_request" {
+				reqID, _ := metadata["request_id"].(string)
+				if reqID == "" {
+					reqID, _ = metadata["requestId"].(string)
+				}
+				if reqID == requestID {
+					metadata["decided_in_slack"] = true
+					metadata["slack_user_id"] = action.UserID
+					metadata["slack_user_name"] = action.UserName
+					b, marshalErr := json.Marshal(metadata)
+					if marshalErr == nil {
+						_ = c.repo.UpdateMessageMetadata(ctx, taskID, m.ID, b)
+					}
+					break
+				}
+			}
+		}
+	}
+
 	if err := c.mcp.SendPermissionVerdict(ctx, workspaceID, ownerID, requestID, behavior); err != nil {
 		errMsg := err.Error()
 		var updateErr error
@@ -717,18 +822,33 @@ func extractPermissionRequestFields(msg entity.Message) (requestID, toolDesc str
 		return "", ""
 	}
 	var m struct {
-		RequestID string `json:"requestId"`
-		Tool      string `json:"tool"`
-		Args      string `json:"args"`
+		RequestID  string `json:"requestId"`
+		RequestID2 string `json:"request_id"`
+		Tool       string `json:"tool"`
+		ToolName   string `json:"tool_name"`
+		Args       string `json:"args"`
+		Desc       string `json:"description"`
 	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		return "", ""
 	}
-	desc := m.Tool
-	if m.Args != "" {
-		desc += " " + m.Args
+	reqID := m.RequestID
+	if reqID == "" {
+		reqID = m.RequestID2
 	}
-	return m.RequestID, desc
+	tool := m.Tool
+	if tool == "" {
+		tool = m.ToolName
+	}
+	args := m.Args
+	if args == "" {
+		args = m.Desc
+	}
+	desc := tool
+	if args != "" {
+		desc += " " + args
+	}
+	return reqID, desc
 }
 
 func (c *controller) Start(ctx context.Context) error {
@@ -800,6 +920,16 @@ func (c *controller) processEvent(ctx context.Context, event entity.CRUDEvent) {
 					go c.OnMessageCreated(ctx, message, task)
 				}
 			}
+		} else if event.Action == entity.ActionMessageUpdate {
+			m, err := c.repo.SystemGetMessage(ctx, event.ResourceID)
+			if err == nil {
+				t, err := c.repo.SystemGetTask(ctx, m.TaskID)
+				if err == nil {
+					message := c.fromModelMessageToEntity(m)
+					task := c.fromModelTaskToEntity(t)
+					go c.OnMessageUpdated(ctx, message, task)
+				}
+			}
 		}
 	}
 }
@@ -844,10 +974,15 @@ func (c *controller) fromModelMessageToEntity(m model.Message) entity.Message {
 		UserID:    m.UserID,
 		Sender:    m.Sender,
 		Text:      m.Text,
-		Metadata:  make(map[string]any),
 	}
 	if len(m.Metadata) > 0 {
-		_ = json.Unmarshal(m.Metadata, &res.Metadata)
+		var meta map[string]any
+		if err := json.Unmarshal(m.Metadata, &meta); err == nil {
+			res.Metadata = meta
+		}
+	}
+	if res.Metadata == nil {
+		res.Metadata = make(map[string]any)
 	}
 	return res
 }

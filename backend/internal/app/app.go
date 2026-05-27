@@ -408,7 +408,20 @@ func New(cfg Config) (*App, error) {
 				return msgID, nil
 			},
 			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
-				b, _ := json.Marshal(metadata)
+				existingMetadata := make(map[string]any)
+				if m, err := repo.SystemGetMessage(ctx, messageID); err == nil && len(m.Metadata) > 0 {
+					_ = json.Unmarshal(m.Metadata, &existingMetadata)
+				}
+
+				newMetaBytes, _ := json.Marshal(metadata)
+				newMetaMap := make(map[string]any)
+				_ = json.Unmarshal(newMetaBytes, &newMetaMap)
+
+				for k, v := range newMetaMap {
+					existingMetadata[k] = v
+				}
+
+				b, _ := json.Marshal(existingMetadata)
 				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, b)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
@@ -416,6 +429,20 @@ func New(cfg Config) (*App, error) {
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
 						Payload: mapper.FromModelTaskToView(latest),
+					})
+
+					// Publish ActionMessageUpdate event to pubsub so Slack and telemetry pick it up
+					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+						PubSubID: entity.PubSubTopicCRUD,
+						Event: entity.CRUDEvent{
+							Action:       entity.ActionMessageUpdate,
+							WorkspaceID:  workspaceID,
+							UserID:       uid,
+							ResourceType: entity.ResourceMessage,
+							ResourceID:   messageID,
+							Actor:        entity.ActorHuman,
+							Origin:       entity.OriginAPI,
+						},
 					})
 				}
 				return err
