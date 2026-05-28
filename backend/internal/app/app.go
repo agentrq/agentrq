@@ -46,6 +46,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -592,6 +593,29 @@ func New(cfg Config) (*App, error) {
 		},
 		Next: func(c *fiber.Ctx) bool {
 			return c.Method() == fiber.MethodOptions
+		},
+	}))
+
+	// Situational security: global rate limiting to protect against abuse and DoS
+	fiberApp.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 60 * time.Second,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+	}))
+
+	// Situational security: strict rate limiting for sensitive root login endpoint
+	fiberApp.Use("/api/v1/auth/root/login", limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 60 * time.Second,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "Too many login attempts. Please try again later.",
+			})
 		},
 	}))
 
