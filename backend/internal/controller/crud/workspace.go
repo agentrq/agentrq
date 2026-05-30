@@ -94,7 +94,7 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {
 	// 1. Get all task and message attachment IDs directly from DB
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	attachmentIDs, _ := c.repository.GetWorkspaceAttachmentIDs(ctx, req.ID)
+	attachmentIDs, _ := c.repository.GetWorkspaceAttachmentIDs(ctx, req.ID, uid)
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
 	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {

@@ -32,10 +32,10 @@ type Repository interface {
 
 	// Message
 	CreateMessage(ctx context.Context, m model.Message) error
-	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
-	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
+	ListMessages(ctx context.Context, taskID int64, userID int64) ([]model.Message, error)
+	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, userID int64, metadata []byte) error
 	FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (filename string, mimeType string, err error)
-	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
+	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64, userID int64) ([]string, error)
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -278,14 +278,21 @@ func (r *repository) CreateMessage(ctx context.Context, m model.Message) error {
 	return r.conn(ctx).Create(&m).Error
 }
 
-func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Message, error) {
+func (r *repository) ListMessages(ctx context.Context, taskID int64, userID int64) ([]model.Message, error) {
 	var msgs []model.Message
-	err := r.conn(ctx).Where("task_id = ?", taskID).Order("created_at asc").Find(&msgs).Error
+	err := r.conn(ctx).
+		Joins("JOIN tasks ON tasks.id = messages.task_id").
+		Where("messages.task_id = ? AND tasks.user_id = ?", taskID, userID).
+		Order("messages.created_at asc").
+		Find(&msgs).Error
 	return msgs, err
 }
 
-func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
-	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, userID int64, metadata []byte) error {
+	return r.conn(ctx).Exec(
+		"UPDATE messages SET metadata = ? WHERE id = ? AND task_id = ? AND task_id IN (SELECT id FROM tasks WHERE user_id = ?)",
+		metadata, messageID, taskID, userID,
+	).Error
 }
 
 func (r *repository) FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (string, string, error) {
@@ -330,12 +337,12 @@ func (r *repository) FindAttachmentMetadata(ctx context.Context, workspaceID int
 	return "", "", fmt.Errorf("attachment metadata not found")
 }
 
-func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {
+func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64, userID int64) ([]string, error) {
 	var attachmentIDs []string
 
 	// 1. Get attachments from tasks
 	var taskAttachments []string
-	err := r.conn(ctx).Model(&model.Task{}).Where("workspace_id = ?", workspaceID).Pluck("attachments", &taskAttachments).Error
+	err := r.conn(ctx).Model(&model.Task{}).Where("workspace_id = ? AND user_id = ?", workspaceID, userID).Pluck("attachments", &taskAttachments).Error
 	if err == nil {
 		for _, ta := range taskAttachments {
 			if len(ta) > 0 {
@@ -355,7 +362,7 @@ func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID 
 	var msgAttachments []string
 	err = r.conn(ctx).Model(&model.Message{}).
 		Joins("JOIN tasks ON tasks.id = messages.task_id").
-		Where("tasks.workspace_id = ?", workspaceID).
+		Where("tasks.workspace_id = ? AND tasks.user_id = ?", workspaceID, userID).
 		Pluck("messages.attachments", &msgAttachments).Error
 	if err == nil {
 		for _, ma := range msgAttachments {
