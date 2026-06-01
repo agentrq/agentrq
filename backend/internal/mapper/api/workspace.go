@@ -137,7 +137,7 @@ func FromUpdateWorkspaceResponseEntityToMCPResponse(rs *entity.Workspace, mcpURL
 }
 
 func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace {
-	return view.Workspace{
+	v := view.Workspace{
 		ID:                   monoflake.ID(p.ID).String(),
 		CreatedAt:            p.CreatedAt,
 		UpdatedAt:            p.UpdatedAt,
@@ -152,6 +152,18 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AllowAllCommands:     p.AllowAllCommands,
 		SelfLearningLoopNote: p.SelfLearningLoopNote,
 	}
+	if p.Slack != nil {
+		v.Slack = &view.SlackConfig{
+			Enabled:     p.Slack.Enabled,
+			Installed:   p.Slack.Installed,
+			ChannelID:   p.Slack.ChannelID,
+			ChannelName: p.Slack.ChannelName,
+			AutoCreated: p.Slack.AutoCreated,
+			ClientID:    p.Slack.ClientID,
+			AuthURL:     p.Slack.AuthURL,
+		}
+	}
+	return v
 }
 
 func fromEntityNotificationSettingsToView(p *entity.NotificationSettings) *view.NotificationSettings {

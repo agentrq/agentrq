@@ -39,7 +39,7 @@ func TestImageService(t *testing.T) {
 		input := "not a base64 image"
 		_, err := s.ResizeBase64(input, 50, 50)
 		if err == nil {
-			t.Fatal("expected error for non-base64 image, got nil")
+			t.Error("expected error for non-base64 image, got nil")
 		}
 	})
 

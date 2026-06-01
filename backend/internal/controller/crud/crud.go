@@ -52,11 +52,18 @@ func (c *controller) emitEvent(ctx context.Context, e entity.CRUDEvent) {
 	if c.pubsub == nil {
 		return
 	}
+	if e.Origin == entity.OriginInvalid {
+		e.Origin = entity.GetOrigin(ctx)
+		if e.Origin == entity.OriginInvalid {
+			e.Origin = entity.OriginAPI
+		}
+	}
 	_, _ = c.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicCRUD,
 		Event:    e,
 	})
 }
+
 
 // WorkspaceController defines workspace operations.
 type WorkspaceController interface {
@@ -93,6 +100,7 @@ type TaskController interface {
 	ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
 	UpdateScheduledTask(ctx context.Context, req entity.UpdateScheduledTaskRequest) (*entity.UpdateScheduledTaskResponse, error)
 	UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error
+	GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error)
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 }

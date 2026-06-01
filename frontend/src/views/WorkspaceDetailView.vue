@@ -56,7 +56,7 @@
                    class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
                    :class="[showMobileFilters ? 'absolute top-10 left-0 z-50 flex shadow-2xl border-gray-900 dark:border-white w-max animate-in fade-in slide-in-from-top-2' : 'hidden md:flex items-center']">
                 <button v-for="f in filters" :key="f.id"
-                        @click="activeFilter = f.id; isMobile && (showMobileFilters = false); tooltipStore.hide()"
+                        @click="selectFilter(f.id)"
                         @mouseenter="tooltipStore.show($event, f.label, 'bottom')"
                         @mouseleave="tooltipStore.hide()"
                         :class="[activeFilter === f.id ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300']"
@@ -71,11 +71,11 @@
             <button @click="router.push(`/workspaces/${workspaceId}/analytics`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Analytics">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
             </button>
-            <button v-if="!workspace?.archived_at" @click="router.push(`/workspaces/${workspaceId}/settings`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Workspace Settings">
+            <button v-if="!workspace?.archivedAt" @click="router.push(`/workspaces/${workspaceId}/settings`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Workspace Settings">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
             </button>
             <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
-            <button v-if="!workspace?.archived_at" @click="router.push(`/workspaces/${workspaceId}/tasks/new`)" 
+            <button v-if="!workspace?.archivedAt" @click="router.push(`/workspaces/${workspaceId}/tasks/new`)"
                     class="group flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 px-3 h-8 rounded-sm text-[10px] font-bold shadow-sm transition-all hover:bg-gray-800 dark:hover:bg-zinc-100 uppercase tracking-widest"
                     title="New Task">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
@@ -97,7 +97,7 @@
             :workspaceId="workspaceId"
             :initialTasks="tasks"
             :liveEvents="events"
-            :isArchived="!!workspace?.archived_at"
+            :isArchived="!!workspace?.archivedAt"
             :isAgentConnected="isAgentConnected"
             :filter="activeFilter"
             :selectedTaskId="selectedTaskId"
@@ -215,12 +215,21 @@ onUnmounted(() => {
   disconnect();
 });
 
-watch(activeFilter, (newVal) => {
-  // When filter changes, we unselect the current task by navigating to the base workspace route
+function selectFilter(filterId) {
+  activeFilter.value = filterId;
+  if (isMobile.value) {
+    showMobileFilters.value = false;
+  }
+  tooltipStore.hide();
+  // Navigate to unselect task and update active filter in URL
   router.push({ 
     path: `/workspaces/${workspaceId.value}`,
-    query: { ...route.query, filter: newVal } 
+    query: { ...route.query, filter: filterId }
   });
+}
+
+watch(() => route.query.filter, (newFilter) => {
+  activeFilter.value = newFilter || 'active';
 });
 
 watch(workspaceId, (newId) => {

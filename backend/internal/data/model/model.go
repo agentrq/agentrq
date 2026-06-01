@@ -80,6 +80,28 @@ type (
 		Name       string `gorm:"type:varchar(255)"`
 		Picture    string `gorm:"type:text"`
 	}
+
+	// SlackWorkspaceLink stores the Slack channel assigned to a workspace.
+	// One row per workspace; upserted whenever the channel is changed.
+	SlackWorkspaceLink struct {
+		WorkspaceID      int64  `gorm:"primaryKey;autoIncrement:false"`
+		SlackChannelID   string `gorm:"type:varchar(32)"`
+		SlackChannelName string `gorm:"type:varchar(80)"`
+		AccessToken      string `gorm:"type:text"`
+		TokenNonce       string `gorm:"type:varchar(32)"`
+		TeamID           string `gorm:"type:varchar(32)"`
+		BotUserID        string `gorm:"type:varchar(32)"`
+		AutoCreated      bool   `gorm:"default:false"` // true if created automatically on workspace creation
+	}
+
+	// SlackTaskThread maps an AgentRQ task to a Slack thread timestamp (ts).
+	// One row per task; created when the first Slack message for the task is posted.
+	SlackTaskThread struct {
+		TaskID         int64  `gorm:"primaryKey;autoIncrement:false"`
+		WorkspaceID    int64  `gorm:"index"`
+		SlackChannelID string `gorm:"type:varchar(32)"`
+		ThreadTS       string `gorm:"type:varchar(32)"` // Slack message ts that anchors the thread
+	}
 )
 
 const (

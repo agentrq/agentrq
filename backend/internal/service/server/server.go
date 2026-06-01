@@ -99,8 +99,8 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = host[:col]
 	}
 
-	// Skip hostname checks for localhost
-	if domain != "" && !strings.HasPrefix(host, "localhost") && !strings.HasPrefix(host, "127.0.0.1") {
+	// Skip hostname checks for localhost and ngrok tunnels to ease local development/testing
+	if domain != "" && !strings.HasPrefix(host, "localhost") && !strings.HasPrefix(host, "127.0.0.1") && !strings.HasSuffix(host, ".ngrok-free.app") && !strings.HasSuffix(host, ".ngrok.io") {
 		mcpSuffix := ".mcp." + domain
 		coreMCPHost := "mcp." + domain
 		appHost := "app." + domain

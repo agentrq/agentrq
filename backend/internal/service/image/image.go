@@ -25,7 +25,7 @@ func New() Service {
 
 func (s *service) ResizeBase64(dataBase64 string, width, height int) (string, error) {
 	if !strings.HasPrefix(dataBase64, "data:image/") {
-		return "", fmt.Errorf("invalid base64 image format: must start with data:image/")
+		return "", fmt.Errorf("invalid image format: missing data:image/ prefix")
 	}
 
 	parts := strings.SplitN(dataBase64, ",", 2)

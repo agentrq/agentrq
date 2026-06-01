@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -37,6 +38,7 @@ type (
 		RootLoginEnabled bool
 		RootToken        string
 		Router           fiber.Router
+		SlackCtrl        slackctrl.Controller // optional; nil = Slack disabled
 	}
 
 	Handler interface{}
@@ -55,6 +57,7 @@ type (
 		rootLoginEnabled bool
 		rootToken        string
 		router           fiber.Router
+		slackCtrl        slackctrl.Controller
 	}
 )
 
@@ -83,6 +86,7 @@ func New(p Params) (Handler, error) {
 		rootLoginEnabled: p.RootLoginEnabled,
 		rootToken:        p.RootToken,
 		router:           p.Router,
+		slackCtrl:        p.SlackCtrl,
 	}
 
 	h.registerPublicAuthRoutes()
@@ -245,14 +249,22 @@ func (h *handler) rootLogin() fiber.Handler {
 			Name:  "Root Administrator",
 		})
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync root user"})
+			zlog.Error().Err(err).Msg("Failed to sync root user")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		userID := monoflake.ID(dbUser.User.ID).String()
 
 		tokenString, err := h.tokenSvc.CreateToken(userID, "root@agentrq.local", "Root Administrator", "")
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
+			zlog.Error().Err(err).Msg("Failed to sign root token")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		cookie := &fiber.Cookie{
@@ -288,7 +300,11 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		user, err := h.auth.Exchange(ctx, code)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			zlog.Error().Err(err).Msg("OAuth exchange failed")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		zlog.Info().Str("id", user.ID).Str("email", user.Email).Str("name", user.Name).Msg("OAuth code exchanged")
@@ -305,7 +321,11 @@ func (h *handler) googleCallback() fiber.Handler {
 			Picture: user.Picture,
 		})
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sync user"})
+			zlog.Error().Err(err).Msg("Failed to sync user")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		// Use base62 ID for JWT "sub" and app-wide user identifier
@@ -314,7 +334,11 @@ func (h *handler) googleCallback() fiber.Handler {
 		// Create JWT using centralized logic
 		tokenString, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, user.Picture)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to sign token"})
+			zlog.Error().Err(err).Msg("Failed to sign token")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 
 		cookie := &fiber.Cookie{
@@ -366,6 +390,8 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Post("/:id/archive", h.archiveWorkspace())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
 	r.Get("/:id/stats", h.getWorkspaceStats())
+	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
+	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
 	return nil
 }
 
@@ -382,11 +408,14 @@ func (h *handler) createWorkspace() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.CreateWorkspace(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to create workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
+		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -413,11 +442,14 @@ func (h *handler) getWorkspace() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.GetWorkspace(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to get workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
+		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -442,12 +474,15 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			IncludeArchived: archived,
 		})
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to list workspaces")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
 		}
 		for i := range rs.Workspaces {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
+			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
 		mcpURLWithToken := func(workspaceID int64) string {
@@ -476,6 +511,8 @@ func (h *handler) deleteWorkspace() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		if err := h.crud.DeleteWorkspace(ctx, *rq); err != nil {
+			zlog.Error().Err(err).Msg("Failed to delete workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -497,6 +534,8 @@ func (h *handler) archiveWorkspace() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		if err := h.crud.ArchiveWorkspace(ctx, rq); err != nil {
+			zlog.Error().Err(err).Msg("Failed to archive workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -518,6 +557,8 @@ func (h *handler) unarchiveWorkspace() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		if err := h.crud.UnarchiveWorkspace(ctx, rq); err != nil {
+			zlog.Error().Err(err).Msg("Failed to unarchive workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -544,6 +585,8 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateWorkspace(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update workspace")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -554,6 +597,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 			srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
+		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -587,6 +631,8 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 			UserID: userID,
 		})
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to verify workspace access for token")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -594,7 +640,11 @@ func (h *handler) getWorkspaceToken() fiber.Handler {
 
 		token, err := h.tokenSvc.CreateMCPToken(userID, workspaceID, "access")
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate workspace token"})
+			zlog.Error().Err(err).Msg("Failed to generate workspace token")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
 		return c.JSON(fiber.Map{"token": token})
 	}
@@ -626,10 +676,92 @@ func (h *handler) getWorkspaceStats() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.GetDetailedWorkspaceStats(ctx, rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to get workspace stats")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
 		}
 		return c.Status(http.StatusOK).JSON(rs)
+	}
+}
+
+func (h *handler) setWorkspaceSlackChannel() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if workspaceID == 0 {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		userID := c.Locals("user_id").(string)
+
+		var body struct {
+			ChannelID   string `json:"channelId"`
+			ChannelName string `json:"channelName"`
+		}
+		if err := c.BodyParser(&body); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid body"})
+		}
+		if body.ChannelID == "" || body.ChannelName == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "channelId and channelName are required"})
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		if h.slackCtrl == nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Slack integration is not enabled"})
+		}
+
+		err := h.slackCtrl.SetWorkspaceChannel(ctx, entity.SetWorkspaceSlackChannelRequest{
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+			ChannelID:   body.ChannelID,
+			ChannelName: body.ChannelName,
+			AutoCreated: false,
+		})
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "success"})
+	}
+}
+
+func (h *handler) removeWorkspaceSlackChannel() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if workspaceID == 0 {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		userID := c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		if h.slackCtrl == nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Slack integration is not enabled"})
+		}
+
+		err := h.slackCtrl.RemoveWorkspaceChannel(ctx, entity.RemoveWorkspaceSlackChannelRequest{
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+		})
+		if err != nil {
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		return c.Status(http.StatusNoContent).Send([]byte(""))
+	}
+}
+
+func (h *handler) enrichWorkspaceSlack(ctx context.Context, ws *entity.Workspace) {
+	if h.slackCtrl == nil || ws == nil {
+		return
+	}
+	cfg, err := h.slackCtrl.GetWorkspaceSlackConfig(ctx, ws.ID)
+	if err == nil && cfg != nil {
+		ws.Slack = cfg
 	}
 }

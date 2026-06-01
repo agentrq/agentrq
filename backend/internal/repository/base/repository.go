@@ -2,6 +2,7 @@ package base
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -33,6 +34,8 @@ type Repository interface {
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
+	FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (filename string, mimeType string, err error)
+	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -47,6 +50,16 @@ type Repository interface {
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
 	GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error)
+	GetGlobalTaskStats(ctx context.Context, userID int64) (entity.GlobalTaskStatsResponse, error)
+
+	// Slack integration
+	UpsertSlackWorkspaceLink(ctx context.Context, link model.SlackWorkspaceLink) error
+	GetSlackWorkspaceLink(ctx context.Context, workspaceID int64) (model.SlackWorkspaceLink, error)
+	GetSlackWorkspaceLinkByChannel(ctx context.Context, channelID string) (model.SlackWorkspaceLink, error)
+	DeleteSlackWorkspaceLink(ctx context.Context, workspaceID int64) error
+	UpsertSlackTaskThread(ctx context.Context, thread model.SlackTaskThread) error
+	GetSlackTaskThreadByTask(ctx context.Context, taskID int64) (model.SlackTaskThread, error)
+	GetSlackTaskThreadByChannel(ctx context.Context, channelID, threadTS string) (model.SlackTaskThread, error)
 }
 
 type repository struct {
@@ -149,7 +162,19 @@ func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, use
 
 func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error) {
 	var tasks []model.Task
-	q := r.conn(ctx).Preload("Messages").Where("user_id = ?", userID)
+	q := r.conn(ctx).Where("user_id = ?", userID)
+
+	if req.PreloadMessages {
+		var metadataExpr string
+		if r.conn(ctx).Dialector.Name() == "postgres" {
+			metadataExpr = "metadata @> '{\"type\":\"permission_request\",\"status\":\"pending\"}'::jsonb"
+		} else {
+			metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%' AND metadata LIKE '%\"status\":\"pending\"%'"
+		}
+		q = q.Preload("Messages", func(db *gorm.DB) *gorm.DB {
+			return db.Where("id = (SELECT MAX(id) FROM messages m2 WHERE m2.task_id = messages.task_id) OR (" + metadataExpr + ")").Order("created_at asc")
+		})
+	}
 
 	if req.WorkspaceID != 0 {
 		q = q.Where("workspace_id = ?", req.WorkspaceID)
@@ -184,7 +209,14 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	} else if len(req.Status) == 1 {
 		status := req.Status[0]
 		if status == "notstarted" {
-			orderBy = "sort_order desc, created_at desc"
+			dialect := r.conn(ctx).Dialector.Name()
+			var sortExpr string
+			if dialect == "sqlite" {
+				sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE CAST(strftime('%s', created_at) AS REAL) END)"
+			} else {
+				sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE EXTRACT(EPOCH FROM created_at) END)"
+			}
+			orderBy = fmt.Sprintf("%s ASC, id ASC", sortExpr)
 		} else if status != "cron" {
 			orderBy = "updated_at desc"
 		}
@@ -262,6 +294,93 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 
 func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
 	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+}
+
+func (r *repository) FindAttachmentMetadata(ctx context.Context, workspaceID int64, attachmentID string) (string, string, error) {
+	// Search in tasks of this workspace
+	var tasks []model.Task
+	likeExpr := "%" + attachmentID + "%"
+	err := r.conn(ctx).Where("workspace_id = ? AND attachments LIKE ?", workspaceID, likeExpr).Find(&tasks).Error
+	if err == nil && len(tasks) > 0 {
+		for _, t := range tasks {
+			var atts []entity.Attachment
+			if len(t.Attachments) > 0 {
+				if err := json.Unmarshal(t.Attachments, &atts); err == nil {
+					for _, a := range atts {
+						if a.ID == attachmentID {
+							return a.Filename, a.MimeType, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Search in messages of tasks in this workspace
+	var msgs []model.Message
+	err = r.conn(ctx).Joins("JOIN tasks ON tasks.id = messages.task_id").
+		Where("tasks.workspace_id = ? AND messages.attachments LIKE ?", workspaceID, likeExpr).Find(&msgs).Error
+	if err == nil && len(msgs) > 0 {
+		for _, m := range msgs {
+			var atts []entity.Attachment
+			if len(m.Attachments) > 0 {
+				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
+					for _, a := range atts {
+						if a.ID == attachmentID {
+							return a.Filename, a.MimeType, nil
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("attachment metadata not found")
+}
+
+func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {
+	var attachmentIDs []string
+
+	// 1. Get attachments from tasks
+	var taskAttachments []string
+	err := r.conn(ctx).Model(&model.Task{}).Where("workspace_id = ?", workspaceID).Pluck("attachments", &taskAttachments).Error
+	if err == nil {
+		for _, ta := range taskAttachments {
+			if len(ta) > 0 {
+				var atts []entity.Attachment
+				if err := json.Unmarshal([]byte(ta), &atts); err == nil {
+					for _, a := range atts {
+						if a.ID != "" {
+							attachmentIDs = append(attachmentIDs, a.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Get attachments from messages
+	var msgAttachments []string
+	err = r.conn(ctx).Model(&model.Message{}).
+		Joins("JOIN tasks ON tasks.id = messages.task_id").
+		Where("tasks.workspace_id = ?", workspaceID).
+		Pluck("messages.attachments", &msgAttachments).Error
+	if err == nil {
+		for _, ma := range msgAttachments {
+			if len(ma) > 0 {
+				var atts []entity.Attachment
+				if err := json.Unmarshal([]byte(ma), &atts); err == nil {
+					for _, a := range atts {
+						if a.ID != "" {
+							attachmentIDs = append(attachmentIDs, a.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return attachmentIDs, nil
 }
 
 func (r *repository) SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error) {
@@ -437,4 +556,77 @@ func (r *repository) UpdateUser(ctx context.Context, u model.User) (model.User, 
 		return model.User{}, err
 	}
 	return u, nil
+}
+
+// ── Slack Integration ─────────────────────────────────────────────────────────
+
+func (r *repository) UpsertSlackWorkspaceLink(ctx context.Context, link model.SlackWorkspaceLink) error {
+	return r.conn(ctx).Save(&link).Error
+}
+
+func (r *repository) GetSlackWorkspaceLink(ctx context.Context, workspaceID int64) (model.SlackWorkspaceLink, error) {
+	var l model.SlackWorkspaceLink
+	err := r.conn(ctx).First(&l, "workspace_id = ?", workspaceID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SlackWorkspaceLink{}, ErrNotFound
+	}
+	return l, err
+}
+
+func (r *repository) GetSlackWorkspaceLinkByChannel(ctx context.Context, channelID string) (model.SlackWorkspaceLink, error) {
+	var l model.SlackWorkspaceLink
+	err := r.conn(ctx).First(&l, "slack_channel_id = ?", channelID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SlackWorkspaceLink{}, ErrNotFound
+	}
+	return l, err
+}
+
+func (r *repository) DeleteSlackWorkspaceLink(ctx context.Context, workspaceID int64) error {
+	return r.conn(ctx).Delete(&model.SlackWorkspaceLink{}, "workspace_id = ?", workspaceID).Error
+}
+
+func (r *repository) UpsertSlackTaskThread(ctx context.Context, thread model.SlackTaskThread) error {
+	return r.conn(ctx).Save(&thread).Error
+}
+
+func (r *repository) GetSlackTaskThreadByTask(ctx context.Context, taskID int64) (model.SlackTaskThread, error) {
+	var t model.SlackTaskThread
+	err := r.conn(ctx).First(&t, "task_id = ?", taskID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SlackTaskThread{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (r *repository) GetSlackTaskThreadByChannel(ctx context.Context, channelID, threadTS string) (model.SlackTaskThread, error) {
+	var t model.SlackTaskThread
+	err := r.conn(ctx).Where("slack_channel_id = ? AND thread_ts = ?", channelID, threadTS).First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.SlackTaskThread{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (r *repository) GetGlobalTaskStats(ctx context.Context, userID int64) (entity.GlobalTaskStatsResponse, error) {
+	var res entity.GlobalTaskStatsResponse
+	var pending, scheduled int64
+
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("user_id = ? AND status IN ?", userID, []string{"notstarted", "ongoing", "blocked"}).
+		Count(&pending).Error
+	if err != nil {
+		return res, err
+	}
+
+	err = r.conn(ctx).Model(&model.Task{}).
+		Where("user_id = ? AND status = ?", userID, "cron").
+		Count(&scheduled).Error
+	if err != nil {
+		return res, err
+	}
+
+	res.PendingTasks = pending
+	res.ScheduledTasks = scheduled
+	return res, nil
 }

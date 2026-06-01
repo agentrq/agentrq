@@ -303,6 +303,12 @@ The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks direc
 gemini extensions install https://github.com/agentrq/agentrq-gemini-extension
 ```
 
+## 🔌 Integrations
+
+### Slack Integration
+AgentRQ supports multi-tenant Slack integration for real-time task creation, thread replies sync, and agent permission requests:
+- [Slack Integration Setup & Usage Guide](integrations/slack/README.md)
+
 ## 🤝 Credits
 
 - [AgentRQ](https://agentrq.com) — The official Agent-Human collaboration platform.
