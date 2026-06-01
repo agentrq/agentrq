@@ -155,13 +155,13 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
     fresh.forEach(ev => {
       if (ev.type === 'task.deleted') {
         const id = ev.payload.id;
-        localTasks.value = localTasks.value.filter(x => x.id !== id);
+        localTasks.value = localTasks.value.filter(x => String(x.id) !== String(id));
         return;
       }
 
       if (ev.type === 'task.updated' || ev.type === 'task.created' || ev.type === 'status.updated' || ev.type === 'respond.ack') {
         const t = ev.payload;
-        const idx = localTasks.value.findIndex(x => x.id === t.id);
+        const idx = localTasks.value.findIndex(x => String(x.id) === String(t.id));
         if (idx !== -1) {
           localTasks.value[idx] = t;
         } else {
