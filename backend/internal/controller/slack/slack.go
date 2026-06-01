@@ -828,7 +828,7 @@ func (c *controller) downloadSlackFile(ctx context.Context, token string, rawURL
 		return "", fmt.Errorf("forbidden slack file host or scheme: %s", rawURL)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", parsedURL.String(), nil)
 	if err != nil {
 		return "", err
 	}
