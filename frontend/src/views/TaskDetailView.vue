@@ -149,17 +149,17 @@
                    <!-- Pending verdict buttons -->
                    <div v-if="m.metadata.status === 'pending'" class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
                       <button @click="handleVerdict(m.metadata.request_id, 'allow')"
-                              :disabled="!!workspace.archived_at"
+                              :disabled="!!workspace.archivedAt"
                               class="px-3 py-1.5 rounded-sm bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-black text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
                         Allow Once
                       </button>
                       <button @click="handleVerdict(m.metadata.request_id, 'allow_always')"
-                              :disabled="!!workspace.archived_at"
+                              :disabled="!!workspace.archivedAt"
                               class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
                         Always Allow
                       </button>
                       <button @click="handleVerdict(m.metadata.request_id, 'deny')"
-                              :disabled="!!workspace.archived_at"
+                              :disabled="!!workspace.archivedAt"
                               class="px-3 py-1.5 rounded-sm bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-700 dark:text-red-500 text-[10px] font-semibold transition-all disabled:opacity-50 border border-red-100 dark:border-red-500/20">
                         Deny
                       </button>
@@ -199,6 +199,32 @@
                       class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold text-gray-700 dark:text-zinc-200 shadow-sm">
                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
                    <span class="truncate max-w-[140px]">{{ att.filename }}</span>
+                 </div>
+               </div>
+             </div>
+          </div>
+        </div>
+
+        <!-- Slack message — right aligned -->
+        <div v-else-if="m.sender === 'slack'" class="flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%]">
+          <div class="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-100 flex items-center justify-center shrink-0 mt-0.5 overflow-hidden p-1.5 border border-gray-200 dark:border-zinc-700 shadow-sm">
+             <svg viewBox="0 0 127 127" class="w-4 h-4 text-[#4A154B] dark:text-zinc-300 animate-in spin-in-12 duration-500" fill="currentColor">
+               <path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9-13.2-13.2-13.2H80z"/>
+             </svg>
+          </div>
+          <div class="flex flex-col items-end min-w-0">
+             <div class="bg-gray-900 text-white dark:bg-zinc-800 dark:text-zinc-100 border border-transparent dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+               <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 block mb-1.5 text-right">
+                 Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}
+               </span>
+               <div class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-all">{{ m.text }}</div>
+               <!-- Attachments on slack message -->
+               <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-700 dark:border-zinc-600 justify-end">
+                 <div v-for="(att, i) in m.attachments" :key="i"
+                      @click="previewAttachment(att)"
+                      class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-700 dark:border-zinc-600 bg-gray-800 dark:bg-zinc-700 hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold">
+                   <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                   <span class="truncate max-w-[140px] text-gray-200">{{ att.filename }}</span>
                  </div>
                </div>
              </div>
@@ -596,7 +622,7 @@ watch(events, (evts) => {
   const last = evts[evts.length - 1];
   if (!last) return;
   
-  if (['task.updated', 'task.created'].includes(last.type)) {
+  if (['task.updated', 'task.created', 'reply.received', 'respond.ack', 'status.updated'].includes(last.type)) {
     if (last.payload && last.payload.id === taskId.value) {
       task.value = last.payload;
     }
@@ -617,6 +643,10 @@ onMounted(() => {
   load();
 });
 onUnmounted(disconnect);
+function getSlackUser(m) {
+  return m.metadata?.slack_user || 'Slack';
+}
+
 function stripNote(body) {
   if (!body) return '';
   const markerRegex = /\n\n(Self[\s-]Learning[\s-]Loop[\s-]Note|\[Self[\s-]Learning[\s-]Loop[\s-]Note\]|Self[\s-]Learning[\s-]Loop):/i;

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	zlog "github.com/rs/zerolog/log"
+
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -33,6 +35,7 @@ const (
 
 func (h *handler) registerTaskRoutes() error {
 	h.router.Get("/tasks", h.listTasks())
+	h.router.Get("/tasks/stats", h.getGlobalTaskStats())
 	h.router.Post(_routePathTasks, h.createTask())
 	h.router.Get(_routePathTasks, h.listTasks())
 	h.router.Get(_routePathTask, h.getTask())
@@ -63,6 +66,8 @@ func (h *handler) createTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.CreateTask(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to fetch attachment")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -71,12 +76,35 @@ func (h *handler) createTask() fiber.Handler {
 		// If human created the task, notify the LLM via MCP channel
 		// ONLY if status is NOT 'cron' (don't notify for template creation)
 		if rq.Task.CreatedBy == "human" && rs.Task.Status != "cron" {
-			srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
-			content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(rs.Task.ID).String(), rs.Task.Title, rs.Task.Body)
-			if atts := formatAttachments(rs.Task.Attachments); atts != "" {
-				content += "\n" + atts
+			shouldNotifyMCP := true
+			listRs, listErr := h.crud.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: rq.Task.WorkspaceID, UserID: rq.UserID})
+			if listErr == nil {
+				hasOngoing := false
+				hasOtherNotStarted := false
+				for _, t := range listRs.Tasks {
+					if t.ID == rs.Task.ID {
+						continue // skip the newly created task itself
+					}
+					if t.Status == "ongoing" {
+						hasOngoing = true
+					}
+					if t.Status == "notstarted" && t.Assignee == "agent" {
+						hasOtherNotStarted = true
+					}
+				}
+				if hasOngoing || hasOtherNotStarted {
+					shouldNotifyMCP = false
+				}
 			}
-			srv.SendChannelNotification(ctx, rs.Task.ID, content)
+
+			if shouldNotifyMCP {
+				srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
+				content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(rs.Task.ID).String(), rs.Task.Title, rs.Task.Body)
+				if atts := formatAttachments(rs.Task.Attachments); atts != "" {
+					content += "\n" + atts
+				}
+				srv.SendChannelNotification(ctx, rs.Task.ID, content)
+			}
 		}
 
 		// Push SSE event
@@ -125,6 +153,12 @@ func (h *handler) getTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.GetTask(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to create task")
+			c.Set(_headerContentType, _mimeJSON)
+			zlog.Error().Err(err).Msg("Failed to list tasks")
+			c.Set(_headerContentType, _mimeJSON)
+			zlog.Error().Err(err).Msg("Failed to get task")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -147,6 +181,8 @@ func (h *handler) respondToTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.RespondToTask(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to respond to task")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -187,6 +223,8 @@ func (h *handler) replyToTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.ReplyToTask(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to reply to task")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -224,6 +262,8 @@ func (h *handler) updateTaskStatus() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateTaskStatus(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update task status")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -253,6 +293,8 @@ func (h *handler) updateTaskOrder() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateTaskOrder(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update task order")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -282,6 +324,8 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateTaskAssignee(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update task assignee")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -318,6 +362,8 @@ func (h *handler) updateTaskAllowAllCommands() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateTaskAllowAllCommands(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update task allow all")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -346,6 +392,8 @@ func (h *handler) deleteTask() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		if _, err := h.crud.DeleteTask(ctx, *rq); err != nil {
+			zlog.Error().Err(err).Msg("Failed to delete task")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -441,6 +489,8 @@ func (h *handler) getAttachment() fiber.Handler {
 			UserID:       userID,
 		})
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to fetch attachment")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -471,6 +521,8 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			if strings.Contains(err.Error(), "(expired)") {
 				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This action request has expired (server was likely restarted). The agent must re-request this action."})
 			}
+			zlog.Error().Err(err).Msg("Failed to send permission verdict")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -493,6 +545,8 @@ func (h *handler) updateScheduledTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateScheduledTask(ctx, *rq)
 		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to update scheduled task")
+			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -525,4 +579,21 @@ func formatAttachments(atts []entity.Attachment) string {
 		return ""
 	}
 	return "Attachments:\n" + strings.Join(parts, "\n")
+}
+
+func (h *handler) getGlobalTaskStats() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		userID := c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.GetGlobalTaskStats(ctx, userID)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(rs)
+	}
 }

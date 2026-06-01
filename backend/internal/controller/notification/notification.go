@@ -148,6 +148,8 @@ func (c *controller) handleWorkspaceEvent(ctx context.Context, event entity.CRUD
 	workspace := c.fromModelWorkspaceToEntity(w)
 
 	switch event.Action {
+	case entity.ActionWorkspaceCreate:
+		// No-op for direct notifications
 	case entity.ActionWorkspaceUpdate:
 		if workspace.ArchivedAt != nil {
 			c.NotifyWorkspaceArchived(workspace)

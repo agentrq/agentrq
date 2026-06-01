@@ -26,6 +26,9 @@ func main() {
 	if err := cfgSvc.Populate("ssl", &cfg.SSL); err != nil {
 		zlog.Fatal().Err(err).Msg("config ssl")
 	}
+	if err := cfgSvc.Populate("slack", &cfg.Slack); err != nil {
+		zlog.Fatal().Err(err).Msg("config slack")
+	}
 
 	cfg.ConfigSvc = cfgSvc
 

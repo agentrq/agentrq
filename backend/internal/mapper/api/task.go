@@ -77,16 +77,24 @@ func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequ
 		status = strings.Split(statusStr, ",")
 	}
 
-	limit, _ := strconv.Atoi(c.Query("limit"))
+	limitStr := c.Query("limit")
+	var limit int
+	if limitStr != "" {
+		limit, _ = strconv.Atoi(limitStr)
+		if limit <= 0 {
+			limit = 10
+		}
+	}
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
 	return &entity.ListTasksRequest{
-		WorkspaceID: workspaceID,
-		CreatedBy:   c.Query("created_by"),
-		Status:      status,
-		Filter:      c.Query("filter"),
-		Limit:       limit,
-		Offset:      offset,
+		WorkspaceID:     workspaceID,
+		CreatedBy:       c.Query("created_by"),
+		Status:          status,
+		Filter:          c.Query("filter"),
+		Limit:           limit,
+		Offset:          offset,
+		PreloadMessages: true,
 	}
 }
 

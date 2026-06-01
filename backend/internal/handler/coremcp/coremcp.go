@@ -294,15 +294,19 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
 						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
 
-					if pRedirect.Scheme != "https" && !isLocal {
-						http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
-						return
-					}
+					isCustomScheme := pRedirect.Scheme != "" && pRedirect.Scheme != "http" && pRedirect.Scheme != "https"
 
-					// Allow host mismatch ONLY for localhost/127.0.0.1
-					if pRedirect.Host != pBase.Host && !isLocal {
-						http.Error(w, "invalid redirect_uri: host mismatch", http.StatusBadRequest)
-						return
+					if !isCustomScheme {
+						if pRedirect.Scheme != "https" && !isLocal {
+							http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
+							return
+						}
+
+						// Allow host mismatch ONLY for localhost/127.0.0.1
+						if pRedirect.Host != pBase.Host && !isLocal {
+							http.Error(w, "invalid redirect_uri: host mismatch", http.StatusBadRequest)
+							return
+						}
 					}
 				} else {
 					// It's not absolute and doesn't start with /

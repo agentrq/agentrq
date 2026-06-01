@@ -2,6 +2,8 @@
 package mcp
 
 import (
+	"context"
+	"fmt"
 	"sync"
 )
 
@@ -55,4 +57,32 @@ func (m *Manager) IsAgentConnected(workspaceID int64) bool {
 		return false
 	}
 	return srv.IsAgentConnected()
+}
+
+// SendPermissionVerdict dispatches a permission request verdict to the appropriate WorkspaceServer.
+func (m *Manager) SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, requestID, behavior string) error {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok {
+		// If the server isn't running or loaded, try loading it using Get
+		srv = m.Get(workspaceID, userID)
+	}
+	if srv == nil {
+		return fmt.Errorf("mcp manager: workspace server %d not found or couldn't be loaded", workspaceID)
+	}
+	return srv.SendPermissionVerdict(ctx, requestID, behavior)
+}
+
+// SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
+func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok {
+		srv = m.Get(workspaceID, userID)
+	}
+	if srv != nil {
+		srv.SendChannelNotification(ctx, taskID, content)
+	}
 }

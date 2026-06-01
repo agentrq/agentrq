@@ -437,15 +437,29 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		attsData, _ = json.Marshal(req.Attachments)
 	}
 
-	// Create a new message from human
+	sender := "human"
+	var metadataJSON datatypes.JSON
+	if entity.GetOrigin(ctx) == entity.OriginSlack {
+		sender = "slack"
+		if req.SlackUser != "" {
+			metaMap := map[string]any{
+				"slack_user": req.SlackUser,
+			}
+			b, _ := json.Marshal(metaMap)
+			metadataJSON = datatypes.JSON(b)
+		}
+	}
+
+	// Create a new message from human/slack
 	msg := model.Message{
 		ID:          c.idgen.NextID(),
 		CreatedAt:   time.Now(),
 		TaskID:      m.ID,
 		UserID:      monoflake.IDFromBase62(req.UserID).Int64(),
-		Sender:      "human",
+		Sender:      sender,
 		Text:        req.Text,
 		Attachments: datatypes.JSON(attsData),
+		Metadata:    metadataJSON,
 	}
 	if err := c.repository.CreateMessage(ctx, msg); err != nil {
 		return nil, err
@@ -618,42 +632,31 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 }
 
 func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error) {
-	// Need to check if user has access to the workspace
-	// we just list all tasks for user and workspace and search attachmentid inside them
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
+
+	// 1. Verify workspace access
+	ok, err := c.repository.CheckWorkspaceAccess(ctx, req.WorkspaceID, uid)
+	if err != nil || !ok {
+		return nil, base.ErrNotFound
+	}
+
+	// 2. Load attachment file data from disk
+	data, err := c.storage.LoadRaw(req.AttachmentID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch tasks for attachment verification: %w", err)
+		return nil, base.ErrNotFound
 	}
 
-	for _, t := range tasks {
-		if len(t.Attachments) > 0 {
-			var atts []entity.Attachment
-			if err := json.Unmarshal(t.Attachments, &atts); err == nil {
-				for _, a := range atts {
-					if a.ID == req.AttachmentID {
-						data, _ := c.storage.LoadRaw(a.ID)
-						return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-					}
-				}
-			}
-		}
-		for _, m := range t.Messages {
-			if len(m.Attachments) > 0 {
-				var atts []entity.Attachment
-				if err := json.Unmarshal(m.Attachments, &atts); err == nil {
-					for _, a := range atts {
-						if a.ID == req.AttachmentID {
-							data, _ := c.storage.LoadRaw(a.ID)
-							return &entity.GetAttachmentResponse{Data: data, Filename: a.Filename, MimeType: a.MimeType}, nil
-						}
-					}
-				}
-			}
-		}
+	// 3. Query attachment metadata directly from DB
+	filename, mimeType, err := c.repository.FindAttachmentMetadata(ctx, req.WorkspaceID, req.AttachmentID)
+	if err != nil {
+		return nil, base.ErrNotFound
 	}
 
-	return nil, base.ErrNotFound
+	return &entity.GetAttachmentResponse{
+		Data:     data,
+		Filename: filename,
+		MimeType: mimeType,
+	}, nil
 }
 
 func (c *controller) saveAttachments(atts []entity.Attachment) {
@@ -719,4 +722,13 @@ func isValidTaskStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+func (c *controller) GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error) {
+	uid := monoflake.IDFromBase62(userID).Int64()
+	res, err := c.repository.GetGlobalTaskStats(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &res, nil
 }

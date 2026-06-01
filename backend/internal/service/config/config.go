@@ -41,43 +41,7 @@ type (
 
 // New inits a new Config based on env name
 func New() (Service, error) {
-	// read base yaml file
-	basefilename, err := filepath.Abs(_configPath + "/base.yaml")
-	if err != nil {
-		return nil, err
-	}
-
-	baseYaml, err := os.ReadFile(basefilename)
-	if err != nil {
-		return nil, err
-	}
-	baseCfg := map[string]any{}
-	if err := yaml.Unmarshal(baseYaml, &baseCfg); err != nil {
-		return nil, err
-	}
-
-	// read env yaml file
-	env := env()
-	envfilename, err := filepath.Abs(fmt.Sprintf(_configPath+"/%s.yaml", env))
-	if err != nil {
-		return nil, err
-	}
-	envYaml, err := os.ReadFile(envfilename)
-	if err != nil {
-		return nil, err
-	}
-	envCfg := map[string]any{}
-	if err := yaml.Unmarshal(envYaml, &envCfg); err != nil {
-		return nil, err
-	}
-
-	merged := mergeMaps(baseCfg, envCfg)
-	yamlFile, err := yaml.Marshal(merged)
-	if err != nil {
-		return nil, err
-	}
-
-	// expand env vars
+	// expand env vars mapper
 	mapper := func(placeholderName string) string {
 		split := strings.Split(placeholderName, ":")
 		defaultValue := ""
@@ -93,16 +57,45 @@ func New() (Service, error) {
 
 		return val
 	}
-	body := []byte(os.Expand(string(yamlFile), mapper))
 
-	// parse into a generic map
-	var cfg map[string]any
-	if err := yaml.Unmarshal(body, &cfg); err != nil {
+	// read base yaml file
+	basefilename, err := filepath.Abs(_configPath + "/base.yaml")
+	if err != nil {
 		return nil, err
 	}
 
-	content := make(map[string][]byte, len(cfg))
-	for k, v := range cfg {
+	baseYaml, err := os.ReadFile(basefilename)
+	if err != nil {
+		return nil, err
+	}
+
+	baseExpanded := os.Expand(string(baseYaml), mapper)
+	baseCfg := map[string]any{}
+	if err := yaml.Unmarshal([]byte(baseExpanded), &baseCfg); err != nil {
+		return nil, err
+	}
+
+	// read env yaml file
+	env := env()
+	envfilename, err := filepath.Abs(fmt.Sprintf(_configPath+"/%s.yaml", env))
+	if err != nil {
+		return nil, err
+	}
+	envYaml, err := os.ReadFile(envfilename)
+	if err != nil {
+		return nil, err
+	}
+
+	envExpanded := os.Expand(string(envYaml), mapper)
+	envCfg := map[string]any{}
+	if err := yaml.Unmarshal([]byte(envExpanded), &envCfg); err != nil {
+		return nil, err
+	}
+
+	merged := mergeMaps(baseCfg, envCfg)
+
+	content := make(map[string][]byte, len(merged))
+	for k, v := range merged {
 		content[k], _ = yaml.Marshal(v)
 	}
 

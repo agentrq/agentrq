@@ -17,12 +17,14 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
 	"github.com/agentrq/agentrq/backend/internal/controller/pub"
+	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	"github.com/agentrq/agentrq/backend/internal/controller/telemetry"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	handlerapi "github.com/agentrq/agentrq/backend/internal/handler/api"
 	handlercoremcp "github.com/agentrq/agentrq/backend/internal/handler/coremcp"
 	handlermcp "github.com/agentrq/agentrq/backend/internal/handler/mcp"
+	handlerslack "github.com/agentrq/agentrq/backend/internal/handler/slack"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
@@ -37,8 +39,11 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/scheduler"
 	"github.com/agentrq/agentrq/backend/internal/service/server"
+	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ddos"
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ratelimit"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -70,8 +75,20 @@ type (
 			RootLoginEnabled  bool   `yaml:"rootLoginEnabled"`
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
 		} `yaml:"auth"`
-		SMTP      smtp.Config    `yaml:"smtp"`
-		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
+		SMTP      smtp.Config     `yaml:"smtp"`
+		Slack     slacksvc.Config `yaml:"slack"`
+		Ddos      struct {
+			Enabled              bool          `yaml:"enabled"`
+			MaxRequestsPerSecond int           `yaml:"maxRequestsPerSecond"`
+			BlockDuration        time.Duration `yaml:"blockDuration"`
+		} `yaml:"ddos"`
+		Ratelimit struct {
+			Enabled    bool          `yaml:"enabled"`
+			MaxPerIP   int           `yaml:"maxPerIP"`
+			MaxPerUser int           `yaml:"maxPerUser"`
+			Window     time.Duration `yaml:"window"`
+		} `yaml:"ratelimit"`
+		ConfigSvc config.Service  `yaml:"-"` // injected, not from YAML
 	}
 
 	App struct {
@@ -106,7 +123,15 @@ func New(cfg Config) (*App, error) {
 		return nil, errors.New("neither postgres nor sqlite must be enabled in config")
 	}
 
-	if err := db.Conn(context.Background()).AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.Telemetry{}, &model.User{}); err != nil {
+	if err := db.Conn(context.Background()).AutoMigrate(
+		&model.Workspace{},
+		&model.Task{},
+		&model.Message{},
+		&model.Telemetry{},
+		&model.User{},
+		&model.SlackWorkspaceLink{},
+		&model.SlackTaskThread{},
+	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
@@ -129,6 +154,12 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("memq: %w", err)
 	}
 	smtpSvc := smtp.New(cfg.SMTP)
+	slackSvc := slacksvc.New(cfg.Slack)
+	zlog.Info().
+		Bool("configured_enabled", cfg.Slack.Enabled).
+		Bool("is_enabled", slackSvc.IsEnabled()).
+		Str("client_id", cfg.Slack.ClientID).
+		Msg("[slack] integration startup status")
 
 	pubsubSvc, err := pubsub.New(pubsub.Params{
 		Config: cfg.ConfigSvc,
@@ -138,7 +169,7 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("pubsub: %w", err)
 	}
 
-	// Ensure global topics (1 and 2) exist
+	// Ensure global topics exist
 	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: entity.PubSubTopicCRUD}); err != nil {
 		return nil, fmt.Errorf("create global pubsub (id:%d): %w", entity.PubSubTopicCRUD, err)
 	}
@@ -155,20 +186,6 @@ func New(cfg Config) (*App, error) {
 	})
 	if err := telemetryCtrl.Start(context.Background()); err != nil {
 		zlog.Error().Err(err).Msg("failed to start telemetry controller")
-	}
-
-	notificationSvc, err := notification.New(notification.Params{
-		Repository: repo,
-		PubSub:     pubsubSvc,
-		MemQ:       mqSvc,
-		SMTP:       smtpSvc,
-		BaseURL:    cfg.App.BaseURL,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("notification: %w", err)
-	}
-	if err := notificationSvc.Start(context.Background()); err != nil {
-		zlog.Error().Err(err).Msg("failed to start notification controller")
 	}
 
 	tokenSvc := auth.NewTokenService(auth.TokenConfig{
@@ -228,6 +245,7 @@ func New(cfg Config) (*App, error) {
 							ResourceType: entity.ResourceTask,
 							ResourceID:   res.ID,
 							Actor:        entity.ActorAgent,
+							Origin:       entity.OriginMCP,
 						},
 					})
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
@@ -270,6 +288,7 @@ func New(cfg Config) (*App, error) {
 								ResourceType: entity.ResourceTask,
 								ResourceID:   updated.ID,
 								Actor:        entity.ActorAgent,
+								Origin:       entity.OriginMCP,
 							},
 						})
 					}
@@ -282,6 +301,7 @@ func New(cfg Config) (*App, error) {
 							ResourceType: entity.ResourceTask,
 							ResourceID:   updated.ID,
 							Actor:        entity.ActorAgent,
+							Origin:       entity.OriginMCP,
 						},
 					})
 					// Emit message event for the status update text
@@ -294,6 +314,7 @@ func New(cfg Config) (*App, error) {
 							ResourceType: entity.ResourceMessage,
 							ResourceID:   msgID,
 							Actor:        entity.ActorAgent,
+							Origin:       entity.OriginMCP,
 						},
 					})
 				}
@@ -385,6 +406,7 @@ func New(cfg Config) (*App, error) {
 						ResourceType: entity.ResourceMessage,
 						ResourceID:   msgID,
 						Actor:        entity.ActorAgent,
+						Origin:       entity.OriginMCP,
 					},
 				})
 
@@ -399,7 +421,20 @@ func New(cfg Config) (*App, error) {
 				return msgID, nil
 			},
 			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
-				b, _ := json.Marshal(metadata)
+				existingMetadata := make(map[string]any)
+				if m, err := repo.SystemGetMessage(ctx, messageID); err == nil && len(m.Metadata) > 0 {
+					_ = json.Unmarshal(m.Metadata, &existingMetadata)
+				}
+
+				newMetaBytes, _ := json.Marshal(metadata)
+				newMetaMap := make(map[string]any)
+				_ = json.Unmarshal(newMetaBytes, &newMetaMap)
+
+				for k, v := range newMetaMap {
+					existingMetadata[k] = v
+				}
+
+				b, _ := json.Marshal(existingMetadata)
 				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, b)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
@@ -407,6 +442,20 @@ func New(cfg Config) (*App, error) {
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
 						Payload: mapper.FromModelTaskToView(latest),
+					})
+
+					// Publish ActionMessageUpdate event to pubsub so Slack and telemetry pick it up
+					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+						PubSubID: entity.PubSubTopicCRUD,
+						Event: entity.CRUDEvent{
+							Action:       entity.ActionMessageUpdate,
+							WorkspaceID:  workspaceID,
+							UserID:       uid,
+							ResourceType: entity.ResourceMessage,
+							ResourceID:   messageID,
+							Actor:        entity.ActorHuman,
+							Origin:       entity.OriginAPI,
+						},
 					})
 				}
 				return err
@@ -439,6 +488,101 @@ func New(cfg Config) (*App, error) {
 		srv.StartPing()
 		return srv
 	})
+
+	slackCtrl := slackctrl.New(slackctrl.Params{
+		Repository: repo,
+		SlackSvc:   slackSvc,
+		Crud:       crudCtrl,
+		MCPManager: mcpManager,
+		PubSub:     pubsubSvc,
+		TokenKey:   cfg.Auth.WorkspaceTokenKey,
+		BaseURL:    cfg.App.BaseURL,
+	})
+	if err := slackCtrl.Start(context.Background()); err != nil {
+		zlog.Error().Err(err).Msg("failed to start slack controller")
+	}
+
+	notificationSvc, err := notification.New(notification.Params{
+		Repository: repo,
+		PubSub:     pubsubSvc,
+		MemQ:       mqSvc,
+		SMTP:       smtpSvc,
+		BaseURL:    cfg.App.BaseURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("notification: %w", err)
+	}
+	if err := notificationSvc.Start(context.Background()); err != nil {
+		zlog.Error().Err(err).Msg("failed to start notification controller")
+	}
+
+	// Central PubSub to EventBus SSE Forwarder
+	go func() {
+		sub, err := pubsubSvc.Subscribe(context.Background(), pubsub.SubscribeRequest{
+			PubSubID: entity.PubSubTopicCRUD,
+		})
+		if err != nil {
+			zlog.Error().Err(err).Msg("[app] failed to subscribe to CRUD topic for SSE forwarding")
+			return
+		}
+		zlog.Info().Msg("[app] started central SSE event forwarder")
+		for eventMsg := range sub.Events {
+			event, ok := eventMsg.(entity.CRUDEvent)
+			if !ok {
+				continue
+			}
+
+			// Forward task and message updates to the EventBus in the background
+			go func(ev entity.CRUDEvent) {
+				ctx := context.Background()
+				ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
+				if err != nil {
+					return
+				}
+				ownerID := monoflake.ID(ws.UserID).String()
+
+				var taskID int64
+				var eventType string
+
+				switch ev.ResourceType {
+				case entity.ResourceTask:
+					taskID = ev.ResourceID
+					switch ev.Action {
+					case entity.ActionTaskCreate:
+						eventType = "task.created"
+					case entity.ActionTaskComplete:
+						eventType = "status.updated"
+					default:
+						eventType = "task.updated"
+					}
+				case entity.ResourceMessage:
+					if ev.Action == entity.ActionMessageCreate {
+						msg, err := repo.SystemGetMessage(ctx, ev.ResourceID)
+						if err == nil {
+							taskID = msg.TaskID
+							eventType = "reply.received"
+						}
+					}
+				}
+
+				if taskID != 0 && eventType != "" {
+					t, err := repo.SystemGetTask(ctx, taskID)
+					if err == nil {
+						// Preload task messages
+						messages, err := repo.ListMessages(ctx, t.ID)
+						if err == nil {
+							t.Messages = messages
+						}
+						bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
+							Type:    eventType,
+							Payload: mapper.FromModelTaskToView(t),
+						})
+					}
+				}
+			}(event)
+		}
+		zlog.Warn().Msg("[app] central SSE forwarder pubsub channel closed")
+	}()
 
 	// ── Fiber & Routing ────────────────────────────────────────────────────────
 	fiberApp := fiber.New(fiber.Config{
@@ -473,6 +617,14 @@ func New(cfg Config) (*App, error) {
 	})
 
 	mux := http.NewServeMux()
+
+	// Slack Webhook Handler
+	handlerslack.New(handlerslack.Params{
+		SlackCtrl: slackCtrl,
+		SlackSvc:  slackSvc,
+		BaseURL:   cfg.App.BaseURL,
+		Mux:       mux,
+	})
 
 	// CoreMCP Handler
 	if _, err := handlercoremcp.New(handlercoremcp.Params{
@@ -513,6 +665,7 @@ func New(cfg Config) (*App, error) {
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
 		RootToken:        cfg.Auth.RootAccessToken,
 		Router:           apiGroup,
+		SlackCtrl:        slackCtrl,
 	}); err != nil {
 		return nil, fmt.Errorf("api handler: %w", err)
 	}
@@ -534,6 +687,10 @@ func New(cfg Config) (*App, error) {
 	mux.Handle("/api/v1/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
+	var finalRouter http.Handler = mux
+	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
+	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
+
 	serverSvc, err := server.New(server.Params{
 		Config: server.Config{
 			Port:               cfg.App.Port,
@@ -544,7 +701,7 @@ func New(cfg Config) (*App, error) {
 			LetsencryptEmail:   cfg.SSL.LetsencryptEmail,
 			CloudflareAPIToken: cfg.SSL.CloudflareAPIToken,
 		},
-		Router: mux,
+		Router: finalRouter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server service: %w", err)

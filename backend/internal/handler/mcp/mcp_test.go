@@ -28,7 +28,7 @@ func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	if tokenStr == "valid-auth-cookie" || tokenStr == m.validCode || tokenStr == "valid-refresh-token" {
 		return &auth.Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
-				Subject: monoflake.IDFromBase62("user123").String(),
+				Subject:  monoflake.IDFromBase62("user123").String(),
 				Audience: jwt.ClaimStrings{"ws123", "authorization_code"},
 			},
 		}, nil
@@ -73,14 +73,14 @@ func (m *mockCrud) CheckWorkspaceAccess(ctx context.Context, id int64, userID st
 func setupTestRouter() (*http.ServeMux, *mockTokenSvc) {
 	mux := http.NewServeMux()
 	tokenSvc := &mockTokenSvc{}
-	
+
 	New(Params{
 		TokenSvc: tokenSvc,
 		Crud:     &mockCrud{},
 		BaseURL:  "https://agentrq.com",
 		Mux:      mux,
 	})
-	
+
 	return mux, tokenSvc
 }
 
@@ -91,7 +91,7 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
-	
+
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -113,7 +113,7 @@ func TestWorkspaceIDFromSubdomain(t *testing.T) {
 	req := httptest.NewRequest("GET", "/.well-known/oauth-authorization-server", nil)
 	// '1j' in base36 is 1*36 + 19 = 55
 	req.Host = "1j.mcp.agentrq.com"
-	
+
 	id := workspaceIDFromParam(req)
 	if id != 55 {
 		t.Errorf("Expected workspace ID 55, got %d", id)
@@ -126,7 +126,7 @@ func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=https://agentrq.com/callback&state=somestate", nil)
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
-	
+
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -150,7 +150,7 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	req.SetPathValue("workspaceID", "12345")
 	req.Host = "12345.mcp.agentrq.com"
 	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
-	
+
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -162,7 +162,7 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	if !strings.HasPrefix(loc, "https://agentrq.com/callback") {
 		t.Errorf("Expected redirect to client redirect_uri, got %s", loc)
 	}
-	
+
 	u, _ := url.Parse(loc)
 	if u.Query().Get("code") == "" {
 		t.Errorf("Expected code in redirect query")
@@ -176,8 +176,8 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 	mux, _ := setupTestRouter()
 
 	tests := []struct {
-		name        string
-		redirectURI string
+		name         string
+		redirectURI  string
 		expectedCode int
 	}{
 		{
@@ -216,10 +216,25 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			expectedCode: http.StatusBadRequest,
 		},
 		{
-			name:         "Host mismatch in absolute redirect (blocked)",
+			name: "Host mismatch in absolute redirect (blocked)",
 
 			redirectURI:  "https://other-client.com/callback",
 			expectedCode: http.StatusBadRequest,
+		},
+		{
+			name:         "Custom app redirect cursor (allowed)",
+			redirectURI:  "cursor://callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "Custom app redirect vscode (allowed)",
+			redirectURI:  "vscode://callback",
+			expectedCode: http.StatusFound,
+		},
+		{
+			name:         "Arbitrary custom app redirect zed (allowed)",
+			redirectURI:  "zed://callback",
+			expectedCode: http.StatusFound,
 		},
 	}
 
@@ -250,11 +265,11 @@ func TestOAuthTokenHandler(t *testing.T) {
 		"grant_type": {"authorization_code"},
 		"code":       {mockSvc.validCode},
 	}
-	
+
 	req := httptest.NewRequest("POST", "/mcp/12345/oauth2/token", strings.NewReader(formData.Encode()))
 	req.SetPathValue("workspaceID", "12345")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	
+
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

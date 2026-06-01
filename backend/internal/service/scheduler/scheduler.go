@@ -98,18 +98,18 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 
 	now := time.Now()
 	child := model.Task{
-		ID:          s.idgen.NextID(),
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		UserID:      parent.UserID,
-		WorkspaceID: parent.WorkspaceID,
-		CreatedBy:   parent.CreatedBy,
-		Assignee:    parent.Assignee,
-		Status:      "notstarted",
-		Title:       parent.Title,
-		Body:        parent.Body,
-		Attachments: parent.Attachments,
-		ParentID:    parent.ID,
+		ID:               s.idgen.NextID(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		UserID:           parent.UserID,
+		WorkspaceID:      parent.WorkspaceID,
+		CreatedBy:        parent.CreatedBy,
+		Assignee:         parent.Assignee,
+		Status:           "notstarted",
+		Title:            parent.Title,
+		Body:             parent.Body,
+		Attachments:      parent.Attachments,
+		ParentID:         parent.ID,
 		AllowAllCommands: parent.AllowAllCommands,
 	}
 
@@ -129,6 +129,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 				ResourceType: entity.ResourceTask,
 				ResourceID:   created.ID,
 				Actor:        entity.ActorHuman, // System acting on behalf of human
+				Origin:       entity.OriginScheduler,
 			},
 		})
 	}
@@ -157,7 +158,8 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 						UserID:       parent.UserID,
 						ResourceType: entity.ResourceTask,
 						ResourceID:   parent.ID,
-						Actor:        entity.ActorHuman, 
+						Actor:        entity.ActorHuman,
+						Origin:       entity.OriginScheduler,
 					},
 				})
 			}

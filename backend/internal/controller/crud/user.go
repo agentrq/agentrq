@@ -47,6 +47,7 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 				ResourceType: entity.ResourceUser,
 				ResourceID:   u.ID,
 				Actor:        entity.ActorHuman,
+				Origin:       entity.OriginAPI,
 			})
 		}
 
@@ -87,6 +88,7 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 		ResourceType: entity.ResourceUser,
 		ResourceID:   created.ID,
 		Actor:        entity.ActorHuman,
+		Origin:       entity.OriginAPI,
 	})
 
 	return &entity.FindOrCreateUserResponse{

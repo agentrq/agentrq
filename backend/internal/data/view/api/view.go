@@ -20,6 +20,17 @@ type (
 		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
 		AllowAllCommands     bool                  `json:"allowAllCommands"`
 		SelfLearningLoopNote string                `json:"selfLearningLoopNote,omitempty"`
+		Slack                *SlackConfig          `json:"slack,omitempty"`
+	}
+
+	SlackConfig struct {
+		Enabled     bool   `json:"enabled"`
+		Installed   bool   `json:"installed"`
+		ChannelID   string `json:"channelId,omitempty"`
+		ChannelName string `json:"channelName,omitempty"`
+		AutoCreated bool   `json:"autoCreated,omitempty"`
+		ClientID    string `json:"clientId,omitempty"`
+		AuthURL     string `json:"authUrl,omitempty"`
 	}
 
 	NotificationSettings struct {

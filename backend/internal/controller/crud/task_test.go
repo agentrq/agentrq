@@ -655,11 +655,9 @@ func TestDeleteTask_Success(t *testing.T) {
 func TestGetAttachment_Success(t *testing.T) {
 	e := newTestController(t)
 
-	attsJSON := `[{"id":"att-1","filename":"f.txt"}]`
-	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{
-		{ID: 1, Attachments: []byte(attsJSON)},
-	}, nil)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
 	e.storage.EXPECT().LoadRaw("att-1").Return([]byte("content"), nil)
+	e.repo.EXPECT().FindAttachmentMetadata(gomock.Any(), int64(1), "att-1").Return("f.txt", "text/plain", nil)
 
 	resp, err := e.controller.GetAttachment(context.Background(), entity.GetAttachmentRequest{
 		WorkspaceID:  1,

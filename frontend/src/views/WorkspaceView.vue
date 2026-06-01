@@ -223,7 +223,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchWorkspaces, createWorkspace, unarchiveWorkspace, fetchGlobalTasks } from '../api';
+import { fetchWorkspaces, createWorkspace, unarchiveWorkspace, fetchGlobalTasks, fetchGlobalTaskStats } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -285,17 +285,12 @@ async function loadWorkspaces() {
       showCreate.value = true;
     }
     // Also load some global stats
-    const [allTasks, pendingTasks, completedTasks] = await Promise.all([
-      fetchGlobalTasks({ limit: 1000 }),
-      fetchGlobalTasks({ filter: 'pending', limit: 1 }), 
-      fetchGlobalTasks({ status: 'completed', limit: 1000 })
-    ]);
-    const tasks = allTasks.tasks || [];
+    const stats = await fetchGlobalTaskStats();
     globalStats.value = {
-      totalTasks: tasks.length,
-      completedTasks: tasks.filter(t => t.status === 'completed').length,
-      pendingTasks: tasks.filter(t => t.status === 'notstarted' || t.status === 'ongoing').length,
-      scheduledTasks: tasks.filter(t => t.cronSchedule && t.cronSchedule !== '').length
+      totalTasks: 0,
+      completedTasks: 0,
+      pendingTasks: stats.pendingTasks || 0,
+      scheduledTasks: stats.scheduledTasks || 0
     };
   } catch (err) {
     error.value = err.message;

@@ -238,3 +238,27 @@ export async function fetchWorkspaceStats(id, range = '7d', from = 0, to = 0) {
   if (!res.ok) throw new Error('Failed to fetch workspace stats');
   return res.json();
 }
+
+export async function setWorkspaceSlackChannel(id, channelId, channelName) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channelId, channelName })
+  });
+  if (!res.ok) throw new Error('Failed to set workspace Slack channel');
+  return res.json();
+}
+
+export async function removeWorkspaceSlackChannel(id) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) throw new Error('Failed to remove workspace Slack channel');
+  return true;
+}
+
+export async function fetchGlobalTaskStats() {
+  const res = await fetch(`${API_BASE_URL}/tasks/stats`);
+  if (!res.ok) throw new Error('Failed to fetch global task stats');
+  return res.json();
+}
