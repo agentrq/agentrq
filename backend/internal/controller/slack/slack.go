@@ -811,11 +811,18 @@ func stripBotMention(text, botUserID string) string {
 	return strings.TrimSpace(strings.ReplaceAll(text, mention, ""))
 }
 
-func downloadSlackFile(ctx context.Context, token string, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", err
-	}
+func downloadSlackFile(ctx context.Context, token string, downloadURL string) (string, error) {
+		parsedURL, err := url.Parse(downloadURL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+			return "", fmt.Errorf("invalid download URL")
+		}
+
+		host := parsedURL.Hostname()
+		if !strings.HasSuffix(host, ".slack.com") && host != "127.0.0.1" && host != "localhost" {
+			return "", fmt.Errorf("unsafe download host: %s", host)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
