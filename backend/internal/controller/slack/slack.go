@@ -823,12 +823,30 @@ func (c *controller) downloadSlackFile(ctx context.Context, token string, rawURL
 	}
 
 	// Situational security: prevent SSRF by strictly validating the host and scheme.
-	// Slack private download URLs are typically on files.slack.com.
-	if parsedURL.Scheme != "https" || (parsedURL.Host != c.slackAllowedHost && parsedURL.Host != c.slackAllowedHost+":443") {
-		return "", fmt.Errorf("forbidden slack file host or scheme: %s", rawURL)
+	if parsedURL.Scheme != "https" {
+		return "", fmt.Errorf("forbidden slack file scheme: %s", parsedURL.Scheme)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", parsedURL.String(), nil)
+	// Only allow the pre-configured host (files.slack.com by default) or its HTTPS port variant.
+	var safeHost string
+	if parsedURL.Host == c.slackAllowedHost {
+		safeHost = c.slackAllowedHost
+	} else if parsedURL.Host == c.slackAllowedHost+":443" {
+		safeHost = c.slackAllowedHost + ":443"
+	} else {
+		return "", fmt.Errorf("forbidden slack file host: %s", parsedURL.Host)
+	}
+
+	// Reconstruct the URL from safe parts to satisfy static analysis (SSRF prevention).
+	// We use the validated safeHost and parsed path/query components.
+	reqURL := (&url.URL{
+		Scheme:   "https",
+		Host:     safeHost,
+		Path:     parsedURL.Path,
+		RawQuery: parsedURL.RawQuery,
+	}).String()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return "", err
 	}
