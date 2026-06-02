@@ -384,6 +384,9 @@ func (s *WorkspaceServer) handleListTasks(ctx context.Context, req *mcp.CallTool
 	if limit <= 0 {
 		limit = 5
 	}
+	if limit > 50 {
+		limit = 50
+	}
 
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
 		UserID:      userID,
@@ -413,6 +416,9 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 	limit := args.Limit
 	if limit <= 0 {
 		limit = 5
+	}
+	if limit > 50 {
+		limit = 50
 	}
 
 	res, err := s.crud.ListTasks(ctx, entity.ListTasksRequest{
