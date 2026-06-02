@@ -369,12 +369,15 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 	installed := err == nil && link.AccessToken != ""
 
 	workspaceID62 := monoflake.ID(workspaceID).String()
+	// Add signature to state for CSRF protection
+	state := workspaceID62 + "." + security.Sign(workspaceID62, c.tokenKey)
+
 	redirectURI := fmt.Sprintf("%s/slack/oauth/callback", c.baseURL)
 	authURL := fmt.Sprintf(
 		"https://slack.com/oauth/v2/authorize?client_id=%s&scope=groups:write,groups:read,chat:write,app_mentions:read,commands&redirect_uri=%s&state=%s",
 		c.slack.ClientID(),
 		url.QueryEscape(redirectURI),
-		workspaceID62,
+		state,
 	)
 
 	cfg := &entity.SlackConfig{
@@ -395,7 +398,17 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 // HandleOAuthCallback handles the dynamic Slack OAuth v2 redirect code exchange.
 // It exchanges the temporary code, encrypts the access token, auto-provisions a private channel,
 // and saves the credentials into GORM.
-func (c *controller) HandleOAuthCallback(ctx context.Context, workspaceID62 string, code string, redirectURI string) error {
+func (c *controller) HandleOAuthCallback(ctx context.Context, state string, code string, redirectURI string) error {
+	// CSRF validation: verify state signature
+	parts := strings.Split(state, ".")
+	if len(parts) != 2 {
+		return fmt.Errorf("slack: invalid oauth state format")
+	}
+	workspaceID62, signature := parts[0], parts[1]
+	if !security.Verify(workspaceID62, signature, c.tokenKey) {
+		return fmt.Errorf("slack: oauth state signature verification failed (CSRF)")
+	}
+
 	workspaceID := monoflake.IDFromBase62(workspaceID62).Int64()
 	if workspaceID == 0 {
 		return fmt.Errorf("slack: invalid workspace ID state: %s", workspaceID62)

@@ -745,6 +745,63 @@ func TestOnMessageUpdated_Success(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	tokenKey := "0123456789abcdef0123456789abcdef"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID62 := "test-workspace"
+	validState := workspaceID62 + "." + security.Sign(workspaceID62, tokenKey)
+	invalidState := workspaceID62 + ".invalid-sig"
+	malformedState := "no-dot"
+
+	t.Run("ValidState", func(t *testing.T) {
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), gomock.Any()).
+			Return(model.Workspace{Name: "test"}, nil)
+		mockRepo.EXPECT().
+			GetSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(model.SlackWorkspaceLink{}, nil)
+		mockRepo.EXPECT().
+			UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(nil)
+
+		err := c.HandleOAuthCallback(context.Background(), validState, "code", "https://app.agentrq.com/slack/oauth/callback")
+		if err != nil {
+			t.Errorf("expected no error for valid state, got %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		err := c.HandleOAuthCallback(context.Background(), invalidState, "code", "https://app.agentrq.com/slack/oauth/callback")
+		if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+			t.Errorf("expected signature verification error, got %v", err)
+		}
+	})
+
+	t.Run("MalformedState", func(t *testing.T) {
+		err := c.HandleOAuthCallback(context.Background(), malformedState, "code", "https://app.agentrq.com/slack/oauth/callback")
+		if err == nil || !strings.Contains(err.Error(), "invalid oauth state format") {
+			t.Errorf("expected malformed state error, got %v", err)
+		}
+	})
+}
+
 func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	gomockCtrl := gomock.NewController(t)
 	defer gomockCtrl.Finish()
