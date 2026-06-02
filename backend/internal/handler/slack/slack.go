@@ -194,8 +194,8 @@ func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseU
 		err := ctrl.HandleOAuthCallback(r.Context(), state, code, redirectURI)
 		if err != nil {
 			zlog.Error().Err(err).Msg("[slack/oauth] HandleOAuthCallback error")
-			// Redirect back with an error query param
-			errorMsg := url.QueryEscape(err.Error())
+			// Redirect back with a generic error query param to prevent information leakage
+			errorMsg := url.QueryEscape("failed to complete slack authorization")
 			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, state, errorMsg), http.StatusTemporaryRedirect)
 			return
 		}

@@ -721,7 +721,10 @@ func (h *handler) setWorkspaceSlackChannel() fiber.Handler {
 			AutoCreated: false,
 		})
 		if err != nil {
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			zlog.Error().Err(err).Int64("workspace_id", workspaceID).Msg("Failed to set workspace Slack channel")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			return c.Status(status).Send(e)
 		}
 
 		return c.Status(http.StatusOK).JSON(fiber.Map{"status": "success"})
@@ -749,7 +752,10 @@ func (h *handler) removeWorkspaceSlackChannel() fiber.Handler {
 			UserID:      userID,
 		})
 		if err != nil {
-			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+			zlog.Error().Err(err).Int64("workspace_id", workspaceID).Msg("Failed to remove workspace Slack channel")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			return c.Status(status).Send(e)
 		}
 
 		return c.Status(http.StatusNoContent).Send([]byte(""))
