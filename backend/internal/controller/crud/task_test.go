@@ -512,7 +512,7 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
-	
+
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		if m.Body != "Original body.\n\nBe concise." {
 			return model.Task{}, fmt.Errorf("expected Body to have loop note appended, got %q", m.Body)
@@ -671,3 +671,46 @@ func TestGetAttachment_Success(t *testing.T) {
 		t.Errorf("expected content")
 	}
 }
+
+// ── GetWorkspaceTaskCounts ───────────────────────────────────────────────────
+
+func TestGetWorkspaceTaskCounts_Success(t *testing.T) {
+	e := newTestController(t)
+
+	expectedCounts := map[string]int64{
+		"ongoing":    2,
+		"notstarted": 3,
+		"scheduled":  1,
+		"completed":  5,
+		"pending":    0,
+	}
+
+	e.repo.EXPECT().GetWorkspaceTaskCountsByCategory(gomock.Any(), int64(1), testUserID).Return(expectedCounts, nil)
+
+	resp, err := e.controller.GetWorkspaceTaskCounts(context.Background(), entity.GetWorkspaceTaskCountsRequest{
+		WorkspaceID: 1,
+		UserID:      testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp["ongoing"] != 2 || resp["notstarted"] != 3 || resp["completed"] != 5 {
+		t.Errorf("unexpected counts returned: %v", resp)
+	}
+}
+
+func TestGetWorkspaceTaskCounts_Error(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspaceTaskCountsByCategory(gomock.Any(), int64(1), testUserID).Return(nil, fmt.Errorf("db error"))
+
+	_, err := e.controller.GetWorkspaceTaskCounts(context.Background(), entity.GetWorkspaceTaskCountsRequest{
+		WorkspaceID: 1,
+		UserID:      testUserIDStr,
+	})
+	if err == nil {
+		t.Fatal("expected error from repository call")
+	}
+}
+
