@@ -794,3 +794,61 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	tokenKey := "12345678901234567890123456789012"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID62 := "00000000001"
+	validSignature := security.Sign(workspaceID62, tokenKey)
+	validState := fmt.Sprintf("%s.%s", workspaceID62, validSignature)
+
+	t.Run("ValidSignature", func(t *testing.T) {
+		// Mock expectations for success path
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), gomock.Any()).
+			Return(model.Workspace{ID: 1, Name: "Test"}, nil)
+		mockRepo.EXPECT().
+			GetSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(model.SlackWorkspaceLink{}, nil)
+		mockRepo.EXPECT().
+			UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(nil)
+
+		err := c.HandleOAuthCallback(context.Background(), validState, "code123", "https://app.agentrq.com/slack/callback")
+		if err != nil {
+			t.Errorf("expected no error for valid signature, got %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		invalidState := workspaceID62 + ".invalid-signature"
+		err := c.HandleOAuthCallback(context.Background(), invalidState, "code123", "https://app.agentrq.com/slack/callback")
+		if err == nil || !strings.Contains(err.Error(), "signature verification failed") {
+			t.Errorf("expected signature verification error, got %v", err)
+		}
+	})
+
+	t.Run("InvalidFormat", func(t *testing.T) {
+		invalidState := "no-dot-format"
+		err := c.HandleOAuthCallback(context.Background(), invalidState, "code123", "https://app.agentrq.com/slack/callback")
+		if err == nil || !strings.Contains(err.Error(), "invalid oauth state format") {
+			t.Errorf("expected format error, got %v", err)
+		}
+	})
+}
