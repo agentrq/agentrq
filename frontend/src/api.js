@@ -234,6 +234,12 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
   return res.json();
 }
 
+export async function fetchTaskCounts(workspaceId) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/counts`);
+  if (!res.ok) throw new Error('Failed to fetch task counts');
+  return res.json();
+}
+
 export async function fetchWorkspaceStats(id, range = '7d', from = 0, to = 0) {
   const params = new URLSearchParams();
   params.append('range', range);

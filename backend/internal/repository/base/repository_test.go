@@ -224,3 +224,64 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(100)
+	userID := int64(1)
+
+	// Create test tasks in various categories
+	// Ongoing: 2 tasks
+	db.Create(&model.Task{ID: 1, WorkspaceID: workspaceID, UserID: userID, Status: "ongoing"})
+	db.Create(&model.Task{ID: 2, WorkspaceID: workspaceID, UserID: userID, Status: "blocked"})
+
+	// Not started: 3 tasks
+	db.Create(&model.Task{ID: 3, WorkspaceID: workspaceID, UserID: userID, Status: "notstarted", Assignee: "agent"})
+	db.Create(&model.Task{ID: 4, WorkspaceID: workspaceID, UserID: userID, Status: "notstarted", Assignee: "agent"})
+	db.Create(&model.Task{ID: 5, WorkspaceID: workspaceID, UserID: userID, Status: "notstarted", Assignee: "human"})
+
+	// Scheduled: 1 task
+	db.Create(&model.Task{ID: 6, WorkspaceID: workspaceID, UserID: userID, Status: "cron"})
+
+	// Completed: 2 tasks
+	db.Create(&model.Task{ID: 7, WorkspaceID: workspaceID, UserID: userID, Status: "completed"})
+	db.Create(&model.Task{ID: 8, WorkspaceID: workspaceID, UserID: userID, Status: "rejected"})
+
+	// Pending (Action Required): 1 task
+	db.Create(&model.Task{ID: 9, WorkspaceID: workspaceID, UserID: userID, Status: "ongoing"})
+	db.Create(&model.Message{
+		ID:        901,
+		TaskID:    9,
+		CreatedAt: time.Now(),
+		Metadata:  []byte(`{"type":"permission_request","status":"pending"}`),
+	})
+
+	counts, err := repo.GetWorkspaceTaskCountsByCategory(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkspaceTaskCountsByCategory failed: %v", err)
+	}
+
+	if counts["ongoing"] != 3 { // ID 1, 2, 9
+		t.Errorf("expected 3 ongoing tasks, got %d", counts["ongoing"])
+	}
+	if counts["notstarted"] != 3 { // ID 3, 4, 5
+		t.Errorf("expected 3 notstarted tasks, got %d", counts["notstarted"])
+	}
+	if counts["scheduled"] != 1 { // ID 6
+		t.Errorf("expected 1 scheduled tasks, got %d", counts["scheduled"])
+	}
+	if counts["completed"] != 2 { // ID 7, 8
+		t.Errorf("expected 2 completed tasks, got %d", counts["completed"])
+	}
+	if counts["pending"] != 1 { // ID 9
+		t.Errorf("expected 1 pending tasks, got %d", counts["pending"])
+	}
+}

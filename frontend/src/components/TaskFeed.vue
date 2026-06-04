@@ -114,12 +114,35 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, fetchTasks } from '../api';
+import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, fetchTasks, fetchTaskCounts } from '../api';
 import { useCron } from '../composables/useCron';
 import DeleteModal from './DeleteModal.vue';
 import { useToasts } from '../composables/useToasts';
 
 const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
+
+const counts = ref({
+  ongoing: 0,
+  notstarted: 0,
+  scheduled: 0,
+  pending: 0,
+  completed: 0
+});
+
+async function loadCounts() {
+  try {
+    const data = await fetchTaskCounts(props.workspaceId);
+    counts.value = {
+      ongoing: data.ongoing || 0,
+      notstarted: data.notstarted || 0,
+      scheduled: data.scheduled || 0,
+      pending: data.pending || 0,
+      completed: data.completed || 0
+    };
+  } catch (err) {
+    console.error('Failed to load task counts', err);
+  }
+}
 
 const props = defineProps({
   workspaceId: { type: [String, Number], required: true },
@@ -248,6 +271,7 @@ function emitUpdatedTasks() {
 
 onMounted(() => {
   loadAllForFilter();
+  loadCounts();
 });
 
 watch(() => props.filter, () => {
@@ -261,6 +285,7 @@ watch(() => props.workspaceId, () => {
   pendingTasks.value = [];
   completedTasks.value = [];
   loadAllForFilter();
+  loadCounts();
 });
 
 watch(() => props.liveEvents.length, (newLen, oldLen) => {
@@ -274,6 +299,7 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
         scheduledTasks.value = scheduledTasks.value.filter(x => String(x.id) !== String(id));
         pendingTasks.value = pendingTasks.value.filter(x => String(x.id) !== String(id));
         completedTasks.value = completedTasks.value.filter(x => String(x.id) !== String(id));
+        loadCounts();
         emitUpdatedTasks();
         return;
       }
@@ -283,6 +309,21 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
         if (t && t.workspaceId && String(t.workspaceId) !== String(props.workspaceId)) {
           return;
         }
+
+        const getListForStatus = (status) => {
+          if (status === 'cron') return scheduledTasks.value;
+          if (['completed', 'rejected'].includes(status)) return completedTasks.value;
+          if (status === 'notstarted') return notStartedTasks.value;
+          if (['ongoing', 'blocked'].includes(status)) return ongoingTasks.value;
+          return [];
+        };
+
+        const targetList = getListForStatus(t.status);
+        const existing = targetList.find(x => String(x.id) === String(t.id));
+        if (existing && new Date(existing.updatedAt).getTime() >= new Date(t.updatedAt).getTime()) {
+          return;
+        }
+
         ongoingTasks.value = ongoingTasks.value.filter(x => String(x.id) !== String(t.id));
         notStartedTasks.value = notStartedTasks.value.filter(x => String(x.id) !== String(t.id));
         scheduledTasks.value = scheduledTasks.value.filter(x => String(x.id) !== String(t.id));
@@ -310,6 +351,7 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
         if (ev.type === 'task.created' && t.createdBy === 'agent') {
           notifyInfo(`Agent defined a new task: ${t.title}`, 'New Task');
         }
+        loadCounts();
         emitUpdatedTasks();
       }
     });
@@ -411,7 +453,8 @@ const displayGroups = computed(() => {
       title: 'Ongoing', 
       tasks: [...ongoingTasks.value].sort((a,b) => getTaskOrder(b) - getTaskOrder(a)),
       hasMore: ongoingHasMore.value,
-      category: 'ongoing'
+      category: 'ongoing',
+      totalCount: counts.value.ongoing
     });
   }
   if (f === 'active' || f === 'notstarted') {
@@ -419,7 +462,8 @@ const displayGroups = computed(() => {
       title: 'Not Started',
       tasks: [...notStartedTasks.value].sort((a,b) => getTaskOrder(a) - getTaskOrder(b)),
       hasMore: notStartedHasMore.value,
-      category: 'notstarted'
+      category: 'notstarted',
+      totalCount: counts.value.notstarted
     });
   }
 
@@ -433,7 +477,8 @@ const displayGroups = computed(() => {
       title: 'Scheduled', 
       tasks: sortedCron,
       hasMore: scheduledHasMore.value,
-      category: 'scheduled'
+      category: 'scheduled',
+      totalCount: counts.value.scheduled
     });
   }
 
@@ -442,7 +487,8 @@ const displayGroups = computed(() => {
       title: 'Action Required', 
       tasks: [...pendingTasks.value].sort((a,b) => getTaskOrder(b) - getTaskOrder(a)),
       hasMore: pendingHasMore.value,
-      category: 'pending'
+      category: 'pending',
+      totalCount: counts.value.pending
     });
   }
 
@@ -451,7 +497,8 @@ const displayGroups = computed(() => {
       title: 'Completed',
       tasks: [...completedTasks.value].sort((a,b) => getTaskOrder(b) - getTaskOrder(a)),
       hasMore: completedHasMore.value,
-      category: 'completed'
+      category: 'completed',
+      totalCount: counts.value.completed
     });
   }
 

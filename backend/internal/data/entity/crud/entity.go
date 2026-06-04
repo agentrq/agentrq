@@ -329,6 +329,11 @@ type (
 		ScheduledTasks int64 `json:"scheduledTasks"`
 	}
 
+	GetWorkspaceTaskCountsRequest struct {
+		WorkspaceID int64
+		UserID      string
+	}
+
 	GetWorkspaceStatsRequest struct {
 		ID     int64  `json:"id"`
 		UserID string `json:"userId"`

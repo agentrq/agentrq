@@ -31,6 +31,7 @@ const (
 	_routePathPermission = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathEvents     = "/workspaces/:id/events"
 	_routePathAttachment = "/workspaces/:id/attachments/:attachmentID"
+	_routePathCounts     = "/workspaces/:id/tasks/counts"
 )
 
 func (h *handler) registerTaskRoutes() error {
@@ -38,6 +39,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Get("/tasks/stats", h.getGlobalTaskStats())
 	h.router.Post(_routePathTasks, h.createTask())
 	h.router.Get(_routePathTasks, h.listTasks())
+	h.router.Get(_routePathCounts, h.getWorkspaceTaskCounts())
 	h.router.Get(_routePathTask, h.getTask())
 	h.router.Post(_routePathRespond, h.respondToTask())
 	h.router.Post(_routePathReply, h.replyToTask())
@@ -595,5 +597,29 @@ func (h *handler) getGlobalTaskStats() fiber.Handler {
 			return c.Send(e)
 		}
 		return c.JSON(rs)
+	}
+}
+
+func (h *handler) getWorkspaceTaskCounts() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		if workspaceID == 0 {
+			return c.Status(http.StatusUnprocessableEntity).Send(_invalidPayload)
+		}
+		userID := c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		counts, err := h.crud.GetWorkspaceTaskCounts(ctx, entity.GetWorkspaceTaskCountsRequest{
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(counts)
 	}
 }

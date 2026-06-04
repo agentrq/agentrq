@@ -45,6 +45,7 @@ type Repository interface {
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
+	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
 	GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error)
 	FindUserByEmail(ctx context.Context, email string) (model.User, error)
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
@@ -668,4 +669,59 @@ func (r *repository) GetGlobalTaskStats(ctx context.Context, userID int64) (enti
 	res.PendingTasks = pending
 	res.ScheduledTasks = scheduled
 	return res, nil
+}
+
+func (r *repository) GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error) {
+	counts := map[string]int64{
+		"ongoing":    0,
+		"notstarted": 0,
+		"scheduled":  0,
+		"completed":  0,
+		"pending":    0,
+	}
+
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var results []statusCount
+	if err := r.conn(ctx).Model(&model.Task{}).
+		Select("status, count(*) as count").
+		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+		Group("status").
+		Scan(&results).Error; err != nil {
+		return nil, err
+	}
+
+	for _, res := range results {
+		switch res.Status {
+		case "ongoing", "blocked":
+			counts["ongoing"] += res.Count
+		case "notstarted":
+			counts["notstarted"] += res.Count
+		case "cron":
+			counts["scheduled"] += res.Count
+		case "completed", "rejected":
+			counts["completed"] += res.Count
+		}
+	}
+
+	// 5. Pending (Action Required)
+	var pending int64
+	var metadataExpr string
+	if r.conn(ctx).Dialector.Name() == "postgres" {
+		metadataExpr = "metadata @> '{\"type\":\"permission_request\"}'::jsonb"
+	} else {
+		metadataExpr = "metadata LIKE '%\"type\":\"permission_request\"%'"
+	}
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("workspace_id = ? AND user_id = ?", workspaceID, userID).
+		Where("id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")").
+		Count(&pending).Error
+	if err != nil {
+		return nil, err
+	}
+	counts["pending"] = pending
+
+	return counts, nil
 }

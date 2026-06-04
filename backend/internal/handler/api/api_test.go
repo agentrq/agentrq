@@ -180,3 +180,42 @@ func TestGetWorkspaceToken_Unauthorized(t *testing.T) {
 		}
 	})
 }
+
+type mockCrudTaskCounts struct {
+	crud.Controller
+	getWorkspaceTaskCountsFunc func(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error)
+}
+
+func (m *mockCrudTaskCounts) GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error) {
+	return m.getWorkspaceTaskCountsFunc(ctx, req)
+}
+
+func TestGetWorkspaceTaskCounts(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudTaskCounts{}
+
+	h := &handler{
+		crud: crudCtrl,
+	}
+
+	app.Get("/api/v1/workspaces/:id/tasks/counts", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.getWorkspaceTaskCounts()(c)
+	})
+
+	t.Run("Success fetching counts", func(t *testing.T) {
+		crudCtrl.getWorkspaceTaskCountsFunc = func(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error) {
+			return map[string]int64{
+				"ongoing":    2,
+				"notstarted": 3,
+			}, nil
+		}
+
+		req := httptest.NewRequest("GET", "/api/v1/workspaces/work1/tasks/counts", nil)
+		resp, _ := app.Test(req)
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		}
+	})
+}

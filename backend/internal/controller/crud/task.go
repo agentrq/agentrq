@@ -744,3 +744,8 @@ func (c *controller) GetGlobalTaskStats(ctx context.Context, userID string) (*en
 	}
 	return &res, nil
 }
+
+func (c *controller) GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	return c.repository.GetWorkspaceTaskCountsByCategory(ctx, req.WorkspaceID, uid)
+}
