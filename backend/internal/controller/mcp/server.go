@@ -37,6 +37,7 @@ import (
 type CreateTaskFunc func(ctx context.Context, task model.Task) (model.Task, error)
 type UpdateTaskStatusFunc func(ctx context.Context, taskID int64, status string) (model.Task, error)
 type GetTaskFunc func(ctx context.Context, taskID int64) (model.Task, error)
+
 // ListTasksFilter specifies optional filters for listing tasks.
 type ListTasksFilter struct {
 	Status []string
@@ -54,6 +55,7 @@ type PermissionRequestParams struct {
 	ToolName     string `json:"tool_name"`
 	Description  string `json:"description"`
 	InputPreview string `json:"input_preview"`
+	TaskID       string `json:"task_id,omitempty"`
 }
 
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
@@ -88,6 +90,8 @@ type WorkspaceServer struct {
 
 	permissionResponsesMu sync.RWMutex
 	permissionResponses   map[string]int64 // requestID -> messageID
+	permissionTasksMu     sync.RWMutex
+	permissionTasks       map[string]int64 // requestID -> taskID
 	metadataMu            sync.RWMutex
 	icon                  string
 	name                  string
@@ -177,6 +181,7 @@ func NewWorkspaceServer(
 		requestParams:         make(map[string]*PermissionRequestParams),
 		sessionTasks:          make(map[string]int64),
 		permissionResponses:   make(map[string]int64),
+		permissionTasks:       make(map[string]int64),
 		icon:                  icon,
 		name:                  name,
 		description:           description,
@@ -279,6 +284,7 @@ func NewWorkspaceServer(
 		return mcpSrv
 	}, &mcp.StreamableHTTPOptions{
 		CrossOriginProtection: cp,
+		Stateless:             true,
 	})
 
 	ps.mcpServer = mcpSrv
@@ -999,9 +1005,19 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				return nil, nil
 			}
 
-			ps.sessionTasksMu.RLock()
-			taskID, ok := ps.sessionTasks[sessID]
-			ps.sessionTasksMu.RUnlock()
+			var taskID int64
+			ok := false
+
+			if p.TaskID != "" {
+				taskID = parseID(p.TaskID)
+				ok = (taskID != 0)
+			}
+
+			if !ok && sessID != "" {
+				ps.sessionTasksMu.RLock()
+				taskID, ok = ps.sessionTasks[sessID]
+				ps.sessionTasksMu.RUnlock()
+			}
 
 			// Fallback: after a server restart the sessionTasks map is empty.
 			// Query the DB for the workspace's current ongoing task — there can only be one.
@@ -1011,13 +1027,22 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 						if t.Status == "ongoing" {
 							taskID = t.ID
 							ok = true
-							ps.sessionTasksMu.Lock()
-							ps.sessionTasks[sessID] = taskID
-							ps.sessionTasksMu.Unlock()
-							zlog.Debug().Str("session_id", sessID).Int64("task_id", taskID).Msg("Session not found; resolved ongoing task from DB")
 							break
 						}
 					}
+				}
+			}
+
+			if ok {
+				ps.permissionTasksMu.Lock()
+				ps.permissionTasks[p.RequestID] = taskID
+				ps.permissionTasksMu.Unlock()
+
+				if sessID != "" {
+					ps.sessionTasksMu.Lock()
+					ps.sessionTasks[sessID] = taskID
+					ps.sessionTasksMu.Unlock()
+					zlog.Debug().Str("session_id", sessID).Int64("task_id", taskID).Msg("Session resolved ongoing task from DB/parameters")
 				}
 			}
 
@@ -1074,6 +1099,10 @@ func (ps *WorkspaceServer) cleanupRequest(requestID string) {
 	ps.permissionResponsesMu.Lock()
 	delete(ps.permissionResponses, requestID)
 	ps.permissionResponsesMu.Unlock()
+
+	ps.permissionTasksMu.Lock()
+	delete(ps.permissionTasks, requestID)
+	ps.permissionTasksMu.Unlock()
 }
 
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID string, behavior string) error {
@@ -1087,9 +1116,27 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, requestID 
 		return fmt.Errorf("unknown request ID (expired): %s", requestID)
 	}
 
-	ps.sessionTasksMu.RLock()
-	taskID, okTask := ps.sessionTasks[sessID]
-	ps.sessionTasksMu.RUnlock()
+	ps.permissionTasksMu.RLock()
+	taskID, okTask := ps.permissionTasks[requestID]
+	ps.permissionTasksMu.RUnlock()
+
+	if sessID == "" && okTask {
+		ps.sessionTasksMu.RLock()
+		for sID, tID := range ps.sessionTasks {
+			if tID == taskID && sID != "" {
+				sessID = sID
+				break
+			}
+		}
+		ps.sessionTasksMu.RUnlock()
+	}
+
+	// For legacy support: if taskID not resolved directly via permissionTasks, fallback to sessionTasks
+	if !okTask && sessID != "" {
+		ps.sessionTasksMu.RLock()
+		taskID, okTask = ps.sessionTasks[sessID]
+		ps.sessionTasksMu.RUnlock()
+	}
 
 	effectiveBehavior := behavior
 	if behavior == "allow_always" {
@@ -1215,9 +1262,19 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			return
 		}
 
-		ps.sessionTasksMu.RLock()
-		taskID, ok := ps.sessionTasks[sessionID]
-		ps.sessionTasksMu.RUnlock()
+		var taskID int64
+		ok := false
+
+		if p.TaskID != "" {
+			taskID = parseID(p.TaskID)
+			ok = (taskID != 0)
+		}
+
+		if !ok && sessionID != "" {
+			ps.sessionTasksMu.RLock()
+			taskID, ok = ps.sessionTasks[sessionID]
+			ps.sessionTasksMu.RUnlock()
+		}
 
 		// Fallback: if session mapping is missing (e.g. after a server restart),
 		// query the DB for the workspace's current ongoing task.
@@ -1228,14 +1285,22 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 					if t.Status == "ongoing" {
 						taskID = t.ID
 						ok = true
-						// Re-populate the session mapping to avoid future DB hits.
-						ps.sessionTasksMu.Lock()
-						ps.sessionTasks[sessionID] = taskID
-						ps.sessionTasksMu.Unlock()
-						zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Msg("Session not found; resolved ongoing task from DB")
 						break
 					}
 				}
+			}
+		}
+
+		if ok {
+			ps.permissionTasksMu.Lock()
+			ps.permissionTasks[p.RequestID] = taskID
+			ps.permissionTasksMu.Unlock()
+
+			if sessionID != "" {
+				ps.sessionTasksMu.Lock()
+				ps.sessionTasks[sessionID] = taskID
+				ps.sessionTasksMu.Unlock()
+				zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Msg("Session resolved ongoing task from DB/parameters (custom notification)")
 			}
 		}
 
@@ -1352,3 +1417,11 @@ func validateCronGranularity(schedule string) error {
 
 	return nil
 }
+
+func parseID(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	return monoflake.IDFromBase62(s).Int64()
+}
+

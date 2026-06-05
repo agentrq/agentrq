@@ -34,7 +34,9 @@ func NewServer(crudCtrl crud.Controller, baseURL string) *WorkspaceServer {
 
 	streamHandler := mcp.NewStreamableHTTPHandler(func(request *http.Request) *mcp.Server {
 		return srv
-	}, &mcp.StreamableHTTPOptions{})
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true,
+	})
 
 	ws := &WorkspaceServer{
 		server:       srv,
