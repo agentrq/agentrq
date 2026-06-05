@@ -794,3 +794,76 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	tokenKey := "12345678901234567890123456789012"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   nil,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID62 := "1c" // 100 in base62
+
+	t.Run("ValidSignature", func(t *testing.T) {
+		sig := security.Sign(workspaceID62, tokenKey)
+		state := fmt.Sprintf("%s.%s", workspaceID62, sig)
+
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), int64(100)).
+			Return(model.Workspace{ID: 100}, nil)
+
+		// Mock exchange and other logic if needed, but we care about state verification here
+		stubSlack := &stubSlackService{}
+		c.(*controller).slack = stubSlack // Temporarily inject stub
+
+		mockRepo.EXPECT().
+			GetSlackWorkspaceLink(gomock.Any(), int64(100)).
+			Return(model.SlackWorkspaceLink{WorkspaceID: 100}, nil)
+
+		mockRepo.EXPECT().
+			UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(nil).AnyTimes()
+
+		err := c.HandleOAuthCallback(context.Background(), state, "code", "redirect")
+		if err != nil && !strings.Contains(err.Error(), "oauth exchange failed") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		state := workspaceID62 + ".invalid-sig"
+		err := c.HandleOAuthCallback(context.Background(), state, "code", "redirect")
+		if err == nil || !strings.Contains(err.Error(), "state verification failed") {
+			t.Fatalf("expected state verification failure, got %v", err)
+		}
+	})
+
+	t.Run("MissingSignature", func(t *testing.T) {
+		state := workspaceID62
+		err := c.HandleOAuthCallback(context.Background(), state, "code", "redirect")
+		if err == nil || !strings.Contains(err.Error(), "invalid state format") {
+			t.Fatalf("expected invalid state format, got %v", err)
+		}
+	})
+
+	t.Run("TamperedWorkspaceID", func(t *testing.T) {
+		sig := security.Sign(workspaceID62, tokenKey)
+		state := "other-ws." + sig
+		err := c.HandleOAuthCallback(context.Background(), state, "code", "redirect")
+		if err == nil || !strings.Contains(err.Error(), "state verification failed") {
+			t.Fatalf("expected state verification failure for tampered ID, got %v", err)
+		}
+	})
+}
