@@ -39,7 +39,7 @@ func (s *stubSlackService) UpdateMessage(ctx context.Context, token, channelID, 
 	return nil
 }
 func (s *stubSlackService) ExchangeCode(ctx context.Context, code, redirectURI string) (string, string, string, string, error) {
-	return "", "", "", "", nil
+	return "xoxb-token", "T123", "U_BOT", "U_USER", nil
 }
 func (s *stubSlackService) VerifyRequest(r *http.Request, body []byte) error {
 	return nil
@@ -794,3 +794,65 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+	stubSlack := &stubSlackService{}
+
+	tokenKey := "0123456789abcdef0123456789abcdef"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   stubSlack,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID62 := "0000000000g" // monoflake ID 42
+	sig := security.Sign(workspaceID62, tokenKey)
+	validState := fmt.Sprintf("%s.%s", workspaceID62, sig)
+	invalidState := workspaceID62 + ".invalid-sig"
+
+	t.Run("ValidSignature", func(t *testing.T) {
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), int64(42)).
+			Return(model.Workspace{ID: 42, Name: "Test WS"}, nil)
+
+		mockRepo.EXPECT().
+			GetSlackWorkspaceLink(gomock.Any(), int64(42)).
+			Return(model.SlackWorkspaceLink{}, nil)
+
+		mockRepo.EXPECT().
+			UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(nil)
+
+		err := c.HandleOAuthCallback(context.Background(), validState, "code123", "https://redirect")
+		if err != nil {
+			t.Errorf("unexpected error for valid signature: %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		err := c.HandleOAuthCallback(context.Background(), invalidState, "code123", "https://redirect")
+		if err == nil {
+			t.Error("expected error for invalid signature")
+		}
+		if !strings.Contains(err.Error(), "verification failed") {
+			t.Errorf("expected CSRF error, got %v", err)
+		}
+	})
+
+	t.Run("MalformedState", func(t *testing.T) {
+		err := c.HandleOAuthCallback(context.Background(), workspaceID62, "code123", "https://redirect")
+		if err == nil {
+			t.Error("expected error for malformed state")
+		}
+	})
+}
