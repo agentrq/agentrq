@@ -191,17 +191,24 @@ func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseU
 		}
 
 		redirectURI := fmt.Sprintf("%s/slack/oauth/callback", baseURL)
-		err := ctrl.HandleOAuthCallback(r.Context(), state, code, redirectURI)
+		workspaceID62, err := ctrl.HandleOAuthCallback(r.Context(), state, code, redirectURI)
 		if err != nil {
 			zlog.Error().Err(err).Msg("[slack/oauth] HandleOAuthCallback error")
 			// Redirect back with a generic error query param to prevent information leakage
 			errorMsg := url.QueryEscape("failed to complete slack authorization")
-			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, state, errorMsg), http.StatusTemporaryRedirect)
+
+			// Try to use the state if it looks like a workspace ID for the redirect, otherwise use a safe fallback
+			redirectWorkspaceID := state
+			if parts := strings.Split(state, "."); len(parts) > 0 {
+				redirectWorkspaceID = parts[0]
+			}
+
+			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, redirectWorkspaceID, errorMsg), http.StatusTemporaryRedirect)
 			return
 		}
 
 		// Redirect back to settings page on success
-		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, state), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, workspaceID62), http.StatusTemporaryRedirect)
 	})
 }
 

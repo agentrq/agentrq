@@ -65,7 +65,7 @@ type Controller interface {
 	GetWorkspaceSlackConfig(ctx context.Context, workspaceID int64) (*entity.SlackConfig, error)
 
 	// OAuth callback
-	HandleOAuthCallback(ctx context.Context, workspaceID62 string, code string, redirectURI string) error
+	HandleOAuthCallback(ctx context.Context, state string, code string, redirectURI string) (string, error)
 
 	// Inbound Slack events
 	HandleSlackEvent(ctx context.Context, payload SlackEventPayload) error
@@ -369,12 +369,15 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 	installed := err == nil && link.AccessToken != ""
 
 	workspaceID62 := monoflake.ID(workspaceID).String()
+	// Situational security: sign the state parameter to prevent CSRF
+	signedState := security.Sign(workspaceID62, c.tokenKey)
+
 	redirectURI := fmt.Sprintf("%s/slack/oauth/callback", c.baseURL)
 	authURL := fmt.Sprintf(
 		"https://slack.com/oauth/v2/authorize?client_id=%s&scope=groups:write,groups:read,chat:write,app_mentions:read,commands&redirect_uri=%s&state=%s",
 		c.slack.ClientID(),
 		url.QueryEscape(redirectURI),
-		workspaceID62,
+		url.QueryEscape(signedState),
 	)
 
 	cfg := &entity.SlackConfig{
@@ -395,25 +398,31 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 // HandleOAuthCallback handles the dynamic Slack OAuth v2 redirect code exchange.
 // It exchanges the temporary code, encrypts the access token, auto-provisions a private channel,
 // and saves the credentials into GORM.
-func (c *controller) HandleOAuthCallback(ctx context.Context, workspaceID62 string, code string, redirectURI string) error {
+func (c *controller) HandleOAuthCallback(ctx context.Context, state string, code string, redirectURI string) (string, error) {
+	// Situational security: verify the state parameter to prevent CSRF
+	workspaceID62, ok := security.Verify(state, c.tokenKey)
+	if !ok {
+		return "", fmt.Errorf("slack: invalid or tampered state parameter (CSRF detected)")
+	}
+
 	workspaceID := monoflake.IDFromBase62(workspaceID62).Int64()
 	if workspaceID == 0 {
-		return fmt.Errorf("slack: invalid workspace ID state: %s", workspaceID62)
+		return "", fmt.Errorf("slack: invalid workspace ID in state: %s", workspaceID62)
 	}
 
 	ws, err := c.repo.SystemGetWorkspace(ctx, workspaceID)
 	if err != nil {
-		return fmt.Errorf("slack: workspace not found: %w", err)
+		return "", fmt.Errorf("slack: workspace not found: %w", err)
 	}
 
 	token, teamID, botUserID, authedUserID, err := c.slack.ExchangeCode(ctx, code, redirectURI)
 	if err != nil {
-		return fmt.Errorf("slack: oauth exchange failed: %w", err)
+		return "", fmt.Errorf("slack: oauth exchange failed: %w", err)
 	}
 
 	encToken, nonce, err := security.Encrypt(token, c.tokenKey)
 	if err != nil {
-		return fmt.Errorf("slack: failed to encrypt token: %w", err)
+		return "", fmt.Errorf("slack: failed to encrypt token: %w", err)
 	}
 
 	// Resolve existing link to preserve manual channel configurations if any
@@ -432,7 +441,7 @@ func (c *controller) HandleOAuthCallback(ctx context.Context, workspaceID62 stri
 		channelName := slacksvc.BuildChannelNameFromWorkspace(ws.Name, workspaceID)
 		channelID, err := c.slack.CreatePrivateChannel(ctx, token, channelName)
 		if err != nil {
-			return fmt.Errorf("slack: failed to auto-provision channel: %w", err)
+			return "", fmt.Errorf("slack: failed to auto-provision channel: %w", err)
 		}
 		link.SlackChannelID = channelID
 		link.SlackChannelName = channelName
@@ -447,11 +456,11 @@ func (c *controller) HandleOAuthCallback(ctx context.Context, workspaceID62 stri
 	}
 
 	if err := c.repo.UpsertSlackWorkspaceLink(ctx, link); err != nil {
-		return fmt.Errorf("slack: failed to save workspace link: %w", err)
+		return "", fmt.Errorf("slack: failed to save workspace link: %w", err)
 	}
 
 	zlog.Info().Int64("workspaceID", workspaceID).Str("channel", link.SlackChannelName).Msg("[slack] successfully completed dynamic multi-tenant installation")
-	return nil
+	return workspaceID62, nil
 }
 
 // ─── Inbound Slack events ──────────────────────────────────────────────────────

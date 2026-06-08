@@ -3,12 +3,15 @@ package security
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
+	"strings"
 )
 
 // Encrypt encrypts a plain text string using AES-256 GCM with the provided key.
@@ -91,4 +94,34 @@ func GenerateSecret(n int) (string, error) {
 // It wraps crypto/subtle.ConstantTimeCompare to mitigate timing attacks.
 func SecureCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// Sign signs the data with the provided key using HMAC-SHA256 and returns a "data.signature" string.
+func Sign(data, key string) string {
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(data))
+	signature := hex.EncodeToString(mac.Sum(nil))
+	return fmt.Sprintf("%s.%s", data, signature)
+}
+
+// Verify verifies the signature of a "data.signature" string and returns the original data if valid.
+func Verify(signedData, key string) (string, bool) {
+	parts := strings.Split(signedData, ".")
+	if len(parts) != 2 {
+		return "", false
+	}
+	data, signatureHex := parts[0], parts[1]
+	signature, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return "", false
+	}
+
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(data))
+	expectedMAC := mac.Sum(nil)
+
+	if !hmac.Equal(signature, expectedMAC) {
+		return "", false
+	}
+	return data, true
 }
