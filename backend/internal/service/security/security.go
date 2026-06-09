@@ -3,7 +3,9 @@ package security
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
@@ -91,4 +93,25 @@ func GenerateSecret(n int) (string, error) {
 // It wraps crypto/subtle.ConstantTimeCompare to mitigate timing attacks.
 func SecureCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// Sign generates an HMAC-SHA256 signature for the given message using the provided key.
+// It returns the hex-encoded signature.
+func Sign(message, key string) string {
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Verify validates an HMAC-SHA256 signature for the given message using the provided key.
+// The signature must be hex-encoded.
+func Verify(message, signatureHex, key string) bool {
+	sig, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(message))
+	expectedSig := mac.Sum(nil)
+	return hmac.Equal(sig, expectedSig)
 }

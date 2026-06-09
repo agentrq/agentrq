@@ -794,3 +794,63 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	tokenKey := "0123456789abcdef0123456789abcdef"
+	c := New(Params{
+		Repository: mockRepo,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+	})
+
+	workspaceID62 := "0000000001c"
+	validSig := security.Sign(workspaceID62, tokenKey)
+	validState := workspaceID62 + "." + validSig
+
+	t.Run("ValidSignature", func(t *testing.T) {
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), int64(100)).
+			Return(model.Workspace{ID: 100}, nil)
+
+		mockRepo.EXPECT().
+			GetSlackWorkspaceLink(gomock.Any(), int64(100)).
+			Return(model.SlackWorkspaceLink{}, nil)
+
+		mockRepo.EXPECT().
+			UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+			Return(nil)
+
+		// Create a stub slack service that returns an error on ExchangeCode to prevent nil panic
+		stubSlack := &stubSlackService{}
+		c.(*controller).slack = stubSlack
+
+		err := c.HandleOAuthCallback(context.Background(), validState, "code", "http://redirect")
+		if err != nil && strings.Contains(err.Error(), "invalid state signature") {
+			t.Errorf("unexpected signature error: %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		invalidState := workspaceID62 + ".invalid-sig"
+		err := c.HandleOAuthCallback(context.Background(), invalidState, "code", "http://redirect")
+		if err == nil || !strings.Contains(err.Error(), "invalid state signature") {
+			t.Errorf("expected CSRF signature error, got: %v", err)
+		}
+	})
+
+	t.Run("MissingSignature", func(t *testing.T) {
+		err := c.HandleOAuthCallback(context.Background(), workspaceID62, "code", "http://redirect")
+		if err == nil || !strings.Contains(err.Error(), "invalid state format") {
+			t.Errorf("expected invalid format error, got: %v", err)
+		}
+	})
+}
