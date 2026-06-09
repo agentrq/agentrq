@@ -134,13 +134,18 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
 	taskID := int64(100)
 	messageID := int64(500)
+	userID := int64(1)
 
+	db.Create(&model.Task{
+		ID:     taskID,
+		UserID: userID,
+	})
 	db.Create(&model.Message{
 		ID:     messageID,
 		TaskID: taskID,
@@ -148,7 +153,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	})
 
 	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, userID, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +165,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, userID, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
