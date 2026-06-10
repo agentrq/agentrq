@@ -95,5 +95,5 @@ docker-compose up -d
 ## Need Help?
 
 - **GitHub Issues**: https://github.com/agentrq/agentrq/issues
-- **Discord**: https://discord.gg/eDXbwF7G
+- **Discord**: https://discord.gg/xFSMaEA2b2
 - **Documentation**: https://agentrq.com/docs

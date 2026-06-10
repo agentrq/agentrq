@@ -222,6 +222,6 @@ docker-compose restart postgres
 
 2. **Open GitHub issue**: https://github.com/agentrq/agentrq/issues
 
-3. **Join Discord**: https://discord.gg/eDXbwF7G
+3. **Join Discord**: https://discord.gg/xFSMaEA2b2
 
 4. **View docs**: https://agentrq.com/docs
