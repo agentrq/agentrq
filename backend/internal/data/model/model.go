@@ -104,6 +104,7 @@ type (
 		P256dh      string `gorm:"type:text"`
 		Auth        string `gorm:"type:varchar(64)"`
 		UserAgent   string `gorm:"type:varchar(255)"`
+		Types       string `gorm:"type:text"` // comma-separated; empty = all types
 	}
 
 	// SlackTaskThread maps an AgentRQ task to a Slack thread timestamp (ts).

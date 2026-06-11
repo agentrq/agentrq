@@ -24,6 +24,7 @@ func FromHTTPRequestToSavePushSubscriptionRequestEntity(c *fiber.Ctx) *entity.Sa
 		Auth:        payload.Keys.Auth,
 		WorkspaceID: workspaceID,
 		UserAgent:   c.Get(fiber.HeaderUserAgent),
+		Types:       payload.Types,
 	}
 }
 

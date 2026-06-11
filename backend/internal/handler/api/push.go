@@ -45,6 +45,7 @@ func (h *handler) pushSubscribe(pushCtrl pushctrl.Controller) fiber.Handler {
 			P256dh:      rq.P256dh,
 			Auth:        rq.Auth,
 			UserAgent:   rq.UserAgent,
+			Types:       rq.Types,
 		}); err != nil {
 			c.Status(http.StatusInternalServerError)
 			return c.JSON(fiber.Map{"error": "failed to save subscription"})

@@ -53,6 +53,12 @@ type (
 	}
 )
 
+const (
+	PushTypeTaskCreate    = "task_create"
+	PushTypeTaskUpdate    = "task_update"
+	PushTypeMessageCreate = "message_create"
+)
+
 func New(p Params) Controller {
 	return &controller{
 		cfg:    p.Config,
@@ -79,6 +85,7 @@ func (c *controller) SaveSubscription(ctx context.Context, req entity.SavePushSu
 		P256dh:      req.P256dh,
 		Auth:        req.Auth,
 		UserAgent:   req.UserAgent,
+		Types:       strings.Join(req.Types, ","),
 	}
 	return c.repo.SavePushSubscription(ctx, sub)
 }
@@ -150,6 +157,7 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 				URL:   fmt.Sprintf("/workspaces/%s", workspaceIDStr),
 				Tag:   fmt.Sprintf("task-create-%d", t.ID),
 			}
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, payload)
 		case entity.ActionTaskUpdate, entity.ActionTaskComplete:
 			payload = pushPayload{
 				Title: fmt.Sprintf("Task %s: %s", strings.ToUpper(t.Status), truncate(t.Title, 50)),
@@ -157,9 +165,9 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 				URL:   fmt.Sprintf("/workspaces/%s", workspaceIDStr),
 				Tag:   fmt.Sprintf("task-status-%d", t.ID),
 			}
-		default:
-			return
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, payload)
 		}
+		return
 
 	case entity.ResourceMessage:
 		if ev.Action != entity.ActionMessageCreate {
@@ -184,15 +192,15 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 			URL:   fmt.Sprintf("/workspaces/%s/tasks/%s", workspaceIDStr, taskIDStr),
 			Tag:   fmt.Sprintf("reply-%d", m.ID),
 		}
+		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, payload)
+		return
 
 	default:
 		return
 	}
-
-	c.sendToUser(ctx, ownerID, ev.WorkspaceID, payload)
 }
 
-func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID int64, payload pushPayload) {
+func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID int64, eventType string, payload pushPayload) {
 	subs, err := c.repo.ListPushSubscriptionsByUserAndWorkspace(ctx, userID, workspaceID)
 	if err != nil || len(subs) == 0 {
 		return
@@ -209,6 +217,9 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID i
 	}
 
 	for _, sub := range subs {
+		if !subscriptionAllowsType(sub.Types, eventType) {
+			continue
+		}
 		wpSub := &webpush.Subscription{
 			Endpoint: sub.Endpoint,
 			Keys: webpush.Keys{
@@ -239,4 +250,18 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// subscriptionAllowsType returns true when the subscription has opted into the
+// given event type. An empty stored types string means all types are allowed.
+func subscriptionAllowsType(storedTypes string, eventType string) bool {
+	if storedTypes == "" {
+		return true
+	}
+	for _, t := range strings.Split(storedTypes, ",") {
+		if strings.TrimSpace(t) == eventType {
+			return true
+		}
+	}
+	return false
 }

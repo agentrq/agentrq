@@ -220,7 +220,8 @@ type (
 			P256dh string `json:"p256dh"`
 			Auth   string `json:"auth"`
 		} `json:"keys"`
-		WorkspaceID string `json:"workspaceId"`
+		WorkspaceID string   `json:"workspaceId"`
+		Types       []string `json:"types,omitempty"` // optional; empty = all types
 	}
 
 	PushUnsubscribeRequest struct {

@@ -400,6 +400,7 @@ type (
 		P256dh      string
 		Auth        string
 		UserAgent   string
+		Types       []string // empty = all types
 	}
 
 	DeletePushSubscriptionRequest struct {
