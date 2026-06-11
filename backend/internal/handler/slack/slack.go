@@ -182,7 +182,7 @@ func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseU
 		}
 
 		code := r.URL.Query().Get("code")
-		state := r.URL.Query().Get("state") // base62 workspace ID
+		state := r.URL.Query().Get("state") // base62 workspace ID (potentially signed: id.sig)
 
 		if code == "" || state == "" {
 			zlog.Warn().Msg("[slack/oauth] missing code or state parameter")
@@ -192,16 +192,20 @@ func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseU
 
 		redirectURI := fmt.Sprintf("%s/slack/oauth/callback", baseURL)
 		err := ctrl.HandleOAuthCallback(r.Context(), state, code, redirectURI)
+
+		// Extract workspaceID part from state (id.sig) for redirection even if verification fails
+		workspaceID62 := strings.Split(state, ".")[0]
+
 		if err != nil {
 			zlog.Error().Err(err).Msg("[slack/oauth] HandleOAuthCallback error")
 			// Redirect back with a generic error query param to prevent information leakage
 			errorMsg := url.QueryEscape("failed to complete slack authorization")
-			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, state, errorMsg), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, workspaceID62, errorMsg), http.StatusTemporaryRedirect)
 			return
 		}
 
 		// Redirect back to settings page on success
-		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, state), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, workspaceID62), http.StatusTemporaryRedirect)
 	})
 }
 

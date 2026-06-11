@@ -294,7 +294,10 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "state")
+		// Sign the redirectURL to prevent CSRF in the OAuth flow
+		signature := security.Sign(redirectURL, h.tokenKey)
+		state := fmt.Sprintf("%s|%s", redirectURL, signature)
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -364,18 +367,26 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		state := c.Query("state")
 		redirectURL := "/"
-		// Situational security: validate redirect URL to prevent open redirect
+		// Situational security: validate redirect URL to prevent open redirect and CSRF
 		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
-			} else {
-				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
-					if pBase, err := url.Parse(h.baseURL); err == nil {
-						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+			parts := strings.Split(state, "|")
+			if len(parts) == 2 {
+				requestedURL, signature := parts[0], parts[1]
+				if security.Verify(requestedURL, signature, h.tokenKey) {
+					if strings.HasPrefix(requestedURL, "/") && !strings.HasPrefix(requestedURL, "//") && !strings.HasPrefix(requestedURL, "/\\") {
+						redirectURL = requestedURL
+					} else {
+						// Parse absolute URL and validate against baseURL
+						if pRedirect, err := url.Parse(requestedURL); err == nil && pRedirect.IsAbs() {
+							if pBase, err := url.Parse(h.baseURL); err == nil {
+								if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
+									redirectURL = requestedURL
+								}
+							}
 						}
 					}
+				} else {
+					zlog.Warn().Str("state", state).Msg("Google OAuth callback: invalid state signature")
 				}
 			}
 		}
