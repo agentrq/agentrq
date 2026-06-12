@@ -794,3 +794,58 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	tokenKey := "0123456789abcdef0123456789abcdef"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   nil,
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	ctx := context.Background()
+	workspaceID62 := "test-ws"
+
+	t.Run("ValidSignature", func(t *testing.T) {
+		sig := security.Sign(workspaceID62, tokenKey)
+		state := fmt.Sprintf("%s.%s", workspaceID62, sig)
+
+		// We just want to check if it passes the CSRF check, not the whole flow
+		// So we expect a call to SystemGetWorkspace and then we can return an error from it
+		mockRepo.EXPECT().
+			SystemGetWorkspace(gomock.Any(), gomock.Any()).
+			Return(model.Workspace{}, fmt.Errorf("stop flow here"))
+
+		err := c.HandleOAuthCallback(ctx, state, "code", "redir")
+		if err == nil || !strings.Contains(err.Error(), "stop flow here") {
+			t.Errorf("expected flow to proceed to workspace lookup, got error: %v", err)
+		}
+	})
+
+	t.Run("InvalidSignature", func(t *testing.T) {
+		state := workspaceID62 + ".invalid-sig"
+		err := c.HandleOAuthCallback(ctx, state, "code", "redir")
+		if err == nil || !strings.Contains(err.Error(), "signature mismatch") {
+			t.Errorf("expected CSRF error, got: %v", err)
+		}
+	})
+
+	t.Run("MalformedState", func(t *testing.T) {
+		state := "just-workspace-id-without-sig"
+		err := c.HandleOAuthCallback(ctx, state, "code", "redir")
+		if err == nil || !strings.Contains(err.Error(), "invalid oauth state format") {
+			t.Errorf("expected format error, got: %v", err)
+		}
+	})
+}
