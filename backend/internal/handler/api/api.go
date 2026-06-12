@@ -294,7 +294,9 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "state")
+		// Situational security: sign the state to prevent CSRF during Google OAuth flow
+		state := redirectURL + "." + security.Sign(redirectURL, h.tokenKey)
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -302,6 +304,15 @@ func (h *handler) googleLogin() fiber.Handler {
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		code := c.Query("code")
+		state := c.Query("state")
+
+		// Situational security: verify the signed state to prevent CSRF
+		lastDot := strings.LastIndex(state, ".")
+		if lastDot == -1 || !security.Verify(state[:lastDot], state[lastDot+1:], h.tokenKey) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid oauth state signature"})
+		}
+		redirectURLParam := state[:lastDot]
+
 		ctx, cancel := newContext(c)
 		defer cancel()
 
@@ -362,18 +373,17 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		state := c.Query("state")
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
-		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
+		if redirectURLParam != "" && redirectURLParam != "state" {
+			if strings.HasPrefix(redirectURLParam, "/") && !strings.HasPrefix(redirectURLParam, "//") && !strings.HasPrefix(redirectURLParam, "/\\") {
+				redirectURL = redirectURLParam
 			} else {
 				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
+				if pRedirect, err := url.Parse(redirectURLParam); err == nil && pRedirect.IsAbs() {
 					if pBase, err := url.Parse(h.baseURL); err == nil {
 						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+							redirectURL = redirectURLParam
 						}
 					}
 				}
