@@ -11,6 +11,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -62,6 +63,7 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 		tokenSvc: tokenSvc,
 		crud:     crudCtrl,
 		baseURL:  "http://localhost:3000",
+		tokenKey: "test-token-key-32-chars-long-!!!",
 	}
 
 	app.Get("/google/callback", h.googleCallback())
@@ -112,7 +114,8 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			state := tt.state + "." + security.Sign(tt.state, h.tokenKey)
+			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {
@@ -124,6 +127,14 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Invalid state signature", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state=invalid.sig", nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
 }
 
 type mockCrudGetWorkspace struct {
