@@ -22,3 +22,8 @@
 **Vulnerability:** The `ResizeBase64` service returned the original input string if the `data:image/` prefix was missing. The CRUD controller then stored this unsanitized string in the database. Since the frontend rendered some icons using `v-html`, this allowed for Stored XSS (e.g., using `javascript:` or malicious SVG).
 **Learning:** Fallback mechanisms that return unvalidated user input when processing fails are dangerous. If a service is designed to process/sanitize input, it must fail explicitly if the input doesn't meet the expected format.
 **Prevention:** Enforce strict input validation (e.g., prefix checks) and remove "fallback to original" logic in data processing services. Ensure that only successfully processed and sanitized data reaches the persistence layer.
+
+## 2024-05-23 - CSRF in Slack OAuth Flow
+**Vulnerability:** The Slack OAuth flow used a predictable `state` parameter (just the workspace ID), making it vulnerable to Cross-Site Request Forgery (CSRF) attacks. An attacker could potentially trick a user into linking their Slack workspace to an attacker-controlled workspace in the application.
+**Learning:** OAuth `state` parameters must be unguessable and cryptographically bound to the user's session or a server-side secret to prevent CSRF.
+**Prevention:** Always use cryptographically signed or random `state` parameters in OAuth flows. Verify the signature or token upon callback before proceeding with the authorization code exchange.
