@@ -294,13 +294,33 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "/")
+		signature := security.Sign(redirectURL, h.tokenKey)
+		state := fmt.Sprintf("%s.%s", redirectURL, signature)
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
 
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		state := c.Query("state")
+		if state == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "missing state"})
+		}
+
+		lastDot := strings.LastIndex(state, ".")
+		if lastDot == -1 {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid state format"})
+		}
+
+		redirectData := state[:lastDot]
+		signature := state[lastDot+1:]
+
+		if !security.Verify(redirectData, h.tokenKey, signature) {
+			zlog.Warn().Str("state", state).Msg("CSRF: Google OAuth callback signature verification failed")
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid state signature"})
+		}
+
 		code := c.Query("code")
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -362,18 +382,17 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		state := c.Query("state")
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
-		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
+		if redirectData != "" {
+			if strings.HasPrefix(redirectData, "/") && !strings.HasPrefix(redirectData, "//") && !strings.HasPrefix(redirectData, "/\\") {
+				redirectURL = redirectData
 			} else {
 				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
+				if pRedirect, err := url.Parse(redirectData); err == nil && pRedirect.IsAbs() {
 					if pBase, err := url.Parse(h.baseURL); err == nil {
 						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+							redirectURL = redirectData
 						}
 					}
 				}
