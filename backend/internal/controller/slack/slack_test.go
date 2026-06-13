@@ -15,6 +15,7 @@ import (
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang/mock/gomock"
+	"github.com/mustafaturan/monoflake"
 	slackapi "github.com/slack-go/slack"
 )
 
@@ -39,7 +40,7 @@ func (s *stubSlackService) UpdateMessage(ctx context.Context, token, channelID, 
 	return nil
 }
 func (s *stubSlackService) ExchangeCode(ctx context.Context, code, redirectURI string) (string, string, string, string, error) {
-	return "", "", "", "", nil
+	return "xoxb-test-token", "T123", "U_BOT", "U_INSTALLER", nil
 }
 func (s *stubSlackService) VerifyRequest(r *http.Request, body []byte) error {
 	return nil
@@ -742,6 +743,83 @@ func TestOnMessageUpdated_Success(t *testing.T) {
 	}
 	if stubSlack.capturedTS != "12345678.90" {
 		t.Errorf("expected message ts '12345678.90', got %q", stubSlack.capturedTS)
+	}
+}
+
+func TestHandleOAuthCallback_CSRF(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		Crud:       &mockCRUD{},
+		MCPManager: &mockMCP{},
+		PubSub:     mockPubSub,
+		TokenKey:   "secret-key-1234567890123456789012",
+	})
+
+	// Case 1: No signature
+	_, err := c.HandleOAuthCallback(context.Background(), "workspace123", "code", "uri")
+	if err == nil || !strings.Contains(err.Error(), "CSRF") {
+		t.Errorf("expected CSRF error for unsigned state, got %v", err)
+	}
+
+	// Case 2: Invalid signature
+	_, err = c.HandleOAuthCallback(context.Background(), "workspace123.invalidsig", "code", "uri")
+	if err == nil || !strings.Contains(err.Error(), "CSRF") {
+		t.Errorf("expected CSRF error for invalid signature, got %v", err)
+	}
+}
+
+func TestHandleOAuthCallback_Success(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	tokenKey := "12345678901234567890123456789012"
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		Crud:       &mockCRUD{},
+		MCPManager: &mockMCP{},
+		PubSub:     mockPubSub,
+		TokenKey:   tokenKey,
+	})
+
+	workspaceID := int64(12345)
+	workspaceID62 := monoflake.ID(workspaceID).String()
+	state := security.Sign(workspaceID62, tokenKey)
+
+	mockRepo.EXPECT().
+		SystemGetWorkspace(gomock.Any(), workspaceID).
+		Return(model.Workspace{ID: workspaceID, Name: "Test Workspace"}, nil)
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), workspaceID).
+		Return(model.SlackWorkspaceLink{}, fmt.Errorf("not found"))
+
+	mockRepo.EXPECT().
+		UpsertSlackWorkspaceLink(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, link model.SlackWorkspaceLink) error {
+			if link.WorkspaceID != workspaceID {
+				t.Errorf("expected workspace ID %d, got %d", workspaceID, link.WorkspaceID)
+			}
+			if link.AccessToken == "" {
+				t.Error("expected encrypted access token")
+			}
+			return nil
+		})
+
+	verifiedID, err := c.HandleOAuthCallback(context.Background(), state, "code", "uri")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if verifiedID != workspaceID62 {
+		t.Errorf("expected verified ID %s, got %s", workspaceID62, verifiedID)
 	}
 }
 

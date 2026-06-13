@@ -89,4 +89,42 @@ func TestSecurity(t *testing.T) {
 			t.Error("expected true for empty strings")
 		}
 	})
+
+	t.Run("SignVerify", func(t *testing.T) {
+		data := "workspace123"
+		key := "secret-key"
+		signed := Sign(data, key)
+
+		if !strings.HasPrefix(signed, data+".") {
+			t.Errorf("expected signed string to start with data, got %s", signed)
+		}
+
+		verified, ok := Verify(signed, key)
+		if !ok {
+			t.Fatal("expected verification to succeed")
+		}
+		if verified != data {
+			t.Errorf("expected verified data %s, got %s", data, verified)
+		}
+
+		// Tamper data
+		if _, ok := Verify("tampered."+strings.Split(signed, ".")[1], key); ok {
+			t.Error("expected verification to fail for tampered data")
+		}
+
+		// Tamper signature
+		if _, ok := Verify(data+".tampered", key); ok {
+			t.Error("expected verification to fail for tampered signature")
+		}
+
+		// Wrong key
+		if _, ok := Verify(signed, "wrong-key"); ok {
+			t.Error("expected verification to fail for wrong key")
+		}
+
+		// Invalid format
+		if _, ok := Verify("no-dot", key); ok {
+			t.Error("expected verification to fail for invalid format")
+		}
+	})
 }
