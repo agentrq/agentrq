@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -57,11 +59,13 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 	tokenSvc := &mockTokenSvc{}
 	crudCtrl := &mockCrudController{}
 
+	tokenKey := "12345678901234567890123456789012"
 	h := &handler{
 		auth:     authSvc,
 		tokenSvc: tokenSvc,
 		crud:     crudCtrl,
 		baseURL:  "http://localhost:3000",
+		tokenKey: tokenKey,
 	}
 
 	app.Get("/google/callback", h.googleCallback())
@@ -112,7 +116,12 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			state := tt.state
+			if tt.name == "Safe local redirect" || tt.name == "Safe absolute redirect" {
+				sig := security.Sign(tt.state, tokenKey)
+				state = fmt.Sprintf("%s.%s", tt.state, sig)
+			}
+			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {

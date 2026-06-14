@@ -294,7 +294,11 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "state")
+		// Situational security: sign the state parameter to prevent CSRF
+		signature := security.Sign(redirectURL, h.tokenKey)
+		state := fmt.Sprintf("%s.%s", redirectURL, signature)
+
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -364,18 +368,29 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		state := c.Query("state")
 		redirectURL := "/"
-		// Situational security: validate redirect URL to prevent open redirect
+
+		// Situational security: verify state signature to prevent CSRF
 		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
-			} else {
-				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
-					if pBase, err := url.Parse(h.baseURL); err == nil {
-						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+			dotIdx := strings.LastIndex(state, ".")
+			if dotIdx != -1 {
+				originalState := state[:dotIdx]
+				signature := state[dotIdx+1:]
+				if security.Verify(originalState, signature, h.tokenKey) {
+					// Situational security: validate redirect URL to prevent open redirect
+					if strings.HasPrefix(originalState, "/") && !strings.HasPrefix(originalState, "//") && !strings.HasPrefix(originalState, "/\\") {
+						redirectURL = originalState
+					} else {
+						// Parse absolute URL and validate against baseURL
+						if pRedirect, err := url.Parse(originalState); err == nil && pRedirect.IsAbs() {
+							if pBase, err := url.Parse(h.baseURL); err == nil {
+								if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
+									redirectURL = originalState
+								}
+							}
 						}
 					}
+				} else {
+					zlog.Warn().Str("state", state).Msg("Google OAuth state verification failed (CSRF)")
 				}
 			}
 		}
