@@ -294,7 +294,10 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "state")
+		// Sign the redirect URL to prevent CSRF and open redirect
+		signature := security.Sign(redirectURL, h.tokenKey)
+		state := redirectURL + "." + signature
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -364,19 +367,34 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		state := c.Query("state")
 		redirectURL := "/"
-		// Situational security: validate redirect URL to prevent open redirect
+
+		// Verify state signature to prevent CSRF
 		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
-			} else {
-				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
-					if pBase, err := url.Parse(h.baseURL); err == nil {
-						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+			lastDot := strings.LastIndex(state, ".")
+			if lastDot != -1 {
+				originalData := state[:lastDot]
+				signature := state[lastDot+1:]
+				if security.Verify(originalData, signature, h.tokenKey) {
+					// Situational security: validate redirect URL to prevent open redirect
+					if strings.HasPrefix(originalData, "/") && !strings.HasPrefix(originalData, "//") && !strings.HasPrefix(originalData, "/\\") {
+						redirectURL = originalData
+					} else {
+						// Parse absolute URL and validate against baseURL
+						if pRedirect, err := url.Parse(originalData); err == nil && pRedirect.IsAbs() {
+							if pBase, err := url.Parse(h.baseURL); err == nil {
+								if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
+									redirectURL = originalData
+								}
+							}
 						}
 					}
+				} else {
+					zlog.Warn().Str("state", state).Msg("OAuth state signature verification failed")
+					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid oauth state"})
 				}
+			} else {
+				zlog.Warn().Str("state", state).Msg("OAuth state missing signature")
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid oauth state format"})
 			}
 		}
 

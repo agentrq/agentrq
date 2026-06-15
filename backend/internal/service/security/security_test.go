@@ -1,6 +1,7 @@
 package security
 
 import (
+	"encoding/hex"
 	"strings"
 	"testing"
 )
@@ -87,6 +88,35 @@ func TestSecurity(t *testing.T) {
 		}
 		if !SecureCompare("", "") {
 			t.Error("expected true for empty strings")
+		}
+	})
+
+	t.Run("SignVerify", func(t *testing.T) {
+		data := "situational-data"
+		key := "secret-key"
+		sig := Sign(data, key)
+		if sig == "" {
+			t.Fatal("expected signature, got empty string")
+		}
+
+		if !Verify(data, sig, key) {
+			t.Error("verification failed for correct signature")
+		}
+
+		if Verify(data, "invalid-sig", key) {
+			t.Error("verification succeeded for invalid hex signature")
+		}
+
+		if Verify(data, hex.EncodeToString([]byte("wrong-sig")), key) {
+			t.Error("verification succeeded for wrong signature")
+		}
+
+		if Verify("wrong-data", sig, key) {
+			t.Error("verification succeeded for wrong data")
+		}
+
+		if Verify(data, sig, "wrong-key") {
+			t.Error("verification succeeded for wrong key")
 		}
 	})
 }
