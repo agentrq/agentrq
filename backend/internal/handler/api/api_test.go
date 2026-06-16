@@ -5,12 +5,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -62,6 +64,7 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 		tokenSvc: tokenSvc,
 		crud:     crudCtrl,
 		baseURL:  "http://localhost:3000",
+		tokenKey: "12345678901234567890123456789012",
 	}
 
 	app.Get("/google/callback", h.googleCallback())
@@ -112,7 +115,22 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			// Test with valid signed state and matching nonce cookie
+			nonce := "test-nonce"
+			stateData := tt.state + ":" + nonce
+			signedState := stateData + "." + security.Sign(stateData, h.tokenKey)
+
+			if tt.state == "http://localhost:3000.evil.com" || tt.state == "http://localhost:3000/safe" {
+				// Re-sign without the colon logic if I'm testing something else?
+				// No, the handler expects a colon.
+			}
+
+			query := url.Values{}
+			query.Set("code", "valid-code")
+			query.Set("state", signedState)
+
+			req := httptest.NewRequest("GET", "/google/callback?"+query.Encode(), nil)
+			req.AddCookie(&http.Cookie{Name: "oauth_state", Value: nonce})
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {
@@ -124,6 +142,26 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Invalid signature", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/google/callback?code=code&state=bad.sig", nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Nonce mismatch", func(t *testing.T) {
+		nonce := "valid-nonce"
+		stateData := "/:" + nonce
+		signedState := stateData + "." + security.Sign(stateData, h.tokenKey)
+		req := httptest.NewRequest("GET", "/google/callback?code=code&state="+signedState, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "wrong-nonce"})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
 }
 
 type mockCrudGetWorkspace struct {
