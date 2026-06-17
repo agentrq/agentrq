@@ -15,6 +15,7 @@ import (
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -584,7 +585,7 @@ func TestWorkspaceServer_HandleCreateTask_InvalidCron(t *testing.T) {
 	}
 }
 
-func TestValidateCronGranularity(t *testing.T) {
+func TestWorkspaceServer_UsesSharedCronGranularityValidation(t *testing.T) {
 	validCases := []string{
 		"0 * * * *",    // every hour at :00
 		"30 * * * *",   // every hour at :30
@@ -602,7 +603,7 @@ func TestValidateCronGranularity(t *testing.T) {
 	}
 
 	for _, s := range validCases {
-		if err := validateCronGranularity(s); err != nil {
+		if err := schedule.ValidateCronGranularity(s); err != nil {
 			t.Errorf("expected valid for %q, got error: %v", s, err)
 		}
 	}
@@ -623,7 +624,7 @@ func TestValidateCronGranularity(t *testing.T) {
 	}
 
 	for _, tc := range invalidCases {
-		if err := validateCronGranularity(tc.schedule); err == nil {
+		if err := schedule.ValidateCronGranularity(tc.schedule); err == nil {
 			t.Errorf("expected error for %q, got nil", tc.schedule)
 		} else if !contains(err.Error(), tc.errFrag) {
 			t.Errorf("expected error containing %q for %q, got: %v", tc.errFrag, tc.schedule, err)

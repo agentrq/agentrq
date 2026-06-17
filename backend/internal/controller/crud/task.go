@@ -9,8 +9,8 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
-	"github.com/robfig/cron/v3"
 	"gorm.io/datatypes"
 )
 
@@ -51,12 +51,10 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 
 	if status == "cron" {
 		if req.Task.CronSchedule == "" {
-			return nil, fmt.Errorf("cron_schedule is required for chronic tasks")
+			return nil, fmt.Errorf("cron schedule is required for scheduled tasks")
 		}
-		// Validate Cron Schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(req.Task.CronSchedule); err != nil {
-			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		if err := schedule.ValidateCronGranularity(req.Task.CronSchedule); err != nil {
+			return nil, err
 		}
 	}
 
@@ -274,7 +272,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		return nil, err
 	}
 	if m.Status == "cron" {
-		return nil, fmt.Errorf("cannot update status of a chronic task template; it must remain in 'cron' state")
+		return nil, fmt.Errorf("cannot update status of a scheduled task template; it must remain in 'cron' state")
 	}
 
 	if !isValidTaskStatus(req.Status) {
@@ -712,17 +710,15 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		return nil, err
 	}
 	if m.Status != "cron" {
-		return nil, fmt.Errorf("only chronic tasks can be edited this way")
+		return nil, fmt.Errorf("only scheduled tasks can be edited this way")
 	}
 
 	if req.CronSchedule == "" {
 		m.Status = "notstarted"
 		m.CronSchedule = ""
 	} else {
-		// Validate Cron Schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(req.CronSchedule); err != nil {
-			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		if err := schedule.ValidateCronGranularity(req.CronSchedule); err != nil {
+			return nil, err
 		}
 		m.CronSchedule = req.CronSchedule
 	}

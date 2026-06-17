@@ -183,6 +183,38 @@ func TestCreateTask_InvalidCronSchedule(t *testing.T) {
 	}
 }
 
+func TestCreateTask_RejectsSubHourlyCronSchedule(t *testing.T) {
+	cases := []struct {
+		name     string
+		schedule string
+		errFrag  string
+	}{
+		{"every minute wildcard", "* * * * *", "granularity too fine"},
+		{"every five minutes", "*/5 * * * *", "granularity too fine"},
+		{"every fifteen minutes", "*/15 * * * *", "granularity too fine"},
+		{"twice hourly list", "0,30 * * * *", "granularity too fine"},
+		{"minute range", "0-30 * * * *", "granularity too fine"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+
+			_, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+				UserID: testUserIDStr,
+				Task:   entity.Task{WorkspaceID: 1, Title: "t", Status: "cron", CronSchedule: tc.schedule},
+			})
+			if err == nil {
+				t.Fatalf("expected error for cron schedule %q", tc.schedule)
+			}
+			if !strings.Contains(err.Error(), tc.errFrag) {
+				t.Fatalf("expected error containing %q, got %v", tc.errFrag, err)
+			}
+		})
+	}
+}
+
 func TestCreateTask_ValidCronSchedule(t *testing.T) {
 	e := newTestController(t)
 
@@ -612,6 +644,24 @@ func TestUpdateScheduledTask_InvalidCron(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid cron schedule")
+	}
+}
+
+func TestUpdateScheduledTask_RejectsSubHourlyCronSchedule(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+
+	_, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
+		WorkspaceID: 1, TaskID: 10, CronSchedule: "*/15 * * * *", UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatal("expected error for sub-hourly cron schedule")
+	}
+	if !strings.Contains(err.Error(), "granularity too fine") {
+		t.Fatalf("expected granularity error, got %v", err)
 	}
 }
 
