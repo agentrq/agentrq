@@ -41,16 +41,6 @@
               </button>
             </div>
 
-            <!-- YOLO Toggle -->
-            <button @click.stop="toggleYOLO"
-                    @mouseenter="tooltipStore.show($event, task.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'bottom')"
-                    @mouseleave="tooltipStore.hide()"
-                    :class="task.allowAllCommands ? 'bg-orange-500 text-white shadow-orange-500/20 shadow-lg border-transparent' : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 border-transparent'"
-                    class="flex items-center gap-1 px-2 rounded-lg border transition-all h-7">
-               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
-               <span class="hidden sm:inline text-[8px] font-black uppercase tracking-tighter">YOLO</span>
-            </button>
-
             <!-- Edit Button (For Scheduled Tasks) -->
             <button v-if="task.cron" @click="router.push(`/workspaces/${workspaceId}/tasks/${taskId}/edit`)"
                     @mouseenter="tooltipStore.show($event, 'Edit Scheduled Task', 'bottom')"
@@ -311,7 +301,7 @@
     </div>
 
     <!-- Reply Box -->
-    <footer v-if="!workspace.archivedAt" class="px-2 sm:px-4 py-2 sm:py-4 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
+    <footer v-if="!workspace.archivedAt" class="px-1 sm:px-4 py-2 sm:py-4 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
 
       <!-- Attachment previews -->
       <div v-if="replyAttachments.length > 0" class="flex flex-wrap gap-2 mb-3">
@@ -347,21 +337,27 @@
             <div class="flex items-center gap-2">
               <button type="button" @click="$refs.fileInput.click()"
                       :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-                      class="h-7 w-7 rounded-sm text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-105 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center disabled:opacity-30"
+                      class="h-6 w-6 rounded-sm text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-105 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center disabled:opacity-30"
                       title="Attach files">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
                 </svg>
               </button>
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-gray-105 dark:bg-zinc-700/50 text-[9px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">
-                {{ task.assignee === 'agent' ? 'Agent' : 'Human' }} Mode
-              </span>
+              <!-- YOLO Toggle -->
+              <button type="button" @click.stop="toggleYOLO"
+                      @mouseenter="tooltipStore.show($event, task.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      :class="task.allowAllCommands ? 'bg-gray-600 text-white border-transparent' : 'bg-gray-105 dark:bg-zinc-700/50 text-gray-400 dark:text-zinc-500 border-transparent hover:text-gray-700 dark:hover:text-zinc-300'"
+                      class="flex items-center gap-1 px-2 h-6 rounded-sm border transition-all text-[9px] font-bold uppercase tracking-wider">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
+                YOLO
+              </button>
             </div>
 
             <!-- Right circular send button -->
             <button type="submit"
                     :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
-                    class="h-7 w-7 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
+                    class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
                     title="Send Message">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
