@@ -3,11 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -110,9 +112,17 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 		},
 	}
 
+	tokenKey := "test-token-key-32-bytes-long-123"
+	h.tokenKey = tokenKey
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			stateData := fmt.Sprintf("%s:nonce123", tt.state)
+			sig := security.Sign(stateData, tokenKey)
+			state := fmt.Sprintf("%s.%s", stateData, sig)
+
+			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+			req.Header.Set("Cookie", "oauth_state=nonce123")
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {

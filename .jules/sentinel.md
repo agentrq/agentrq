@@ -13,6 +13,11 @@
 **Learning:** Endpoints that operate on specific resources must always verify that the authenticated user has the necessary permissions/ownership for that resource ID, even if they are already authenticated.
 **Prevention:** Always include a user-specific identifier (e.g., `userID`) in repository/controller queries for resource-specific operations to ensure implicit authorization.
 
+## 2026-06-17 - OAuth CSRF Vulnerability
+**Vulnerability:** The Google OAuth flow lacked CSRF protection as it did not use or verify a state-nonce parameter. An attacker could potentially trick a user into performing an OAuth login that links the victim's session to the attacker's account or vice versa.
+**Learning:** Redirect parameters in OAuth are not inherently secure. A cryptographic "state" parameter linked to a session cookie (nonce) is essential to ensure the callback originates from the same session that initiated the login.
+**Prevention:** Always implement the State-Nonce pattern for OAuth flows. Use HMAC to sign the state parameter and verify it against a session-bound `HTTPOnly` cookie.
+
 ## 2024-05-21 - IDOR in Workspace Stats Endpoint
 **Vulnerability:** The `GetDetailedWorkspaceStats` controller method retrieved statistics for any workspace ID provided in the request without verifying if the authenticated user owned or had access to that workspace.
 **Learning:** Even when handlers correctly extract and pass the `userID`, the business logic layer must explicitly use it to authorize access to the requested resource. Simply passing it to a downstream service that ignores it leaves the application vulnerable to IDOR.
