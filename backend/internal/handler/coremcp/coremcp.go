@@ -191,6 +191,7 @@ func (h *handler) streamableHandler() http.Handler {
 
 		userID := claims.Subject
 		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx = context.WithValue(ctx, auth.ClaimsContextKey, claims)
 
 		zlog.Debug().Str("user_id", userID).Str("method", r.Method).Msg("CoreMCP streamable handler")
 

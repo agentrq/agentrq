@@ -63,6 +63,28 @@ func TestTokenService(t *testing.T) {
 		if len(claims.Audience) == 0 || claims.Audience[0] != workspaceID {
 			t.Errorf("expected audience %s, got %v", workspaceID, claims.Audience)
 		}
+		if !HasAudience(claims, ActorAgentAudience) {
+			t.Errorf("expected MCP access token audience to include %s, got %v", ActorAgentAudience, claims.Audience)
+		}
+	})
+
+	t.Run("CreateMCPRefreshTokenDoesNotIncludeAgentActor", func(t *testing.T) {
+		userID := "user123"
+		workspaceID := "ws456"
+
+		token, err := s.CreateMCPToken(userID, workspaceID, "refresh")
+		if err != nil {
+			t.Fatalf("failed to create MCP token: %v", err)
+		}
+
+		claims, err := s.ValidateToken(token)
+		if err != nil {
+			t.Fatalf("failed to validate MCP token: %v", err)
+		}
+
+		if HasAudience(claims, ActorAgentAudience) {
+			t.Errorf("expected MCP refresh token not to include %s, got %v", ActorAgentAudience, claims.Audience)
+		}
 	})
 
 	t.Run("CreateOAuthCodeToken", func(t *testing.T) {

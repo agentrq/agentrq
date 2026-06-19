@@ -234,10 +234,22 @@ func (h *handler) streamableHandler() http.Handler {
 
 		// Create a new context with claims if we have them
 		ctx := r.Context()
-		if userID != "" {
-			ctx = context.WithValue(ctx, auth.ClaimsContextKey, &auth.Claims{
+		var requestClaims *auth.Claims
+		if len(queryToken) == 16 {
+			requestClaims = &auth.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{Subject: userID},
-			})
+			}
+			requestClaims.Audience = jwt.ClaimStrings{auth.ActorAgentAudience}
+		} else if claims, err := h.tokenSvc.ValidateToken(queryToken); err == nil {
+			requestClaims = claims
+		}
+		if requestClaims == nil && userID != "" {
+			requestClaims = &auth.Claims{
+				RegisteredClaims: jwt.RegisteredClaims{Subject: userID},
+			}
+		}
+		if requestClaims != nil {
+			ctx = context.WithValue(ctx, auth.ClaimsContextKey, requestClaims)
 		}
 
 		if r.Method == "POST" {

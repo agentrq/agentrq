@@ -9,8 +9,9 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
-	"github.com/robfig/cron/v3"
 	"gorm.io/datatypes"
 )
 
@@ -43,7 +44,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 
 	status := req.Task.Status
 	if status == "" {
-		status = "notstarted"
+		if req.Task.CronSchedule != "" {
+			status = "cron"
+		} else {
+			status = "notstarted"
+		}
 	}
 	if !isValidTaskStatus(status) {
 		return nil, fmt.Errorf("invalid task status: %s", status)
@@ -53,10 +58,8 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		if req.Task.CronSchedule == "" {
 			return nil, fmt.Errorf("cron_schedule is required for chronic tasks")
 		}
-		// Validate Cron Schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(req.Task.CronSchedule); err != nil {
-			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		if err := validateCronForContext(ctx, req.Task.CronSchedule); err != nil {
+			return nil, err
 		}
 	}
 
@@ -721,10 +724,8 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		m.Status = "notstarted"
 		m.CronSchedule = ""
 	} else {
-		// Validate Cron Schedule
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(req.CronSchedule); err != nil {
-			return nil, fmt.Errorf("invalid cron schedule: %w", err)
+		if err := validateCronForContext(ctx, req.CronSchedule); err != nil {
+			return nil, err
 		}
 		m.CronSchedule = req.CronSchedule
 	}
@@ -756,6 +757,13 @@ func isValidTaskStatus(status string) bool {
 		return true
 	}
 	return false
+}
+
+func validateCronForContext(ctx context.Context, cronSchedule string) error {
+	if auth.ContextHasAudience(ctx, auth.ActorAgentAudience) {
+		return schedule.ValidateCronGranularity(cronSchedule)
+	}
+	return schedule.ValidateCronSyntax(cronSchedule)
 }
 
 func (c *controller) GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error) {

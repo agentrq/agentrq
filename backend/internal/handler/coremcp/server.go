@@ -449,6 +449,7 @@ func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToo
 		UserID: userID,
 		Task: entity.Task{
 			WorkspaceID:  parseID(args.WorkspaceID),
+			CreatedBy:    "agent",
 			Title:        args.Title,
 			Body:         args.Body,
 			Assignee:     assignee,

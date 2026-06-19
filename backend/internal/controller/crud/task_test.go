@@ -11,7 +11,9 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang/mock/gomock"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/datatypes"
 )
 
@@ -201,6 +203,54 @@ func TestCreateTask_ValidCronSchedule(t *testing.T) {
 	}
 	if resp.Task.Status != "cron" {
 		t.Errorf("expected cron status, got %s", resp.Task.Status)
+	}
+}
+
+func TestCreateTask_AllowsSubHourlyCronWithoutAgentAudience(t *testing.T) {
+	e := newTestController(t)
+
+	created := model.Task{ID: 6, WorkspaceID: 1, Title: "t", Status: "cron", CronSchedule: "*/15 * * * *"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.idgen.EXPECT().NextID().Return(int64(6))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.Status != "cron" {
+			return model.Task{}, fmt.Errorf("expected cron status, got %s", m.Status)
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "t", CronSchedule: "*/15 * * * *"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.CronSchedule != "*/15 * * * *" {
+		t.Errorf("expected sub-hourly cron schedule, got %s", resp.Task.CronSchedule)
+	}
+}
+
+func TestCreateTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	ctx := context.WithValue(context.Background(), auth.ClaimsContextKey, &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
+		},
+	})
+
+	_, err := e.controller.CreateTask(ctx, entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "t", CronSchedule: "*/15 * * * *"},
+	})
+	if err == nil {
+		t.Fatal("expected error for agent sub-hourly cron schedule")
+	}
+	if !strings.Contains(err.Error(), "granularity too fine") {
+		t.Fatalf("expected granularity error, got %v", err)
 	}
 }
 
@@ -612,6 +662,29 @@ func TestUpdateScheduledTask_InvalidCron(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid cron schedule")
+	}
+}
+
+func TestUpdateScheduledTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	ctx := context.WithValue(context.Background(), auth.ClaimsContextKey, &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
+		},
+	})
+
+	_, err := e.controller.UpdateScheduledTask(ctx, entity.UpdateScheduledTaskRequest{
+		WorkspaceID: 1, TaskID: 10, CronSchedule: "*/15 * * * *", UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatal("expected error for agent sub-hourly cron schedule")
+	}
+	if !strings.Contains(err.Error(), "granularity too fine") {
+		t.Fatalf("expected granularity error, got %v", err)
 	}
 }
 
