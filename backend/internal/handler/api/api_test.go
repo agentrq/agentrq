@@ -3,11 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -56,12 +58,14 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 	authSvc := &mockAuthService{}
 	tokenSvc := &mockTokenSvc{}
 	crudCtrl := &mockCrudController{}
+	tokenKey := "12345678901234567890123456789012"
 
 	h := &handler{
 		auth:     authSvc,
 		tokenSvc: tokenSvc,
 		crud:     crudCtrl,
 		baseURL:  "http://localhost:3000",
+		tokenKey: tokenKey,
 	}
 
 	app.Get("/google/callback", h.googleCallback())
@@ -80,39 +84,50 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		state       string
+		redirectURL string
+		nonce       string
 		expectedLoc string
 	}{
 		{
 			name:        "Safe local redirect",
-			state:       "/workspaces",
+			redirectURL: "/workspaces",
+			nonce:       "nonce1",
 			expectedLoc: "/workspaces",
 		},
 		{
 			name:        "Malicious absolute redirect",
-			state:       "http://localhost:3000.evil.com",
+			redirectURL: "http://localhost:3000.evil.com",
+			nonce:       "nonce2",
 			expectedLoc: "/",
 		},
 		{
 			name:        "Malicious relative redirect //",
-			state:       "//evil.com",
+			redirectURL: "//evil.com",
+			nonce:       "nonce3",
 			expectedLoc: "/",
 		},
 		{
 			name:        "Malicious relative redirect /\\",
-			state:       "/\\evil.com",
+			redirectURL: "/\\evil.com",
+			nonce:       "nonce4",
 			expectedLoc: "/",
 		},
 		{
 			name:        "Safe absolute redirect",
-			state:       "http://localhost:3000/safe",
+			redirectURL: "http://localhost:3000/safe",
+			nonce:       "nonce5",
 			expectedLoc: "http://localhost:3000/safe",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			stateData := fmt.Sprintf("%s:%s", tt.redirectURL, tt.nonce)
+			signature := security.Sign(stateData, tokenKey)
+			state := fmt.Sprintf("%s.%s", stateData, signature)
+
+			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+			req.Header.Set("Cookie", "oauth_state="+tt.nonce)
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {

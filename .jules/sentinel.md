@@ -22,3 +22,8 @@
 **Vulnerability:** The `ResizeBase64` service returned the original input string if the `data:image/` prefix was missing. The CRUD controller then stored this unsanitized string in the database. Since the frontend rendered some icons using `v-html`, this allowed for Stored XSS (e.g., using `javascript:` or malicious SVG).
 **Learning:** Fallback mechanisms that return unvalidated user input when processing fails are dangerous. If a service is designed to process/sanitize input, it must fail explicitly if the input doesn't meet the expected format.
 **Prevention:** Enforce strict input validation (e.g., prefix checks) and remove "fallback to original" logic in data processing services. Ensure that only successfully processed and sanitized data reaches the persistence layer.
+
+## 2025-05-23 - CSRF in Google OAuth Flow
+**Vulnerability:** The Google OAuth flow used a simple `state` parameter containing only the redirect URL without any cryptographic signature or session-bound nonce, making it vulnerable to CSRF attacks where an attacker could force a victim to log into the attacker's account.
+**Learning:** For OAuth flows, the `state` parameter must be used to provide CSRF protection by including a session-bound nonce. To prevent tampering and open redirects, the entire state data (redirect URL + nonce) should be cryptographically signed.
+**Prevention:** Always use a signed `state` parameter in OAuth flows. Include a random nonce that is also stored in a secure, HTTP-only, session-bound cookie. Verify the signature and the nonce on the callback before proceeding with the token exchange.
