@@ -11,6 +11,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -112,7 +113,13 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+tt.state, nil)
+			nonce := "nonce12345678901"
+			data := tt.state + ":" + nonce
+			signature := security.Sign(data, h.tokenKey)
+			state := data + "." + signature
+
+			req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+			req.AddCookie(&http.Cookie{Name: "oauth_state", Value: nonce})
 			resp, _ := app.Test(req)
 
 			if resp.StatusCode != http.StatusFound {
@@ -124,6 +131,28 @@ func TestGoogleCallback_OpenRedirectPrevention(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Invalid signature", func(t *testing.T) {
+		state := "/workspaces:nonce.invalidsig"
+		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("Expected status 403, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Nonce mismatch", func(t *testing.T) {
+		data := "/workspaces:nonce1"
+		sig := security.Sign(data, h.tokenKey)
+		state := data + "." + sig
+
+		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "nonce2"})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("Expected status 403, got %d", resp.StatusCode)
+		}
+	})
 }
 
 type mockCrudGetWorkspace struct {

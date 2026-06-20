@@ -294,7 +294,35 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "state")
+
+		// CSRF Protection: Generate a random nonce
+		nonce, err := security.GenerateSecret(16)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to generate OAuth state nonce")
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+		}
+
+		// Store nonce in a secure cookie
+		cookie := &fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    nonce,
+			Expires:  time.Now().Add(15 * time.Minute),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
+
+		// Signed state: redirectURL:nonce.signature
+		data := fmt.Sprintf("%s:%s", redirectURL, nonce)
+		signature := security.Sign(data, h.tokenKey)
+		state := fmt.Sprintf("%s.%s", data, signature)
+
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -302,6 +330,56 @@ func (h *handler) googleLogin() fiber.Handler {
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		code := c.Query("code")
+		state := c.Query("state")
+
+		// 1. Verify CSRF state
+		if state == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing state parameter"})
+		}
+
+		// Parse state: data.signature
+		dotIdx := strings.LastIndex(state, ".")
+		if dotIdx == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state format"})
+		}
+		stateData := state[:dotIdx]
+		signature := state[dotIdx+1:]
+
+		if !security.Verify(stateData, signature, h.tokenKey) {
+			zlog.Warn().Msg("OAuth state signature verification failed")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state signature"})
+		}
+
+		// Parse data: redirectURL:nonce
+		colonIdx := strings.LastIndex(stateData, ":")
+		if colonIdx == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state data format"})
+		}
+		redirectURLParam := stateData[:colonIdx]
+		sessionNonce := stateData[colonIdx+1:]
+
+		// Compare with cookie nonce
+		cookieNonce := c.Cookies("oauth_state")
+		// Clear cookie immediately
+		clearCookie := &fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    "",
+			Expires:  time.Now().Add(-1 * time.Hour),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			clearCookie.Domain = "." + h.domain
+		}
+		c.Cookie(clearCookie)
+
+		if sessionNonce == "" || !security.SecureCompare(sessionNonce, cookieNonce) {
+			zlog.Warn().Msg("OAuth CSRF nonce mismatch")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "CSRF verification failed"})
+		}
+
 		ctx, cancel := newContext(c)
 		defer cancel()
 
@@ -362,18 +440,17 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		state := c.Query("state")
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
-		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
+		if redirectURLParam != "" && redirectURLParam != "state" {
+			if strings.HasPrefix(redirectURLParam, "/") && !strings.HasPrefix(redirectURLParam, "//") && !strings.HasPrefix(redirectURLParam, "/\\") {
+				redirectURL = redirectURLParam
 			} else {
 				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
+				if pRedirect, err := url.Parse(redirectURLParam); err == nil && pRedirect.IsAbs() {
 					if pBase, err := url.Parse(h.baseURL); err == nil {
 						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+							redirectURL = redirectURLParam
 						}
 					}
 				}
