@@ -249,7 +249,7 @@ func (h *handler) streamableHandler() http.Handler {
 			}
 		}
 		if requestClaims != nil {
-			ctx = context.WithValue(ctx, auth.ClaimsContextKey, requestClaims)
+			ctx = context.WithValue(ctx, auth.CtxKeyMCPClaims, requestClaims)
 		}
 
 		if r.Method == "POST" {

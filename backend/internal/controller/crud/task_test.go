@@ -12,8 +12,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/golang/mock/gomock"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang/mock/gomock"
 	"gorm.io/datatypes"
 )
 
@@ -236,7 +236,7 @@ func TestCreateTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T) {
 	e := newTestController(t)
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	ctx := context.WithValue(context.Background(), auth.ClaimsContextKey, &auth.Claims{
+	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
 		},
@@ -671,7 +671,7 @@ func TestUpdateScheduledTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T)
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	ctx := context.WithValue(context.Background(), auth.ClaimsContextKey, &auth.Claims{
+	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
 		},
@@ -935,4 +935,3 @@ func TestGetWorkspaceTaskCounts_Error(t *testing.T) {
 		t.Fatal("expected error from repository call")
 	}
 }
-

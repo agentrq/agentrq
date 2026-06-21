@@ -9,9 +9,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type ctxKey uint8
+
 const (
-	ClaimsContextKey   = "mcp_claims"
-	ActorAgentAudience = "actor:agent"
+	CtxKeyMCPClaims    ctxKey = 1
+	ActorAgentAudience        = "actor:agent"
 )
 
 type TokenConfig struct {
@@ -107,7 +109,7 @@ func ContextHasAudience(ctx context.Context, audience string) bool {
 	if ctx == nil {
 		return false
 	}
-	claims, _ := ctx.Value(ClaimsContextKey).(*Claims)
+	claims, _ := ctx.Value(CtxKeyMCPClaims).(*Claims)
 	return HasAudience(claims, audience)
 }
 
