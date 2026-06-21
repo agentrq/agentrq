@@ -294,7 +294,34 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
+		redirectURL := c.Query("redirect_url", "/")
+
+		// Situational security: CSRF protection for OAuth flow
+		nonce, err := security.GenerateSecret(16)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+		}
+
+		// Store nonce in a session cookie
+		cookie := &fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    nonce,
+			Expires:  time.Now().Add(15 * time.Minute),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
+
+		// Sign the state (redirectURL + nonce) to prevent tampering
+		stateData := redirectURL + ":" + nonce
+		signature := security.Sign(stateData, h.tokenKey)
+		state := stateData + "." + signature
+
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -302,6 +329,41 @@ func (h *handler) googleLogin() fiber.Handler {
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		code := c.Query("code")
+		state := c.Query("state")
+
+		// Situational security: Verify signed state and session nonce
+		if state == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing state"})
+		}
+
+		lastDot := strings.LastIndex(state, ".")
+		if lastDot == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state format"})
+		}
+
+		stateData := state[:lastDot]
+		signature := state[lastDot+1:]
+
+		if !security.Verify(stateData, signature, h.tokenKey) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state signature"})
+		}
+
+		lastColon := strings.LastIndex(stateData, ":")
+		if lastColon == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state data"})
+		}
+
+		redirectURLCandidate := stateData[:lastColon]
+		nonce := stateData[lastColon+1:]
+
+		cookieNonce := c.Cookies("oauth_state")
+		// Clear the cookie immediately
+		h.clearCookie(c, "oauth_state")
+
+		if cookieNonce == "" || !security.SecureCompare(nonce, cookieNonce) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid oauth session"})
+		}
+
 		ctx, cancel := newContext(c)
 		defer cancel()
 
@@ -362,18 +424,17 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		state := c.Query("state")
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
-		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
+		if redirectURLCandidate != "" {
+			if strings.HasPrefix(redirectURLCandidate, "/") && !strings.HasPrefix(redirectURLCandidate, "//") && !strings.HasPrefix(redirectURLCandidate, "/\\") {
+				redirectURL = redirectURLCandidate
 			} else {
 				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
+				if pRedirect, err := url.Parse(redirectURLCandidate); err == nil && pRedirect.IsAbs() {
 					if pBase, err := url.Parse(h.baseURL); err == nil {
 						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+							redirectURL = redirectURLCandidate
 						}
 					}
 				}
@@ -382,6 +443,22 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		return c.Redirect(redirectURL)
 	}
+}
+
+func (h *handler) clearCookie(c *fiber.Ctx, name string) {
+	cookie := &fiber.Cookie{
+		Name:     name,
+		Value:    "",
+		Expires:  time.Now().Add(-1 * time.Hour),
+		HTTPOnly: true,
+		Secure:   h.sslEnabled,
+		SameSite: "Lax",
+		Path:     "/",
+	}
+	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+		cookie.Domain = "." + h.domain
+	}
+	c.Cookie(cookie)
 }
 
 // ── Workspaces ──────────────────────────────────────────────────────────────────
