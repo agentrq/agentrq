@@ -89,4 +89,24 @@ func TestSecurity(t *testing.T) {
 			t.Error("expected true for empty strings")
 		}
 	})
+
+	t.Run("SignVerify", func(t *testing.T) {
+		data := "some data to sign"
+		sig := Sign(data, key)
+		if sig == "" {
+			t.Fatal("expected signature, got empty string")
+		}
+		if !Verify(data, sig, key) {
+			t.Error("expected true for valid signature")
+		}
+		if Verify(data, "invalid signature", key) {
+			t.Error("expected false for invalid signature")
+		}
+		if Verify("different data", sig, key) {
+			t.Error("expected false for different data")
+		}
+		if Verify(data, sig, "different key 123456789012345678") {
+			t.Error("expected false for different key")
+		}
+	})
 }

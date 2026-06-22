@@ -295,14 +295,90 @@ func (h *handler) rootLogin() fiber.Handler {
 
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		state := c.Query("redirect_url", "state")
-		return c.Redirect(h.auth.GetAuthURL(state))
+		redirectURL := c.Query("redirect_url", "/")
+
+		// Security: generate a random nonce for CSRF protection
+		nonce, err := security.GenerateSecret(16)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to generate oauth state nonce")
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+		}
+
+		// Security: sign the state data to prevent tampering
+		stateData := fmt.Sprintf("%s:%s", redirectURL, nonce)
+		stateSignature := security.Sign(stateData, h.tokenKey)
+		signedState := fmt.Sprintf("%s.%s", stateData, stateSignature)
+
+		// Store nonce in a secure cookie
+		cookie := &fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    nonce,
+			Expires:  time.Now().Add(15 * time.Minute),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			cookie.Domain = "." + h.domain
+		}
+		c.Cookie(cookie)
+
+		return c.Redirect(h.auth.GetAuthURL(signedState))
 	}
 }
 
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		code := c.Query("code")
+		state := c.Query("state")
+
+		// Security: verify signed state and nonce to prevent CSRF
+		if state == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing state parameter"})
+		}
+
+		lastDot := strings.LastIndex(state, ".")
+		if lastDot == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state format"})
+		}
+
+		stateData := state[:lastDot]
+		stateSignature := state[lastDot+1:]
+
+		if !security.Verify(stateData, stateSignature, h.tokenKey) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state signature"})
+		}
+
+		lastColon := strings.LastIndex(stateData, ":")
+		if lastColon == -1 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid state data"})
+		}
+
+		redirectURLParam := stateData[:lastColon]
+		nonceParam := stateData[lastColon+1:]
+
+		cookieNonce := c.Cookies("oauth_state")
+
+		// Clear cookie immediately
+		clearCookie := &fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    "",
+			Expires:  time.Now().Add(-1 * time.Hour),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		}
+		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+			clearCookie.Domain = "." + h.domain
+		}
+		c.Cookie(clearCookie)
+
+		if cookieNonce == "" || !security.SecureCompare(nonceParam, cookieNonce) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid oauth state (CSRF detected or expired)"})
+		}
+
 		ctx, cancel := newContext(c)
 		defer cancel()
 
@@ -363,18 +439,17 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		state := c.Query("state")
 		redirectURL := "/"
 		// Situational security: validate redirect URL to prevent open redirect
-		if state != "" && state != "state" {
-			if strings.HasPrefix(state, "/") && !strings.HasPrefix(state, "//") && !strings.HasPrefix(state, "/\\") {
-				redirectURL = state
+		if redirectURLParam != "" {
+			if strings.HasPrefix(redirectURLParam, "/") && !strings.HasPrefix(redirectURLParam, "//") && !strings.HasPrefix(redirectURLParam, "/\\") {
+				redirectURL = redirectURLParam
 			} else {
 				// Parse absolute URL and validate against baseURL
-				if pRedirect, err := url.Parse(state); err == nil && pRedirect.IsAbs() {
+				if pRedirect, err := url.Parse(redirectURLParam); err == nil && pRedirect.IsAbs() {
 					if pBase, err := url.Parse(h.baseURL); err == nil {
 						if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
-							redirectURL = state
+							redirectURL = redirectURLParam
 						}
 					}
 				}
