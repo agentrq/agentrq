@@ -639,6 +639,7 @@ const permissionsConfig = computed(() => ({
       `mcp__${serverName.value}__downloadAttachment`,
       `mcp__${serverName.value}__getTaskMessages`,
       `mcp__${serverName.value}__getNextTask`,
+      `mcp__${serverName.value}__publishEvent`,
     ]
   },
   enableAllProjectMcpServers: true,
@@ -670,6 +671,9 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [mcp_servers.${serverName.value}.tools.getNextTask]
+approval_mode = "approve"
+
+[mcp_servers.${serverName.value}.tools.publishEvent]
 approval_mode = "approve"`;
 });
 

@@ -286,3 +286,207 @@ func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	}
 }
 
+func TestRepository_Event_CRUD(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Event{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(1)
+	otherUserID := int64(2)
+
+	// Create
+	e, err := repo.CreateEvent(ctx, model.Event{
+		ID:                100,
+		UserID:            userID,
+		Name:              "code_review_done",
+		PayloadGuidelines: "Describe what was reviewed",
+	})
+	if err != nil {
+		t.Fatalf("CreateEvent: %v", err)
+	}
+	if e.ID != 100 {
+		t.Errorf("expected ID 100, got %d", e.ID)
+	}
+
+	// GetEvent — owner
+	got, err := repo.GetEvent(ctx, 100, userID)
+	if err != nil {
+		t.Fatalf("GetEvent: %v", err)
+	}
+	if got.Name != "code_review_done" {
+		t.Errorf("expected name code_review_done, got %s", got.Name)
+	}
+
+	// GetEvent — wrong user (IDOR guard)
+	_, err = repo.GetEvent(ctx, 100, otherUserID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound for wrong user, got %v", err)
+	}
+
+	// GetEventByName
+	got, err = repo.GetEventByName(ctx, "code_review_done", userID)
+	if err != nil {
+		t.Fatalf("GetEventByName: %v", err)
+	}
+	if got.ID != 100 {
+		t.Errorf("expected ID 100, got %d", got.ID)
+	}
+
+	// GetEventByName — wrong user
+	_, err = repo.GetEventByName(ctx, "code_review_done", otherUserID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound for wrong user in GetEventByName, got %v", err)
+	}
+
+	// ListEventsByUser
+	_ = db.Create(&model.Event{ID: 101, UserID: userID, Name: "deploy_done"})
+	_ = db.Create(&model.Event{ID: 200, UserID: otherUserID, Name: "other_event"})
+
+	list, err := repo.ListEventsByUser(ctx, userID)
+	if err != nil {
+		t.Fatalf("ListEventsByUser: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2 events for user 1, got %d", len(list))
+	}
+
+	// DeleteEvent — wrong user (IDOR guard)
+	err = repo.DeleteEvent(ctx, 100, otherUserID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound when deleting with wrong user, got %v", err)
+	}
+
+	// DeleteEvent — owner
+	err = repo.DeleteEvent(ctx, 100, userID)
+	if err != nil {
+		t.Fatalf("DeleteEvent: %v", err)
+	}
+	_, err = repo.GetEvent(ctx, 100, userID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestRepository_EventTrigger_CRUD(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Task{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(1)
+	otherUserID := int64(2)
+	eventID := int64(500)
+	workspaceID := int64(10)
+
+	// Create trigger
+	tr, err := repo.CreateEventTrigger(ctx, model.EventTrigger{
+		ID:          1000,
+		EventID:     eventID,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Title:       "Review completed: {{EVENT_PAYLOAD}}",
+		Body:        "Details: {{EVENT_FAQ}}",
+		Assignee:    "agent",
+	})
+	if err != nil {
+		t.Fatalf("CreateEventTrigger: %v", err)
+	}
+	if tr.ID != 1000 {
+		t.Errorf("expected ID 1000, got %d", tr.ID)
+	}
+
+	// GetEventTrigger — owner
+	got, err := repo.GetEventTrigger(ctx, 1000, userID)
+	if err != nil {
+		t.Fatalf("GetEventTrigger: %v", err)
+	}
+	if got.EventID != eventID {
+		t.Errorf("expected eventID %d, got %d", eventID, got.EventID)
+	}
+
+	// GetEventTrigger — wrong user (IDOR)
+	_, err = repo.GetEventTrigger(ctx, 1000, otherUserID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound for wrong user, got %v", err)
+	}
+
+	// ListEventTriggersByEvent — user-scoped
+	_ = db.Create(&model.EventTrigger{ID: 1001, EventID: eventID, UserID: userID, WorkspaceID: 20})
+	_ = db.Create(&model.EventTrigger{ID: 1002, EventID: eventID, UserID: otherUserID, WorkspaceID: 30})
+
+	list, err := repo.ListEventTriggersByEvent(ctx, eventID, userID)
+	if err != nil {
+		t.Fatalf("ListEventTriggersByEvent: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2 triggers for user 1 on event, got %d", len(list))
+	}
+
+	// SystemListEventTriggersByEventID — cross-user
+	all, err := repo.SystemListEventTriggersByEventID(ctx, eventID)
+	if err != nil {
+		t.Fatalf("SystemListEventTriggersByEventID: %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("expected 3 triggers system-wide, got %d", len(all))
+	}
+
+	// DeleteEventTrigger — wrong user (IDOR)
+	err = repo.DeleteEventTrigger(ctx, 1000, otherUserID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound for wrong user delete, got %v", err)
+	}
+
+	// DeleteEventTrigger — owner
+	err = repo.DeleteEventTrigger(ctx, 1000, userID)
+	if err != nil {
+		t.Fatalf("DeleteEventTrigger: %v", err)
+	}
+	_, err = repo.GetEventTrigger(ctx, 1000, userID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestRepository_ListTasksByTriggerID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Task{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(1)
+	otherUserID := int64(2)
+	triggerID := int64(500)
+
+	db.Create(&model.Task{ID: 1, UserID: userID, TriggerID: triggerID, WorkspaceID: 10, Status: "completed"})
+	db.Create(&model.Task{ID: 2, UserID: userID, TriggerID: triggerID, WorkspaceID: 10, Status: "notstarted"})
+	db.Create(&model.Task{ID: 3, UserID: otherUserID, TriggerID: triggerID, WorkspaceID: 20, Status: "completed"})
+	db.Create(&model.Task{ID: 4, UserID: userID, TriggerID: 999, WorkspaceID: 10, Status: "completed"})
+
+	tasks, err := repo.ListTasksByTriggerID(ctx, triggerID, userID)
+	if err != nil {
+		t.Fatalf("ListTasksByTriggerID: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Errorf("expected 2 tasks for user 1 with triggerID %d, got %d", triggerID, len(tasks))
+	}
+	for _, task := range tasks {
+		if task.TriggerID != triggerID {
+			t.Errorf("unexpected triggerID %d", task.TriggerID)
+		}
+		if task.UserID != userID {
+			t.Errorf("unexpected userID %d (IDOR leak)", task.UserID)
+		}
+	}
+}
+

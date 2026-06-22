@@ -31,6 +31,9 @@ const routes = [
   { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
   { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
 
+  { path: '/events', component: () => import('./views/EventsView.vue') },
+  { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
+
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
 

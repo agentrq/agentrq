@@ -106,6 +106,7 @@ func New(p Params) (Handler, error) {
 	if err := h.registerTaskRoutes(); err != nil {
 		return nil, err
 	}
+	h.registerEventRoutes()
 	if p.PushCtrl != nil {
 		h.registerPushRoutes(p.PushCtrl)
 	}

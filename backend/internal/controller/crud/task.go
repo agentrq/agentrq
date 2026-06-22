@@ -91,21 +91,22 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	}
 
 	m := model.Task{
-		ID:           c.idgen.NextID(),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		UserID:       userID,
-		WorkspaceID:  req.Task.WorkspaceID,
-		CreatedBy:    req.Task.CreatedBy,
-		Assignee:     req.Task.Assignee,
-		Status:       status,
-		Title:        req.Task.Title,
-		Body:         req.Task.Body,
-		Attachments:  attachJSON,
-		CronSchedule: req.Task.CronSchedule,
-		ParentID:     req.Task.ParentID,
-		SortOrder:    sortOrder,
+		ID:               c.idgen.NextID(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		UserID:           userID,
+		WorkspaceID:      req.Task.WorkspaceID,
+		CreatedBy:        req.Task.CreatedBy,
+		Assignee:         req.Task.Assignee,
+		Status:           status,
+		Title:            req.Task.Title,
+		Body:             req.Task.Body,
+		Attachments:      attachJSON,
+		CronSchedule:     req.Task.CronSchedule,
+		ParentID:         req.Task.ParentID,
+		SortOrder:        sortOrder,
 		AllowAllCommands: allowAll,
+		EventID:          req.Task.EventID,
 	}
 	created, err := c.repository.CreateTask(ctx, m)
 	if err != nil {
@@ -637,10 +638,11 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		ReplyText:    m.ReplyText,
 		Attachments:  atts,
 		Messages:     msgs,
-		CronSchedule: m.CronSchedule,
-		ParentID:     m.ParentID,
-		SortOrder:    m.SortOrder,
+		CronSchedule:     m.CronSchedule,
+		ParentID:         m.ParentID,
+		SortOrder:        m.SortOrder,
 		AllowAllCommands: m.AllowAllCommands,
+		EventID:          m.EventID,
 	}
 }
 

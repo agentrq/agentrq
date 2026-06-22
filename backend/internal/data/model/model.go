@@ -47,6 +47,36 @@ type (
 		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
 		SortOrder        float64 `gorm:"type:real;default:0"`
 		AllowAllCommands bool    `gorm:"default:false"`
+		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
+		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+	}
+
+	// Event defines a named event that agents can publish after completing a task.
+	// Other workspaces can subscribe to it via EventTrigger.
+	Event struct {
+		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt         time.Time
+		UpdatedAt         time.Time
+		UserID            int64          `gorm:"index:idx_events_user_id"`
+		Name              string `gorm:"type:varchar(140);uniqueIndex:idx_events_name_user_id"`
+		PayloadGuidelines string `gorm:"type:text"`
+	}
+
+	// EventTrigger subscribes a workspace to an Event; when the event fires, a task
+	// is created in the target workspace using the stored template.
+	EventTrigger struct {
+		ID               int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		EventID          int64  `gorm:"index:idx_event_triggers_event_id"`
+		WorkspaceID      int64  `gorm:"index:idx_event_triggers_workspace_id"`
+		UserID           int64  `gorm:"index:idx_event_triggers_user_id"`
+		Title            string `gorm:"type:varchar(255)"`
+		Body             string `gorm:"type:text"`
+		Assignee         string `gorm:"type:varchar(16)"`
+		CronSchedule     string `gorm:"type:varchar(64)"`
+		AllowAllCommands bool   `gorm:"default:false"`
+		EmitEventID      int64  `gorm:"index:idx_event_triggers_emit_event_id"` // event this trigger's task emits on completion
 	}
 
 	// Message is an entry in a task's chat history

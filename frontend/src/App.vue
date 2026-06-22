@@ -183,6 +183,24 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Completed</span>
           </router-link>
+
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
+            <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Experimental</span>
+          </div>
+          <div v-else class="mt-4 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50"></div>
+
+          <router-link to="/events"
+              @mouseenter="showTooltip($event, 'Events')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/events') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.651a3.75 3.75 0 010-5.303m5.304-.002a3.75 3.75 0 010 5.304m-7.425 2.122a6.75 6.75 0 010-9.546m9.546.001a6.75 6.75 0 010 9.545m-11.667 2.121a9.75 9.75 0 010-13.788m13.788.001a9.75 9.75 0 010 13.787M12 12h.008v.008H12V12z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Events</span>
+          </router-link>
         </div>
 
         <!-- Sidebar Footer -->

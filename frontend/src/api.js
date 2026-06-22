@@ -86,22 +86,13 @@ export async function getTask(workspaceId, taskId) {
   return res.json();
 }
 
-export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false) {
+export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false, eventId = '') {
+  const task = { title, body, createdBy: 'human', assignee, attachments, status, cronSchedule, allowAllCommands };
+  if (eventId) task.eventId = eventId;
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      task: { 
-        title, 
-        body, 
-        createdBy: 'human', 
-        assignee, 
-        attachments, 
-        status, 
-        cronSchedule,
-        allowAllCommands: allowAllCommands
-      } 
-    })
+    body: JSON.stringify({ task })
   });
   if (!res.ok) throw new Error('Failed to create task');
   return res.json();
@@ -272,5 +263,89 @@ export async function removeWorkspaceSlackChannel(id) {
 export async function fetchGlobalTaskStats() {
   const res = await fetch(`${API_BASE_URL}/tasks/stats`);
   if (!res.ok) throw new Error('Failed to fetch global task stats');
+  return res.json();
+}
+
+export async function fetchEvents() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`${API_BASE_URL}/events`, { signal: controller.signal });
+    if (!res.ok) throw new Error('Failed to fetch events');
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function createEvent(name, payloadGuidelines) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(`${API_BASE_URL}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, payloadGuidelines }),
+      signal: controller.signal
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error?.message || body.error || `Failed to create event (${res.status})`);
+    }
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function getEvent(id) {
+  const res = await fetch(`${API_BASE_URL}/events/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch event');
+  return res.json();
+}
+
+export async function updateEvent(id, payloadGuidelines) {
+  const res = await fetch(`${API_BASE_URL}/events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payloadGuidelines }),
+  });
+  if (!res.ok) throw new Error('Failed to update event');
+  return res.json();
+}
+
+export async function deleteEvent(id) {
+  const res = await fetch(`${API_BASE_URL}/events/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete event');
+  return true;
+}
+
+export async function fetchEventTriggers(eventId) {
+  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers`);
+  if (!res.ok) throw new Error('Failed to fetch event triggers');
+  return res.json();
+}
+
+export async function createEventTrigger(eventId, { workspaceId, title, body, assignee = 'agent', cronSchedule = '', allowAllCommands = false, emitEventId = '' }) {
+  const payload = { workspaceId, title, body, assignee, cronSchedule, allowAllCommands };
+  if (emitEventId) payload.emitEventId = emitEventId;
+  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('Failed to create event trigger');
+  return res.json();
+}
+
+export async function deleteEventTrigger(eventId, triggerId) {
+  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete event trigger');
+  return true;
+}
+
+export async function fetchEventTasks(eventId) {
+  const res = await fetch(`${API_BASE_URL}/events/${eventId}/tasks`);
+  if (!res.ok) throw new Error('Failed to fetch event tasks');
   return res.json();
 }

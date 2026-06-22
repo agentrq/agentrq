@@ -27,6 +27,8 @@ type (
 		WorkspaceController
 		UserController
 		TaskController
+		EventController
+		EventTriggerController
 	}
 
 	controller struct {

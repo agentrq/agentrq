@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -67,6 +68,22 @@ type Repository interface {
 	DeletePushSubscriptionByWorkspace(ctx context.Context, userID int64, workspaceID int64, endpoint string) error
 	GetPushSubscriptionForWorkspace(ctx context.Context, userID int64, workspaceID int64, endpoint string) (bool, error)
 	ListPushSubscriptionsByUserAndWorkspace(ctx context.Context, userID int64, workspaceID int64) ([]model.PushSubscription, error)
+
+	// Events
+	CreateEvent(ctx context.Context, e model.Event) (model.Event, error)
+	GetEvent(ctx context.Context, id int64, userID int64) (model.Event, error)
+	GetEventByName(ctx context.Context, name string, userID int64) (model.Event, error)
+	ListEventsByUser(ctx context.Context, userID int64) ([]model.Event, error)
+	UpdateEvent(ctx context.Context, id int64, userID int64, payloadGuidelines string) (model.Event, error)
+	DeleteEvent(ctx context.Context, id int64, userID int64) error
+
+	// EventTriggers
+	CreateEventTrigger(ctx context.Context, t model.EventTrigger) (model.EventTrigger, error)
+	GetEventTrigger(ctx context.Context, id int64, userID int64) (model.EventTrigger, error)
+	ListEventTriggersByEvent(ctx context.Context, eventID int64, userID int64) ([]model.EventTrigger, error)
+	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
+	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
+	ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error)
 }
 
 type repository struct {
@@ -723,4 +740,112 @@ func (r *repository) ListPushSubscriptionsByUserAndWorkspace(ctx context.Context
 	var subs []model.PushSubscription
 	err := r.conn(ctx).Where("user_id = ? AND workspace_id = ?", userID, workspaceID).Find(&subs).Error
 	return subs, err
+}
+
+// ── Events ─────────────────────────────────────────────────────────────────────
+
+func (r *repository) CreateEvent(ctx context.Context, e model.Event) (model.Event, error) {
+	if err := r.conn(ctx).Create(&e).Error; err != nil {
+		return model.Event{}, err
+	}
+	return e, nil
+}
+
+func (r *repository) GetEvent(ctx context.Context, id int64, userID int64) (model.Event, error) {
+	var e model.Event
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&e).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Event{}, ErrNotFound
+	}
+	return e, err
+}
+
+func (r *repository) GetEventByName(ctx context.Context, name string, userID int64) (model.Event, error) {
+	var e model.Event
+	err := r.conn(ctx).Where("name = ? AND user_id = ?", name, userID).First(&e).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Event{}, ErrNotFound
+	}
+	return e, err
+}
+
+func (r *repository) ListEventsByUser(ctx context.Context, userID int64) ([]model.Event, error) {
+	var events []model.Event
+	err := r.conn(ctx).Where("user_id = ?", userID).Order("created_at desc").Find(&events).Error
+	return events, err
+}
+
+func (r *repository) UpdateEvent(ctx context.Context, id int64, userID int64, payloadGuidelines string) (model.Event, error) {
+	var e model.Event
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&e).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Event{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Event{}, err
+	}
+	e.PayloadGuidelines = payloadGuidelines
+	e.UpdatedAt = time.Now()
+	if err := r.conn(ctx).Save(&e).Error; err != nil {
+		return model.Event{}, err
+	}
+	return e, nil
+}
+
+func (r *repository) DeleteEvent(ctx context.Context, id int64, userID int64) error {
+	res := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.Event{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ── EventTriggers ──────────────────────────────────────────────────────────────
+
+func (r *repository) CreateEventTrigger(ctx context.Context, t model.EventTrigger) (model.EventTrigger, error) {
+	if err := r.conn(ctx).Create(&t).Error; err != nil {
+		return model.EventTrigger{}, err
+	}
+	return t, nil
+}
+
+func (r *repository) GetEventTrigger(ctx context.Context, id int64, userID int64) (model.EventTrigger, error) {
+	var t model.EventTrigger
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&t).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.EventTrigger{}, ErrNotFound
+	}
+	return t, err
+}
+
+func (r *repository) ListEventTriggersByEvent(ctx context.Context, eventID int64, userID int64) ([]model.EventTrigger, error) {
+	var triggers []model.EventTrigger
+	err := r.conn(ctx).Where("event_id = ? AND user_id = ?", eventID, userID).Order("created_at desc").Find(&triggers).Error
+	return triggers, err
+}
+
+func (r *repository) SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error) {
+	var triggers []model.EventTrigger
+	err := r.conn(ctx).Where("event_id = ?", eventID).Find(&triggers).Error
+	return triggers, err
+}
+
+func (r *repository) DeleteEventTrigger(ctx context.Context, id int64, userID int64) error {
+	res := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.EventTrigger{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *repository) ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.conn(ctx).Where("trigger_id = ? AND user_id = ?", triggerID, userID).Order("created_at desc").Find(&tasks).Error
+	return tasks, err
 }

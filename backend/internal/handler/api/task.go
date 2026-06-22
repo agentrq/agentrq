@@ -105,6 +105,15 @@ func (h *handler) createTask() fiber.Handler {
 				if atts := formatAttachments(rs.Task.Attachments); atts != "" {
 					content += "\n" + atts
 				}
+				if rs.Task.EventID != 0 {
+					if ev, evErr := h.crud.GetEvent(ctx, entity.GetEventRequest{ID: rs.Task.EventID, UserID: rq.UserID}); evErr == nil {
+						instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(\"%s\", \"<your output payload>\")]", ev.Event.Name)
+						if ev.Event.PayloadGuidelines != "" {
+							instruction += fmt.Sprintf("\nPayload guidelines: %s", ev.Event.PayloadGuidelines)
+						}
+						content += instruction
+					}
+				}
 				srv.SendChannelNotification(ctx, rs.Task.ID, content)
 			}
 		}

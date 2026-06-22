@@ -170,6 +170,7 @@ type (
 		ParentID         int64
 		SortOrder        float64
 		AllowAllCommands bool
+		EventID          int64
 	}
 
 	CreateTaskRequest struct {
@@ -420,12 +421,144 @@ type (
 		WorkspaceID int64
 		Endpoint    string
 	}
+
+	// Event entities
+
+	EventFAQ struct {
+		Q string
+		A string
+	}
+
+	Event struct {
+		ID                int64
+		CreatedAt         time.Time
+		UpdatedAt         time.Time
+		UserID            int64
+		Name              string
+		PayloadGuidelines string
+	}
+
+	CreateEventRequest struct {
+		Name              string
+		PayloadGuidelines string
+		UserID            string
+	}
+
+	CreateEventResponse struct {
+		Event Event
+	}
+
+	GetEventRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetEventResponse struct {
+		Event Event
+	}
+
+	ListEventsRequest struct {
+		UserID string
+	}
+
+	ListEventsResponse struct {
+		Events []Event
+	}
+
+	UpdateEventRequest struct {
+		ID                int64
+		UserID            string
+		PayloadGuidelines string
+	}
+
+	UpdateEventResponse struct {
+		Event Event
+	}
+
+	DeleteEventRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	// EventTrigger entities
+
+	EventTrigger struct {
+		ID               int64
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		EventID          int64
+		WorkspaceID      int64
+		UserID           int64
+		Title            string
+		Body             string
+		Assignee         string
+		CronSchedule     string
+		AllowAllCommands bool
+		EmitEventID      int64
+	}
+
+	CreateEventTriggerRequest struct {
+		EventID          int64
+		WorkspaceID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		CronSchedule     string
+		AllowAllCommands bool
+		EmitEventID      int64
+		UserID           string
+	}
+
+	CreateEventTriggerResponse struct {
+		EventTrigger EventTrigger
+	}
+
+	GetEventTriggerRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetEventTriggerResponse struct {
+		EventTrigger EventTrigger
+	}
+
+	ListEventTriggersRequest struct {
+		EventID int64
+		UserID  string
+	}
+
+	ListEventTriggersResponse struct {
+		EventTriggers []EventTrigger
+	}
+
+	DeleteEventTriggerRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	ListTasksFromEventRequest struct {
+		EventID int64
+		UserID  string
+	}
+
+	ListTasksFromEventResponse struct {
+		Tasks []Task
+	}
 )
 
 const (
-	PubSubTopicCRUD int64 = 1
-	PubSubTopicMCP  int64 = 2
+	PubSubTopicCRUD   int64 = 1
+	PubSubTopicMCP    int64 = 2
+	PubSubTopicEvents int64 = 3
 )
+
+// EventPublishedPayload is the message sent on PubSubTopicEvents when an event fires.
+type EventPublishedPayload struct {
+	EventID int64
+	Name    string
+	Payload string
+	FAQ     []EventFAQ
+}
 
 const (
 	ActorHuman Actor = 1
@@ -520,6 +653,7 @@ const (
 	ActionMCPPermissionManual        Action = 21
 	ActionMCPPermissionAuto          Action = 22
 	ActionTaskAllowAllCommandsToggle Action = 23
+	ActionEventPublished             Action = 30
 )
 
 func (a Action) String() string {
@@ -562,6 +696,8 @@ func (a Action) String() string {
 		return "mcp_permission_auto"
 	case ActionTaskAllowAllCommandsToggle:
 		return "task_allow_all_commands_toggle"
+	case ActionEventPublished:
+		return "event_published"
 	}
 	return "unknown"
 }

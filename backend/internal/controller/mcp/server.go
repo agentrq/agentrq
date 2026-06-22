@@ -37,6 +37,7 @@ import (
 type CreateTaskFunc func(ctx context.Context, task model.Task) (model.Task, error)
 type UpdateTaskStatusFunc func(ctx context.Context, taskID int64, status string) (model.Task, error)
 type GetTaskFunc func(ctx context.Context, taskID int64) (model.Task, error)
+
 // ListTasksFilter specifies optional filters for listing tasks.
 type ListTasksFilter struct {
 	Status []string
@@ -48,6 +49,7 @@ type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
+type PublishEventFunc func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error
 
 type PermissionRequestParams struct {
 	RequestID    string `json:"request_id"`
@@ -71,6 +73,7 @@ type WorkspaceServer struct {
 	reply                 ReplyFunc
 	updateMessageMetadata UpdateMessageMetadataFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
+	publishEvent          PublishEventFunc
 	bus                   *eventbus.Bus
 	idgen                 idgen.Service
 	storage               storage.Service
@@ -107,6 +110,20 @@ type CreateTaskParams struct {
 	Assignee     string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
 	Attachments  []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
 	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
+	EventID      string `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+}
+
+// PublishEventParams is the input to the publishEvent tool.
+type PublishEventParams struct {
+	Name    string            `json:"name" jsonschema:"The event name to publish (must match an existing event in this workspace's owner account)"`
+	Payload string            `json:"payload,omitempty" jsonschema:"Unstructured text payload describing what happened"`
+	FAQ     []PublishEventFAQ `json:"faq,omitempty" jsonschema:"Optional question-answer pairs providing additional context"`
+}
+
+// PublishEventFAQ is a single question-answer pair in a publishEvent call.
+type PublishEventFAQ struct {
+	Q string `json:"q"`
+	A string `json:"a"`
 }
 
 // UpdateTaskStatusParams is the input to the update_task_status tool.
@@ -147,6 +164,7 @@ func NewWorkspaceServer(
 	reply ReplyFunc,
 	updateMessageMetadata UpdateMessageMetadataFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
+	publishEvent PublishEventFunc,
 	bus *eventbus.Bus,
 	ids idgen.Service,
 	store storage.Service,
@@ -170,6 +188,7 @@ func NewWorkspaceServer(
 		reply:                 reply,
 		updateMessageMetadata: updateMessageMetadata,
 		updateAutoAllowed:     updateAutoAllowed,
+		publishEvent:          publishEvent,
 		bus:                   bus,
 		idgen:                 ids,
 		storage:               store,
@@ -271,6 +290,11 @@ func NewWorkspaceServer(
 		Name:        "getNextTask",
 		Description: "Get the next available \"not started\" task assigned to the agent.",
 	}, ps.handleGetNextTask)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "publishEvent",
+		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically.",
+	}, ps.handlePublishEvent)
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware)
@@ -562,6 +586,8 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		status = "cron"
 	}
 
+	eventID := monoflake.IDFromBase62(params.EventID).Int64()
+
 	t := model.Task{
 		ID:           ps.idgen.NextID(),
 		CreatedAt:    now,
@@ -574,6 +600,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		Title:        params.Title,
 		Body:         params.Body,
 		CronSchedule: params.CronSchedule,
+		EventID:      eventID,
 	}
 
 	if attachmentsJSON != "" {
@@ -778,6 +805,31 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 	return &mcp.CallToolResult{
 		IsError: true,
 		Content: []mcp.Content{&mcp.TextContent{Text: "attachment not found in task"}},
+	}, nil, nil
+}
+
+func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, _ *mcp.CallToolRequest, params PublishEventParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "publishEvent")
+	if params.Name == "" {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: "name is required"}},
+		}, nil, nil
+	}
+	faq := make([]entity.EventFAQ, len(params.FAQ))
+	for i, f := range params.FAQ {
+		faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
+	}
+	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq); err != nil {
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to publish event: %v", err)}},
+		}, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("event %q published", params.Name),
+		}},
 	}, nil, nil
 }
 

@@ -131,6 +131,17 @@
                     </div>
                   </div>
                 </div>
+                <!-- Emit Event on Completion -->
+                <div v-if="!isEditMode && events.length > 0" class="pt-6 border-t border-gray-100 dark:border-zinc-800/50">
+                  <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider block mb-2">Emit Event on Completion</label>
+                  <select v-model="selectedEventId"
+                          class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs font-mono">
+                    <option value="">None</option>
+                    <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+                  </select>
+                  <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1">Agent will be asked to fire the event on task completion</p>
+                </div>
+
                 <!-- Schedule Section -->
                 <div class="flex flex-col gap-6 pt-6 border-t border-gray-100 dark:border-zinc-800/50">
                   <div class="flex flex-col gap-4">
@@ -231,7 +242,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { getWorkspace, createTask, updateScheduledTask, getTask } from '../api';
+import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useCron } from '../composables/useCron';
 
@@ -252,6 +263,10 @@ const fileInput = ref(null);
 const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });
 const newTaskAttachments = ref([]);
 
+// Event-on-completion
+const events = ref([]);
+const selectedEventId = ref('');
+
 // Scheduling state
 const scheduleType = ref('none');
 const oneTimeDate = ref('');
@@ -270,26 +285,30 @@ function handleDrop(e) {
 
 onMounted(async () => {
   try {
-    const res = await getWorkspace(workspaceId);
-    workspace.value = res.workspace;
+    const [wsRes, eventsRes] = await Promise.all([
+      getWorkspace(workspaceId),
+      fetchEvents().catch(() => ({ events: [] })),
+    ]);
+    workspace.value = wsRes.workspace;
+    events.value = eventsRes.events ?? [];
 
     if (isEditMode.value) {
       const taskRes = await getTask(workspaceId, taskId);
       const t = taskRes.task;
-      newTask.value = { 
-        title: t.title, 
-        body: t.body, 
-        assignee: t.assignee, 
+      newTask.value = {
+        title: t.title,
+        body: t.body,
+        assignee: t.assignee,
         cronSchedule: t.cronSchedule,
         allowAllCommands: t.allowAllCommands || false
       };
-      
+
       if (t.cronSchedule) {
         parseCronToUI(t.cronSchedule);
       }
     } else {
       // Default to workspace setting for new tasks
-      newTask.value.allowAllCommands = res.workspace.allowAllCommands || false;
+      newTask.value.allowAllCommands = wsRes.workspace.allowAllCommands || false;
     }
   } catch (err) {
     notifyError("Access Error: " + err.message);
@@ -449,9 +468,10 @@ async function submitHumanTask() {
   try {
     const status = scheduleType.value !== 'none' ? 'cron' : 'notstarted';
     await createTask(
-      workspaceId, newTask.value.title, newTask.value.body, 
+      workspaceId, newTask.value.title, newTask.value.body,
       newTask.value.assignee, newTaskAttachments.value,
-      status, newTask.value.cronSchedule, newTask.value.allowAllCommands
+      status, newTask.value.cronSchedule, newTask.value.allowAllCommands,
+      selectedEventId.value
     );
     notifySuccess('Task Created successfully');
     goBack(status === 'cron');

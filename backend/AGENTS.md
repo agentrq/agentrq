@@ -80,6 +80,30 @@ Views define the external structures, like JSON inputs/outputs.
 - **Payload transformation:** Return raw `[]byte` payloads from `...ToHTTPResponse` mappers using `json.Marshal` internally, preventing the caller (handler) from doing repetitive marshaling.
 - **Formatting:** After your changes use always go format
 
+## 5. Events (experimental)
+
+Event-driven agent-to-agent communication wired through three layers:
+
+- **Models** (`internal/data/model`):
+  - `Event` — name (unique per user), payloadGuidelines, FAQ JSON.
+  - `EventTrigger` — workspaceID, title, body, assignee, allowAllCommands, **emitEventId** (optional: which event the spawned task should publish on completion).
+  - `Task.EventID` — links a task to an event it should publish when completed.
+
+- **PubSub topic**: `PubSubTopicEvents = 3` (see `internal/data/entity/crud/entity.go`). Payload: `EventPublishedPayload{EventID, Name, Payload, FAQ}`.
+
+- **Consumer** (`internal/controller/event/event.go`): subscribes to topic 3, fans out to all matching `EventTrigger` rows via `SystemListEventTriggersByEventID`.
+  - `renderTemplate` substitutes `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` **in the task body only** — the title uses static text (`strings.TrimSpace`).
+  - If `trigger.EmitEventID != 0`, appends `[On completion: call publishEvent("name", "...")]` to the body and sets `Task.EventID = trigger.EmitEventID` (event chaining).
+  - Triggered tasks always start as `notstarted`; `CronSchedule` on `EventTrigger` is ignored at fire time.
+
+- **MCP tool** `publishEvent`: looks up event by name via `PublishEventFunc` callback (wired in `app.go`), publishes to topic 3 with agent-supplied payload.
+
+- **Task auto-publish** (`updateStatusFunc` in `app.go`): when `status == "completed" && task.EventID != 0`, publishes the linked event automatically as a fallback. The `createTask` handler also injects `[On completion: call publishEvent("name", "...")]` into the MCP channel notification so the agent publishes explicitly with a real payload first.
+
+- **REST routes** (`internal/handler/api/event.go`): events CRUD + `/events/:id/triggers` CRUD + `GET /events/:id/tasks`. **Do not register these in the stdlib `mux`** — only SSE routes (`/api/v1/workspaces/{id}/events`) and pub-stats belong there. All events CRUD is handled by Fiber.
+
+- **Routing pitfall**: the stdlib `mux` in `app.go` takes precedence over Fiber for exact path matches. Adding `mux.Handle("/api/v1/events", ...)` would silently shadow the Fiber CRUD handler and cause all requests to hang (the SSE stream writer never delivers a JSON body).
+
 ## 4. Unit Testing and Mocking
 
 Unit testing is critical for maintaining service reliability.

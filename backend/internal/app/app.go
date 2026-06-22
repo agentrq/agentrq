@@ -14,6 +14,7 @@ import (
 	"gorm.io/datatypes"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
 	"github.com/agentrq/agentrq/backend/internal/controller/pub"
@@ -153,6 +154,8 @@ func New(cfg Config) (*App, error) {
 		&model.SlackWorkspaceLink{},
 		&model.SlackTaskThread{},
 		&model.PushSubscription{},
+		&model.Event{},
+		&model.EventTrigger{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
@@ -205,6 +208,9 @@ func New(cfg Config) (*App, error) {
 	}
 	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: entity.PubSubTopicMCP}); err != nil {
 		return nil, fmt.Errorf("create global pubsub (id:%d): %w", entity.PubSubTopicMCP, err)
+	}
+	if _, err := pubsubSvc.Create(context.Background(), pubsub.CreatePubSubRequest{ID: entity.PubSubTopicEvents}); err != nil {
+		return nil, fmt.Errorf("create global pubsub (id:%d): %w", entity.PubSubTopicEvents, err)
 	}
 
 	// ── Controllers ────────────────────────────────────────────────────────────
@@ -324,6 +330,7 @@ func New(cfg Config) (*App, error) {
 								Origin:       entity.OriginMCP,
 							},
 						})
+
 					}
 					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
 						PubSubID: entity.PubSubTopicCRUD,
@@ -498,6 +505,23 @@ func New(cfg Config) (*App, error) {
 					UserID:      monoflake.ID(workspace.UserID).String(),
 				})
 			},
+			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error {
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				ev, err := repo.GetEventByName(ctx, eventName, uid)
+				if err != nil {
+					return fmt.Errorf("event %q not found", eventName)
+				}
+				pubsubSvc.Publish(ctx, pubsub.PublishRequest{
+					PubSubID: entity.PubSubTopicEvents,
+					Event: entity.EventPublishedPayload{
+						EventID: ev.ID,
+						Name:    ev.Name,
+						Payload: payload,
+						FAQ:     faq,
+					},
+				})
+				return nil
+			},
 			bus,
 			ids,
 			storageSvc,
@@ -555,6 +579,16 @@ func New(cfg Config) (*App, error) {
 	})
 	if err := pushCtrl.Start(context.Background()); err != nil {
 		zlog.Error().Err(err).Msg("failed to start push controller")
+	}
+
+	eventConsumer := eventctrl.New(eventctrl.Params{
+		Repository: repo,
+		PubSub:     pubsubSvc,
+		IDGen:      ids,
+		Bus:        bus,
+	})
+	if err := eventConsumer.Start(context.Background()); err != nil {
+		zlog.Error().Err(err).Msg("failed to start event consumer")
 	}
 
 	// Central PubSub to EventBus SSE Forwarder
@@ -727,7 +761,6 @@ func New(cfg Config) (*App, error) {
 	// ── Server Start ─────────────────────────────────────────────────
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
-	mux.Handle("/api/v1/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	var finalRouter http.Handler = mux

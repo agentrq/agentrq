@@ -104,6 +104,7 @@ type (
 		ParentID         string       `json:"parentId,omitempty"`
 		SortOrder        float64      `json:"sortOrder"`
 		AllowAllCommands bool         `json:"allowAllCommands"`
+		EventID          string       `json:"eventId,omitempty"`
 	}
 
 	CreateTaskRequest struct {
@@ -234,5 +235,73 @@ type (
 
 	PushSubscriptionStatusResponse struct {
 		Subscribed bool `json:"subscribed"`
+	}
+
+	// Event views
+
+	Event struct {
+		ID                string    `json:"id"`
+		CreatedAt         time.Time `json:"createdAt"`
+		UpdatedAt         time.Time `json:"updatedAt"`
+		Name              string    `json:"name"`
+		PayloadGuidelines string    `json:"payloadGuidelines"`
+	}
+
+	CreateEventRequest struct {
+		Name              string `json:"name"`
+		PayloadGuidelines string `json:"payloadGuidelines"`
+	}
+
+	CreateEventResponse struct {
+		Event Event `json:"event"`
+	}
+
+	UpdateEventRequest struct {
+		PayloadGuidelines string `json:"payloadGuidelines"`
+	}
+
+	UpdateEventResponse struct {
+		Event Event `json:"event"`
+	}
+
+	GetEventResponse struct {
+		Event Event `json:"event"`
+	}
+
+	ListEventsResponse struct {
+		Events []Event `json:"events"`
+	}
+
+	// EventTrigger views
+
+	EventTrigger struct {
+		ID               string    `json:"id"`
+		CreatedAt        time.Time `json:"createdAt"`
+		EventID          string    `json:"eventId"`
+		WorkspaceID      string    `json:"workspaceId"`
+		Title            string    `json:"title"`
+		Body             string    `json:"body"`
+		Assignee         string    `json:"assignee"`
+		CronSchedule     string    `json:"cronSchedule,omitempty"`
+		AllowAllCommands bool      `json:"allowAllCommands"`
+		EmitEventID      string    `json:"emitEventId,omitempty"`
+	}
+
+	CreateEventTriggerRequest struct {
+		WorkspaceID      string `json:"workspaceId"`
+		Title            string `json:"title"`
+		Body             string `json:"body"`
+		Assignee         string `json:"assignee"`
+		CronSchedule     string `json:"cronSchedule,omitempty"`
+		AllowAllCommands bool   `json:"allowAllCommands"`
+		EmitEventID      string `json:"emitEventId,omitempty"`
+	}
+
+	CreateEventTriggerResponse struct {
+		EventTrigger EventTrigger `json:"eventTrigger"`
+	}
+
+	ListEventTriggersResponse struct {
+		EventTriggers []EventTrigger `json:"eventTriggers"`
 	}
 )

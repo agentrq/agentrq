@@ -32,6 +32,8 @@ A task is the atomic unit of work. Key fields:
 | `Title` / `Body` | Task description |
 | `CronSchedule` | 5-field cron string (for scheduled task templates) |
 | `ParentID` | Set when a task is spawned from a cron template |
+| `TriggerID` | ID of the event that caused this task (set by the event consumer) |
+| `EventID` | ID of the event this task should publish on completion |
 | `SortOrder` | Controls queue priority for `getNextTask` |
 | `AllowAllCommands` | Per-task override for permission gating |
 
@@ -95,10 +97,11 @@ Every agent connected to a per-workspace MCP server has access to exactly these 
 | `getWorkspace()` | Returns workspace name, description, and task stats |
 | `getNextTask()` | Dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`) |
 | `getTaskMessages(taskId, cursor?, limit?)` | Paginated message history for a task |
-| `createTask(title, body, assignee?, attachments?, cronSchedule?)` | Creates a new task (or cron template) in this workspace |
+| `createTask(title, body, assignee?, attachments?, cronSchedule?, eventId?)` | Creates a new task (or cron template) in this workspace; `eventId` links a task to the event it should publish on completion |
 | `updateTaskStatus(taskId, status)` | Transitions task state; auto-appends a status message |
 | `reply(chatId, text, attachments?)` | Sends a message in a task's conversation thread |
 | `downloadAttachment(attachmentId, taskId)` | Retrieves a file attachment as base64 |
+| `publishEvent(name, payload, faq?)` | Fires a named event with a payload and optional FAQ; fans out to all matching `EventTrigger` rows, creating tasks in subscribed workspaces |
 
 All state mutations go through the MCP tool layer — there is no direct database access for agents.
 
@@ -219,8 +222,8 @@ AgentRQ uses two complementary event systems:
 
 ### PubSub (Internal)
 - Separate async bus for system-level concerns
-- Topics: `PubSubTopicCRUD` (entity lifecycle events), `PubSubTopicMCP` (tool call telemetry)
-- Consumed by: Slack controller, notification service, push service, central SSE forwarder, telemetry
+- Topics: `PubSubTopicCRUD` (entity lifecycle events), `PubSubTopicMCP` (tool call telemetry), `PubSubTopicEvents` (named event signals)
+- Consumed by: Slack controller, notification service, push service, central SSE forwarder, telemetry, event consumer
 
 The **Central Forwarder** bridges them: it subscribes to the CRUD PubSub topic and translates entity events into workspace-scoped SSE events on the EventBus.
 
@@ -238,6 +241,132 @@ Tasks with `status = "cron"` are templates managed by the Scheduler service:
 - **Granularity rule**: minute field must be a single integer (0–59); wildcards/ranges/steps are rejected — enforcing a minimum hourly granularity
 
 This allows supervisors to schedule recurring subtask generation without human intervention.
+
+---
+
+## Events (Cross-Workspace Signals)
+
+Events are named signals that let one workspace trigger tasks in other workspaces — enabling decoupled, event-driven multi-agent pipelines without requiring a supervisor agent to coordinate.
+
+### Core Concepts
+
+| Entity | Description |
+|--------|-------------|
+| `Event` | A named signal definition owned by a user. Has a `name` (unique per user, lowercase letters/digits/underscores) and an optional `payloadGuidelines` hint for agents publishing it |
+| `EventTrigger` | A subscription: when a named event fires, create a task in `WorkspaceID` using the stored `Title` and `Body` template. Optional `EmitEventID` chains to a second event on the spawned task's completion |
+| `Task.EventID` | Links a task to the event it should publish when completed. The assigned agent receives an explicit `publishEvent` instruction in its task notification |
+| `Task.TriggerID` | Records which event caused this task (set by the event consumer at creation time) |
+
+### Publishing Flow
+
+```
+Agent calls publishEvent("deploy_done", "v2.3 deployed to prod")
+  → WorkspaceServer.handlePublishEvent
+  → PublishEventFunc (wired in app.go): looks up event by name + userID
+  → pubsubSvc.Publish(PubSubTopicEvents, EventPublishedPayload{...})
+  → Event Consumer (controller/event) receives message
+  → repo.SystemListEventTriggersByEventID(eventID)
+  → For each EventTrigger:
+      body = renderTemplate(trigger.Body, payload, faqText)   ← {{EVENT_PAYLOAD}} / {{EVENT_FAQ}} substituted
+      title = trigger.Title                                   ← always static text, no substitution
+      if trigger.EmitEventID != 0:
+          body += "[On completion: call publishEvent(\"chain_event\", ...)]"
+          task.EventID = trigger.EmitEventID
+      repo.CreateTask(...)
+      pubsubSvc.Publish(PubSubTopicCRUD, ActionTaskCreate)    ← SSE push to human UI
+      bus.Publish(workspaceID, ...)                           ← EventBus SSE for real-time update
+```
+
+### Agent Instruction Injection
+
+When a task is created with an `EventID` (via REST or triggered by an `EventTrigger.EmitEventID`), the MCP channel notification delivered to the agent is augmented:
+
+```
+[Task abc123] Review and summarize the latest deploy
+<task body>
+
+[On completion: call publishEvent("deploy_reviewed", "<your output payload>")]
+Payload guidelines: Summarise key changes, risks, and sign-off status
+```
+
+This ensures the agent knows to publish the event explicitly with a meaningful payload before marking the task completed.
+
+### Event Chaining
+
+`EventTrigger.EmitEventID` enables pipelines: the spawned task inherits an `EventID` pointing to a second event. When the agent completes that task and calls `publishEvent`, the second event fires, triggering its own set of `EventTrigger` rows — and so on.
+
+```
+Event A fires
+  → Trigger T1 creates Task X in Workspace B (EventID = Event B)
+    → Agent completes Task X, calls publishEvent("event_b", payload)
+      → Event B fires
+        → Trigger T2 creates Task Y in Workspace C
+```
+
+### Diagrams
+
+**Single event fan-out:**
+
+```mermaid
+sequenceDiagram
+    participant A as Agent (Workspace A)
+    participant MCP as WorkspaceServer (MCP)
+    participant PS as PubSub<br/>(topic: Events)
+    participant EC as Event Consumer
+    participant DB as Repository
+    participant B as Workspace B
+    participant C as Workspace C
+    participant UI as Human UI (SSE)
+
+    A->>MCP: publishEvent("deploy_done", payload)
+    MCP->>DB: GetEventByName("deploy_done", userID)
+    DB-->>MCP: Event{id, name}
+    MCP->>PS: Publish(EventPublishedPayload)
+
+    PS->>EC: EventPublishedPayload received
+    EC->>DB: SystemListEventTriggersByEventID(eventID)
+    DB-->>EC: [Trigger→WS-B, Trigger→WS-C]
+
+    EC->>DB: CreateTask(WS-B, title, renderTemplate(body, payload))
+    EC->>DB: CreateTask(WS-C, title, renderTemplate(body, payload))
+
+    EC->>PS: Publish(ActionTaskCreate, WS-B)
+    EC->>PS: Publish(ActionTaskCreate, WS-C)
+    PS-->>UI: SSE task.created (WS-B)
+    PS-->>UI: SSE task.created (WS-C)
+
+    B-->>B: Agent picks up task via getNextTask()
+    C-->>C: Agent picks up task via getNextTask()
+```
+
+**Event chaining (EmitEventID):**
+
+```mermaid
+sequenceDiagram
+    participant A as Agent A<br/>(Workspace A)
+    participant EC as Event Consumer
+    participant B as Agent B<br/>(Workspace B)
+    participant C as Agent C<br/>(Workspace C)
+    participant PS as PubSub
+
+    Note over A: Task has EventID = "event_b"
+    A->>PS: publishEvent("event_a", payload_a)
+    PS->>EC: fan-out → create Task in WS-B<br/>(body includes publishEvent("event_b") instruction)<br/>Task.EventID = event_b
+
+    B-->>B: getNextTask() → works on task
+    Note over B: Notification includes:<br/>[On completion: call publishEvent("event_b", ...)]
+    B->>PS: publishEvent("event_b", payload_b)
+
+    PS->>EC: fan-out → create Task in WS-C<br/>(body includes payload_b via {{EVENT_PAYLOAD}})
+    C-->>C: getNextTask() → works on task
+```
+
+### Ownership & Authorization
+
+All event and trigger operations are scoped to the requesting user at the repository layer (`WHERE id = ? AND user_id = ?`). The `CreateEventTrigger` controller additionally validates:
+- The target event belongs to the user (`GetEvent(eventID, uid)`)
+- The target workspace belongs to the user (`CheckWorkspaceAccess(workspaceID, uid)`)
+- The `EmitEventID`, if set, belongs to the user (`GetEvent(emitEventID, uid)`)
 
 ---
 

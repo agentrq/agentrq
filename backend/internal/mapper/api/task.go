@@ -35,16 +35,17 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 
 	return &entity.CreateTaskRequest{
 		Task: entity.Task{
-			WorkspaceID:  workspaceID,
-			CreatedBy:    payload.Task.CreatedBy,
-			Assignee:     payload.Task.Assignee,
-			Title:        payload.Task.Title,
-			Body:         payload.Task.Body,
-			Status:       payload.Task.Status,
-			Attachments:  entityAttachments,
-			CronSchedule: payload.Task.CronSchedule,
-			SortOrder:    payload.Task.SortOrder,
+			WorkspaceID:      workspaceID,
+			CreatedBy:        payload.Task.CreatedBy,
+			Assignee:         payload.Task.Assignee,
+			Title:            payload.Task.Title,
+			Body:             payload.Task.Body,
+			Status:           payload.Task.Status,
+			Attachments:      entityAttachments,
+			CronSchedule:     payload.Task.CronSchedule,
+			SortOrder:        payload.Task.SortOrder,
 			AllowAllCommands: payload.Task.AllowAllCommands,
+			EventID:          monoflake.IDFromBase62(payload.Task.EventID).Int64(),
 		},
 	}
 }
@@ -280,25 +281,28 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		workspaceID = monoflake.ID(t.WorkspaceID).String()
 	}
 	res := view.Task{
-		ID:           monoflake.ID(t.ID).String(),
-		CreatedAt:    t.CreatedAt,
-		UpdatedAt:    t.UpdatedAt,
-		WorkspaceID:  workspaceID,
-		CreatedBy:    t.CreatedBy,
-		Assignee:     t.Assignee,
-		Status:       t.Status,
-		Title:        t.Title,
-		Body:         t.Body,
-		Response:     t.Response,
-		ReplyText:    t.ReplyText,
-		Attachments:  fromEntityAttachmentsToView(t.Attachments),
-		Messages:     fromEntityMessagesToView(t.Messages),
-		CronSchedule: t.CronSchedule,
-		SortOrder:    t.SortOrder,
+		ID:               monoflake.ID(t.ID).String(),
+		CreatedAt:        t.CreatedAt,
+		UpdatedAt:        t.UpdatedAt,
+		WorkspaceID:      workspaceID,
+		CreatedBy:        t.CreatedBy,
+		Assignee:         t.Assignee,
+		Status:           t.Status,
+		Title:            t.Title,
+		Body:             t.Body,
+		Response:         t.Response,
+		ReplyText:        t.ReplyText,
+		Attachments:      fromEntityAttachmentsToView(t.Attachments),
+		Messages:         fromEntityMessagesToView(t.Messages),
+		CronSchedule:     t.CronSchedule,
+		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
+	}
+	if t.EventID != 0 {
+		res.EventID = monoflake.ID(t.EventID).String()
 	}
 	return res
 }
@@ -366,25 +370,28 @@ func FromModelTaskToView(t model.Task) view.Task {
 	}
 
 	res := view.Task{
-		ID:           monoflake.ID(t.ID).String(),
-		CreatedAt:    t.CreatedAt,
-		UpdatedAt:    t.UpdatedAt,
-		WorkspaceID:  workspaceID,
-		CreatedBy:    t.CreatedBy,
-		Assignee:     t.Assignee,
-		Status:       t.Status,
-		Title:        t.Title,
-		Body:         t.Body,
-		Response:     t.Response,
-		ReplyText:    t.ReplyText,
-		Attachments:  atts,
-		Messages:     msgs,
-		CronSchedule: t.CronSchedule,
-		SortOrder:    t.SortOrder,
+		ID:               monoflake.ID(t.ID).String(),
+		CreatedAt:        t.CreatedAt,
+		UpdatedAt:        t.UpdatedAt,
+		WorkspaceID:      workspaceID,
+		CreatedBy:        t.CreatedBy,
+		Assignee:         t.Assignee,
+		Status:           t.Status,
+		Title:            t.Title,
+		Body:             t.Body,
+		Response:         t.Response,
+		ReplyText:        t.ReplyText,
+		Attachments:      atts,
+		Messages:         msgs,
+		CronSchedule:     t.CronSchedule,
+		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
 		res.ParentID = monoflake.ID(t.ParentID).String()
+	}
+	if t.EventID != 0 {
+		res.EventID = monoflake.ID(t.EventID).String()
 	}
 	return res
 }
