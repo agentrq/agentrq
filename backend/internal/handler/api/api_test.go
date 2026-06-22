@@ -192,6 +192,76 @@ func (m *mockCrudTaskCounts) GetWorkspaceTaskCounts(ctx context.Context, req ent
 	return m.getWorkspaceTaskCountsFunc(ctx, req)
 }
 
+type mockCrudListTasks struct {
+	crud.Controller
+	listTasksFunc func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
+}
+
+func (m *mockCrudListTasks) ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+	return m.listTasksFunc(ctx, req)
+}
+
+func TestListTasks_InvalidWorkspaceID(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudListTasks{}
+	called := false
+
+	h := &handler{
+		crud: crudCtrl,
+	}
+
+	app.Get("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.listTasks()(c)
+	})
+
+	crudCtrl.listTasksFunc = func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+		called = true
+		return &entity.ListTasksResponse{}, nil
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/workspaces/!/tasks", nil)
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("Expected status 422, got %d", resp.StatusCode)
+	}
+	if called {
+		t.Fatal("ListTasks should not be called for invalid workspace IDs")
+	}
+}
+
+func TestListTasks_GlobalRouteAllowsMissingWorkspaceID(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudListTasks{}
+
+	h := &handler{
+		crud: crudCtrl,
+	}
+
+	app.Get("/api/v1/tasks", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.listTasks()(c)
+	})
+
+	crudCtrl.listTasksFunc = func(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error) {
+		if req.WorkspaceID != 0 {
+			t.Fatalf("expected global task list workspace ID 0, got %d", req.WorkspaceID)
+		}
+		if req.UserID != "user1" {
+			t.Fatalf("expected user ID user1, got %s", req.UserID)
+		}
+		return &entity.ListTasksResponse{}, nil
+	}
+
+	req := httptest.NewRequest("GET", "/api/v1/tasks", nil)
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
+	}
+}
+
 func TestGetWorkspaceTaskCounts(t *testing.T) {
 	app := fiber.New()
 	crudCtrl := &mockCrudTaskCounts{}

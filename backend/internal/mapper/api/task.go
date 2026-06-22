@@ -35,15 +35,15 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 
 	return &entity.CreateTaskRequest{
 		Task: entity.Task{
-			WorkspaceID:  workspaceID,
-			CreatedBy:    payload.Task.CreatedBy,
-			Assignee:     payload.Task.Assignee,
-			Title:        payload.Task.Title,
-			Body:         payload.Task.Body,
-			Status:       payload.Task.Status,
-			Attachments:  entityAttachments,
-			CronSchedule: payload.Task.CronSchedule,
-			SortOrder:    payload.Task.SortOrder,
+			WorkspaceID:      workspaceID,
+			CreatedBy:        payload.Task.CreatedBy,
+			Assignee:         payload.Task.Assignee,
+			Title:            payload.Task.Title,
+			Body:             payload.Task.Body,
+			Status:           payload.Task.Status,
+			Attachments:      entityAttachments,
+			CronSchedule:     payload.Task.CronSchedule,
+			SortOrder:        payload.Task.SortOrder,
 			AllowAllCommands: payload.Task.AllowAllCommands,
 		},
 	}
@@ -69,7 +69,13 @@ func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte 
 }
 
 func FromHTTPRequestToListTasksRequestEntity(c *fiber.Ctx) *entity.ListTasksRequest {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	var workspaceID int64
+	if idParam := c.Params("id"); idParam != "" {
+		workspaceID = monoflake.IDFromBase62(idParam).Int64()
+		if workspaceID == 0 {
+			return nil
+		}
+	}
 
 	statusStr := c.Query("status")
 	var status []string
@@ -280,21 +286,21 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		workspaceID = monoflake.ID(t.WorkspaceID).String()
 	}
 	res := view.Task{
-		ID:           monoflake.ID(t.ID).String(),
-		CreatedAt:    t.CreatedAt,
-		UpdatedAt:    t.UpdatedAt,
-		WorkspaceID:  workspaceID,
-		CreatedBy:    t.CreatedBy,
-		Assignee:     t.Assignee,
-		Status:       t.Status,
-		Title:        t.Title,
-		Body:         t.Body,
-		Response:     t.Response,
-		ReplyText:    t.ReplyText,
-		Attachments:  fromEntityAttachmentsToView(t.Attachments),
-		Messages:     fromEntityMessagesToView(t.Messages),
-		CronSchedule: t.CronSchedule,
-		SortOrder:    t.SortOrder,
+		ID:               monoflake.ID(t.ID).String(),
+		CreatedAt:        t.CreatedAt,
+		UpdatedAt:        t.UpdatedAt,
+		WorkspaceID:      workspaceID,
+		CreatedBy:        t.CreatedBy,
+		Assignee:         t.Assignee,
+		Status:           t.Status,
+		Title:            t.Title,
+		Body:             t.Body,
+		Response:         t.Response,
+		ReplyText:        t.ReplyText,
+		Attachments:      fromEntityAttachmentsToView(t.Attachments),
+		Messages:         fromEntityMessagesToView(t.Messages),
+		CronSchedule:     t.CronSchedule,
+		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
@@ -366,21 +372,21 @@ func FromModelTaskToView(t model.Task) view.Task {
 	}
 
 	res := view.Task{
-		ID:           monoflake.ID(t.ID).String(),
-		CreatedAt:    t.CreatedAt,
-		UpdatedAt:    t.UpdatedAt,
-		WorkspaceID:  workspaceID,
-		CreatedBy:    t.CreatedBy,
-		Assignee:     t.Assignee,
-		Status:       t.Status,
-		Title:        t.Title,
-		Body:         t.Body,
-		Response:     t.Response,
-		ReplyText:    t.ReplyText,
-		Attachments:  atts,
-		Messages:     msgs,
-		CronSchedule: t.CronSchedule,
-		SortOrder:    t.SortOrder,
+		ID:               monoflake.ID(t.ID).String(),
+		CreatedAt:        t.CreatedAt,
+		UpdatedAt:        t.UpdatedAt,
+		WorkspaceID:      workspaceID,
+		CreatedBy:        t.CreatedBy,
+		Assignee:         t.Assignee,
+		Status:           t.Status,
+		Title:            t.Title,
+		Body:             t.Body,
+		Response:         t.Response,
+		ReplyText:        t.ReplyText,
+		Attachments:      atts,
+		Messages:         msgs,
+		CronSchedule:     t.CronSchedule,
+		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
 	}
 	if t.ParentID != 0 {
@@ -399,12 +405,12 @@ func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.Upd
 		return nil
 	}
 	return &entity.UpdateScheduledTaskRequest{
-		WorkspaceID:  workspaceID,
-		TaskID:       taskID,
-		Title:        payload.Task.Title,
-		Body:         payload.Task.Body,
-		Assignee:     payload.Task.Assignee,
-		CronSchedule: payload.Task.CronSchedule,
+		WorkspaceID:      workspaceID,
+		TaskID:           taskID,
+		Title:            payload.Task.Title,
+		Body:             payload.Task.Body,
+		Assignee:         payload.Task.Assignee,
+		CronSchedule:     payload.Task.CronSchedule,
 		AllowAllCommands: payload.Task.AllowAllCommands,
 	}
 }
