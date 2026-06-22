@@ -1,6 +1,9 @@
 # AgentRQ ── Agent-Human Collaboration Platform
 
 <p align="center">
+  <a href="README.zh-CN.md">简体中文</a>
+  <br />
+  <br />
   <a href="https://www.youtube.com/watch?v=GBAoSpuCzrU">Watch on YouTube in HD</a>
   <br />
   <br />
