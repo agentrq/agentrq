@@ -552,6 +552,7 @@ func New(cfg Config) (*App, error) {
 	slackCtrl := slackctrl.New(slackctrl.Params{
 		Repository: repo,
 		SlackSvc:   slackSvc,
+		TokenSvc:   tokenSvc,
 		Crud:       crudCtrl,
 		MCPManager: mcpManager,
 		PubSub:     pubsubSvc,
@@ -703,6 +704,7 @@ func New(cfg Config) (*App, error) {
 	handlerslack.New(handlerslack.Params{
 		SlackCtrl: slackCtrl,
 		SlackSvc:  slackSvc,
+		TokenSvc:  tokenSvc,
 		BaseURL:   cfg.App.BaseURL,
 		Mux:       mux,
 	})
