@@ -164,10 +164,6 @@ func (h *handler) getTask() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.GetTask(ctx, *rq)
 		if err != nil {
-			zlog.Error().Err(err).Msg("Failed to create task")
-			c.Set(_headerContentType, _mimeJSON)
-			zlog.Error().Err(err).Msg("Failed to list tasks")
-			c.Set(_headerContentType, _mimeJSON)
 			zlog.Error().Err(err).Msg("Failed to get task")
 			c.Set(_headerContentType, _mimeJSON)
 			e, status := mapper.FromErrorToHTTPResponse(err)
