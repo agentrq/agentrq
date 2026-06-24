@@ -13,7 +13,7 @@ type ctxKey uint8
 
 const (
 	CtxKeyMCPClaims    ctxKey = 1
-	ActorAgentAudience        = "actor:agent"
+	ActorHumanAudience        = "actor:human"
 )
 
 type TokenConfig struct {
@@ -61,6 +61,7 @@ func (s *tokenService) CreateToken(userID, email, name, picture string) (string,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			Audience:  jwt.ClaimStrings{ActorHumanAudience},
 		},
 		Email:   email,
 		Name:    name,
@@ -84,9 +85,6 @@ func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	}
 	if tokenType != "" {
 		claims.Audience = append(claims.Audience, tokenType)
-	}
-	if tokenType == "access" {
-		claims.Audience = append(claims.Audience, ActorAgentAudience)
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

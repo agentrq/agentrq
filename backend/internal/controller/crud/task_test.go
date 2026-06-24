@@ -206,7 +206,7 @@ func TestCreateTask_ValidCronSchedule(t *testing.T) {
 	}
 }
 
-func TestCreateTask_AllowsSubHourlyCronWithoutAgentAudience(t *testing.T) {
+func TestCreateTask_AllowsSubHourlyCronWithHumanAudience(t *testing.T) {
 	e := newTestController(t)
 
 	created := model.Task{ID: 6, WorkspaceID: 1, Title: "t", Status: "cron", CronSchedule: "*/15 * * * *"}
@@ -219,8 +219,13 @@ func TestCreateTask_AllowsSubHourlyCronWithoutAgentAudience(t *testing.T) {
 		}
 		return created, nil
 	})
+	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience: jwt.ClaimStrings{auth.ActorHumanAudience},
+		},
+	})
 
-	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+	resp, err := e.controller.CreateTask(ctx, entity.CreateTaskRequest{
 		UserID: testUserIDStr,
 		Task:   entity.Task{WorkspaceID: 1, Title: "t", CronSchedule: "*/15 * * * *"},
 	})
@@ -232,22 +237,17 @@ func TestCreateTask_AllowsSubHourlyCronWithoutAgentAudience(t *testing.T) {
 	}
 }
 
-func TestCreateTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T) {
+func TestCreateTask_RejectsSubHourlyCronWithoutHumanAudience(t *testing.T) {
 	e := newTestController(t)
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
-		},
-	})
 
-	_, err := e.controller.CreateTask(ctx, entity.CreateTaskRequest{
+	_, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
 		UserID: testUserIDStr,
 		Task:   entity.Task{WorkspaceID: 1, Title: "t", CronSchedule: "*/15 * * * *"},
 	})
 	if err == nil {
-		t.Fatal("expected error for agent sub-hourly cron schedule")
+		t.Fatal("expected error for sub-hourly cron schedule without human audience")
 	}
 	if !strings.Contains(err.Error(), "granularity too fine") {
 		t.Fatalf("expected granularity error, got %v", err)
@@ -665,23 +665,48 @@ func TestUpdateScheduledTask_InvalidCron(t *testing.T) {
 	}
 }
 
-func TestUpdateScheduledTask_RejectsSubHourlyCronWithAgentAudience(t *testing.T) {
+func TestUpdateScheduledTask_AllowsSubHourlyCronWithHumanAudience(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
+	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "cron", CronSchedule: "*/15 * * * *"}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.CronSchedule != "*/15 * * * *" {
+			return model.Task{}, fmt.Errorf("expected sub-hourly cron schedule, got %s", m.CronSchedule)
+		}
+		return updated, nil
+	})
+	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience: jwt.ClaimStrings{auth.ActorHumanAudience},
+		},
+	})
+
+	resp, err := e.controller.UpdateScheduledTask(ctx, entity.UpdateScheduledTaskRequest{
+		WorkspaceID: 1, TaskID: 10, CronSchedule: "*/15 * * * *", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.CronSchedule != "*/15 * * * *" {
+		t.Errorf("expected sub-hourly cron schedule, got %s", resp.Task.CronSchedule)
+	}
+}
+
+func TestUpdateScheduledTask_RejectsSubHourlyCronWithoutHumanAudience(t *testing.T) {
 	e := newTestController(t)
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	ctx := context.WithValue(context.Background(), auth.CtxKeyMCPClaims, &auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Audience: jwt.ClaimStrings{auth.ActorAgentAudience},
-		},
-	})
 
-	_, err := e.controller.UpdateScheduledTask(ctx, entity.UpdateScheduledTaskRequest{
+	_, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
 		WorkspaceID: 1, TaskID: 10, CronSchedule: "*/15 * * * *", UserID: testUserIDStr,
 	})
 	if err == nil {
-		t.Fatal("expected error for agent sub-hourly cron schedule")
+		t.Fatal("expected error for sub-hourly cron schedule without human audience")
 	}
 	if !strings.Contains(err.Error(), "granularity too fine") {
 		t.Fatalf("expected granularity error, got %v", err)

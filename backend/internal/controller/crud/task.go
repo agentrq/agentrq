@@ -627,20 +627,20 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 	}
 
 	return entity.Task{
-		ID:           m.ID,
-		CreatedAt:    m.CreatedAt,
-		UpdatedAt:    m.UpdatedAt,
-		WorkspaceID:  m.WorkspaceID,
-		UserID:       m.UserID,
-		CreatedBy:    m.CreatedBy,
-		Assignee:     m.Assignee,
-		Status:       m.Status,
-		Title:        m.Title,
-		Body:         m.Body,
-		Response:     m.Response,
-		ReplyText:    m.ReplyText,
-		Attachments:  atts,
-		Messages:     msgs,
+		ID:               m.ID,
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+		WorkspaceID:      m.WorkspaceID,
+		UserID:           m.UserID,
+		CreatedBy:        m.CreatedBy,
+		Assignee:         m.Assignee,
+		Status:           m.Status,
+		Title:            m.Title,
+		Body:             m.Body,
+		Response:         m.Response,
+		ReplyText:        m.ReplyText,
+		Attachments:      atts,
+		Messages:         msgs,
 		CronSchedule:     m.CronSchedule,
 		ParentID:         m.ParentID,
 		SortOrder:        m.SortOrder,
@@ -760,10 +760,10 @@ func isValidTaskStatus(status string) bool {
 }
 
 func validateCronForContext(ctx context.Context, cronSchedule string) error {
-	if auth.ContextHasAudience(ctx, auth.ActorAgentAudience) {
-		return schedule.ValidateCronGranularity(cronSchedule)
+	if auth.ContextHasAudience(ctx, auth.ActorHumanAudience) {
+		return schedule.ValidateCronSyntax(cronSchedule)
 	}
-	return schedule.ValidateCronSyntax(cronSchedule)
+	return schedule.ValidateCronGranularity(cronSchedule)
 }
 
 func (c *controller) GetGlobalTaskStats(ctx context.Context, userID string) (*entity.GlobalTaskStatsResponse, error) {

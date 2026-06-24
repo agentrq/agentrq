@@ -121,11 +121,19 @@ func New(p Params) (Handler, error) {
 }
 
 func newContext(c *fiber.Ctx) (context.Context, context.CancelFunc) {
+	withLocals := func(ctx context.Context) context.Context {
+		if claims, ok := c.Locals("claims").(*auth.Claims); ok && claims != nil {
+			ctx = context.WithValue(ctx, auth.CtxKeyMCPClaims, claims)
+		}
+		return ctx
+	}
 	deadline, ok := c.Context().Deadline()
 	if ok {
-		return context.WithDeadline(context.Background(), deadline)
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		return withLocals(ctx), cancel
 	}
-	return context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	return withLocals(ctx), cancel
 }
 
 func (h *handler) mcpURL(workspaceID int64, token string) string {
@@ -229,6 +237,7 @@ func (h *handler) authMiddleware() fiber.Handler {
 		c.Locals("user_email", claims.Email)
 		c.Locals("user_name", claims.Name)
 		c.Locals("user_picture", claims.Picture)
+		c.Locals("claims", claims)
 		return c.Next()
 	}
 }

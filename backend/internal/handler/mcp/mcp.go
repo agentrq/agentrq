@@ -239,7 +239,6 @@ func (h *handler) streamableHandler() http.Handler {
 			requestClaims = &auth.Claims{
 				RegisteredClaims: jwt.RegisteredClaims{Subject: userID},
 			}
-			requestClaims.Audience = jwt.ClaimStrings{auth.ActorAgentAudience}
 		} else if claims, err := h.tokenSvc.ValidateToken(queryToken); err == nil {
 			requestClaims = claims
 		}
