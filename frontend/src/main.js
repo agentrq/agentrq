@@ -22,6 +22,7 @@ const routes = [
     path: '/workspaces/:id', 
     component: () => import('./views/WorkspaceDetailView.vue'),
     children: [
+      { path: 'board', component: () => import('./views/KanbanBoardView.vue') },
       { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
       { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
       { path: 'tasks/:taskId', component: () => import('./views/TaskDetailView.vue') },

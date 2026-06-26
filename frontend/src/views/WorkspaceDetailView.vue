@@ -29,11 +29,11 @@
 
           <div class="flex flex-col min-w-0 flex-1">
             <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
-              <span v-if="$route.path.includes('/settings') || $route.path.includes('/analytics')" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ toKebabCase(workspace?.name) }}</span>
+              <span v-if="isFullPane" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ toKebabCase(workspace?.name) }}</span>
               <span v-else>{{ toKebabCase(workspace?.name) || 'Workspace' }}</span>
-              <template v-if="$route.path.includes('/settings') || $route.path.includes('/analytics')">
+              <template v-if="isFullPane">
                 <span class="mx-1.5 text-gray-300 dark:text-zinc-700 font-medium">/</span>
-                <span class="text-gray-400 dark:text-zinc-500">{{ $route.path.includes('/settings') ? 'Settings' : 'Analytics' }}</span>
+                <span class="text-gray-400 dark:text-zinc-500">{{ sectionLabel }}</span>
               </template>
             </h1>
           </div>
@@ -68,6 +68,12 @@
               </div>
             </div>
 
+            <button @click="router.push(isBoard ? `/workspaces/${workspaceId}` : `/workspaces/${workspaceId}/board`)"
+                    class="h-8 w-8 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 border rounded-lg transition-all shadow-sm hidden md:flex items-center justify-center"
+                    :class="isBoard ? 'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white' : 'text-gray-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'"
+                    :title="isBoard ? 'List view' : 'Kanban board'">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z" /></svg>
+            </button>
             <button @click="router.push(`/workspaces/${workspaceId}/analytics`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Analytics">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
             </button>
@@ -88,7 +94,7 @@
       <!-- Content Area (Split Pane) -->
       <div class="flex flex-col md:flex-row flex-1 min-h-0 w-full bg-transparent">
         <!-- Tasks Sidebar (Left Pane) -->
-        <div v-show="!$route.path.endsWith('/analytics') && !$route.path.endsWith('/settings') && (!selectedTaskId || !isMobile)" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
+        <div v-show="!isFullPane && (!selectedTaskId || !isMobile)" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
           
           <!-- Task Feed Area -->
           <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -107,9 +113,9 @@
         </div>
         </div>
     <!-- Task Detail / Analytics Pane (Right) -->
-    <div v-show="selectedTaskId || $route.path.endsWith('/analytics') || $route.path.endsWith('/settings') || !isMobile" 
+    <div v-show="selectedTaskId || isFullPane || !isMobile"
          class="flex-1 min-w-0 flex flex-col h-full bg-transparent">
-      <router-view v-if="selectedTaskId || $route.path.endsWith('/analytics') || $route.path.endsWith('/settings')" />
+      <router-view v-if="selectedTaskId || isFullPane" />
       
       <!-- Empty state when no task is selected -->
       <div v-else class="flex-1 flex flex-col items-center justify-center m-4 p-8 text-center h-full bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-500">
@@ -181,6 +187,16 @@ const { isMobile } = useViewport();
 const workspaceId = computed(() => route.params.id);
 const selectedTaskId = computed(() => route.params.taskId);
 
+// Full-width sub-views replace the task list/detail split pane.
+const sectionLabel = computed(() => {
+  if (route.path.endsWith('/settings')) return 'Settings';
+  if (route.path.endsWith('/analytics')) return 'Analytics';
+  if (route.path.endsWith('/board')) return 'Board';
+  return '';
+});
+const isFullPane = computed(() => !!sectionLabel.value);
+const isBoard = computed(() => route.path.endsWith('/board'));
+
 const workspaceStore = useWorkspaceStore();
 const workspace = computed(() => workspaceStore.workspaces.find(w => w.id == workspaceId.value) || localWorkspace.value);
 const localWorkspace = ref(null);
@@ -232,6 +248,12 @@ function selectFilter(filterId) {
 watch(() => route.query.filter, (newFilter) => {
   activeFilter.value = newFilter || 'active';
 });
+
+// The kanban board is desktop-only; if a narrow viewport lands on /board
+// (direct link or window resize), fall back to the list view.
+watch([isMobile, isBoard], ([mobile, board]) => {
+  if (mobile && board) router.replace(`/workspaces/${workspaceId.value}`);
+}, { immediate: true });
 
 watch(workspaceId, (newId) => {
   if (newId) {
