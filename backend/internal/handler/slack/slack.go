@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -20,6 +21,7 @@ import (
 type Params struct {
 	SlackCtrl slackctrl.Controller
 	SlackSvc  slacksvc.Service
+	TokenSvc  auth.TokenService
 	BaseURL   string
 	Mux       *http.ServeMux
 }
@@ -33,7 +35,7 @@ type Params struct {
 func New(p Params) {
 	p.Mux.Handle("/slack/events", eventsHandler(p.SlackSvc, p.SlackCtrl))
 	p.Mux.Handle("/slack/interactions", interactionsHandler(p.SlackSvc, p.SlackCtrl))
-	p.Mux.Handle("/slack/oauth/callback", oauthCallbackHandler(p.SlackSvc, p.SlackCtrl, p.BaseURL))
+	p.Mux.Handle("/slack/oauth/callback", oauthCallbackHandler(p.SlackSvc, p.SlackCtrl, p.TokenSvc, p.BaseURL))
 	p.Mux.Handle("/slack/commands", commandHandler(p.SlackSvc, p.SlackCtrl))
 }
 
@@ -174,7 +176,7 @@ func interactionsHandler(svc slacksvc.Service, ctrl slackctrl.Controller) http.H
 }
 
 // oauthCallbackHandler handles Slack's OAuth redirect callback.
-func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseURL string) http.Handler {
+func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, tokenSvc auth.TokenService, baseURL string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -182,26 +184,34 @@ func oauthCallbackHandler(svc slacksvc.Service, ctrl slackctrl.Controller, baseU
 		}
 
 		code := r.URL.Query().Get("code")
-		state := r.URL.Query().Get("state") // base62 workspace ID
+		stateToken := r.URL.Query().Get("state") // JWT state token
 
-		if code == "" || state == "" {
+		if code == "" || stateToken == "" {
 			zlog.Warn().Msg("[slack/oauth] missing code or state parameter")
 			http.Error(w, "missing code or state parameter", http.StatusBadRequest)
 			return
 		}
 
+		// Validate state token and retrieve workspaceID62
+		workspaceID62, err := tokenSvc.ValidateOAuthStateToken(stateToken, "slack")
+		if err != nil {
+			zlog.Warn().Err(err).Msg("[slack/oauth] invalid state token")
+			http.Error(w, "invalid state parameter", http.StatusUnauthorized)
+			return
+		}
+
 		redirectURI := fmt.Sprintf("%s/slack/oauth/callback", baseURL)
-		err := ctrl.HandleOAuthCallback(r.Context(), state, code, redirectURI)
+		err = ctrl.HandleOAuthCallback(r.Context(), workspaceID62, code, redirectURI)
 		if err != nil {
 			zlog.Error().Err(err).Msg("[slack/oauth] HandleOAuthCallback error")
 			// Redirect back with a generic error query param to prevent information leakage
 			errorMsg := url.QueryEscape("failed to complete slack authorization")
-			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, state, errorMsg), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack&slack_error=%s", baseURL, workspaceID62, errorMsg), http.StatusTemporaryRedirect)
 			return
 		}
 
 		// Redirect back to settings page on success
-		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, state), http.StatusTemporaryRedirect)
+		http.Redirect(w, r, fmt.Sprintf("%s/workspaces/%s/settings?tab=slack", baseURL, workspaceID62), http.StatusTemporaryRedirect)
 	})
 }
 

@@ -16,6 +16,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
@@ -45,6 +46,7 @@ type Params struct {
 	Crud       CRUDRespondToTask
 	MCPManager MCPManager
 	PubSub     pubsub.Service
+	TokenSvc   auth.TokenService
 	TokenKey   string
 	BaseURL    string
 }
@@ -117,6 +119,7 @@ type controller struct {
 	crud     CRUDRespondToTask
 	mcp      MCPManager
 	pubsub   pubsub.Service
+	tokenSvc auth.TokenService
 	tokenKey string
 	baseURL  string
 }
@@ -129,6 +132,7 @@ func New(p Params) Controller {
 		crud:     p.Crud,
 		mcp:      p.MCPManager,
 		pubsub:   p.PubSub,
+		tokenSvc: p.TokenSvc,
 		tokenKey: p.TokenKey,
 		baseURL:  p.BaseURL,
 	}
@@ -369,12 +373,18 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 	installed := err == nil && link.AccessToken != ""
 
 	workspaceID62 := monoflake.ID(workspaceID).String()
+	state, err := c.tokenSvc.CreateOAuthStateToken(workspaceID62, "slack")
+	if err != nil {
+		zlog.Error().Err(err).Int64("workspaceID", workspaceID).Msg("[slack] failed to generate oauth state token")
+		return nil, fmt.Errorf("failed to generate oauth state")
+	}
+
 	redirectURI := fmt.Sprintf("%s/slack/oauth/callback", c.baseURL)
 	authURL := fmt.Sprintf(
 		"https://slack.com/oauth/v2/authorize?client_id=%s&scope=groups:write,groups:read,chat:write,app_mentions:read,commands&redirect_uri=%s&state=%s",
 		c.slack.ClientID(),
 		url.QueryEscape(redirectURI),
-		workspaceID62,
+		url.QueryEscape(state),
 	)
 
 	cfg := &entity.SlackConfig{
