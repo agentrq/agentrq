@@ -109,10 +109,19 @@ type (
 	}
 )
 
+const (
+	defaultJWTSecret         = "agentrq-secret-change-me"
+	defaultRootAccessToken   = "agentrq"
+	defaultWorkspaceTokenKey = "agentrq-token-key-change-me-32by"
+)
+
 func New(cfg Config) (*App, error) {
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
 	if cfg.App.BaseURL == "" {
 		cfg.App.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.App.Port)
+	}
+	if err := validateDeploymentSecrets(cfg); err != nil {
+		return nil, err
 	}
 
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -555,6 +564,7 @@ func New(cfg Config) (*App, error) {
 		Crud:       crudCtrl,
 		MCPManager: mcpManager,
 		PubSub:     pubsubSvc,
+		TokenSvc:   tokenSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		BaseURL:    cfg.App.BaseURL,
 	})
@@ -792,6 +802,26 @@ func New(cfg Config) (*App, error) {
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, cancel: appCancel}, nil
+}
+
+func validateDeploymentSecrets(cfg Config) error {
+	env := "development"
+	if cfg.ConfigSvc != nil {
+		env = cfg.ConfigSvc.Env()
+	}
+	if env == "" || env == "development" {
+		return nil
+	}
+	if cfg.Auth.JWTSecret == "" || cfg.Auth.JWTSecret == defaultJWTSecret {
+		return errors.New("insecure auth.jwtSecret: set AGENTRQ_AUTH_JWT_SECRET to a production secret")
+	}
+	if cfg.Auth.WorkspaceTokenKey == "" || cfg.Auth.WorkspaceTokenKey == defaultWorkspaceTokenKey || len(cfg.Auth.WorkspaceTokenKey) != 32 {
+		return errors.New("insecure auth.workspaceTokenKey: set AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY to an exact 32-byte production key")
+	}
+	if cfg.Auth.RootLoginEnabled && (cfg.Auth.RootAccessToken == "" || cfg.Auth.RootAccessToken == defaultRootAccessToken) {
+		return errors.New("insecure auth.rootAccessToken: set AGENTRQ_AUTH_ROOT_ACCESS_TOKEN before enabling root login")
+	}
+	return nil
 }
 
 func pubStatsHandler(ctrl pub.StatsController) http.Handler {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -505,9 +507,34 @@ func (h *handler) getAttachment() fiber.Handler {
 			return c.Send(e)
 		}
 
-		c.Set("Content-Type", res.MimeType)
-		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", res.Filename))
+		contentType := safeAttachmentContentType(res.MimeType)
+		c.Set("Content-Type", contentType)
+		c.Set("X-Content-Type-Options", "nosniff")
+		disposition := "attachment"
+		if isInlineAttachmentType(contentType) {
+			disposition = "inline"
+		}
+		c.Set("Content-Disposition", fmt.Sprintf("%s; filename=%s", disposition, strconv.Quote(filepath.Base(res.Filename))))
 		return c.Send(res.Data)
+	}
+}
+
+func safeAttachmentContentType(mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+	switch mimeType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "application/pdf", "text/plain":
+		return mimeType
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func isInlineAttachmentType(mimeType string) bool {
+	switch mimeType {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain":
+		return true
+	default:
+		return false
 	}
 }
 
