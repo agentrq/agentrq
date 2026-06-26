@@ -802,10 +802,14 @@ function stripNote(body) {
 .md-body li { margin: 0.25em 0; display: list-item; }
 .md-body li > p { margin: 0.2em 0; }
 .md-body code { font-family: ui-monospace, monospace; font-size: 0.84em; background: rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.12); padding: 0.12em 0.38em; border-radius: 4px; white-space: pre-wrap; }
+@media (prefers-color-scheme: dark) { .md-body code { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); } }
+.dark .md-body code { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); }
 .md-body pre { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; padding: 0.85em 1em; border-radius: 6px; overflow-x: auto; margin: 0.75em 0; }
 @media (prefers-color-scheme: dark) { .md-body pre { background: #18181b; color: #d4d4d8; border-color: #3f3f46; } }
 .dark .md-body pre { background: #18181b; color: #d4d4d8; border-color: #3f3f46; }
 .md-body pre code { background: none; border: none; padding: 0; font-size: 0.82em; white-space: pre-wrap; word-break: break-all; border-radius: 0; }
+@media (prefers-color-scheme: dark) { .md-body pre code { background: none; border: none; } }
+.dark .md-body pre code { background: none; border: none; }
 .md-body blockquote { border-left: 3px solid #d1d5db; padding: 0.1em 0 0.1em 0.85em; color: #6b7280; margin: 0.6em 0; }
 .md-body blockquote p { margin: 0.2em 0; }
 .md-body a { text-decoration: underline; }
