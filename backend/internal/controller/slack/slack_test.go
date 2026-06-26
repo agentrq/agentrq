@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang/mock/gomock"
+	"github.com/mustafaturan/monoflake"
 	slackapi "github.com/slack-go/slack"
 )
 
@@ -77,6 +80,64 @@ func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 }
 
 func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {}
+
+func TestGetWorkspaceSlackConfig_SignedState(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	// Use a real token service to verify JWT behavior
+	realTokenSvc := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	crud := &mockCRUD{}
+	mcp := &mockMCP{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		Crud:       crud,
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenSvc:   realTokenSvc,
+		TokenKey:   "test-key",
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID := int64(123)
+	workspaceID62 := monoflake.ID(workspaceID).String()
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), workspaceID).
+		Return(model.SlackWorkspaceLink{}, fmt.Errorf("not found"))
+
+	cfg, err := c.GetWorkspaceSlackConfig(context.Background(), workspaceID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.Enabled {
+		t.Fatal("expected slack to be enabled")
+	}
+
+	// Verify that the AuthURL contains a valid signed state token for the workspace
+	u, err := url.Parse(cfg.AuthURL)
+	if err != nil {
+		t.Fatalf("failed to parse auth URL: %v", err)
+	}
+	stateToken := u.Query().Get("state")
+	if stateToken == "" {
+		t.Fatal("expected state parameter in auth URL")
+	}
+
+	// The token should be valid and contain the workspaceID62
+	gotWorkspaceID62, err := realTokenSvc.ValidateOAuthStateToken(stateToken, "slack")
+	if err != nil {
+		t.Fatalf("failed to validate state token: %v", err)
+	}
+	if gotWorkspaceID62 != workspaceID62 {
+		t.Errorf("expected workspace ID %s, got %s", workspaceID62, gotWorkspaceID62)
+	}
+}
 
 func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 	gomockCtrl := gomock.NewController(t)
