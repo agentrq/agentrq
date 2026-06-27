@@ -10,6 +10,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -84,6 +85,12 @@ type Repository interface {
 	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
 	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
 	ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error)
+
+	// Backfills (one-time data migrations)
+	SystemListBackfills(ctx context.Context) ([]model.Backfill, error)
+	SystemRecordBackfill(ctx context.Context, name string) error
+	SystemListMessagesWithMetadataKeys(ctx context.Context, keys []string) ([]model.Message, error)
+	SystemUpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error
 }
 
 type repository struct {
@@ -357,6 +364,43 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 
 func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
 	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+}
+
+// ── Backfills ─────────────────────────────────────────────────────────────────
+
+func (r *repository) SystemListBackfills(ctx context.Context) ([]model.Backfill, error) {
+	var rows []model.Backfill
+	err := r.conn(ctx).Find(&rows).Error
+	return rows, err
+}
+
+func (r *repository) SystemRecordBackfill(ctx context.Context, name string) error {
+	return r.conn(ctx).Create(&model.Backfill{Name: name, CreatedAt: time.Now()}).Error
+}
+
+// SystemListMessagesWithMetadataKeys returns messages whose JSON metadata
+// contains at least one of the given top-level keys. The HasKey predicate
+// compiles to dialect-appropriate SQL for both SQLite and Postgres.
+func (r *repository) SystemListMessagesWithMetadataKeys(ctx context.Context, keys []string) ([]model.Message, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	cond := r.conn(ctx).Session(&gorm.Session{NewDB: true})
+	for i, k := range keys {
+		expr := datatypes.JSONQuery("metadata").HasKey(k)
+		if i == 0 {
+			cond = cond.Where(expr)
+		} else {
+			cond = cond.Or(expr)
+		}
+	}
+	var msgs []model.Message
+	err := r.conn(ctx).Model(&model.Message{}).Where(cond).Find(&msgs).Error
+	return msgs, err
+}
+
+func (r *repository) SystemUpdateMessageMetadata(ctx context.Context, messageID int64, metadata []byte) error {
+	return r.conn(ctx).Model(&model.Message{}).Where("id = ?", messageID).Update("metadata", metadata).Error
 }
 
 func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {

@@ -57,7 +57,7 @@ type (
 		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt         time.Time
 		UpdatedAt         time.Time
-		UserID            int64          `gorm:"index:idx_events_user_id"`
+		UserID            int64  `gorm:"index:idx_events_user_id"`
 		Name              string `gorm:"type:varchar(140);uniqueIndex:idx_events_name_user_id"`
 		PayloadGuidelines string `gorm:"type:text"`
 	}
@@ -144,6 +144,13 @@ type (
 		WorkspaceID    int64  `gorm:"index"`
 		SlackChannelID string `gorm:"type:varchar(32)"`
 		ThreadTS       string `gorm:"type:varchar(32)"` // Slack message ts that anchors the thread
+	}
+
+	// Backfill records a one-time data migration that has already been applied,
+	// keyed by a stable name, so it is never re-run on subsequent startups.
+	Backfill struct {
+		Name      string `gorm:"primaryKey;type:varchar(128)"`
+		CreatedAt time.Time
 	}
 )
 
