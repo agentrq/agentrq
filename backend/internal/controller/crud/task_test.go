@@ -136,6 +136,41 @@ func TestCreateTask_AgentAppendLoopNote(t *testing.T) {
 	}
 }
 
+// TestCreateTask_AgentLoopNoteIdempotent ensures the self-learning loop note is
+// not appended a second time when the submitted body already contains it (e.g.
+// a self-improving loop re-submitting a prior task body). Otherwise the note
+// would accumulate and be returned multiple times by the getTask tool.
+func TestCreateTask_AgentLoopNoteIdempotent(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.SelfLearningLoopNote = "Be concise."
+
+	bodyWithNote := "Hello world.\n\nBe concise."
+	created := model.Task{ID: 46, WorkspaceID: 1, Assignee: "agent", Body: bodyWithNote}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.idgen.EXPECT().NextID().Return(int64(46))
+	e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.Body != bodyWithNote {
+			return model.Task{}, fmt.Errorf("expected note to NOT be duplicated, got %q", m.Body)
+		}
+		return created, nil
+	})
+
+	resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+		UserID: testUserIDStr,
+		Task:   entity.Task{WorkspaceID: 1, Title: "Agent Task", Body: bodyWithNote, Assignee: "agent"},
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.Body != bodyWithNote {
+		t.Errorf("expected body unchanged (note not duplicated), got %q", resp.Task.Body)
+	}
+}
+
 func TestCreateTask_EmptyTitle(t *testing.T) {
 	e := newTestController(t)
 
@@ -585,6 +620,38 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	}
 	if resp.Task.Body != "Original body.\n\nBe concise." {
 		t.Errorf("expected task body to be updated")
+	}
+}
+
+// TestUpdateTaskAssignee_LoopNoteIdempotent ensures reassigning a task to the
+// agent does not append the loop note again when the body already contains it.
+func TestUpdateTaskAssignee_LoopNoteIdempotent(t *testing.T) {
+	e := newTestController(t)
+
+	ws := activeWorkspace()
+	ws.SelfLearningLoopNote = "Be concise."
+
+	bodyWithNote := "Original body.\n\nBe concise."
+	task := model.Task{ID: 11, WorkspaceID: 1, Assignee: "human", Body: bodyWithNote}
+	updated := model.Task{ID: 11, WorkspaceID: 1, Assignee: "agent", Body: bodyWithNote}
+
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(11), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.Body != bodyWithNote {
+			return model.Task{}, fmt.Errorf("expected note to NOT be duplicated, got %q", m.Body)
+		}
+		return updated, nil
+	})
+
+	resp, err := e.controller.UpdateTaskAssignee(context.Background(), entity.UpdateTaskAssigneeRequest{
+		WorkspaceID: 1, TaskID: 11, Assignee: "agent", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.Body != bodyWithNote {
+		t.Errorf("expected body unchanged (note not duplicated), got %q", resp.Task.Body)
 	}
 }
 
