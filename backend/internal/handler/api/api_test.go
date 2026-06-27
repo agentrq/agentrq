@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -42,12 +44,19 @@ func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	return m.createMCPTokenFunc(userID, workspaceID, tokenType)
 }
 
-func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
-	return redirectURL, nil // passthrough for tests that don't need real JWT signing
+func (m *mockTokenSvc) CreateOAuthStateToken(payload, provider, nonce string) (string, error) {
+	return payload + ":" + nonce, nil // simplified signed state for tests
 }
 
-func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
-	return tokenStr, nil // treat the raw value as the redirect URL in simple tests
+func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider, nonce string) (string, error) {
+	parts := strings.Split(tokenStr, ":")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("invalid token")
+	}
+	if nonce != "" && parts[1] != nonce {
+		return "", fmt.Errorf("nonce mismatch")
+	}
+	return parts[0], nil
 }
 
 type mockCrudController struct {
@@ -108,8 +117,10 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 	}
 
 	t.Run("Valid JWT state redirects correctly", func(t *testing.T) {
-		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "google")
+		nonce := "test-nonce"
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "google", nonce)
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_state", Value: nonce})
 		resp, _ := app.Test(req)
 		if resp.StatusCode != http.StatusFound {
 			t.Fatalf("expected 302, got %d", resp.StatusCode)
@@ -119,38 +130,50 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 		}
 	})
 
-	t.Run("Forged state falls back to /", func(t *testing.T) {
+	t.Run("Forged state returns 403", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state=forged-not-a-jwt", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Wrong provider state falls back to /", func(t *testing.T) {
-		// State signed for github should be rejected by google callback
-		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "github")
+	t.Run("Missing nonce cookie returns 403", func(t *testing.T) {
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "google", "nonce-1")
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Missing state falls back to /", func(t *testing.T) {
+	t.Run("Wrong provider state returns 403", func(t *testing.T) {
+		// State signed for github should be rejected by google callback
+		nonce := "test-nonce"
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "github", nonce)
+		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_state", Value: nonce})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Mismatched nonce state returns 403", func(t *testing.T) {
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "google", "nonce-1")
+		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
+		req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "nonce-2"})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Missing state returns 400", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", resp.StatusCode)
 		}
 	})
 }

@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/mustafaturan/monoflake"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
@@ -46,6 +48,21 @@ func (s *stubSlackService) VerifyRequest(r *http.Request, body []byte) error {
 }
 
 // Thin mock for CRUDRespondToTask
+type mockTokenSvc struct {
+	auth.TokenService
+}
+
+func (m *mockTokenSvc) CreateOAuthStateToken(payload, provider, nonce string) (string, error) {
+	return "signed-" + payload, nil
+}
+
+func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider, nonce string) (string, error) {
+	if strings.HasPrefix(tokenStr, "signed-") {
+		return strings.TrimPrefix(tokenStr, "signed-"), nil
+	}
+	return "", fmt.Errorf("invalid token")
+}
+
 type mockCRUD struct {
 	createTaskFunc  func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	replyToTaskFunc func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
@@ -794,3 +811,34 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestGetWorkspaceSlackConfig_SignedState(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockToken := &mockTokenSvc{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackService{},
+		TokenSvc:   mockToken,
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID := int64(12345)
+	workspaceID62 := monoflake.ID(workspaceID).String()
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), workspaceID).
+		Return(model.SlackWorkspaceLink{}, nil)
+
+	nonce := "test-nonce"
+	cfg, err := c.GetWorkspaceSlackConfig(context.Background(), workspaceID, nonce)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(cfg.AuthURL, "state=signed-"+workspaceID62) {
+		t.Errorf("expected signed state in AuthURL, got %q", cfg.AuthURL)
+	}
+}
