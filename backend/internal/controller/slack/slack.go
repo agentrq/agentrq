@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -45,6 +46,7 @@ type Params struct {
 	Crud       CRUDRespondToTask
 	MCPManager MCPManager
 	PubSub     pubsub.Service
+	TokenSvc   auth.TokenService
 	TokenKey   string
 	BaseURL    string
 }
@@ -62,7 +64,7 @@ type Controller interface {
 	// Channel assignment (called from API handler)
 	SetWorkspaceChannel(ctx context.Context, req entity.SetWorkspaceSlackChannelRequest) error
 	RemoveWorkspaceChannel(ctx context.Context, req entity.RemoveWorkspaceSlackChannelRequest) error
-	GetWorkspaceSlackConfig(ctx context.Context, workspaceID int64) (*entity.SlackConfig, error)
+	GetWorkspaceSlackConfig(ctx context.Context, workspaceID int64, nonce string) (*entity.SlackConfig, error)
 
 	// OAuth callback
 	HandleOAuthCallback(ctx context.Context, workspaceID62 string, code string, redirectURI string) error
@@ -117,6 +119,7 @@ type controller struct {
 	crud     CRUDRespondToTask
 	mcp      MCPManager
 	pubsub   pubsub.Service
+	tokenSvc auth.TokenService
 	tokenKey string
 	baseURL  string
 }
@@ -129,6 +132,7 @@ func New(p Params) Controller {
 		crud:     p.Crud,
 		mcp:      p.MCPManager,
 		pubsub:   p.PubSub,
+		tokenSvc: p.TokenSvc,
 		tokenKey: p.TokenKey,
 		baseURL:  p.BaseURL,
 	}
@@ -360,7 +364,7 @@ func (c *controller) RemoveWorkspaceChannel(ctx context.Context, req entity.Remo
 	return c.repo.DeleteSlackWorkspaceLink(ctx, req.WorkspaceID)
 }
 
-func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID int64) (*entity.SlackConfig, error) {
+func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID int64, nonce string) (*entity.SlackConfig, error) {
 	if !c.slack.IsEnabled() {
 		return &entity.SlackConfig{Enabled: false}, nil
 	}
@@ -369,12 +373,22 @@ func (c *controller) GetWorkspaceSlackConfig(ctx context.Context, workspaceID in
 	installed := err == nil && link.AccessToken != ""
 
 	workspaceID62 := monoflake.ID(workspaceID).String()
+
+	// Hardening: Slack state must be a signed token to prevent CSRF.
+	// We bind it to the session using the provided nonce.
+	state := workspaceID62
+	if c.tokenSvc != nil {
+		if signed, err := c.tokenSvc.CreateOAuthStateToken(workspaceID62, "slack", nonce); err == nil {
+			state = signed
+		}
+	}
+
 	redirectURI := fmt.Sprintf("%s/slack/oauth/callback", c.baseURL)
 	authURL := fmt.Sprintf(
 		"https://slack.com/oauth/v2/authorize?client_id=%s&scope=groups:write,groups:read,chat:write,app_mentions:read,commands&redirect_uri=%s&state=%s",
 		c.slack.ClientID(),
 		url.QueryEscape(redirectURI),
-		workspaceID62,
+		url.QueryEscape(state),
 	)
 
 	cfg := &entity.SlackConfig{

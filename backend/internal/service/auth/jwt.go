@@ -30,15 +30,16 @@ type Claims struct {
 type StateClaims struct {
 	jwt.RegisteredClaims
 	RedirectURL string `json:"rurl,omitempty"`
+	Nonce       string `json:"nonce,omitempty"`
 }
 
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
-	CreateOAuthStateToken(redirectURL, provider string) (string, error)
+	CreateOAuthStateToken(payload, provider, nonce string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
-	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
+	ValidateOAuthStateToken(tokenStr, provider, nonce string) (payload string, err error)
 }
 
 type tokenService struct {
@@ -128,22 +129,23 @@ func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string,
 	return token.SignedString(s.secret)
 }
 
-func (s *tokenService) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
+func (s *tokenService) CreateOAuthStateToken(payload, provider, nonce string) (string, error) {
 	now := time.Now()
 	claims := StateClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "oauth_state",
 			Audience:  jwt.ClaimStrings{provider},
-			ExpiresAt: jwt.NewNumericDate(now.Add(3 * time.Minute)),
-			NotBefore: jwt.NewNumericDate(now.Add(-2 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)), // 15 mins for more breathing room
+			NotBefore: jwt.NewNumericDate(now.Add(-10 * time.Second)),
 		},
-		RedirectURL: redirectURL,
+		RedirectURL: payload,
+		Nonce:       nonce,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
 }
 
-func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
+func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider, nonce string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &StateClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
@@ -158,6 +160,13 @@ func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (strin
 	if !ok || !token.Valid {
 		return "", errors.New("invalid state token")
 	}
+
+	// If the token contains a nonce, it must match the provided nonce.
+	// This ensures the flow is bound to the same user session.
+	if claims.Nonce != "" && claims.Nonce != nonce {
+		return "", errors.New("state nonce mismatch")
+	}
+
 	return claims.RedirectURL, nil
 }
 

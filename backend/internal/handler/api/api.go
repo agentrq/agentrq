@@ -314,10 +314,29 @@ func (h *handler) rootLogin() fiber.Handler {
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "google")
+
+		// CSRF Hardening: generate a session-bound nonce
+		nonce, err := security.GenerateSecret(16)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate nonce"})
+		}
+
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "google", nonce)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
+
+		// Store nonce in a secure cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    nonce,
+			Expires:  time.Now().Add(15 * time.Minute),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		})
+
 		return c.Redirect(h.auth.GetAuthURL(state))
 	}
 }
@@ -387,10 +406,26 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		redirectURL := "/"
 		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
+			nonce := c.Cookies("oauth_state")
+			rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google", nonce)
+			if err != nil {
+				zlog.Warn().Err(err).Msg("OAuth state validation failed")
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state"})
 			}
+			redirectURL = h.sanitizeRedirectURL(rurl)
+		} else {
+			zlog.Warn().Msg("OAuth state missing in callback")
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing state"})
 		}
+
+		// Clear state cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    "",
+			Expires:  time.Now().Add(-1 * time.Hour),
+			HTTPOnly: true,
+			Path:     "/",
+		})
 
 		return c.Redirect(redirectURL)
 	}
@@ -402,10 +437,29 @@ func (h *handler) githubLogin() fiber.Handler {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "github login disabled"})
 		}
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "github")
+
+		// CSRF Hardening: generate a session-bound nonce
+		nonce, err := security.GenerateSecret(16)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate nonce"})
+		}
+
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "github", nonce)
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
+
+		// Store nonce in a secure cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    nonce,
+			Expires:  time.Now().Add(15 * time.Minute),
+			HTTPOnly: true,
+			Secure:   h.sslEnabled,
+			SameSite: "Lax",
+			Path:     "/",
+		})
+
 		return c.Redirect(h.githubAuth.GetAuthURL(state))
 	}
 }
@@ -467,10 +521,26 @@ func (h *handler) githubCallback() fiber.Handler {
 
 		redirectURL := "/"
 		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
+			nonce := c.Cookies("oauth_state")
+			rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github", nonce)
+			if err != nil {
+				zlog.Warn().Err(err).Msg("GitHub OAuth state validation failed")
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state"})
 			}
+			redirectURL = h.sanitizeRedirectURL(rurl)
+		} else {
+			zlog.Warn().Msg("GitHub OAuth state missing in callback")
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing state"})
 		}
+
+		// Clear state cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "oauth_state",
+			Value:    "",
+			Expires:  time.Now().Add(-1 * time.Hour),
+			HTTPOnly: true,
+			Path:     "/",
+		})
 
 		return c.Redirect(redirectURL)
 	}
@@ -531,7 +601,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
-		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
+		h.enrichWorkspaceSlack(c, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -565,7 +635,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
-		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
+		h.enrichWorkspaceSlack(c, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -598,7 +668,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 		}
 		for i := range rs.Workspaces {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
-			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
+			h.enrichWorkspaceSlack(c, &rs.Workspaces[i])
 		}
 
 		mcpURLWithToken := func(workspaceID int64) string {
@@ -713,7 +783,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 			srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
-		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
+		h.enrichWorkspaceSlack(c, &rs.Workspace)
 
 		// Decrypt situational secret for mission owner visibility
 		token := ""
@@ -878,11 +948,29 @@ func (h *handler) removeWorkspaceSlackChannel() fiber.Handler {
 	}
 }
 
-func (h *handler) enrichWorkspaceSlack(ctx context.Context, ws *entity.Workspace) {
+func (h *handler) enrichWorkspaceSlack(c *fiber.Ctx, ws *entity.Workspace) {
 	if h.slackCtrl == nil || ws == nil {
 		return
 	}
-	cfg, err := h.slackCtrl.GetWorkspaceSlackConfig(ctx, ws.ID)
+
+	// Generate and store nonce for Slack OAuth if not already present
+	nonce := c.Cookies("oauth_state")
+	if nonce == "" {
+		nonce, _ = security.GenerateSecret(16)
+		if nonce != "" {
+			c.Cookie(&fiber.Cookie{
+				Name:     "oauth_state",
+				Value:    nonce,
+				Expires:  time.Now().Add(15 * time.Minute),
+				HTTPOnly: true,
+				Secure:   h.sslEnabled,
+				SameSite: "Lax",
+				Path:     "/",
+			})
+		}
+	}
+
+	cfg, err := h.slackCtrl.GetWorkspaceSlackConfig(c.Context(), ws.ID, nonce)
 	if err == nil && cfg != nil {
 		ws.Slack = cfg
 	}

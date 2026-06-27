@@ -144,13 +144,14 @@ func TestTokenService(t *testing.T) {
 	t.Run("CreateAndValidateOAuthStateToken", func(t *testing.T) {
 		redirectURL := "/dashboard"
 		provider := "google"
+		nonce := "test-nonce"
 
-		token, err := s.CreateOAuthStateToken(redirectURL, provider)
+		token, err := s.CreateOAuthStateToken(redirectURL, provider, nonce)
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
-		got, err := s.ValidateOAuthStateToken(token, provider)
+		got, err := s.ValidateOAuthStateToken(token, provider, nonce)
 		if err != nil {
 			t.Fatalf("failed to validate state token: %v", err)
 		}
@@ -160,25 +161,37 @@ func TestTokenService(t *testing.T) {
 	})
 
 	t.Run("OAuthStateTokenWrongProvider", func(t *testing.T) {
-		token, err := s.CreateOAuthStateToken("/dashboard", "google")
+		token, err := s.CreateOAuthStateToken("/dashboard", "google", "")
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
-		_, err = s.ValidateOAuthStateToken(token, "github")
+		_, err = s.ValidateOAuthStateToken(token, "github", "")
 		if err == nil {
 			t.Error("expected error when validating with wrong provider, got nil")
 		}
 	})
 
+	t.Run("OAuthStateTokenNonceMismatch", func(t *testing.T) {
+		token, err := s.CreateOAuthStateToken("/", "google", "nonce-1")
+		if err != nil {
+			t.Fatalf("failed to create state token: %v", err)
+		}
+
+		_, err = s.ValidateOAuthStateToken(token, "google", "nonce-2")
+		if err == nil {
+			t.Error("expected error when validating with mismatched nonce, got nil")
+		}
+	})
+
 	t.Run("OAuthStateTokenExpiry", func(t *testing.T) {
-		token, err := s.CreateOAuthStateToken("/", "google")
+		token, err := s.CreateOAuthStateToken("/", "google", "")
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
 		// Should be valid immediately
-		_, err = s.ValidateOAuthStateToken(token, "google")
+		_, err = s.ValidateOAuthStateToken(token, "google", "")
 		if err != nil {
 			t.Errorf("expected valid token, got: %v", err)
 		}
