@@ -637,8 +637,7 @@ const permissionsConfig = computed(() => ({
       `mcp__${serverName.value}__reply`,
       `mcp__${serverName.value}__createTask`,
       `mcp__${serverName.value}__downloadAttachment`,
-      `mcp__${serverName.value}__getTaskMessages`,
-      `mcp__${serverName.value}__getNextTask`,
+      `mcp__${serverName.value}__getTask`,
       `mcp__${serverName.value}__publishEvent`,
     ]
   },
@@ -667,10 +666,7 @@ approval_mode = "approve"
 [mcp_servers.${serverName.value}.tools.downloadAttachment]
 approval_mode = "approve"
 
-[mcp_servers.${serverName.value}.tools.getTaskMessages]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.getNextTask]
+[mcp_servers.${serverName.value}.tools.getTask]
 approval_mode = "approve"
 
 [mcp_servers.${serverName.value}.tools.publishEvent]

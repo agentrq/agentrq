@@ -144,11 +144,12 @@ type DownloadAttachmentParams struct {
 	TaskID       string `json:"taskId" jsonschema:"The ID of the task containing the attachment"`
 }
 
-// GetTaskMessagesParams is the input to the getTaskMessages tool.
-type GetTaskMessagesParams struct {
-	TaskID string `json:"taskId" jsonschema:"The ID of the task to get messages for"`
-	Cursor int    `json:"cursor,omitempty" jsonschema:"The offset cursor. Default is 0."`
-	Limit  int    `json:"limit,omitempty" jsonschema:"The maximum items to return. Default is 5."`
+// GetTaskParams is the input to the getTask tool.
+type GetTaskParams struct {
+	TaskID              string `json:"taskId,omitempty" jsonschema:"The ID of the task to fetch. If omitted, the next available 'not started' task assigned to the agent is returned (dequeues the work queue)."`
+	IncludeConversation bool   `json:"includeConversation,omitempty" jsonschema:"When true, include the task's conversation messages in the response."`
+	Cursor              int    `json:"cursor,omitempty" jsonschema:"Message pagination offset cursor; only used when includeConversation is true. Default is 0."`
+	Limit               int    `json:"limit,omitempty" jsonschema:"Maximum number of messages to return; only used when includeConversation is true. Default is 5."`
 }
 
 func NewWorkspaceServer(
@@ -281,14 +282,9 @@ func NewWorkspaceServer(
 	}, ps.handleGetWorkspace)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
-		Name:        "getTaskMessages",
-		Description: "Read the chat history and messages of a task. Returns messages ordered from oldest to newest with cursor-based pagination.",
-	}, ps.handleGetTaskMessages)
-
-	mcp.AddTool(mcpSrv, &mcp.Tool{
-		Name:        "getNextTask",
-		Description: "Get the next available \"not started\" task assigned to the agent.",
-	}, ps.handleGetNextTask)
+		Name:        "getTask",
+		Description: "Fetch a task. With no taskId, returns the next available \"not started\" task assigned to the agent (dequeues the work queue). With a taskId, returns that specific task. Set includeConversation=true to also include the task's chat history (oldest to newest, with cursor-based pagination).",
+	}, ps.handleGetTask)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "publishEvent",
@@ -870,37 +866,90 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 	}, nil, nil
 }
 
-func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.CallToolRequest, params GetTaskMessagesParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "getTaskMessages")
+// handleGetTask merges the former getNextTask and getTaskMessages tools. With no
+// taskId it dequeues the next "not started" task (like getNextTask); with a taskId
+// it fetches that task. When includeConversation is true, the task's chat history
+// is appended as a JSON block (paginated via cursor/limit).
+func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRequest, params GetTaskParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getTask")
+
+	var task model.Task
+	header := "Task details:"
+
 	if params.TaskID == "" {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "taskId is required"}},
-		}, nil, nil
+		// No taskId: behave like the former getNextTask — dequeue the next task.
+		t, err := ps.getNextTask(ctx)
+		if err != nil {
+			if errors.Is(err, base.ErrNotFound) {
+				return &mcp.CallToolResult{
+					Content: []mcp.Content{&mcp.TextContent{Text: "no pending tasks exist"}},
+				}, nil, nil
+			}
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get next task: %v", err)}},
+			}, nil, nil
+		}
+		task = t
+		header = "Next assigned task:"
+
+		// Associate session with the task ID for context-aware routing (like permissions)
+		if req != nil && req.GetSession() != nil {
+			sessID := req.GetSession().ID()
+			ps.sessionTasksMu.Lock()
+			ps.sessionTasks[sessID] = task.ID
+			ps.sessionTasksMu.Unlock()
+			zlog.Debug().Str("session_id", sessID).Int64("task_id", task.ID).Msg("Associated session with task in getTask")
+		}
+	} else {
+		id := monoflake.IDFromBase62(params.TaskID)
+		if id == 0 {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
+			}, nil, nil
+		}
+		t, err := ps.getTask(ctx, id.Int64())
+		if err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get task: %v", err)}},
+			}, nil, nil
+		}
+		task = t
 	}
 
-	if params.Limit <= 0 {
-		params.Limit = 5
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s\nID: %s\nTitle: %s", header, monoflake.ID(task.ID).String(), task.Title)
+	if task.Status != "" {
+		fmt.Fprintf(&sb, "\nStatus: %s", task.Status)
 	}
-	if params.Cursor < 0 {
-		params.Cursor = 0
+	fmt.Fprintf(&sb, "\nDetails: %s", task.Body)
+	if atts := formatModelAttachments(task.Attachments); atts != "" {
+		sb.WriteString("\n")
+		sb.WriteString(atts)
 	}
 
-	id := monoflake.IDFromBase62(params.TaskID)
-	if id == 0 {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: "invalid taskId format"}},
-		}, nil, nil
+	if params.IncludeConversation {
+		sb.WriteString("\n\nConversation:\n")
+		sb.WriteString(buildConversationJSON(task, params.Cursor, params.Limit))
 	}
-	taskID := id.Int64()
 
-	task, err := ps.getTask(ctx, taskID)
-	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get task: %v", err)}},
-		}, nil, nil
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: sb.String()}},
+	}, nil, nil
+}
+
+// buildConversationJSON returns the task's chat history as a JSON string of the
+// form {"messages":[...],"total":N,"cursor":M}. permission_request messages are
+// filtered out (the LLM doesn't need allow/deny history) and attachments include
+// metadata only (no base64 data).
+func buildConversationJSON(task model.Task, cursor, limit int) string {
+	if limit <= 0 {
+		limit = 5
+	}
+	if cursor < 0 {
+		cursor = 0
 	}
 
 	allMessages := task.Messages
@@ -908,7 +957,6 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		return allMessages[i].ID < allMessages[j].ID
 	})
 
-	// Filter out permission_request messages (allow/deny history) — the LLM doesn't need these.
 	messages := make([]model.Message, 0, len(allMessages))
 	for _, m := range allMessages {
 		if len(m.Metadata) > 0 {
@@ -923,11 +971,11 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 	}
 
 	total := len(messages)
-	start := params.Cursor
+	start := cursor
 	if start > total {
 		start = total
 	}
-	end := start + params.Limit
+	end := start + limit
 	if end > total {
 		end = total
 	}
@@ -972,46 +1020,7 @@ func (ps *WorkspaceServer) handleGetTaskMessages(ctx context.Context, req *mcp.C
 		"total":    total,
 		"cursor":   end,
 	})
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
-	}, nil, nil
-}
-
-func (ps *WorkspaceServer) handleGetNextTask(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "getNextTask")
-
-	t, err := ps.getNextTask(ctx)
-	if err != nil {
-		if errors.Is(err, base.ErrNotFound) {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "no pending tasks exist"}},
-			}, nil, nil
-		}
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get next task: %v", err)}},
-		}, nil, nil
-	}
-
-	// Associate session with the task ID for context-aware routing (like permissions)
-	if req != nil && req.GetSession() != nil {
-		sessID := req.GetSession().ID()
-		ps.sessionTasksMu.Lock()
-		ps.sessionTasks[sessID] = t.ID
-		ps.sessionTasksMu.Unlock()
-		zlog.Debug().Str("session_id", sessID).Int64("task_id", t.ID).Msg("Associated session with task in getNextTask")
-	}
-
-	content := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s",
-		monoflake.ID(t.ID).String(), t.Title, t.Body)
-	if atts := formatModelAttachments(t.Attachments); atts != "" {
-		content += "\n" + atts
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: content}},
-	}, nil, nil
+	return string(b)
 }
 
 func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.MethodHandler {

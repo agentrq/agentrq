@@ -259,7 +259,7 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	}
 }
 
-func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
+func TestWorkspaceServer_HandleGetTask_IncludeConversation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -281,12 +281,13 @@ func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
-	params := GetTaskMessagesParams{
-		TaskID: monoflake.ID(42).String(),
-		Limit:  1,
-		Cursor: 0,
+	params := GetTaskParams{
+		TaskID:              monoflake.ID(42).String(),
+		IncludeConversation: true,
+		Limit:               1,
+		Cursor:              0,
 	}
-	res, _, err := ps.handleGetTaskMessages(context.Background(), nil, params)
+	res, _, err := ps.handleGetTask(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,7 +301,7 @@ func TestWorkspaceServer_HandleGetTaskMessages(t *testing.T) {
 	}
 }
 
-func TestWorkspaceServer_HandleGetTaskMessages_FiltersPermissionRequests(t *testing.T) {
+func TestWorkspaceServer_HandleGetTask_FiltersPermissionRequests(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -323,12 +324,13 @@ func TestWorkspaceServer_HandleGetTaskMessages_FiltersPermissionRequests(t *test
 
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
-	params := GetTaskMessagesParams{
-		TaskID: monoflake.ID(42).String(),
-		Limit:  10,
-		Cursor: 0,
+	params := GetTaskParams{
+		TaskID:              monoflake.ID(42).String(),
+		IncludeConversation: true,
+		Limit:               10,
+		Cursor:              0,
 	}
-	res, _, err := ps.handleGetTaskMessages(context.Background(), nil, params)
+	res, _, err := ps.handleGetTask(context.Background(), nil, params)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -618,7 +620,7 @@ func TestWorkspaceServer_UsesSharedCronGranularityValidation(t *testing.T) {
 		{"0,30 * * * *", "granularity too fine"},
 		{"0-5 * * * *", "granularity too fine"},
 		{"60 * * * *", "must be a valid integer"},
-		{"-1 * * * *", "granularity too fine"},    // "-" in minute field caught as range-like
+		{"-1 * * * *", "granularity too fine"}, // "-" in minute field caught as range-like
 		{"abc * * * *", "must be a valid integer"},
 		{"not a cron at all", "must be a valid integer"}, // 5 tokens; "not" fails Atoi
 	}
@@ -632,7 +634,7 @@ func TestWorkspaceServer_UsesSharedCronGranularityValidation(t *testing.T) {
 	}
 }
 
-func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
+func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -654,7 +656,7 @@ func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
 		}, nil
 	}
 
-	res, _, err := ps.handleGetNextTask(context.Background(), nil, nil)
+	res, _, err := ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -675,7 +677,7 @@ func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
 			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"}]`),
 		}, nil
 	}
-	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	text = res.Content[0].(*mcp.TextContent).Text
 	if !contains(text, "file.txt") {
 		t.Errorf("expected attachments to be formatted, got: %s", text)
@@ -685,7 +687,7 @@ func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
 	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
 		return model.Task{}, base.ErrNotFound
 	}
-	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	if res.IsError {
 		t.Fatal("expected no error result for NotFound")
 	}
@@ -698,9 +700,66 @@ func TestWorkspaceServer_HandleGetNextTask(t *testing.T) {
 	ps.getNextTask = func(ctx context.Context) (model.Task, error) {
 		return model.Task{}, fmt.Errorf("db error")
 	}
-	res, _, _ = ps.handleGetNextTask(context.Background(), nil, nil)
+	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "db error") {
 		t.Errorf("expected error result, got: %v", res)
+	}
+}
+
+func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+		getTask: func(ctx context.Context, taskID int64) (model.Task, error) {
+			if taskID != 42 {
+				return model.Task{}, fmt.Errorf("unexpected task id %d", taskID)
+			}
+			return model.Task{
+				ID:     42,
+				Title:  "Specific Task",
+				Body:   "Specific Body",
+				Status: "ongoing",
+				Messages: []model.Message{
+					{ID: 1001, Sender: "human", Text: "hi"},
+				},
+			}, nil
+		},
+	}
+
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+
+	// Case 1: fetch by id, no conversation
+	res, _, err := ps.handleGetTask(context.Background(), nil, GetTaskParams{TaskID: monoflake.ID(42).String()})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Fatal("expected no error")
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, "Task details:") || !contains(text, "Title: Specific Task") || !contains(text, "Status: ongoing") {
+		t.Errorf("unexpected content: %s", text)
+	}
+	if contains(text, "Conversation:") {
+		t.Errorf("did not expect conversation without includeConversation: %s", text)
+	}
+
+	// Case 2: fetch by id, with conversation
+	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{TaskID: monoflake.ID(42).String(), IncludeConversation: true})
+	text = res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, "Conversation:") || !contains(text, `"text":"hi"`) || !contains(text, `"total":1`) {
+		t.Errorf("expected conversation in content: %s", text)
+	}
+
+	// Case 3: lookup failure surfaces as an error result
+	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{TaskID: monoflake.ID(99).String()})
+	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "failed to get task") {
+		t.Errorf("expected get task error, got: %v", res)
 	}
 }
 

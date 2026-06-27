@@ -34,7 +34,7 @@ A task is the atomic unit of work. Key fields:
 | `ParentID` | Set when a task is spawned from a cron template |
 | `TriggerID` | ID of the event that caused this task (set by the event consumer) |
 | `EventID` | ID of the event this task should publish on completion |
-| `SortOrder` | Controls queue priority for `getNextTask` |
+| `SortOrder` | Controls queue priority for `getTask` (next-task dequeue) |
 | `AllowAllCommands` | Per-task override for permission gating |
 
 ### Message
@@ -95,8 +95,7 @@ Every agent connected to a per-workspace MCP server has access to exactly these 
 | Tool | Description |
 |------|-------------|
 | `getWorkspace()` | Returns workspace name, description, and task stats |
-| `getNextTask()` | Dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`) |
-| `getTaskMessages(taskId, cursor?, limit?)` | Paginated message history for a task |
+| `getTask(taskId?, includeConversation?, cursor?, limit?)` | With no `taskId`, dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`); with a `taskId`, returns that task. `includeConversation` appends paginated message history |
 | `createTask(title, body, assignee?, attachments?, cronSchedule?, eventId?)` | Creates a new task (or cron template) in this workspace; `eventId` links a task to the event it should publish on completion |
 | `updateTaskStatus(taskId, status)` | Transitions task state; auto-appends a status message |
 | `reply(chatId, text, attachments?)` | Sends a message in a task's conversation thread |
@@ -142,7 +141,7 @@ The supervisor never touches per-workspace MCP endpoints. It sees everything thr
 
 4. **Supervisor creates subtasks**: For each specialist workspace (coding, docs, publishing), the supervisor calls `createTask(workspaceId="...", title="...", body="...", assignee="agent")` on coremcp. Each call creates a task in the target workspace and returns its ID.
 
-5. **Specialist agents work**: Each specialist workspace agent runs its own `getNextTask` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
+5. **Specialist agents work**: Each specialist workspace agent runs its own `getTask` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
 
 6. **Supervisor monitors**: Supervisor calls `listTasks(workspaceId, status="completed")` or `getTask(workspaceId, taskId)` on coremcp to track worker progress. When a worker marks its task `completed`, the supervisor reads the result from the task data and uses it as input for the next stage.
 
@@ -183,7 +182,7 @@ Agent
 
 ```
 Agent
-  → getNextTask()          ← dequeues first notstarted task
+  → getTask()          ← dequeues first notstarted task
   → updateTaskStatus(ongoing)
   → [work happens]
   → reply(chatId, "...")   ← intermediate progress updates
@@ -335,8 +334,8 @@ sequenceDiagram
     PS-->>UI: SSE task.created (WS-B)
     PS-->>UI: SSE task.created (WS-C)
 
-    B-->>B: Agent picks up task via getNextTask()
-    C-->>C: Agent picks up task via getNextTask()
+    B-->>B: Agent picks up task via getTask()
+    C-->>C: Agent picks up task via getTask()
 ```
 
 **Event chaining (EmitEventID):**
@@ -353,12 +352,12 @@ sequenceDiagram
     A->>PS: publishEvent("event_a", payload_a)
     PS->>EC: fan-out → create Task in WS-B<br/>(body includes publishEvent("event_b") instruction)<br/>Task.EventID = event_b
 
-    B-->>B: getNextTask() → works on task
+    B-->>B: getTask() → works on task
     Note over B: Notification includes:<br/>[On completion: call publishEvent("event_b", ...)]
     B->>PS: publishEvent("event_b", payload_b)
 
     PS->>EC: fan-out → create Task in WS-C<br/>(body includes payload_b via {{EVENT_PAYLOAD}})
-    C-->>C: getNextTask() → works on task
+    C-->>C: getTask() → works on task
 ```
 
 ### Ownership & Authorization
