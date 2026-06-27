@@ -389,7 +389,7 @@ watch(events, (newEvents) => {
     
     // Check for permission requests
     if (lastMsg?.metadata?.type === 'permission_request' && lastMsg.metadata.status !== 'allow' && lastMsg.metadata.status !== 'deny') {
-      notifyError(`Permission required: ${lastMsg.metadata.tool_name}`, 'Action Needed')
+      notifyError(`Permission required: ${lastMsg.metadata.toolName}`, 'Action Needed')
     } 
     // Check for agent-initiated status updates
     else if (lastMsg?.sender === 'agent' && lastMsg.text?.includes('Status updated to:')) {

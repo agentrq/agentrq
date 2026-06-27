@@ -13,6 +13,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 
+	backfillctrl "github.com/agentrq/agentrq/backend/internal/controller/backfill"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -35,6 +36,7 @@ import (
 	repopg "github.com/agentrq/agentrq/backend/internal/repository/postgres"
 	reposqlite "github.com/agentrq/agentrq/backend/internal/repository/sqlite"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	backfillsvc "github.com/agentrq/agentrq/backend/internal/service/backfill"
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -160,6 +162,7 @@ func New(cfg Config) (*App, error) {
 		&model.PushSubscription{},
 		&model.Event{},
 		&model.EventTrigger{},
+		&model.Backfill{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
@@ -171,6 +174,12 @@ func New(cfg Config) (*App, error) {
 	}
 	repo := base.New(db)
 	bus := eventbus.New()
+
+	// Run one-time data backfills. Each is recorded in the backfills table once
+	// applied, so it never runs again; pending ones run in the background.
+	if err := backfillctrl.New(repo, backfillsvc.New(repo)).Run(context.Background()); err != nil {
+		return nil, fmt.Errorf("run backfills: %w", err)
+	}
 
 	storageSvc, err := storage.New("./_storage")
 	if err != nil {

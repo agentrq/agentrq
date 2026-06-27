@@ -399,7 +399,7 @@ const handleAction = async (task, action) => {
       m.metadata?.status !== 'deny'
     );
     
-    const requestId = pendingMsg?.metadata?.request_id || pendingMsg?.metadata?.requestId;
+    const requestId = pendingMsg?.metadata?.requestId;
     if (!requestId) throw new Error('No pending permission request found');
     
     const behavior = action === 'allow' ? 'allow' : 'deny';

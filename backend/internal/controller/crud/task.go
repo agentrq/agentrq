@@ -467,7 +467,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 		sender = "slack"
 		if req.SlackUser != "" {
 			metaMap := map[string]any{
-				"slack_user": req.SlackUser,
+				"slackUser": req.SlackUser,
 			}
 			b, _ := json.Marshal(metaMap)
 			metadataJSON = datatypes.JSON(b)

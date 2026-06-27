@@ -1009,7 +1009,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 			"id":          monoflake.ID(m.ID).String(),
 			"sender":      m.Sender,
 			"text":        m.Text,
-			"created_at":  m.CreatedAt,
+			"createdAt":   m.CreatedAt,
 			"attachments": attachments,
 			"metadata":    string(m.Metadata),
 		})
@@ -1115,12 +1115,12 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("relaying permission request")
 				// Type "permission_request" helps UI render buttons
 				metadata := map[string]any{
-					"type":          "permission_request",
-					"request_id":    p.RequestID,
-					"tool_name":     p.ToolName,
-					"description":   p.Description,
-					"input_preview": p.InputPreview,
-					"status":        "pending",
+					"type":         "permission_request",
+					"requestId":    p.RequestID,
+					"toolName":     p.ToolName,
+					"description":  p.Description,
+					"inputPreview": p.InputPreview,
+					"status":       "pending",
 				}
 				// Store resolved taskID with the request for later use in SendPermissionVerdict
 				ps.requestTaskIDsMu.Lock()
@@ -1392,12 +1392,12 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
 			metadata := map[string]any{
-				"type":          "permission_request",
-				"request_id":    p.RequestID,
-				"tool_name":     p.ToolName,
-				"description":   p.Description,
-				"input_preview": p.InputPreview,
-				"status":        "pending",
+				"type":         "permission_request",
+				"requestId":    p.RequestID,
+				"toolName":     p.ToolName,
+				"description":  p.Description,
+				"inputPreview": p.InputPreview,
+				"status":       "pending",
 			}
 			// Store resolved taskID with the request for later use in SendPermissionVerdict
 			ps.requestTaskIDsMu.Lock()

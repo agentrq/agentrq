@@ -282,8 +282,14 @@ func (c *controller) OnMessageUpdated(ctx context.Context, msg entity.Message, t
 		return nil
 	}
 
-	// Skip if the decision was already executed/marked in Slack
-	if decidedInSlack, _ := metaMap["decided_in_slack"].(bool); decidedInSlack {
+	// Skip if the decision was already executed/marked in Slack.
+	// Read camelCase first, falling back to the legacy snake_case key for
+	// messages persisted before the camelCase migration.
+	decidedInSlack, _ := metaMap["decidedInSlack"].(bool)
+	if !decidedInSlack {
+		decidedInSlack, _ = metaMap["decided_in_slack"].(bool)
+	}
+	if decidedInSlack {
 		return nil
 	}
 
@@ -760,9 +766,9 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 					reqID, _ = metadata["requestId"].(string)
 				}
 				if reqID == requestID {
-					metadata["decided_in_slack"] = true
-					metadata["slack_user_id"] = action.UserID
-					metadata["slack_user_name"] = action.UserName
+					metadata["decidedInSlack"] = true
+					metadata["slackUserId"] = action.UserID
+					metadata["slackUserName"] = action.UserName
 					b, marshalErr := json.Marshal(metadata)
 					if marshalErr == nil {
 						_ = c.repo.UpdateMessageMetadata(ctx, taskID, m.ID, b)
@@ -1055,4 +1061,3 @@ func formatSlackAttachments(atts []entity.Attachment) string {
 	}
 	return "Attachments:\n" + strings.Join(parts, "\n")
 }
-
