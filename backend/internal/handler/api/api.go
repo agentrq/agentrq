@@ -314,7 +314,7 @@ func (h *handler) rootLogin() fiber.Handler {
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "google")
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "", "google")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
@@ -387,7 +387,7 @@ func (h *handler) googleCallback() fiber.Handler {
 
 		redirectURL := "/"
 		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
+			if rurl, _, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
 				redirectURL = h.sanitizeRedirectURL(rurl)
 			}
 		}
@@ -402,7 +402,7 @@ func (h *handler) githubLogin() fiber.Handler {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "github login disabled"})
 		}
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "github")
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "", "github")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
@@ -467,7 +467,7 @@ func (h *handler) githubCallback() fiber.Handler {
 
 		redirectURL := "/"
 		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
+			if rurl, _, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
 				redirectURL = h.sanitizeRedirectURL(rurl)
 			}
 		}

@@ -30,15 +30,16 @@ type Claims struct {
 type StateClaims struct {
 	jwt.RegisteredClaims
 	RedirectURL string `json:"rurl,omitempty"`
+	WorkspaceID string `json:"wid,omitempty"`
 }
 
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
-	CreateOAuthStateToken(redirectURL, provider string) (string, error)
+	CreateOAuthStateToken(redirectURL, workspaceID, provider string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
-	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
+	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL, workspaceID string, err error)
 }
 
 type tokenService struct {
@@ -128,7 +129,7 @@ func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string,
 	return token.SignedString(s.secret)
 }
 
-func (s *tokenService) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
+func (s *tokenService) CreateOAuthStateToken(redirectURL, workspaceID, provider string) (string, error) {
 	now := time.Now()
 	claims := StateClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -138,12 +139,13 @@ func (s *tokenService) CreateOAuthStateToken(redirectURL, provider string) (stri
 			NotBefore: jwt.NewNumericDate(now.Add(-2 * time.Second)),
 		},
 		RedirectURL: redirectURL,
+		WorkspaceID: workspaceID,
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
 }
 
-func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
+func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (string, string, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &StateClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
@@ -151,14 +153,14 @@ func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (strin
 		return s.secret, nil
 	}, jwt.WithAudience(provider))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	claims, ok := token.Claims.(*StateClaims)
 	if !ok || !token.Valid {
-		return "", errors.New("invalid state token")
+		return "", "", errors.New("invalid state token")
 	}
-	return claims.RedirectURL, nil
+	return claims.RedirectURL, claims.WorkspaceID, nil
 }
 
 func (s *tokenService) ValidateToken(tokenStr string) (*Claims, error) {
