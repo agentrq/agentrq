@@ -42,12 +42,12 @@ func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	return m.createMCPTokenFunc(userID, workspaceID, tokenType)
 }
 
-func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
+func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, workspaceID, provider string) (string, error) {
 	return redirectURL, nil // passthrough for tests that don't need real JWT signing
 }
 
-func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
-	return tokenStr, nil // treat the raw value as the redirect URL in simple tests
+func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, string, error) {
+	return tokenStr, "", nil // treat the raw value as the redirect URL in simple tests
 }
 
 type mockCrudController struct {
@@ -108,7 +108,7 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 	}
 
 	t.Run("Valid JWT state redirects correctly", func(t *testing.T) {
-		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "google")
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "", "google")
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 		resp, _ := app.Test(req)
 		if resp.StatusCode != http.StatusFound {
@@ -132,7 +132,7 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 
 	t.Run("Wrong provider state falls back to /", func(t *testing.T) {
 		// State signed for github should be rejected by google callback
-		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "github")
+		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "", "github")
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 		resp, _ := app.Test(req)
 		if resp.StatusCode != http.StatusFound {

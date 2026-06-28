@@ -11,6 +11,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/agentrq/agentrq/backend/internal/service/security"
@@ -46,6 +47,18 @@ func (s *stubSlackService) VerifyRequest(r *http.Request, body []byte) error {
 }
 
 // Thin mock for CRUDRespondToTask
+type mockTokenSvc struct {
+	auth.TokenService
+}
+
+func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, workspaceID, provider string) (string, error) {
+	return workspaceID, nil // simple mock
+}
+
+func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, string, error) {
+	return "", tokenStr, nil // simple mock
+}
+
 type mockCRUD struct {
 	createTaskFunc  func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	replyToTaskFunc func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
@@ -86,6 +99,7 @@ func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	c := New(Params{
 		Repository: mockRepo,
@@ -93,6 +107,7 @@ func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -121,6 +136,7 @@ func TestHandleSlashCommand_WorkspaceNotFound(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	c := New(Params{
 		Repository: mockRepo,
@@ -128,6 +144,7 @@ func TestHandleSlashCommand_WorkspaceNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -153,6 +170,7 @@ func TestHandleSlashCommand_Success_Unquoted(t *testing.T) {
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	var capturedReq entity.CreateTaskRequest
 	crud := &mockCRUD{
@@ -168,6 +186,7 @@ func TestHandleSlashCommand_Success_Unquoted(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -220,6 +239,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	var capturedReq entity.CreateTaskRequest
 	crud := &mockCRUD{
@@ -235,6 +255,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -274,6 +295,7 @@ func TestHandleSlashCommand_Success_SmartQuotes(t *testing.T) {
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	var capturedReq entity.CreateTaskRequest
 	crud := &mockCRUD{
@@ -289,6 +311,7 @@ func TestHandleSlashCommand_Success_SmartQuotes(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -329,6 +352,7 @@ func TestHandleSlashCommand_Success_Truncation(t *testing.T) {
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	var capturedReq entity.CreateTaskRequest
 	crud := &mockCRUD{
@@ -344,6 +368,7 @@ func TestHandleSlashCommand_Success_Truncation(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -385,6 +410,7 @@ func TestProcessEvent_OriginSlack(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	c := New(Params{
 		Repository: mockRepo,
@@ -392,6 +418,7 @@ func TestProcessEvent_OriginSlack(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "test-key",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -415,6 +442,7 @@ func TestHandleSlackEvent_WithFiles(t *testing.T) {
 	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	// Setup a mock HTTP test server to serve the private file download
 	fileContent := "hello from slack attachment"
@@ -442,6 +470,7 @@ func TestHandleSlackEvent_WithFiles(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "12345678901234567890123456789012",
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -537,6 +566,7 @@ func TestOnTaskCreated_ChannelNotFound(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	stubSlack := &stubSlackServiceChannelNotFound{}
 
@@ -546,6 +576,7 @@ func TestOnTaskCreated_ChannelNotFound(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -595,6 +626,7 @@ func TestOnMessageCreated_HumanUserName(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	stubSlack := &stubSlackService{}
 
@@ -604,6 +636,7 @@ func TestOnMessageCreated_HumanUserName(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -683,6 +716,7 @@ func TestOnMessageUpdated_Success(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	stubSlack := &stubSlackServiceWithUpdateTracking{}
 
@@ -692,6 +726,7 @@ func TestOnMessageUpdated_Success(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
 		BaseURL:    "https://app.agentrq.com",
 	})
@@ -753,6 +788,7 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
 	crud := &mockCRUD{}
 	mcp := &mockMCP{}
+	tokenSvc := &mockTokenSvc{}
 
 	stubSlack := &stubSlackServiceWithUpdateTracking{}
 
@@ -762,6 +798,7 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 		Crud:       crud,
 		MCPManager: mcp,
 		PubSub:     mockPubSub,
+		TokenSvc:   tokenSvc,
 		TokenKey:   "0123456789abcdef0123456789abcdef", // 32-byte key
 		BaseURL:    "https://app.agentrq.com",
 	})

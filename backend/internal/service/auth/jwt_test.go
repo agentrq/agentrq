@@ -143,42 +143,46 @@ func TestTokenService(t *testing.T) {
 
 	t.Run("CreateAndValidateOAuthStateToken", func(t *testing.T) {
 		redirectURL := "/dashboard"
+		workspaceID := "w123"
 		provider := "google"
 
-		token, err := s.CreateOAuthStateToken(redirectURL, provider)
+		token, err := s.CreateOAuthStateToken(redirectURL, workspaceID, provider)
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
-		got, err := s.ValidateOAuthStateToken(token, provider)
+		gotURL, gotWS, err := s.ValidateOAuthStateToken(token, provider)
 		if err != nil {
 			t.Fatalf("failed to validate state token: %v", err)
 		}
-		if got != redirectURL {
-			t.Errorf("expected redirectURL %q, got %q", redirectURL, got)
+		if gotURL != redirectURL {
+			t.Errorf("expected redirectURL %q, got %q", redirectURL, gotURL)
+		}
+		if gotWS != workspaceID {
+			t.Errorf("expected workspaceID %q, got %q", workspaceID, gotWS)
 		}
 	})
 
 	t.Run("OAuthStateTokenWrongProvider", func(t *testing.T) {
-		token, err := s.CreateOAuthStateToken("/dashboard", "google")
+		token, err := s.CreateOAuthStateToken("/dashboard", "", "google")
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
-		_, err = s.ValidateOAuthStateToken(token, "github")
+		_, _, err = s.ValidateOAuthStateToken(token, "github")
 		if err == nil {
 			t.Error("expected error when validating with wrong provider, got nil")
 		}
 	})
 
 	t.Run("OAuthStateTokenExpiry", func(t *testing.T) {
-		token, err := s.CreateOAuthStateToken("/", "google")
+		token, err := s.CreateOAuthStateToken("/", "", "google")
 		if err != nil {
 			t.Fatalf("failed to create state token: %v", err)
 		}
 
 		// Should be valid immediately
-		_, err = s.ValidateOAuthStateToken(token, "google")
+		_, _, err = s.ValidateOAuthStateToken(token, "google")
 		if err != nil {
 			t.Errorf("expected valid token, got: %v", err)
 		}
