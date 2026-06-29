@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,13 +17,18 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang/mock/gomock"
 	slackapi "github.com/slack-go/slack"
+	"gorm.io/datatypes"
 )
+
+// Ensure future-permission-test imports are referenced.
+var _ = json.Marshal
+var _ datatypes.JSON
 
 // Thin stub for slacksvc.Service
 type stubSlackService struct{}
 
-func (s *stubSlackService) IsEnabled() bool    { return true }
-func (s *stubSlackService) ClientID() string   { return "test-client-id" }
+func (s *stubSlackService) IsEnabled() bool  { return true }
+func (s *stubSlackService) ClientID() string { return "test-client-id" }
 func (s *stubSlackService) CreatePrivateChannel(ctx context.Context, token, name string) (string, error) {
 	return "", nil
 }
@@ -47,8 +53,9 @@ func (s *stubSlackService) VerifyRequest(r *http.Request, body []byte) error {
 
 // Thin mock for CRUDRespondToTask
 type mockCRUD struct {
-	createTaskFunc  func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
-	replyToTaskFunc func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
+	createTaskFunc    func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
+	replyToTaskFunc   func(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)
+	respondToTaskFunc func(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error)
 }
 
 func (m *mockCRUD) CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
@@ -58,6 +65,9 @@ func (m *mockCRUD) CreateTask(ctx context.Context, req entity.CreateTaskRequest)
 	return &entity.CreateTaskResponse{}, nil
 }
 func (m *mockCRUD) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
+	if m.respondToTaskFunc != nil {
+		return m.respondToTaskFunc(ctx, req)
+	}
 	return nil, nil
 }
 func (m *mockCRUD) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
@@ -70,13 +80,29 @@ func (m *mockCRUD) CheckWorkspaceAccess(ctx context.Context, id int64, userID st
 	return true, nil
 }
 
-type mockMCP struct{}
+type mockMCP struct {
+	capturedVerdict *struct {
+		workspaceID int64
+		userID      string
+		taskID      int64
+		requestID   string
+		behavior    string
+	}
+}
 
 func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error {
+	m.capturedVerdict = &struct {
+		workspaceID int64
+		userID      string
+		taskID      int64
+		requestID   string
+		behavior    string
+	}{workspaceID, userID, taskID, requestID, behavior}
 	return nil
 }
 
-func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {}
+func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
+}
 
 func TestHandleSlashCommand_ChannelNotFound(t *testing.T) {
 	gomockCtrl := gomock.NewController(t)
@@ -615,11 +641,11 @@ func TestOnMessageCreated_HumanUserName(t *testing.T) {
 	}
 
 	msg := entity.Message{
-		ID:        1,
-		TaskID:    99,
-		UserID:    100,
-		Sender:    "human",
-		Text:      "Hello slack thread",
+		ID:     1,
+		TaskID: 99,
+		UserID: 100,
+		Sender: "human",
+		Text:   "Hello slack thread",
 	}
 
 	task := entity.Task{
@@ -673,6 +699,18 @@ func (s *stubSlackServiceWithUpdateTracking) UpdateMessage(ctx context.Context, 
 	s.capturedChannelID = channelID
 	s.capturedTS = ts
 	return nil
+}
+
+type stubSlackServiceWithPostTracking struct {
+	stubSlackService
+	postMessageCalled bool
+	capturedChannelID string
+}
+
+func (s *stubSlackServiceWithPostTracking) PostMessage(ctx context.Context, token, channelID string, blocks []slackapi.Block) (string, error) {
+	s.postMessageCalled = true
+	s.capturedChannelID = channelID
+	return "thread-ts-123", nil
 }
 
 func TestOnMessageUpdated_Success(t *testing.T) {
@@ -794,3 +832,71 @@ func TestOnMessageUpdated_SkippedIfDecidedInSlack(t *testing.T) {
 	}
 }
 
+func TestOnTaskCreated_Success(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+
+	stubSlack := &stubSlackServiceWithPostTracking{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   stubSlack,
+		Crud:       &mockCRUD{},
+		MCPManager: &mockMCP{},
+		PubSub:     mockPubSub,
+		TokenKey:   "0123456789abcdef0123456789abcdef",
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	decToken := "xoxb-test-token"
+	encToken, nonce, err := security.Encrypt(decToken, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("failed to encrypt token: %v", err)
+	}
+
+	task := entity.Task{
+		ID:          1,
+		WorkspaceID: 42,
+		Title:       "Fix the bug",
+		Body:        "See issue #42",
+		Assignee:    "agent",
+		Status:      "notstarted",
+		CreatedBy:   "human",
+	}
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), int64(42)).
+		Return(model.SlackWorkspaceLink{
+			WorkspaceID:    42,
+			AccessToken:    encToken,
+			TokenNonce:     nonce,
+			SlackChannelID: "C_PROJ",
+		}, nil)
+
+	var capturedThread model.SlackTaskThread
+	mockRepo.EXPECT().
+		UpsertSlackTaskThread(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, th model.SlackTaskThread) error {
+			capturedThread = th
+			return nil
+		})
+
+	err = c.OnTaskCreated(context.Background(), task)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !stubSlack.postMessageCalled {
+		t.Error("expected PostMessage to be called")
+	}
+	if stubSlack.capturedChannelID != "C_PROJ" {
+		t.Errorf("expected channel 'C_PROJ', got %q", stubSlack.capturedChannelID)
+	}
+	if capturedThread.TaskID != 1 || capturedThread.WorkspaceID != 42 ||
+		capturedThread.SlackChannelID != "C_PROJ" || capturedThread.ThreadTS != "thread-ts-123" {
+		t.Errorf("unexpected SlackTaskThread: %+v", capturedThread)
+	}
+}
