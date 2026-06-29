@@ -27,6 +27,7 @@ type mockEventCrud struct {
 	listEventTriggersFunc  func(ctx context.Context, req entity.ListEventTriggersRequest) (*entity.ListEventTriggersResponse, error)
 	deleteEventTriggerFunc func(ctx context.Context, req entity.DeleteEventTriggerRequest) error
 	listTasksFromEventFunc func(ctx context.Context, req entity.ListTasksFromEventRequest) (*entity.ListTasksFromEventResponse, error)
+	updateEventFunc        func(ctx context.Context, req entity.UpdateEventRequest) (*entity.UpdateEventResponse, error)
 }
 
 func (m *mockEventCrud) CreateEvent(ctx context.Context, req entity.CreateEventRequest) (*entity.CreateEventResponse, error) {
@@ -53,6 +54,9 @@ func (m *mockEventCrud) DeleteEventTrigger(ctx context.Context, req entity.Delet
 func (m *mockEventCrud) ListTasksFromEvent(ctx context.Context, req entity.ListTasksFromEventRequest) (*entity.ListTasksFromEventResponse, error) {
 	return m.listTasksFromEventFunc(ctx, req)
 }
+func (m *mockEventCrud) UpdateEvent(ctx context.Context, req entity.UpdateEventRequest) (*entity.UpdateEventResponse, error) {
+	return m.updateEventFunc(ctx, req)
+}
 
 func newEventApp(ctrl *mockEventCrud) *fiber.App {
 	app := fiber.New()
@@ -72,6 +76,10 @@ func newEventApp(ctrl *mockEventCrud) *fiber.App {
 	app.Delete("/events/:id", func(c *fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.deleteEvent()(c)
+	})
+	app.Patch("/events/:id", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.updateEvent()(c)
 	})
 	app.Post("/events/:id/triggers", func(c *fiber.Ctx) error {
 		c.Locals("user_id", "user1")
@@ -434,5 +442,82 @@ func TestListTasksFromEvent_InvalidEventID(t *testing.T) {
 
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+// ── updateEvent ───────────────────────────────────────────────────────────────
+
+func TestUpdateEvent_OK(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.updateEventFunc = func(_ context.Context, req entity.UpdateEventRequest) (*entity.UpdateEventResponse, error) {
+		return &entity.UpdateEventResponse{Event: entity.Event{ID: req.ID, PayloadGuidelines: req.PayloadGuidelines}}, nil
+	}
+	app := newEventApp(ctrl)
+
+	body := []byte(`{"payloadGuidelines":"describe what was deployed"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEvent_InvalidID(t *testing.T) {
+	app := newEventApp(&mockEventCrud{})
+
+	req := httptest.NewRequest(http.MethodPatch, "/events/!!!", bytes.NewReader([]byte(`{"payloadGuidelines":"x"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEvent_InvalidPayload(t *testing.T) {
+	app := newEventApp(&mockEventCrud{})
+
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID, bytes.NewReader([]byte(`{bad json`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEvent_NotFound(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.updateEventFunc = func(_ context.Context, _ entity.UpdateEventRequest) (*entity.UpdateEventResponse, error) {
+		return nil, base.ErrNotFound
+	}
+	app := newEventApp(ctrl)
+
+	body := []byte(`{"payloadGuidelines":"x"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEvent_ControllerError(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.updateEventFunc = func(_ context.Context, _ entity.UpdateEventRequest) (*entity.UpdateEventResponse, error) {
+		return nil, errors.New("db unavailable")
+	}
+	app := newEventApp(ctrl)
+
+	body := []byte(`{"payloadGuidelines":"x"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", resp.StatusCode)
 	}
 }
