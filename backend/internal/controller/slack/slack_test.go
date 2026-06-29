@@ -1110,6 +1110,7 @@ func TestHandleMCPPermission_Success_Allow(t *testing.T) {
 		ChannelID: "C123",
 		MessageTS: "12345678.90",
 		UserID:    "U_REVIEWER",
+		UserName:  "John Doe",
 	}
 
 	err = c.HandleMCPPermission(context.Background(), action)
@@ -1127,6 +1128,9 @@ func TestHandleMCPPermission_Success_Allow(t *testing.T) {
 	}
 	if uid, _ := meta["slack_user_id"].(string); uid != "U_REVIEWER" {
 		t.Errorf("expected slack_user_id='U_REVIEWER', got %q", uid)
+	}
+	if name, _ := meta["slack_user_name"].(string); name != "John Doe" {
+		t.Errorf("expected slack_user_name='John Doe', got %q", name)
 	}
 	if rid, _ := meta["request_id"].(string); rid != requestID {
 		t.Errorf("expected request_id=%q, got %q", requestID, rid)
