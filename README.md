@@ -233,6 +233,14 @@ codex-gateway
 codex-gateway -- codex app-server
 ```
 
+> **Windows PowerShell:** `codex-gateway -- codex app-server` may fail with `spawn codex ENOENT` when Codex is installed through npm. Until [agentrq/codex-gateway#2](https://github.com/agentrq/codex-gateway/issues/2) is fixed, pass the absolute Codex executable path:
+
+```powershell
+& "$env:APPDATA\npm\codex-gateway.cmd" -- "$env:APPDATA\npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe" app-server
+```
+
+If your npm global directory or Codex package path differs, replace those paths with the locations on your machine.
+
 ## 👑 Supervisor (CoreMCP)
 
 While individual workspaces provide a scoped view for specific projects, the **Supervisor (CoreMCP)** is a global MCP server that grants an agent bird's-eye view and management capabilities across your entire AgentRQ account.

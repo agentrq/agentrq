@@ -146,6 +146,10 @@
                             {{ copiedState.codexStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
+                        <p class="text-[10px] text-amber-700 dark:text-amber-400 font-semibold leading-relaxed">
+                          Windows PowerShell users may see <code class="font-mono">spawn codex ENOENT</code>. See:
+                          <a href="https://github.com/agentrq/codex-gateway/issues/2" target="_blank" rel="noopener noreferrer" class="underline decoration-amber-300 underline-offset-2">agentrq/codex-gateway#2</a>.
+                        </p>
                       </div>
                     </div>
 
