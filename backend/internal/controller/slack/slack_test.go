@@ -21,10 +21,6 @@ import (
 	"gorm.io/datatypes"
 )
 
-// Ensure future-permission-test imports are referenced.
-var _ = json.Marshal
-var _ datatypes.JSON
-
 // Thin stub for slacksvc.Service
 type stubSlackService struct{}
 
@@ -1038,5 +1034,192 @@ func TestHandleTaskApproval_WorkspaceNotFound(t *testing.T) {
 	err := c.HandleTaskApproval(context.Background(), action)
 	if err == nil {
 		t.Fatal("expected error when workspace is not found")
+	}
+}
+
+func TestHandleMCPPermission_Success_Allow(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+	stubSlack := &stubSlackServiceWithUpdateTracking{}
+	mcp := &mockMCP{}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   stubSlack,
+		Crud:       &mockCRUD{},
+		MCPManager: mcp,
+		PubSub:     mockPubSub,
+		TokenKey:   "0123456789abcdef0123456789abcdef",
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID := int64(42)
+	workspaceID62 := monoflake.ID(workspaceID).String()
+	taskID := int64(99)
+	taskID62 := monoflake.ID(taskID).String()
+	requestID := "req-abc-123"
+	ownerUserID := monoflake.ID(int64(100)).String()
+	actionID := "task_permission:" + workspaceID62 + ":" + taskID62 + ":" + requestID + ":allow"
+
+	decToken := "xoxb-test-token"
+	encToken, nonce, err := security.Encrypt(decToken, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("failed to encrypt token: %v", err)
+	}
+
+	metaBytes, _ := json.Marshal(map[string]any{
+		"type":       "permission_request",
+		"request_id": requestID,
+	})
+	permMsg := model.Message{
+		ID:       7,
+		TaskID:   taskID,
+		Metadata: datatypes.JSON(metaBytes),
+	}
+
+	mockRepo.EXPECT().
+		SystemGetWorkspace(gomock.Any(), workspaceID).
+		Return(model.Workspace{UserID: int64(100)}, nil)
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), workspaceID).
+		Return(model.SlackWorkspaceLink{
+			WorkspaceID:    workspaceID,
+			AccessToken:    encToken,
+			TokenNonce:     nonce,
+			SlackChannelID: "C123",
+		}, nil)
+
+	mockRepo.EXPECT().
+		ListMessages(gomock.Any(), taskID).
+		Return([]model.Message{permMsg}, nil)
+
+	var capturedMeta []byte
+	mockRepo.EXPECT().
+		UpdateMessageMetadata(gomock.Any(), taskID, int64(7), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int64, _ int64, b []byte) error {
+			capturedMeta = b
+			return nil
+		})
+
+	action := SlackBlockAction{
+		ActionID:  actionID,
+		ChannelID: "C123",
+		MessageTS: "12345678.90",
+		UserID:    "U_REVIEWER",
+	}
+
+	err = c.HandleMCPPermission(context.Background(), action)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Assert metadata-tagging: decided_in_slack, slack_user_id, request_id
+	var meta map[string]any
+	if err := json.Unmarshal(capturedMeta, &meta); err != nil {
+		t.Fatalf("failed to unmarshal captured metadata: %v", err)
+	}
+	if decided, _ := meta["decided_in_slack"].(bool); !decided {
+		t.Error("expected decided_in_slack=true in updated metadata")
+	}
+	if uid, _ := meta["slack_user_id"].(string); uid != "U_REVIEWER" {
+		t.Errorf("expected slack_user_id='U_REVIEWER', got %q", uid)
+	}
+	if rid, _ := meta["request_id"].(string); rid != requestID {
+		t.Errorf("expected request_id=%q, got %q", requestID, rid)
+	}
+
+	// Assert SendPermissionVerdict args via capturedVerdict
+	if mcp.capturedVerdict == nil {
+		t.Fatal("expected SendPermissionVerdict to be called")
+	}
+	if mcp.capturedVerdict.workspaceID != workspaceID {
+		t.Errorf("SendPermissionVerdict: expected workspaceID %d, got %d", workspaceID, mcp.capturedVerdict.workspaceID)
+	}
+	if mcp.capturedVerdict.userID != ownerUserID {
+		t.Errorf("SendPermissionVerdict: expected userID %q, got %q", ownerUserID, mcp.capturedVerdict.userID)
+	}
+	if mcp.capturedVerdict.taskID != taskID {
+		t.Errorf("SendPermissionVerdict: expected taskID %d, got %d", taskID, mcp.capturedVerdict.taskID)
+	}
+	if mcp.capturedVerdict.requestID != requestID {
+		t.Errorf("SendPermissionVerdict: expected requestID %q, got %q", requestID, mcp.capturedVerdict.requestID)
+	}
+	if mcp.capturedVerdict.behavior != "allow" {
+		t.Errorf("SendPermissionVerdict: expected behavior 'allow', got %q", mcp.capturedVerdict.behavior)
+	}
+	if !stubSlack.updateMessageCalled {
+		t.Error("expected UpdateMessage to be called after permission verdict")
+	}
+}
+
+func TestHandleMCPPermission_InvalidActionID(t *testing.T) {
+	c := New(Params{
+		TokenKey: "0123456789abcdef0123456789abcdef",
+		BaseURL:  "https://app.agentrq.com",
+	})
+
+	action := SlackBlockAction{ActionID: "task_permission:only:three:parts"}
+	err := c.HandleMCPPermission(context.Background(), action)
+	if err == nil {
+		t.Fatal("expected error for malformed action_id")
+	}
+	if !strings.Contains(err.Error(), "invalid task_permission action_id") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestHandleMCPPermission_NoMCPManager(t *testing.T) {
+	gomockCtrl := gomock.NewController(t)
+	defer gomockCtrl.Finish()
+
+	mockRepo := mock_repo.NewMockRepository(gomockCtrl)
+	mockPubSub := mock_pubsub.NewMockService(gomockCtrl)
+
+	decToken := "xoxb-test-token"
+	encToken, nonce, err := security.Encrypt(decToken, "0123456789abcdef0123456789abcdef")
+	if err != nil {
+		t.Fatalf("failed to encrypt token: %v", err)
+	}
+
+	c := New(Params{
+		Repository: mockRepo,
+		SlackSvc:   &stubSlackServiceWithUpdateTracking{},
+		Crud:       &mockCRUD{},
+		MCPManager: nil,
+		PubSub:     mockPubSub,
+		TokenKey:   "0123456789abcdef0123456789abcdef",
+		BaseURL:    "https://app.agentrq.com",
+	})
+
+	workspaceID := int64(42)
+	workspaceID62 := monoflake.ID(workspaceID).String()
+	taskID := int64(99)
+	taskID62 := monoflake.ID(taskID).String()
+	actionID := "task_permission:" + workspaceID62 + ":" + taskID62 + ":req-xyz:allow"
+
+	mockRepo.EXPECT().
+		SystemGetWorkspace(gomock.Any(), workspaceID).
+		Return(model.Workspace{UserID: int64(100)}, nil)
+
+	mockRepo.EXPECT().
+		GetSlackWorkspaceLink(gomock.Any(), workspaceID).
+		Return(model.SlackWorkspaceLink{
+			WorkspaceID:    workspaceID,
+			AccessToken:    encToken,
+			TokenNonce:     nonce,
+			SlackChannelID: "C123",
+		}, nil)
+
+	action := SlackBlockAction{ActionID: actionID, ChannelID: "C123", MessageTS: "ts"}
+	err = c.HandleMCPPermission(context.Background(), action)
+	if err == nil {
+		t.Fatal("expected error when MCP manager is nil")
+	}
+	if !strings.Contains(err.Error(), "MCP manager not available") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
