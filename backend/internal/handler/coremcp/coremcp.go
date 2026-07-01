@@ -110,6 +110,15 @@ func getTokenVal(r *http.Request) string {
 	return ""
 }
 
+func loggedHeaderValue(name string, values []string) string {
+	switch strings.ToLower(name) {
+	case "authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token":
+		return "[REDACTED]"
+	default:
+		return strings.Join(values, ", ")
+	}
+}
+
 func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatus int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
@@ -152,11 +161,7 @@ func (h *handler) streamableHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ev := zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("remote", r.RemoteAddr)
 		for k, v := range r.Header {
-			if strings.ToLower(k) == "authorization" {
-				ev = ev.Str("h_"+strings.ToLower(k), "[REDACTED]")
-				continue
-			}
-			ev = ev.Str("h_"+strings.ToLower(k), strings.Join(v, ", "))
+			ev = ev.Str("h_"+strings.ToLower(k), loggedHeaderValue(k, v))
 		}
 		ev.Msg("CoreMCP call")
 
