@@ -141,9 +141,13 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		Payload: mapper.FromModelTaskToView(created),
 	})
 
-	// If this is a one-time schedule, delete the parent template now that we've spawned it
+	// If this is a one-time schedule, delete the parent template now that we've spawned it.
+	// A schedule is one-time only when BOTH day-of-month and month are fixed (e.g.
+	// "0 9 1 1 *"), matching the frontend contract (useCron.js and the task-form
+	// generators). A fixed month with a wildcard day-of-month (e.g. "0 9 * 6 *" —
+	// every day in June) is recurring and must keep its parent template.
 	parts := strings.Fields(parent.CronSchedule)
-	if len(parts) == 5 && parts[3] != "*" {
+	if len(parts) == 5 && parts[2] != "*" && parts[3] != "*" {
 		err := s.repo.DeleteTask(ctx, parent.WorkspaceID, parent.ID, parent.UserID)
 		if err != nil {
 			zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to delete one-time parent task")
