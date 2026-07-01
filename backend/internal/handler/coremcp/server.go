@@ -220,6 +220,7 @@ type UpdateScheduledTaskParams struct {
 
 type GetAttachmentParams struct {
 	WorkspaceID  string `json:"workspaceId"`
+	TaskID       string `json:"taskId"`
 	AttachmentID string `json:"attachmentId"`
 }
 
@@ -600,6 +601,7 @@ func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Call
 	res, err := s.crud.GetAttachment(ctx, entity.GetAttachmentRequest{
 		UserID:       userID,
 		WorkspaceID:  parseID(args.WorkspaceID),
+		TaskID:       parseID(args.TaskID),
 		AttachmentID: args.AttachmentID,
 	})
 	if err != nil {

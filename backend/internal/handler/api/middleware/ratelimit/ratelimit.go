@@ -2,13 +2,13 @@ package ratelimit
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	zlog "github.com/rs/zerolog/log"
 )
@@ -51,19 +51,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Always extract IP
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
-			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				ips := strings.Split(xff, ",")
-				if len(ips) > 0 {
-					ip = strings.TrimSpace(ips[0])
-				}
-			} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-				ip = xri
-			}
+			ip := clientip.Extract(r)
 			ipKey := "ip:" + ip
 
 			// Extract User ID if authenticated
@@ -168,22 +156,22 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 
 			// Set rate limit headers
 			w.Header().Set("X-RateLimit-Limit-IP", strconv.Itoa(maxPerIP))
-			w.Header().Set("X-RateLimit-Remaining-IP", strconv.Itoa(maxPerIP - ipInfo.requestCount))
+			w.Header().Set("X-RateLimit-Remaining-IP", strconv.Itoa(maxPerIP-ipInfo.requestCount))
 			w.Header().Set("X-RateLimit-Reset-IP", strconv.FormatInt(ipInfo.windowStart.Add(window).Unix(), 10))
 
 			if userKey != "" {
 				w.Header().Set("X-RateLimit-Limit-User", strconv.Itoa(maxPerUser))
-				w.Header().Set("X-RateLimit-Remaining-User", strconv.Itoa(maxPerUser - userInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining-User", strconv.Itoa(maxPerUser-userInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset-User", strconv.FormatInt(userInfo.windowStart.Add(window).Unix(), 10))
 
 				// Set primary headers to User limits since it's the more specific limit
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(maxPerUser))
-				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerUser - userInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerUser-userInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(userInfo.windowStart.Add(window).Unix(), 10))
 			} else {
 				// Set primary headers to IP limits
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(maxPerIP))
-				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerIP - ipInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerIP-ipInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(ipInfo.windowStart.Add(window).Unix(), 10))
 			}
 
