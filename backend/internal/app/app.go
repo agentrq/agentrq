@@ -305,6 +305,14 @@ func New(cfg Config) (*App, error) {
 				if err != nil {
 					return model.Task{}, err
 				}
+				// Validate the transition with the same rules the REST path enforces, so an
+				// agent cannot persist an arbitrary status or mutate a cron template through MCP.
+				if !crud.IsValidTaskStatus(status) {
+					return model.Task{}, fmt.Errorf("invalid task status: %s", status)
+				}
+				if m.Status == "cron" {
+					return model.Task{}, fmt.Errorf("cannot change the status of a cron task template")
+				}
 				if m.Status == status {
 					return m, nil
 				}
@@ -380,7 +388,17 @@ func New(cfg Config) (*App, error) {
 			},
 			func(ctx context.Context) (model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				return repo.GetNextTask(ctx, workspaceID, uid)
+				t, err := repo.ClaimNextTask(ctx, workspaceID, uid)
+				if err != nil {
+					return model.Task{}, err
+				}
+				// The task was atomically transitioned to "ongoing" as it was claimed;
+				// notify the human UI so the dashboard reflects that an agent picked it up.
+				bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
+					Type:    "task.updated",
+					Payload: mapper.FromModelTaskToView(t),
+				})
+				return t, nil
 			},
 			func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 				id := monoflake.IDFromBase62(chatID)

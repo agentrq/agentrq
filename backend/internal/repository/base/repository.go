@@ -51,6 +51,7 @@ type Repository interface {
 	CreateUser(ctx context.Context, u model.User) (model.User, error)
 	UpdateUser(ctx context.Context, u model.User) (model.User, error)
 	GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error)
+	ClaimNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error)
 	GetGlobalTaskStats(ctx context.Context, userID int64) (entity.GlobalTaskStatsResponse, error)
 
 	// Slack integration
@@ -316,6 +317,55 @@ func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID 
 		return model.Task{}, ErrNotFound
 	}
 	return t, err
+}
+
+// ClaimNextTask atomically dequeues the next notstarted, agent-assigned task in the
+// workspace and transitions it to "ongoing" in a single step, so two concurrent agents
+// (or the poller racing a getTask call) can never receive the same task. The claim is a
+// conditional UPDATE guarded by status = 'notstarted': for a given task exactly one caller
+// observes RowsAffected == 1; losers see 0 and retry with the next candidate. This is
+// atomic on both SQLite (writes are globally serialized) and PostgreSQL (row lock held for
+// the UPDATE), so it needs no dialect-specific FOR UPDATE / RETURNING clause.
+func (r *repository) ClaimNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error) {
+	dialect := r.conn(ctx).Dialector.Name()
+	var sortExpr string
+	if dialect == "sqlite" {
+		sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE CAST(strftime('%s', created_at) AS REAL) END)"
+	} else {
+		// Assume Postgres
+		sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE EXTRACT(EPOCH FROM created_at) END)"
+	}
+	order := fmt.Sprintf("%s ASC, id ASC", sortExpr)
+
+	// Bound the retry loop: a caller only loops when another caller claimed the same
+	// candidate first, which means the queue is draining, so this terminates quickly.
+	const maxAttempts = 128
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		var t model.Task
+		err := r.conn(ctx).
+			Where("workspace_id = ? AND user_id = ? AND status = ? AND assignee = ?", workspaceID, userID, "notstarted", "agent").
+			Order(order).
+			First(&t).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Task{}, ErrNotFound
+		}
+		if err != nil {
+			return model.Task{}, err
+		}
+
+		res := r.conn(ctx).Model(&model.Task{}).
+			Where("id = ? AND status = ?", t.ID, "notstarted").
+			Updates(map[string]any{"status": "ongoing", "updated_at": time.Now()})
+		if res.Error != nil {
+			return model.Task{}, res.Error
+		}
+		if res.RowsAffected == 1 {
+			t.Status = "ongoing"
+			return t, nil
+		}
+		// Lost the race for this task; another caller claimed it first. Try the next one.
+	}
+	return model.Task{}, ErrNotFound
 }
 
 func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {
