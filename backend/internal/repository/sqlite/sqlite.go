@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
@@ -50,7 +51,7 @@ func New(p Params) (dbconn.DBConn, error) {
 		return nil, nil
 	}
 
-	db, err := gorm.Open(sqlite.Open(cfg.DSN), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open(withConcurrencyPragmas(cfg.DSN)), &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, fmt.Errorf(_logPrefix+"failed to connect: %w", err)
 	}
@@ -73,6 +74,31 @@ func New(p Params) (dbconn.DBConn, error) {
 	}
 
 	return &repository{db: db}, nil
+}
+
+// withConcurrencyPragmas enables WAL journaling and a busy timeout on a file-backed SQLite
+// DSN. WAL lets readers and the single writer proceed concurrently (a bare DSN defaults to
+// "delete" journaling, where any reader blocks the writer and vice versa), and the busy
+// timeout makes contending writers wait rather than fail. It respects an operator that has
+// already configured pragmas, and leaves in-memory databases untouched.
+func withConcurrencyPragmas(dsn string) string {
+	if dsn == "" || strings.Contains(dsn, "_pragma=") {
+		return dsn // operator configured pragmas explicitly; do not override
+	}
+	if strings.Contains(dsn, ":memory:") {
+		return dsn // WAL is not meaningful for in-memory databases
+	}
+
+	base := dsn
+	if !strings.HasPrefix(base, "file:") {
+		// A file: scheme is required for the driver to parse query-string pragmas.
+		base = "file:" + base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 }
 
 func (r *repository) Conn(ctx context.Context) *gorm.DB {
