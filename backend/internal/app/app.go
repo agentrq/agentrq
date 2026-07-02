@@ -102,10 +102,11 @@ type (
 	}
 
 	App struct {
-		server server.Service
-		bus    *eventbus.Bus
-		pubsub pubsub.Service
-		cancel context.CancelFunc
+		server    server.Service
+		bus       *eventbus.Bus
+		pubsub    pubsub.Service
+		telemetry telemetry.Controller
+		cancel    context.CancelFunc
 	}
 )
 
@@ -224,7 +225,7 @@ func New(cfg Config) (*App, error) {
 		BatchSize: 1000,
 		Interval:  5 * time.Second,
 	})
-	if err := telemetryCtrl.Start(context.Background()); err != nil {
+	if err := telemetryCtrl.Start(appCtx); err != nil {
 		zlog.Error().Err(err).Msg("failed to start telemetry controller")
 	}
 
@@ -791,7 +792,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
 }
 
 func pubStatsHandler(ctrl pub.StatsController) http.Handler {
@@ -893,4 +894,15 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 func (a *App) Run() error {
 	defer a.cancel()
 	return a.server.Run()
+}
+
+// Shutdown gracefully stops the app: it cancels the app context (signaling background
+// consumers wired to it to stop), flushes buffered telemetry so nothing is lost, and
+// shuts the HTTP server down within ctx's deadline. Safe to call once on SIGINT/SIGTERM.
+func (a *App) Shutdown(ctx context.Context) error {
+	a.cancel()
+	if a.telemetry != nil {
+		a.telemetry.Close()
+	}
+	return a.server.Shutdown(ctx)
 }

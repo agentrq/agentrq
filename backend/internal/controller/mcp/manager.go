@@ -21,7 +21,6 @@ func NewManager(newFn func(workspaceID int64, userID string) *WorkspaceServer) *
 	}
 }
 
-
 // Get returns an existing server or creates one lazily.
 func (m *Manager) Get(workspaceID int64, userID string) *WorkspaceServer {
 	m.mu.RLock()
@@ -42,12 +41,17 @@ func (m *Manager) Get(workspaceID int64, userID string) *WorkspaceServer {
 	return srv
 }
 
-// Remove tears down a workspace's MCP server.
+// Remove tears down a workspace's MCP server, stopping its background goroutines.
 func (m *Manager) Remove(workspaceID int64) {
 	m.mu.Lock()
+	srv := m.servers[workspaceID]
 	delete(m.servers, workspaceID)
 	m.mu.Unlock()
+	if srv != nil {
+		srv.Close() // stop StartPing/StartPoller so they don't leak
+	}
 }
+
 // IsAgentConnected returns true if any agent is currently connected to the workspace server.
 func (m *Manager) IsAgentConnected(workspaceID int64) bool {
 	m.mu.RLock()
@@ -86,4 +90,3 @@ func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64
 		srv.SendChannelNotification(ctx, taskID, content)
 	}
 }
-

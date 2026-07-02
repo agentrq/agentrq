@@ -100,6 +100,21 @@ type WorkspaceServer struct {
 	archivedAt            *time.Time
 	lastUpdateCheckAt     time.Time
 	agentConnections      atomic.Int32
+
+	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
+	// removed workspace server does not leak them for the lifetime of the process.
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// Close stops the server's background goroutines (StartPing / StartPoller). It is
+// idempotent and safe to call more than once (e.g. from Manager.Remove).
+func (ps *WorkspaceServer) Close() {
+	ps.closeOnce.Do(func() {
+		if ps.done != nil {
+			close(ps.done)
+		}
+	})
 }
 
 // CreateTaskParams is the input to the create_task tool.
@@ -180,6 +195,7 @@ func NewWorkspaceServer(
 	ps := &WorkspaceServer{
 		workspaceID:           workspaceID,
 		userID:                userID,
+		done:                  make(chan struct{}),
 		createTask:            createTask,
 		updateStatus:          updateStatus,
 		getTask:               getTask,
@@ -415,7 +431,12 @@ func (ps *WorkspaceServer) StartPing() {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-ps.done:
+				return
+			case <-ticker.C:
+			}
 			for sess := range ps.mcpServer.Sessions() {
 				sess := sess // shadow for closure capture
 				go func() {
@@ -446,7 +467,12 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 	go func() {
 		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-ps.done:
+				return
+			case <-ticker.C:
+			}
 			ps.metadataMu.RLock()
 			isArchived := ps.archivedAt != nil
 			ps.metadataMu.RUnlock()

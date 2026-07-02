@@ -23,6 +23,7 @@ type (
 
 	Controller interface {
 		Start(ctx context.Context) error
+		Close()
 	}
 
 	controller struct {
@@ -30,6 +31,7 @@ type (
 		pubsub    pubsub.Service
 		queue     chan model.Telemetry
 		stop      chan struct{}
+		closeOnce sync.Once
 		wg        sync.WaitGroup
 		batchSize int
 		interval  time.Duration
@@ -225,8 +227,23 @@ func (c *controller) worker() {
 		case <-ticker.C:
 			flush()
 		case <-c.stop:
-			flush()
-			return
+			// Drain anything still queued so a shutdown flush loses nothing, then flush.
+			for {
+				select {
+				case record := <-c.queue:
+					buffer = append(buffer, record)
+				default:
+					flush()
+					return
+				}
+			}
 		}
 	}
+}
+
+// Close stops the worker, draining and flushing any buffered telemetry so shutdown does
+// not drop up to a batch interval of events. It is idempotent.
+func (c *controller) Close() {
+	c.closeOnce.Do(func() { close(c.stop) })
+	c.wg.Wait()
 }
