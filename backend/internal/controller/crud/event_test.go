@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,36 +38,6 @@ func repeat(s string, n int) string {
 		out[i] = s[0]
 	}
 	return string(out)
-}
-
-// ── validateEventTriggerCron ──────────────────────────────────────────────────
-
-func TestValidateEventTriggerCron(t *testing.T) {
-	valid := []string{
-		"0 * * * *",    // every hour at :00
-		"30 * * * *",   // every hour at :30
-		"0 0 * * *",    // every day midnight
-		"30 14 25 4 *", // one-time
-	}
-	for _, s := range valid {
-		if err := validateEventTriggerCron(s); err != nil {
-			t.Errorf("expected %q to be valid, got %v", s, err)
-		}
-	}
-	invalid := []string{
-		"* * * * *",    // wildcard minute
-		"*/5 * * * *",  // step
-		"0-5 * * * *",  // range
-		"0,30 * * * *", // comma list
-		"60 * * * *",   // out of range
-		"abc * * * *",  // non-integer
-		"0 * * *",      // too few fields
-	}
-	for _, s := range invalid {
-		if err := validateEventTriggerCron(s); err == nil {
-			t.Errorf("expected %q to be invalid", s)
-		}
-	}
 }
 
 // ── CreateEvent ───────────────────────────────────────────────────────────────
@@ -112,7 +83,6 @@ func TestCreateEvent_EmptyName(t *testing.T) {
 		t.Error("expected error for empty name")
 	}
 }
-
 
 func TestCreateEvent_InvalidUserID(t *testing.T) {
 	e := newTestController(t)
@@ -281,7 +251,13 @@ func TestCreateEventTrigger_InvalidCron(t *testing.T) {
 		UserID:       testUserIDStr,
 	})
 	if err == nil {
-		t.Error("expected error for invalid cron schedule")
+		t.Fatal("expected error for invalid cron schedule")
+	}
+	// The trigger path delegates to the shared schedule.ValidateCronGranularity
+	// (same guardrail as the MCP server and task paths); assert we get its
+	// granularity error rather than any other validation failure.
+	if !strings.Contains(err.Error(), "granularity too fine") {
+		t.Errorf("expected granularity error, got %v", err)
 	}
 }
 

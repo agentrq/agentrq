@@ -3,15 +3,13 @@ package crud
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
-	"github.com/robfig/cron/v3"
 )
 
 // EventController defines event operations.
@@ -126,7 +124,7 @@ func (c *controller) CreateEventTrigger(ctx context.Context, req entity.CreateEv
 	}
 
 	if req.CronSchedule != "" {
-		if err := validateEventTriggerCron(req.CronSchedule); err != nil {
+		if err := schedule.ValidateCronGranularity(req.CronSchedule); err != nil {
 			return nil, err
 		}
 	}
@@ -201,33 +199,6 @@ func (c *controller) ListTasksFromEvent(ctx context.Context, req entity.ListTask
 }
 
 // ── Validation helpers ────────────────────────────────────────────────────────
-
-// validateEventTriggerCron enforces the same cron rules as the MCP server:
-// - exactly 5 fields
-// - minute field must be a single fixed integer 0-59 (no wildcards, steps, ranges, or comma-lists)
-// - valid cron syntax overall
-func validateEventTriggerCron(schedule string) error {
-	fields := strings.Fields(schedule)
-	if len(fields) != 5 {
-		return fmt.Errorf("cron schedule must have exactly 5 fields (minute hour dom month dow)")
-	}
-	minuteField := fields[0]
-	if minuteField == "*" ||
-		strings.Contains(minuteField, "/") ||
-		strings.Contains(minuteField, "-") ||
-		strings.Contains(minuteField, ",") {
-		return fmt.Errorf("cron schedule granularity too fine: minute field must be a single fixed value (0-59), got %q", minuteField)
-	}
-	minute, err := strconv.Atoi(minuteField)
-	if err != nil || minute < 0 || minute > 59 {
-		return fmt.Errorf("cron schedule minute field must be a valid integer between 0 and 59, got %q", minuteField)
-	}
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	if _, err := parser.Parse(schedule); err != nil {
-		return fmt.Errorf("invalid cron schedule: %w", err)
-	}
-	return nil
-}
 
 func isValidEventName(name string) bool {
 	if len(name) == 0 || len(name) > 129 {
