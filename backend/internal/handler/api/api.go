@@ -314,7 +314,7 @@ func (h *handler) rootLogin() fiber.Handler {
 func (h *handler) googleLogin() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "google")
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "google", "")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
@@ -386,11 +386,18 @@ func (h *handler) googleCallback() fiber.Handler {
 		c.Cookie(cookie)
 
 		redirectURL := "/"
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			zlog.Warn().Msg("Google OAuth callback missing state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
 		}
+
+		rurl, _, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google")
+		if err != nil {
+			zlog.Warn().Err(err).Msg("Google OAuth state validation failed")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL = h.sanitizeRedirectURL(rurl)
 
 		return c.Redirect(redirectURL)
 	}
@@ -402,7 +409,7 @@ func (h *handler) githubLogin() fiber.Handler {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "github login disabled"})
 		}
 		redirectURL := h.sanitizeRedirectURL(c.Query("redirect_url", "/"))
-		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "github")
+		state, err := h.tokenSvc.CreateOAuthStateToken(redirectURL, "github", "")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to generate state"})
 		}
@@ -466,11 +473,18 @@ func (h *handler) githubCallback() fiber.Handler {
 		c.Cookie(cookie)
 
 		redirectURL := "/"
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			zlog.Warn().Msg("GitHub OAuth callback missing state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
 		}
+
+		rurl, _, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github")
+		if err != nil {
+			zlog.Warn().Err(err).Msg("GitHub OAuth state validation failed")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL = h.sanitizeRedirectURL(rurl)
 
 		return c.Redirect(redirectURL)
 	}
