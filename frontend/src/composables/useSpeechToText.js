@@ -1,5 +1,6 @@
 import { ref, onUnmounted } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
+import WhisperWorker from '../workers/whisperWorker.js?worker';
 
 /**
  * Composable for browser-based speech-to-text using local Whisper AI.
@@ -52,10 +53,7 @@ export function useSpeechToText(targetRef, workspaceId) {
 
   function getWorker() {
     if (!worker) {
-      worker = new Worker(
-        new URL('../workers/whisperWorker.js', import.meta.url),
-        { type: 'module' }
-      );
+      worker = new WhisperWorker();
 
       worker.onmessage = (event) => {
         const { status, text, progress, error: errMsg } = event.data;

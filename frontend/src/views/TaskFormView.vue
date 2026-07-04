@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden">
+  <div class="h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
     <!-- Breadcrumb Header -->
     <header class="py-4 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center justify-between gap-4 bg-white dark:bg-zinc-900 sticky top-0 z-30 px-6">
       <div class="flex items-center gap-2 text-xs font-semibold min-w-0 flex-1">
@@ -7,7 +7,7 @@
           {{ workspace?.name || 'Workspace' }}
         </router-link>
         <svg class="w-3 h-3 text-gray-300 dark:text-zinc-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-        <span class="text-gray-900 dark:text-zinc-50 truncate flex-1 min-w-0 text-sm">{{ isEditMode ? 'Edit Task' : 'New Task Definition' }}</span>
+        <span class="text-gray-900 dark:text-zinc-50 truncate flex-1 min-w-0 text-sm">{{ isEditMode ? 'Edit Task' : 'New Task' }}</span>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <button @click="() => goBack()" class="p-2 text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-sm transition-all">
@@ -16,254 +16,244 @@
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto pt-6 md:pt-10 pb-12 px-4 md:px-8 scroll-smooth custom-scrollbar">
-      <div class="w-full space-y-8">
-        <form id="taskForm" @submit.prevent="isEditMode ? submitEditProtocol() : submitHumanTask()" class="space-y-8">
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+    <main class="flex-1 overflow-y-auto pt-8 md:pt-16 pb-24 px-4 md:px-8 scroll-smooth custom-scrollbar flex items-start justify-center"
+          @dragover.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @drop.prevent="handleDrop">
+      
+      <div class="w-full max-w-3xl space-y-4">
+        
+        <h1 class="text-xl md:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
+          {{ isEditMode ? 'Edit Scheduled Task' : 'What do you want to achieve?' }}
+        </h1>
+
+        <!-- Drag & Drop Overlay inside the main container -->
+        <div v-if="isDragging" class="absolute inset-4 z-50 border-4 border-dashed border-gray-300 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 rounded-2xl flex flex-col items-center justify-center shadow-2xl animate-in zoom-in-95 pointer-events-none">
+           <svg class="w-16 h-16 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+           <p class="text-xl font-black text-gray-700 dark:text-zinc-300">Drop files to attach</p>
+        </div>
+
+        <form id="taskForm" @submit.prevent="isEditMode ? submitEditProtocol() : submitHumanTask()" 
+              class="flex flex-col bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-xl focus-within:border-gray-900 dark:focus-within:border-white focus-within:ring-0 transition-all shadow-xl relative overflow-visible z-10">
+          
+          <!-- Auto-generated Title Input (Top edge) -->
+          <div class="px-4 pt-3 pb-1 border-b border-gray-100 dark:border-zinc-800/50 flex items-center gap-2 group relative">
+            <svg class="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             
-            <!-- Requirement Definition (Box 1) -->
-            <div class="border border-gray-200 dark:border-zinc-800 rounded-sm bg-white dark:bg-zinc-900 shadow-sm overflow-hidden flex flex-col h-full">
-              <div class="bg-gray-50 dark:bg-zinc-800/80 px-6 py-4 flex items-center justify-between border-b border-gray-200 dark:border-zinc-800">
-                <div class="flex items-center gap-3">
-                  <div class="w-6 h-6 rounded-sm bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 flex items-center justify-center text-[10px] font-semibold border border-gray-200 dark:border-zinc-700">1</div>
-                  <span class="text-[11px] font-bold text-gray-900 dark:text-zinc-50">Requirement Definition</span>
-                </div>
-              </div>
-              <div class="p-6 space-y-6 flex-1">
-                <div class="flex flex-col gap-2">
-                  <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">Title</label>
-                  <input v-model="newTask.title" 
-                         placeholder="Task summary..." 
-                         class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-bold text-gray-900 dark:text-zinc-50 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all placeholder:text-gray-500 dark:placeholder:text-zinc-600 shadow-sm" 
-                         required />
-                </div>
-                
-                <div class="flex flex-col gap-2">
-                  <div class="flex items-center gap-2">
-                    <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">Instructions</label>
-                    <button v-if="sttSupported" type="button" @click="sttToggle"
-                            :disabled="sttTranscribing"
-                            @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoading ? `Loading model... ${sttProgress}%` : 'Transcribing...') : 'Voice input', 'top')"
-                            @mouseleave="tooltipStore.hide()"
-                            :class="[
-                              sttRecording ? 'bg-red-500 text-white border-red-500' : sttTranscribing ? 'bg-gray-200 dark:bg-zinc-600 text-gray-500 dark:text-zinc-300 border-transparent' : 'text-gray-400 dark:text-zinc-500 border-transparent hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800'
-                            ]"
-                            class="h-5 w-5 rounded-sm border transition-all flex items-center justify-center disabled:opacity-30">
-                      <span v-if="sttRecording" class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                      <svg v-else-if="sttTranscribing" class="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                      <svg v-else class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" /></svg>
-                    </button>
-                  </div>
-                  <textarea v-model="newTask.body" 
-                            placeholder="Provide detailed context..." 
-                            class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 min-h-[160px] placeholder:text-gray-500 dark:placeholder:text-zinc-600 shadow-sm custom-scrollbar" 
-                            required></textarea>
-                </div>
+            <input v-model="titleRef" 
+                   @input="markOverridden"
+                   :placeholder="isModelLoading ? `Loading AI Model... ${modelProgress}%` : isGenerating ? 'Generating title...' : isAutoTitleSupported ? 'Task Title (Click sparkle to auto-generate)' : 'Task Title'"
+                   class="w-full bg-transparent outline-none border-none text-[13px] font-bold text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 pl-1" />
 
-                <!-- Inline Assets -->
-                <div v-if="!isEditMode" class="pt-2 border-t border-gray-100 dark:border-zinc-800/50">
-                  <div class="flex items-center justify-between mb-3">
-                    <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Attachments</span>
-                  </div>
-                  
-                  <div 
-                    @dragover.prevent="isDragging = true"
-                    @dragleave.prevent="isDragging = false"
-                    @drop.prevent="handleDrop"
-                    :class="[
-                      'relative border-2 border-dashed rounded-sm transition-all duration-200 flex flex-col items-center justify-center p-4',
-                      isDragging ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-zinc-800' : 'border-gray-200 dark:border-zinc-800 bg-transparent hover:bg-gray-50/50 dark:hover:bg-zinc-900/50'
-                    ]"
-                  >
-                    <input type="file" ref="fileInput" multiple class="absolute inset-0 opacity-0 cursor-pointer" @change="handleFileUpload" />
-                    
-                    <div v-if="newTaskAttachments.length === 0" class="flex flex-col items-center gap-1 text-center">
-                      <svg class="w-5 h-5 text-gray-500 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                      <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-tight">Drop files here or click to browse</span>
-                    </div>
+            <!-- AI Sparkles Button -->
+            <button v-if="isAutoTitleSupported && bodyRef && bodyRef.trim().length >= 5" type="button" @click="generateTitle"
+                    :disabled="isGenerating"
+                    @mouseenter="tooltipStore.show($event, isModelLoading ? `Loading Model... ${modelProgress}%` : 'Generate title from description using local AI', 'top')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="p-1 hover:bg-gray-100 dark:hover:bg-zinc-850 rounded text-gray-450 dark:text-zinc-500 hover:text-sky-600 dark:hover:text-sky-400 transition-all shrink-0">
+               <svg v-if="isGenerating" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+               <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 21l-.813-5.096L3 15l5.188-.813L9 9l.813 5.187L15 15l-5.187.813zM19.071 4.929l-.571 3.571-3.571.571 3.571.571.571 3.571.571-3.571 3.571-.571-3.571-.571-.571-3.571z" /></svg>
+            </button>
+          </div>
 
-                    <div v-else class="w-full flex flex-wrap gap-2">
-                       <div v-for="(att, i) in newTaskAttachments" :key="i" class="flex items-center gap-2 text-[9px] bg-white dark:bg-zinc-800 border border-gray-100 dark:border-zinc-700 rounded-sm pl-3 pr-1 py-1 font-bold shadow-sm group pointer-events-auto relative z-10" @click.stop>
-                         <span class="truncate max-w-[140px] text-gray-600 dark:text-zinc-400">{{ att.filename }}</span>
-                         <button @click.prevent="newTaskAttachments.splice(i, 1)" class="p-1 text-gray-500 hover:text-red-500 transition-colors">
-                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"></path></svg>
-                         </button>
-                       </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <!-- Description Textarea -->
+          <textarea v-model="bodyRef" 
+                    placeholder="Provide detailed context or instructions..." 
+                    class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
+                    required></textarea>
 
-            <!-- Execution Strategy (Box 2) -->
-            <div class="border border-gray-200 dark:border-zinc-800 rounded-sm bg-white dark:bg-zinc-900 shadow-sm overflow-hidden flex flex-col h-full">
-              <div class="bg-gray-50 dark:bg-zinc-800/80 px-6 py-4 flex items-center justify-between border-b border-gray-200 dark:border-zinc-800">
-                <div class="flex items-center gap-3">
-                  <div class="w-6 h-6 rounded-sm bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 flex items-center justify-center text-[10px] font-semibold border border-gray-200 dark:border-zinc-700">2</div>
-                  <span class="text-[11px] font-bold text-gray-900 dark:text-zinc-50">Execution Strategy</span>
-                </div>
-              </div>
-              
-              <div class="p-6 space-y-8 flex-1">
-                <!-- Assignee & YOLO Permissions -->
-                <div class="flex flex-wrap items-start gap-8">
-                  <!-- Responsibility Column -->
-                  <div class="flex flex-col gap-3">
-                    <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">Responsibility</label>
-                    <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-sm w-fit">
-                      <button type="button" 
-                              @click="newTask.assignee = 'agent'"
-                              :class="newTask.assignee === 'agent' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-6 py-2 rounded-sm text-[10px] font-semibold transition-all">
-                        Agent
-                      </button>
-                      <button type="button" 
-                              @click="newTask.assignee = 'human'"
-                              :class="newTask.assignee === 'human' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-6 py-2 rounded-sm text-[10px] font-semibold transition-all">
-                        Human
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- YOLO Column -->
-                  <div v-if="newTask.assignee === 'agent'" class="flex flex-col gap-3 animate-in fade-in slide-in-from-left-2 duration-200">
-                    <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">YOLO (Auto-Allow)</label>
-                    <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-sm w-fit">
-                      <button type="button" 
-                              @click="newTask.allowAllCommands = true"
-                              :class="newTask.allowAllCommands ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-6 py-2 rounded-sm text-[10px] font-semibold transition-all uppercase">
-                        ON
-                      </button>
-                      <button type="button" 
-                              @click="newTask.allowAllCommands = false"
-                              :class="!newTask.allowAllCommands ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-6 py-2 rounded-sm text-[10px] font-semibold transition-all uppercase">
-                        OFF
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <!-- Emit Event on Completion -->
-                <div v-if="!isEditMode && events.length > 0" class="pt-6 border-t border-gray-100 dark:border-zinc-800/50">
-                  <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider block mb-2">Emit Event on Completion</label>
-                  <select v-model="selectedEventId"
-                          class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs font-mono">
-                    <option value="">None</option>
-                    <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
-                  </select>
-                  <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-1">Agent will be asked to fire the event on task completion</p>
-                </div>
-
-                <!-- Schedule Section -->
-                <div class="flex flex-col gap-6 pt-6 border-t border-gray-100 dark:border-zinc-800/50">
-                  <div class="flex flex-col gap-4">
-                    <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider">Execution Type</label>
-                    <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-sm w-fit">
-                      <button type="button" @click="scheduleType = 'none'"
-                              :class="scheduleType === 'none' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-4 py-2 rounded-sm text-[10px] font-semibold transition-all">None</button>
-                      <button type="button" @click="scheduleType = 'onetime'"
-                              :class="scheduleType === 'onetime' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-4 py-2 rounded-sm text-[10px] font-semibold transition-all">One-time</button>
-                      <button type="button" @click="scheduleType = 'repeated'"
-                              :class="scheduleType === 'repeated' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
-                              class="px-4 py-2 rounded-sm text-[10px] font-semibold transition-all">Repeated</button>
-                    </div>
-                  </div>
-
-                  <!-- Schedule Options -->
-                  <div class="min-h-[100px]">
-                    <div v-if="scheduleType === 'onetime'" class="animate-in fade-in slide-in-from-top-2 duration-200">
-                      <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-2 block">Launch Date/Time</label>
-                      <input type="datetime-local" v-model="oneTimeDate"
-                             class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2.5 text-xs font-semibold text-gray-900 dark:text-zinc-50 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs" />
-                    </div>
-
-                    <div v-if="scheduleType === 'repeated'" class="space-y-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div class="flex flex-wrap items-end gap-4">
-                        <div class="flex flex-col gap-2 min-w-[160px] flex-1 max-w-[200px]">
-                          <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Frequency</label>
-                          <select v-model="repeatPreset" 
-                                  class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full">
-                            <option value="15min">Every 15 mins</option>
-                            <option value="30min">Every 30 mins</option>
-                            <option value="hourly">Hourly</option>
-                            <option value="2hour">Bi-hourly</option>
-                            <option value="12hour">Twice a day</option>
-                            <option value="daily">Daily</option>
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="custom">Custom...</option>
-                          </select>
-                        </div>
-
-                        <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-2">
-                          <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Time</label>
-                          <input type="time" v-model="repeatTime"
-                                 class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-[100px]" />
-                        </div>
-                      </div>
-
-                      <div v-if="repeatPreset === 'custom'" class="flex flex-col gap-2 pt-2">
-                         <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Active Days</label>
-                         <div class="flex flex-wrap gap-1.5">
-                           <button v-for="d in daysOptions" :key="d.value" type="button" @click="toggleDay(d.value)"
-                                   :class="selectedDays.includes(d.value) ? 'bg-gray-900 dark:bg-white text-white dark:text-zinc-900 border-black dark:border-white' : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-500'"
-                                   class="w-7 h-7 rounded-sm border text-[9px] font-bold flex items-center justify-center transition-all">
-                             {{ d.label }}
-                           </button>
-                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Footer Stats (Inside Box 2) -->
-              <div v-if="scheduleType !== 'none'" class="bg-gray-50 dark:bg-zinc-800/50 p-5 border-t border-gray-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div class="flex flex-col gap-1.5">
-                     <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Resolved Cron</span>
-                     <code class="text-[10px] font-mono text-gray-900 dark:text-zinc-100 select-all bg-white dark:bg-zinc-950 px-2 py-1 rounded-sm border border-gray-200 dark:border-zinc-700">{{ newTask.cronSchedule || '----' }}</code>
-                  </div>
-                  <div v-if="nextRunPreview" class="flex flex-col sm:items-end gap-1.5">
-                     <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Next Run</span>
-                     <span class="text-[10px] font-semibold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">{{ nextRunPreview }}</span>
-                  </div>
-              </div>
+          <!-- Attachments Preview -->
+          <div v-if="newTaskAttachments.length > 0" class="flex flex-wrap gap-2 px-4 pb-2 border-t border-gray-50 dark:border-zinc-800/50 pt-2">
+            <div v-for="(att, i) in newTaskAttachments" :key="i"
+                 class="flex items-center text-[10px] bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-md px-2.5 py-1 font-bold shadow-sm">
+              <span class="truncate max-w-[150px]">{{ att.filename }}</span>
+              <button @click.prevent="newTaskAttachments.splice(i, 1)" class="ml-2 text-gray-500 hover:text-red-500 transition-colors">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
             </div>
           </div>
 
-          <!-- Final Action -->
-          <div class="pt-6 flex flex-col sm:flex-row-reverse gap-4">
+          <!-- Bottom Toolbar -->
+          <div class="flex items-center justify-between px-3 pb-2 pt-2 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 rounded-b-xl flex-wrap gap-2 relative">
+             <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
+                <!-- Attachment Button -->
+                <button type="button" @click="$refs.fileInput.click()"
+                        class="h-7 w-7 rounded-md text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center"
+                        title="Attach files">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                </button>
+                <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
+
+                <!-- STT Button -->
+                <button v-if="sttSupported" type="button" @click="sttToggle"
+                        :disabled="sttTranscribing"
+                        @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoadingSTT ? `Loading STT model... ${sttProgressSTT}%` : 'Transcribing...') : 'Voice input', 'top')"
+                        @mouseleave="tooltipStore.hide()"
+                        :class="[
+                          sttRecording ? 'bg-red-500 text-white border-red-500' : sttTranscribing ? 'bg-gray-200 dark:bg-zinc-600 text-gray-500 dark:text-zinc-300 border-transparent' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700'
+                        ]"
+                        class="h-7 w-7 rounded-md border border-transparent transition-all flex items-center justify-center disabled:opacity-30 relative">
+                  <span v-if="sttRecording" class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                  <svg v-else-if="sttTranscribing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                  <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" /></svg>
+                </button>
+
+                <!-- Divider -->
+                <div class="w-px h-4 bg-gray-200 dark:bg-zinc-700 mx-1"></div>
+
+                <!-- Agent/Human Toggle -->
+                <div class="flex p-0.5 bg-gray-200 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700/50 rounded-md h-7">
+                  <button type="button" @click="newTask.assignee = 'agent'"
+                          @mouseenter="tooltipStore.show($event, 'Assign to Agent', 'top')" @mouseleave="tooltipStore.hide()"
+                          :class="newTask.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
+                          class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
+                    Agent
+                  </button>
+                  <button type="button" @click="newTask.assignee = 'human'"
+                          @mouseenter="tooltipStore.show($event, 'Assign to Human', 'top')" @mouseleave="tooltipStore.hide()"
+                          :class="newTask.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
+                          class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
+                    Human
+                  </button>
+                </div>
+
+                <!-- YOLO Toggle -->
+                <button v-if="newTask.assignee === 'agent'" type="button" @click.stop="newTask.allowAllCommands = !newTask.allowAllCommands"
+                        @mouseenter="tooltipStore.show($event, newTask.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
+                        @mouseleave="tooltipStore.hide()"
+                        :class="newTask.allowAllCommands ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black border-transparent shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+                        class="flex items-center gap-1 px-2.5 h-7 rounded-md transition-all text-[10px] font-bold uppercase tracking-wider">
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
+                  YOLO
+                </button>
+
+                <!-- Schedule / Cron Dropdown (Popover) -->
+                <div class="relative" v-click-outside="() => showScheduleMenu = false">
+                   <button type="button" @click="showScheduleMenu = !showScheduleMenu; showEventMenu = false"
+                           @mouseenter="tooltipStore.show($event, scheduleType === 'none' ? 'Set Schedule' : (newTask.cronSchedule || 'Schedule Active'), 'top')"
+                           @mouseleave="tooltipStore.hide()"
+                           :class="scheduleType !== 'none' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+                           class="flex items-center justify-center w-7 h-7 rounded-md transition-all">
+                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                   </button>
+
+                   <!-- Schedule Menu Content -->
+                   <div v-if="showScheduleMenu" class="fixed sm:absolute left-4 right-4 sm:left-0 sm:right-auto bottom-4 sm:bottom-full mb-3 w-auto sm:w-[320px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
+                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">Execution Strategy</h3>
+                       
+                       <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-sm mb-4">
+                         <button type="button" @click="scheduleType = 'none'"
+                                 :class="scheduleType === 'none' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
+                                 class="px-2 py-1.5 flex-1 rounded-sm text-[10px] font-semibold transition-all">None</button>
+                         <button type="button" @click="scheduleType = 'onetime'"
+                                 :class="scheduleType === 'onetime' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
+                                 class="px-2 py-1.5 flex-1 rounded-sm text-[10px] font-semibold transition-all">One-time</button>
+                         <button type="button" @click="scheduleType = 'repeated'"
+                                 :class="scheduleType === 'repeated' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 border border-transparent'"
+                                 class="px-2 py-1.5 flex-1 rounded-sm text-[10px] font-semibold transition-all">Repeated</button>
+                       </div>
+
+                       <div class="min-h-[100px]">
+                         <div v-if="scheduleType === 'onetime'" class="animate-in fade-in slide-in-from-top-2 duration-200">
+                           <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-2 block">Launch Date/Time</label>
+                           <input type="datetime-local" v-model="oneTimeDate"
+                                  class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full" />
+                         </div>
+
+                         <div v-if="scheduleType === 'repeated'" class="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                           <div class="flex gap-3">
+                             <div class="flex flex-col gap-1.5 flex-1">
+                               <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Frequency</label>
+                               <select v-model="repeatPreset" 
+                                       class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full">
+                                 <option value="15min">Every 15 mins</option>
+                                 <option value="30min">Every 30 mins</option>
+                                 <option value="hourly">Hourly</option>
+                                 <option value="2hour">Bi-hourly</option>
+                                 <option value="12hour">Twice a day</option>
+                                 <option value="daily">Daily</option>
+                                 <option value="weekly">Weekly</option>
+                                 <option value="monthly">Monthly</option>
+                                 <option value="custom">Custom...</option>
+                               </select>
+                             </div>
+
+                             <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-1.5 w-[90px]">
+                               <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Time</label>
+                               <input type="time" v-model="repeatTime"
+                                      class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-1.5 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full" />
+                             </div>
+                           </div>
+
+                           <div v-if="repeatPreset === 'custom'" class="flex flex-col gap-1.5">
+                              <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Active Days</label>
+                              <div class="flex flex-wrap gap-1">
+                                <button v-for="d in daysOptions" :key="d.value" type="button" @click="toggleDay(d.value)"
+                                        :class="selectedDays.includes(d.value) ? 'bg-gray-900 dark:bg-white text-white dark:text-zinc-900 border-black dark:border-white' : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-500'"
+                                        class="w-6 h-6 rounded-sm border text-[9px] font-bold flex items-center justify-center transition-all">
+                                  {{ d.label }}
+                                </button>
+                              </div>
+                           </div>
+                         </div>
+                       </div>
+                       
+                       <div v-if="scheduleType !== 'none'" class="mt-4 pt-3 border-t border-gray-100 dark:border-zinc-800 flex items-center justify-between">
+                          <code class="text-[9px] font-mono text-gray-600 dark:text-zinc-400">{{ newTask.cronSchedule || '----' }}</code>
+                          <span class="text-[9px] font-bold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">{{ nextRunPreview }}</span>
+                       </div>
+                   </div>
+                </div>
+
+                <!-- Emit Event Dropdown -->
+                <div class="relative" v-if="!isEditMode && events.length > 0" v-click-outside="() => showEventMenu = false">
+                   <button type="button" @click="showEventMenu = !showEventMenu; showScheduleMenu = false"
+                           @mouseenter="tooltipStore.show($event, selectedEventId ? 'Event Emitted on Completion' : 'Emit Event on Completion', 'top')"
+                           @mouseleave="tooltipStore.hide()"
+                           :class="selectedEventId ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+                           class="flex items-center justify-center w-7 h-7 rounded-md transition-all">
+                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                   </button>
+                   <div v-if="showEventMenu" class="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 bottom-4 sm:bottom-full mb-3 w-auto sm:w-[240px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
+                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">Emit Event on Completion</h3>
+                       <select v-model="selectedEventId" class="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-md px-2 py-2 text-[11px] font-semibold text-gray-900 dark:text-zinc-100 outline-none">
+                         <option value="">None</option>
+                         <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+                       </select>
+                   </div>
+                </div>
+
+             </div>
+
+             <!-- Submit Button -->
              <button type="submit"
                      :disabled="sending || !newTask.title || !newTask.body"
-                     class="flex-1 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 rounded-sm px-8 py-4 text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-100 transition-all shadow-sm active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-50 border border-transparent">
-                <svg v-if="sending" class="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                <svg v-else class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7" /></svg>
-                {{ sending ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Create Task' : 'Create Task') }}
+                     class="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
+                <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                <svg v-else class="w-4 h-4 translate-x-px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
              </button>
-             <button type="button" @click="() => goBack()" class="px-8 py-4 rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 text-xs font-semibold hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all shadow-sm">Cancel</button>
           </div>
         </form>
+        
+        <div class="flex justify-center mt-6">
+          <button type="button" @click="() => goBack()" class="px-6 py-2 rounded-full bg-transparent text-gray-500 hover:text-gray-800 dark:text-zinc-500 dark:hover:text-zinc-300 text-[10px] font-bold uppercase tracking-widest transition-colors">Cancel</button>
+        </div>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, toRef } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import cronParser from 'cron-parser';
 import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useCron } from '../composables/useCron';
 import { useSpeechToText } from '../composables/useSpeechToText';
+import { useAutoTitle } from '../composables/useAutoTitle';
 import { useTooltipStore } from '../stores/tooltipStore';
 
 const { getNextRunLabel, daysOptions } = useCron();
-
 const route = useRoute();
 const router = useRouter();
 const { notifyError, notifySuccess } = useToasts();
@@ -280,24 +270,42 @@ const fileInput = ref(null);
 const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });
 const newTaskAttachments = ref([]);
 
-// Speech-to-text for body field — we need a ref that directly reads/writes newTask.body
+// We use computed refs to bridge to the composables
+const titleRef = computed({
+  get: () => newTask.value.title,
+  set: (v) => { newTask.value.title = v; },
+});
 const bodyRef = computed({
   get: () => newTask.value.body,
   set: (v) => { newTask.value.body = v; },
 });
+
+// STT
 const {
   isRecording: sttRecording,
   isTranscribing: sttTranscribing,
-  isModelLoading: sttModelLoading,
-  modelProgress: sttProgress,
+  isModelLoading: sttModelLoadingSTT,
+  modelProgress: sttProgressSTT,
   error: sttError,
   isSupported: sttSupported,
   toggleRecording: sttToggle,
 } = useSpeechToText(bodyRef, workspaceId);
 
+// Auto-Title
+const {
+  isSupported: isAutoTitleSupported,
+  isGenerating,
+  isModelLoading,
+  modelProgress,
+  isOverridden,
+  markOverridden,
+  generateTitle
+} = useAutoTitle(bodyRef, titleRef);
+
 // Event-on-completion
 const events = ref([]);
 const selectedEventId = ref('');
+const showEventMenu = ref(false);
 
 // Scheduling state
 const scheduleType = ref('none');
@@ -305,6 +313,8 @@ const oneTimeDate = ref('');
 const repeatPreset = ref('daily');
 const repeatTime = ref('09:00');
 const selectedDays = ref([1, 2, 3, 4, 5]); // Mon-Fri
+const showScheduleMenu = ref(false);
+
 const isDragging = ref(false);
 
 function handleDrop(e) {
@@ -334,12 +344,12 @@ onMounted(async () => {
         cronSchedule: t.cronSchedule,
         allowAllCommands: t.allowAllCommands || false
       };
+      markOverridden(); // Assume edited tasks shouldn't auto-title
 
       if (t.cronSchedule) {
         parseCronToUI(t.cronSchedule);
       }
     } else {
-      // Default to workspace setting for new tasks
       newTask.value.allowAllCommands = wsRes.workspace.allowAllCommands || false;
     }
   } catch (err) {
@@ -389,8 +399,6 @@ function parseCronToUI(cron) {
         const now = new Date();
         const utcDays = dow.split(',').map(Number);
         const localDays = utcDays.map(ud => {
-           // Find the target day by taking a known Sunday in the current month/year context
-           // so that we handle the current DST transition correctly.
            const base = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
            const currentUTCDay = base.getUTCDay();
            const offset = ud - currentUTCDay;
@@ -465,7 +473,6 @@ watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays], () =>
       const dd = new Date();
       dd.setHours(localHours, localMinutes, 0, 0);
       const currentDay = dd.getDay();
-      // Adjust date to the selected local day
       dd.setDate(dd.getDate() + (day - currentDay));
       utcDays.add(dd.getUTCDay());
     });
