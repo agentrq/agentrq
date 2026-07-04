@@ -1,0 +1,120 @@
+/**
+ * Whisper Web Worker — matches whisperweb.dev approach.
+ *
+ * Uses the lower-level AutoTokenizer / AutoProcessor / WhisperForConditionalGeneration
+ * API from @huggingface/transformers with onnx-community/whisper-base.
+ *
+ * Tries WebGPU first (fast), falls back to WASM (universal).
+ */
+import {
+  AutoTokenizer,
+  AutoProcessor,
+  WhisperForConditionalGeneration,
+  full,
+} from '@huggingface/transformers';
+
+const MODEL_ID = 'onnx-community/whisper-base';
+
+let tokenizer = null;
+let processor = null;
+let model = null;
+let isLoading = false;
+
+async function loadModel(progressCb) {
+  if (tokenizer && processor && model) return;
+  if (isLoading) return; // prevent double-load
+  isLoading = true;
+
+  // Detect WebGPU support
+  let device = 'wasm';
+  let dtype = { encoder_model: 'fp32', decoder_model_merged: 'q4' };
+
+  if (typeof navigator !== 'undefined' && navigator.gpu) {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) {
+        device = 'webgpu';
+      }
+    } catch {
+      // WebGPU not available, stay on WASM
+    }
+  }
+
+  // For WASM fallback, use q8 quantization across the board
+  if (device === 'wasm') {
+    dtype = 'q8';
+  }
+
+  tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, {
+    progress_callback: progressCb,
+  });
+
+  processor = await AutoProcessor.from_pretrained(MODEL_ID, {
+    progress_callback: progressCb,
+  });
+
+  model = await WhisperForConditionalGeneration.from_pretrained(MODEL_ID, {
+    dtype,
+    device,
+    progress_callback: progressCb,
+  });
+
+  isLoading = false;
+}
+
+async function transcribe(audio, language) {
+  const inputs = await processor(audio, {
+    sampling_rate: 16000,
+  });
+
+  const outputs = await model.generate({
+    input_features: inputs.input_features,
+    max_new_tokens: 128,
+    language: language || 'en',
+    task: 'transcribe',
+  });
+
+  const decoded = tokenizer.batch_decode(outputs, { skip_special_tokens: true });
+  return decoded.join(' ').trim();
+}
+
+self.onmessage = async (event) => {
+  const { type, audio, language } = event.data;
+
+  if (type === 'transcribe') {
+    try {
+      // Load model if needed
+      if (!model) {
+        self.postMessage({ status: 'loading', progress: 0 });
+
+        await loadModel((progress) => {
+          if (progress.status === 'progress') {
+            self.postMessage({
+              status: 'loading',
+              progress: Math.round(progress.progress || 0),
+              file: progress.file,
+            });
+          } else if (progress.status === 'done') {
+            self.postMessage({ status: 'loading', progress: 100 });
+          }
+        });
+
+        self.postMessage({ status: 'ready' });
+      }
+
+      self.postMessage({ status: 'transcribing' });
+
+      const text = await transcribe(audio, language);
+
+      self.postMessage({
+        status: 'complete',
+        text,
+      });
+    } catch (err) {
+      self.postMessage({
+        status: 'error',
+        error: err.message || 'Transcription failed',
+      });
+    }
+  }
+};

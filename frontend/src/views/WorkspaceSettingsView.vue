@@ -55,6 +55,17 @@
                     <textarea v-model="form.selfLearningLoopNote" rows="6" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="Extract successful workarounds and record them in skills md files..."></textarea>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Guidance for the agent to optimize its strategy over time.</p>
                   </div>
+
+                  <div class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50">
+                    <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Voice Input Language</label>
+                    <select v-model="voiceLanguage" class="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs">
+                      <option value="auto">{{ browserLanguageLabel }}</option>
+                      <option v-for="(name, code) in WHISPER_LANGUAGES" :key="code" :value="code">
+                        {{ name }} ({{ code }})
+                      </option>
+                    </select>
+                    <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
+                  </div>
                 </div>
 
                 <!-- Setup -->
@@ -498,6 +509,7 @@ import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
+import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
 
@@ -518,6 +530,13 @@ const showDeleteConfirm = ref(false);
 const activeConnectionTab = ref('claude');
 const token = ref('');
 const slackConfig = ref(null);
+
+const browserLanguageLabel = computed(() => {
+  if (typeof window === 'undefined') return 'Use Browser Language';
+  const browserLang = (navigator.language || '').split('-')[0].toLowerCase();
+  const name = WHISPER_LANGUAGES[browserLang];
+  return name ? `Use Browser Language (${name})` : 'Use Browser Language (English)';
+});
 const slackForm = ref({
   channelId: '',
   channelName: ''
@@ -525,6 +544,7 @@ const slackForm = ref({
 const linkingSlack = ref(false);
 const slackError = ref('');
 const showManualForm = ref(false);
+const voiceLanguage = ref('auto');
 
 const { checkWorkspaceSubscription, subscribeWorkspace, unsubscribeWorkspace } = usePushNotifications();
 const isPushSubscribed = ref(false);
@@ -751,6 +771,10 @@ async function load() {
       const tokenRes = await getWorkspaceToken(workspaceId.value);
       token.value = tokenRes.token || '';
     } catch (err) { console.error('Failed to fetch token:', err); }
+    
+    // Load local voice preference
+    voiceLanguage.value = localStorage.getItem(`stt_lang_${workspaceId.value}`) || 'auto';
+
     await initPushAvailability();
     await refreshPushStatus();
   } catch (err) {
@@ -767,6 +791,14 @@ async function save() {
     const res = await updateWorkspace(workspaceId.value, form.value);
     workspace.value = res.workspace;
     workspaceStore.updateWorkspaceMetadata(res.workspace);
+    
+    // Save local voice preference
+    if (voiceLanguage.value === 'auto') {
+      localStorage.removeItem(`stt_lang_${workspaceId.value}`);
+    } else {
+      localStorage.setItem(`stt_lang_${workspaceId.value}`, voiceLanguage.value);
+    }
+
     notifySuccess("Workspace settings updated");
     try {
       const tokenRes = await getWorkspaceToken(workspaceId.value);
