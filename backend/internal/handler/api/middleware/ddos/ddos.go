@@ -2,12 +2,11 @@ package ddos
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/clientip"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -49,20 +48,7 @@ func New(enabled bool, maxRequestsPerSecond int, blockDuration time.Duration) fu
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Extract IP
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
-			// Handle proxies
-			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				ips := strings.Split(xff, ",")
-				if len(ips) > 0 {
-					ip = strings.TrimSpace(ips[0])
-				}
-			} else if xri := r.Header.Get("X-Real-IP"); xri != "" {
-				ip = xri
-			}
+			ip := clientip.Extract(r)
 
 			now := time.Now()
 
