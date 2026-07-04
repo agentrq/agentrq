@@ -16,7 +16,7 @@
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto pt-8 md:pt-16 pb-24 px-4 md:px-8 scroll-smooth custom-scrollbar flex items-start justify-center"
+    <main class="flex-1 overflow-y-auto pt-8 md:pt-16 pb-24 px-1 sm:px-2 md:px-4 scroll-smooth custom-scrollbar flex items-start justify-center"
           @dragover.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
           @drop.prevent="handleDrop">
@@ -107,13 +107,15 @@
                           @mouseenter="tooltipStore.show($event, 'Assign to Agent', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
-                    Agent
+                    <span class="hidden sm:inline">Agent</span>
+                    <svg class="sm:hidden w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
                   </button>
                   <button type="button" @click="newTask.assignee = 'human'"
                           @mouseenter="tooltipStore.show($event, 'Assign to Human', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
-                    Human
+                    <span class="hidden sm:inline">Human</span>
+                    <svg class="sm:hidden w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                   </button>
                 </div>
 
@@ -122,9 +124,9 @@
                         @mouseenter="tooltipStore.show($event, newTask.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
                         @mouseleave="tooltipStore.hide()"
                         :class="newTask.allowAllCommands ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black border-transparent shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
-                        class="flex items-center gap-1 px-2.5 h-7 rounded-md transition-all text-[10px] font-bold uppercase tracking-wider">
-                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
-                  YOLO
+                        class="flex items-center justify-center gap-1 w-7 h-7 sm:w-auto sm:px-2.5 rounded-md transition-all text-[10px] font-bold uppercase tracking-wider">
+                  <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
+                  <span class="hidden sm:inline">YOLO</span>
                 </button>
 
                 <!-- Schedule / Cron Dropdown (Popover) -->

@@ -42,8 +42,12 @@ self.addEventListener('message', async (e) => {
 
       let title = output[0].generated_text.trim();
 
-      // Cleanup common artifacts if the model gets chatty
-      title = title.replace(/^Title:\s*/i, '').replace(/^"|"$/g, '').trim();
+      // Cleanup common artifacts if the model gets chatty (e.g. "Title: ...", "Task Title: ...")
+      title = title
+        .replace(/^(Task\s+)?Title:\s*/i, '')
+        .replace(/^Task\s+Title\s+/i, '')
+        .replace(/^"|"$/g, '')
+        .trim();
 
       self.postMessage({ id, type: 'SUCCESS', data: { title } });
     } catch (error) {
