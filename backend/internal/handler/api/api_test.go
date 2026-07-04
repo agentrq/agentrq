@@ -10,6 +10,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
@@ -40,6 +41,14 @@ func (m *mockTokenSvc) CreateToken(userID, email, name, picture string) (string,
 
 func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	return m.createMCPTokenFunc(userID, workspaceID, tokenType)
+}
+
+func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
+	return &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user1"}}, nil
+}
+
+func (m *mockTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
+	return "code", nil
 }
 
 func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {

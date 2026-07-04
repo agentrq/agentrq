@@ -22,3 +22,8 @@
 **Vulnerability:** The `ResizeBase64` service returned the original input string if the `data:image/` prefix was missing. The CRUD controller then stored this unsanitized string in the database. Since the frontend rendered some icons using `v-html`, this allowed for Stored XSS (e.g., using `javascript:` or malicious SVG).
 **Learning:** Fallback mechanisms that return unvalidated user input when processing fails are dangerous. If a service is designed to process/sanitize input, it must fail explicitly if the input doesn't meet the expected format.
 **Prevention:** Enforce strict input validation (e.g., prefix checks) and remove "fallback to original" logic in data processing services. Ensure that only successfully processed and sanitized data reaches the persistence layer.
+
+## 2026-07-04 - BOLA/IDOR Protection in Repository Layer
+**Vulnerability:** Several repository methods (`ListMessages`, `UpdateMessageMetadata`, `GetWorkspaceAttachmentIDs`) lacked `userID` validation, relying on higher-level controllers to perform all authorization. This created a risk of BOLA/IDOR if any caller missed a check or if a new caller was added without proper auth.
+**Learning:** Enforcing authorization at the data access (repository) layer provides a robust "last line of defense". Using SQL JOINs or subqueries (`task_id IN (SELECT id FROM tasks WHERE user_id = ?)`) allows for efficient ownership verification directly in the query.
+**Prevention:** Always require a `userID` in repository methods that access resources owned by a user. Explicitly filter queries by this `userID` to ensure that a user can never access or modify data belonging to another user, even if they know the resource ID.
