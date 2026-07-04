@@ -343,6 +343,22 @@
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
                 </svg>
               </button>
+              <!-- Speech-to-Text Mic -->
+              <button v-if="sttSupported" type="button" @click="sttToggle"
+                      :disabled="sttTranscribing || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+                      @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoading ? `Loading model... ${sttProgress}%` : 'Transcribing...') : 'Voice input', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      :class="[
+                        sttRecording ? 'bg-red-500 text-white border-red-500' : sttTranscribing ? 'bg-gray-200 dark:bg-zinc-600 text-gray-500 dark:text-zinc-300 border-transparent' : 'bg-gray-105 dark:bg-zinc-700/50 text-gray-400 dark:text-zinc-500 border-transparent hover:text-gray-700 dark:hover:text-zinc-300'
+                      ]"
+                      class="h-6 w-6 rounded-sm border transition-all flex items-center justify-center disabled:opacity-30 relative">
+                <!-- Recording: pulsing dot -->
+                <span v-if="sttRecording" class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                <!-- Transcribing: spinner -->
+                <svg v-else-if="sttTranscribing" class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                <!-- Idle: mic icon -->
+                <svg v-else class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" /></svg>
+              </button>
               <!-- YOLO Toggle -->
               <button type="button" @click.stop="toggleYOLO"
                       @mouseenter="tooltipStore.show($event, task.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
@@ -440,11 +456,13 @@ import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateW
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
+import { useSpeechToText } from '../composables/useSpeechToText';
 import { useEventBus } from '../useEventBus';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 const { notifyError, notifySuccess } = useToasts();
+const tooltipStore = useTooltipStore();
 const route = useRoute();
 const router = useRouter();
 const workspaceId = computed(() => route.params.id || route.params.workspaceId);
@@ -456,6 +474,16 @@ const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
+
+const {
+  isRecording: sttRecording,
+  isTranscribing: sttTranscribing,
+  isModelLoading: sttModelLoading,
+  modelProgress: sttProgress,
+  error: sttError,
+  isSupported: sttSupported,
+  toggleRecording: sttToggle,
+} = useSpeechToText(replyText, workspaceId);
 const scrollContainer = ref(null);
 
 const isDragging = ref(false);

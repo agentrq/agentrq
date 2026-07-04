@@ -53,6 +53,9 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers'],
+  },
   server: {
     port: 5173,
     proxy: {

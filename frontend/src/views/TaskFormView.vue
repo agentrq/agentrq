@@ -39,7 +39,21 @@
                 </div>
                 
                 <div class="flex flex-col gap-2">
-                  <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">Instructions</label>
+                  <div class="flex items-center gap-2">
+                    <label class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400">Instructions</label>
+                    <button v-if="sttSupported" type="button" @click="sttToggle"
+                            :disabled="sttTranscribing"
+                            @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoading ? `Loading model... ${sttProgress}%` : 'Transcribing...') : 'Voice input', 'top')"
+                            @mouseleave="tooltipStore.hide()"
+                            :class="[
+                              sttRecording ? 'bg-red-500 text-white border-red-500' : sttTranscribing ? 'bg-gray-200 dark:bg-zinc-600 text-gray-500 dark:text-zinc-300 border-transparent' : 'text-gray-400 dark:text-zinc-500 border-transparent hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800'
+                            ]"
+                            class="h-5 w-5 rounded-sm border transition-all flex items-center justify-center disabled:opacity-30">
+                      <span v-if="sttRecording" class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                      <svg v-else-if="sttTranscribing" class="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                      <svg v-else class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4M12 15a3 3 0 003-3V5a3 3 0 00-6 0v7a3 3 0 003 3z" /></svg>
+                    </button>
+                  </div>
                   <textarea v-model="newTask.body" 
                             placeholder="Provide detailed context..." 
                             class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 min-h-[160px] placeholder:text-gray-500 dark:placeholder:text-zinc-600 shadow-sm custom-scrollbar" 
@@ -239,18 +253,21 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, toRef } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useCron } from '../composables/useCron';
+import { useSpeechToText } from '../composables/useSpeechToText';
+import { useTooltipStore } from '../stores/tooltipStore';
 
 const { getNextRunLabel, daysOptions } = useCron();
 
 const route = useRoute();
 const router = useRouter();
 const { notifyError, notifySuccess } = useToasts();
+const tooltipStore = useTooltipStore();
 
 const workspaceId = route.params.id;
 const taskId = route.params.taskId;
@@ -262,6 +279,21 @@ const fileInput = ref(null);
 
 const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });
 const newTaskAttachments = ref([]);
+
+// Speech-to-text for body field — we need a ref that directly reads/writes newTask.body
+const bodyRef = computed({
+  get: () => newTask.value.body,
+  set: (v) => { newTask.value.body = v; },
+});
+const {
+  isRecording: sttRecording,
+  isTranscribing: sttTranscribing,
+  isModelLoading: sttModelLoading,
+  modelProgress: sttProgress,
+  error: sttError,
+  isSupported: sttSupported,
+  toggleRecording: sttToggle,
+} = useSpeechToText(bodyRef, workspaceId);
 
 // Event-on-completion
 const events = ref([]);

@@ -30,7 +30,7 @@ export const useTooltipStore = defineStore('tooltip', {
       this.style = {
         top: `${top}px`,
         left: `${left}px`,
-        transform: position === 'bottom' || position === 'top' ? 'translateX(-50%)' : 'translateY(-50%)'
+        transform: position === 'top' ? 'translate(-50%, -100%)' : position === 'bottom' ? 'translateX(-50%)' : 'translateY(-50%)'
       };
     },
     hide() {
