@@ -768,6 +768,7 @@ func New(cfg Config) (*App, error) {
 	// ── Server Start ─────────────────────────────────────────────────
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
+	mux.Handle("/api/v1/events/stream", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	var finalRouter http.Handler = mux

@@ -46,7 +46,7 @@
                    class="w-full bg-transparent outline-none border-none text-[13px] font-bold text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 pl-1" />
 
             <!-- AI Sparkles Button -->
-            <button v-if="isAutoTitleSupported && bodyRef && bodyRef.trim().length >= 5" type="button" @click="generateTitle"
+            <button v-if="isAutoTitleSupported && bodyRef && bodyRef.trim().length >= 5" type="button" @click="generateTitle(); tooltipStore.hide()"
                     :disabled="isGenerating"
                     @mouseenter="tooltipStore.show($event, isModelLoading ? `Loading Model... ${modelProgress}%` : 'Generate title from description using local AI', 'top')"
                     @mouseleave="tooltipStore.hide()"
@@ -85,7 +85,7 @@
                 <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
                 <!-- STT Button -->
-                <button v-if="sttSupported" type="button" @click="sttToggle"
+                <button v-if="sttSupported" type="button" @click="sttToggle(); tooltipStore.hide()"
                         :disabled="sttTranscribing"
                         @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoadingSTT ? `Loading STT model... ${sttProgressSTT}%` : 'Transcribing...') : 'Voice input', 'top')"
                         @mouseleave="tooltipStore.hide()"
@@ -103,14 +103,14 @@
 
                 <!-- Agent/Human Toggle -->
                 <div class="flex p-0.5 bg-gray-200 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700/50 rounded-md h-7">
-                  <button type="button" @click="newTask.assignee = 'agent'"
+                  <button type="button" @click="newTask.assignee = 'agent'; tooltipStore.hide()"
                           @mouseenter="tooltipStore.show($event, 'Assign to Agent', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
                     <span class="hidden sm:inline">Agent</span>
                     <svg class="sm:hidden w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
                   </button>
-                  <button type="button" @click="newTask.assignee = 'human'"
+                  <button type="button" @click="newTask.assignee = 'human'; tooltipStore.hide()"
                           @mouseenter="tooltipStore.show($event, 'Assign to Human', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
@@ -120,7 +120,7 @@
                 </div>
 
                 <!-- YOLO Toggle -->
-                <button v-if="newTask.assignee === 'agent'" type="button" @click.stop="newTask.allowAllCommands = !newTask.allowAllCommands"
+                <button v-if="newTask.assignee === 'agent'" type="button" @click.stop="newTask.allowAllCommands = !newTask.allowAllCommands; tooltipStore.hide()"
                         @mouseenter="tooltipStore.show($event, newTask.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
                         @mouseleave="tooltipStore.hide()"
                         :class="newTask.allowAllCommands ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black border-transparent shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
@@ -131,7 +131,7 @@
 
                 <!-- Schedule / Cron Dropdown (Popover) -->
                 <div class="relative" v-click-outside="() => showScheduleMenu = false">
-                   <button type="button" @click="showScheduleMenu = !showScheduleMenu; showEventMenu = false"
+                   <button type="button" @click="showScheduleMenu = !showScheduleMenu; showEventMenu = false; tooltipStore.hide()"
                            @mouseenter="tooltipStore.show($event, scheduleType === 'none' ? 'Set Schedule' : (newTask.cronSchedule || 'Schedule Active'), 'top')"
                            @mouseleave="tooltipStore.hide()"
                            :class="scheduleType !== 'none' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
@@ -209,7 +209,7 @@
 
                 <!-- Emit Event Dropdown -->
                 <div class="relative" v-if="!isEditMode && events.length > 0" v-click-outside="() => showEventMenu = false">
-                   <button type="button" @click="showEventMenu = !showEventMenu; showScheduleMenu = false"
+                   <button type="button" @click="showEventMenu = !showEventMenu; showScheduleMenu = false; tooltipStore.hide()"
                            @mouseenter="tooltipStore.show($event, selectedEventId ? 'Event Emitted on Completion' : 'Emit Event on Completion', 'top')"
                            @mouseleave="tooltipStore.hide()"
                            :class="selectedEventId ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"

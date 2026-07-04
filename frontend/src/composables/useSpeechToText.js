@@ -105,6 +105,21 @@ export function useSpeechToText(targetRef, workspaceId) {
     return worker;
   }
 
+  let sharedAudioCtx = null;
+
+  function initAudioContext() {
+    try {
+      if (!sharedAudioCtx) {
+        sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+      }
+    } catch (e) {
+      console.error('[STT] Failed to initialize AudioContext:', e);
+    }
+  }
+
   /**
    * Convert an audio Blob (webm/opus) to 16kHz mono Float32Array.
    * Uses OfflineAudioContext for reliable resampling.
@@ -112,14 +127,11 @@ export function useSpeechToText(targetRef, workspaceId) {
   async function audioToFloat32(blob) {
     const arrayBuffer = await blob.arrayBuffer();
 
-    // First decode at native sample rate
-    const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
-    let audioBuffer;
-    try {
-      audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
-    } finally {
-      await tempCtx.close();
+    // First decode at native sample rate using the pre-authorized shared context
+    if (!sharedAudioCtx) {
+      sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
+    const audioBuffer = await sharedAudioCtx.decodeAudioData(arrayBuffer);
 
     // Use OfflineAudioContext to resample to 16kHz mono
     const targetSampleRate = 16000;
@@ -215,6 +227,9 @@ export function useSpeechToText(targetRef, workspaceId) {
   }
 
   function toggleRecording() {
+    // Initialize AudioContext directly on the user click gesture thread
+    initAudioContext();
+
     if (isRecording.value) {
       stopRecording();
     } else if (!isTranscribing.value) {
@@ -226,6 +241,9 @@ export function useSpeechToText(targetRef, workspaceId) {
   onUnmounted(() => {
     stopRecording();
     stream?.getTracks().forEach(t => t.stop());
+    if (sharedAudioCtx) {
+      sharedAudioCtx.close().catch(() => {});
+    }
     // Don't terminate the worker — let it persist for reuse across views
   });
 

@@ -24,7 +24,7 @@ export function useEventBus(workspaceId) {
 
     events.value = [];
     const wsId = unref(workspaceId);
-    const url = wsId ? `/api/v1/workspaces/${wsId}/events` : `/api/v1/events`;
+    const url = wsId ? `/api/v1/workspaces/${wsId}/events` : `/api/v1/events/stream`;
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
