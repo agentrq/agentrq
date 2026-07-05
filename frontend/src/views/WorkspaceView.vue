@@ -191,21 +191,34 @@
 
     <!-- Bottom Stats -->
     <div v-if="!loadingWorkspaces && workspaces.length > 0" class="px-4 pb-4 flex flex-wrap items-center gap-6 border-t border-gray-100 dark:border-zinc-800 pt-3">
-      <div class="flex items-baseline gap-1.5">
-        <span class="text-[8px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Workspaces</span>
-        <span class="text-sm font-black text-gray-900 dark:text-zinc-100">{{ activeWorkspaces.length }}</span>
+      <div class="flex items-center gap-1.5 cursor-help" 
+           @mouseenter="tooltipStore.show($event, 'Online Agents', 'top')"
+           @mouseleave="tooltipStore.hide()">
+        <svg class="w-4 h-4" :class="activeWorkspaces.filter(w => w.agentConnected).length > 0 ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8V4H8"></path>
+          <rect width="16" height="12" x="4" y="8" rx="2"></rect>
+          <path d="M2 14h2"></path>
+          <path d="M20 14h2"></path>
+          <path d="M15 13v2"></path>
+          <path d="M9 13v2"></path>
+        </svg>
+        <span class="text-sm font-black" :class="activeWorkspaces.filter(w => w.agentConnected).length > 0 ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'">{{ activeWorkspaces.filter(w => w.agentConnected).length }}</span>
       </div>
-      <div class="flex items-baseline gap-1.5">
-        <span class="text-[8px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Online</span>
-        <span class="text-sm font-black text-green-600 dark:text-green-500">{{ activeWorkspaces.filter(w => w.agentConnected).length }}</span>
+      <div class="flex items-center gap-1.5 cursor-help" 
+           @mouseenter="tooltipStore.show($event, 'Pending Tasks', 'top')"
+           @mouseleave="tooltipStore.hide()">
+        <svg class="w-4 h-4 text-amber-500 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span class="text-sm font-black text-amber-500 dark:text-amber-400">{{ globalStats.pendingTasks }}</span>
       </div>
-      <div class="flex items-baseline gap-1.5">
-        <span class="text-[8px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Pending</span>
-        <span class="text-sm font-black text-gray-900 dark:text-zinc-100">{{ globalStats.pendingTasks }}</span>
-      </div>
-      <div class="flex items-baseline gap-1.5">
-        <span class="text-[8px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Scheduled</span>
-        <span class="text-sm font-black text-gray-900 dark:text-zinc-100">{{ globalStats.scheduledTasks }}</span>
+      <div class="flex items-center gap-1.5 cursor-help" 
+           @mouseenter="tooltipStore.show($event, 'Scheduled Tasks', 'top')"
+           @mouseleave="tooltipStore.hide()">
+        <svg class="w-4 h-4 text-sky-500 dark:text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span class="text-sm font-black text-sky-500 dark:text-sky-400">{{ globalStats.scheduledTasks }}</span>
       </div>
     </div>
   </div>
@@ -219,8 +232,10 @@ import { useToasts } from '../composables/useToasts';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
+import { useTooltipStore } from '../stores/tooltipStore';
 
 const { toKebabCase, liveKebabCase } = useFormat();
+const tooltipStore = useTooltipStore();
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
