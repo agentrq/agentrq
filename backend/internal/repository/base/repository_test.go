@@ -134,7 +134,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -147,8 +147,14 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	userID := int64(1)
+	db.Create(&model.Task{
+		ID:     taskID,
+		UserID: userID,
+	})
+
+	// Case 1: Success update with correct taskID and userID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, userID, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +166,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, userID, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
@@ -168,6 +174,17 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	db.First(&m, messageID)
 	if string(m.Metadata) == `{"hacked":true}` {
 		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+
+	// Case 3: Update with WRONG userID (BOLA/IDOR)
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, 999, []byte(`{"hacked_user":true}`))
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"hacked_user":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong userID")
 	}
 }
 
@@ -490,3 +507,82 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 	}
 }
 
+
+func TestRepository_ListMessages(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(100)
+	userID := int64(1)
+
+	db.Create(&model.Task{ID: taskID, UserID: userID})
+	db.Create(&model.Message{ID: 501, TaskID: taskID, Text: "Msg 1"})
+
+	// Case 1: Success with correct userID
+	msgs, err := repo.ListMessages(ctx, taskID, userID)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message, got %d", len(msgs))
+	}
+
+	// Case 2: IDOR with wrong userID
+	msgs, err = repo.ListMessages(ctx, taskID, 999)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for wrong user, got %d", len(msgs))
+	}
+}
+
+func TestRepository_GetWorkspaceAttachmentIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(100)
+	userID := int64(1)
+
+	db.Create(&model.Task{
+		ID:          1,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Attachments: []byte(`[{"id":"att1"}]`),
+	})
+	db.Create(&model.Message{
+		ID:          501,
+		TaskID:      1,
+		Attachments: []byte(`[{"id":"att2"}]`),
+	})
+
+	// Case 1: Success with correct userID
+	ids, err := repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	if len(ids) != 2 {
+		t.Errorf("expected 2 attachment IDs, got %d", len(ids))
+	}
+
+	// Case 2: IDOR with wrong userID
+	ids, err = repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, 999)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected 0 attachment IDs for wrong user, got %d", len(ids))
+	}
+}
