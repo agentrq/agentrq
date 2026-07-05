@@ -98,7 +98,7 @@ Event-driven agent-to-agent communication wired through three layers:
 
 - **MCP tool** `publishEvent`: looks up event by name via `PublishEventFunc` callback (wired in `app.go`), publishes to topic 3 with agent-supplied payload.
 
-- **Task auto-publish** (`updateStatusFunc` in `app.go`): when `status == "completed" && task.EventID != 0`, publishes the linked event automatically as a fallback. The `createTask` handler also injects `[On completion: call publishEvent("name", "...")]` into the MCP channel notification so the agent publishes explicitly with a real payload first.
+- **Task event publishing is agent-driven**: there is no automatic publish on completion. The `createTask` handler injects `[On completion: call publishEvent("name", "...")]` into the MCP channel notification so the agent publishes the linked event explicitly with a real payload before completing. (`updateStatusFunc` in `app.go` only emits CRUD/telemetry events on completion; it does not publish to the events topic.)
 
 - **REST routes** (`internal/handler/api/event.go`): events CRUD + `/events/:id/triggers` CRUD + `GET /events/:id/tasks`. **Do not register these in the stdlib `mux`** — only SSE routes (`/api/v1/workspaces/{id}/events`) and pub-stats belong there. All events CRUD is handled by Fiber.
 
