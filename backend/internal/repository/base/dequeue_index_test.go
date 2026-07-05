@@ -8,10 +8,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// The agent dequeue filters (workspace_id, user_id, status, assignee) and orders by
-// sort_order. Before this change assignee and sort_order were unindexed and there was no
-// composite index. Assert AutoMigrate creates idx_tasks_dequeue with the columns in the
-// order the query uses.
+// The agent dequeue filters on workspace_id, user_id and status. Assert AutoMigrate
+// creates idx_tasks_dequeue covering that equality prefix in query order. assignee and
+// sort_order are deliberately left out to keep the index small.
 func TestTaskDequeueCompositeIndex(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -37,7 +36,7 @@ func TestTaskDequeueCompositeIndex(t *testing.T) {
 		cols = append(cols, name)
 	}
 
-	want := []string{"workspace_id", "user_id", "status", "assignee", "sort_order"}
+	want := []string{"workspace_id", "user_id", "status"}
 	if len(cols) != len(want) {
 		t.Fatalf("idx_tasks_dequeue columns = %v, want %v (index missing or wrong shape)", cols, want)
 	}

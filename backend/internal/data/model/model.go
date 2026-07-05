@@ -31,13 +31,14 @@ type (
 		CreatedAt time.Time
 		UpdatedAt time.Time
 
-		// idx_tasks_dequeue is a composite index matching the agent work-dequeue query
-		// (ClaimNextTask / GetNextTask): equality on workspace_id, user_id, status, assignee
-		// followed by the sort_order used for prioritization. Column order mirrors the query.
+		// idx_tasks_dequeue is a composite index matching the equality prefix of the
+		// agent work-dequeue query (ClaimNextTask / GetNextTask): workspace_id, user_id,
+		// status. Column order mirrors the query. assignee and sort_order are left out
+		// deliberately to keep the index small.
 		UserID      int64  `gorm:"index:idx_tasks_user_id;index:idx_tasks_dequeue,priority:2"`
 		WorkspaceID int64  `gorm:"index:idx_tasks_workspace_id;index:idx_tasks_dequeue,priority:1"`
 		CreatedBy   string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
-		Assignee    string `gorm:"type:varchar(16);index:idx_tasks_dequeue,priority:4"`    // "human" | "agent"
+		Assignee    string `gorm:"type:varchar(16)"`                                       // "human" | "agent"
 		Status      string `json:"status" gorm:"index;index:idx_tasks_dequeue,priority:3"` // notstarted, ongoing, completed, rejected, cron, blocked
 		Title       string `gorm:"type:varchar(255)"`
 		Body        string `gorm:"type:text"`
@@ -48,7 +49,7 @@ type (
 
 		CronSchedule     string  `gorm:"type:varchar(64)"`
 		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
-		SortOrder        float64 `gorm:"type:real;default:0;index:idx_tasks_dequeue,priority:5"`
+		SortOrder        float64 `gorm:"type:real;default:0"`
 		AllowAllCommands bool    `gorm:"default:false"`
 		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
