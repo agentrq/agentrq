@@ -2,9 +2,15 @@ package push
 
 import (
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
@@ -237,6 +243,88 @@ func TestTruncate(t *testing.T) {
 			t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.n, got, tt.want)
 		}
 	}
+}
+
+// ── sendToUser (stale-subscription pruning) ──────────────────────────────────
+
+// newTestSubscriptionKeys returns a valid P-256 ECDH public key (p256dh) and a
+// 16-byte auth secret, base64url-encoded exactly as a browser PushSubscription
+// provides them. Real keys are required because webpush.SendNotification encrypts
+// the payload before sending, so bogus keys would fail before any HTTP round-trip.
+func newTestSubscriptionKeys(t *testing.T) (p256dh, auth string) {
+	t.Helper()
+	priv, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ECDH key: %v", err)
+	}
+	authBytes := make([]byte, 16)
+	if _, err := rand.Read(authBytes); err != nil {
+		t.Fatalf("generate auth secret: %v", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(priv.PublicKey().Bytes()),
+		base64.RawURLEncoding.EncodeToString(authBytes)
+}
+
+func newPushTestController(t *testing.T) (*controller, *mock_repo.MockRepository) {
+	t.Helper()
+	vapidPriv, vapidPub, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatalf("generate VAPID keys: %v", err)
+	}
+	c, mockRepo, _ := newTestController(t, Config{
+		VAPIDPublicKey:  vapidPub,
+		VAPIDPrivateKey: vapidPriv,
+		Subscriber:      "mailto:test@example.com",
+	})
+	return c, mockRepo
+}
+
+// A push service returns 404 Not Found or 410 Gone once a subscription no longer
+// exists (RFC 8030 §7.3). Those responses arrive with a nil error, so sendToUser
+// must inspect the status code and delete the dead subscription.
+func TestSendToUser_PrunesExpiredSubscription(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			c, mockRepo := newPushTestController(t)
+			p256dh, auth := newTestSubscriptionKeys(t)
+
+			mockRepo.EXPECT().
+				ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(7), int64(3)).
+				Return([]model.PushSubscription{
+					{Endpoint: srv.URL, P256dh: p256dh, Auth: auth, Types: PushTypeTaskCreate},
+				}, nil)
+			mockRepo.EXPECT().
+				DeletePushSubscription(gomock.Any(), int64(7), srv.URL).
+				Return(nil)
+
+			c.sendToUser(context.Background(), 7, 3, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
+		})
+	}
+}
+
+// A successful delivery must leave the subscription in place. gomock fails the
+// test if DeletePushSubscription is called, since no such call is expected.
+func TestSendToUser_KeepsSubscriptionOnSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c, mockRepo := newPushTestController(t)
+	p256dh, auth := newTestSubscriptionKeys(t)
+
+	mockRepo.EXPECT().
+		ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(7), int64(3)).
+		Return([]model.PushSubscription{
+			{Endpoint: srv.URL, P256dh: p256dh, Auth: auth, Types: PushTypeTaskCreate},
+		}, nil)
+
+	c.sendToUser(context.Background(), 7, 3, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
 }
 
 // ── processEvent ─────────────────────────────────────────────────────────────

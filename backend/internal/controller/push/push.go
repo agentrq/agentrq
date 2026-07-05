@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -245,13 +246,19 @@ func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID i
 		})
 		if err != nil {
 			zlog.Warn().Err(err).Str("endpoint", sub.Endpoint).Msg("[push] failed to send notification")
-			// Remove invalid/expired subscriptions (410 Gone)
-			if resp != nil && resp.StatusCode == 410 {
-				_ = c.repo.DeletePushSubscription(ctx, userID, sub.Endpoint)
-			}
 			continue
 		}
 		resp.Body.Close()
+
+		// webpush.SendNotification only returns a non-nil error for transport-level
+		// failures; a delivered-but-rejected request comes back here with err == nil and
+		// the failure encoded in the status code. Per RFC 8030 §7.3 the push service
+		// returns 404 Not Found or 410 Gone once a subscription no longer exists, so
+		// prune it — otherwise it lingers in the DB and every future event re-attempts
+		// delivery to a dead endpoint.
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+			_ = c.repo.DeletePushSubscription(ctx, userID, sub.Endpoint)
+		}
 	}
 }
 
