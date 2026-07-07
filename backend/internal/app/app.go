@@ -838,9 +838,17 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
 		claims, err := tokenSvc.ValidateToken(cookie.Value)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Situational security: only tokens intended for the human UI (ActorHumanAudience)
+		// are allowed to access SSE events.
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			http.Error(w, "Unauthorized: invalid audience", http.StatusUnauthorized)
 			return
 		}
 		userID := claims.Subject

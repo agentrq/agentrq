@@ -233,6 +233,12 @@ func (h *handler) authMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}
 
+		// Situational security: only tokens intended for the human UI (ActorHumanAudience)
+		// are allowed to access protected API endpoints.
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized: invalid audience"})
+		}
+
 		c.Locals("user_id", claims.Subject)
 		c.Locals("user_email", claims.Email)
 		c.Locals("user_name", claims.Name)

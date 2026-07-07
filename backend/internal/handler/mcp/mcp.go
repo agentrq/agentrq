@@ -407,7 +407,11 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		var userID string
 		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
 			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && claims != nil {
-				userID = claims.Subject
+				// Only tokens intended for the human UI (ActorHumanAudience) are allowed
+				// to identify the session for OAuth authorization.
+				if auth.HasAudience(claims, auth.ActorHumanAudience) {
+					userID = claims.Subject
+				}
 			}
 		}
 
