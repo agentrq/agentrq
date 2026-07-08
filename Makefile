@@ -12,7 +12,8 @@ dev:
 backend:
 	@echo "Starting Backend..."
 	-@lsof -ti:3000,3001 | xargs kill -9 2>/dev/null || true
-	@cd backend/cmd/server && mkdir -p _storage && go build -o agentrq_binary main.go && ./agentrq_binary
+	@cd backend/cmd/server && mkdir -p _storage && go build -o agentrq_binary main.go && \
+		(set -a && [ -f _config/.env ] && . _config/.env; set +a; ./agentrq_binary)
 
 # Start the frontend dev server
 frontend:
@@ -64,4 +65,9 @@ mocks:
 		mockgen -source=internal/service/pubsub/pubsub.go -destination=internal/service/mocks/pubsub/mock_pubsub.go -package=pubsub
 
 test: mocks
-	@cd backend && go test ./internal/service/... ./internal/controller/...
+	@cd backend && unformatted="$$(gofmt -l $$(find . -name '*.go' -not -path './internal/service/mocks/*'))"; \
+		if [ -n "$$unformatted" ]; then echo "$$unformatted"; exit 1; fi
+	@cd backend && go vet ./internal/...
+	@cd backend && go test ./internal/...
+	@cd frontend && npm run lint
+	@cd frontend && npm test
