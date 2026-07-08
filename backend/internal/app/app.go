@@ -843,6 +843,13 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// Ensure the token is intended for human actor UI access.
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			http.Error(w, "Unauthorized: human audience required", http.StatusUnauthorized)
+			return
+		}
+
 		userID := claims.Subject
 
 		workspaceIDParam := r.PathValue("id")

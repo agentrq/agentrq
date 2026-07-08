@@ -233,6 +233,12 @@ func (h *handler) authMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}
 
+		// Ensure the token is intended for human actor UI access,
+		// preventing service-level MCP tokens from accessing these APIs.
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized: human audience required"})
+		}
+
 		c.Locals("user_id", claims.Subject)
 		c.Locals("user_email", claims.Email)
 		c.Locals("user_name", claims.Name)
@@ -385,12 +391,15 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		redirectURL := "/"
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
 		}
+		rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google")
+		if err != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL := h.sanitizeRedirectURL(rurl)
 
 		return c.Redirect(redirectURL)
 	}
@@ -465,12 +474,15 @@ func (h *handler) githubCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		redirectURL := "/"
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
 		}
+		rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github")
+		if err != nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL := h.sanitizeRedirectURL(rurl)
 
 		return c.Redirect(redirectURL)
 	}
