@@ -27,3 +27,13 @@
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
 **Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2025-05-24 - Enforce Human Audience for UI APIs
+**Vulnerability:** The application used a shared JWT secret for both human UI sessions and service-level MCP tokens. Without explicit audience validation, a service-level MCP token (which might have long expiration) could be misused to access human-only UI REST APIs.
+**Learning:** In a multi-actor system (Humans, Agents/MCP), sharing a signing secret requires explicit 'aud' (audience) or 'sub' (subject) type validation in middleware to prevent token cross-contamination.
+**Prevention:** Always include an 'actor' or specific audience claim in JWTs and verify it in the corresponding middleware. We now use 'actor:human' for UI sessions.
+
+## 2025-05-25 - Strict OAuth State Enforcement
+**Vulnerability:** The OAuth callback handlers for Google and GitHub were too lenient; if the 'state' parameter was missing or failed JWT validation, they would fall back to redirecting the user to the home page ('/'). This could lead to login CSRF or session fixation if an attacker can force a login flow.
+**Learning:** OAuth 'state' validation MUST be a terminal failure. Falling back to a "safe" default mask a failure in the security handshake.
+**Prevention:** Return a 403 Forbidden or similar hard error when OAuth state validation fails. Never fall back to a default redirect on security validation failure.

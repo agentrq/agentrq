@@ -119,38 +119,29 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 		}
 	})
 
-	t.Run("Forged state falls back to /", func(t *testing.T) {
+	t.Run("Forged state returns 403", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state=forged-not-a-jwt", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Wrong provider state falls back to /", func(t *testing.T) {
+	t.Run("Wrong provider state returns 403", func(t *testing.T) {
 		// State signed for github should be rejected by google callback
 		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "github")
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Missing state falls back to /", func(t *testing.T) {
+	t.Run("Missing state returns 403", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 }
@@ -373,4 +364,35 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", resp.StatusCode)
 	}
+}
+
+func TestAuthMiddleware_AudienceRequired(t *testing.T) {
+	realTokenSvc := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+	app := fiber.New()
+	h := &handler{tokenSvc: realTokenSvc}
+
+	app.Use(h.authMiddleware())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusOK)
+	})
+
+	t.Run("Human token is accepted", func(t *testing.T) {
+		token, _ := realTokenSvc.CreateToken("user1", "user1@example.com", "User One", "")
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: token})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("MCP token without human audience is rejected", func(t *testing.T) {
+		token, _ := realTokenSvc.CreateMCPToken("user1", "work1", "access")
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: token})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
+		}
+	})
 }
