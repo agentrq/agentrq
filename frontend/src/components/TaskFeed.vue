@@ -418,8 +418,6 @@ const displayGroups = computed(() => {
     if (cronTasks.length === 0) return [{ title: 'Scheduled', tasks: [], hasMore: scheduledHasMore.value, category: 'scheduled' }];
     
     const categories = [
-      { label: 'Every 15 mins', values: ['*/15 * * * *'] },
-      { label: 'Every 30 mins', values: ['*/30 * * * *'] },
       { label: 'Hourly', values: ['0 * * * *'] },
       { label: 'Daily', values: ['0 0 * * *'] },
       { label: 'Weekly', values: ['0 0 * * 0'] },

@@ -18,8 +18,6 @@ export function useCron() {
 
     const presets = {
       '0 * * * *': 'Hourly',
-      '*/15 * * * *': 'Every 15m',
-      '*/30 * * * *': 'Every 30m',
     };
     if (presets[cron]) return presets[cron];
 

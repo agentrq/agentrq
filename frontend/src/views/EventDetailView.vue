@@ -122,9 +122,7 @@ watch([triggerScheduleType, triggerOneTimeDate, triggerRepeatPreset, triggerRepe
   const minutes = d.getUTCMinutes()
   const hours = d.getUTCHours()
   const p = triggerRepeatPreset.value
-  if (p === '15min') triggerForm.value.cronSchedule = '*/15 * * * *'
-  else if (p === '30min') triggerForm.value.cronSchedule = '*/30 * * * *'
-  else if (p === 'hourly') triggerForm.value.cronSchedule = '0 * * * *'
+  if (p === 'hourly') triggerForm.value.cronSchedule = '0 * * * *'
   else if (p === '2hour') triggerForm.value.cronSchedule = '0 */2 * * *'
   else if (p === '12hour') {
     const h2 = new Date(d); h2.setHours(h2.getHours() + 12)

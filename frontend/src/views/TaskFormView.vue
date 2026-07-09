@@ -168,8 +168,6 @@
                                <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Frequency</label>
                                <select v-model="repeatPreset" 
                                        class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full">
-                                 <option value="15min">Every 15 mins</option>
-                                 <option value="30min">Every 30 mins</option>
                                  <option value="hourly">Hourly</option>
                                  <option value="2hour">Bi-hourly</option>
                                  <option value="12hour">Twice a day</option>
@@ -180,7 +178,7 @@
                                </select>
                              </div>
 
-                             <div v-if="!['15min', '30min', 'hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-1.5 w-[90px]">
+                             <div v-if="!['hourly', '2hour'].includes(repeatPreset)" class="flex flex-col gap-1.5 w-[90px]">
                                <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Time</label>
                                <input type="time" v-model="repeatTime"
                                       class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-1.5 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-full" />
@@ -375,11 +373,7 @@ function parseCronToUI(cron) {
     oneTimeDate.value = `${year}-${mon}-${day}T${hh}:${mm}`;
   } else {
     scheduleType.value = 'repeated';
-    if (cron === '*/15 * * * *') {
-      repeatPreset.value = '15min';
-    } else if (cron === '*/30 * * * *') {
-      repeatPreset.value = '30min';
-    } else if (cron === '0 * * * *') {
+    if (cron === '0 * * * *') {
       repeatPreset.value = 'hourly';
     } else if (cron === '0 */2 * * *') {
       repeatPreset.value = '2hour';
@@ -444,11 +438,7 @@ watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays], () =>
   const minutes = d.getUTCMinutes();
   const hours = d.getUTCHours();
 
-  if (repeatPreset.value === '15min') {
-    newTask.value.cronSchedule = '*/15 * * * *';
-  } else if (repeatPreset.value === '30min') {
-    newTask.value.cronSchedule = '*/30 * * * *';
-  } else if (repeatPreset.value === 'hourly') {
+  if (repeatPreset.value === 'hourly') {
     newTask.value.cronSchedule = `0 * * * *`;
   } else if (repeatPreset.value === '2hour') {
     newTask.value.cronSchedule = `0 */2 * * *`;
