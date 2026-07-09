@@ -34,6 +34,9 @@ Open **http://localhost:2026** in your browser.
 |---|---|
 | `AGENTRQ_BASE_URL` | Full public URL (e.g. `http://localhost:2026` or `https://your-domain.com`) |
 | `AGENTRQ_DOMAIN` | Domain without protocol (e.g. `localhost` or `your-domain.com`) |
+| `AGENTRQ_BASE_PATH` | Base path prefix when behind a reverse proxy (e.g., `/abc/def`) |
+| `AGENTRQ_PROXY_DOMAIN` | Public domain name of the reverse proxy (e.g., `example.com`) |
+| `AGENTRQ_COOKIE_SECURE` | Force cookie Secure flag for TLS-terminating proxies (`true`/`false`) |
 | `AGENTRQ_AUTH_JWT_SECRET` | Secret for signing session JWTs — use a random 32+ character string |
 | `AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY` | AES-256-GCM key for MCP token encryption — must be **exactly 32 bytes** |
 | `AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_ID` | Google OAuth2 Client ID |
@@ -149,6 +152,16 @@ docker run -d \
 ```
 
 Set `AGENTRQ_SSL_ENABLED=true`, `AGENTRQ_BASE_URL=https://your-domain.com`, and `AGENTRQ_SSL_LETSENCRYPT_EMAIL=you@example.com` in your `.env`.
+
+## Reverse Proxy (Path constraint & TLS termination)
+
+If deploying behind a reverse proxy that enforces a path constraint (e.g. `https://example.com/abc/def/`):
+
+1. Set `AGENTRQ_BASE_PATH=/abc/def` in your `.env`.
+2. Set `AGENTRQ_BASE_URL=https://example.com/abc/def` in your `.env`.
+3. Set `AGENTRQ_PROXY_DOMAIN=example.com` in your `.env` (this allows requests matching the proxy host to pass through validation).
+4. If the proxy terminates SSL (AgentRQ runs on HTTP but proxy handles TLS), set `AGENTRQ_COOKIE_SECURE=true` to keep cookies secure.
+5. Simply run the standard pre-built image (e.g. `agentrq/agentrq:latest`) — base path injection and relative asset paths are resolved dynamically at runtime!
 
 ## Full Setup Guide
 

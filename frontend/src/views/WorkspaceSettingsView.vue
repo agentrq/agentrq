@@ -629,8 +629,16 @@ const copiedState = ref({
 });
 
 const authenticatedUrl = computed(() => {
-  if (!workspace.value?.mcpUrl) return '';
-  const baseUrl = workspace.value.mcpUrl.split('?')[0];
+  if (!workspace.value) return '';
+  let baseUrl = '';
+  // If the backend has constructed a subdomain-based MCP URL, respect it.
+  if (workspace.value.mcpUrl && workspace.value.mcpUrl.includes('.mcp.')) {
+    baseUrl = workspace.value.mcpUrl.split('?')[0];
+  } else {
+    const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
+    const origin = window.location.origin;
+    baseUrl = `${origin}${cleanBase}/mcp/${workspaceId.value}`;
+  }
   if (!token.value) return baseUrl;
   return `${baseUrl}?token=${token.value}`;
 });

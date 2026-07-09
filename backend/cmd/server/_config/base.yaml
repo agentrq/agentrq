@@ -2,6 +2,9 @@ app:
   port: ${PORT:3000}
   baseUrl: ${AGENTRQ_BASE_URL:http://localhost:3000}
   domain: ${AGENTRQ_DOMAIN:localhost}
+  basePath: ${AGENTRQ_BASE_PATH:}
+  cookieSecure: ${AGENTRQ_COOKIE_SECURE:}
+  proxyDomain: ${AGENTRQ_PROXY_DOMAIN:}
 
 ssl:
   enabled: ${AGENTRQ_SSL_ENABLED:false}

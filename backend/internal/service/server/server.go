@@ -35,6 +35,7 @@ type (
 		SSLPort            int
 		SSLEnabled         bool
 		Domain             string
+		ProxyDomain        string
 		SSLCacheDir        string
 		LetsencryptEmail   string
 		CloudflareAPIToken string
@@ -105,9 +106,12 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		coreMCPHost := "mcp." + domain
 		appHost := "app." + domain
 
-		// 1. Check if it's the CoreMCP subdomain
-		if host == coreMCPHost {
-			// Allow it through. Paths starting with /coremcp are expected.
+		// 1. Check if it's the CoreMCP subdomain or matches the raw domain or proxy domain
+		proxyDomain := strings.ToLower(s.cfg.ProxyDomain)
+		if host == domain || (proxyDomain != "" && host == proxyDomain) {
+			// Allow raw domain or proxy domain (e.g. example.com when served directly or behind a path-based proxy)
+		} else if host == coreMCPHost {
+			// Allow it through. Paths starting with /mcp are expected.
 		} else if strings.HasSuffix(host, mcpSuffix) {
 			// 2. Check if it's a workspace-specific MCP subdomain
 			workspaceID36 := strings.TrimSuffix(host, mcpSuffix)

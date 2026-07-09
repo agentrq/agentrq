@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -58,10 +59,13 @@ import (
 type (
 	Config struct {
 		App struct {
-			Port    int    `yaml:"port"`
-			SSLPort int    `yaml:"sslPort"`
-			BaseURL string `yaml:"baseUrl"`
-			Domain  string `yaml:"domain"` // e.g. agentrq.com
+			Port         int    `yaml:"port"`
+			SSLPort      int    `yaml:"sslPort"`
+			BaseURL      string `yaml:"baseUrl"`
+			Domain       string `yaml:"domain"`       // e.g. agentrq.com
+			BasePath     string `yaml:"basePath"`     // e.g. /abc/def for reverse proxy
+			CookieSecure string `yaml:"cookieSecure"` // "true"/"false"/"" (empty = follow SSL)
+			ProxyDomain  string `yaml:"proxyDomain"`  // e.g. example.com for reverse proxy
 		} `yaml:"app"`
 		SSL struct {
 			Enabled            bool   `yaml:"enabled"`
@@ -114,6 +118,21 @@ func New(cfg Config) (*App, error) {
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
 	if cfg.App.BaseURL == "" {
 		cfg.App.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.App.Port)
+	}
+
+	// Normalize base path: strip trailing slash, ensure leading slash if non-empty.
+	cfg.App.BasePath = strings.TrimSuffix(cfg.App.BasePath, "/")
+	if cfg.App.BasePath != "" && !strings.HasPrefix(cfg.App.BasePath, "/") {
+		cfg.App.BasePath = "/" + cfg.App.BasePath
+	}
+
+	// Compute effective cookie Secure flag: explicit config wins, otherwise follow SSL.
+	cookieSecure := cfg.SSL.Enabled
+	switch strings.ToLower(strings.TrimSpace(cfg.App.CookieSecure)) {
+	case "true", "1", "yes":
+		cookieSecure = true
+	case "false", "0", "no":
+		cookieSecure = false
 	}
 
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -695,7 +714,8 @@ func New(cfg Config) (*App, error) {
 	fiberApp.Static("/", "./public", fiber.Static{
 		Compress: false,
 		Next: func(c *fiber.Ctx) bool {
-			return strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp")
+			path := c.Path()
+			return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") || path == "/" || path == "/index.html"
 		},
 	})
 
@@ -745,7 +765,8 @@ func New(cfg Config) (*App, error) {
 		BaseURL:          cfg.App.BaseURL,
 		MCPBaseURL:       cfg.App.BaseURL,
 		Domain:           cfg.App.Domain,
-		SSLEnabled:       cfg.SSL.Enabled,
+		CookieSecure:     cookieSecure,
+		BasePath:         cfg.App.BasePath,
 		TokenKey:         cfg.Auth.WorkspaceTokenKey,
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
 		RootToken:        cfg.Auth.RootAccessToken,
@@ -765,7 +786,39 @@ func New(cfg Config) (*App, error) {
 		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 		c.Set("Pragma", "no-cache")
 		c.Set("Expires", "0")
-		return c.SendFile("./public/index.html")
+
+		htmlBytes, err := os.ReadFile("./public/index.html")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("index.html not found")
+		}
+
+		htmlContent := string(htmlBytes)
+		injectScript := fmt.Sprintf(`<script>
+			window.__AGENTRQ_BASE_PATH__ = %q;
+			if (window.__AGENTRQ_BASE_PATH__ && window.location.pathname === window.__AGENTRQ_BASE_PATH__) {
+				window.location.replace(window.__AGENTRQ_BASE_PATH__ + '/');
+			}
+		</script>`, cfg.App.BasePath)
+
+		// Search case-insensitively for the head tag
+		headIndex := strings.Index(strings.ToLower(htmlContent), "<head>")
+		if headIndex != -1 {
+			htmlContent = htmlContent[:headIndex+6] + injectScript + htmlContent[headIndex+6:]
+		} else {
+			// Fallback: search for <head
+			headTagIndex := strings.Index(strings.ToLower(htmlContent), "<head")
+			if headTagIndex != -1 {
+				// Find closing bracket
+				closeBracket := strings.Index(htmlContent[headTagIndex:], ">")
+				if closeBracket != -1 {
+					insertPos := headTagIndex + closeBracket + 1
+					htmlContent = htmlContent[:insertPos] + injectScript + htmlContent[insertPos:]
+				}
+			}
+		}
+
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.SendString(htmlContent)
 	})
 
 	// ── Server Start ─────────────────────────────────────────────────
@@ -784,6 +837,7 @@ func New(cfg Config) (*App, error) {
 			SSLPort:            cfg.App.SSLPort,
 			SSLEnabled:         cfg.SSL.Enabled,
 			Domain:             cfg.App.Domain,
+			ProxyDomain:        cfg.App.ProxyDomain,
 			SSLCacheDir:        cfg.SSL.CacheDir,
 			LetsencryptEmail:   cfg.SSL.LetsencryptEmail,
 			CloudflareAPIToken: cfg.SSL.CloudflareAPIToken,

@@ -1,4 +1,5 @@
-export const API_BASE_URL = '/api/v1';
+const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
+export const API_BASE_URL = `${cleanBase}/api/v1`;
 
 export async function fetchWorkspaces(includeArchived = false) {
   const url = includeArchived ? `${API_BASE_URL}/workspaces?archived=true` : `${API_BASE_URL}/workspaces`;

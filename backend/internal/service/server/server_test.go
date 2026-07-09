@@ -66,9 +66,9 @@ func TestServeHTTP(t *testing.T) {
 		{
 			name:       "CoreMCPHost",
 			host:       "mcp.example.com",
-			path:       "/coremcp/sse",
+			path:       "/mcp",
 			wantStatus: http.StatusOK,
-			wantBody:   "path:/coremcp/sse",
+			wantBody:   "path:/mcp",
 		},
 		{
 			name:       "LocalhostAllowed",

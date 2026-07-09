@@ -321,9 +321,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
-import { fetchUser, fetchWorkspaces } from './api'
+import { fetchUser, fetchWorkspaces, API_BASE_URL } from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { useThemeStore } from './stores/themeStore'
@@ -347,6 +347,7 @@ const handleUpdateNow = async () => {
 const { toKebabCase } = useFormat()
 
 const route = useRoute()
+const router = useRouter()
 const { notifySuccess, notifyInfo, notifyError } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
 const user = ref(null)
@@ -418,8 +419,8 @@ const hideTooltip = () => {
 
 async function logout() {
   await unsubscribePush()
-  await fetch('/api/v1/auth/logout', { method: 'POST' })
-  window.location.href = '/login'
+  await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' })
+  router.push('/login')
 }
 
 const loadWorkspaces = () => workspaceStore.fetchWorkspaces()

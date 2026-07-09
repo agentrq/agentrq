@@ -346,6 +346,9 @@ docker logs --tail 100 agentrq
 | `PORT` | Yes | `3000` | HTTP listen port |
 | `AGENTRQ_BASE_URL` | Yes | — | Full public URL (e.g. `https://your-domain.com`) |
 | `AGENTRQ_DOMAIN` | Yes | — | Domain without protocol (e.g. `your-domain.com`) |
+| `AGENTRQ_BASE_PATH` | No | — | Base path prefix when behind a reverse proxy (e.g., `/abc/def`) |
+| `AGENTRQ_PROXY_DOMAIN` | No | — | Public domain name of the reverse proxy (e.g., `example.com`) |
+| `AGENTRQ_COOKIE_SECURE` | No | — | Force cookie Secure flag for TLS-terminating proxies (`true`/`false`) |
 | `AGENTRQ_SSL_ENABLED` | No | `false` | Enable built-in TLS via Let's Encrypt |
 | `AGENTRQ_SSL_LETSENCRYPT_EMAIL` | If TLS | — | Email for Let's Encrypt registration |
 | `AGENTRQ_SSL_CACHE_DIR` | No | `/_certs` | Directory for TLS certificate cache |

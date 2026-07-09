@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { API_BASE_URL } from '../api'
 
 const isSubscribed = ref(false)
 
@@ -10,7 +11,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function fetchVAPIDPublicKey() {
-  const res = await fetch('/api/v1/push/vapid-public-key')
+  const res = await fetch(`${API_BASE_URL}/push/vapid-public-key`)
   if (!res.ok) return null
   const data = await res.json()
   return data.publicKey || null
@@ -51,7 +52,7 @@ async function getBrowserSubscription() {
 async function saveSubscription(subscription, workspaceId) {
   const key = subscription.getKey('p256dh')
   const auth = subscription.getKey('auth')
-  await fetch('/api/v1/push/subscribe', {
+  await fetch(`${API_BASE_URL}/push/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -66,7 +67,7 @@ async function saveSubscription(subscription, workspaceId) {
 }
 
 async function deleteSubscription(endpoint) {
-  await fetch('/api/v1/push/subscribe', {
+  await fetch(`${API_BASE_URL}/push/subscribe`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint }),
@@ -74,7 +75,7 @@ async function deleteSubscription(endpoint) {
 }
 
 async function deleteSubscriptionByWorkspace(endpoint, workspaceId) {
-  await fetch('/api/v1/push/subscription', {
+  await fetch(`${API_BASE_URL}/push/subscription`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint, workspaceId }),
@@ -114,7 +115,7 @@ export function usePushNotifications() {
       const sub = await getBrowserSubscription()
       if (!sub) return false
       const params = new URLSearchParams({ workspaceId, endpoint: sub.endpoint })
-      const res = await fetch(`/api/v1/push/subscription?${params}`)
+      const res = await fetch(`${API_BASE_URL}/push/subscription?${params}`)
       if (!res.ok) return false
       const data = await res.json()
       return data.subscribed === true

@@ -1,4 +1,5 @@
 import { ref, onUnmounted, unref } from 'vue';
+import { API_BASE_URL } from './api';
 
 // Shared across all useEventBus instances — ensures only one auth check fires at a time
 // regardless of how many SSE connections error simultaneously.
@@ -6,7 +7,7 @@ let sharedAuthCheckPromise = null;
 
 async function checkAuth() {
   if (sharedAuthCheckPromise) return sharedAuthCheckPromise;
-  sharedAuthCheckPromise = fetch('/api/v1/auth/user')
+  sharedAuthCheckPromise = fetch(`${API_BASE_URL}/auth/user`)
     .then(res => res.status)
     .catch(() => null)
     .finally(() => { sharedAuthCheckPromise = null; });
@@ -24,7 +25,8 @@ export function useEventBus(workspaceId) {
 
     events.value = [];
     const wsId = unref(workspaceId);
-    const url = wsId ? `/api/v1/workspaces/${wsId}/events` : `/api/v1/events/stream`;
+    const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
+    const url = wsId ? `${cleanBase}/api/v1/workspaces/${wsId}/events` : `${cleanBase}/api/v1/events/stream`;
     eventSource = new EventSource(url);
 
     eventSource.onopen = () => {
@@ -41,8 +43,10 @@ export function useEventBus(workspaceId) {
       const status = await checkAuth();
       if (status === 401) {
         console.warn('Not authenticated. Stopping EventSource reconnection and redirecting to login.');
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
+        const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
+        const loginPath = cleanBase ? `${cleanBase}/login` : '/login';
+        if (window.location.pathname !== loginPath) {
+          window.location.href = loginPath;
         }
         return;
       }

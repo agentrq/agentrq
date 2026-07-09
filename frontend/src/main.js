@@ -39,7 +39,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(window.__AGENTRQ_BASE_PATH__ || '/'),
   routes,
 })
 
