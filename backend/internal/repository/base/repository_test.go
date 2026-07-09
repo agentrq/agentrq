@@ -134,7 +134,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -147,8 +147,11 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	// Case 1: Success update with correct taskID and userID
+	userID := int64(1)
+	db.Create(&model.Task{ID: taskID, UserID: userID})
+
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, userID, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +163,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, userID, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
@@ -168,6 +171,93 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	db.First(&m, messageID)
 	if string(m.Metadata) == `{"hacked":true}` {
 		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+
+	// Case 3: Update with WRONG userID (BOLA)
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, 999, []byte(`{"bola":true}`))
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"bola":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong userID")
+	}
+}
+
+func TestRepository_ListMessages_BOLA(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(100)
+	userID := int64(1)
+	otherUserID := int64(2)
+
+	db.Create(&model.Task{ID: taskID, UserID: userID})
+	db.Create(&model.Message{ID: 1, TaskID: taskID, Text: "Secret message"})
+
+	// Case 1: Owner can list
+	msgs, err := repo.ListMessages(ctx, taskID, userID)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message, got %d", len(msgs))
+	}
+
+	// Case 2: Other user cannot list (BOLA)
+	msgs, err = repo.ListMessages(ctx, taskID, otherUserID)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("vulnerability detected: other user could list messages, got %d", len(msgs))
+	}
+}
+
+func TestRepository_GetWorkspaceAttachmentIDs_BOLA(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(100)
+	userID := int64(1)
+	otherUserID := int64(2)
+
+	db.Create(&model.Task{
+		ID:          1,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Attachments: []byte(`[{"id":"att-1","filename":"test.txt"}]`),
+	})
+
+	// Case 1: Owner can get IDs
+	ids, err := repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "att-1" {
+		t.Errorf("expected [att-1], got %v", ids)
+	}
+
+	// Case 2: Other user cannot get IDs (BOLA)
+	ids, err = repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, otherUserID)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("vulnerability detected: other user could get attachment IDs, got %v", ids)
 	}
 }
 

@@ -479,9 +479,9 @@ func New(cfg Config) (*App, error) {
 				}
 
 				b, _ := json.Marshal(existingMetadata)
-				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, b)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, uid, b)
 				if err == nil {
-					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 					latest, _ := repo.GetTask(ctx, workspaceID, taskID, uid)
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
@@ -651,7 +651,8 @@ func New(cfg Config) (*App, error) {
 					t, err := repo.SystemGetTask(ctx, taskID)
 					if err == nil {
 						// Preload task messages
-						messages, err := repo.ListMessages(ctx, t.ID)
+						uid := monoflake.IDFromBase62(ownerID).Int64()
+						messages, err := repo.ListMessages(ctx, t.ID, uid)
 						if err == nil {
 							t.Messages = messages
 						}
