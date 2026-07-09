@@ -122,8 +122,14 @@ func New(cfg Config) (*App, error) {
 
 	// Normalize base path: strip trailing slash, ensure leading slash if non-empty.
 	cfg.App.BasePath = strings.TrimSuffix(cfg.App.BasePath, "/")
-	if cfg.App.BasePath != "" && !strings.HasPrefix(cfg.App.BasePath, "/") {
-		cfg.App.BasePath = "/" + cfg.App.BasePath
+	if cfg.App.BasePath != "" {
+		if !strings.HasPrefix(cfg.App.BasePath, "/") {
+			cfg.App.BasePath = "/" + cfg.App.BasePath
+		}
+		// Disallow ambiguous absolute-URL-like prefixes.
+		if strings.HasPrefix(cfg.App.BasePath, "//") || strings.HasPrefix(cfg.App.BasePath, "/\\") {
+			cfg.App.BasePath = ""
+		}
 	}
 
 	// Compute effective cookie Secure flag: explicit config wins, otherwise follow SSL.
