@@ -8,7 +8,7 @@
 import { pipeline } from '@huggingface/transformers';
 
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-const MODEL_ID = isMobile ? 'onnx-community/moonshine-base-ONNX' : 'onnx-community/whisper-base';
+const MODEL_ID = isMobile ? 'onnx-community/whisper-tiny.en' : 'onnx-community/whisper-base';
 
 let pipe = null;
 let isLoading = false;
@@ -48,12 +48,18 @@ async function loadModel(progressCb) {
 }
 
 async function transcribe(audio, language) {
-  const options = {
-    language: language || 'en',
-    task: 'transcribe',
-  };
+  const isMultilingual = !MODEL_ID.endsWith('.en') && !MODEL_ID.includes('moonshine');
   
-  const outputs = await pipe(audio, options);
+  let outputs;
+  if (isMultilingual) {
+    const options = {
+      language: language || 'en',
+      task: 'transcribe',
+    };
+    outputs = await pipe(audio, options);
+  } else {
+    outputs = await pipe(audio);
+  }
   
   return outputs.text ? outputs.text.trim() : '';
 }

@@ -3,6 +3,8 @@ import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
 
+let hasShownMobileToast = false;
+
 /**
  * Composable for browser-based speech-to-text using local Whisper AI.
  * Audio is recorded via MediaRecorder, resampled to 16kHz mono Float32Array,
@@ -19,7 +21,8 @@ export function useSpeechToText(targetRef, workspaceId) {
   const isModelLoading = ref(false);
   const modelProgress = ref(0);
   const error = ref('');
-  const { notifyError } = useToasts();
+  const { notifyError, notifyInfo } = useToasts();
+
 
   watch(error, (newVal) => {
     if (newVal) {
@@ -167,6 +170,12 @@ export function useSpeechToText(targetRef, workspaceId) {
   async function startRecording() {
     error.value = '';
     audioChunks = [];
+
+    const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile && !hasShownMobileToast) {
+      notifyInfo('Voice transcription on mobile currently supports English only.', 'English Only');
+      hasShownMobileToast = true;
+    }
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({
