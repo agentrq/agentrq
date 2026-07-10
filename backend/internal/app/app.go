@@ -786,8 +786,16 @@ func New(cfg Config) (*App, error) {
 
 	// SPA Fallback
 	fiberApp.Get("/*", func(c *fiber.Ctx) error {
-		if strings.HasPrefix(c.Path(), "/api/") || strings.HasPrefix(c.Path(), "/mcp") || strings.HasPrefix(c.Path(), "/.well-known/") {
+		path := c.Path()
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") || strings.HasPrefix(path, "/.well-known/") {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Not Found"})
+		}
+		// If it's a request for a static asset file (has an extension like .js, .css, .wasm, etc.), return 404 instead of falling back to index.html
+		if idx := strings.LastIndex(path, "."); idx != -1 && idx > strings.LastIndex(path, "/") {
+			ext := path[idx:]
+			if ext != ".html" {
+				return c.Status(fiber.StatusNotFound).SendString("Not Found")
+			}
 		}
 		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 		c.Set("Pragma", "no-cache")
