@@ -917,6 +917,13 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		// Enforce human actor audience to prevent token misuse
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
 		userID := claims.Subject
 
 		workspaceIDParam := r.PathValue("id")

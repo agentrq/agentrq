@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -48,6 +49,26 @@ func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (stri
 
 func (m *mockTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
 	return tokenStr, nil // treat the raw value as the redirect URL in simple tests
+}
+
+func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
+	if tokenStr == "valid-human-token" {
+		return &auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:  "user1",
+				Audience: jwt.ClaimStrings{auth.ActorHumanAudience},
+			},
+		}, nil
+	}
+	if tokenStr == "valid-mcp-token" {
+		return &auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:  "user1",
+				Audience: jwt.ClaimStrings{"workspace1"},
+			},
+		}, nil
+	}
+	return nil, base.ErrNotFound
 }
 
 type mockCrudController struct {
@@ -328,6 +349,46 @@ type mockCrudWorkspaceAccess struct {
 
 func (m *mockCrudWorkspaceAccess) CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error) {
 	return m.checkWorkspaceAccessFunc(ctx, id, userID)
+}
+
+func TestAuthMiddleware_AudienceValidation(t *testing.T) {
+	app := fiber.New()
+	tokenSvc := &mockTokenSvc{}
+
+	h := &handler{
+		tokenSvc: tokenSvc,
+	}
+
+	app.Use(h.authMiddleware())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	t.Run("Token with human audience is accepted", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: "valid-human-token"})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Token without human audience (MCP token) is rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: "valid-mcp-token"})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Missing token is rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
+		}
+	})
 }
 
 func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
