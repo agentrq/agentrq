@@ -1,27 +1,20 @@
 /**
  * Whisper Web Worker — matches whisperweb.dev approach.
  *
- * Uses the lower-level AutoTokenizer / AutoProcessor / WhisperForConditionalGeneration
- * API from @huggingface/transformers with onnx-community/whisper-base.
+ * Uses the pipeline API from @huggingface/transformers.
  *
  * Tries WebGPU first (fast), falls back to WASM (universal).
  */
-import {
-  AutoTokenizer,
-  AutoProcessor,
-  WhisperForConditionalGeneration,
-  full,
-} from '@huggingface/transformers';
+import { pipeline } from '@huggingface/transformers';
 
-const MODEL_ID = 'onnx-community/whisper-base';
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+const MODEL_ID = isMobile ? 'onnx-community/moonshine-base-ONNX' : 'onnx-community/whisper-base';
 
-let tokenizer = null;
-let processor = null;
-let model = null;
+let pipe = null;
 let isLoading = false;
 
 async function loadModel(progressCb) {
-  if (tokenizer && processor && model) return;
+  if (pipe) return;
   if (isLoading) return; // prevent double-load
   isLoading = true;
 
@@ -45,17 +38,9 @@ async function loadModel(progressCb) {
     dtype = 'q8';
   }
 
-  tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, {
-    progress_callback: progressCb,
-  });
-
-  processor = await AutoProcessor.from_pretrained(MODEL_ID, {
-    progress_callback: progressCb,
-  });
-
-  model = await WhisperForConditionalGeneration.from_pretrained(MODEL_ID, {
-    dtype,
+  pipe = await pipeline('automatic-speech-recognition', MODEL_ID, {
     device,
+    dtype,
     progress_callback: progressCb,
   });
 
@@ -63,19 +48,14 @@ async function loadModel(progressCb) {
 }
 
 async function transcribe(audio, language) {
-  const inputs = await processor(audio, {
-    sampling_rate: 16000,
-  });
-
-  const outputs = await model.generate({
-    input_features: inputs.input_features,
-    max_new_tokens: 128,
+  const options = {
     language: language || 'en',
     task: 'transcribe',
-  });
-
-  const decoded = tokenizer.batch_decode(outputs, { skip_special_tokens: true });
-  return decoded.join(' ').trim();
+  };
+  
+  const outputs = await pipe(audio, options);
+  
+  return outputs.text ? outputs.text.trim() : '';
 }
 
 self.onmessage = async (event) => {
@@ -84,7 +64,7 @@ self.onmessage = async (event) => {
   if (type === 'transcribe') {
     try {
       // Load model if needed
-      if (!model) {
+      if (!pipe) {
         self.postMessage({ status: 'loading', progress: 0 });
 
         await loadModel((progress) => {

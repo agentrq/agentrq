@@ -50,3 +50,5 @@ gemini-extension/
 claude-extension/
 .antigravitycli/
 .claude/
+.gemini/
+.codex/

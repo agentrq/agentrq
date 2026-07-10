@@ -1,6 +1,7 @@
-import { ref, onUnmounted } from 'vue';
+import { ref, onUnmounted, watch } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
+import { useToasts } from './useToasts';
 
 /**
  * Composable for browser-based speech-to-text using local Whisper AI.
@@ -18,6 +19,13 @@ export function useSpeechToText(targetRef, workspaceId) {
   const isModelLoading = ref(false);
   const modelProgress = ref(0);
   const error = ref('');
+  const { notifyError } = useToasts();
+
+  watch(error, (newVal) => {
+    if (newVal) {
+      notifyError(newVal, 'Speech to Text');
+    }
+  });
 
   const isSupported = typeof window !== 'undefined'
     && !!navigator.mediaDevices?.getUserMedia
@@ -127,6 +135,10 @@ export function useSpeechToText(targetRef, workspaceId) {
   async function audioToFloat32(blob) {
     const arrayBuffer = await blob.arrayBuffer();
 
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error('Audio data is empty');
+    }
+
     // First decode at native sample rate using the pre-authorized shared context
     if (!sharedAudioCtx) {
       sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -212,9 +224,13 @@ export function useSpeechToText(targetRef, workspaceId) {
       mediaRecorder.start(250); // Collect data every 250ms
       isRecording.value = true;
     } catch (e) {
-      error.value = e.name === 'NotAllowedError'
-        ? 'Microphone permission denied'
-        : 'Failed to access microphone: ' + e.message;
+      if (e.name === 'NotAllowedError') {
+        error.value = 'Microphone permission denied';
+      } else if (e.name === 'NotFoundError') {
+        error.value = 'No microphone found on this device';
+      } else {
+        error.value = 'Failed to access microphone: ' + e.message;
+      }
       console.error('[STT] Mic access error:', e);
     }
   }
