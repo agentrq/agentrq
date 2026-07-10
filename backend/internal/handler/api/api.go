@@ -236,6 +236,11 @@ func (h *handler) authMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}
 
+		// Enforce human actor audience to prevent token misuse
+		if !auth.HasAudience(claims, auth.ActorHumanAudience) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
 		c.Locals("user_id", claims.Subject)
 		c.Locals("user_email", claims.Email)
 		c.Locals("user_name", claims.Name)

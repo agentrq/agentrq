@@ -407,7 +407,10 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		var userID string
 		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
 			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && claims != nil {
-				userID = claims.Subject
+				// Enforce human actor audience to prevent token misuse
+				if auth.HasAudience(claims, auth.ActorHumanAudience) {
+					userID = claims.Subject
+				}
 			}
 		}
 
