@@ -233,29 +233,29 @@
              </svg>
           </div>
           <div class="flex flex-col items-end min-w-0">
-             <div class="bg-gray-900 text-white dark:bg-zinc-800 dark:text-zinc-100 border border-transparent dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
+             <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0">
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
                    <button type="button" @click.stop="toggleMessageRender(m.id)"
-                           :class="!rawMessages.has(m.id) ? 'text-gray-300' : 'text-gray-500 hover:text-gray-300'"
+                           :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                            class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
                    <button type="button" @click.stop="copyMessageText(m.id, m.text)"
-                           class="text-gray-500 hover:text-gray-300 transition-colors p-0.5 rounded" title="Copy raw text">
+                           class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
                      <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                     <svg v-else class="w-2.5 h-2.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                     <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                    </button>
                  </div>
                </div>
-               <div v-if="!rawMessages.has(m.id)" class="md-body text-[13px] text-white" v-html="renderMarkdown(m.text)"></div>
-               <div v-else class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-all">{{ m.text }}</div>
+               <div v-if="!rawMessages.has(m.id)" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(m.text)"></div>
+               <div v-else class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap text-right break-all text-gray-800 dark:text-zinc-200">{{ m.text }}</div>
                <!-- Attachments on slack message -->
-               <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-700 dark:border-zinc-600 justify-end">
+               <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-zinc-600 justify-end">
                  <div v-for="(att, i) in m.attachments" :key="i"
                       @click="previewAttachment(att)"
-                      class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-700 dark:border-zinc-600 bg-gray-800 dark:bg-zinc-700 hover:bg-gray-700 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold">
-                   <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                   <span class="truncate max-w-[140px] text-gray-200">{{ att.filename }}</span>
+                      class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-600 transition-colors cursor-pointer text-[9px] font-semibold text-gray-700 dark:text-zinc-200 shadow-sm">
+                   <svg class="w-3 h-3 text-gray-500 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                   <span class="truncate max-w-[140px] text-gray-700 dark:text-gray-200">{{ att.filename }}</span>
                  </div>
                </div>
              </div>
