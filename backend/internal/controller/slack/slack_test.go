@@ -1107,13 +1107,13 @@ func TestHandleMCPPermission_Success_Allow(t *testing.T) {
 		}, nil)
 
 	mockRepo.EXPECT().
-		ListMessages(gomock.Any(), taskID).
+		ListMessages(gomock.Any(), taskID, gomock.Any()).
 		Return([]model.Message{permMsg}, nil)
 
 	var capturedMeta []byte
 	mockRepo.EXPECT().
-		UpdateMessageMetadata(gomock.Any(), taskID, int64(7), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ int64, _ int64, b []byte) error {
+		UpdateMessageMetadata(gomock.Any(), taskID, int64(7), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int64, _ int64, b []byte, _ int64) error {
 			capturedMeta = b
 			return nil
 		})

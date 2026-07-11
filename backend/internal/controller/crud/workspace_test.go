@@ -38,7 +38,7 @@ func TestCreateWorkspace_WithOptions(t *testing.T) {
 func TestDeleteWorkspace_Complex(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().GetWorkspaceAttachmentIDs(gomock.Any(), int64(1)).Return([]string{"att-1", "att-2"}, nil)
+	e.repo.EXPECT().GetWorkspaceAttachmentIDs(gomock.Any(), int64(1), gomock.Any()).Return([]string{"att-1", "att-2"}, nil)
 	e.repo.EXPECT().DeleteWorkspace(gomock.Any(), int64(1), testUserID).Return(nil)
 	e.storage.EXPECT().Delete("att-1").Return(nil)
 	e.storage.EXPECT().Delete("att-2").Return(nil)

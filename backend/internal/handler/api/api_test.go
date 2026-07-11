@@ -374,3 +374,36 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 		t.Fatalf("expected status 403, got %d", resp.StatusCode)
 	}
 }
+
+func TestAuthMiddleware_AudienceEnforcement(t *testing.T) {
+	// Use a real token service so JWT signing and claims work as expected.
+	realTokenSvc := auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"})
+
+	app := fiber.New()
+	h := &handler{tokenSvc: realTokenSvc}
+	app.Use(h.authMiddleware())
+	app.Get("/protected", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusOK)
+	})
+
+	t.Run("Valid human token is accepted", func(t *testing.T) {
+		token, _ := realTokenSvc.CreateToken("user1", "test@example.com", "Test", "")
+		req := httptest.NewRequest("GET", "/protected", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: token})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Token with wrong audience is rejected", func(t *testing.T) {
+		// Create an MCP token which lacks the "actor:human" audience.
+		token, _ := realTokenSvc.CreateMCPToken("user1", "work1", "access")
+		req := httptest.NewRequest("GET", "/protected", nil)
+		req.AddCookie(&http.Cookie{Name: "at", Value: token})
+		resp, _ := app.Test(req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
+		}
+	})
+}
