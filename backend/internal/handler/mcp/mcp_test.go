@@ -26,12 +26,17 @@ type mockTokenSvc struct {
 
 func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	if tokenStr == "valid-auth-cookie" || tokenStr == m.validCode || tokenStr == "valid-refresh-token" {
-		return &auth.Claims{
+		claims := &auth.Claims{
 			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:  monoflake.IDFromBase62("user123").String(),
-				Audience: jwt.ClaimStrings{"ws123", "authorization_code"},
+				Subject: monoflake.IDFromBase62("user123").String(),
 			},
-		}, nil
+		}
+		if tokenStr == "valid-auth-cookie" {
+			claims.Audience = jwt.ClaimStrings{auth.ActorHumanAudience}
+		} else {
+			claims.Audience = jwt.ClaimStrings{"ws123", "authorization_code"}
+		}
+		return claims, nil
 	}
 	return nil, jwt.ErrSignatureInvalid
 }

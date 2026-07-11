@@ -141,14 +141,16 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	taskID := int64(100)
 	messageID := int64(500)
 
+	userID := int64(1)
 	db.Create(&model.Message{
 		ID:     messageID,
 		TaskID: taskID,
+		UserID: userID,
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	// Case 1: Success update with correct taskID and userID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`), userID)
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,9 +162,26 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`), userID)
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"hacked":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+
+	// Case 3: Update with WRONG userID (IDOR/BOLA)
+	otherUserID := int64(2)
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"bola":true}`), otherUserID)
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"bola":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong userID")
 	}
 
 	db.First(&m, messageID)
