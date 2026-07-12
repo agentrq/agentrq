@@ -46,7 +46,7 @@ type ListTasksFilter struct {
 type ListTasksFunc func(ctx context.Context, filter ListTasksFilter) ([]model.Task, error)
 type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
-type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
+type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, userID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 type PublishEventFunc func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error
 
@@ -1306,7 +1306,8 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 							ps.permissionResponsesMu.RUnlock()
 
 							if hasMsg {
-								_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": behavior})
+							uid := monoflake.IDFromBase62(ps.userID).Int64()
+							_ = ps.updateMessageMetadata(ctx, taskID, msgID, uid, map[string]any{"status": behavior})
 							}
 						}
 

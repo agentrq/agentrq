@@ -27,3 +27,8 @@
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
 **Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2024-05-24 - IDOR in Message and Attachment Retrieval
+**Vulnerability:** The `ListMessages`, `UpdateMessageMetadata`, and `GetWorkspaceAttachmentIDs` repository methods were vulnerable to IDOR/BOLA as they only used resource IDs for queries, potentially allowing access to other users' data.
+**Learning:** Defense-in-depth requires that the persistence layer enforces ownership checks, regardless of higher-level controller logic. For cross-hierarchical checks (e.g., messages -> tasks -> workspaces) in SQLite, subqueries are more reliable and performant than complex joins in GORM.
+**Prevention:** Proactively include `userID` in all repository signatures for resource-scoped operations. Use the pattern `task_id IN (SELECT id FROM tasks WHERE user_id = ?)` to enforce ownership across the data hierarchy.

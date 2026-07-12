@@ -489,7 +489,7 @@ func New(cfg Config) (*App, error) {
 				}
 				return msgID, nil
 			},
-			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			func(ctx context.Context, taskID int64, messageID int64, userID int64, metadata any) error {
 				existingMetadata := make(map[string]any)
 				if m, err := repo.SystemGetMessage(ctx, messageID); err == nil && len(m.Metadata) > 0 {
 					_ = json.Unmarshal(m.Metadata, &existingMetadata)
@@ -504,9 +504,9 @@ func New(cfg Config) (*App, error) {
 				}
 
 				b, _ := json.Marshal(existingMetadata)
-				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, b)
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				err := repo.UpdateMessageMetadata(ctx, taskID, messageID, uid, b)
 				if err == nil {
-					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 					latest, _ := repo.GetTask(ctx, workspaceID, taskID, uid)
 					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
 						Type:    "task.updated",
@@ -675,8 +675,9 @@ func New(cfg Config) (*App, error) {
 				if taskID != 0 && eventType != "" {
 					t, err := repo.SystemGetTask(ctx, taskID)
 					if err == nil {
+						uid := monoflake.IDFromBase62(ownerID).Int64()
 						// Preload task messages
-						messages, err := repo.ListMessages(ctx, t.ID)
+						messages, err := repo.ListMessages(ctx, t.ID, uid)
 						if err == nil {
 							t.Messages = messages
 						}
