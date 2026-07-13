@@ -913,7 +913,7 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			return
 		}
 		claims, err := tokenSvc.ValidateToken(cookie.Value)
-		if err != nil {
+		if err != nil || !auth.HasAudience(claims, auth.ActorHumanAudience) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

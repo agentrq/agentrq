@@ -232,7 +232,7 @@ func (h *handler) authMiddleware() fiber.Handler {
 		}
 
 		claims, err := h.tokenSvc.ValidateToken(tokenStr)
-		if err != nil {
+		if err != nil || !auth.HasAudience(claims, auth.ActorHumanAudience) {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}
 
