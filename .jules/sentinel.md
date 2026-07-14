@@ -27,3 +27,8 @@
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
 **Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2026-07-14 - BOLA Protection in Repository Layer
+**Vulnerability:** Core repository methods `ListMessages`, `UpdateMessageMetadata`, and `GetWorkspaceAttachmentIDs` lacked `userID` ownership checks, allowing potential IDOR/BOLA attacks where an authenticated user could access or modify messages and attachments of other users' tasks/workspaces.
+**Learning:** Adding a `userID` filter directly on a `messages` table can be too restrictive and cause functional regressions if the user is the task owner but not the message author. Resource ownership (Task/Workspace) must be verified before allowing access to sub-resources (Messages/Attachments).
+**Prevention:** Use subqueries or joins to verify ownership of the parent resource (e.g., `task_id IN (SELECT id FROM tasks WHERE user_id = ?)`) when performing operations on child resources, ensuring that the owner can access all relevant data while preventing unauthorized access from others.

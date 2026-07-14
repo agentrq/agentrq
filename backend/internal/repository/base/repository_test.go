@@ -134,21 +134,24 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 		t.Fatalf("failed to connect database: %v", err)
 	}
 
-	_ = db.AutoMigrate(&model.Message{})
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
 	taskID := int64(100)
 	messageID := int64(500)
+	userID := int64(1)
 
+	db.Create(&model.Task{ID: taskID, UserID: userID})
 	db.Create(&model.Message{
 		ID:     messageID,
 		TaskID: taskID,
+		UserID: 99, // author doesn't have to be the owner
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	// Case 1: Success update with correct taskID and userID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, userID, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +163,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, userID, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
@@ -168,6 +171,115 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	db.First(&m, messageID)
 	if string(m.Metadata) == `{"hacked":true}` {
 		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+
+	// Case 3: Update with WRONG userID (BOLA)
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, 999, []byte(`{"bola":true}`))
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"bola":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong userID")
+	}
+}
+
+func TestRepository_ListMessages_Ownership(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(100)
+	userID := int64(1)
+	otherUserID := int64(2)
+
+	db.Create(&model.Task{ID: taskID, UserID: userID})
+	db.Create(&model.Message{ID: 1, TaskID: taskID, UserID: userID, Text: "Msg 1"})
+	db.Create(&model.Message{ID: 2, TaskID: taskID, UserID: 0, Sender: "agent", Text: "Agent reply"})
+
+	// Case 1: Owner lists all messages in the task
+	msgs, err := repo.ListMessages(ctx, taskID, userID)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Errorf("expected 2 messages for task owner, got %d", len(msgs))
+	}
+
+	// Case 2: Other user lists messages (doesn't own the task)
+	msgs, err = repo.ListMessages(ctx, taskID, otherUserID)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages for non-owner, got %d", len(msgs))
+	}
+}
+
+func TestRepository_GetWorkspaceAttachmentIDs_Ownership(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(1)
+	userID := int64(10)
+	otherUserID := int64(20)
+
+	// Task with attachment for userID 10
+	db.Create(&model.Task{
+		ID:          1,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Attachments: []byte(`[{"id":"att-1","filename":"f1.txt"}]`),
+	})
+
+	// Message with attachment for userID 10
+	db.Create(&model.Message{
+		ID:     101,
+		TaskID: 1,
+		UserID: userID,
+		Attachments: []byte(`[{"id":"att-2","filename":"f2.txt"}]`),
+	})
+
+	// Task with attachment for otherUserID
+	db.Create(&model.Task{
+		ID:          2,
+		WorkspaceID: workspaceID,
+		UserID:      otherUserID,
+		Attachments: []byte(`[{"id":"att-3","filename":"f3.txt"}]`),
+	})
+
+	// Case 1: Owner gets attachment IDs
+	ids, err := repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	// att-1 from task 1, att-2 from message 101 (joined via task 1 which belongs to userID 10)
+	// Wait, the join in GetWorkspaceAttachmentIDs joins tasks ON tasks.id = messages.task_id
+	// and checks tasks.workspace_id = ? AND tasks.user_id = ?.
+	// Since task 1 belongs to userID 10, message 101's attachment will be included for userID 10.
+	if len(ids) != 2 {
+		t.Errorf("expected 2 attachment IDs for owner, got %d: %v", len(ids), ids)
+	}
+
+	// Case 2: Other user gets attachment IDs
+	ids, err = repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, otherUserID)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "att-3" {
+		t.Errorf("expected 1 attachment ID (att-3) for other user, got %d: %v", len(ids), ids)
 	}
 }
 
@@ -208,6 +320,13 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		PreloadMessages: true,
 		Limit:           10,
 	}
+
+	// Update existing test expectations: ListTasks preloads messages using r.conn(ctx).
+	// The preloading logic in ListTasks also needs to be userID scoped.
+	// My previous change to ListTasks implementation:
+	// I didn't change ListTasks implementation yet? Let me check.
+	// Oh, I see ListTasks already took userID and used it for tasks: q := r.conn(ctx).Where("user_id = ?", userID)
+	// But it didn't use it for the message preloading subquery.
 
 	tasks, err := repo.ListTasks(ctx, req, userID)
 	if err != nil {

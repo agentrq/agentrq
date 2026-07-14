@@ -255,7 +255,9 @@ func (c *controller) OnMessageCreated(ctx context.Context, msg entity.Message, t
 				msg.Metadata = metaMap
 				b, marshalErr := json.Marshal(metaMap)
 				if marshalErr == nil {
-					if updateErr := c.repo.UpdateMessageMetadata(ctx, task.ID, msg.ID, b); updateErr != nil {
+					ownerID := monoflake.ID(task.UserID).String()
+					uid := monoflake.IDFromBase62(ownerID).Int64()
+					if updateErr := c.repo.UpdateMessageMetadata(ctx, task.ID, msg.ID, uid, b); updateErr != nil {
 						zlog.Error().Err(updateErr).Int64("messageID", msg.ID).Msg("[slack] failed to update message metadata with slack details")
 					}
 				}
@@ -757,7 +759,8 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 
 	// Try to find the permission request message and save the slack decision flag in its metadata first,
 	// so that OnMessageUpdated can skip overwriting the slack-initiated UI update.
-	messages, listErr := c.repo.ListMessages(ctx, taskID)
+	uid := monoflake.IDFromBase62(ownerID).Int64()
+	messages, listErr := c.repo.ListMessages(ctx, taskID, uid)
 	if listErr == nil {
 		for _, m := range messages {
 			var metadata map[string]any
@@ -775,7 +778,7 @@ func (c *controller) HandleMCPPermission(ctx context.Context, action SlackBlockA
 					metadata["slack_user_name"] = action.UserName
 					b, marshalErr := json.Marshal(metadata)
 					if marshalErr == nil {
-						_ = c.repo.UpdateMessageMetadata(ctx, taskID, m.ID, b)
+						_ = c.repo.UpdateMessageMetadata(ctx, taskID, m.ID, uid, b)
 					}
 					break
 				}
