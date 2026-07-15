@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -32,6 +34,7 @@ type mockTokenSvc struct {
 	auth.TokenService
 	createTokenFunc    func(userID, email, name, picture string) (string, error)
 	createMCPTokenFunc func(userID, workspaceID, tokenType string) (string, error)
+	validateTokenFunc  func(tokenStr string) (*auth.Claims, error)
 }
 
 func (m *mockTokenSvc) CreateToken(userID, email, name, picture string) (string, error) {
@@ -40,6 +43,13 @@ func (m *mockTokenSvc) CreateToken(userID, email, name, picture string) (string,
 
 func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {
 	return m.createMCPTokenFunc(userID, workspaceID, tokenType)
+}
+
+func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
+	if m.validateTokenFunc != nil {
+		return m.validateTokenFunc(tokenStr)
+	}
+	return nil, nil
 }
 
 func (m *mockTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
@@ -372,5 +382,78 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestAuthMiddleware_AudienceEnforcement(t *testing.T) {
+	app := fiber.New()
+	tokenSvc := &mockTokenSvc{}
+
+	h := &handler{
+		tokenSvc: tokenSvc,
+	}
+
+	app.Use(h.authMiddleware())
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	tests := []struct {
+		name           string
+		token          string
+		claims         *auth.Claims
+		expectedStatus int
+	}{
+		{
+			name:  "Valid human token",
+			token: "valid-human",
+			claims: &auth.Claims{
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject:  "user1",
+					Audience: jwt.ClaimStrings{auth.ActorHumanAudience},
+				},
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:  "Invalid audience (agent token)",
+			token: "agent-token",
+			claims: &auth.Claims{
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject:  "user1",
+					Audience: jwt.ClaimStrings{"ws123", "access"},
+				},
+			},
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:  "Missing audience",
+			token: "no-aud",
+			claims: &auth.Claims{
+				RegisteredClaims: jwt.RegisteredClaims{
+					Subject: "user1",
+				},
+			},
+			expectedStatus: http.StatusUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tokenSvc.validateTokenFunc = func(tokenStr string) (*auth.Claims, error) {
+				if tokenStr == tt.token {
+					return tt.claims, nil
+				}
+				return nil, jwt.ErrSignatureInvalid
+			}
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.AddCookie(&http.Cookie{Name: "at", Value: tt.token})
+			resp, _ := app.Test(req)
+
+			if resp.StatusCode != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, resp.StatusCode)
+			}
+		})
 	}
 }
