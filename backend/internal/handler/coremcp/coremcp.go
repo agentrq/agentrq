@@ -265,7 +265,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var userID string
 		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
-			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && claims != nil {
+			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && auth.HasAudience(claims, auth.ActorHumanAudience) {
 				userID = claims.Subject
 			}
 		}
