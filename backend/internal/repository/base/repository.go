@@ -793,14 +793,26 @@ func (r *repository) UpdateEvent(ctx context.Context, id int64, userID int64, pa
 }
 
 func (r *repository) DeleteEvent(ctx context.Context, id int64, userID int64) error {
-	res := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.Event{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Event{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+
+		if err := tx.Where("event_id = ? AND user_id = ?", id, userID).Delete(&model.EventTrigger{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&model.EventTrigger{}).
+			Where("emit_event_id = ? AND user_id = ?", id, userID).
+			Update("emit_event_id", 0).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // ── EventTriggers ──────────────────────────────────────────────────────────────
