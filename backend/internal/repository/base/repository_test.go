@@ -140,15 +140,17 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	ctx := context.Background()
 	taskID := int64(100)
 	messageID := int64(500)
+	userID := int64(1)
 
 	db.Create(&model.Message{
 		ID:     messageID,
 		TaskID: taskID,
+		UserID: userID,
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	// Case 1: Success update with correct taskID and userID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, userID, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +162,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, userID, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
@@ -168,6 +170,17 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	db.First(&m, messageID)
 	if string(m.Metadata) == `{"hacked":true}` {
 		t.Error("vulnerability detected: metadata was updated with wrong taskID")
+	}
+
+	// Case 3: Update with WRONG userID (BOLA/IDOR)
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, 999, []byte(`{"bola":true}`))
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+
+	db.First(&m, messageID)
+	if string(m.Metadata) == `{"bola":true}` {
+		t.Error("vulnerability detected: metadata was updated with wrong userID")
 	}
 }
 
@@ -222,6 +235,107 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		if len(task.Messages) != 1 {
 			t.Errorf("expected 1 preloaded message for task %d, got %d", task.ID, len(task.Messages))
 		}
+	}
+}
+
+func TestRepository_ListMessages_BOLA(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(100)
+	userID := int64(1)
+
+	db.Create(&model.Message{ID: 1, TaskID: taskID, UserID: userID, Text: "Msg 1"})
+	db.Create(&model.Message{ID: 2, TaskID: taskID, UserID: 999, Text: "Msg 2 (attacker)"})
+
+	// Case 1: Fetch messages for task with owner userID
+	msgs, err := repo.ListMessages(ctx, taskID, userID)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].ID != 1 {
+		t.Errorf("expected message 1, got %d", msgs[0].ID)
+	}
+
+	// Case 2: Fetch messages with wrong userID (BOLA)
+	msgs, _ = repo.ListMessages(ctx, taskID, 999)
+	if len(msgs) != 1 || msgs[0].ID != 2 {
+		t.Errorf("expected only attacker's message, got %d messages", len(msgs))
+	}
+}
+
+func TestRepository_GetWorkspaceAttachmentIDs_BOLA(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(100)
+	userID := int64(1)
+
+	// Task attachment
+	db.Create(&model.Task{
+		ID:          1,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Attachments: []byte(`[{"id":"att1"}]`),
+	})
+	// Message attachment
+	db.Create(&model.Message{
+		ID:          10,
+		TaskID:      1,
+		UserID:      userID,
+		Attachments: []byte(`[{"id":"att2"}]`),
+	})
+
+	// Attacker's data
+	db.Create(&model.Task{
+		ID:          2,
+		WorkspaceID: workspaceID,
+		UserID:      999,
+		Attachments: []byte(`[{"id":"att-hacked"}]`),
+	})
+
+	// Case 1: Fetch attachments for workspace with owner userID
+	ids, err := repo.GetWorkspaceAttachmentIDs(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+
+	foundAtt1 := false
+	foundAtt2 := false
+	foundAttHacked := false
+
+	for _, id := range ids {
+		if id == "att1" {
+			foundAtt1 = true
+		}
+		if id == "att2" {
+			foundAtt2 = true
+		}
+		if id == "att-hacked" {
+			foundAttHacked = true
+		}
+	}
+
+	if !foundAtt1 || !foundAtt2 {
+		t.Errorf("expected att1 and att2 to be found, got %v", ids)
+	}
+	if foundAttHacked {
+		t.Error("vulnerability detected: found attacker's attachment ID")
 	}
 }
 
