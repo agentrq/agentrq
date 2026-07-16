@@ -291,7 +291,7 @@ func TestRepository_Event_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Event{})
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -368,6 +368,43 @@ func TestRepository_Event_CRUD(t *testing.T) {
 	_, err = repo.GetEvent(ctx, 100, userID)
 	if err != ErrNotFound {
 		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestRepository_DeleteEvent_CascadesTriggers(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	userID := int64(1)
+
+	db.Create(&model.Event{ID: 100, UserID: userID, Name: "deploy_done"})
+	db.Create(&model.Event{ID: 200, UserID: userID, Name: "tests_done"})
+	// Trigger owned by the event being deleted.
+	db.Create(&model.EventTrigger{ID: 1, EventID: 100, UserID: userID, WorkspaceID: 10, Title: "t1"})
+	// Trigger of another event that chains to the event being deleted.
+	db.Create(&model.EventTrigger{ID: 2, EventID: 200, UserID: userID, WorkspaceID: 10, Title: "t2", EmitEventID: 100})
+
+	if err := repo.DeleteEvent(ctx, 100, userID); err != nil {
+		t.Fatalf("DeleteEvent: %v", err)
+	}
+
+	var count int64
+	db.Model(&model.EventTrigger{}).Where("event_id = ?", 100).Count(&count)
+	if count != 0 {
+		t.Errorf("expected the deleted event's triggers to be removed, found %d", count)
+	}
+
+	var chained model.EventTrigger
+	if err := db.First(&chained, 2).Error; err != nil {
+		t.Fatalf("trigger of the surviving event should not be deleted: %v", err)
+	}
+	if chained.EmitEventID != 0 {
+		t.Errorf("expected dangling emitEventId to be cleared, got %d", chained.EmitEventID)
 	}
 }
 
