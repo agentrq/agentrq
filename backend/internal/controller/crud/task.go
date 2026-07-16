@@ -766,6 +766,11 @@ func isValidTaskStatus(status string) bool {
 	return false
 }
 
+// IsValidTaskStatus reports whether status is a recognized task status. It is the single
+// source of truth for status validation, exported so other entry points (e.g. the MCP tool
+// layer) enforce the same rule as the REST path rather than duplicating the list.
+func IsValidTaskStatus(status string) bool { return isValidTaskStatus(status) }
+
 func validateCronForContext(ctx context.Context, cronSchedule string) error {
 	if auth.ContextHasAudience(ctx, auth.ActorHumanAudience) {
 		return schedule.ValidateCronSyntax(cronSchedule)
