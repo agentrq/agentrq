@@ -66,12 +66,15 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 			}
 			ipKey := "ip:" + ip
 
-			// Extract User ID if authenticated
+			// Extract User ID if authenticated.
+			// Security enhancement: Only scope rate-limiting by userKey if the token carries
+			// the "actor:human" audience. This prevents service-to-service or MCP tokens (which
+			// lack human scope) from sharing or exhausting the human user's rate limit quota.
 			userKey := ""
 
 			// 1. Try resolving authenticated User ID from JWT cookie
 			if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
-				if claims, err := tokenSvc.ValidateToken(cookie.Value); err == nil && claims.Subject != "" {
+				if claims, err := tokenSvc.ValidateToken(cookie.Value); err == nil && claims.Subject != "" && auth.HasAudience(claims, auth.ActorHumanAudience) {
 					userKey = "user:" + claims.Subject
 				}
 			}
@@ -81,7 +84,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 				if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 					tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 					tokenStr = strings.TrimSpace(tokenStr)
-					if claims, err := tokenSvc.ValidateToken(tokenStr); err == nil && claims.Subject != "" {
+					if claims, err := tokenSvc.ValidateToken(tokenStr); err == nil && claims.Subject != "" && auth.HasAudience(claims, auth.ActorHumanAudience) {
 						userKey = "user:" + claims.Subject
 					}
 				}
@@ -90,7 +93,7 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 			// 3. Try resolving from query parameters
 			if userKey == "" {
 				if tokenStr := r.URL.Query().Get("token"); tokenStr != "" {
-					if claims, err := tokenSvc.ValidateToken(tokenStr); err == nil && claims.Subject != "" {
+					if claims, err := tokenSvc.ValidateToken(tokenStr); err == nil && claims.Subject != "" && auth.HasAudience(claims, auth.ActorHumanAudience) {
 						userKey = "user:" + claims.Subject
 					}
 				}

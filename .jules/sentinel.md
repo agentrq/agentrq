@@ -26,4 +26,9 @@
 ## 2025-05-23 - CSRF in Slack OAuth Flow
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
-**Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+**Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT` that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2026-07-16 - Improper Audience Scoping in Rate Limit Middleware
+**Vulnerability:** The rate limiting middleware mapped any valid token with a non-empty `Subject` to a user-scoped rate limit `user:<userID>`. Because it did not verify the token's audience, service-to-service or MCP tokens (which are long-lived and have different use cases) could share or exhaust a human user's rate limiting quota.
+**Learning:** Multi-audience JWT setups must enforce strict audience verification at every validation point (such as rate limiters and auth middleware) to ensure that token scopes do not bleed into incorrect security/operational contexts.
+**Prevention:** Always verify that the validated JWT contains the expected audience (such as `actor:human` for human user sessions) before extracting the subject or treating the token as a human user session.
