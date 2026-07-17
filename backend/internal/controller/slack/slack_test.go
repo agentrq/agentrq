@@ -1106,14 +1106,15 @@ func TestHandleMCPPermission_Success_Allow(t *testing.T) {
 			SlackChannelID: "C123",
 		}, nil)
 
+	uid := monoflake.IDFromBase62(ownerUserID).Int64()
 	mockRepo.EXPECT().
-		ListMessages(gomock.Any(), taskID).
+		ListMessages(gomock.Any(), taskID, uid).
 		Return([]model.Message{permMsg}, nil)
 
 	var capturedMeta []byte
 	mockRepo.EXPECT().
-		UpdateMessageMetadata(gomock.Any(), taskID, int64(7), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ int64, _ int64, b []byte) error {
+		UpdateMessageMetadata(gomock.Any(), taskID, int64(7), uid, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int64, _ int64, _ int64, b []byte) error {
 			capturedMeta = b
 			return nil
 		})

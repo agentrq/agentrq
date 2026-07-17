@@ -144,11 +144,12 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	db.Create(&model.Message{
 		ID:     messageID,
 		TaskID: taskID,
+		UserID: 1,
 		Text:   "Initial text",
 	})
 
-	// Case 1: Success update with correct taskID
-	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, []byte(`{"updated":true}`))
+	// Case 1: Success update with correct taskID and userID
+	err = repo.UpdateMessageMetadata(ctx, taskID, messageID, 1, []byte(`{"updated":true}`))
 	if err != nil {
 		t.Errorf("expected nil error, got %v", err)
 	}
@@ -160,7 +161,7 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 
 	// Case 2: Update with WRONG taskID (IDOR)
-	err = repo.UpdateMessageMetadata(ctx, 999, messageID, []byte(`{"hacked":true}`))
+	err = repo.UpdateMessageMetadata(ctx, 999, messageID, 1, []byte(`{"hacked":true}`))
 	if err != nil {
 		t.Errorf("expected nil error (GORM Update doesn't return error on no rows), got %v", err)
 	}
@@ -198,6 +199,7 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		db.Create(&model.Message{
 			ID:     100 + i,
 			TaskID: i,
+			UserID: userID,
 			Text:   "Initial msg for task",
 		})
 	}
@@ -222,6 +224,24 @@ func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 		if len(task.Messages) != 1 {
 			t.Errorf("expected 1 preloaded message for task %d, got %d", task.ID, len(task.Messages))
 		}
+	}
+
+	// Case 2: ListMessages with userID
+	msgs, err := repo.ListMessages(ctx, 1, userID)
+	if err != nil {
+		t.Fatalf("ListMessages failed: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message, got %d", len(msgs))
+	}
+
+	// Case 3: ListMessages with WRONG userID (IDOR)
+	msgs, err = repo.ListMessages(ctx, 1, 999)
+	if err != nil {
+		t.Fatalf("ListMessages (wrong user) failed: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("vulnerability: expected 0 messages for wrong user, got %d", len(msgs))
 	}
 }
 
@@ -260,6 +280,7 @@ func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	db.Create(&model.Message{
 		ID:        901,
 		TaskID:    9,
+		UserID:    userID,
 		CreatedAt: time.Now(),
 		Metadata:  []byte(`{"type":"permission_request","status":"pending"}`),
 	})
@@ -283,6 +304,39 @@ func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	}
 	if counts["pending"] != 1 { // ID 9
 		t.Errorf("expected 1 pending tasks, got %d", counts["pending"])
+	}
+
+	// Test GetWorkspaceAttachmentIDs
+	_ = db.AutoMigrate(&model.Task{}, &model.Message{})
+	_ = db.Create(&model.Task{
+		ID:          100,
+		WorkspaceID: 1,
+		UserID:      10,
+		Attachments: []byte(`[{"id":"att-task-1","filename":"test.txt"}]`),
+	})
+	_ = db.Create(&model.Message{
+		ID:        200,
+		TaskID:    100,
+		UserID:    10,
+		Attachments: []byte(`[{"id":"att-msg-1","filename":"test2.txt"}]`),
+	})
+
+	// Correct user
+	attIDs, err := repo.GetWorkspaceAttachmentIDs(ctx, 1, 10)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	if len(attIDs) != 2 {
+		t.Errorf("expected 2 attachments, got %d", len(attIDs))
+	}
+
+	// Wrong user
+	attIDs, err = repo.GetWorkspaceAttachmentIDs(ctx, 1, 999)
+	if err != nil {
+		t.Fatalf("GetWorkspaceAttachmentIDs failed: %v", err)
+	}
+	if len(attIDs) != 0 {
+		t.Errorf("vulnerability: expected 0 attachments for wrong user, got %d", len(attIDs))
 	}
 }
 
