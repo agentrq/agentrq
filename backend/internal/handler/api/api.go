@@ -332,6 +332,20 @@ func (h *handler) googleLogin() fiber.Handler {
 
 func (h *handler) googleCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		// ✅ SECURITY: Early, strict validation of OAuth 'state' parameter to prevent CSRF attacks.
+		// Abort immediately and return 403 Forbidden on missing or invalid state token.
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			zlog.Warn().Msg("Google OAuth callback: missing state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
+		}
+		redirectURL, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google")
+		if err != nil {
+			zlog.Warn().Err(err).Msg("Google OAuth callback: invalid state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL = h.sanitizeRedirectURL(redirectURL)
+
 		code := c.Query("code")
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -393,16 +407,6 @@ func (h *handler) googleCallback() fiber.Handler {
 		}
 		c.Cookie(cookie)
 
-		redirectURL := "/"
-		if h.basePath != "" {
-			redirectURL = h.basePath + "/"
-		}
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "google"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
-		}
-
 		return c.Redirect(redirectURL)
 	}
 }
@@ -427,6 +431,20 @@ func (h *handler) githubLogin() fiber.Handler {
 
 func (h *handler) githubCallback() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		// ✅ SECURITY: Early, strict validation of OAuth 'state' parameter to prevent CSRF attacks.
+		// Abort immediately and return 403 Forbidden on missing or invalid state token.
+		stateToken := c.Query("state")
+		if stateToken == "" {
+			zlog.Warn().Msg("GitHub OAuth callback: missing state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "missing state parameter"})
+		}
+		redirectURL, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github")
+		if err != nil {
+			zlog.Warn().Err(err).Msg("GitHub OAuth callback: invalid state parameter")
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid state parameter"})
+		}
+		redirectURL = h.sanitizeRedirectURL(redirectURL)
+
 		code := c.Query("code")
 		ctx, cancel := newContext(c)
 		defer cancel()
@@ -479,16 +497,6 @@ func (h *handler) githubCallback() fiber.Handler {
 			cookie.Domain = "." + h.domain
 		}
 		c.Cookie(cookie)
-
-		redirectURL := "/"
-		if h.basePath != "" {
-			redirectURL = h.basePath + "/"
-		}
-		if stateToken := c.Query("state"); stateToken != "" {
-			if rurl, err := h.tokenSvc.ValidateOAuthStateToken(stateToken, "github"); err == nil {
-				redirectURL = h.sanitizeRedirectURL(rurl)
-			}
-		}
 
 		return c.Redirect(redirectURL)
 	}
