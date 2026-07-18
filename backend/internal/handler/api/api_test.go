@@ -119,38 +119,29 @@ func TestGoogleCallback_StateJWT(t *testing.T) {
 		}
 	})
 
-	t.Run("Forged state falls back to /", func(t *testing.T) {
+	t.Run("Forged state returns 403 Forbidden", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state=forged-not-a-jwt", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Wrong provider state falls back to /", func(t *testing.T) {
+	t.Run("Wrong provider state returns 403 Forbidden", func(t *testing.T) {
 		// State signed for github should be rejected by google callback
 		state, _ := realTokenSvc.CreateOAuthStateToken("/workspaces", "github")
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code&state="+state, nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 
-	t.Run("Missing state falls back to /", func(t *testing.T) {
+	t.Run("Missing state returns 403 Forbidden", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/google/callback?code=valid-code", nil)
 		resp, _ := app.Test(req)
-		if resp.StatusCode != http.StatusFound {
-			t.Fatalf("expected 302, got %d", resp.StatusCode)
-		}
-		if loc := resp.Header.Get("Location"); loc != "/" {
-			t.Errorf("expected /, got %s", loc)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", resp.StatusCode)
 		}
 	})
 }
