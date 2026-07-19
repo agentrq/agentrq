@@ -27,3 +27,8 @@
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
 **Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2026-05-18 - Rejected CORS Restriction on BaseURL
+**Vulnerability:** Attempted to replace wildcard CORS (`AllowOrigins: "*"`) with a hardcoded list of local hosts and `cfg.App.BaseURL` to reduce CORS attack surface.
+**Learning:** In production, the frontend client and the backend API are frequently deployed on different subdomains or separate domains. Restricting CORS solely to the backend's `BaseURL` (which is often configured as the backend API's public URL) without a dedicated `AllowedOrigins` configuration parameter would block all legitimate production cross-origin requests from the frontend, causing a critical outage.
+**Prevention:** Avoid restricting CORS wildcard origins to `BaseURL` unless you are absolutely sure they are on the exact same origin, or implement a dedicated `cfg.App.AllowedOrigins` whitelist configuration list to allow operators to specify correct origin whitelists.
