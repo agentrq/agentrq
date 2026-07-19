@@ -848,6 +848,14 @@ func New(cfg Config) (*App, error) {
 	mux.Handle("/", adaptor.FiberApp(fiberApp))
 
 	var finalRouter http.Handler = mux
+	// Apply defense-in-depth security headers (Clickjacking, MIME-sniffing, XSS protection, Referrer Policy)
+	finalRouter = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		mux.ServeHTTP(w, r)
+	})
 	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
 	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
 
