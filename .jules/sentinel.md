@@ -27,3 +27,8 @@
 **Vulnerability:** The Slack OAuth flow used a predictable base62 workspace ID as the `state` parameter. This lacked cryptographic integrity and session binding, making it vulnerable to CSRF attacks where an attacker could force a user to link their Slack workspace to an arbitrary AgentRQ workspace.
 **Learning:** The `state` parameter in OAuth2 is intended to be a non-guessable, session-bound value to prevent CSRF. Using a resource ID directly is insufficient.
 **Prevention:** Always use cryptographically signed tokens or high-entropy random nonces for the OAuth `state` parameter. In this project, `TokenService.CreateOAuthStateToken` provides a secure, signed JWT that can carry payload (like workspace ID) while ensuring origin and integrity.
+
+## 2025-05-24 - Missing JWT Audience Validation
+**Vulnerability:** The application used JWTs for both human UI sessions and MCP (service-to-service) authentication, but the API handlers did not verify the `aud` (audience) claim. This allowed a validly signed but restricted-scope MCP token to be used to access sensitive human-only API endpoints and SSE streams.
+**Learning:** Valid signature and expiration are insufficient for JWT security. Different parts of an application (e.g., UI vs. API vs. Webhooks) should use distinct audience claims to prevent token misuse across security boundaries.
+**Prevention:** Always enforce strict audience validation at every authentication checkpoint. Use distinct constants (like `ActorHumanAudience`) and verify them using helper functions like `auth.HasAudience` before granting access.
