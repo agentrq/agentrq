@@ -527,3 +527,82 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 	}
 }
 
+func TestRepository_Swarm(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Swarm{}, &model.Task{})
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+
+	created, err := repo.CreateSwarm(ctx, model.Swarm{
+		ID:                1,
+		WorkspaceID:        10,
+		Name:               "test-swarm",
+		LeaderWorkspaceID:  100,
+		MemberWorkspaceIDs: []byte(`[100,200,300]`),
+	})
+	if err != nil {
+		t.Fatalf("CreateSwarm: %v", err)
+	}
+	if created.ID != 1 {
+		t.Errorf("expected ID=1, got %d", created.ID)
+	}
+
+	got, err := repo.SystemGetSwarm(ctx, 1)
+	if err != nil {
+		t.Fatalf("SystemGetSwarm: %v", err)
+	}
+	if got.Name != "test-swarm" || got.LeaderWorkspaceID != 100 {
+		t.Errorf("unexpected swarm: %+v", got)
+	}
+
+	_, err = repo.SystemGetSwarm(ctx, 999)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestRepository_ListChildTasksAndCountIncompleteChildren(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.Task{})
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+
+	db.Create(&model.Task{ID: 1, WorkspaceID: 100, Status: "notstarted"}) // parent
+	db.Create(&model.Task{ID: 2, WorkspaceID: 200, ParentID: 1, Status: "completed"})
+	db.Create(&model.Task{ID: 3, WorkspaceID: 300, ParentID: 1, Status: "ongoing"})
+	db.Create(&model.Task{ID: 4, WorkspaceID: 400, ParentID: 1, Status: "notstarted"})
+	db.Create(&model.Task{ID: 5, WorkspaceID: 500, ParentID: 999, Status: "ongoing"}) // unrelated parent
+
+	children, err := repo.ListChildTasks(ctx, 1)
+	if err != nil {
+		t.Fatalf("ListChildTasks: %v", err)
+	}
+	if len(children) != 3 {
+		t.Errorf("expected 3 children, got %d", len(children))
+	}
+
+	count, err := repo.CountIncompleteChildren(ctx, 1)
+	if err != nil {
+		t.Fatalf("CountIncompleteChildren: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 incomplete children (ongoing+notstarted), got %d", count)
+	}
+
+	// Mark remaining two terminal; count should drop to 0.
+	db.Model(&model.Task{}).Where("id IN ?", []int64{3, 4}).Update("status", "completed")
+	count, err = repo.CountIncompleteChildren(ctx, 1)
+	if err != nil {
+		t.Fatalf("CountIncompleteChildren (2nd): %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 incomplete children after completing siblings, got %d", count)
+	}
+}
+

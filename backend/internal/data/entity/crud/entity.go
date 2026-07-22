@@ -171,6 +171,8 @@ type (
 		SortOrder        float64
 		AllowAllCommands bool
 		EventID          int64
+		IsSwarmEnabled   bool
+		SwarmID          int64
 	}
 
 	CreateTaskRequest struct {
@@ -543,6 +545,30 @@ type (
 
 	ListTasksFromEventResponse struct {
 		Tasks []Task
+	}
+
+	// Swarm entities
+
+	Swarm struct {
+		ID                 int64
+		CreatedAt          time.Time
+		UpdatedAt          time.Time
+		WorkspaceID        int64
+		Name               string
+		LeaderWorkspaceID  int64
+		MemberWorkspaceIDs []int64
+	}
+
+	CreateSwarmRequest struct {
+		UserID             string
+		WorkspaceID        int64
+		Name               string
+		LeaderWorkspaceID  int64
+		MemberWorkspaceIDs []int64
+	}
+
+	CreateSwarmResponse struct {
+		Swarm Swarm
 	}
 )
 

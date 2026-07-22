@@ -26,6 +26,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	swarmsvc "github.com/agentrq/agentrq/backend/internal/service/swarm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
@@ -77,6 +78,7 @@ type WorkspaceServer struct {
 	idgen                 idgen.Service
 	storage               storage.Service
 	pubsub                pubsub.Service
+	swarm                 swarmsvc.Orchestrator
 	tokenSvc              auth.TokenService
 	autoAllowedToolsMu    sync.RWMutex
 	autoAllowedTools      []string
@@ -119,12 +121,14 @@ func (ps *WorkspaceServer) Close() {
 
 // CreateTaskParams is the input to the create_task tool.
 type CreateTaskParams struct {
-	Title        string `json:"title" jsonschema:"Short title of the task"`
-	Body         string `json:"body" jsonschema:"Detailed description of the task or action needed"`
-	Assignee     string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
-	Attachments  []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
-	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
-	EventID      string `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+	Title          string `json:"title" jsonschema:"Short title of the task"`
+	Body           string `json:"body" jsonschema:"Detailed description of the task or action needed"`
+	Assignee       string `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
+	Attachments    []any  `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	CronSchedule   string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
+	EventID        string `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+	IsSwarmEnabled bool   `json:"isSwarmEnabled,omitempty" jsonschema:"Mark this task for swarm sub-task decomposition. Only valid when called from the swarm's leader workspace; use delegateSubtasks afterward."`
+	SwarmID        string `json:"swarmId,omitempty" jsonschema:"The swarm ID (base62) this task belongs to. Required when isSwarmEnabled is true."`
 }
 
 // PublishEventParams is the input to the publishEvent tool.
@@ -167,6 +171,25 @@ type GetTaskParams struct {
 	Limit               int    `json:"limit,omitempty" jsonschema:"Maximum number of messages to return; only used when includeConversation is true. Default is 5."`
 }
 
+// DelegateSubtaskItem is one independent sub-task in a delegateSubtasks call.
+type DelegateSubtaskItem struct {
+	Title string `json:"title" jsonschema:"Short title of the sub-task"`
+	Body  string `json:"body" jsonschema:"Detailed description of the sub-task"`
+}
+
+// DelegateSubtasksParams is the input to the delegateSubtasks tool.
+type DelegateSubtasksParams struct {
+	SwarmID      string                 `json:"swarmId" jsonschema:"The swarm ID (base62)"`
+	ParentTaskID string                 `json:"parentTaskId" jsonschema:"The parent task ID (base62) that was marked isSwarmEnabled"`
+	Subtasks     []DelegateSubtaskItem  `json:"subtasks" jsonschema:"The independent sub-tasks to delegate; each is dispatched round-robin to a worker workspace"`
+}
+
+// GetSwarmStatusParams is the input to the getSwarmStatus tool.
+type GetSwarmStatusParams struct {
+	SwarmID      string `json:"swarmId" jsonschema:"The swarm ID (base62)"`
+	ParentTaskID string `json:"parentTaskId" jsonschema:"The parent task ID (base62) whose sub-task statuses to fetch"`
+}
+
 func NewWorkspaceServer(
 	workspaceID int64,
 	userID string,
@@ -190,6 +213,7 @@ func NewWorkspaceServer(
 	autoAllowedTools []string,
 	tokenSvc auth.TokenService,
 	pubsub pubsub.Service,
+	swarmOrch swarmsvc.Orchestrator,
 ) *WorkspaceServer {
 	zlog.Info().Int64("workspace_id", workspaceID).Msg("new workspace server created")
 	ps := &WorkspaceServer{
@@ -221,6 +245,7 @@ func NewWorkspaceServer(
 		description:           description,
 		archivedAt:            archivedAt,
 		pubsub:                pubsub,
+		swarm:                 swarmOrch,
 		lastUpdateCheckAt:     time.Now(), // defer first status check by a full hour
 	}
 
@@ -306,6 +331,16 @@ func NewWorkspaceServer(
 		Name:        "publishEvent",
 		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically.",
 	}, ps.handlePublishEvent)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "delegateSubtasks",
+		Description: "Delegate independent sub-tasks of a swarm-enabled task to the swarm's worker workspaces, round-robin assigned. Callable only from the swarm's leader workspace.",
+	}, ps.handleDelegateSubtasks)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "getSwarmStatus",
+		Description: "Get a swarm's membership and the status of a parent task's delegated sub-tasks.",
+	}, ps.handleGetSwarmStatus)
 
 	// Add middleware to handle incoming notifications (like permission_request)
 	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware)
@@ -625,6 +660,20 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		EventID:      eventID,
 	}
 
+	t.IsSwarmEnabled = params.IsSwarmEnabled
+	if t.IsSwarmEnabled {
+		t.SwarmID = monoflake.IDFromBase62(params.SwarmID).Int64()
+	}
+
+	if t.IsSwarmEnabled {
+		if err := ps.swarm.ValidateSwarmTask(ctx, t); err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
+	}
+
 	if attachmentsJSON != "" {
 		t.Attachments = datatypes.JSON(attachmentsJSON)
 	}
@@ -853,6 +902,59 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, _ *mcp.CallTo
 			Text: fmt.Sprintf("event %q published", params.Name),
 		}},
 	}, nil, nil
+}
+
+func (ps *WorkspaceServer) handleDelegateSubtasks(ctx context.Context, req *mcp.CallToolRequest, params DelegateSubtasksParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "delegateSubtasks")
+
+	swarmID := monoflake.IDFromBase62(params.SwarmID).Int64()
+	parentTaskID := monoflake.IDFromBase62(params.ParentTaskID).Int64()
+	if swarmID == 0 || parentTaskID == 0 {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "swarmId and parentTaskId are required"}}}, nil, nil
+	}
+	if len(params.Subtasks) == 0 {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "at least one subtask is required"}}}, nil, nil
+	}
+
+	inputs := make([]swarmsvc.SubtaskInput, len(params.Subtasks))
+	for i, s := range params.Subtasks {
+		inputs[i] = swarmsvc.SubtaskInput{Title: s.Title, Body: s.Body}
+	}
+
+	created, err := ps.swarm.DelegateSubtasks(ctx, ps.workspaceID, swarmID, parentTaskID, inputs)
+	if err != nil {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to delegate subtasks: %v", err)}}}, nil, nil
+	}
+
+	ids := make([]string, len(created))
+	for i, t := range created {
+		ids[i] = monoflake.ID(t.ID).String()
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("delegated %d subtask(s): %s", len(created), strings.Join(ids, ", "))}},
+	}, nil, nil
+}
+
+func (ps *WorkspaceServer) handleGetSwarmStatus(ctx context.Context, req *mcp.CallToolRequest, params GetSwarmStatusParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getSwarmStatus")
+
+	swarmID := monoflake.IDFromBase62(params.SwarmID).Int64()
+	parentTaskID := monoflake.IDFromBase62(params.ParentTaskID).Int64()
+	if swarmID == 0 || parentTaskID == 0 {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "swarmId and parentTaskId are required"}}}, nil, nil
+	}
+
+	status, err := ps.swarm.GetStatus(ctx, ps.workspaceID, swarmID, parentTaskID)
+	if err != nil {
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to get swarm status: %v", err)}}}, nil, nil
+	}
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Swarm: %s\nLeader workspace: %s\n\nSub-tasks:", status.Swarm.Name, monoflake.ID(status.Swarm.LeaderWorkspaceID).String())
+	for _, t := range status.Children {
+		fmt.Fprintf(&sb, "\n- %s [%s] workspace=%s: %s", monoflake.ID(t.ID).String(), t.Status, monoflake.ID(t.WorkspaceID).String(), t.Title)
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: sb.String()}}}, nil, nil
 }
 
 func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
