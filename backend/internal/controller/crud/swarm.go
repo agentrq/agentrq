@@ -25,17 +25,32 @@ func (c *controller) CreateSwarm(ctx context.Context, req entity.CreateSwarmRequ
 		return nil, fmt.Errorf("memberWorkspaceIds must include at least the leader")
 	}
 
+	// Default WorkspaceID to LeaderWorkspaceID if not specified
+	if req.WorkspaceID == 0 {
+		req.WorkspaceID = req.LeaderWorkspaceID
+	}
+
 	isLeaderMember := false
+	validatedWorkspaceIDs := make(map[int64]bool)
+
 	for _, id := range req.MemberWorkspaceIDs {
 		if _, err := c.repository.GetWorkspace(ctx, id, uid); err != nil {
 			return nil, fmt.Errorf("member workspace %d: %w", id, err)
 		}
+		validatedWorkspaceIDs[id] = true
 		if id == req.LeaderWorkspaceID {
 			isLeaderMember = true
 		}
 	}
 	if !isLeaderMember {
 		return nil, fmt.Errorf("leaderWorkspaceId must be one of memberWorkspaceIds")
+	}
+
+	// Validate WorkspaceID ownership if not already validated in member loop
+	if !validatedWorkspaceIDs[req.WorkspaceID] {
+		if _, err := c.repository.GetWorkspace(ctx, req.WorkspaceID, uid); err != nil {
+			return nil, fmt.Errorf("workspaceId: %w", err)
+		}
 	}
 
 	membersJSON, err := json.Marshal(req.MemberWorkspaceIDs)
