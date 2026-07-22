@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
@@ -47,6 +48,13 @@ type orchestrator struct {
 	mqID   uint32
 	bus    *eventbus.Bus
 	notify NotifyFunc
+
+	// synthesizePublished de-dupes the swarm_ready_to_synthesize event within
+	// this process instance: it tracks which parent task IDs have already had
+	// their aggregation event published, so that two sub-tasks completing at
+	// nearly the same moment cannot both observe zero incomplete children and
+	// both publish the event.
+	synthesizePublished sync.Map // map[int64]bool, keyed by parentTaskID
 }
 
 // New creates the swarm dispatch queue (4 workers) and returns the Orchestrator.
@@ -132,12 +140,17 @@ func (o *orchestrator) DelegateSubtasks(ctx context.Context, callerWorkspaceID, 
 		workers = []int64{s.LeaderWorkspaceID}
 	}
 
-	now := time.Now()
-	created := make([]model.Task, 0, len(subtasks))
+	// Validate every subtask up front, before any CreateTask call, so a bad
+	// input never leaves earlier subtasks persisted as orphaned rows.
 	for i, st := range subtasks {
 		if st.Title == "" {
 			return nil, fmt.Errorf("subtask %d: title is required", i)
 		}
+	}
+
+	now := time.Now()
+	created := make([]model.Task, 0, len(subtasks))
+	for i, st := range subtasks {
 		workerID := workers[i%len(workers)]
 		t := model.Task{
 			ID:          o.idgen.NextID(),
@@ -177,6 +190,14 @@ func (o *orchestrator) OnTaskCompleted(ctx context.Context, task model.Task) err
 		return fmt.Errorf("count incomplete children of %d: %w", task.ParentID, err)
 	}
 	if remaining > 0 {
+		return nil
+	}
+
+	// Guard against double-firing the aggregation event: two sibling
+	// sub-tasks completing near-simultaneously can both observe remaining==0
+	// above. LoadOrStore atomically checks-and-sets so only the first caller
+	// for this parentTaskID proceeds to publish; later callers return nil.
+	if _, alreadyPublished := o.synthesizePublished.LoadOrStore(task.ParentID, true); alreadyPublished {
 		return nil
 	}
 

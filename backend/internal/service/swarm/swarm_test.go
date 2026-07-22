@@ -135,6 +135,26 @@ func TestOrchestrator_DelegateSubtasks(t *testing.T) {
 			t.Error("expected error when a member workspace no longer exists")
 		}
 	})
+
+	t.Run("EmptyTitleAmongSubtasksCreatesNothing", func(t *testing.T) {
+		mockRepo.EXPECT().SystemGetSwarm(gomock.Any(), int64(1)).Return(swarmModel, nil)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(5)).Return(parent, nil)
+		mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(200)).Return(model.Workspace{ID: 200}, nil)
+		mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(300)).Return(model.Workspace{ID: 300}, nil)
+		// No CreateTask expectation set: gomock's strict mock will fail the
+		// test if CreateTask is called at all, which is what we want to
+		// verify — subtask 2's empty title must be caught by the pre-pass
+		// validation before subtasks 0 and 1 are ever persisted.
+
+		_, err := o.DelegateSubtasks(context.Background(), 100, 1, 5, []SubtaskInput{
+			{Title: "sub-1", Body: "do a"},
+			{Title: "sub-2", Body: "do b"},
+			{Title: "", Body: "do c"},
+		})
+		if err == nil {
+			t.Fatal("expected error for empty subtask title")
+		}
+	})
 }
 
 func TestOrchestrator_OnTaskCompleted(t *testing.T) {
@@ -177,6 +197,36 @@ func TestOrchestrator_OnTaskCompleted(t *testing.T) {
 			}
 		default:
 			t.Error("expected swarm_ready_to_synthesize event to be published")
+		}
+	})
+
+	t.Run("ConcurrentCompletionPublishesOnce", func(t *testing.T) {
+		ch := bus.Subscribe(100, "")
+		defer bus.Unsubscribe(100, "", ch)
+
+		// Both "concurrent" callers observe zero incomplete children for the
+		// same parent task; only the first should actually publish.
+		mockRepo.EXPECT().CountIncompleteChildren(gomock.Any(), int64(7)).Return(int64(0), nil).Times(2)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(7)).Return(model.Task{ID: 7, SwarmID: 1}, nil)
+		mockRepo.EXPECT().SystemGetSwarm(gomock.Any(), int64(1)).Return(model.Swarm{ID: 1, LeaderWorkspaceID: 100}, nil)
+		mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(100)).Return(model.Workspace{ID: 100, UserID: 1}, nil)
+
+		if err := o.OnTaskCompleted(context.Background(), model.Task{ID: 3, ParentID: 7}); err != nil {
+			t.Fatalf("unexpected error on first call: %v", err)
+		}
+		if err := o.OnTaskCompleted(context.Background(), model.Task{ID: 4, ParentID: 7}); err != nil {
+			t.Fatalf("unexpected error on second call: %v", err)
+		}
+
+		select {
+		case <-ch:
+		default:
+			t.Fatal("expected exactly one swarm_ready_to_synthesize event")
+		}
+		select {
+		case line := <-ch:
+			t.Fatalf("expected no second event, got %s", line)
+		default:
 		}
 	})
 }
