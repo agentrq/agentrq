@@ -13,6 +13,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 )
 
@@ -327,6 +328,12 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		ResourceID:   updated.ID,
 		Actor:        entity.ActorHuman,
 	})
+
+	if c.swarm != nil && (updated.Status == "completed" || updated.Status == "rejected" || updated.Status == "failed") {
+		if err := c.swarm.OnTaskCompleted(ctx, updated); err != nil {
+			zlog.Warn().Err(err).Int64("task_id", updated.ID).Msg("swarm: failed to process task completion")
+		}
+	}
 
 	if updated.Status == "completed" || updated.Status == "done" {
 		c.emitEvent(ctx, entity.CRUDEvent{

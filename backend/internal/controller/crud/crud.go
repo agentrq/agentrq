@@ -10,6 +10,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/ratelimit"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	swarmsvc "github.com/agentrq/agentrq/backend/internal/service/swarm"
 )
 
 type (
@@ -21,6 +22,7 @@ type (
 		PubSub     pubsub.Service
 		TokenKey   string
 		Limiter    ratelimit.Limiter
+		Swarm      swarmsvc.Orchestrator
 	}
 
 	Controller interface {
@@ -40,6 +42,7 @@ type (
 		pubsub     pubsub.Service
 		tokenKey   string
 		limiter    ratelimit.Limiter
+		swarm      swarmsvc.Orchestrator
 	}
 )
 
@@ -52,6 +55,7 @@ func New(p Params) Controller {
 		pubsub:     p.PubSub,
 		tokenKey:   p.TokenKey,
 		limiter:    p.Limiter,
+		swarm:      p.Swarm,
 	}
 }
 

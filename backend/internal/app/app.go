@@ -49,6 +49,7 @@ import (
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	swarmsvc "github.com/agentrq/agentrq/backend/internal/service/swarm"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
@@ -217,6 +218,22 @@ func New(cfg Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memq: %w", err)
 	}
+
+	var mcpManager *mcp.Manager
+	swarmOrchestrator, err := swarmsvc.New(context.Background(), repo, ids, mqSvc, bus, func(ctx context.Context, workspaceID int64, taskID int64, message string) {
+		if mcpManager == nil {
+			return
+		}
+		workspace, err := repo.SystemGetWorkspace(ctx, workspaceID)
+		if err != nil {
+			return
+		}
+		mcpManager.SendChannelNotification(ctx, workspaceID, monoflake.ID(workspace.UserID).String(), taskID, message)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("swarm orchestrator: %w", err)
+	}
+
 	smtpSvc := smtp.New(cfg.SMTP)
 	slackSvc := slacksvc.New(cfg.Slack)
 	zlog.Info().
@@ -269,6 +286,7 @@ func New(cfg Config) (*App, error) {
 		PubSub:     pubsubSvc,
 		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		Limiter:    rateLimiter,
+		Swarm:      swarmOrchestrator,
 	})
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
@@ -289,7 +307,7 @@ func New(cfg Config) (*App, error) {
 	githubAuthSvc := auth.NewGitHub(cfg.Auth.GitHub.ClientID, cfg.Auth.GitHub.ClientSecret, fmt.Sprintf("%s/api/v1/auth/github/callback", cfg.App.BaseURL))
 
 	// ── MCP manager ───────────────────────────────────────────────────────────
-	mcpManager := mcp.NewManager(func(workspaceID int64, userID string) *mcp.WorkspaceServer {
+	mcpManager = mcp.NewManager(func(workspaceID int64, userID string) *mcp.WorkspaceServer {
 		var workspaceOwner string
 		workspace, err := repo.SystemGetWorkspace(context.Background(), workspaceID)
 		if err == nil {
@@ -349,6 +367,11 @@ func New(cfg Config) (*App, error) {
 
 				updated, err := repo.UpdateTask(ctx, m)
 				if err == nil {
+					if updated.Status == "completed" || updated.Status == "rejected" || updated.Status == "failed" {
+						if hookErr := swarmOrchestrator.OnTaskCompleted(ctx, updated); hookErr != nil {
+							zlog.Warn().Err(hookErr).Int64("task_id", updated.ID).Msg("swarm: failed to process task completion")
+						}
+					}
 					if updated.Status == "completed" || updated.Status == "done" {
 						pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
 							PubSubID: entity.PubSubTopicCRUD,
@@ -570,6 +593,7 @@ func New(cfg Config) (*App, error) {
 			}(),
 			tokenSvc,
 			pubsubSvc,
+			swarmOrchestrator,
 		)
 		srv.StartPoller(repo)
 		srv.StartPing()
