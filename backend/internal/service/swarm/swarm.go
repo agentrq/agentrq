@@ -239,7 +239,9 @@ func (o *orchestrator) GetStatus(ctx context.Context, callerWorkspaceID, swarmID
 
 	var memberIDs []int64
 	if len(s.MemberWorkspaceIDs) > 0 {
-		_ = json.Unmarshal(s.MemberWorkspaceIDs, &memberIDs)
+		if err := json.Unmarshal(s.MemberWorkspaceIDs, &memberIDs); err != nil {
+			return StatusResult{}, fmt.Errorf("corrupt swarm membership: %w", err)
+		}
 	}
 	isMember := false
 	for _, id := range memberIDs {
@@ -250,6 +252,14 @@ func (o *orchestrator) GetStatus(ctx context.Context, callerWorkspaceID, swarmID
 	}
 	if !isMember {
 		return StatusResult{}, fmt.Errorf("workspace %d is not a member of swarm %d", callerWorkspaceID, swarmID)
+	}
+
+	parent, err := o.repo.SystemGetTask(ctx, parentTaskID)
+	if err != nil {
+		return StatusResult{}, fmt.Errorf("parent task %d: %w", parentTaskID, err)
+	}
+	if parent.SwarmID != swarmID {
+		return StatusResult{}, fmt.Errorf("parent task does not belong to this swarm")
 	}
 
 	children, err := o.repo.ListChildTasks(ctx, parentTaskID)

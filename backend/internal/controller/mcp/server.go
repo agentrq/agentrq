@@ -661,7 +661,9 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 	}
 
 	t.IsSwarmEnabled = params.IsSwarmEnabled
-	t.SwarmID = monoflake.IDFromBase62(params.SwarmID).Int64()
+	if t.IsSwarmEnabled {
+		t.SwarmID = monoflake.IDFromBase62(params.SwarmID).Int64()
+	}
 
 	if t.IsSwarmEnabled {
 		if err := ps.swarm.ValidateSwarmTask(ctx, t); err != nil {

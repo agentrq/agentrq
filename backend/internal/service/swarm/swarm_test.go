@@ -285,6 +285,7 @@ func TestOrchestrator_GetStatus(t *testing.T) {
 
 	t.Run("Success", func(t *testing.T) {
 		mockRepo.EXPECT().SystemGetSwarm(gomock.Any(), int64(1)).Return(swarmModel, nil)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(5)).Return(model.Task{ID: 5, SwarmID: 1}, nil)
 		mockRepo.EXPECT().ListChildTasks(gomock.Any(), int64(5)).Return([]model.Task{{ID: 6, Status: "ongoing"}}, nil)
 
 		res, err := o.GetStatus(context.Background(), 200, 1, 5)
@@ -301,6 +302,21 @@ func TestOrchestrator_GetStatus(t *testing.T) {
 		_, err := o.GetStatus(context.Background(), 999, 1, 5)
 		if err == nil {
 			t.Error("expected error for non-member workspace")
+		}
+	})
+
+	t.Run("RejectsParentFromDifferentSwarm", func(t *testing.T) {
+		// Caller (200) IS a member of swarm 1, but the requested parentTaskID
+		// (5) actually belongs to a different swarm (2). GetStatus must reject
+		// this before ever calling ListChildTasks - no ListChildTasks
+		// expectation is set below, so gomock's strict-mock default fails the
+		// test if the IDOR guard is missing and ListChildTasks gets called.
+		mockRepo.EXPECT().SystemGetSwarm(gomock.Any(), int64(1)).Return(swarmModel, nil)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(5)).Return(model.Task{ID: 5, SwarmID: 2}, nil)
+
+		_, err := o.GetStatus(context.Background(), 200, 1, 5)
+		if err == nil {
+			t.Error("expected error when parent task belongs to a different swarm")
 		}
 	})
 }
