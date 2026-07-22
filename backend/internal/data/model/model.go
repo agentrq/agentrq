@@ -53,6 +53,8 @@ type (
 		AllowAllCommands bool    `gorm:"default:false"`
 		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+		IsSwarmEnabled   bool    `gorm:"default:false"`              // marks this task for swarm sub-task decomposition
+		SwarmID          int64   `gorm:"index:idx_tasks_swarm_id"`   // swarm this task (or its sub-tasks) belongs to
 	}
 
 	// Event defines a named event that agents can publish after completing a task.
@@ -81,6 +83,18 @@ type (
 		CronSchedule     string `gorm:"type:varchar(64)"`
 		AllowAllCommands bool   `gorm:"default:false"`
 		EmitEventID      int64  `gorm:"index:idx_event_triggers_emit_event_id"` // event this trigger's task emits on completion
+	}
+
+	// Swarm groups existing workspaces into one Leader and N Worker members for
+	// hierarchical task decomposition. Membership is static, set at creation.
+	Swarm struct {
+		ID                 int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt          time.Time
+		UpdatedAt          time.Time
+		WorkspaceID        int64          `gorm:"index:idx_swarms_workspace_id"` // owning workspace (listing/permissions)
+		Name               string         `gorm:"type:varchar(128)"`
+		LeaderWorkspaceID  int64          `gorm:"index:idx_swarms_leader_workspace_id"`
+		MemberWorkspaceIDs datatypes.JSON `gorm:"type:text"` // JSON-encoded []int64, includes the leader
 	}
 
 	// Message is an entry in a task's chat history

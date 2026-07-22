@@ -760,7 +760,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 
 func isValidTaskStatus(status string) bool {
 	switch status {
-	case "notstarted", "ongoing", "completed", "rejected", "cron", "blocked":
+	case "notstarted", "ongoing", "completed", "rejected", "cron", "blocked", "failed":
 		return true
 	}
 	return false

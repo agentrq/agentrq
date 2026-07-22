@@ -186,6 +186,7 @@ func New(cfg Config) (*App, error) {
 		&model.PushSubscription{},
 		&model.Event{},
 		&model.EventTrigger{},
+		&model.Swarm{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
