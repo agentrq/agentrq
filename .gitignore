@@ -52,3 +52,7 @@ claude-extension/
 .claude/
 .gemini/
 .codex/
+
+# Claude-specific, local only
+CLAUDE.md
+docs/superpowers/
