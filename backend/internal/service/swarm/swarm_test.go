@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -227,6 +228,48 @@ func TestOrchestrator_OnTaskCompleted(t *testing.T) {
 		case line := <-ch:
 			t.Fatalf("expected no second event, got %s", line)
 		default:
+		}
+	})
+
+	t.Run("GuardIsClearedAfterDownstreamErrorSoRetryCanPublish", func(t *testing.T) {
+		ch := bus.Subscribe(100, "")
+		defer bus.Unsubscribe(100, "", ch)
+
+		// First call: remaining==0, guard gets set via LoadOrStore, then
+		// SystemGetTask fails. The guard must be deleted so a later retry
+		// for the same parent isn't silently swallowed forever.
+		mockRepo.EXPECT().CountIncompleteChildren(gomock.Any(), int64(9)).Return(int64(0), nil)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(9)).Return(model.Task{}, errors.New("boom"))
+
+		if err := o.OnTaskCompleted(context.Background(), model.Task{ID: 8, ParentID: 9}); err == nil {
+			t.Fatal("expected error from first call, got nil")
+		}
+
+		select {
+		case line := <-ch:
+			t.Fatalf("expected no event to be published on the failing call, got %s", line)
+		default:
+		}
+
+		// Second call for the same parent: all downstream calls succeed
+		// this time, and the event must actually be published, proving the
+		// guard was cleaned up after the first call's error.
+		mockRepo.EXPECT().CountIncompleteChildren(gomock.Any(), int64(9)).Return(int64(0), nil)
+		mockRepo.EXPECT().SystemGetTask(gomock.Any(), int64(9)).Return(model.Task{ID: 9, SwarmID: 1}, nil)
+		mockRepo.EXPECT().SystemGetSwarm(gomock.Any(), int64(1)).Return(model.Swarm{ID: 1, LeaderWorkspaceID: 100}, nil)
+		mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(100)).Return(model.Workspace{ID: 100, UserID: 1}, nil)
+
+		if err := o.OnTaskCompleted(context.Background(), model.Task{ID: 10, ParentID: 9}); err != nil {
+			t.Fatalf("unexpected error on retry: %v", err)
+		}
+
+		select {
+		case line := <-ch:
+			if len(line) == 0 {
+				t.Error("expected non-empty SSE line")
+			}
+		default:
+			t.Error("expected swarm_ready_to_synthesize event to be published on retry")
 		}
 	})
 }

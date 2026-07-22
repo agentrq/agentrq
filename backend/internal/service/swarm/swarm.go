@@ -203,6 +203,7 @@ func (o *orchestrator) OnTaskCompleted(ctx context.Context, task model.Task) err
 
 	parent, err := o.repo.SystemGetTask(ctx, task.ParentID)
 	if err != nil {
+		o.synthesizePublished.Delete(task.ParentID)
 		return fmt.Errorf("parent task %d: %w", task.ParentID, err)
 	}
 	if parent.SwarmID == 0 {
@@ -210,11 +211,13 @@ func (o *orchestrator) OnTaskCompleted(ctx context.Context, task model.Task) err
 	}
 	s, err := o.repo.SystemGetSwarm(ctx, parent.SwarmID)
 	if err != nil {
+		o.synthesizePublished.Delete(task.ParentID)
 		return fmt.Errorf("swarm %d: %w", parent.SwarmID, err)
 	}
 
 	owner, err := o.repo.SystemGetWorkspace(ctx, s.LeaderWorkspaceID)
 	if err != nil {
+		o.synthesizePublished.Delete(task.ParentID)
 		return fmt.Errorf("leader workspace %d: %w", s.LeaderWorkspaceID, err)
 	}
 
