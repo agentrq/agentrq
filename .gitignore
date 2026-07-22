@@ -54,5 +54,4 @@ claude-extension/
 .codex/
 
 # Claude-specific, local only
-CLAUDE.md
 docs/superpowers/
