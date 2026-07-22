@@ -29,6 +29,7 @@ type (
 		TaskController
 		EventController
 		EventTriggerController
+		SwarmController
 	}
 
 	controller struct {
@@ -110,4 +111,9 @@ type TaskController interface {
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error)
+}
+
+// SwarmController defines swarm operations.
+type SwarmController interface {
+	CreateSwarm(ctx context.Context, req entity.CreateSwarmRequest) (*entity.CreateSwarmResponse, error)
 }

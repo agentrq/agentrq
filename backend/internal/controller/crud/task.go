@@ -653,6 +653,8 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		SortOrder:        m.SortOrder,
 		AllowAllCommands: m.AllowAllCommands,
 		EventID:          m.EventID,
+		IsSwarmEnabled:   m.IsSwarmEnabled,
+		SwarmID:          m.SwarmID,
 	}
 }
 
