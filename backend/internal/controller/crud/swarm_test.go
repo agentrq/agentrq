@@ -6,6 +6,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 )
@@ -94,7 +95,7 @@ func TestController_CreateSwarm(t *testing.T) {
 
 	t.Run("RejectsUnownedWorkspaceID", func(t *testing.T) {
 		env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(100), uidInt).Return(model.Workspace{ID: 100, UserID: uidInt}, nil)
-		env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(999), uidInt).Return(model.Workspace{}, gomock.Any()).Times(1)
+		env.repo.EXPECT().GetWorkspace(gomock.Any(), int64(999), uidInt).Return(model.Workspace{}, base.ErrNotFound).Times(1)
 
 		_, err := c.CreateSwarm(context.Background(), entity.CreateSwarmRequest{
 			UserID:             userID,
