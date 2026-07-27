@@ -13,6 +13,12 @@ cd backend && go test ./internal/...
 
 Mock packages are **generated** (gitignored). Run `make mocks` before testing if they are missing. `mockgen` lives at `~/go/bin/mockgen`.
 
+```bash
+cd frontend && npm test
+```
+
+Frontend unit tests run on Vitest + `@vue/test-utils` (config: `frontend/vitest.config.js`). Test files live beside the module they cover, named `*.spec.js` (e.g. `useCron.spec.js` next to `useCron.js`). Coverage currently targets pure composables (`useCron`, `useFormat`); broader view/SSE/permission coverage is expected to land incrementally.
+
 ## MCP server (`backend/internal/controller/mcp/`)
 
 - `server.go` — all tool handlers (`handleCreateTask`, `handleReply`, etc.) and the `WorkspaceServer` struct
