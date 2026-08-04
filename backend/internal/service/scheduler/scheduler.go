@@ -23,10 +23,11 @@ type Service interface {
 }
 
 type scheduler struct {
-	repo   base.Repository
-	idgen  idgen.Service
-	bus    *eventbus.Bus
-	pubsub pubsub.Service
+	repo      base.Repository
+	idgen     idgen.Service
+	bus       *eventbus.Bus
+	pubsub    pubsub.Service
+	lastTick  time.Time
 }
 
 func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, ps pubsub.Service) Service {
@@ -50,6 +51,27 @@ func (s *scheduler) Start(ctx context.Context) {
 }
 
 func (s *scheduler) tick(ctx context.Context) {
+	s.tickAt(ctx, time.Now().UTC())
+}
+
+func (s *scheduler) tickAt(ctx context.Context, ts time.Time) {
+	current := ts.Truncate(time.Minute)
+
+	// If processing was delayed and we missed one or more whole minutes,
+	// catch up by evaluating every minute since the last successful tick.
+	start := current
+	if !s.lastTick.IsZero() {
+		start = s.lastTick.Add(time.Minute).Truncate(time.Minute)
+	}
+
+	for probe := start; !probe.After(current); probe = probe.Add(time.Minute) {
+		s.tickMinute(ctx, probe)
+	}
+
+	s.lastTick = current
+}
+
+func (s *scheduler) tickMinute(ctx context.Context, now time.Time) {
 	crons, err := s.repo.SystemListTasksByStatus(ctx, "cron")
 	if err != nil {
 		zlog.Error().Err(err).Msg("scheduler: failed to list crons")
@@ -57,7 +79,6 @@ func (s *scheduler) tick(ctx context.Context) {
 	}
 
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	now := time.Now().UTC().Truncate(time.Minute)
 
 	for _, c := range crons {
 		if c.CronSchedule == "" {
