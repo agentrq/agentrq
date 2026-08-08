@@ -351,8 +351,10 @@ onMounted(async () => {
       if (t.cronSchedule) {
         parseCronToUI(t.cronSchedule);
       }
+      document.title = `Edit Task | ${workspace.value?.name || 'Workspace'} | AgentRQ`;
     } else {
       newTask.value.allowAllCommands = wsRes.workspace.allowAllCommands || false;
+      document.title = `New Task | ${workspace.value?.name || 'Workspace'} | AgentRQ`;
     }
   } catch (err) {
     notifyError("Access Error: " + err.message);
