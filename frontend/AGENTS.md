@@ -5,7 +5,6 @@ This document outlines the core design principles and UI patterns to ensure cons
 ## 1. General Aesthetic
 
 - **Minimalist & High-Density**: Prioritize information and architectural clarity over decorative elements.
-- **Light Theme Only**: The application strictly uses a light-themed palette. Skip dark mode support for now.
 - **Flatter Design**: No elevation (drop shadows) on cards or buttons (except for subtle shadow-sm on parent containers).
 
 ## 2. Colors
