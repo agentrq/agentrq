@@ -198,8 +198,6 @@ func (c *controller) fromModelWorkspaceToEntity(m model.Workspace) entity.Worksp
 		Description:      m.Description,
 		Icon:             m.Icon,
 		ArchivedAt:       m.ArchivedAt,
-		TokenEncrypted:   m.TokenEncrypted,
-		TokenNonce:       m.TokenNonce,
 		AutoAllowedTools: make([]string, 0),
 	}
 	if len(m.AutoAllowedTools) > 0 {

@@ -266,7 +266,6 @@ func New(cfg Config) (*App, error) {
 		Storage:    storageSvc,
 		Image:      imgSvc,
 		PubSub:     pubsubSvc,
-		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		Limiter:    rateLimiter,
 	})
 
@@ -752,7 +751,6 @@ func New(cfg Config) (*App, error) {
 		MCPManager: mcpManager,
 		Crud:       crudCtrl,
 		TokenSvc:   tokenSvc,
-		TokenKey:   cfg.Auth.WorkspaceTokenKey,
 		BaseURL:    cfg.App.BaseURL,
 		Mux:        mux,
 	}); err != nil {
@@ -773,7 +771,6 @@ func New(cfg Config) (*App, error) {
 		Domain:           cfg.App.Domain,
 		CookieSecure:     cookieSecure,
 		BasePath:         cfg.App.BasePath,
-		TokenKey:         cfg.Auth.WorkspaceTokenKey,
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
 		RootToken:        cfg.Auth.RootAccessToken,
 		GithubClientID:   cfg.Auth.GitHub.ClientID,

@@ -20,7 +20,6 @@ import (
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
-	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/mustafaturan/monoflake"
@@ -30,7 +29,6 @@ type Params struct {
 	MCPManager *mcpctrl.Manager
 	Crud       crud.Controller
 	TokenSvc   auth.TokenService
-	TokenKey   string
 	BaseURL    string
 	Mux        *http.ServeMux
 }
@@ -41,7 +39,6 @@ type handler struct {
 	mcpManager *mcpctrl.Manager
 	crud       crud.Controller
 	tokenSvc   auth.TokenService
-	tokenKey   string
 	baseURL    string
 }
 
@@ -65,7 +62,6 @@ func New(p Params) (Handler, error) {
 		mcpManager: p.MCPManager,
 		crud:       p.Crud,
 		tokenSvc:   p.TokenSvc,
-		tokenKey:   p.TokenKey,
 		baseURL:    p.BaseURL,
 	}
 
@@ -178,28 +174,11 @@ func (h *handler) streamableHandler() http.Handler {
 
 		// 1. Mandatory token check if workspace has it in DB
 		queryToken := getTokenVal(r)
-		workspace, err := h.crud.SystemGetWorkspace(r.Context(), workspaceID)
-		if err != nil {
-			sendJSONRPCError(w, "situational security: workspace not found", jsonrpc.CodeInvalidParams, http.StatusNotFound)
-			return
-		}
-
 		userID := ""
 		if queryToken == "" {
 			sendJSONRPCError(w, "situational security: mission token required", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 			return
 		}
-
-		// If it's a 16-character mission token, decrypt and check
-		if len(queryToken) == 16 {
-			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
-			if decErr != nil || !security.SecureCompare(dec, queryToken) {
-				sendJSONRPCError(w, "situational security: invalid mission token", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
-				return
-			}
-			userID = monoflake.ID(workspace.UserID).String()
-		}
-		// If length is not 16, it might be a valid JWT OAuth token. It will be checked via identifyUser below.
 
 		// 2. Mandatory Mcp-Session-Id for non-initialize requests
 		sessionID := r.Header.Get("Mcp-Session-Id")
@@ -235,11 +214,7 @@ func (h *handler) streamableHandler() http.Handler {
 		// Create a new context with claims if we have them
 		ctx := r.Context()
 		var requestClaims *auth.Claims
-		if len(queryToken) == 16 {
-			requestClaims = &auth.Claims{
-				RegisteredClaims: jwt.RegisteredClaims{Subject: userID},
-			}
-		} else if claims, err := h.tokenSvc.ValidateToken(queryToken); err == nil {
+		if claims, err := h.tokenSvc.ValidateToken(queryToken); err == nil {
 			requestClaims = claims
 		}
 		if requestClaims == nil && userID != "" {
@@ -269,17 +244,6 @@ func (h *handler) streamableHandler() http.Handler {
 func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr string) string {
 	if tokenStr == "" {
 		return ""
-	}
-
-	// 1. Try situational secret (16-chars)
-	if len(tokenStr) == 16 {
-		workspace, err := h.crud.SystemGetWorkspace(ctx, workspaceID)
-		if err == nil && workspace.TokenEncrypted != "" {
-			dec, decErr := security.Decrypt(workspace.TokenEncrypted, h.tokenKey, workspace.TokenNonce)
-			if decErr == nil && security.SecureCompare(dec, tokenStr) {
-				return monoflake.ID(workspace.UserID).String()
-			}
-		}
 	}
 
 	// 2. Try JWT situational authentication

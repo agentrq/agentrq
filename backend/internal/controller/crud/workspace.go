@@ -8,7 +8,6 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
-	"github.com/agentrq/agentrq/backend/internal/service/security"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -29,16 +28,6 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		Description:          req.Workspace.Description,
 		AllowAllCommands:     req.Workspace.AllowAllCommands,
 		SelfLearningLoopNote: req.Workspace.SelfLearningLoopNote,
-	}
-
-	// Generate and encrypt token for new workspace
-	token, _ := security.GenerateSecret(16)
-	if token != "" && c.tokenKey != "" {
-		enc, nonce, err := security.Encrypt(token, c.tokenKey)
-		if err == nil {
-			m.TokenEncrypted = enc
-			m.TokenNonce = nonce
-		}
 	}
 
 	if req.Workspace.NotificationSettings != nil {
@@ -302,8 +291,6 @@ func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 		Description:      m.Description,
 		Icon:             m.Icon,
 		ArchivedAt:       m.ArchivedAt,
-		TokenEncrypted:   m.TokenEncrypted,
-		TokenNonce:       m.TokenNonce,
 		AutoAllowedTools:     make([]string, 0),
 		AllowAllCommands:     m.AllowAllCommands,
 		SelfLearningLoopNote: m.SelfLearningLoopNote,

@@ -38,7 +38,6 @@ type (
 		Domain           string
 		CookieSecure     bool
 		BasePath         string
-		TokenKey         string
 		RootLoginEnabled bool
 		RootToken        string
 		Router           fiber.Router
@@ -61,7 +60,6 @@ type (
 		domain           string
 		cookieSecure     bool
 		basePath         string
-		tokenKey         string
 		rootLoginEnabled bool
 		rootToken        string
 		router           fiber.Router
@@ -94,7 +92,6 @@ func New(p Params) (Handler, error) {
 		domain:           p.Domain,
 		cookieSecure:     p.CookieSecure,
 		basePath:         p.BasePath,
-		tokenKey:         p.TokenKey,
 		rootLoginEnabled: p.RootLoginEnabled,
 		rootToken:        p.RootToken,
 		router:           p.Router,
@@ -139,7 +136,7 @@ func newContext(c *fiber.Ctx) (context.Context, context.CancelFunc) {
 	return withLocals(ctx), cancel
 }
 
-func (h *handler) mcpURL(workspaceID int64, token string) string {
+func (h *handler) mcpURL(workspaceID int64) string {
 	id := monoflake.ID(workspaceID).String()
 	url := fmt.Sprintf("%s/mcp/%s", h.mcpBaseURL, id)
 
@@ -154,9 +151,6 @@ func (h *handler) mcpURL(workspaceID int64, token string) string {
 		url = fmt.Sprintf("%s://%s.mcp.%s", proto, id36, h.domain)
 	}
 
-	if token != "" {
-		url += "?token=" + token
-	}
 	return url
 }
 
@@ -554,15 +548,8 @@ func (h *handler) createWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
-		// Decrypt situational secret for mission owner visibility
-		token := ""
-		if rs.Workspace.TokenEncrypted != "" {
-			dec, _ := security.Decrypt(rs.Workspace.TokenEncrypted, h.tokenKey, rs.Workspace.TokenNonce)
-			token = dec
-		}
-
 		c.Status(http.StatusCreated)
-		return c.Send(mapper.FromCreateWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID, token)))
+		return c.Send(mapper.FromCreateWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID)))
 	}
 }
 
@@ -588,15 +575,8 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
-		// Decrypt situational secret for mission owner visibility
-		token := ""
-		if rs.Workspace.TokenEncrypted != "" {
-			dec, _ := security.Decrypt(rs.Workspace.TokenEncrypted, h.tokenKey, rs.Workspace.TokenNonce)
-			token = dec
-		}
-
 		c.Status(http.StatusOK)
-		return c.Send(mapper.FromGetWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID, token)))
+		return c.Send(mapper.FromGetWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID)))
 	}
 }
 
@@ -622,17 +602,8 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
-		mcpURLWithToken := func(workspaceID int64) string {
-			// For list, we generally don't include plain token unless strictly situational required.
-			// However, since missionowner is viewing THEIR workspaces, we can include it.
-			// Optimized: We would need the full workspace model here.
-			// For now, list will show generic URL to save decryption cost,
-			// detail will show full URL.
-			return h.mcpURL(workspaceID, "")
-		}
-
 		c.Status(http.StatusOK)
-		return c.Send(mapper.FromListWorkspacesResponseEntityToHTTPResponse(rs, mcpURLWithToken))
+		return c.Send(mapper.FromListWorkspacesResponseEntityToHTTPResponse(rs, h.mcpURL))
 	}
 }
 
@@ -736,15 +707,8 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
-		// Decrypt situational secret for mission owner visibility
-		token := ""
-		if rs.Workspace.TokenEncrypted != "" {
-			dec, _ := security.Decrypt(rs.Workspace.TokenEncrypted, h.tokenKey, rs.Workspace.TokenNonce)
-			token = dec
-		}
-
 		c.Status(http.StatusOK)
-		return c.Send(mapper.FromUpdateWorkspaceResponseEntityToHTTPResponse(&rs.Workspace, h.mcpURL(rq.Workspace.ID, token)))
+		return c.Send(mapper.FromUpdateWorkspaceResponseEntityToHTTPResponse(&rs.Workspace, h.mcpURL(rq.Workspace.ID)))
 	}
 }
 

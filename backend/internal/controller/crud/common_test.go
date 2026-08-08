@@ -41,7 +41,6 @@ func newTestController(t *testing.T) *testEnv {
 		Storage:    stor,
 		Image:      img,
 		PubSub:     psSvc,
-		TokenKey:   "test-key",
 	})
 
 	return &testEnv{

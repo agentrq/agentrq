@@ -18,8 +18,6 @@ type (
 		ArchivedAt           *time.Time
 		Icon                 string         `gorm:"type:text"`
 		NotificationSettings datatypes.JSON `gorm:"type:text"`
-		TokenEncrypted       string         `gorm:"type:text"`
-		TokenNonce           string         `gorm:"type:varchar(64)"`
 		AutoAllowedTools     datatypes.JSON `gorm:"type:text"`
 		AllowAllCommands     bool           `gorm:"default:false"`
 		SelfLearningLoopNote string         `gorm:"type:text"`

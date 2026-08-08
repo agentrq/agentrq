@@ -30,8 +30,6 @@ type (
 		Icon                 string
 		NotificationSettings *NotificationSettings
 		AgentConnected       bool
-		TokenEncrypted       string
-		TokenNonce           string
 		AutoAllowedTools     []string
 		AllowAllCommands     bool
 		SelfLearningLoopNote string

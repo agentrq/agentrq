@@ -19,7 +19,6 @@ type (
 		Storage    storage.Service
 		Image      image.Service
 		PubSub     pubsub.Service
-		TokenKey   string
 		Limiter    ratelimit.Limiter
 	}
 
@@ -37,7 +36,6 @@ type (
 		storage    storage.Service
 		image      image.Service
 		pubsub     pubsub.Service
-		tokenKey   string
 		limiter    ratelimit.Limiter
 	}
 )
@@ -49,7 +47,6 @@ func New(p Params) Controller {
 		storage:    p.Storage,
 		image:      p.Image,
 		pubsub:     p.PubSub,
-		tokenKey:   p.TokenKey,
 		limiter:    p.Limiter,
 	}
 }
