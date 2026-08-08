@@ -702,6 +702,32 @@ func TestUpdateScheduledTask_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateScheduledTask_NotStartedToCron(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
+	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "cron", Title: "scheduled title", CronSchedule: "0 9 * * 1"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.Status != "cron" {
+			t.Errorf("expected status 'cron', got %s", m.Status)
+		}
+		return updated, nil
+	})
+
+	resp, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
+		WorkspaceID: 1, TaskID: 10, Title: "scheduled title", CronSchedule: "0 9 * * 1", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.Status != "cron" {
+		t.Errorf("expected status 'cron', got %s", resp.Task.Status)
+	}
+}
+
 func TestUpdateScheduledTask_NonCronTask_Rejected(t *testing.T) {
 	e := newTestController(t)
 

@@ -723,8 +723,8 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	if err != nil {
 		return nil, err
 	}
-	if m.Status != "cron" {
-		return nil, fmt.Errorf("only chronic tasks can be edited this way")
+	if m.Status != "cron" && m.Status != "notstarted" {
+		return nil, fmt.Errorf("only chronic or not started tasks can be edited")
 	}
 
 	if req.CronSchedule == "" {
@@ -734,6 +734,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		if err := validateCronForContext(ctx, req.CronSchedule); err != nil {
 			return nil, err
 		}
+		m.Status = "cron"
 		m.CronSchedule = req.CronSchedule
 	}
 

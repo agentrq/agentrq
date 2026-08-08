@@ -43,8 +43,8 @@
                   <span class="text-[10px] font-medium text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded uppercase tracking-tight group-hover:bg-gray-100 dark:group-hover:bg-zinc-700 group-hover:text-black dark:group-hover:text-white transition-colors">{{ t.assignee === 'agent' ? 'Agent' : 'Human' }}</span>
                 </div>
                 <div class="flex items-center gap-2">
-                   <!-- Action Menu (Hover) -->
-                   <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                   <!-- Action Menu (Visible on mobile, hover on desktop) -->
+                   <div class="opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
                       <!-- Task Reordering -->
                       <template v-if="!isArchived && t.status === 'notstarted' && grp.title === 'Not Started'">
                         <button @click.stop="reorderTask(t, -1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Up">
@@ -55,7 +55,7 @@
                         </button>
                       </template>
 
-                      <button v-if="!isArchived && t.status === 'cron'" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all">
+                      <button v-if="!isArchived && (t.status === 'cron' || t.status === 'notstarted')" @click.stop="triggerEdit(t)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Edit Task">
                         <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
                       <button v-if="!isArchived" @click.stop="triggerDelete(t)" class="text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 p-1 rounded-sm transition-all">

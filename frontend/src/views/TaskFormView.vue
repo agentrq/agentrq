@@ -24,7 +24,7 @@
       <div class="w-full max-w-3xl space-y-4">
         
         <h1 class="text-xl md:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
-          {{ isEditMode ? 'Edit Scheduled Task' : 'What do you want to achieve?' }}
+          {{ isEditMode ? 'Edit Task' : 'What do you want to achieve?' }}
         </h1>
 
         <!-- Drag & Drop Overlay inside the main container -->
@@ -531,7 +531,7 @@ async function submitEditProtocol() {
       newTask.value.assignee, newTask.value.cronSchedule,
       newTask.value.allowAllCommands
     );
-    notifySuccess('Scheduled Task Updated');
+    notifySuccess('Task Updated');
     goBack(newTask.value.cronSchedule !== '');
   } catch(err) {
     notifyError("Update Error: " + err.message);
