@@ -71,15 +71,38 @@
         <!-- Body Content (Collapsed) -->
         <div class="mt-0.5">
           <div v-if="task.body" class="mb-1">
-            <p @click="isDescriptionCollapsed = !isDescriptionCollapsed"
-               :class="[
-                 isDescriptionCollapsed 
-                   ? 'truncate text-[11px] text-gray-500 dark:text-zinc-500 py-1' 
-                   : 'whitespace-pre-wrap p-3 bg-gray-50/50 dark:bg-zinc-800/30 rounded-xl border border-gray-100 dark:border-zinc-800 text-[13px] text-gray-600 dark:text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-200'
-               ]"
-               class="cursor-pointer font-medium leading-relaxed transition-all hover:text-gray-800 dark:hover:text-zinc-100">
-              {{ stripNote(task.body) }}
-            </p>
+            <div @click="expandDescription"
+                 :class="[
+                   isDescriptionCollapsed 
+                     ? 'truncate text-[11px] text-gray-500 dark:text-zinc-500 py-1 cursor-pointer font-medium hover:text-gray-800 dark:hover:text-zinc-100' 
+                     : 'p-3 bg-gray-50/50 dark:bg-zinc-800/30 rounded-xl border border-gray-100 dark:border-zinc-800 text-[13px] text-gray-600 dark:text-zinc-300 animate-in fade-in slide-in-from-top-1 duration-200'
+                 ]"
+                 class="transition-all">
+              <div v-if="isDescriptionCollapsed">
+                {{ stripNote(task.body) }}
+              </div>
+              <div v-else>
+                <div class="flex items-center justify-between mb-1.5 pb-1 border-b border-gray-100 dark:border-zinc-800/60">
+                  <span class="text-[9px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider"></span>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" @click.stop="toggleTaskBodyRender"
+                            :class="!isTaskBodyRaw ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                            class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
+                    <button type="button" @click.stop="copyTaskBodyText"
+                            class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
+                      <svg v-if="!taskBodyCopied" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                      <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                    </button>
+                    <button type="button" @click.stop="isDescriptionCollapsed = true"
+                            class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded ml-1" title="Collapse details">
+                      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div v-if="!isTaskBodyRaw" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(stripNote(task.body))"></div>
+                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-all">{{ stripNote(task.body) }}</div>
+              </div>
+            </div>
           </div>
           
           <!-- Attachments -->
@@ -556,6 +579,27 @@ function onDrop(e) {
 }
 const isStatusMenuOpen = ref(false);
 const isDescriptionCollapsed = ref(true);
+const isTaskBodyRaw = ref(false);
+const taskBodyCopied = ref(false);
+
+function expandDescription() {
+  if (isDescriptionCollapsed.value) {
+    isDescriptionCollapsed.value = false;
+  }
+}
+
+function toggleTaskBodyRender() {
+  isTaskBodyRaw.value = !isTaskBodyRaw.value;
+}
+
+async function copyTaskBodyText() {
+  const text = stripNote(task.value?.body || '');
+  await navigator.clipboard.writeText(text);
+  taskBodyCopied.value = true;
+  setTimeout(() => {
+    taskBodyCopied.value = false;
+  }, 1500);
+}
 
 
 const tooltip = ref({
