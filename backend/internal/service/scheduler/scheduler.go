@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -96,6 +97,22 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		return
 	}
 
+	body := parent.Body
+	// Keep the event link on spawned runs. The publish instruction must live in
+	// the body because scheduled children reach the agent via getTask/poller
+	// notifications, which have no event-aware path of their own.
+	if parent.EventID != 0 {
+		if ev, err := s.repo.GetEvent(ctx, parent.EventID, parent.UserID); err == nil {
+			instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(%q, \"<your output payload>\")]", ev.Name)
+			if ev.PayloadGuidelines != "" {
+				instruction += fmt.Sprintf("\nPayload guidelines: %s", ev.PayloadGuidelines)
+			}
+			body += instruction
+		} else {
+			zlog.Warn().Err(err).Int64("cron_id", parent.ID).Int64("event_id", parent.EventID).Msg("scheduler: linked event not found")
+		}
+	}
+
 	now := time.Now()
 	child := model.Task{
 		ID:               s.idgen.NextID(),
@@ -107,10 +124,11 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		Assignee:         parent.Assignee,
 		Status:           "notstarted",
 		Title:            parent.Title,
-		Body:             parent.Body,
+		Body:             body,
 		Attachments:      parent.Attachments,
 		ParentID:         parent.ID,
 		AllowAllCommands: parent.AllowAllCommands,
+		EventID:          parent.EventID,
 	}
 
 	created, err := s.repo.CreateTask(ctx, child)

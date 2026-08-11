@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,6 +124,36 @@ func TestScheduler(t *testing.T) {
 		mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 2}, nil)
 		mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 		mockRepo.EXPECT().DeleteTask(gomock.Any(), int64(10), int64(1), int64(1)).Return(nil)
+
+		s.(*scheduler).spawn(context.Background(), task)
+	})
+
+	// A cron template linked to an event must pass its EventID on to spawned
+	// children and carry the publishEvent instruction in the body — otherwise
+	// the event chain silently never fires on scheduled runs.
+	t.Run("SpawnCopiesEventLink", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub)
+
+		task := model.Task{ID: 1, WorkspaceID: 10, UserID: 1, CronSchedule: "0 9 * * *", Body: "do the thing", EventID: 77}
+		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "notstarted").Return(false, nil)
+		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "ongoing").Return(false, nil)
+		mockRepo.EXPECT().GetEvent(gomock.Any(), int64(77), int64(1)).Return(model.Event{ID: 77, UserID: 1, Name: "run_done"}, nil)
+		mockIdgen.EXPECT().NextID().Return(int64(2))
+		mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, child model.Task) (model.Task, error) {
+			if child.EventID != 77 {
+				t.Errorf("expected child EventID 77, got %d", child.EventID)
+			}
+			if !strings.Contains(child.Body, `publishEvent("run_done"`) {
+				t.Errorf("expected publishEvent instruction in child body, got %q", child.Body)
+			}
+			return model.Task{ID: 2}, nil
+		})
+		mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 		s.(*scheduler).spawn(context.Background(), task)
 	})
