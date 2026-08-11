@@ -31,6 +31,12 @@ type Repository interface {
 	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
 	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error
 
+	// Swarm
+	CreateSwarm(ctx context.Context, s model.Swarm) (model.Swarm, error)
+	SystemGetSwarm(ctx context.Context, id int64) (model.Swarm, error)
+	ListChildTasks(ctx context.Context, parentID int64) ([]model.Task, error)
+	CountIncompleteChildren(ctx context.Context, parentID int64) (int64, error)
+
 	// Message
 	CreateMessage(ctx context.Context, m model.Message) error
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
@@ -860,4 +866,36 @@ func (r *repository) ListTasksByTriggerID(ctx context.Context, triggerID int64, 
 	var tasks []model.Task
 	err := r.conn(ctx).Where("trigger_id = ? AND user_id = ?", triggerID, userID).Order("created_at desc").Find(&tasks).Error
 	return tasks, err
+}
+
+// ── Swarms ─────────────────────────────────────────────────────────────────────
+
+func (r *repository) CreateSwarm(ctx context.Context, s model.Swarm) (model.Swarm, error) {
+	if err := r.conn(ctx).Create(&s).Error; err != nil {
+		return model.Swarm{}, err
+	}
+	return s, nil
+}
+
+func (r *repository) SystemGetSwarm(ctx context.Context, id int64) (model.Swarm, error) {
+	var s model.Swarm
+	err := r.conn(ctx).First(&s, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Swarm{}, ErrNotFound
+	}
+	return s, err
+}
+
+func (r *repository) ListChildTasks(ctx context.Context, parentID int64) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.conn(ctx).Where("parent_id = ?", parentID).Order("created_at asc").Find(&tasks).Error
+	return tasks, err
+}
+
+func (r *repository) CountIncompleteChildren(ctx context.Context, parentID int64) (int64, error) {
+	var count int64
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("parent_id = ? AND status NOT IN ?", parentID, []string{"completed", "rejected", "failed"}).
+		Count(&count).Error
+	return count, err
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/ratelimit"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
+	swarmsvc "github.com/agentrq/agentrq/backend/internal/service/swarm"
 )
 
 type (
@@ -20,6 +21,7 @@ type (
 		Image      image.Service
 		PubSub     pubsub.Service
 		Limiter    ratelimit.Limiter
+		Swarm      swarmsvc.Orchestrator
 	}
 
 	Controller interface {
@@ -28,6 +30,7 @@ type (
 		TaskController
 		EventController
 		EventTriggerController
+		SwarmController
 	}
 
 	controller struct {
@@ -37,6 +40,7 @@ type (
 		image      image.Service
 		pubsub     pubsub.Service
 		limiter    ratelimit.Limiter
+		swarm      swarmsvc.Orchestrator
 	}
 )
 
@@ -48,6 +52,7 @@ func New(p Params) Controller {
 		image:      p.Image,
 		pubsub:     p.PubSub,
 		limiter:    p.Limiter,
+		swarm:      p.Swarm,
 	}
 }
 
@@ -107,4 +112,9 @@ type TaskController interface {
 	DeleteTask(ctx context.Context, req entity.DeleteTaskRequest) (*entity.DeleteTaskResponse, error)
 	GetAttachment(ctx context.Context, req entity.GetAttachmentRequest) (*entity.GetAttachmentResponse, error)
 	GetWorkspaceTaskCounts(ctx context.Context, req entity.GetWorkspaceTaskCountsRequest) (map[string]int64, error)
+}
+
+// SwarmController defines swarm operations.
+type SwarmController interface {
+	CreateSwarm(ctx context.Context, req entity.CreateSwarmRequest) (*entity.CreateSwarmResponse, error)
 }

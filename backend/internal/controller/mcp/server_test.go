@@ -16,6 +16,7 @@ import (
 	mock_storage "github.com/agentrq/agentrq/backend/internal/service/mocks/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
+	swarmsvc "github.com/agentrq/agentrq/backend/internal/service/swarm"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -765,4 +766,68 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
+}
+
+type fakeSwarmOrchestrator struct {
+	delegateFn func(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64, subtasks []swarmsvc.SubtaskInput) ([]model.Task, error)
+	statusFn   func(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64) (swarmsvc.StatusResult, error)
+}
+
+func (f *fakeSwarmOrchestrator) ValidateSwarmTask(ctx context.Context, task model.Task) error { return nil }
+func (f *fakeSwarmOrchestrator) DelegateSubtasks(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64, subtasks []swarmsvc.SubtaskInput) ([]model.Task, error) {
+	return f.delegateFn(ctx, callerWorkspaceID, swarmID, parentTaskID, subtasks)
+}
+func (f *fakeSwarmOrchestrator) OnTaskCompleted(ctx context.Context, task model.Task) error { return nil }
+func (f *fakeSwarmOrchestrator) GetStatus(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64) (swarmsvc.StatusResult, error) {
+	return f.statusFn(ctx, callerWorkspaceID, swarmID, parentTaskID)
+}
+
+func TestWorkspaceServer_HandleDelegateSubtasks(t *testing.T) {
+	orch := &fakeSwarmOrchestrator{
+		delegateFn: func(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64, subtasks []swarmsvc.SubtaskInput) ([]model.Task, error) {
+			if len(subtasks) != 2 {
+				t.Errorf("expected 2 subtasks, got %d", len(subtasks))
+			}
+			return []model.Task{{ID: 1}, {ID: 2}}, nil
+		},
+	}
+	ps := &WorkspaceServer{workspaceID: 100, swarm: orch}
+
+	res, _, err := ps.handleDelegateSubtasks(context.Background(), nil, DelegateSubtasksParams{
+		SwarmID:      monoflake.ID(1).String(),
+		ParentTaskID: monoflake.ID(5).String(),
+		Subtasks: []DelegateSubtaskItem{
+			{Title: "a", Body: "do a"},
+			{Title: "b", Body: "do b"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("expected success, got error result: %v", res.Content)
+	}
+}
+
+func TestWorkspaceServer_HandleGetSwarmStatus(t *testing.T) {
+	orch := &fakeSwarmOrchestrator{
+		statusFn: func(ctx context.Context, callerWorkspaceID, swarmID, parentTaskID int64) (swarmsvc.StatusResult, error) {
+			return swarmsvc.StatusResult{
+				Swarm:    model.Swarm{Name: "test-swarm", LeaderWorkspaceID: 100},
+				Children: []model.Task{{ID: 6, Status: "ongoing", Title: "sub-task", WorkspaceID: 200}},
+			}, nil
+		},
+	}
+	ps := &WorkspaceServer{workspaceID: 200, swarm: orch}
+
+	res, _, err := ps.handleGetSwarmStatus(context.Background(), nil, GetSwarmStatusParams{
+		SwarmID:      monoflake.ID(1).String(),
+		ParentTaskID: monoflake.ID(5).String(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.IsError {
+		t.Errorf("expected success, got error result: %v", res.Content)
+	}
 }

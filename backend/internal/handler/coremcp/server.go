@@ -223,6 +223,13 @@ type GetAttachmentParams struct {
 	AttachmentID string `json:"attachmentId"`
 }
 
+type CreateSwarmParams struct {
+	WorkspaceID        string   `json:"workspaceId,omitempty" jsonschema:"Optional owning workspace ID for listing purposes"`
+	Name               string   `json:"name"`
+	LeaderWorkspaceID  string   `json:"leaderWorkspaceId" jsonschema:"Workspace ID that acts as the swarm's leader"`
+	MemberWorkspaceIDs []string `json:"memberWorkspaceIds" jsonschema:"All workspace IDs in the swarm, including the leader"`
+}
+
 // ── Tool Definitions ──────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) registerTools() {
@@ -243,6 +250,7 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task"}, s.handleUpdateTaskAllowAll)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task"}, s.handleUpdateScheduledTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata"}, s.handleGetAttachment)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "createSwarm", Description: "Create a swarm grouping existing workspaces with one designated leader"}, s.handleCreateSwarm)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -607,4 +615,29 @@ func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Call
 	}
 
 	return jsonResponse(res), nil, nil
+}
+
+func (s *WorkspaceServer) handleCreateSwarm(ctx context.Context, req *mcp.CallToolRequest, args CreateSwarmParams) (*mcp.CallToolResult, any, error) {
+	userID := getUserID(ctx)
+
+	memberIDs := make([]int64, len(args.MemberWorkspaceIDs))
+	for i, id := range args.MemberWorkspaceIDs {
+		memberIDs[i] = parseID(id)
+	}
+
+	res, err := s.crud.CreateSwarm(ctx, entity.CreateSwarmRequest{
+		UserID:             userID,
+		Name:               args.Name,
+		WorkspaceID:        parseID(args.WorkspaceID),
+		LeaderWorkspaceID:  parseID(args.LeaderWorkspaceID),
+		MemberWorkspaceIDs: memberIDs,
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	return jsonResponse(map[string]any{
+		"swarmId":           monoflake.ID(res.Swarm.ID).String(),
+		"leaderWorkspaceId": monoflake.ID(res.Swarm.LeaderWorkspaceID).String(),
+	}), nil, nil
 }
