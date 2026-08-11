@@ -148,13 +148,29 @@
                         </div>
                       </div>
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge on macOS or Linux:</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
                             <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">codex-gateway -- codex app-server</code>
                           </div>
                           <button type="button" @click="copyToClipboard('codex-gateway -- codex app-server', 'codexStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
                             {{ copiedState.codexStart ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 font-medium">3. Windows PowerShell workaround:</p>
+                        <p class="text-[10px] leading-relaxed text-amber-700">
+                          The npm shim may not forward the custom command correctly. Until
+                          <a href="https://github.com/agentrq/codex-gateway/issues/2" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-amber-900">codex-gateway#2</a>
+                          is resolved, invoke the gateway shim and native Codex executable explicitly.
+                        </p>
+                        <div class="bg-white p-3 rounded-sm border border-gray-200 flex items-start justify-between group overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] leading-relaxed text-gray-900 font-bold whitespace-pre">{{ codexWindowsStartCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(codexWindowsStartCommand, 'codexWindowsStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexWindowsStart ? 'text-green-500' : 'text-gray-400 hover:text-black'">
+                            {{ copiedState.codexWindowsStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
                       </div>
@@ -528,6 +544,10 @@ const iconError = ref('');
 const showArchiveConfirm = ref(false);
 const showDeleteConfirm = ref(false);
 const activeConnectionTab = ref('claude');
+const codexWindowsStartCommand = `$gateway = (Get-Command codex-gateway.cmd).Source
+$codex = Get-ChildItem (npm root -g) -Filter codex.exe -Recurse |
+  Select-Object -First 1 -ExpandProperty FullName
+& $gateway -- $codex app-server`;
 const token = ref('');
 const slackConfig = ref(null);
 

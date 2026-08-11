@@ -223,7 +223,9 @@ Create a `.mcp.json` in your project root so `codex-gateway` can connect to the 
 
 ### Usage
 
-Run `codex-gateway` from your agentrq workspace root (the directory containing `.mcp.json`):
+Run `codex-gateway` from your AgentRQ workspace root (the directory containing `.mcp.json`).
+
+On macOS and Linux:
 
 ```bash
 # Default: runs `codex app-server`
@@ -232,6 +234,21 @@ codex-gateway
 # Custom codex command
 codex-gateway -- codex app-server
 ```
+
+On Windows PowerShell, the npm shim may not forward `--` correctly and the
+gateway's default codex lookup may fail. Until
+[`agentrq/codex-gateway#2`](https://github.com/agentrq/codex-gateway/issues/2)
+is resolved, invoke the `.cmd` shim and native Codex executable explicitly:
+
+```powershell
+$gateway = (Get-Command codex-gateway.cmd).Source
+$codex = Get-ChildItem (npm root -g) -Filter codex.exe -Recurse |
+  Select-Object -First 1 -ExpandProperty FullName
+& $gateway -- $codex app-server
+```
+
+If `$codex` is empty, confirm that `@openai/codex` is installed globally and
+that its platform package contains `codex.exe`.
 
 ## 👑 Supervisor (CoreMCP)
 
