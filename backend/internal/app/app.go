@@ -180,6 +180,7 @@ func New(cfg Config) (*App, error) {
 		&model.Task{},
 		&model.Message{},
 		&model.Telemetry{},
+		&model.MCPClient{},
 		&model.User{},
 		&model.SlackWorkspaceLink{},
 		&model.SlackTaskThread{},

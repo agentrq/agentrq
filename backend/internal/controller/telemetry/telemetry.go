@@ -11,6 +11,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	zlog "github.com/rs/zerolog/log"
+	"gorm.io/gorm/clause"
 )
 
 type (
@@ -35,6 +36,11 @@ type (
 		wg        sync.WaitGroup
 		batchSize int
 		interval  time.Duration
+
+		// seenClients caches MCPClient IDs already persisted so recordMCPClient
+		// doesn't hit the DB for every single event from an already-known client.
+		seenClientsMu sync.Mutex
+		seenClients   map[uint64]struct{}
 	}
 )
 
@@ -47,12 +53,13 @@ func New(p Params) Controller {
 	}
 
 	return &controller{
-		db:        p.DB,
-		pubsub:    p.PubSub,
-		queue:     make(chan model.Telemetry, 10000),
-		stop:      make(chan struct{}),
-		batchSize: p.BatchSize,
-		interval:  p.Interval,
+		db:          p.DB,
+		pubsub:      p.PubSub,
+		queue:       make(chan model.Telemetry, 10000),
+		stop:        make(chan struct{}),
+		batchSize:   p.BatchSize,
+		interval:    p.Interval,
+		seenClients: make(map[uint64]struct{}),
 	}
 }
 
@@ -191,13 +198,47 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		return
 	}
 
+	c.recordMCPClient(event.ClientID, event.ClientName, event.ClientVersion)
+
 	c.queue <- model.Telemetry{
 		UserID:      event.UserID,
 		WorkspaceID: event.WorkspaceID,
 		OccurredAt:  time.Now().Unix(),
 		Action:      action,
 		Actor:       uint8(event.Actor),
+		ClientID:    event.ClientID,
 	}
+}
+
+// recordMCPClient upserts a lookup row for a newly-seen MCP client identity so
+// Telemetry.ClientID can reference "which agent" without repeating the raw
+// name/version on every row. A cache of already-persisted IDs keeps this from
+// hitting the DB on every single event once a client has been seen once.
+func (c *controller) recordMCPClient(id uint64, name, version string) {
+	if id == 0 {
+		return
+	}
+
+	c.seenClientsMu.Lock()
+	_, known := c.seenClients[id]
+	c.seenClientsMu.Unlock()
+	if known {
+		return
+	}
+
+	err := c.db.Conn(context.Background()).Clauses(clause.OnConflict{DoNothing: true}).Create(&model.MCPClient{
+		ID:      id,
+		Name:    name,
+		Version: version,
+	}).Error
+	if err != nil {
+		zlog.Error().Err(err).Uint64("client_id", id).Msg("[telemetry] failed to record mcp client")
+		return
+	}
+
+	c.seenClientsMu.Lock()
+	c.seenClients[id] = struct{}{}
+	c.seenClientsMu.Unlock()
 }
 
 func (c *controller) worker() {

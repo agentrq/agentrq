@@ -348,7 +348,7 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 					Type:    "agent.connected",
 					Payload: map[string]any{"connected": true, "workspaceId": ps.workspaceID},
 				})
-				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect")
+				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
 				if ps.agentConnections.Add(-1) == 0 {
@@ -557,7 +557,7 @@ func (ps *WorkspaceServer) UpdateAutoAllowedTools(tools []string) {
 // ── Tool handlers ─────────────────────────────────────────────────────────────
 
 func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, params CreateTaskParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "createTask")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "createTask", clientIdentityFromRequest(req))
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -659,7 +659,7 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 }
 
 func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.CallToolRequest, params UpdateTaskStatusParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "updateTaskStatus")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "updateTaskStatus", clientIdentityFromRequest(req))
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -722,7 +722,7 @@ func (ps *WorkspaceServer) handleUpdateTaskStatus(ctx context.Context, req *mcp.
 }
 
 func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolRequest, params ReplyParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "reply")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "reply", clientIdentityFromRequest(req))
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -761,7 +761,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 }
 
 func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mcp.CallToolRequest, params DownloadAttachmentParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "downloadAttachment")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "downloadAttachment", clientIdentityFromRequest(req))
 	if params.AttachmentID == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -830,8 +830,8 @@ func (ps *WorkspaceServer) handleDownloadAttachment(ctx context.Context, req *mc
 	}, nil, nil
 }
 
-func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, _ *mcp.CallToolRequest, params PublishEventParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "publishEvent")
+func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.CallToolRequest, params PublishEventParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "publishEvent", clientIdentityFromRequest(req))
 	if params.Name == "" {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -856,7 +856,7 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, _ *mcp.CallTo
 }
 
 func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "getWorkspace")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getWorkspace", clientIdentityFromRequest(req))
 	ps.metadataMu.RLock()
 	name := ps.name
 	desc := ps.description
@@ -897,7 +897,7 @@ func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.Call
 // it fetches that task. When includeConversation is true, the task's chat history
 // is appended as a JSON block (paginated via cursor/limit).
 func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolRequest, params GetTaskParams) (*mcp.CallToolResult, any, error) {
-	ps.emitTelemetry(ctx, ActionMCPToolCall, "getTask")
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "getTask", clientIdentityFromRequest(req))
 
 	var task model.Task
 	header := "Task details:"
@@ -1053,7 +1053,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		zlog.Debug().Str("method", method).Msg("MCP incoming")
 		if method == "notifications/claude/channel/permission_request" {
-			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_request")
+			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_request", clientIdentityFromRequest(req))
 			params := req.GetParams()
 			var p PermissionRequestParams
 			b, _ := json.Marshal(params)
@@ -1086,7 +1086,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 					_ = ps.SendPermissionVerdict(context.Background(), 0, p.RequestID, "allow")
 				}()
-				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 				return nil, nil
 			}
 
@@ -1134,7 +1134,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 						_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
 					}()
-					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 					return nil, nil
 				}
 
@@ -1276,11 +1276,13 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 		}
 	}
 
+	// No inbound MCP request is available here (this is a human-triggered verdict, not
+	// itself a request handler), so client identity is unknown for these two events.
 	switch effectiveBehavior {
 	case "allow":
-		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_allow")
+		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_allow", clientIdentity{})
 	case "deny":
-		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny")
+		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny", clientIdentity{})
 	}
 
 	// Notify Claude Code session
@@ -1362,7 +1364,8 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				time.Sleep(100 * time.Millisecond)
 				_ = ps.SendPermissionVerdict(context.Background(), 0, p.RequestID, "allow")
 			}()
-			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
+			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
 			return
 		}
 
@@ -1412,7 +1415,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 					time.Sleep(100 * time.Millisecond)
 					_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
 				}()
-				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow")
+				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
 				return
 			}
 
@@ -1448,17 +1451,20 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 	}
 }
 
-func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, toolOrMethod string) {
+func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, toolOrMethod string, ci clientIdentity) {
 	uid := monoflake.IDFromBase62(ps.userID).Int64()
 	ps.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicMCP,
 		Event: MCPEvent{
-			Action:      action,
-			WorkspaceID: ps.workspaceID,
-			UserID:      uid,
-			ToolName:    toolOrMethod,
-			Method:      toolOrMethod,
-			Actor:       2, // Agent
+			Action:        action,
+			WorkspaceID:   ps.workspaceID,
+			UserID:        uid,
+			ToolName:      toolOrMethod,
+			Method:        toolOrMethod,
+			Actor:         2, // Agent
+			ClientID:      ci.hash(),
+			ClientName:    ci.name,
+			ClientVersion: ci.version,
 		},
 	})
 }

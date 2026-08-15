@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-acme/lego/v4 v4.35.2
 	github.com/gofiber/contrib/fiberzerolog v1.0.3

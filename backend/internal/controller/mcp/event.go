@@ -28,12 +28,15 @@ func (a Action) String() string {
 }
 
 type MCPEvent struct {
-	Action      Action `json:"action"`
-	WorkspaceID int64  `json:"workspaceId"`
-	UserID      int64  `json:"userId"`
-	Method      string `json:"method,omitempty"`
-	ToolName    string `json:"toolName,omitempty"`
-	Actor       uint8  `json:"actor"` // 1: Human, 2: Agent
+	Action        Action `json:"action"`
+	WorkspaceID   int64  `json:"workspaceId"`
+	UserID        int64  `json:"userId"`
+	Method        string `json:"method,omitempty"`
+	ToolName      string `json:"toolName,omitempty"`
+	Actor         uint8  `json:"actor"`                   // 1: Human, 2: Agent
+	ClientID      uint64 `json:"clientId,omitempty"`      // xxhash64(name+version) of the calling MCP client, 0 if unknown
+	ClientName    string `json:"clientName,omitempty"`    // e.g. "claude-code", empty if unknown
+	ClientVersion string `json:"clientVersion,omitempty"` // empty if unknown
 }
 
 func (e MCPEvent) String() string {
