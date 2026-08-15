@@ -1,15 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-[110] flex items-center justify-center p-2 md:p-6" @keydown.esc="$emit('close')">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="$emit('close')"></div>
-    <div class="relative w-full max-w-6xl h-full md:h-[85vh] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-xl flex flex-col overflow-hidden">
-
-      <!-- Header -->
-      <div class="flex items-center justify-between px-4 pt-3 pb-2 border-b border-gray-100 dark:border-zinc-800 shrink-0">
-        <h2 class="text-[11px] font-black uppercase tracking-widest text-gray-800 dark:text-zinc-200">Tool Call History</h2>
-        <button @click="$emit('close')" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
+  <div class="flex-1 min-h-0 flex flex-col overflow-hidden bg-white dark:bg-zinc-900">
 
       <!-- Minimap -->
       <div v-if="items.length > 0" class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0">
@@ -113,7 +103,6 @@
           </div>
         </div>
       </div>
-    </div>
   </div>
 </template>
 
@@ -124,7 +113,6 @@ const props = defineProps({
   messages: { type: Array, default: () => [] },
   toolCalls: { type: Array, default: () => [] },
 });
-defineEmits(['close']);
 
 const LANES = [
   { key: 'input', label: 'INPUT' },
