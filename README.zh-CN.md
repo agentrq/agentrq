@@ -292,6 +292,7 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 - Gemini CLI extension
 - ACP Gateway
 - Codex Gateway
+- DeepSeek Harness plugin
 
 Claude Code 扩展安装：
 
@@ -305,6 +306,16 @@ Gemini CLI 扩展安装：
 ```bash
 gemini extensions install https://github.com/agentrq/agentrq-gemini-extension
 ```
+
+DeepSeek Harness 插件安装（[`@agentrq/dsh-plugin-agentrq`](plugins/deepseek-harness/README.md) 将 AgentRQ 接入 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，把 Workspace 的工具桥接为 `mcp__agentrq__*`，并通过受监督的 workspace session 实时推送任务和回复，无需轮询）：
+
+```bash
+dsh plugin --profile agentrq-<workspace> add @agentrq/dsh-plugin-agentrq
+# 在 ~/.dsh/profiles/agentrq-<workspace>/cordis.patch.yml 中固定该 workspace 的 MCP URL
+dsh --profile agentrq-<workspace>
+```
+
+填好的安装命令和配置片段可在 **Workspace Settings → Setup → DeepSeek Harness** 页面直接复制。更多细节见 [plugin README](plugins/deepseek-harness/README.md)。
 
 集成能力包括：
 
