@@ -65,3 +65,14 @@ mocks:
 
 test: mocks
 	@cd backend && go test ./internal/service/... ./internal/controller/...
+
+# Typecheck, test, and build the DeepSeek Harness plugin bundle.
+# Harness packages declare peers that pnpm resolves from a dsh profile, so a
+# standalone npm install needs --legacy-peer-deps.
+plugin-deepseek:
+	@echo "Building @agentrq/dsh-plugin-agentrq..."
+	@cd plugins/deepseek-harness && \
+		npm install --legacy-peer-deps && \
+		npm run typecheck && \
+		npm test && \
+		npm run build

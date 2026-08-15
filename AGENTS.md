@@ -4,6 +4,7 @@
 
 - `backend/` — Go backend (Fiber HTTP, GORM, MCP server)
 - `frontend/` — Vue3 frontend
+- `plugins/` — harness plugins published from this repo (`plugins/deepseek-harness` → the `@agentrq/dsh-plugin-agentrq` bundle for DeepSeek Harness)
 
 ## Running tests
 

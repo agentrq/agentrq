@@ -1,0 +1,18 @@
+# The @agentrq/dsh-plugin-agentrq bundle patch. Applied when a profile lists
+# this bundle, over whatever earlier layers (normally @deepseek-ai/dsh-base)
+# already contributed.
+#
+# One row, one endpoint. The plugin mounts @deepseek-ai/dsh-mcp-client itself as
+# a child fiber, so the workspace URL is configured once and the bridge shares
+# this row's lifetime. Everything else has a schema default.
+#
+# `url` falls back to AGENTRQ_WORKSPACE_MCP_URL, which suits a container or CI
+# job. For an interactive install, pin the endpoint in the profile's own
+# cordis.patch.yml instead: that layer is applied after this one, and dsh
+# watches it, so an edit takes effect without a restart.
+
+- insert:
+    - id: agentrq
+      name: '@agentrq/dsh-plugin-agentrq'
+      config:
+        url: !!js process.env.AGENTRQ_WORKSPACE_MCP_URL

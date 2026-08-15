@@ -1,0 +1,109 @@
+name: DeepSeek Harness Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugins/deepseek-harness/**'
+      - '.github/workflows/plugin-deepseek-harness.yml'
+  pull_request:
+    paths:
+      - 'plugins/deepseek-harness/**'
+      - '.github/workflows/plugin-deepseek-harness.yml'
+  # Manual re-run, for a publish that failed after the merge landed.
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+defaults:
+  run:
+    working-directory: plugins/deepseek-harness
+
+jobs:
+  check:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # The harness packages declare peer dependencies that pnpm resolves from a
+      # dsh profile; a standalone npm install needs --legacy-peer-deps.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  publish:
+    name: Publish to npm
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+
+      # npm rejects republishing an existing version, which would fail every
+      # push that touches the plugin without bumping it. Skip instead: bumping
+      # the version in package.json is what releases.
+      - name: Resolve release status
+        id: release
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is already on npm; skipping publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is new; publishing."
+          fi
+
+      - name: Publish
+        if: steps.release.outputs.published == 'false'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.release.outputs.published }}" = "false" ]; then
+            echo "Published ${{ steps.release.outputs.name }}@${{ steps.release.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Skipped: ${{ steps.release.outputs.name }}@${{ steps.release.outputs.version }} is already on npm. Bump the version to release." >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,76 @@
+{
+  "name": "@agentrq/dsh-plugin-agentrq",
+  "version": "0.1.0",
+  "description": "AgentRQ task manager for DeepSeek Harness: create, manage, and auto-pull AgentRQ tasks without leaving the harness",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "agentrq",
+    "task-manager",
+    "mcp"
+  ],
+  "homepage": "https://github.com/agentrq/agentrq/tree/main/plugins/deepseek-harness",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentrq/agentrq.git",
+    "directory": "plugins/deepseek-harness"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-attachment": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-brand": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-invariants": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-session": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-timeout": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
+    "@types/node": "^22.20.1",
+    "tsdown": "^0.15.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

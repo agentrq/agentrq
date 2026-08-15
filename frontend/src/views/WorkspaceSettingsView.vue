@@ -74,9 +74,10 @@
                     <button type="button" @click="activeConnectionTab = 'claude'" :class="activeConnectionTab === 'claude' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Claude</button>
                     <button type="button" @click="activeConnectionTab = 'gemini'" :class="activeConnectionTab === 'gemini' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Gemini / ACP</button>
                     <button type="button" @click="activeConnectionTab = 'codex'" :class="activeConnectionTab === 'codex' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Codex</button>
+                    <button type="button" @click="activeConnectionTab = 'deepseek'" :class="activeConnectionTab === 'deepseek' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">DeepSeek Harness</button>
                   </div>
 
-                  <section class="space-y-4 min-w-0 w-full overflow-hidden">
+                  <section v-if="activeConnectionTab !== 'deepseek'" class="space-y-4 min-w-0 w-full overflow-hidden">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">1. Configuration</h3>
                     <div class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm p-5 relative group border border-gray-200 dark:border-zinc-800 w-full max-w-full overflow-hidden">
                       <div class="flex justify-between items-center mb-4">
@@ -117,10 +118,47 @@
                     </div>
                   </section>
 
+                  <section v-if="activeConnectionTab === 'deepseek'" class="space-y-4 min-w-0 w-full overflow-hidden">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">1. Profile Config</h3>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">Save this as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshPatchPath }}</code> after the install step below. One row, one URL — the plugin mounts the MCP bridge itself. Each profile pins its own workspace here, so switching workspaces is switching profiles, with no environment variable. <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">dsh</code> watches this file, so edits apply without a restart.</p>
+                    <div class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm p-5 relative group border border-gray-200 dark:border-zinc-800 w-full max-w-full overflow-hidden">
+                      <div class="flex justify-between items-center mb-4">
+                        <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500 font-mono">cordis.patch.yml</span>
+                        <button type="button" @click="copyToClipboard(dshPatchYaml, 'dshPatch')" class="text-[10px] font-bold text-gray-400 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors uppercase tracking-widest">
+                          {{ copiedState.dshPatch ? 'Copied!' : 'Copy Config' }}
+                        </button>
+                      </div>
+                      <pre class="text-[11px] text-gray-800 dark:text-zinc-300 font-mono leading-relaxed p-1 overflow-x-auto custom-scrollbar whitespace-pre max-w-full block"><code>{{ dshPatchYaml }}</code></pre>
+                    </div>
+                  </section>
+
+                  <section v-if="activeConnectionTab === 'deepseek'" class="space-y-4 min-w-0 w-full overflow-hidden">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">2. Tuning (optional)</h3>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">Tasks arrive over the workspace channel — the plugin does not poll. Restate the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrq</code> row with these keys to change delivery or reconnect behavior. Anything you leave out falls back to its default.</p>
+                    <div class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm p-5 relative group border border-gray-200 dark:border-zinc-800 w-full max-w-full overflow-hidden">
+                      <div class="flex justify-between items-center mb-4">
+                        <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500 font-mono">cordis.patch.yml</span>
+                        <button type="button" @click="copyToClipboard(dshTuningYaml, 'dshTuning')" class="text-[10px] font-bold text-gray-400 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors uppercase tracking-widest">
+                          {{ copiedState.dshTuning ? 'Copied!' : 'Copy Config' }}
+                        </button>
+                      </div>
+                      <pre class="text-[11px] text-gray-800 dark:text-zinc-300 font-mono leading-relaxed p-1 overflow-x-auto custom-scrollbar whitespace-pre max-w-full block"><code>{{ dshTuningYaml }}</code></pre>
+                    </div>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">Prefer an environment variable — for a container or CI — instead of pinning the URL in the file? Drop the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">url</code> lines and export this instead; the bundle falls back to it.</p>
+                    <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                      <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                        <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ dshEnvExport }}</code>
+                      </div>
+                      <button type="button" @click="copyToClipboard(dshEnvExport, 'dshEnv')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.dshEnv ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                        {{ copiedState.dshEnv ? 'Copied!' : 'Copy' }}
+                      </button>
+                    </div>
+                  </section>
+
                   <section class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      {{ activeConnectionTab === 'claude' ? 'Start Command' : (activeConnectionTab === 'codex' ? 'Codex Gateway Setup' : 'ACP Gateway Setup') }}
+                      {{ activeConnectionTab === 'claude' ? 'Start Command' : (activeConnectionTab === 'codex' ? 'Codex Gateway Setup' : (activeConnectionTab === 'deepseek' ? 'Harness Plugin Setup' : 'ACP Gateway Setup')) }}
                     </h3>
                     
                     <div v-if="activeConnectionTab === 'claude'" class="space-y-3 min-w-0">
@@ -158,6 +196,36 @@
                           </button>
                         </div>
                       </div>
+                    </div>
+
+                    <div v-else-if="activeConnectionTab === 'deepseek'" class="space-y-4 min-w-0">
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. Install the bundle into your profile:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ dshInstallCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(dshInstallCommand, 'dshInstall')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.dshInstall ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.dshInstall ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Save the config above as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshPatchPath }}</code> — the install step creates that directory.</p>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">3. Start the harness:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ dshStartCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(dshStartCommand, 'dshStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.dshStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.dshStart ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">The bundle mounts AgentRQ's tools as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">mcp__agentrq__*</code> and holds a workspace session, so tasks assigned to this workspace's agent — and your replies — arrive on their own. Use <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrq_autopull</code> inside the harness to pause, resume, or pull now.</p>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">A profile serves one workspace, so these use the profile <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshProfile }}</code>. Repeat from each workspace's Settings page to work several at once — each profile carries its own URL, so nothing to re-export when you switch.</p>
                     </div>
 
                     <div v-else class="space-y-4 min-w-0">
@@ -625,7 +693,12 @@ const copiedState = ref({
   gatewayStart: false,
   codexConfig: false,
   codexInstall: false,
-  codexStart: false
+  codexStart: false,
+  dshEnv: false,
+  dshInstall: false,
+  dshStart: false,
+  dshPatch: false,
+  dshTuning: false
 });
 
 const authenticatedUrl = computed(() => {
@@ -700,6 +773,41 @@ approval_mode = "approve"
 [mcp_servers.${serverName.value}.tools.publishEvent]
 approval_mode = "approve"`;
 });
+
+// DeepSeek Harness installs the AgentRQ bundle rather than an MCP config file:
+// the bundle's own patch mounts both the MCP bridge and the delivery plugin,
+// and both rows read the endpoint from AGENTRQ_WORKSPACE_MCP_URL.
+const dshEnvExport = computed(() => `export AGENTRQ_WORKSPACE_MCP_URL='${authenticatedUrl.value}'`);
+// A dsh profile serves one AgentRQ workspace, so the profile is named after
+// this one: running several workspaces means running several profiles.
+const dshProfile = computed(() => `agentrq-${workspaceId.value}`);
+const dshInstallCommand = computed(() => `dsh plugin --profile ${dshProfile.value} add @agentrq/dsh-plugin-agentrq`);
+const dshStartCommand = computed(() => `dsh --profile ${dshProfile.value}`);
+const dshPatchPath = computed(() => `~/.dsh/profiles/${dshProfile.value}/cordis.patch.yml`);
+
+// The profile's own patch layer is applied after the bundle's, so pinning the
+// endpoint here is what makes each profile point at its own workspace — no
+// environment variable, and dsh watches this file and reapplies edits live.
+const dshPatchYaml = computed(() => `- id: agentrq
+  name: '@agentrq/dsh-plugin-agentrq'
+  config:
+    url: "${authenticatedUrl.value}"`);
+
+// Absent keys fall back to the schema defaults, so a row only restates what it
+// changes.
+const dshTuningYaml = `- id: agentrq
+  name: '@agentrq/dsh-plugin-agentrq'
+  config:
+    url: "<the URL above>"
+    serverName: agentrq
+    deliverPushes: true
+    catchUpOnStart: true
+    scope: single-agent
+    reconnect:
+      initialDelayMs: 1000
+      maxDelayMs: 900000
+    guidance: true
+    requestTimeoutMs: 30000`;
 
 function copyToClipboard(text, key) {
   navigator.clipboard.writeText(text);
