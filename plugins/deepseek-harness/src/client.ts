@@ -224,7 +224,7 @@ export class AgentRqClient {
     if (this.closed) throw new Error('agentrq client disposed')
 
     const transport = this.createTransport()
-    const client = new Client({ name: 'dsh-plugin-agentrq', version: '0.1.0' })
+    const client = new Client({ name: 'dsh-plugin-agentrq', version: '0.2.0' })
     client.fallbackNotificationHandler = async notification => {
       if (notification.method !== CHANNEL_NOTIFICATION_METHOD) return
       const message = parseChannelNotification(notification.params)
