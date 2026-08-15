@@ -64,6 +64,53 @@
       </div>
     </div>
 
+    <!-- Heatmaps Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Task Heatmap -->
+      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Activity Heatmap</h3>
+          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
+        </div>
+        <div class="h-56 w-full relative">
+          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
+            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
+          </div>
+          <HeatmapChart
+            v-if="stats && stats.heatmap"
+            :data="stats.heatmap.tasksCompleted || []"
+            :granularity="heatmapGranularity"
+            :range-start="stats.heatmap.rangeStart"
+            :range-end="stats.heatmap.rangeEnd"
+            :weekday-column-labels="activeRange === 'week'"
+            metric-label="Tasks"
+          />
+        </div>
+      </div>
+
+      <!-- Message Heatmap -->
+      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Message Activity Heatmap</h3>
+          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
+        </div>
+        <div class="h-56 w-full relative">
+          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
+            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
+          </div>
+          <HeatmapChart
+            v-if="stats && stats.heatmap"
+            :data="stats.heatmap.messages || []"
+            :granularity="heatmapGranularity"
+            :range-start="stats.heatmap.rangeStart"
+            :range-end="stats.heatmap.rangeEnd"
+            :weekday-column-labels="activeRange === 'week'"
+            metric-label="Messages"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- Charts Section -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Task Chart -->
@@ -76,10 +123,10 @@
           <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
             <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
           </div>
-          <ChartSVG 
+          <ChartSVG
             v-if="stats && stats.timeseries"
-            :data="stats.timeseries.tasksCompleted || []" 
-            :color="isDark ? '#d4d4d8' : '#27272a'" 
+            :data="stats.timeseries.tasksCompleted || []"
+            :color="isDark ? '#d4d4d8' : '#27272a'"
             :fixed-length="chartFixedLength"
             :last-date="chartEndDate"
           />
@@ -96,10 +143,10 @@
           <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
             <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
           </div>
-          <ChartSVG 
+          <ChartSVG
             v-if="stats && stats.timeseries"
-            :data="stats.timeseries.messages || []" 
-            :color="isDark ? '#d4d4d8' : '#27272a'" 
+            :data="stats.timeseries.messages || []"
+            :color="isDark ? '#d4d4d8' : '#27272a'"
             :fixed-length="chartFixedLength"
             :last-date="chartEndDate"
           />
@@ -113,6 +160,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { fetchWorkspaceStats } from '../api';
 import ChartSVG from './ChartSVG.vue';
+import HeatmapChart from './HeatmapChart.vue';
 import { useThemeStore } from '../stores/themeStore';
 
 const props = defineProps({
@@ -170,6 +218,8 @@ const chartEndDate = computed(() => {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 });
+
+const heatmapGranularity = computed(() => stats.value?.heatmap?.granularity || 'day');
 
 const chartFixedLength = computed(() => {
   if (activeRange.value === '7d' || activeRange.value === 'week') return 7;

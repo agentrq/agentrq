@@ -459,12 +459,14 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 
 	// Dialect specific date formatting
 	dialect := r.conn(ctx).Dialector.Name()
-	var dateExpr string
+	var dateExpr, hourExpr string
 	if dialect == "sqlite" {
 		dateExpr = "strftime('%Y-%m-%d', datetime(occurred_at, 'unixepoch', 'localtime'))"
+		hourExpr = "strftime('%Y-%m-%d %H:00', datetime(occurred_at, 'unixepoch', 'localtime'))"
 	} else {
 		// Assume Postgres
 		dateExpr = "TO_CHAR(TO_TIMESTAMP(occurred_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
+		hourExpr = "TO_CHAR(TO_TIMESTAMP(occurred_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:00')"
 	}
 
 	// 1. Get Summary Stats
@@ -517,6 +519,37 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 		Group("date").
 		Order("date ASC").
 		Scan(&res.Timeseries.Messages).Error
+	if err != nil {
+		return res, err
+	}
+
+	// 4. Heatmap: hourly buckets for windows of a week or less, daily buckets otherwise
+	const heatmapHourlyThresholdSeconds = 7 * 24 * 3600
+	bucketExpr := dateExpr
+	res.Heatmap.Granularity = "day"
+	if endTime > startTime && endTime-startTime <= heatmapHourlyThresholdSeconds {
+		bucketExpr = hourExpr
+		res.Heatmap.Granularity = "hour"
+	}
+	res.Heatmap.RangeStart = startTime
+	res.Heatmap.RangeEnd = endTime
+
+	err = r.conn(ctx).Model(&model.Telemetry{}).
+		Select(bucketExpr+" as bucket, count(*) as count").
+		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDTaskComplete).
+		Group("bucket").
+		Order("bucket ASC").
+		Scan(&res.Heatmap.TasksCompleted).Error
+	if err != nil {
+		return res, err
+	}
+
+	err = r.conn(ctx).Model(&model.Telemetry{}).
+		Select(bucketExpr+" as bucket, count(*) as count").
+		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDMessageCreate).
+		Group("bucket").
+		Order("bucket ASC").
+		Scan(&res.Heatmap.Messages).Error
 
 	return res, err
 }

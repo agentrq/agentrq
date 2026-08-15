@@ -345,6 +345,7 @@ type (
 	GetDetailedWorkspaceStatsResponse struct {
 		Summary    WorkspaceStatsSummary    `json:"summary"`
 		Timeseries WorkspaceStatsTimeseries `json:"timeseries"`
+		Heatmap    WorkspaceStatsHeatmap    `json:"heatmap"`
 	}
 
 	WorkspaceStatsSummary struct {
@@ -359,6 +360,19 @@ type (
 	WorkspaceStatsTimeseries struct {
 		TasksCompleted []DailyStat `json:"tasksCompleted"`
 		Messages       []DailyStat `json:"messages"`
+	}
+
+	HeatmapStat struct {
+		Bucket string `json:"bucket"`
+		Count  int64  `json:"count"`
+	}
+
+	WorkspaceStatsHeatmap struct {
+		Granularity    string        `json:"granularity"` // "hour" or "day"
+		RangeStart     int64         `json:"rangeStart"`  // unix timestamp
+		RangeEnd       int64         `json:"rangeEnd"`     // unix timestamp
+		TasksCompleted []HeatmapStat `json:"tasksCompleted"`
+		Messages       []HeatmapStat `json:"messages"`
 	}
 
 	User struct {

@@ -286,6 +286,72 @@ func TestRepository_GetWorkspaceTaskCountsByCategory(t *testing.T) {
 	}
 }
 
+func TestRepository_GetDetailedWorkspaceStats_Heatmap(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Telemetry{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	workspaceID := int64(100)
+	now := time.Now()
+
+	// Two task-complete events an hour apart, two message events an hour apart.
+	db.Create(&model.Telemetry{WorkspaceID: workspaceID, OccurredAt: now.Add(-2 * time.Hour).Unix(), Action: model.ActionIDTaskComplete})
+	db.Create(&model.Telemetry{WorkspaceID: workspaceID, OccurredAt: now.Add(-1 * time.Hour).Unix(), Action: model.ActionIDTaskComplete})
+	db.Create(&model.Telemetry{WorkspaceID: workspaceID, OccurredAt: now.Add(-1 * time.Hour).Unix(), Action: model.ActionIDMessageCreate})
+
+	// Window <= 7 days: heatmap buckets by hour.
+	shortStart := now.Add(-3 * time.Hour).Unix()
+	shortEnd := now.Unix()
+	res, err := repo.GetDetailedWorkspaceStats(ctx, workspaceID, shortStart, shortEnd)
+	if err != nil {
+		t.Fatalf("GetDetailedWorkspaceStats failed: %v", err)
+	}
+	if res.Heatmap.Granularity != "hour" {
+		t.Errorf("expected hour granularity for a <=7d window, got %q", res.Heatmap.Granularity)
+	}
+	if res.Heatmap.RangeStart != shortStart || res.Heatmap.RangeEnd != shortEnd {
+		t.Errorf("expected heatmap range [%d,%d], got [%d,%d]", shortStart, shortEnd, res.Heatmap.RangeStart, res.Heatmap.RangeEnd)
+	}
+	var totalTasks, totalMessages int64
+	for _, s := range res.Heatmap.TasksCompleted {
+		totalTasks += s.Count
+	}
+	for _, s := range res.Heatmap.Messages {
+		totalMessages += s.Count
+	}
+	if totalTasks != 2 {
+		t.Errorf("expected 2 completed-task heatmap entries, got %d", totalTasks)
+	}
+	if totalMessages != 1 {
+		t.Errorf("expected 1 message heatmap entry, got %d", totalMessages)
+	}
+
+	// Older event, 10 days back, to exercise the day-granularity path.
+	db.Create(&model.Telemetry{WorkspaceID: workspaceID, OccurredAt: now.AddDate(0, 0, -10).Unix(), Action: model.ActionIDTaskComplete})
+
+	longStart := now.AddDate(0, 0, -30).Unix()
+	longEnd := now.Unix()
+	res, err = repo.GetDetailedWorkspaceStats(ctx, workspaceID, longStart, longEnd)
+	if err != nil {
+		t.Fatalf("GetDetailedWorkspaceStats failed: %v", err)
+	}
+	if res.Heatmap.Granularity != "day" {
+		t.Errorf("expected day granularity for a >7d window, got %q", res.Heatmap.Granularity)
+	}
+	totalTasks = 0
+	for _, s := range res.Heatmap.TasksCompleted {
+		totalTasks += s.Count
+	}
+	if totalTasks != 3 {
+		t.Errorf("expected 3 completed-task heatmap entries over 30d, got %d", totalTasks)
+	}
+}
+
 func TestRepository_Event_CRUD(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

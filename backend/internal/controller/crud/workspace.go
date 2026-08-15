@@ -238,17 +238,19 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 	case "30d":
 		startTime = now.AddDate(0, 0, -30).Unix()
 	case "week":
-		// Start of current week (Monday)
+		// Full current week, Monday through Sunday, regardless of today's weekday
 		daysSinceMonday := int(now.Weekday()) - 1
 		if daysSinceMonday < 0 {
 			daysSinceMonday = 6
 		}
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -daysSinceMonday)
 		startTime = start.Unix()
+		endTime = start.AddDate(0, 0, 7).Unix() - 1
 	case "month":
-		// Start of current month
+		// Full current month, 1st through the last day, regardless of today's date
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 		startTime = start.Unix()
+		endTime = start.AddDate(0, 1, 0).Unix() - 1
 	case "custom":
 		startTime = req.From
 		if req.To > 0 {
