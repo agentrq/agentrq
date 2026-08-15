@@ -59,6 +59,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # npm trusted publishing: the runner mints an OIDC token that npm
+      # exchanges for a short-lived publish credential. No NPM_TOKEN secret,
+      # nothing to rotate, and no 2FA prompt — a stored npm token would demand
+      # an OTP unless it were a classic Automation token.
+      id-token: write
 
     steps:
       - name: Checkout
@@ -69,6 +74,12 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
+
+      # Node 22 ships npm 10.x, which has no OIDC support; trusted publishing
+      # needs npm >= 11.5.1. Without this the publish falls back to looking for
+      # a token and fails.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
@@ -94,11 +105,11 @@ jobs:
             echo "$NAME@$VERSION is new; publishing."
           fi
 
+      # Authenticated by the OIDC token above, not by a secret. npm attaches
+      # build provenance automatically on a trusted-publisher release.
       - name: Publish
         if: steps.release.outputs.published == 'false'
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         run: |

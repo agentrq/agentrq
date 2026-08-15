@@ -174,7 +174,12 @@ npm run build
 
 **Bumping `version` in `package.json` is what releases.** npm refuses to republish an existing version, so the workflow checks first and skips the publish when the current version is already on the registry — an ordinary fix that touches this path does not need a version bump to merge.
 
-Publishing requires an `NPM_TOKEN` repository secret with publish rights to `@agentrq/dsh-plugin-agentrq`.
+Authentication is [npm trusted publishing](https://docs.npmjs.com/trusted-publishers): the package names `agentrq/agentrq` and this workflow file as its trusted publisher, the job requests an OIDC token with `id-token: write`, and npm exchanges it for a short-lived publish credential. There is no `NPM_TOKEN` secret to store, rotate, or leak, and npm attaches build provenance automatically.
+
+Two things that break it, both non-obvious:
+
+- **Renaming the workflow file.** The trusted-publisher record names `plugin-deepseek-harness.yml` exactly; a rename must be made on npm's side too or every publish is rejected.
+- **npm older than 11.5.1.** `setup-node` with Node 22 installs npm 10.x, which has no OIDC support and silently falls back to looking for a token. The workflow upgrades npm explicitly for this reason — do not remove that step.
 
 ## Known limitations and deferred work
 
