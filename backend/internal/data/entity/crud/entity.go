@@ -146,6 +146,19 @@ type (
 		Metadata    any
 	}
 
+	// ToolCall entity
+	// Status: "auto_allowed" | "pending" | "allowed" | "denied"
+	ToolCall struct {
+		ID           int64
+		CreatedAt    time.Time
+		TaskID       int64
+		WorkspaceID  int64
+		ToolName     string
+		Description  string
+		InputPreview string
+		Status       string
+	}
+
 	// Task entity
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
@@ -164,6 +177,7 @@ type (
 		ReplyText        string
 		Attachments      []Attachment
 		Messages         []Message
+		ToolCalls        []ToolCall
 		CronSchedule     string
 		ParentID         int64
 		SortOrder        float64
@@ -370,7 +384,7 @@ type (
 	WorkspaceStatsHeatmap struct {
 		Granularity    string        `json:"granularity"` // "hour" or "day"
 		RangeStart     int64         `json:"rangeStart"`  // unix timestamp
-		RangeEnd       int64         `json:"rangeEnd"`     // unix timestamp
+		RangeEnd       int64         `json:"rangeEnd"`    // unix timestamp
 		TasksCompleted []HeatmapStat `json:"tasksCompleted"`
 		Messages       []HeatmapStat `json:"messages"`
 	}

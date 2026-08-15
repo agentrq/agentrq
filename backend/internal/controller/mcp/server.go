@@ -50,6 +50,15 @@ type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
 type PublishEventFunc func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error
 
+// RecordToolCallFunc persists a tool-call permission decision (auto-allowed or
+// pending a manual verdict) so it can be shown as a "tool calls" list, separate
+// from the message thread.
+type RecordToolCallFunc func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
+
+// UpdateToolCallStatusFunc updates a previously-recorded tool call once a manual
+// permission request is resolved ("allowed" or "denied").
+type UpdateToolCallStatusFunc func(ctx context.Context, id int64, status string) error
+
 type PermissionRequestParams struct {
 	RequestID    string `json:"request_id"`
 	TaskID       string `json:"task_id,omitempty"`
@@ -73,6 +82,8 @@ type WorkspaceServer struct {
 	updateMessageMetadata UpdateMessageMetadataFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
 	publishEvent          PublishEventFunc
+	recordToolCall        RecordToolCallFunc
+	updateToolCallStatus  UpdateToolCallStatusFunc
 	bus                   *eventbus.Bus
 	idgen                 idgen.Service
 	storage               storage.Service
@@ -93,6 +104,8 @@ type WorkspaceServer struct {
 	requestTaskIDs        map[string]int64 // requestID -> taskID (resolved at request time)
 	permissionResponsesMu sync.RWMutex
 	permissionResponses   map[string]int64 // requestID -> messageID
+	toolCallIDsMu         sync.RWMutex
+	toolCallIDs           map[string]int64 // requestID -> ToolCall row ID (manual requests only, until resolved)
 	metadataMu            sync.RWMutex
 	icon                  string
 	name                  string
@@ -180,6 +193,8 @@ func NewWorkspaceServer(
 	updateMessageMetadata UpdateMessageMetadataFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
 	publishEvent PublishEventFunc,
+	recordToolCall RecordToolCallFunc,
+	updateToolCallStatus UpdateToolCallStatusFunc,
 	bus *eventbus.Bus,
 	ids idgen.Service,
 	store storage.Service,
@@ -205,6 +220,8 @@ func NewWorkspaceServer(
 		updateMessageMetadata: updateMessageMetadata,
 		updateAutoAllowed:     updateAutoAllowed,
 		publishEvent:          publishEvent,
+		recordToolCall:        recordToolCall,
+		updateToolCallStatus:  updateToolCallStatus,
 		bus:                   bus,
 		idgen:                 ids,
 		storage:               store,
@@ -216,6 +233,7 @@ func NewWorkspaceServer(
 		sessionTasks:          make(map[string]int64),
 		requestTaskIDs:        make(map[string]int64),
 		permissionResponses:   make(map[string]int64),
+		toolCallIDs:           make(map[string]int64),
 		icon:                  icon,
 		name:                  name,
 		description:           description,
@@ -1080,6 +1098,9 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			isAutoAllowed := ps.checkAutoAllow(p.ToolName, p.InputPreview)
 			ps.autoAllowedToolsMu.RUnlock()
 
+			// Resolve taskID: first from the payload, then from the session, then from the DB.
+			taskID, ok := ps.resolveTaskID(ctx, sessID, p.TaskID)
+
 			if isAutoAllowed {
 				zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request")
 				go func() {
@@ -1087,43 +1108,10 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					_ = ps.SendPermissionVerdict(context.Background(), 0, p.RequestID, "allow")
 				}()
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
+				if ok {
+					ps.persistToolCall(ctx, taskID, p, "auto_allowed")
+				}
 				return nil, nil
-			}
-
-			// Resolve taskID: first from the payload, then from the session, then from the DB.
-			var taskID int64
-			ok := false
-
-			// 1. From the incoming payload
-			if p.TaskID != "" {
-				if id := monoflake.IDFromBase62(p.TaskID); id != 0 {
-					if _, err := ps.getTask(ctx, id.Int64()); err == nil {
-						taskID = id.Int64()
-						ok = true
-					}
-				}
-			}
-
-			// 2. From the session mapping
-			if !ok {
-				ps.sessionTasksMu.RLock()
-				taskID, ok = ps.sessionTasks[sessID]
-				ps.sessionTasksMu.RUnlock()
-			}
-
-			// 3. Fallback: query the DB for the workspace's current ongoing or blocked task.
-			if !ok {
-				if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing", "blocked"}, Limit: 1}); err == nil {
-					for _, t := range tasks {
-						taskID = t.ID
-						ok = true
-						ps.sessionTasksMu.Lock()
-						ps.sessionTasks[sessID] = taskID
-						ps.sessionTasksMu.Unlock()
-						zlog.Debug().Str("session_id", sessID).Int64("task_id", taskID).Msg("Session not found; resolved task from DB")
-						break
-					}
-				}
 			}
 
 			if ok {
@@ -1135,6 +1123,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 						_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
 					}()
 					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
+					ps.persistToolCall(ctx, taskID, p, "auto_allowed")
 					return nil, nil
 				}
 
@@ -1153,6 +1142,12 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				ps.requestTaskIDs[p.RequestID] = taskID
 				ps.requestTaskIDsMu.Unlock()
 
+				if tcID := ps.persistToolCall(ctx, taskID, p, "pending"); tcID != 0 {
+					ps.toolCallIDsMu.Lock()
+					ps.toolCallIDs[p.RequestID] = tcID
+					ps.toolCallIDsMu.Unlock()
+				}
+
 				msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
 				if msgID != 0 {
 					ps.permissionResponsesMu.Lock()
@@ -1166,6 +1161,77 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 		}
 		return next(ctx, method, req)
 	}
+}
+
+// resolveTaskID finds which task a permission request/tool call belongs to:
+// first the payload's own taskID, then the session->task mapping, then (falling
+// back) the workspace's current ongoing/blocked task. Populates the session
+// mapping on the DB fallback so subsequent requests on the same session resolve
+// without another query.
+func (ps *WorkspaceServer) resolveTaskID(ctx context.Context, sessID, payloadTaskID string) (int64, bool) {
+	if payloadTaskID != "" {
+		if id := monoflake.IDFromBase62(payloadTaskID); id != 0 {
+			if _, err := ps.getTask(ctx, id.Int64()); err == nil {
+				return id.Int64(), true
+			}
+		}
+	}
+
+	ps.sessionTasksMu.RLock()
+	taskID, ok := ps.sessionTasks[sessID]
+	ps.sessionTasksMu.RUnlock()
+	if ok {
+		return taskID, true
+	}
+
+	if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing", "blocked"}, Limit: 1}); err == nil {
+		for _, t := range tasks {
+			ps.sessionTasksMu.Lock()
+			ps.sessionTasks[sessID] = t.ID
+			ps.sessionTasksMu.Unlock()
+			zlog.Debug().Str("session_id", sessID).Int64("task_id", t.ID).Msg("Session not found; resolved task from DB")
+			return t.ID, true
+		}
+	}
+
+	return 0, false
+}
+
+// toolCallInputPreviewMaxLen caps how much of a tool call's input preview gets
+// persisted — tool inputs (e.g. a large file write) can be arbitrarily long,
+// and the "tool calls" list only needs enough to identify what happened.
+const toolCallInputPreviewMaxLen = 2000
+
+func truncateForStorage(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+// persistToolCall records a tool-call permission decision so it shows up in the
+// task's "tool calls" list, separate from the message thread. Best-effort: this
+// is a secondary audit trail, not the allow/deny decision itself, so failures
+// are logged and swallowed. Returns the new row's ID (0 if not recorded).
+func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p PermissionRequestParams, status string) int64 {
+	if ps.recordToolCall == nil {
+		return 0
+	}
+	tc, err := ps.recordToolCall(ctx, model.ToolCall{
+		ID:           ps.idgen.NextID(),
+		CreatedAt:    time.Now(),
+		TaskID:       taskID,
+		WorkspaceID:  ps.workspaceID,
+		ToolName:     p.ToolName,
+		Description:  p.Description,
+		InputPreview: truncateForStorage(p.InputPreview, toolCallInputPreviewMaxLen),
+		Status:       status,
+	})
+	if err != nil {
+		zlog.Error().Err(err).Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("failed to record tool call")
+		return 0
+	}
+	return tc.ID
 }
 
 func (ps *WorkspaceServer) cleanupRequest(requestID string) {
@@ -1188,6 +1254,10 @@ func (ps *WorkspaceServer) cleanupRequest(requestID string) {
 	ps.permissionResponsesMu.Lock()
 	delete(ps.permissionResponses, requestID)
 	ps.permissionResponsesMu.Unlock()
+
+	ps.toolCallIDsMu.Lock()
+	delete(ps.toolCallIDs, requestID)
+	ps.toolCallIDsMu.Unlock()
 }
 
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int64, requestID string, behavior string) error {
@@ -1285,6 +1355,21 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny", clientIdentity{})
 	}
 
+	if ps.updateToolCallStatus != nil {
+		ps.toolCallIDsMu.RLock()
+		tcID, hasTC := ps.toolCallIDs[requestID]
+		ps.toolCallIDsMu.RUnlock()
+		if hasTC {
+			tcStatus := "denied"
+			if effectiveBehavior == "allow" {
+				tcStatus = "allowed"
+			}
+			if err := ps.updateToolCallStatus(ctx, tcID, tcStatus); err != nil {
+				zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to update tool call status")
+			}
+		}
+	}
+
 	// Notify Claude Code session
 	params := map[string]any{
 		"request_id": requestID,
@@ -1358,6 +1443,9 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 		isAutoAllowed := ps.checkAutoAllow(p.ToolName, p.InputPreview)
 		ps.autoAllowedToolsMu.RUnlock()
 
+		// Resolve taskID: first from the payload, then from the session, then from the DB.
+		taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
+
 		if isAutoAllowed {
 			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
 			go func() {
@@ -1366,43 +1454,10 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			}()
 			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
 			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
+			if ok {
+				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
+			}
 			return
-		}
-
-		// Resolve taskID: first from the payload, then from the session, then from the DB.
-		var taskID int64
-		ok := false
-
-		// 1. From the incoming payload
-		if p.TaskID != "" {
-			if id := monoflake.IDFromBase62(p.TaskID); id != 0 {
-				if _, err := ps.getTask(ctx, id.Int64()); err == nil {
-					taskID = id.Int64()
-					ok = true
-				}
-			}
-		}
-
-		// 2. From the session mapping
-		if !ok {
-			ps.sessionTasksMu.RLock()
-			taskID, ok = ps.sessionTasks[sessionID]
-			ps.sessionTasksMu.RUnlock()
-		}
-
-		// 3. Fallback: query the DB for the workspace's current ongoing or blocked task.
-		if !ok {
-			if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing", "blocked"}, Limit: 1}); err == nil {
-				for _, t := range tasks {
-					taskID = t.ID
-					ok = true
-					ps.sessionTasksMu.Lock()
-					ps.sessionTasks[sessionID] = taskID
-					ps.sessionTasksMu.Unlock()
-					zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Msg("Session not found; resolved task from DB")
-					break
-				}
-			}
 		}
 
 		zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Bool("found", ok).Msg("Session to task mapping lookup")
@@ -1416,6 +1471,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 					_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
 				}()
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
+				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
 				return
 			}
 
@@ -1432,6 +1488,12 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			ps.requestTaskIDsMu.Lock()
 			ps.requestTaskIDs[p.RequestID] = taskID
 			ps.requestTaskIDsMu.Unlock()
+
+			if tcID := ps.persistToolCall(ctx, taskID, p, "pending"); tcID != 0 {
+				ps.toolCallIDsMu.Lock()
+				ps.toolCallIDs[p.RequestID] = tcID
+				ps.toolCallIDsMu.Unlock()
+			}
 
 			msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), fmt.Sprintf("Permission requested for %s: %s", p.ToolName, p.Description), nil, metadata)
 			if msgID != 0 {

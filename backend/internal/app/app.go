@@ -187,6 +187,7 @@ func New(cfg Config) (*App, error) {
 		&model.PushSubscription{},
 		&model.Event{},
 		&model.EventTrigger{},
+		&model.ToolCall{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
@@ -551,6 +552,33 @@ func New(cfg Config) (*App, error) {
 						FAQ:     faq,
 					},
 				})
+				return nil
+			},
+			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+				created, err := repo.CreateToolCall(ctx, tc)
+				if err == nil {
+					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+					if latest, gErr := repo.GetTask(ctx, workspaceID, created.TaskID, uid); gErr == nil {
+						bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
+							Type:    "task.updated",
+							Payload: mapper.FromModelTaskToView(latest),
+						})
+					}
+				}
+				return created, err
+			},
+			func(ctx context.Context, id int64, status string) error {
+				updated, err := repo.UpdateToolCallStatus(ctx, id, status)
+				if err != nil {
+					return err
+				}
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				if latest, gErr := repo.GetTask(ctx, workspaceID, updated.TaskID, uid); gErr == nil {
+					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
+						Type:    "task.updated",
+						Payload: mapper.FromModelTaskToView(latest),
+					})
+				}
 				return nil
 			},
 			bus,

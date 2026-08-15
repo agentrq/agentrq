@@ -37,6 +37,10 @@ type Repository interface {
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
 	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
 
+	// ToolCall
+	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
+	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
+
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
 	SystemGetMessage(ctx context.Context, id int64) (model.Message, error)
@@ -176,6 +180,7 @@ func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, use
 	var t model.Task
 	err := r.conn(ctx).
 		Preload("Messages").
+		Preload("ToolCalls").
 		Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).
 		First(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -357,6 +362,28 @@ func (r *repository) ListMessages(ctx context.Context, taskID int64) ([]model.Me
 
 func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error {
 	return r.conn(ctx).Model(&model.Message{}).Where("id = ? AND task_id = ?", messageID, taskID).Update("metadata", metadata).Error
+}
+
+func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+	if err := r.conn(ctx).Create(&tc).Error; err != nil {
+		return model.ToolCall{}, err
+	}
+	return tc, nil
+}
+
+func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error) {
+	var tc model.ToolCall
+	if err := r.conn(ctx).Where("id = ?", id).First(&tc).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.ToolCall{}, ErrNotFound
+		}
+		return model.ToolCall{}, err
+	}
+	tc.Status = status
+	if err := r.conn(ctx).Save(&tc).Error; err != nil {
+		return model.ToolCall{}, err
+	}
+	return tc, nil
 }
 
 func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {

@@ -633,6 +633,20 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		}
 	}
 
+	toolCalls := make([]entity.ToolCall, len(m.ToolCalls))
+	for i, tc := range m.ToolCalls {
+		toolCalls[i] = entity.ToolCall{
+			ID:           tc.ID,
+			CreatedAt:    tc.CreatedAt,
+			TaskID:       tc.TaskID,
+			WorkspaceID:  tc.WorkspaceID,
+			ToolName:     tc.ToolName,
+			Description:  tc.Description,
+			InputPreview: tc.InputPreview,
+			Status:       tc.Status,
+		}
+	}
+
 	return entity.Task{
 		ID:               m.ID,
 		CreatedAt:        m.CreatedAt,
@@ -648,6 +662,7 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		ReplyText:        m.ReplyText,
 		Attachments:      atts,
 		Messages:         msgs,
+		ToolCalls:        toolCalls,
 		CronSchedule:     m.CronSchedule,
 		ParentID:         m.ParentID,
 		SortOrder:        m.SortOrder,
