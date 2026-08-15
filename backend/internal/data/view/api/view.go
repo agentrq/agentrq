@@ -82,6 +82,17 @@ type (
 		Metadata    any          `json:"metadata,omitempty"`
 	}
 
+	// Status: "auto_allowed" | "pending" | "allowed" | "denied"
+	ToolCall struct {
+		ID           string    `json:"id"`
+		CreatedAt    time.Time `json:"createdAt"`
+		TaskID       string    `json:"taskId"`
+		ToolName     string    `json:"toolName"`
+		Description  string    `json:"description,omitempty"`
+		InputPreview string    `json:"inputPreview,omitempty"`
+		Status       string    `json:"status"`
+	}
+
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {
@@ -100,6 +111,7 @@ type (
 		Attachments      []Attachment `json:"attachments,omitempty"`
 		Metadata         any          `json:"metadata,omitempty"`
 		Messages         []Message    `json:"messages,omitempty"`
+		ToolCalls        []ToolCall   `json:"toolCalls,omitempty"`
 		CronSchedule     string       `json:"cronSchedule,omitempty"`
 		ParentID         string       `json:"parentId,omitempty"`
 		SortOrder        float64      `json:"sortOrder"`

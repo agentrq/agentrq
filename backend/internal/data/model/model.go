@@ -43,7 +43,8 @@ type (
 		Response    string `gorm:"type:text"`
 		ReplyText   string `gorm:"type:text"`
 		Attachments datatypes.JSON
-		Messages    []Message `gorm:"foreignKey:TaskID"`
+		Messages    []Message  `gorm:"foreignKey:TaskID"`
+		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
 
 		CronSchedule     string  `gorm:"type:varchar(64)"`
 		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
@@ -51,6 +52,22 @@ type (
 		AllowAllCommands bool    `gorm:"default:false"`
 		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+	}
+
+	// ToolCall records a single tool-call permission decision for a task: either
+	// auto-allowed (matched a stored auto-allow rule, or the task has
+	// AllowAllCommands/"YOLO" enabled) or a manual request awaiting/resolved by a
+	// human verdict. This is the only place auto-allowed calls are recorded —
+	// they otherwise bypass the message thread entirely.
+	ToolCall struct {
+		ID           int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt    time.Time
+		TaskID       int64  `gorm:"index:idx_tool_calls_task_id"`
+		WorkspaceID  int64  `gorm:"index:idx_tool_calls_workspace_id"`
+		ToolName     string `gorm:"type:varchar(128)"`
+		Description  string `gorm:"type:text"`
+		InputPreview string `gorm:"type:text"`
+		Status       string `gorm:"type:varchar(16)"` // "auto_allowed" | "pending" | "allowed" | "denied"
 	}
 
 	// Event defines a named event that agents can publish after completing a task.

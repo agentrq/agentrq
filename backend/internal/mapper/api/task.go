@@ -300,6 +300,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		ReplyText:        t.ReplyText,
 		Attachments:      fromEntityAttachmentsToView(t.Attachments),
 		Messages:         fromEntityMessagesToView(t.Messages),
+		ToolCalls:        fromEntityToolCallsToView(t.ToolCalls),
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
@@ -309,6 +310,22 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 	}
 	if t.EventID != 0 {
 		res.EventID = monoflake.ID(t.EventID).String()
+	}
+	return res
+}
+
+func fromEntityToolCallsToView(tcs []entity.ToolCall) []view.ToolCall {
+	res := make([]view.ToolCall, len(tcs))
+	for i, tc := range tcs {
+		res[i] = view.ToolCall{
+			ID:           monoflake.ID(tc.ID).String(),
+			CreatedAt:    tc.CreatedAt,
+			TaskID:       monoflake.ID(tc.TaskID).String(),
+			ToolName:     tc.ToolName,
+			Description:  tc.Description,
+			InputPreview: tc.InputPreview,
+			Status:       tc.Status,
+		}
 	}
 	return res
 }
@@ -375,6 +392,19 @@ func FromModelTaskToView(t model.Task) view.Task {
 		}
 	}
 
+	toolCalls := make([]view.ToolCall, len(t.ToolCalls))
+	for i, tc := range t.ToolCalls {
+		toolCalls[i] = view.ToolCall{
+			ID:           monoflake.ID(tc.ID).String(),
+			CreatedAt:    tc.CreatedAt,
+			TaskID:       monoflake.ID(tc.TaskID).String(),
+			ToolName:     tc.ToolName,
+			Description:  tc.Description,
+			InputPreview: tc.InputPreview,
+			Status:       tc.Status,
+		}
+	}
+
 	res := view.Task{
 		ID:               monoflake.ID(t.ID).String(),
 		CreatedAt:        t.CreatedAt,
@@ -389,6 +419,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 		ReplyText:        t.ReplyText,
 		Attachments:      atts,
 		Messages:         msgs,
+		ToolCalls:        toolCalls,
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
