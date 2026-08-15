@@ -68,7 +68,7 @@
 
             <!-- Tool Calls button (deliberately separate from the message thread) -->
             <button @click.stop="showToolCalls = true"
-                    @mouseenter="tooltipStore.show($event, 'View tool calls', 'bottom')"
+                    @mouseenter="tooltipStore.show($event, 'View tool call history', 'bottom')"
                     @mouseleave="tooltipStore.hide()"
                     class="px-2 md:px-3 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg border border-transparent hover:border-black/10 transition-all flex items-center gap-1.5 shadow-sm uppercase tracking-tighter h-7">
               <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 1021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.929a2.548 2.548 0 00-3.586-3.586l-6.837 5.63m5.108-.929l-4.655 5.653" /></svg>
@@ -458,37 +458,8 @@
       </div>
     </div>
 
-    <!-- Tool Calls Modal -->
-    <div v-if="showToolCalls" class="fixed inset-0 z-[110] flex items-center justify-center p-4" @keydown.esc="showToolCalls = false">
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="showToolCalls = false"></div>
-      <div class="relative w-full max-w-lg max-h-[80vh] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-xl flex flex-col overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-zinc-800 shrink-0">
-          <h2 class="text-[11px] font-black uppercase tracking-widest text-gray-800 dark:text-zinc-200">Tool Calls</h2>
-          <button @click="showToolCalls = false" class="text-gray-400 hover:text-gray-700 dark:hover:text-zinc-200 transition-colors">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
-          <div v-if="sortedToolCalls.length === 0" class="py-10 text-center text-[11px] text-gray-400 dark:text-zinc-500 font-medium">
-            No tool calls recorded yet.
-          </div>
-          <div v-for="tc in sortedToolCalls" :key="tc.id"
-               @click="toggleToolCallExpanded(tc.id)"
-               class="border border-gray-100 dark:border-zinc-800 rounded-lg mb-1.5 last:mb-0 cursor-pointer hover:border-gray-200 dark:hover:border-zinc-700 transition-colors overflow-hidden">
-            <div class="flex items-center gap-2.5 px-3 py-2">
-              <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="toolCallDotStyle(tc.status)"></span>
-              <span class="text-[11px] font-bold text-gray-800 dark:text-zinc-200 truncate flex-1">{{ tc.toolName }}</span>
-              <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0" :class="toolCallStatusStyle(tc.status)">{{ toolCallStatusLabel(tc.status) }}</span>
-              <span class="text-[9px] text-gray-400 dark:text-zinc-500 shrink-0">{{ formatDateTime(tc.createdAt) }}</span>
-            </div>
-            <div v-if="expandedToolCalls.has(tc.id)" class="px-3 pb-2.5 pt-0.5 border-t border-dashed border-gray-100 dark:border-zinc-800">
-              <p v-if="tc.description" class="text-[10px] text-gray-600 dark:text-zinc-400 italic mb-1.5">"{{ tc.description }}"</p>
-              <pre v-if="tc.inputPreview" class="text-[9px] font-mono bg-zinc-950 text-zinc-300 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">{{ tc.inputPreview }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Tool Call History Panel -->
+    <TrajectoryPanel v-if="showToolCalls" :messages="sortedMessages" :tool-calls="sortedToolCalls" @close="showToolCalls = false" />
 
     <!-- Custom Tooltip -->
     <div v-if="tooltip.visible"
@@ -518,6 +489,7 @@ import { useSpeechToText } from '../composables/useSpeechToText';
 import { useEventBus } from '../useEventBus';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
 const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
@@ -677,55 +649,11 @@ const sortedMessages = computed(() => {
 });
 
 const showToolCalls = ref(false);
-const expandedToolCalls = ref(new Set());
-function toggleToolCallExpanded(id) {
-  const s = new Set(expandedToolCalls.value);
-  s.has(id) ? s.delete(id) : s.add(id);
-  expandedToolCalls.value = s;
-}
 
 const sortedToolCalls = computed(() => {
   if (!task.value || !task.value.toolCalls) return [];
-  return [...task.value.toolCalls].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return [...task.value.toolCalls].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
-
-function toolCallDotStyle(status) {
-  switch (status) {
-    case 'allowed':
-    case 'auto_allowed':
-      return 'bg-green-500';
-    case 'denied':
-      return 'bg-red-500';
-    case 'pending':
-      return 'bg-amber-400';
-    default:
-      return 'bg-gray-300 dark:bg-zinc-600';
-  }
-}
-
-function toolCallStatusStyle(status) {
-  switch (status) {
-    case 'allowed':
-    case 'auto_allowed':
-      return 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800';
-    case 'denied':
-      return 'text-red-700 dark:text-red-500 bg-red-50 dark:bg-red-500/10';
-    case 'pending':
-      return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10';
-    default:
-      return 'text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-zinc-800';
-  }
-}
-
-function toolCallStatusLabel(status) {
-  switch (status) {
-    case 'allowed': return 'Allowed';
-    case 'auto_allowed': return 'Auto-allowed';
-    case 'denied': return 'Denied';
-    case 'pending': return 'Pending';
-    default: return status;
-  }
-}
 
 watch(() => sortedMessages.value.length, (count) => {
   if (count === 0 && task.value?.body) {
