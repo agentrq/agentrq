@@ -15,6 +15,7 @@
  * @module @agentrq/dsh-plugin-agentrq
  */
 
+import pkg from '../package.json' with { type: 'json' }
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
@@ -224,7 +225,9 @@ export class AgentRqClient {
     if (this.closed) throw new Error('agentrq client disposed')
 
     const transport = this.createTransport()
-    const client = new Client({ name: 'dsh-plugin-agentrq', version: '0.2.0' })
+    // Version comes from package.json so a release bump cannot leave the
+    // handshake reporting a stale one.
+    const client = new Client({ name: 'dsh-plugin-agentrq', version: pkg.version })
     client.fallbackNotificationHandler = async notification => {
       if (notification.method !== CHANNEL_NOTIFICATION_METHOD) return
       const message = parseChannelNotification(notification.params)
