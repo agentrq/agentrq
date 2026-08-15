@@ -26,12 +26,13 @@ type clientIdentity struct {
 }
 
 // hash returns a deterministic 64-bit identifier for this identity, or 0 if no
-// identity information was available.
-func (ci clientIdentity) hash() uint64 {
+// identity information was available. Returned as int64 (reinterpreting the
+// same bit pattern) since Postgres has no unsigned bigint type.
+func (ci clientIdentity) hash() int64 {
 	if ci.name == "" {
 		return 0
 	}
-	return xxhash.Sum64String(ci.name + "@" + ci.version)
+	return int64(xxhash.Sum64String(ci.name + "@" + ci.version))
 }
 
 func clientIdentityFromRequest(req mcp.Request) clientIdentity {

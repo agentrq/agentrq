@@ -96,20 +96,20 @@ type (
 
 	// Telemetry record for user and workspace actions
 	Telemetry struct {
-		UserID      int64  `gorm:"index:idx_telemetry_user_id"`
-		WorkspaceID int64  `gorm:"index:idx_telemetry_workspace_id"`
-		OccurredAt  int64  `gorm:"index:idx_telemetry_occurred_at"`
-		Action      uint8  `gorm:"index:idx_telemetry_action"`
-		Actor       uint8  `gorm:"index:idx_telemetry_actor"`
-		ClientID    uint64 `gorm:"index:idx_telemetry_client_id"` // xxhash64(name+version) of the MCP client, 0 if unknown; see MCPClient
+		UserID      int64 `gorm:"index:idx_telemetry_user_id"`
+		WorkspaceID int64 `gorm:"index:idx_telemetry_workspace_id"`
+		OccurredAt  int64 `gorm:"index:idx_telemetry_occurred_at"`
+		Action      uint8 `gorm:"index:idx_telemetry_action"`
+		Actor       uint8 `gorm:"index:idx_telemetry_actor"`
+		ClientID    int64 `gorm:"index:idx_telemetry_client_id"` // xxhash64(name+version) of the MCP client (reinterpreted as int64; no unsigned bigint in Postgres), 0 if unknown; see MCPClient
 	}
 
 	// MCPClient is a lookup table of distinct MCP client identities seen on
-	// requests, keyed by xxhash64(name+"@"+version) so Telemetry rows can
-	// reference "which agent" (Claude Code, Codex, ...) without repeating the
-	// raw name/version on every row.
+	// requests, keyed by xxhash64(name+"@"+version) reinterpreted as int64 so
+	// Telemetry rows can reference "which agent" (Claude Code, Codex, ...)
+	// without repeating the raw name/version on every row.
 	MCPClient struct {
-		ID        uint64 `gorm:"primaryKey;autoIncrement:false"`
+		ID        int64  `gorm:"primaryKey;autoIncrement:false"`
 		Name      string `gorm:"type:varchar(255)"`
 		Version   string `gorm:"type:varchar(64)"`
 		CreatedAt time.Time

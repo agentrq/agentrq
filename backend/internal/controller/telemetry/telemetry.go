@@ -40,7 +40,7 @@ type (
 		// seenClients caches MCPClient IDs already persisted so recordMCPClient
 		// doesn't hit the DB for every single event from an already-known client.
 		seenClientsMu sync.Mutex
-		seenClients   map[uint64]struct{}
+		seenClients   map[int64]struct{}
 	}
 )
 
@@ -59,7 +59,7 @@ func New(p Params) Controller {
 		stop:        make(chan struct{}),
 		batchSize:   p.BatchSize,
 		interval:    p.Interval,
-		seenClients: make(map[uint64]struct{}),
+		seenClients: make(map[int64]struct{}),
 	}
 }
 
@@ -214,7 +214,7 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 // Telemetry.ClientID can reference "which agent" without repeating the raw
 // name/version on every row. A cache of already-persisted IDs keeps this from
 // hitting the DB on every single event once a client has been seen once.
-func (c *controller) recordMCPClient(id uint64, name, version string) {
+func (c *controller) recordMCPClient(id int64, name, version string) {
 	if id == 0 {
 		return
 	}
@@ -232,7 +232,7 @@ func (c *controller) recordMCPClient(id uint64, name, version string) {
 		Version: version,
 	}).Error
 	if err != nil {
-		zlog.Error().Err(err).Uint64("client_id", id).Msg("[telemetry] failed to record mcp client")
+		zlog.Error().Err(err).Int64("client_id", id).Msg("[telemetry] failed to record mcp client")
 		return
 	}
 

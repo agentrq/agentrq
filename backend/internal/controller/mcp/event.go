@@ -34,7 +34,7 @@ type MCPEvent struct {
 	Method        string `json:"method,omitempty"`
 	ToolName      string `json:"toolName,omitempty"`
 	Actor         uint8  `json:"actor"`                   // 1: Human, 2: Agent
-	ClientID      uint64 `json:"clientId,omitempty"`      // xxhash64(name+version) of the calling MCP client, 0 if unknown
+	ClientID      int64  `json:"clientId,omitempty"`      // xxhash64(name+version) of the calling MCP client, 0 if unknown
 	ClientName    string `json:"clientName,omitempty"`    // e.g. "claude-code", empty if unknown
 	ClientVersion string `json:"clientVersion,omitempty"` // empty if unknown
 }
