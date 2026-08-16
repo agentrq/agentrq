@@ -121,8 +121,8 @@
                   <section v-if="activeConnectionTab === 'deepseek'" class="space-y-3 min-w-0 w-full overflow-hidden">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Entry point</h3>
                     <div class="flex gap-2">
-                      <button type="button" @click="dshEntryMode = 'terminal'" :class="dshEntryMode === 'terminal' ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">Terminal (dsh)</button>
                       <button type="button" @click="dshEntryMode = 'web'" :class="dshEntryMode === 'web' ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">Browser (dsh web)</button>
+                      <button type="button" @click="dshEntryMode = 'terminal'" :class="dshEntryMode === 'terminal' ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">Terminal (dsh)</button>
                     </div>
                     <p v-if="dshEntryMode === 'web'" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1"><code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">dsh web</code> always boots the profile literally named <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">web</code> — a workspace-named profile (used by the terminal flow) is invisible to it. Install and configure into <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">web</code> directly instead. Since one profile can only carry one workspace's bundle, the browser UI can be wired to one AgentRQ workspace at a time this way — use the terminal flow for several at once.</p>
                   </section>
@@ -792,7 +792,7 @@ const dshEnvExport = computed(() => `export AGENTRQ_WORKSPACE_MCP_URL='${authent
 // this one: running several workspaces means running several profiles.
 // `dsh web` is the one exception — it always boots the profile literally
 // named `web`, so a workspace-named profile is invisible to it.
-const dshEntryMode = ref('terminal');
+const dshEntryMode = ref('web');
 const dshProfile = computed(() => dshEntryMode.value === 'web' ? 'web' : `agentrq-${workspaceId.value}`);
 const dshInstallCommand = computed(() => `dsh plugin --profile ${dshProfile.value} add @agentrq/dsh-plugin-agentrq`);
 const dshStartCommand = computed(() => dshEntryMode.value === 'web' ? 'dsh web' : `dsh --profile ${dshProfile.value}`);
