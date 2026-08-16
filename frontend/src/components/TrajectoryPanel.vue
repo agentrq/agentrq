@@ -119,8 +119,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { renderMarkdown } from '../utils/markdown';
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -243,10 +242,6 @@ function toggleContentRaw(id) {
   s.has(id) ? s.delete(id) : s.add(id);
   rawContent.value = s;
 }
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }));
-}
-
 const copiedContent = ref(new Set());
 async function copyContentText(id, text) {
   await navigator.clipboard.writeText(text || '');

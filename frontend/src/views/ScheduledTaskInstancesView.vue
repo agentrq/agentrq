@@ -127,8 +127,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { renderMarkdown } from '../utils/markdown';
 import { fetchTasks, getWorkspace } from '../api';
 import { useCron } from '../composables/useCron';
 
@@ -157,10 +156,6 @@ function expandDescription() {
 
 function toggleTaskBodyRender() {
   isTaskBodyRaw.value = !isTaskBodyRaw.value;
-}
-
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }));
 }
 
 async function copyTaskBodyText() {

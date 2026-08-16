@@ -498,8 +498,7 @@ import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
 import { useSpeechToText } from '../composables/useSpeechToText';
 import { useEventBus } from '../useEventBus';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+import { renderMarkdown } from '../utils/markdown';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
 const { notifyError, notifySuccess } = useToasts();
@@ -536,10 +535,6 @@ function toggleMessageRender(id) {
   s.has(id) ? s.delete(id) : s.add(id);
   rawMessages.value = s;
 }
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text || '', { breaks: true }));
-}
-
 const copiedMessages = ref(new Set());
 async function copyMessageText(id, text) {
   await navigator.clipboard.writeText(text || '');
