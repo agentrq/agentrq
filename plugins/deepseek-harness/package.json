@@ -1,6 +1,6 @@
 {
   "name": "@agentrq/dsh-plugin-agentrq",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "AgentRQ task manager for DeepSeek Harness: create, manage, and auto-pull AgentRQ tasks without leaving the harness",
   "keywords": [
     "dsh-plugin",
