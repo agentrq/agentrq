@@ -315,9 +315,9 @@ The [`@agentrq/dsh-plugin-agentrq`](plugins/deepseek-harness/README.md) bundle b
 
 **Installation:**
 ```bash
-dsh plugin --profile agentrq-<workspace> add @agentrq/dsh-plugin-agentrq
+npx @deepseek-ai/dsh plugin --profile agentrq-<workspace> add @agentrq/dsh-plugin-agentrq
 # pin this workspace's MCP URL in ~/.dsh/profiles/agentrq-<workspace>/cordis.patch.yml
-dsh --profile agentrq-<workspace>
+npx @deepseek-ai/dsh --profile agentrq-<workspace>
 ```
 
 Copy the filled-in commands and config block from **Workspace Settings → Setup → DeepSeek Harness**. A dsh profile serves one workspace and carries its own endpoint, so run one profile per workspace and switching workspaces is switching profiles. Delivery, startup catch-up, and reconnect behavior are configurable; see the [plugin README](plugins/deepseek-harness/README.md).

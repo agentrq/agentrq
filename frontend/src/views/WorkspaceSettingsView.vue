@@ -794,8 +794,8 @@ const dshEnvExport = computed(() => `export AGENTRQ_WORKSPACE_MCP_URL='${authent
 // named `web`, so a workspace-named profile is invisible to it.
 const dshEntryMode = ref('web');
 const dshProfile = computed(() => dshEntryMode.value === 'web' ? 'web' : `agentrq-${workspaceId.value}`);
-const dshInstallCommand = computed(() => `dsh plugin --profile ${dshProfile.value} add @agentrq/dsh-plugin-agentrq`);
-const dshStartCommand = computed(() => dshEntryMode.value === 'web' ? 'dsh web' : `dsh --profile ${dshProfile.value}`);
+const dshInstallCommand = computed(() => `npx @deepseek-ai/dsh plugin --profile ${dshProfile.value} add @agentrq/dsh-plugin-agentrq`);
+const dshStartCommand = computed(() => dshEntryMode.value === 'web' ? 'npx @deepseek-ai/dsh web' : `npx @deepseek-ai/dsh --profile ${dshProfile.value}`);
 const dshPatchPath = computed(() => `~/.dsh/profiles/${dshProfile.value}/cordis.patch.yml`);
 
 // The profile's own patch layer is applied after the bundle's, so pinning the

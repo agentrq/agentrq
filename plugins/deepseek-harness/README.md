@@ -11,7 +11,7 @@ Create, manage, and automatically receive [AgentRQ](https://agentrq.com) tasks w
 **One profile per workspace.** A profile serves one AgentRQ workspace and carries its own endpoint, so name it after the workspace rather than using `default` — that is what makes [several workspaces](#multiple-workspaces) work. Your workspace's **Settings → Setup → DeepSeek Harness** page prints every command and config block below already filled in.
 
 ```sh
-dsh plugin --profile agentrq-<workspace> add @agentrq/dsh-plugin-agentrq
+npx @deepseek-ai/dsh plugin --profile agentrq-<workspace> add @agentrq/dsh-plugin-agentrq
 ```
 
 Then pin this workspace's endpoint in the profile's own patch layer, `~/.dsh/profiles/agentrq-<workspace>/cordis.patch.yml`. Copy the URL from the Settings page — it already carries the `?token=` credential that authenticates a headless client:
@@ -26,8 +26,8 @@ Then pin this workspace's endpoint in the profile's own patch layer, `~/.dsh/pro
 One row, one URL: the plugin mounts `@deepseek-ai/dsh-mcp-client` itself as a child fiber, so the endpoint is configured in exactly one place and the bridge shares this row's lifetime — disposal and HMR take it along.
 
 ```sh
-dsh --profile agentrq-<workspace> --dump-config   # shows the bundle layer and your override
-dsh --profile agentrq-<workspace>
+npx @deepseek-ai/dsh --profile agentrq-<workspace> --dump-config   # shows the bundle layer and your override
+npx @deepseek-ai/dsh --profile agentrq-<workspace>
 ```
 
 The profile's patch is applied after every bundle layer, so those two rows win. dsh watches both `cordis.patch.yml` layers and reapplies valid edits transactionally, so changing the URL takes effect without a restart.
@@ -37,14 +37,14 @@ The profile's patch is applied after every bundle layer, so those two rows win. 
 `dsh web` is an alias for `--profile web` — a fixed, dsh-shipped profile that is a different profile from any `agentrq-<workspace>` profile made above, and the two do not share bundles. Installing into one does not make the plugin visible in the other. To use this plugin from the harness's browser UI, target `web` directly:
 
 ```sh
-dsh plugin --profile web add @agentrq/dsh-plugin-agentrq
+npx @deepseek-ai/dsh plugin --profile web add @agentrq/dsh-plugin-agentrq
 ```
 
 Then either pin the endpoint in `~/.dsh/profiles/web/cordis.patch.yml` (same block as above) or export `AGENTRQ_WORKSPACE_MCP_URL` before starting:
 
 ```sh
 export AGENTRQ_WORKSPACE_MCP_URL='https://<workspace>.mcp.agentrq.com/mcp?token=<token>'
-dsh web
+npx @deepseek-ai/dsh web
 ```
 
 Because [a single profile cannot serve two workspaces](#multiple-workspaces), only one AgentRQ workspace can be wired into the browser UI this way — use the `--profile agentrq-<workspace>` flow above for several at once.
@@ -55,7 +55,7 @@ The bundle's own patch defaults both rows to `!!js process.env.AGENTRQ_WORKSPACE
 
 ```sh
 export AGENTRQ_WORKSPACE_MCP_URL='https://<workspace>.mcp.agentrq.com/mcp?token=<token>'
-dsh --profile agentrq-<workspace>
+npx @deepseek-ai/dsh --profile agentrq-<workspace>
 ```
 
 Prefer the profile patch for an interactive install: an environment variable is process-global, so with one profile per workspace you have to remember the right `export` before each start, and the wrong one connects the wrong workspace without complaint. Supply neither and the row fails to load with the `url` field named — it is a required field, not a silent default.
@@ -123,13 +123,13 @@ AgentRQ users normally have several workspaces, each with its own queue, mission
 Install once per profile, and let each profile's `cordis.patch.yml` carry its own endpoint:
 
 ```sh
-dsh plugin --profile agentrq-acme add @agentrq/dsh-plugin-agentrq
-dsh plugin --profile agentrq-beta add @agentrq/dsh-plugin-agentrq
+npx @deepseek-ai/dsh plugin --profile agentrq-acme add @agentrq/dsh-plugin-agentrq
+npx @deepseek-ai/dsh plugin --profile agentrq-beta add @agentrq/dsh-plugin-agentrq
 # …then pin acme's URL in ~/.dsh/profiles/agentrq-acme/cordis.patch.yml
 #     and beta's URL in ~/.dsh/profiles/agentrq-beta/cordis.patch.yml
 
-dsh --profile agentrq-acme    # terminal 1
-dsh --profile agentrq-beta    # terminal 2
+npx @deepseek-ai/dsh --profile agentrq-acme    # terminal 1
+npx @deepseek-ai/dsh --profile agentrq-beta    # terminal 2
 ```
 
 Because the endpoint lives in the profile rather than the environment, switching workspaces is switching profiles — nothing to re-export, and no way to start one workspace's profile pointed at another's queue.
