@@ -118,6 +118,15 @@
                     </div>
                   </section>
 
+                  <section v-if="activeConnectionTab === 'deepseek'" class="space-y-3 min-w-0 w-full overflow-hidden">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Entry point</h3>
+                    <div class="flex gap-2">
+                      <button type="button" @click="dshEntryMode = 'terminal'" :class="dshEntryMode === 'terminal' ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">Terminal (dsh)</button>
+                      <button type="button" @click="dshEntryMode = 'web'" :class="dshEntryMode === 'web' ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-200'" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors">Browser (dsh web)</button>
+                    </div>
+                    <p v-if="dshEntryMode === 'web'" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1"><code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">dsh web</code> always boots the profile literally named <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">web</code> — a workspace-named profile (used by the terminal flow) is invisible to it. Install and configure into <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">web</code> directly instead. Since one profile can only carry one workspace's bundle, the browser UI can be wired to one AgentRQ workspace at a time this way — use the terminal flow for several at once.</p>
+                  </section>
+
                   <section v-if="activeConnectionTab === 'deepseek'" class="space-y-4 min-w-0 w-full overflow-hidden">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">1. Profile Config</h3>
                     <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">Save this as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshPatchPath }}</code> after the install step below. One row, one URL — the plugin mounts the MCP bridge itself. Each profile pins its own workspace here, so switching workspaces is switching profiles, with no environment variable. <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">dsh</code> watches this file, so edits apply without a restart.</p>
@@ -214,7 +223,7 @@
                         <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Save the config above as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshPatchPath }}</code> — the install step creates that directory.</p>
                       </div>
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">3. Start the harness:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">3. {{ dshEntryMode === 'web' ? 'Start the browser UI:' : 'Start the harness:' }}</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
                             <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ dshStartCommand }}</code>
@@ -225,7 +234,8 @@
                         </div>
                       </div>
                       <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">The bundle mounts AgentRQ's tools as <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">mcp__agentrq__*</code> and holds a workspace session, so tasks assigned to this workspace's agent — and your replies — arrive on their own. Use <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrq_autopull</code> inside the harness to pause, resume, or pull now.</p>
-                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">A profile serves one workspace, so these use the profile <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshProfile }}</code>. Repeat from each workspace's Settings page to work several at once — each profile carries its own URL, so nothing to re-export when you switch.</p>
+                      <p v-if="dshEntryMode === 'web'" class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">These target the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">web</code> profile that <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">dsh web</code> always boots. Only one workspace can be wired into the browser UI this way — switch to the Terminal tab above for several workspaces at once.</p>
+                      <p v-else class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">A profile serves one workspace, so these use the profile <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshProfile }}</code>. Repeat from each workspace's Settings page to work several at once — each profile carries its own URL, so nothing to re-export when you switch.</p>
                     </div>
 
                     <div v-else class="space-y-4 min-w-0">
@@ -780,9 +790,12 @@ approval_mode = "approve"`;
 const dshEnvExport = computed(() => `export AGENTRQ_WORKSPACE_MCP_URL='${authenticatedUrl.value}'`);
 // A dsh profile serves one AgentRQ workspace, so the profile is named after
 // this one: running several workspaces means running several profiles.
-const dshProfile = computed(() => `agentrq-${workspaceId.value}`);
+// `dsh web` is the one exception — it always boots the profile literally
+// named `web`, so a workspace-named profile is invisible to it.
+const dshEntryMode = ref('terminal');
+const dshProfile = computed(() => dshEntryMode.value === 'web' ? 'web' : `agentrq-${workspaceId.value}`);
 const dshInstallCommand = computed(() => `dsh plugin --profile ${dshProfile.value} add @agentrq/dsh-plugin-agentrq`);
-const dshStartCommand = computed(() => `dsh --profile ${dshProfile.value}`);
+const dshStartCommand = computed(() => dshEntryMode.value === 'web' ? 'dsh web' : `dsh --profile ${dshProfile.value}`);
 const dshPatchPath = computed(() => `~/.dsh/profiles/${dshProfile.value}/cordis.patch.yml`);
 
 // The profile's own patch layer is applied after the bundle's, so pinning the

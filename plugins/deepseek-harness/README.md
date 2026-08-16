@@ -32,6 +32,23 @@ dsh --profile agentrq-<workspace>
 
 The profile's patch is applied after every bundle layer, so those two rows win. dsh watches both `cordis.patch.yml` layers and reapplies valid edits transactionally, so changing the URL takes effect without a restart.
 
+### Using dsh web (browser UI)
+
+`dsh web` is an alias for `--profile web` — a fixed, dsh-shipped profile that is a different profile from any `agentrq-<workspace>` profile made above, and the two do not share bundles. Installing into one does not make the plugin visible in the other. To use this plugin from the harness's browser UI, target `web` directly:
+
+```sh
+dsh plugin --profile web add @agentrq/dsh-plugin-agentrq
+```
+
+Then either pin the endpoint in `~/.dsh/profiles/web/cordis.patch.yml` (same block as above) or export `AGENTRQ_WORKSPACE_MCP_URL` before starting:
+
+```sh
+export AGENTRQ_WORKSPACE_MCP_URL='https://<workspace>.mcp.agentrq.com/mcp?token=<token>'
+dsh web
+```
+
+Because [a single profile cannot serve two workspaces](#multiple-workspaces), only one AgentRQ workspace can be wired into the browser UI this way — use the `--profile agentrq-<workspace>` flow above for several at once.
+
 ### Configuring without a file edit
 
 The bundle's own patch defaults both rows to `!!js process.env.AGENTRQ_WORKSPACE_MCP_URL`, so a container or CI job can export the endpoint instead of writing a profile patch:
