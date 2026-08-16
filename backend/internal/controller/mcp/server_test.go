@@ -766,3 +766,83 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
+
+// TestWorkspaceServer_PersistToolCall_AutoAllowed locks in that auto-allowed
+// tool calls (both workspace-level pattern matches and task-level
+// AllowAllCommands/"YOLO") are actually written to tool call history via
+// persistToolCall, which notificationMiddleware and HandleCustomNotification
+// call with status="auto_allowed" for those two cases (see server.go).
+func TestWorkspaceServer_PersistToolCall_AutoAllowed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockIdgen.EXPECT().NextID().Return(int64(555))
+
+	var recorded model.ToolCall
+	ps := &WorkspaceServer{
+		workspaceID: 100,
+		idgen:       mockIdgen,
+		recordToolCall: func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+			recorded = tc
+			tc.ID = 999
+			return tc, nil
+		},
+	}
+
+	params := PermissionRequestParams{
+		RequestID:    "req-1",
+		ToolName:     "Bash",
+		Description:  "run tests",
+		InputPreview: `{"command":"go test ./..."}`,
+	}
+
+	gotID := ps.persistToolCall(context.Background(), 42, params, "auto_allowed")
+
+	if gotID != 999 {
+		t.Errorf("expected returned ID 999, got %d", gotID)
+	}
+	if recorded.ID != 555 {
+		t.Errorf("expected generated ID 555, got %d", recorded.ID)
+	}
+	if recorded.TaskID != 42 {
+		t.Errorf("expected task ID 42, got %d", recorded.TaskID)
+	}
+	if recorded.WorkspaceID != 100 {
+		t.Errorf("expected workspace ID 100, got %d", recorded.WorkspaceID)
+	}
+	if recorded.ToolName != "Bash" {
+		t.Errorf("expected tool name Bash, got %s", recorded.ToolName)
+	}
+	if recorded.Status != "auto_allowed" {
+		t.Errorf("expected status auto_allowed, got %s", recorded.Status)
+	}
+}
+
+func TestWorkspaceServer_PersistToolCall_NoRecordFunc(t *testing.T) {
+	ps := &WorkspaceServer{}
+	gotID := ps.persistToolCall(context.Background(), 42, PermissionRequestParams{ToolName: "Bash"}, "auto_allowed")
+	if gotID != 0 {
+		t.Errorf("expected 0 when recordToolCall is nil, got %d", gotID)
+	}
+}
+
+func TestWorkspaceServer_PersistToolCall_RecordError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockIdgen.EXPECT().NextID().Return(int64(1))
+
+	ps := &WorkspaceServer{
+		idgen: mockIdgen,
+		recordToolCall: func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+			return model.ToolCall{}, fmt.Errorf("db down")
+		},
+	}
+
+	gotID := ps.persistToolCall(context.Background(), 42, PermissionRequestParams{ToolName: "Bash"}, "auto_allowed")
+	if gotID != 0 {
+		t.Errorf("expected 0 on record error, got %d", gotID)
+	}
+}
