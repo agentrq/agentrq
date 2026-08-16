@@ -67,6 +67,22 @@ export interface Config {
   guidance: boolean
   /** Per-request timeout for AgentRQ tool calls, in milliseconds. */
   requestTimeoutMs: number
+  /**
+   * Provider route for each task's dedicated session. Empty means "copy
+   * whatever an already-live agent in this process is using" — a task session
+   * created with no provider/model at all fails every turn (the persona
+   * assembly has no value for `{{model}}`), so this and `model` exist
+   * specifically to avoid that when no other session happens to be live yet.
+   */
+  provider: string
+  /** Model id for each task's dedicated session. Empty defers to `provider`'s fallback. */
+  model: string
+  /**
+   * Working directory for each task's dedicated session. Empty uses the dsh
+   * process's own cwd — the same directory an interactively opened session
+   * gets, and what a capable UI groups sessions by.
+   */
+  cwd: string
 }
 
 export const Config = Schema.object({
@@ -82,4 +98,7 @@ export const Config = Schema.object({
   }).default({ initialDelayMs: 1000, maxDelayMs: 900000 }),
   guidance: Schema.boolean().default(true).description('Contribute the AgentRQ working-agreement system-prompt section.'),
   requestTimeoutMs: Schema.number().min(1000).default(30000).description('Timeout for a single AgentRQ tool call.'),
+  provider: Schema.string().default('').description('Provider route for each task\'s dedicated session. Empty copies an already-live agent\'s provider.'),
+  model: Schema.string().default('').description('Model id for each task\'s dedicated session. Empty copies an already-live agent\'s model.'),
+  cwd: Schema.string().default('').description('Working directory for each task\'s dedicated session. Empty uses the dsh process\'s own cwd.'),
 })

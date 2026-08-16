@@ -808,10 +808,10 @@ const dshPatchYaml = computed(() => `- id: agentrq
 
 // Absent keys fall back to the schema defaults, so a row only restates what it
 // changes.
-const dshTuningYaml = `- id: agentrq
+const dshTuningYaml = computed(() => `- id: agentrq
   name: '@agentrq/dsh-plugin-agentrq'
   config:
-    url: "<the URL above>"
+    url: "${authenticatedUrl.value}"
     serverName: agentrq
     deliverPushes: true
     catchUpOnStart: true
@@ -819,7 +819,13 @@ const dshTuningYaml = `- id: agentrq
       initialDelayMs: 1000
       maxDelayMs: 900000
     guidance: true
-    requestTimeoutMs: 30000`;
+    requestTimeoutMs: 30000
+    # Each task gets its own dedicated session; set model explicitly so the
+    # very first one has something to start with instead of copying whatever
+    # session happens to already be live.
+    provider: "<provider, e.g. anthropic>"
+    model: "<model id>"
+    cwd: ""`);
 
 function copyToClipboard(text, key) {
   navigator.clipboard.writeText(text);

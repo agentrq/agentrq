@@ -14,6 +14,9 @@ const CONFIG: Config = {
   reconnect: { initialDelayMs: 1000, maxDelayMs: 900000 },
   guidance: true,
   requestTimeoutMs: 30000,
+  provider: '',
+  model: '',
+  cwd: '',
 }
 
 function task(id: string, status = 'notstarted'): AgentRqTask {
@@ -34,20 +37,33 @@ interface SpawnedSession {
   readonly deliveries: Delivery[]
   status: 'idle' | 'running'
   disposed: boolean
+  readonly meta: { cwd?: string } | undefined
+  readonly agentOptions: { provider?: string; model?: string } | undefined
   emitStatus(status: 'idle' | 'running'): void
 }
 
 function harness() {
   const warnings: string[] = []
   const spawned: SpawnedSession[] = []
+  // Every agent `ctx.agents.get()`/`list()` can see: pre-seeded stand-ins for
+  // an already-open chat, plus every agent `create()` spawns below.
+  const registry = new Map<string, { id: string; options: { provider?: string; model?: string } }>()
+  // A bare-bones stand-in for cordis' scope-filtered dispatch: agent-scoped
+  // listeners (registered on `agent.ctx`) see only that agent's events, while
+  // top-level listeners (registered directly on `ctx`) see every agent's.
+  const globalStatusListeners: Array<(payload: { agent: unknown; status: string }) => void> = []
   let spawnCount = 0
+  let liveAgentCount = 0
 
   const agentsService = {
-    create: async (): Promise<{ agent: unknown; dispose: () => Promise<void> }> => {
+    create: async (options: {
+      meta?: { cwd?: string }
+      agentOptions?: { provider?: string; model?: string }
+    }): Promise<{ agent: unknown; dispose: () => Promise<void> }> => {
       spawnCount += 1
       const id = `spawned-${spawnCount}`
       const deliveries: Delivery[] = []
-      const statusListeners: Array<(payload: { status: string }) => void> = []
+      const statusListeners: Array<(payload: { agent: unknown; status: string }) => void> = []
       const disposedListeners: Array<() => void> = []
       const record = (route: Delivery['route']) => (message: { content: readonly { type: string; text?: string }[] }) => {
         deliveries.push({ route, text: message.content.map(block => block.text ?? '').join('') })
@@ -58,18 +74,23 @@ function harness() {
         deliveries,
         status: 'idle',
         disposed: false,
+        meta: options.meta,
+        agentOptions: options.agentOptions,
         emitStatus(status) {
           session.status = status
-          for (const listener of statusListeners) listener({ status })
+          const payload = { agent, status }
+          for (const listener of statusListeners) listener(payload)
+          for (const listener of globalStatusListeners) listener(payload)
         },
       }
 
       const agent = {
         id,
         get status() { return session.status },
+        options: options.agentOptions ?? {},
         ctx: {
           on: (event: string, listener: (payload: unknown) => void) => {
-            if (event === 'agent/status') statusListeners.push(listener as (payload: { status: string }) => void)
+            if (event === 'agent/status') statusListeners.push(listener as (payload: { agent: unknown; status: string }) => void)
             if (event === 'agent/disposed') disposedListeners.push(listener as () => void)
             return () => {}
           },
@@ -79,26 +100,55 @@ function harness() {
       }
 
       spawned.push(session)
+      registry.set(id, agent)
       return {
         agent,
         dispose: async (): Promise<void> => {
           session.disposed = true
+          registry.delete(id)
           for (const listener of disposedListeners) listener()
         },
       }
     },
+    list: () => [...registry.values()],
+    get: (id: string) => registry.get(id),
     withoutInitiator: <T>(operation: () => T): T => operation(),
   }
 
   const ctx = {
     logger: { warn: (message: string) => { warnings.push(message) } },
     agents: agentsService,
+    on: (event: string, listener: (payload: { agent: unknown; status: string }) => void) => {
+      if (event === 'agent/status') globalStatusListeners.push(listener)
+      return () => {}
+    },
+  }
+
+  /** Seed a stand-in for an already-open, non-task chat session. */
+  function addLiveAgent(options: { provider?: string; model?: string }): string {
+    liveAgentCount += 1
+    const id = `live-${liveAgentCount}`
+    registry.set(id, { id, options })
+    return id
+  }
+
+  /** Simulate one live agent (by id) starting a turn, as the activity tracker observes it. */
+  function markActive(agentId: string): void {
+    const agent = registry.get(agentId)
+    for (const listener of globalStatusListeners) listener({ agent, status: 'running' })
+  }
+
+  /** Simulate a live agent going away (closed tab, disposed session, …). */
+  function removeLiveAgent(agentId: string): void {
+    registry.delete(agentId)
   }
 
   const queue: (AgentRqTask | undefined)[] = []
   const failures: (Error | undefined)[] = []
   const statuses = new Map<string, string>()
+  const fetchTaskFailures: (Error | undefined)[] = []
   let starts = 0
+  let fetchTaskCalls = 0
   let connected = true
   const client = {
     get connected() { return connected },
@@ -110,6 +160,9 @@ function harness() {
       return queue.shift()
     },
     fetchTask: async (id: string): Promise<AgentRqTask | undefined> => {
+      fetchTaskCalls += 1
+      const failure = fetchTaskFailures.shift()
+      if (failure !== undefined) throw failure
       const status = statuses.get(id)
       return status === undefined ? undefined : task(id, status)
     },
@@ -121,7 +174,12 @@ function harness() {
     queue,
     failures,
     statuses,
+    fetchTaskFailures,
+    addLiveAgent,
+    markActive,
+    removeLiveAgent,
     starts: () => starts,
+    fetchTaskCalls: () => fetchTaskCalls,
     setConnected: (value: boolean) => { connected = value },
     manager: (config: Config = CONFIG) => new TaskSessionManager(
       ctx as unknown as Context,
@@ -394,5 +452,150 @@ describe('TaskSessionManager', () => {
     await manager.dispose()
 
     expect(h.spawned.every(session => session.disposed)).toBe(true)
+  })
+
+  it('opens a task session with the dsh process cwd and an existing agent\'s model, when config sets neither', async () => {
+    const h = harness()
+    h.addLiveAgent({ provider: 'anthropic', model: 'claude' })
+    const manager = h.manager()
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.meta?.cwd).toBe(process.cwd())
+    expect(h.spawned[0]?.agentOptions).toEqual({ provider: 'anthropic', model: 'claude' })
+
+    await manager.dispose()
+  })
+
+  it('leaves agentOptions undefined with no config and no other live agent to copy', async () => {
+    const h = harness()
+    const manager = h.manager()
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.agentOptions).toBeUndefined()
+
+    await manager.dispose()
+  })
+
+  it('prefers explicit config over an existing agent\'s model/provider/cwd', async () => {
+    const h = harness()
+    h.addLiveAgent({ provider: 'openai', model: 'gpt' })
+    const manager = h.manager({ ...CONFIG, provider: 'anthropic', model: 'claude', cwd: '/srv/repo' })
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.meta?.cwd).toBe('/srv/repo')
+    expect(h.spawned[0]?.agentOptions).toEqual({ provider: 'anthropic', model: 'claude' })
+
+    await manager.dispose()
+  })
+
+  it('omits provider when only model is configured', async () => {
+    const h = harness()
+    const manager = h.manager({ ...CONFIG, model: 'claude' })
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.agentOptions).toEqual({ model: 'claude' })
+
+    await manager.dispose()
+  })
+
+  it('copies the most recently active agent\'s model, not just the first one registered', async () => {
+    const h = harness()
+    const older = h.addLiveAgent({ provider: 'openai', model: 'gpt' })
+    const newer = h.addLiveAgent({ provider: 'anthropic', model: 'claude' })
+    const manager = h.manager()
+    await manager.start()
+
+    // The older agent had a turn a while ago; the newer one just started one.
+    h.markActive(older)
+    h.markActive(newer)
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.agentOptions).toEqual({ provider: 'anthropic', model: 'claude' })
+
+    await manager.dispose()
+  })
+
+  it('falls back to registration order when no agent has been observed active yet', async () => {
+    const h = harness()
+    h.addLiveAgent({ provider: 'openai', model: 'gpt' })
+    h.addLiveAgent({ provider: 'anthropic', model: 'claude' })
+    const manager = h.manager()
+    await manager.start()
+
+    // Neither agent has had a turn since the manager started watching.
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.agentOptions).toEqual({ provider: 'openai', model: 'gpt' })
+
+    await manager.dispose()
+  })
+
+  it('ignores a most-recently-active agent that is no longer live', async () => {
+    const h = harness()
+    const gone = h.addLiveAgent({ provider: 'openai', model: 'gpt' })
+    h.addLiveAgent({ provider: 'anthropic', model: 'claude' })
+    const manager = h.manager()
+    await manager.start()
+
+    h.markActive(gone)
+    h.removeLiveAgent(gone)
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.agentOptions).toEqual({ provider: 'anthropic', model: 'claude' })
+
+    await manager.dispose()
+  })
+
+  it('leads a push-opened session\'s first message with the task\'s title, fetched via getTask', async () => {
+    const h = harness()
+    h.statuses.set('t1', 'notstarted')
+    const manager = h.manager()
+
+    await manager.deliverPush({ chatId: 't1', text: 'Next assigned task:\nTitle: title t1', user: 'human' })
+
+    expect(h.spawned[0]?.deliveries[0]?.text.startsWith('title t1\n\n')).toBe(true)
+
+    await manager.dispose()
+  })
+
+  it('leads a startup-caught-up task\'s first message with its own title, with no extra getTask call', async () => {
+    const h = harness()
+    h.queue.push(task('t1'))
+    const manager = h.manager()
+
+    await manager.start()
+
+    expect(h.spawned[0]?.deliveries[0]?.text.startsWith('title t1\n\n')).toBe(true)
+    expect(h.fetchTaskCalls()).toBe(0)
+
+    await manager.dispose()
+  })
+
+  it('delivers the plain framing when no title is available', async () => {
+    const h = harness()
+    const manager = h.manager()
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.deliveries[0]?.text.startsWith('[AGENTRQ]')).toBe(true)
+
+    await manager.dispose()
+  })
+
+  it('falls back to the plain framing when the title lookup fails', async () => {
+    const h = harness()
+    h.fetchTaskFailures.push(new Error('workspace unreachable'))
+    const manager = h.manager()
+
+    await manager.deliverPush({ chatId: 't1', text: 'ping', user: 'human' })
+
+    expect(h.spawned[0]?.deliveries[0]?.text.startsWith('[AGENTRQ]')).toBe(true)
+    expect(h.warnings.join('\n')).toContain('workspace unreachable')
+
+    await manager.dispose()
   })
 })

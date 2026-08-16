@@ -12,7 +12,7 @@
  * @module @agentrq/dsh-plugin-agentrq
  */
 
-import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -73,6 +73,8 @@ export class TaskSessionManager {
   private paused = false
   private stopping = false
   private spawnSeq = 0
+  private mostRecentActive: Agent | undefined
+  private stopWatchingActivity: (() => void) | undefined
 
   constructor(
     private readonly ctx: Context,
@@ -82,6 +84,11 @@ export class TaskSessionManager {
 
   /** Open the workspace session and, optionally, claim any waiting task. */
   async start(): Promise<void> {
+    // Registered before the client connects, so a task pushed the instant the
+    // session opens still has every prior turn's activity to fall back on.
+    this.stopWatchingActivity = this.ctx.on('agent/status', ({ agent, status }) => {
+      if (status === 'running') this.mostRecentActive = agent
+    })
     await this.client.start()
     if (!this.config.catchUpOnStart || this.stopping) return
     try {
@@ -98,6 +105,7 @@ export class TaskSessionManager {
   async dispose(): Promise<void> {
     this.stopping = true
     this.abort.abort()
+    this.stopWatchingActivity?.()
     const handles = [...this.sessions.values()]
     this.sessions.clear()
     await this.client.dispose()
@@ -159,6 +167,8 @@ export class TaskSessionManager {
     // The workspace repeats an unclaimed task verbatim every minute.
     if (this.remember(message.chatId, message.text)) return
     this.lastDeliveredTaskId = message.chatId
+    // A push carries no structured title; routeToSession fetches one itself
+    // only if it turns out to be opening a brand new session.
     await this.routeToSession(message.chatId, renderPushFraming(message, this.config.serverName))
   }
 
@@ -167,11 +177,16 @@ export class TaskSessionManager {
     if (!this.deliverable()) return
     if (this.remember(task.id, task.text)) return
     this.lastDeliveredTaskId = task.id
-    await this.routeToSession(task.id, renderTaskFraming(task, this.config.serverName))
+    await this.routeToSession(task.id, renderTaskFraming(task, this.config.serverName), task.title)
   }
 
-  /** Deliver framed text to a task's session, opening one if none is open yet. */
-  private async routeToSession(taskId: string, framed: string): Promise<void> {
+  /**
+   * Deliver framed text to a task's session, opening one if none is open yet.
+   *
+   * @param knownTitle - the task's title, when the caller already has it
+   * (avoids an extra `getTask` round trip); fetched on demand otherwise.
+   */
+  private async routeToSession(taskId: string, framed: string, knownTitle?: string): Promise<void> {
     const existing = this.sessions.get(taskId)
     if (existing !== undefined) {
       this.queue(existing.agent, framed)
@@ -181,12 +196,29 @@ export class TaskSessionManager {
     if (handle === undefined) return
     this.sessions.set(taskId, handle)
     this.watch(taskId, handle)
-    this.queue(handle.agent, framed)
+    const title = knownTitle ?? await this.fetchTitle(taskId)
+    this.queue(handle.agent, title === undefined || title === '' ? framed : `${title}\n\n${framed}`)
+  }
+
+  /**
+   * The task's title, so a UI that derives a session's display name from its
+   * first message shows something meaningful instead of the framing's own
+   * tag line. Best effort: a lookup failure just skips the lead line.
+   */
+  private async fetchTitle(taskId: string): Promise<string | undefined> {
+    try {
+      const task = await this.client.fetchTask(taskId, this.abort.signal)
+      return task?.title
+    } catch (error: unknown) {
+      this.warn(`could not fetch a title for task "${taskId}"`, error)
+      return undefined
+    }
   }
 
   /** Open a fresh dedicated agent/session for one task. */
   private async openSession(taskId: string): Promise<AgentHandle | undefined> {
     this.spawnSeq += 1
+    const agentOptions = this.resolveAgentOptions()
     try {
       return await this.ctx.agents.create({
         // `SessionId` brands a string at the type level only (no runtime
@@ -194,11 +226,35 @@ export class TaskSessionManager {
         // for its identity function.
         sessionId: `agentrq-task-${taskId}-${this.spawnSeq}` as SessionId,
         signal: this.abort.signal,
+        meta: { cwd: this.config.cwd !== '' ? this.config.cwd : process.cwd() },
+        ...(agentOptions === undefined ? {} : { agentOptions }),
       })
     } catch (error: unknown) {
       this.warn(`could not open a dedicated session for task "${taskId}"`, error)
       return undefined
     }
+  }
+
+  /**
+   * Provider/model for a fresh task session.
+   *
+   * A session created with neither fails every turn — prompt assembly has no
+   * value for `{{model}}` — so this always returns something concrete:
+   * config when set; otherwise whichever live agent most recently started a
+   * turn (tracked since `start()`, so it reflects genuine activity rather
+   * than registration order); otherwise the longest-lived agent still
+   * around, for a task pushed before this process has seen any activity yet.
+   */
+  private resolveAgentOptions(): AgentOptions | undefined {
+    if (this.config.model !== '') {
+      return this.config.provider === ''
+        ? { model: this.config.model }
+        : { provider: this.config.provider, model: this.config.model }
+    }
+    const active = this.mostRecentActive
+    if (active !== undefined && this.ctx.agents.get(active.id) === active) return active.options
+    const agents = this.ctx.agents.list()
+    return agents[0]?.options
   }
 
   /**
