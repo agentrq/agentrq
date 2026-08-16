@@ -67,7 +67,7 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 			status = "notstarted"
 		}
 	}
-	if !isValidTaskStatus(status) {
+	if !IsValidTaskStatus(status) {
 		return nil, fmt.Errorf("invalid task status: %s", status)
 	}
 
@@ -294,7 +294,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		return nil, fmt.Errorf("cannot update status of a chronic task template; it must remain in 'cron' state")
 	}
 
-	if !isValidTaskStatus(req.Status) {
+	if !IsValidTaskStatus(req.Status) {
 		return nil, fmt.Errorf("invalid task status: %s", req.Status)
 	}
 
@@ -774,7 +774,10 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
-func isValidTaskStatus(status string) bool {
+// IsValidTaskStatus reports whether status is one of the legal task statuses:
+// notstarted, ongoing, completed, rejected, cron, blocked. It is shared by the
+// REST and MCP write paths so both entry points enforce identical validation.
+func IsValidTaskStatus(status string) bool {
 	switch status {
 	case "notstarted", "ongoing", "completed", "rejected", "cron", "blocked":
 		return true

@@ -110,8 +110,13 @@ func TestRepository_GetNextTask(t *testing.T) {
 	if task.ID != 11 {
 		t.Errorf("expected task 11, got %d", task.ID)
 	}
+	// The dequeue atomically claims the task: it is returned as "ongoing" and is
+	// never handed out again.
+	if task.Status != "ongoing" {
+		t.Errorf("expected claimed task status 'ongoing', got %q", task.Status)
+	}
 
-	// Case 4: Tie-break by ID
+	// Case 4: A claimed task is not handed out again; tie-break by ID on fresh tasks.
 	db.Create(&model.Task{
 		ID:          13,
 		WorkspaceID: workspaceID,
@@ -121,10 +126,38 @@ func TestRepository_GetNextTask(t *testing.T) {
 		SortOrder:   5,
 		CreatedAt:   now.Add(3 * time.Hour),
 	})
-	// Now 11 and 13 have same SortOrder 5. ID 11 should come first.
-	task, _ = repo.GetNextTask(ctx, workspaceID, userID)
-	if task.ID != 11 {
-		t.Errorf("expected task 11 (tie-break by ID), got %d", task.ID)
+	db.Create(&model.Task{
+		ID:          14,
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Status:      "notstarted",
+		Assignee:    "agent",
+		SortOrder:   5,
+		CreatedAt:   now.Add(4 * time.Hour),
+	})
+	// 13 and 14 share SortOrder 5; 13 (lower ID) is claimed first. Task 11 was
+	// already claimed in Case 3, so it must not be returned again.
+	task, err = repo.GetNextTask(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if task.ID != 13 {
+		t.Errorf("expected task 13 (tie-break by ID), got %d", task.ID)
+	}
+
+	// Case 5: each dequeue advances the queue until it is exhausted.
+	for _, want := range []int64{14, 12, 10} {
+		task, err = repo.GetNextTask(ctx, workspaceID, userID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if task.ID != want {
+			t.Errorf("expected task %d, got %d", want, task.ID)
+		}
+	}
+	_, err = repo.GetNextTask(ctx, workspaceID, userID)
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound after queue drained, got %v", err)
 	}
 }
 

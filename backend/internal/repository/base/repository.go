@@ -301,8 +301,13 @@ func (r *repository) ListTasks(ctx context.Context, req entity.ListTasksRequest,
 	return tasks, nil
 }
 
+// GetNextTask atomically claims (dequeues) the next eligible task for an agent.
+// The claim is a guarded UPDATE (WHERE status = 'notstarted'): exactly one of N
+// concurrent claimers wins each task, and the losers retry with the next
+// candidate. The returned task has status "ongoing", so two agents can never be
+// handed the same task (the previous bare SELECT returned the top-of-queue task
+// to every caller without changing its status).
 func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID int64) (model.Task, error) {
-	var t model.Task
 	dialect := r.conn(ctx).Dialector.Name()
 	var sortExpr string
 	if dialect == "sqlite" {
@@ -312,15 +317,36 @@ func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID 
 		sortExpr = "(CASE WHEN sort_order > 0 THEN sort_order ELSE EXTRACT(EPOCH FROM created_at) END)"
 	}
 
-	err := r.conn(ctx).
-		Where("workspace_id = ? AND user_id = ? AND status = ? AND assignee = ?", workspaceID, userID, "notstarted", "agent").
-		Order(fmt.Sprintf("%s ASC, id ASC", sortExpr)).
-		First(&t).Error
+	for attempt := 0; attempt < 10; attempt++ {
+		var t model.Task
+		err := r.conn(ctx).
+			Where("workspace_id = ? AND user_id = ? AND status = ? AND assignee = ?", workspaceID, userID, "notstarted", "agent").
+			Order(fmt.Sprintf("%s ASC, id ASC", sortExpr)).
+			First(&t).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Task{}, ErrNotFound
+		}
+		if err != nil {
+			return model.Task{}, err
+		}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.Task{}, ErrNotFound
+		// Atomic claim: only the first claimer to flip the status wins the task;
+		// every other claimer sees 0 affected rows and moves on.
+		res := r.conn(ctx).
+			Model(&model.Task{}).
+			Where("id = ? AND status = ?", t.ID, "notstarted").
+			Update("status", "ongoing")
+		if res.Error != nil {
+			return model.Task{}, res.Error
+		}
+		if res.RowsAffected == 1 {
+			t.Status = "ongoing"
+			return t, nil
+		}
+		// Lost the claim race to another dequeue; try the next candidate.
 	}
-	return t, err
+
+	return model.Task{}, fmt.Errorf("failed to claim a task after repeated attempts")
 }
 
 func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {

@@ -328,9 +328,19 @@ func New(cfg Config) (*App, error) {
 			},
 			func(ctx context.Context, taskID int64, status string) (model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+
+				// Mirror the REST path (crud.UpdateTaskStatus) so the MCP write
+				// path cannot write unknown statuses or move cron templates.
+				if !crud.IsValidTaskStatus(status) {
+					return model.Task{}, fmt.Errorf("invalid task status: %s", status)
+				}
+
 				m, err := repo.GetTask(ctx, workspaceID, taskID, uid)
 				if err != nil {
 					return model.Task{}, err
+				}
+				if m.Status == "cron" {
+					return model.Task{}, fmt.Errorf("cannot update status of a cron task template; it must remain in 'cron' state")
 				}
 				if m.Status == status {
 					return m, nil
@@ -407,7 +417,49 @@ func New(cfg Config) (*App, error) {
 			},
 			func(ctx context.Context) (model.Task, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				return repo.GetNextTask(ctx, workspaceID, uid)
+				t, err := repo.GetNextTask(ctx, workspaceID, uid)
+				if err != nil {
+					return model.Task{}, err
+				}
+
+				// The dequeue atomically claimed the task (status -> "ongoing").
+				// Surface that transition exactly like updateTaskStatus would — a
+				// thread message plus CRUD events — so the human UI flips the task
+				// to ongoing in real time (the frontend does not poll).
+				msgID := ids.NextID()
+				_ = repo.CreateMessage(ctx, model.Message{
+					ID:        msgID,
+					CreatedAt: time.Now(),
+					TaskID:    t.ID,
+					UserID:    uid,
+					Sender:    "agent",
+					Text:      fmt.Sprintf("Status updated to: %s", t.Status),
+				})
+				pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+					PubSubID: entity.PubSubTopicCRUD,
+					Event: entity.CRUDEvent{
+						Action:       entity.ActionTaskUpdate,
+						WorkspaceID:  workspaceID,
+						UserID:       uid,
+						ResourceType: entity.ResourceTask,
+						ResourceID:   t.ID,
+						Actor:        entity.ActorAgent,
+						Origin:       entity.OriginMCP,
+					},
+				})
+				pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
+					PubSubID: entity.PubSubTopicCRUD,
+					Event: entity.CRUDEvent{
+						Action:       entity.ActionMessageCreate,
+						WorkspaceID:  workspaceID,
+						UserID:       uid,
+						ResourceType: entity.ResourceMessage,
+						ResourceID:   msgID,
+						Actor:        entity.ActorAgent,
+						Origin:       entity.OriginMCP,
+					},
+				})
+				return t, nil
 			},
 			func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 				id := monoflake.IDFromBase62(chatID)
