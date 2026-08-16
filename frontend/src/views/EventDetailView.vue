@@ -6,6 +6,7 @@ import { useToasts } from '../composables/useToasts'
 import { useCron } from '../composables/useCron'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import DeleteModal from '../components/DeleteModal.vue'
+import LoadingState from '../components/LoadingState.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -470,7 +471,9 @@ onMounted(async () => {
         </Transition>
 
         <!-- Triggers List -->
-        <div v-if="loadingTriggers" class="text-sm text-gray-500 dark:text-zinc-400 py-4 text-center">Loading triggers…</div>
+        <div v-if="loadingTriggers" class="py-4">
+          <LoadingState label="Loading triggers…" />
+        </div>
         <div v-else-if="triggers.length === 0 && !showTriggerForm"
           class="py-8 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-center">
           <p class="text-sm font-semibold text-gray-500 dark:text-zinc-400">No triggers yet</p>
@@ -514,7 +517,9 @@ onMounted(async () => {
           <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">Tasks automatically spawned each time this event fired.</p>
         </div>
 
-        <div v-if="loadingTasks" class="text-sm text-gray-500 dark:text-zinc-400 py-4 text-center">Loading tasks…</div>
+        <div v-if="loadingTasks" class="py-4">
+          <LoadingState label="Loading tasks…" />
+        </div>
         <div v-else-if="tasks.length === 0"
           class="py-8 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-center">
           <p class="text-sm font-semibold text-gray-500 dark:text-zinc-400">No tasks yet</p>

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { fetchEvents, createEvent, deleteEvent } from '../api'
 import { useToasts } from '../composables/useToasts'
 import DeleteModal from '../components/DeleteModal.vue'
+import LoadingState from '../components/LoadingState.vue'
 
 const router = useRouter()
 const { notifyError, notifySuccess } = useToasts()
@@ -181,7 +182,9 @@ onMounted(loadEvents)
 
       <!-- Events List -->
       <div>
-        <div v-if="loading" class="text-sm text-gray-500 dark:text-zinc-400 py-8 text-center">Loading events…</div>
+        <div v-if="loading" class="py-8">
+          <LoadingState label="Loading events…" />
+        </div>
 
         <div v-else-if="events.length === 0 && !showCreateForm"
              class="py-12 px-4 border border-dashed border-gray-200 dark:border-zinc-800 rounded-xl text-center">

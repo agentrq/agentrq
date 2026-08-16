@@ -43,8 +43,8 @@
       <div v-show="!selectedTaskId || !isMobile" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
         
         <!-- Task List -->
-        <div v-if="loading" class="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2 pb-20 relative">
-          Loading tasks...
+        <div v-if="loading" class="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2 pb-20 relative flex items-center justify-center">
+          <LoadingState label="Loading tasks..." />
         </div>
         
         <div v-else class="space-y-6 pb-6 overflow-y-auto custom-scrollbar px-4">
@@ -161,6 +161,7 @@ import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
 import { useEventBus } from '../useEventBus';
 import { useViewport } from '../composables/useViewport';
+import LoadingState from '../components/LoadingState.vue';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();

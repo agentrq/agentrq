@@ -59,9 +59,8 @@
 
     <!-- Workspace list -->
     <div class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
-      <div v-if="loadingWorkspaces" class="text-[10px] font-black text-gray-500 dark:text-zinc-500 animate-pulse flex items-center gap-3 py-8 justify-center">
-        <div class="w-5 h-5 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin"></div>
-        Loading Workspaces...
+      <div v-if="loadingWorkspaces" class="py-8">
+        <LoadingState label="Loading Workspaces..." />
       </div>
 
       <div v-else class="space-y-12">
@@ -233,6 +232,7 @@ import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
+import LoadingState from '../components/LoadingState.vue';
 
 const { toKebabCase, liveKebabCase } = useFormat();
 const tooltipStore = useTooltipStore();

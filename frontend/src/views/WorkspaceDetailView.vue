@@ -1,8 +1,8 @@
 <template>
   <div class="flex flex-col h-full w-full bg-transparent">
     
-    <div v-if="loading" class="flex-1 flex flex-col items-center justify-center py-20 text-sm font-bold text-gray-500 dark:text-zinc-500 animate-pulse">
-      Loading workspace context...
+    <div v-if="loading" class="flex-1 flex items-center justify-center py-20">
+      <LoadingState label="Loading workspace context..." />
     </div>
     
     <div v-else-if="error" class="flex-1 text-center py-6 text-sm font-bold text-red-600 border border-red-300 bg-red-50 p-4 rounded-sm">
@@ -177,6 +177,7 @@ import { useViewport } from '../composables/useViewport';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import TaskFeed from '../components/TaskFeed.vue';
+import LoadingState from '../components/LoadingState.vue';
 
 const { toKebabCase } = useFormat();
 

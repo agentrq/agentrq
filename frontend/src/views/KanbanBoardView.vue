@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col h-full w-full bg-transparent min-h-0">
-    <div v-if="loading" class="flex-1 flex items-center justify-center py-20 text-sm font-bold text-gray-500 dark:text-zinc-500 animate-pulse">
-      Loading board...
+    <div v-if="loading" class="flex-1 flex items-center justify-center py-20">
+      <LoadingState label="Loading board..." />
     </div>
 
     <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0">
@@ -72,6 +72,7 @@ import { fetchTasks, updateTaskStatus, updateTaskOrder } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import LoadingState from '../components/LoadingState.vue';
 
 const route = useRoute();
 const router = useRouter();
