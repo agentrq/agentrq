@@ -4,19 +4,19 @@
  * One row, one endpoint. The plugin mounts `@deepseek-ai/dsh-mcp-client` as a
  * child so the workspace URL is configured once, and owns the parts a
  * model-facing bridge cannot do on its own — the AgentRQ working agreement as
- * a system-prompt section, and a supervised workspace session that delivers
- * AgentRQ's pushes (new tasks, the periodic next-task reminder, and the
- * human's messages) into the live agent.
+ * a system-prompt section, and a supervised workspace session that opens a
+ * fresh, dedicated dsh session for each task AgentRQ pushes (a new task, the
+ * periodic next-task reminder, or a human's message), so one task's history
+ * never rides along in another's conversation.
  *
- * Lifecycle is effect-scoped: disposal stops every poller, closes every
- * workspace session, and unregisters the section and tools. HMR hot-swaps by
- * disposing the old instance and applying a new one.
+ * Lifecycle is effect-scoped: disposal closes the workspace session and every
+ * still-open task session, and unregisters the section and tools. HMR
+ * hot-swaps by disposing the old instance and applying a new one.
  *
  * @module @agentrq/dsh-plugin-agentrq
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 // Side-effect type imports: these declaration-merge `tools` and `systemPrompt`
 // onto `Context`, and `agent` onto the agent registry surface.
 import type {} from '@deepseek-ai/dsh-tools'
@@ -25,12 +25,12 @@ import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
 import { AgentRqClient } from './client.js'
 import type { Config } from './config.js'
 import { GUIDANCE_SECTION_NAME, GUIDANCE_SECTION_ORDER, renderGuidanceSection } from './prompt.js'
-import { AgentRqRuntime } from './runtime.js'
+import { TaskSessionManager } from './sessions.js'
 import { registerAutoPullTool } from './tools.js'
 
 export type { AgentRqTask, ChannelMessage, ReconnectOptions } from './client.js'
-export type { DeliveryScope, ReconnectConfig } from './config.js'
-export type { DeliveryStatus } from './runtime.js'
+export type { ReconnectConfig } from './config.js'
+export type { DeliveryStatus } from './sessions.js'
 export { AgentRqClient, parseChannelNotification, parseTaskReply } from './client.js'
 export { renderGuidanceSection, renderPushFraming, renderTaskFraming, toolName } from './prompt.js'
 // Cordis reads the exported schema to validate `config` and fill defaults; the
@@ -43,11 +43,8 @@ export const name = 'agentrq'
 /** Services required before this plugin loads. */
 export const inject = ['agents', 'tools', 'systemPrompt']
 
-/** Teardown for one agent's AgentRQ attachment. */
-type AgentCleanup = () => void | Promise<void>
-
 /**
- * Attach AgentRQ to root agents published after this plugin loads.
+ * Wire up the workspace connection and the tools that reach it.
  *
  * @param ctx - the plugin's context.
  * @param config - validated plugin configuration.
@@ -82,60 +79,32 @@ export function apply(ctx: Context, config: Config): void {
     })
   }
 
-  const attachments = new Map<Agent, AgentCleanup>()
-  let stopping = false
-
   ctx.effect(() => {
-    const stopCreated = ctx.on('agent/created', ({ agent }) => {
-      if (stopping || attachments.has(agent)) return
-      if (!ctx.agents.roots().includes(agent)) return
-      // AgentRQ broadcasts each push to every connected session, and one
-      // workspace queue serves one worker. Under the default scope the first
-      // live root agent holds the session, and a later one only inherits it
-      // after that agent is gone.
-      if (config.scope === 'single-agent' && attachments.size > 0) return
+    let manager: TaskSessionManager | undefined
+    const client = new AgentRqClient({
+      url: config.url,
+      token: config.token,
+      requestTimeoutMs: config.requestTimeoutMs,
+      reconnect: config.reconnect,
+      onChannelMessage: message => { void manager?.deliverPush(message) },
+      onConnectionError: error => {
+        ctx.logger.warn(`agentrq: workspace session: ${
+          error instanceof Error ? error.message : String(error)}`)
+      },
+    })
+    manager = new TaskSessionManager(ctx, client, config)
+    const owned = manager
 
-      let runtime: AgentRqRuntime | undefined
-      const client = new AgentRqClient({
-        url: config.url,
-        token: config.token,
-        requestTimeoutMs: config.requestTimeoutMs,
-        reconnect: config.reconnect,
-        onChannelMessage: message => { runtime?.deliverPush(message) },
-        onConnectionError: error => {
-          ctx.logger.warn(`agentrq: workspace session for agent "${agent.id}": ${
-            error instanceof Error ? error.message : String(error)}`)
-        },
-      })
-      runtime = new AgentRqRuntime(ctx, agent, client, config)
-      const owned = runtime
-
-      const cleanup: AgentCleanup = agent.ctx.effect(() => {
-        const disposeTool = registerAutoPullTool(agent.ctx, owned)
-        // Connecting and the startup catch-up are async; the effect's disposer
-        // is registered synchronously, so teardown always finds this runtime.
-        void owned.start().catch(() => {
-          // `start` reports its own failures and the client keeps retrying.
-        })
-        return async () => {
-          disposeTool()
-          try {
-            await owned.dispose()
-          } finally {
-            if (attachments.get(agent) === cleanup) attachments.delete(agent)
-          }
-        }
-      }, 'agentrq.runtime()')
-
-      attachments.set(agent, cleanup)
+    const disposeTool = registerAutoPullTool(ctx, owned)
+    // Connecting and the startup catch-up are async; the effect's disposer is
+    // registered synchronously, so teardown always finds this manager.
+    void owned.start().catch(() => {
+      // `start` reports its own failures and the client keeps retrying.
     })
 
     return async () => {
-      stopping = true
-      stopCreated()
-      const cleanups = [...attachments.values()]
-      attachments.clear()
-      await Promise.allSettled(cleanups.map(cleanup => Promise.resolve(cleanup())))
+      disposeTool()
+      await owned.dispose()
     }
   }, 'agentrq.lifecycle()')
 }

@@ -815,7 +815,6 @@ const dshTuningYaml = `- id: agentrq
     serverName: agentrq
     deliverPushes: true
     catchUpOnStart: true
-    scope: single-agent
     reconnect:
       initialDelayMs: 1000
       maxDelayMs: 900000

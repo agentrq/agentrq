@@ -186,6 +186,11 @@ export class AgentRqClient {
     return parseTaskReply(await this.callTool('getTask', {}, signal))
   }
 
+  /** Fetch one task by id, without dequeuing anything. */
+  async fetchTask(taskId: string, signal: AbortSignal): Promise<AgentRqTask | undefined> {
+    return parseTaskReply(await this.callTool('getTask', { taskId }, signal))
+  }
+
   /**
    * Call one AgentRQ tool and return its joined text content.
    *

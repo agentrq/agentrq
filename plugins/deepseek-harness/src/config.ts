@@ -9,9 +9,6 @@
 
 import Schema from '@deepseek-ai/schemastery'
 
-/** How many of a process's agents may take work from the same workspace. */
-export type DeliveryScope = 'single-agent' | 'every-agent'
-
 /** Reconnection backoff for a dropped workspace session. */
 export interface ReconnectConfig {
   /** Delay before the first retry, in milliseconds. */
@@ -61,14 +58,6 @@ export interface Config {
    * work that predates the connection.
    */
   catchUpOnStart: boolean
-  /**
-   * One AgentRQ workspace queue serves one worker, and pushes are broadcast to
-   * every connected session. Under `single-agent` (the default) exactly one
-   * live root agent holds the workspace session, so opening a second chat
-   * session does not get every task delivered twice. `every-agent` suits a
-   * deployment that wants deliberate fan-out.
-   */
-  scope: DeliveryScope
   /** Reconnection backoff for a dropped workspace session. */
   reconnect: ReconnectConfig
   /**
@@ -87,7 +76,6 @@ export const Config = Schema.object({
   serverName: Schema.string().default('agentrq').description('Namespace for the bridged tools: mcp__<serverName>__reply, and so on.'),
   deliverPushes: Schema.boolean().default(true).description('Deliver the workspace\'s tasks and messages into the live session.'),
   catchUpOnStart: Schema.boolean().default(true).description('Dequeue one task at startup, for work that predates the connection.'),
-  scope: Schema.union(['single-agent', 'every-agent'] as const).default('single-agent').description('Whether one root agent or every root agent holds a workspace session.'),
   reconnect: Schema.object({
     initialDelayMs: Schema.number().min(100).default(1000).description('Delay before the first reconnect attempt.'),
     maxDelayMs: Schema.number().min(1000).default(900000).description('Ceiling for the reconnect backoff.'),

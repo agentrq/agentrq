@@ -2,7 +2,7 @@
 
 AgentRQ task manager for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-Create, manage, and automatically receive [AgentRQ](https://agentrq.com) tasks without leaving the harness. The bundle ships two rows: the workspace's tools bridged to the model, and the harness-side behavior a tool bridge cannot provide on its own — a supervised workspace session that delivers AgentRQ's pushes into the live agent, and the AgentRQ working agreement as a system-prompt section.
+Create, manage, and automatically receive [AgentRQ](https://agentrq.com) tasks without leaving the harness. The bundle ships two rows: the workspace's tools bridged to the model, and the harness-side behavior a tool bridge cannot provide on its own — a supervised workspace session that opens a dedicated dsh session for each task AgentRQ pushes, and the AgentRQ working agreement as a system-prompt section.
 
 ## Install
 
@@ -102,19 +102,19 @@ The plugin's own workspace session subscribes to that channel, exactly as [`acp-
 
 Each push is forwarded **as written**. A new task, the periodic reminder, a status check, and a human's reply all arrive on the same channel; the plugin adds a framing line naming the `chat_id` and the tools to answer with, then hands over the content. It does not try to classify what kind of push it is, because that would only add a way to be wrong. The content is JSON-escaped into the framing, so pushed content cannot forge a framing field.
 
-Delivery route depends on the agent's state: `inject()` while a turn is running, so it lands at the next step boundary, and `followup()` while idle, since nothing else would wake it. Neither interrupts a turn in flight.
+**Each task gets its own dedicated dsh session.** The plugin's own workspace connection is not tied to any chat you open — the first push for a given task (its `chat_id`) opens a fresh, dedicated agent via `ctx.agents.create()` and hands it the framed push; every later push for that same task (the reminder, a status check, a human's reply) is routed into that same session, not into whatever chat you happen to have open. This is what keeps one task's history from bleeding into another's. Delivery route within a task's session depends on its agent's state: `inject()` while a turn is running, so it lands at the next step boundary, and `followup()` while idle, since nothing else would wake it. Neither interrupts a turn in flight.
 
-`SendChannelNotification` puts the task id in `meta.chat_id` on every push, so the id never has to be recovered from the content.
+`SendChannelNotification` puts the task id in `meta.chat_id` on every push, so the id never has to be recovered from the content, and it doubles as the key the manager uses to find a task's session again.
 
-**Repeats are dropped.** The workspace re-pushes an unclaimed task verbatim every minute; the runtime remembers recent `(task, content)` pairs, so the agent is handed it once and not woken every sixty seconds for work it already has. A genuinely new message on the same task still gets through.
+**Repeats are dropped.** The workspace re-pushes an unclaimed task verbatim every minute; the manager remembers recent `(task, content)` pairs, so a task's session is handed it once and not woken every sixty seconds for work it already has. A genuinely new message on the same task still gets through.
 
-**Staying connected is the load-bearing part.** No session, no pushes — so a closed transport or an unrecoverable transport error triggers a reconnect with exponential backoff (`reconnect.initialDelayMs` doubling to `reconnect.maxDelayMs`), on top of the SDK's own SSE resumption. Because the server re-pushes on its own schedule, a recovered session catches up on the next tick without any client-side replay.
+**A task's session closes itself once the task is done.** An idle agent does not by itself mean the task is finished — it may simply have asked the human a question and be waiting on a reply, which must land in the same session. So on every idle transition the manager reads the task's own status back through `getTask`; only `completed` or `rejected` closes the dedicated session. `blocked` and anything else keep it open so the next push — including the human's reply — still has somewhere to go.
 
-`catchUpOnStart` dequeues one task when the session opens, so work that predates the connection does not wait for the server's next tick. A failed startup check costs latency, not work.
+**Staying connected is the load-bearing part.** No workspace session, no pushes — so a closed transport or an unrecoverable transport error triggers a reconnect with exponential backoff (`reconnect.initialDelayMs` doubling to `reconnect.maxDelayMs`), on top of the SDK's own SSE resumption. Because the server re-pushes on its own schedule, a recovered connection catches up on the next tick without any client-side replay. A task's own dedicated session is unaffected by a workspace reconnect — it is a separate, harness-native agent, not part of the workspace transport.
 
-`agentrq_autopull pause` stops pushes from reaching the session; the session itself stays open.
+`catchUpOnStart` dequeues one task when the workspace connection opens, so work that predates the connection does not wait for the server's next tick. A failed startup check costs latency, not work.
 
-One AgentRQ queue serves one worker, the harness Web UI creates a root agent per chat session, and pushes are broadcast to **every** connected session. Under the default `scope: single-agent`, exactly one live root agent holds the workspace session, so a second chat session does not get every task delivered a second time; a later session inherits the connection only after the owning agent is gone. Set `every-agent` when your agents work disjoint queues or you want deliberate fan-out.
+`agentrq_autopull pause` stops the manager from opening or routing into task sessions; already-open ones stay live until their task closes them, and the workspace connection itself stays open.
 
 ## Multiple workspaces
 
@@ -151,9 +151,8 @@ Two consequences worth knowing:
 | `token` | `''` | Bearer token, for deployments that prefer an `Authorization` header over `?token=` |
 | `mountBridge` | `true` | Mount the `@deepseek-ai/dsh-mcp-client` child that gives the model AgentRQ's tools |
 | `serverName` | `agentrq` | Namespace for the bridged tools; the guidance section and framings follow it |
-| `deliverPushes` | `true` | Deliver the workspace's tasks and messages into the live session |
-| `catchUpOnStart` | `true` | Dequeue one task when the session opens |
-| `scope` | `single-agent` | Whether one root agent or every root agent holds a workspace session |
+| `deliverPushes` | `true` | Open and route into a dedicated session for each task the workspace pushes |
+| `catchUpOnStart` | `true` | Dequeue one task when the workspace connection opens |
 | `reconnect.initialDelayMs` | `1000` | Delay before the first reconnect attempt |
 | `reconnect.maxDelayMs` | `900000` | Ceiling for the reconnect backoff |
 | `guidance` | `true` | Contribute the AgentRQ working-agreement system-prompt section |
@@ -205,8 +204,8 @@ Two things that break it, both non-obvious:
 - **One workspace per profile** — each row carries one `url`, and mounting the bundle twice in one profile collides on the prompt-section and tool names. [Several workspaces means several profiles](#multiple-workspaces).
 - **The endpoint is configured, not discovered** — there is no in-harness command to switch workspaces; the profile's `cordis.patch.yml` (watched, so no restart needed) or `AGENTRQ_WORKSPACE_MCP_URL` is the switch. A `ctx.settings` namespace would give a schema-driven editor with `role('secret')` redaction for the token, but its document is `$DSH_HOME`-global by default and so does not carry per-profile values without extra plumbing.
 - **The bridge is mounted, not injectable** — the plugin mounts one `@deepseek-ai/dsh-mcp-client` child with the settings it derives from its own config. A deployment that needs the bridge's other knobs sets `mountBridge: false` and mounts its own row, and is then responsible for keeping `serverName` aligned.
-- **Load-order boundary** — the plugin attaches only to root agents published after it loads; an agent that was already live when the plugin loaded gets no workspace session and no `agentrq_autopull` tool.
-- **Ownership does not migrate to a live agent** — under `single-agent`, when the owning agent is disposed the connection stops until the *next* root agent is created; an already-open second session does not adopt it.
+- **No surfaced way to find a task's session** — a task's dedicated session is an ordinary root agent, so it exists independently of any chat you have open, but there is no in-harness command yet to list or switch to one; you find it the same way you'd find any other root agent your dsh UI happens to expose.
+- **Terminal-status check costs a round trip per idle transition** — the manager cannot tell "done" from "idle mid-task, waiting on a reply" without asking the workspace, so every `agent/status: idle` for a task's session calls `getTask` once. Cheap in practice (one call per turn boundary, not per second), but not free.
 - **Session-lifetime repeat memory** — the delivered-set is process-local and bounded, so a restarted harness may be handed a task it saw before if that task is still unclaimed. Claiming a task with `updateTaskStatus` is what stops the workspace re-pushing it.
 - **Auth is the URL's credential** — the plugin does not run the AgentRQ OAuth authorization-code flow; it uses the long-lived token from Workspace Settings, as a bearer header or a `?token=` query parameter.
 - **Attachments travel through the model** — the plugin's own session only receives pushes and dequeues on request; `downloadAttachment` remains a model-facing tool call on the bridged server.
