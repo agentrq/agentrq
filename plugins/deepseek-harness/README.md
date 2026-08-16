@@ -6,6 +6,8 @@ Create, manage, and automatically receive [AgentRQ](https://agentrq.com) tasks w
 
 ## Install
 
+**Requires pnpm.** `dsh plugin` is a thin forwarder to `pnpm` for every profile — installing any plugin, this one included, fails with `pnpm not found on PATH` unless pnpm is already installed (`npm install -g pnpm`, `corepack enable pnpm`, or `brew install pnpm`). This is a DeepSeek Harness CLI requirement, not something this plugin can opt out of.
+
 **One profile per workspace.** A profile serves one AgentRQ workspace and carries its own endpoint, so name it after the workspace rather than using `default` — that is what makes [several workspaces](#multiple-workspaces) work. Your workspace's **Settings → Setup → DeepSeek Harness** page prints every command and config block below already filled in.
 
 ```sh
