@@ -126,16 +126,46 @@ function truncate(text, len) {
   return t.length > len ? t.slice(0, len) + '…' : t;
 }
 
+function permissionStatus(status) {
+  switch (status) {
+    case 'allow': return 'allowed';
+    case 'allow_always': return 'auto_allowed';
+    case 'deny': return 'denied';
+    default: return status || 'pending';
+  }
+}
+
 const items = computed(() => {
-  const fromMessages = (props.messages || []).map(m => ({
-    id: `m-${m.id}`,
-    lane: m.sender === 'agent' ? 'agent' : 'input',
-    laneLabel: m.sender === 'agent' ? 'AGENT' : (m.sender === 'slack' ? 'SLACK' : 'INPUT'),
-    createdAt: m.createdAt,
-    label: m.sender === 'agent' ? 'Agent' : (m.sender === 'slack' ? 'Slack' : 'You'),
-    preview: truncate(m.text, 140) || '(no text)',
-    raw: m,
-  }));
+  const fromMessages = (props.messages || []).map(m => {
+    const isPermissionRequest = m.metadata?.type === 'permission_request';
+    if (isPermissionRequest) {
+      const toolName = m.metadata?.toolName || 'Permission Request';
+      return {
+        id: `m-${m.id}`,
+        lane: 'tool',
+        laneLabel: 'TOOL',
+        createdAt: m.createdAt,
+        label: toolName,
+        preview: truncate(`${toolName} ${m.metadata?.inputPreview || m.metadata?.description || ''}`, 140),
+        raw: {
+          ...m,
+          toolName,
+          description: m.metadata?.description,
+          inputPreview: m.metadata?.inputPreview,
+          status: permissionStatus(m.metadata?.status),
+        },
+      };
+    }
+    return {
+      id: `m-${m.id}`,
+      lane: m.sender === 'agent' ? 'agent' : 'input',
+      laneLabel: m.sender === 'agent' ? 'AGENT' : (m.sender === 'slack' ? 'SLACK' : 'INPUT'),
+      createdAt: m.createdAt,
+      label: m.sender === 'agent' ? 'Agent' : (m.sender === 'slack' ? 'Slack' : 'You'),
+      preview: truncate(m.text, 140) || '(no text)',
+      raw: m,
+    };
+  });
   const fromToolCalls = (props.toolCalls || []).map(tc => ({
     id: `t-${tc.id}`,
     lane: 'tool',
