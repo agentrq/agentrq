@@ -12,13 +12,39 @@
  * @module @agentrq/dsh-plugin-agentrq
  */
 
+import { randomUUID } from 'node:crypto'
+import { realpath } from 'node:fs/promises'
 import type { Agent, AgentHandle, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+// Side-effect type imports: these declaration-merge `sessionTitle` and
+// `workspaceRegistry` onto `Context`. Both are optional host services — a
+// deployment without session persistence never mounts them — so every call
+// site checks for `undefined` before using either.
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-session-title'
+import type {} from '@deepseek-ai/dsh-workspace'
 import type { AgentRqClient, AgentRqTask, ChannelMessage } from './client.js'
 import type { Config } from './config.js'
 import { renderPushFraming, renderTaskFraming } from './prompt.js'
+
+/** Every dedicated task session's id starts with this, `<taskId>` next, then a random suffix. */
+const SESSION_ID_PREFIX = 'agentrq-task-'
+
+/**
+ * Recover the task id a dedicated session's own id encodes, so the manager
+ * never needs a second store to remember which session belongs to which
+ * task — the id already carries that fact durably. AgentRQ task ids are
+ * plain base62 (no hyphens), so the first `-`-delimited segment after the
+ * prefix is always the whole task id, regardless of the random suffix's own
+ * hyphens (it's a UUID).
+ */
+function parseTaskIdFromSessionId(id: string): string | undefined {
+  if (!id.startsWith(SESSION_ID_PREFIX)) return undefined
+  const taskId = id.slice(SESSION_ID_PREFIX.length).split('-')[0]
+  return taskId === undefined || taskId === '' ? undefined : taskId
+}
 
 /** Source attribution carried by every message this plugin queues. */
 const MESSAGE_SOURCE = { kind: 'plugin', plugin: 'agentrq' } as const
@@ -69,10 +95,16 @@ export class TaskSessionManager {
   private readonly abort = new AbortController()
   private readonly seen = new Set<string>()
   private readonly sessions = new Map<string, AgentHandle>()
+  /**
+   * Task id -> durable session id, for a task whose session predates this
+   * process (survived a restart) and isn't live yet. Populated once at
+   * `start()` from `sessionPersistence.list()` and consumed (moved into
+   * `sessions`, live) the first time a push for that task arrives.
+   */
+  private readonly persistedSessions = new Map<string, SessionId>()
   private lastDeliveredTaskId: string | undefined
   private paused = false
   private stopping = false
-  private spawnSeq = 0
   private mostRecentActive: Agent | undefined
   private stopWatchingActivity: (() => void) | undefined
 
@@ -89,6 +121,7 @@ export class TaskSessionManager {
     this.stopWatchingActivity = this.ctx.on('agent/status', ({ agent, status }) => {
       if (status === 'running') this.mostRecentActive = agent
     })
+    await this.loadPersistedSessions()
     await this.client.start()
     if (!this.config.catchUpOnStart || this.stopping) return
     try {
@@ -192,18 +225,23 @@ export class TaskSessionManager {
       this.queue(existing.agent, framed)
       return
     }
-    const handle = await this.openSession(taskId)
+    const handle = await this.openOrResumeSession(taskId)
     if (handle === undefined) return
     this.sessions.set(taskId, handle)
     this.watch(taskId, handle)
+    // Applied to a resumed handle too, not just a freshly created one: cheap
+    // and idempotent either way, and it also repairs a session that was
+    // mis-titled/mis-grouped by an older, buggier build before a restart.
+    const cwd = handle.agent.session.header.cwd
+    if (cwd !== undefined) await this.groupSession(cwd, handle.agent.id)
     const title = knownTitle ?? await this.fetchTitle(taskId)
-    this.queue(handle.agent, title === undefined || title === '' ? framed : `${title}\n\n${framed}`)
+    if (title !== undefined && title !== '') this.applyTitle(handle, title)
+    this.queue(handle.agent, framed)
   }
 
   /**
-   * The task's title, so a UI that derives a session's display name from its
-   * first message shows something meaningful instead of the framing's own
-   * tag line. Best effort: a lookup failure just skips the lead line.
+   * The task's title, fetched on demand when the caller doesn't already have
+   * it. Best effort: a lookup failure just leaves the session untitled.
    */
   private async fetchTitle(taskId: string): Promise<string | undefined> {
     try {
@@ -215,18 +253,79 @@ export class TaskSessionManager {
     }
   }
 
+  /**
+   * Pin the task's title as the session's display name.
+   *
+   * A session's title is a durable `session/title` log event
+   * (`@deepseek-ai/dsh-session-title`), not something a UI infers from the
+   * first message's content — and even the deterministic fallback only
+   * considers genuinely human-sourced messages, which this plugin's own
+   * pushes never are. `rename()` is the sanctioned way anything (a human
+   * renaming a chat, or here, a plugin) sets an explicit title; it also pins
+   * it, so later conversation never overwrites it with an automatic retitle.
+   */
+  private applyTitle(handle: AgentHandle, title: string): void {
+    // `ctx.sessionTitle` is a direct property read, which assumes the
+    // service is declared via `inject` (guaranteed present). It is not here
+    // — deliberately, since a deployment without session persistence never
+    // mounts it — so `ctx.get()` is the one accessor documented to return
+    // `undefined` rather than throw for a service outside `inject`.
+    const sessionTitle = this.ctx.get('sessionTitle')
+    if (sessionTitle === undefined) return
+    try {
+      sessionTitle.rename(handle.agent.session, title)
+    } catch (error: unknown) {
+      this.warn(`could not set the session title to "${title}"`, error)
+    }
+  }
+
+  /**
+   * Find or open the one dedicated session for a task: a session id already
+   * encodes its task id (see {@link parseTaskIdFromSessionId}), so a session
+   * that outlived a restart is durably findable without a second store —
+   * `loadPersistedSessions` indexes it at startup, and this is where that
+   * index gets consumed the first time the task is pushed again.
+   */
+  private async openOrResumeSession(taskId: string): Promise<AgentHandle | undefined> {
+    const persistedSessionId = this.persistedSessions.get(taskId)
+    if (persistedSessionId !== undefined) {
+      // Consumed either way: a failed resume (corrupted log, …) shouldn't be
+      // retried forever, and a fresh session is the reasonable fallback.
+      this.persistedSessions.delete(taskId)
+      const resumed = await this.resumeSession(persistedSessionId, taskId)
+      if (resumed !== undefined) return resumed
+    }
+    return this.openSession(taskId)
+  }
+
+  /** Resume a task's session that survived a restart, rather than reopening a fresh one. */
+  private async resumeSession(sessionId: SessionId, taskId: string): Promise<AgentHandle | undefined> {
+    try {
+      return await this.ctx.agents.resume({ resumeSessionId: sessionId, signal: this.abort.signal })
+    } catch (error: unknown) {
+      this.warn(`could not resume the existing session for task "${taskId}"`, error)
+      return undefined
+    }
+  }
+
   /** Open a fresh dedicated agent/session for one task. */
   private async openSession(taskId: string): Promise<AgentHandle | undefined> {
-    this.spawnSeq += 1
-    const agentOptions = this.resolveAgentOptions()
     try {
+      const agentOptions = this.resolveAgentOptions()
+      const cwd = await this.resolveCwd()
       return await this.ctx.agents.create({
         // `SessionId` brands a string at the type level only (no runtime
         // behavior), so a local cast avoids depending on `dsh-session` just
-        // for its identity function.
-        sessionId: `agentrq-task-${taskId}-${this.spawnSeq}` as SessionId,
+        // for its identity function. The random suffix is load-bearing, not
+        // decorative: an incrementing in-process counter collides with a
+        // still-persisted session from a *previous* process lifetime the
+        // instant the same task gets pushed twice across a restart — the
+        // store rejects the id outright as "already persisted at a
+        // different cwd," which happened for real once this plugin started
+        // resolving cwd correctly and a stale collision surfaced.
+        sessionId: `agentrq-task-${taskId}-${randomUUID()}` as SessionId,
         signal: this.abort.signal,
-        meta: { cwd: this.config.cwd !== '' ? this.config.cwd : process.cwd() },
+        meta: { cwd },
         ...(agentOptions === undefined ? {} : { agentOptions }),
       })
     } catch (error: unknown) {
@@ -236,14 +335,79 @@ export class TaskSessionManager {
   }
 
   /**
+   * Index every already-persisted task session at startup, so a task whose
+   * session survived a restart is resumed instead of duplicated the first
+   * time it's pushed again. Cheap: `list()` returns headers only, not full
+   * conversation logs.
+   */
+  private async loadPersistedSessions(): Promise<void> {
+    const sessionPersistence = this.ctx.get('sessionPersistence')
+    if (sessionPersistence === undefined) return
+    try {
+      const headers = await sessionPersistence.list(this.abort.signal)
+      // A task's session should not repeat, but a prior process crashing
+      // mid-collision (see `openSession`) could still leave more than one
+      // persisted id for the same task; keep the most recently created.
+      const newest = new Map<string, { id: SessionId; createdAt: number }>()
+      for (const header of headers) {
+        const taskId = parseTaskIdFromSessionId(header.id)
+        if (taskId === undefined) continue
+        const current = newest.get(taskId)
+        if (current !== undefined && current.createdAt >= header.createdAt) continue
+        newest.set(taskId, { id: header.id, createdAt: header.createdAt })
+      }
+      for (const [taskId, { id }] of newest) this.persistedSessions.set(taskId, id)
+    } catch (error: unknown) {
+      this.warn('could not scan persisted sessions for tasks to resume', error)
+    }
+  }
+
+  /**
+   * Fold the new session into whichever workspace already owns its `cwd`
+   * (creating one if this is the first session ever seen there), so it
+   * shows up grouped in a capable UI instead of "Ungrouped."
+   *
+   * `Workspace.attachSession` is the only thing that groups a session at
+   * all — a UI does not group merely because a live session's own `cwd`
+   * happens to match a workspace's path, per `@deepseek-ai/dsh-workspace`'s
+   * own docs ("later cwd-only sessions remain Ungrouped"). Membership also
+   * requires an exact canonical-path match, so `cwd` is realpath'd here and
+   * used as-is for the session's own `meta.cwd` too — passing the
+   * pre-canonicalized form to both keeps them from ever disagreeing.
+   */
+  private async groupSession(cwd: string, sessionId: SessionId): Promise<void> {
+    // See `applyTitle` for why this is `ctx.get()` rather than a direct
+    // `ctx.workspaceRegistry` read.
+    const workspaceRegistry = this.ctx.get('workspaceRegistry')
+    if (workspaceRegistry === undefined) return
+    try {
+      const workspace = (await workspaceRegistry.resolveByPath(cwd))
+        ?? await workspaceRegistry.create(cwd)
+      await workspace.attachSession(sessionId)
+    } catch (error: unknown) {
+      this.warn(`could not group the session for cwd "${cwd}" into its workspace`, error)
+    }
+  }
+
+  /**
+   * The reference agent a fresh session copies provider/model/cwd from:
+   * whichever live agent most recently started a turn (tracked since
+   * `start()`, so it reflects genuine activity rather than registration
+   * order), or the longest-lived agent still around when nothing has been
+   * active yet.
+   */
+  private referenceAgent(): Agent | undefined {
+    const active = this.mostRecentActive
+    if (active !== undefined && this.ctx.agents.get(active.id) === active) return active
+    return this.ctx.agents.list()[0]
+  }
+
+  /**
    * Provider/model for a fresh task session.
    *
    * A session created with neither fails every turn — prompt assembly has no
-   * value for `{{model}}` — so this always returns something concrete:
-   * config when set; otherwise whichever live agent most recently started a
-   * turn (tracked since `start()`, so it reflects genuine activity rather
-   * than registration order); otherwise the longest-lived agent still
-   * around, for a task pushed before this process has seen any activity yet.
+   * value for `{{model}}` — so this always returns something concrete: config
+   * when set, otherwise the reference agent's.
    */
   private resolveAgentOptions(): AgentOptions | undefined {
     if (this.config.model !== '') {
@@ -251,10 +415,34 @@ export class TaskSessionManager {
         ? { model: this.config.model }
         : { provider: this.config.provider, model: this.config.model }
     }
-    const active = this.mostRecentActive
-    if (active !== undefined && this.ctx.agents.get(active.id) === active) return active.options
-    const agents = this.ctx.agents.list()
-    return agents[0]?.options
+    return this.referenceAgent()?.options
+  }
+
+  /**
+   * Working directory for a fresh task session: config when set, otherwise
+   * the reference agent's own `cwd` — critically NOT `process.cwd()`, which
+   * is the dsh *profile*'s directory (e.g. `~/.dsh/profiles/web`) under
+   * `dsh web`, not the project the human actually works in. Falling back to
+   * it left a session confused about where its own codebase was. `cwd` is
+   * only truly unknown when nothing has ever been live in this process, so
+   * `process.cwd()` remains the last resort there.
+   *
+   * Realpath'd so this exact string can also be used to resolve/create the
+   * session's workspace grouping — membership requires a canonical-path
+   * match, so the two must never disagree on symlinks or trailing slashes.
+   */
+  private async resolveCwd(): Promise<string> {
+    const raw = this.config.cwd !== ''
+      ? this.config.cwd
+      : this.referenceAgent()?.session.header.cwd ?? process.cwd()
+    try {
+      return await realpath(raw)
+    } catch {
+      // An unresolvable path (already gone, no permission, …) is still the
+      // best answer available; the session/workspace calls that use it next
+      // fail on their own terms rather than here.
+      return raw
+    }
   }
 
   /**

@@ -1,6 +1,6 @@
 {
   "name": "@agentrq/dsh-plugin-agentrq",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "AgentRQ task manager for DeepSeek Harness: create, manage, and auto-pull AgentRQ tasks without leaving the harness",
   "keywords": [
     "dsh-plugin",
@@ -53,8 +53,22 @@
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.1",
     "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-mcp-client": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-session-title": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-system-prompt": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1"
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-workspace": "^0.0.1-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-session-persistence": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-title": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-workspace": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -65,9 +79,12 @@
     "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-mcp-client": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-session": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-title": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-system-prompt": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-timeout": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-workspace": "^0.1.0-rc.6",
     "@types/node": "^22.20.1",
     "tsdown": "^0.15.1",
     "typescript": "^5.9.2",
