@@ -187,6 +187,8 @@ func New(cfg Config) (*App, error) {
 		&model.PushSubscription{},
 		&model.Event{},
 		&model.EventTrigger{},
+		&model.Workflow{},
+		&model.WorkflowStep{},
 		&model.ToolCall{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
@@ -537,7 +539,7 @@ func New(cfg Config) (*App, error) {
 					UserID:      monoflake.ID(workspace.UserID).String(),
 				})
 			},
-			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error {
+			func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ, run mcp.WorkflowRunContext) error {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				ev, err := repo.GetEventByName(ctx, eventName, uid)
 				if err != nil {
@@ -546,10 +548,12 @@ func New(cfg Config) (*App, error) {
 				pubsubSvc.Publish(ctx, pubsub.PublishRequest{
 					PubSubID: entity.PubSubTopicEvents,
 					Event: entity.EventPublishedPayload{
-						EventID: ev.ID,
-						Name:    ev.Name,
-						Payload: payload,
-						FAQ:     faq,
+						EventID:    ev.ID,
+						Name:       ev.Name,
+						Payload:    payload,
+						FAQ:        faq,
+						WorkflowID: run.WorkflowID,
+						Depth:      run.Depth,
 					},
 				})
 				return nil

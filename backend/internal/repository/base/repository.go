@@ -88,6 +88,23 @@ type Repository interface {
 	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
 	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
 	ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error)
+
+	// Workflows
+	CreateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
+	GetWorkflow(ctx context.Context, id int64, userID int64) (model.Workflow, error)
+	ListWorkflowsByUser(ctx context.Context, userID int64) ([]model.Workflow, error)
+	UpdateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
+	DeleteWorkflow(ctx context.Context, id int64, userID int64) error
+
+	// WorkflowSteps
+	CreateWorkflowStep(ctx context.Context, s model.WorkflowStep) (model.WorkflowStep, error)
+	ListWorkflowStepsByWorkflow(ctx context.Context, workflowID int64, userID int64) ([]model.WorkflowStep, error)
+	DeleteWorkflowStep(ctx context.Context, id int64, userID int64) error
+	// SystemListWorkflowStepsByEvent resolves the fan-out for one hop of a
+	// workflow run. Deliberately userID-free: the consumer runs outside any
+	// request and keys off the workflow the originating task already carried.
+	SystemListWorkflowStepsByEvent(ctx context.Context, workflowID int64, eventID int64) ([]model.WorkflowStep, error)
+	ListTasksByWorkflowID(ctx context.Context, workflowID int64, userID int64) ([]model.Task, error)
 }
 
 type repository struct {
@@ -919,5 +936,106 @@ func (r *repository) DeleteEventTrigger(ctx context.Context, id int64, userID in
 func (r *repository) ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error) {
 	var tasks []model.Task
 	err := r.conn(ctx).Where("trigger_id = ? AND user_id = ?", triggerID, userID).Order("created_at desc").Find(&tasks).Error
+	return tasks, err
+}
+
+// ── Workflows ──────────────────────────────────────────────────────────────────
+
+func (r *repository) CreateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error) {
+	if err := r.conn(ctx).Create(&w).Error; err != nil {
+		return model.Workflow{}, err
+	}
+	return w, nil
+}
+
+func (r *repository) GetWorkflow(ctx context.Context, id int64, userID int64) (model.Workflow, error) {
+	var w model.Workflow
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&w).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Workflow{}, ErrNotFound
+	}
+	return w, err
+}
+
+func (r *repository) ListWorkflowsByUser(ctx context.Context, userID int64) ([]model.Workflow, error) {
+	var workflows []model.Workflow
+	err := r.conn(ctx).Where("user_id = ?", userID).Order("created_at desc").Find(&workflows).Error
+	return workflows, err
+}
+
+// UpdateWorkflow persists the mutable fields of an existing workflow. The
+// caller supplies a whole model, but only name/description/startEventId/layout
+// are written — ownership and creation time are never reassigned.
+func (r *repository) UpdateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error) {
+	var existing model.Workflow
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", w.ID, w.UserID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Workflow{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Workflow{}, err
+	}
+	existing.Name = w.Name
+	existing.Description = w.Description
+	existing.StartEventID = w.StartEventID
+	existing.Layout = w.Layout
+	existing.UpdatedAt = time.Now()
+	if err := r.conn(ctx).Save(&existing).Error; err != nil {
+		return model.Workflow{}, err
+	}
+	return existing, nil
+}
+
+// DeleteWorkflow removes a workflow and its steps together. Tasks already
+// spawned by past runs keep their workflow_id: they are historical records, and
+// blanking them would lose the only trace of why they exist.
+func (r *repository) DeleteWorkflow(ctx context.Context, id int64, userID int64) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Workflow{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return tx.Where("workflow_id = ? AND user_id = ?", id, userID).Delete(&model.WorkflowStep{}).Error
+	})
+}
+
+// ── WorkflowSteps ──────────────────────────────────────────────────────────────
+
+func (r *repository) CreateWorkflowStep(ctx context.Context, s model.WorkflowStep) (model.WorkflowStep, error) {
+	if err := r.conn(ctx).Create(&s).Error; err != nil {
+		return model.WorkflowStep{}, err
+	}
+	return s, nil
+}
+
+func (r *repository) ListWorkflowStepsByWorkflow(ctx context.Context, workflowID int64, userID int64) ([]model.WorkflowStep, error) {
+	var steps []model.WorkflowStep
+	err := r.conn(ctx).Where("workflow_id = ? AND user_id = ?", workflowID, userID).Order("created_at asc").Find(&steps).Error
+	return steps, err
+}
+
+func (r *repository) DeleteWorkflowStep(ctx context.Context, id int64, userID int64) error {
+	res := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.WorkflowStep{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *repository) SystemListWorkflowStepsByEvent(ctx context.Context, workflowID int64, eventID int64) ([]model.WorkflowStep, error) {
+	var steps []model.WorkflowStep
+	err := r.conn(ctx).Where("workflow_id = ? AND event_id = ?", workflowID, eventID).Find(&steps).Error
+	return steps, err
+}
+
+func (r *repository) ListTasksByWorkflowID(ctx context.Context, workflowID int64, userID int64) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.conn(ctx).Where("workflow_id = ? AND user_id = ?", workflowID, userID).Order("created_at desc").Find(&tasks).Error
 	return tasks, err
 }

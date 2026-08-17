@@ -48,7 +48,20 @@ type GetNextTaskFunc func(ctx context.Context) (model.Task, error)
 type ReplyFunc func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error)
 type UpdateMessageMetadataFunc func(ctx context.Context, taskID int64, messageID int64, metadata any) error
 type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []string) error
-type PublishEventFunc func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ) error
+
+// WorkflowRunContext identifies the workflow run a publishing task belongs to.
+// The zero value means "not part of a workflow run", which keeps the publish on
+// the original global-trigger path.
+type WorkflowRunContext struct {
+	WorkflowID int64
+	// Depth is how many hops already preceded the publishing task, carried so
+	// the consumer's runaway guard survives the task boundary.
+	Depth int
+}
+
+// PublishEventFunc fires a named event. run scopes the consumer's fan-out to a
+// single workflow's steps instead of the global triggers.
+type PublishEventFunc func(ctx context.Context, eventName string, payload string, faq []entity.EventFAQ, run WorkflowRunContext) error
 
 // RecordToolCallFunc persists a tool-call permission decision (auto-allowed or
 // pending a manual verdict) so it can be shown as a "tool calls" list, separate
@@ -860,7 +873,7 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 	for i, f := range params.FAQ {
 		faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
 	}
-	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq); err != nil {
+	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq, ps.currentWorkflowRun(ctx, req)); err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to publish event: %v", err)}},
@@ -871,6 +884,30 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 			Text: fmt.Sprintf("event %q published", params.Name),
 		}},
 	}, nil, nil
+}
+
+// currentWorkflowRun reports the workflow run the publishing task belongs to,
+// so a chained event stays inside its own workflow instead of falling back to
+// the global triggers.
+//
+// Best effort by design: the agent never passes the workflow itself (it has no
+// reason to know one exists), so this leans on the same session→task resolution
+// the permission flow uses. If the task cannot be resolved, the zero value
+// means "not in a workflow" and the publish behaves exactly as it did before
+// workflows existed — a missed chain, never a wrong one.
+func (ps *WorkspaceServer) currentWorkflowRun(ctx context.Context, req *mcp.CallToolRequest) WorkflowRunContext {
+	if req == nil || req.GetSession() == nil {
+		return WorkflowRunContext{}
+	}
+	taskID, ok := ps.resolveTaskID(ctx, req.GetSession().ID(), "")
+	if !ok {
+		return WorkflowRunContext{}
+	}
+	task, err := ps.getTask(ctx, taskID)
+	if err != nil {
+		return WorkflowRunContext{}
+	}
+	return WorkflowRunContext{WorkflowID: task.WorkflowID, Depth: task.WorkflowDepth}
 }
 
 func (ps *WorkspaceServer) handleGetWorkspace(ctx context.Context, req *mcp.CallToolRequest, params any) (*mcp.CallToolResult, any, error) {

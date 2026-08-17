@@ -183,6 +183,8 @@ type (
 		SortOrder        float64
 		AllowAllCommands bool
 		EventID          int64
+		WorkflowID       int64
+		WorkflowDepth    int
 	}
 
 	CreateTaskRequest struct {
@@ -570,6 +572,125 @@ type (
 	ListTasksFromEventResponse struct {
 		Tasks []Task
 	}
+
+	// Workflow entities (experimental)
+
+	Workflow struct {
+		ID           int64
+		CreatedAt    time.Time
+		UpdatedAt    time.Time
+		UserID       int64
+		Name         string
+		Description  string
+		StartEventID int64
+		Layout       string
+	}
+
+	CreateWorkflowRequest struct {
+		Name         string
+		Description  string
+		StartEventID int64
+		UserID       string
+	}
+
+	CreateWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	GetWorkflowRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	ListWorkflowsRequest struct {
+		UserID string
+	}
+
+	ListWorkflowsResponse struct {
+		Workflows []Workflow
+	}
+
+	// UpdateWorkflowRequest carries only the mutable fields. Each is a pointer
+	// so a PATCH can distinguish "not supplied" from "set to empty" — a layout
+	// save must not blank the description, and vice versa.
+	UpdateWorkflowRequest struct {
+		ID           int64
+		UserID       string
+		Name         *string
+		Description  *string
+		StartEventID *int64
+		Layout       *string
+	}
+
+	UpdateWorkflowResponse struct {
+		Workflow Workflow
+	}
+
+	DeleteWorkflowRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	// WorkflowStep entities
+
+	WorkflowStep struct {
+		ID               int64
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		WorkflowID       int64
+		UserID           int64
+		EventID          int64
+		WorkspaceID      int64
+		EmitEventID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		AllowAllCommands bool
+	}
+
+	CreateWorkflowStepRequest struct {
+		WorkflowID       int64
+		EventID          int64
+		WorkspaceID      int64
+		EmitEventID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		AllowAllCommands bool
+		UserID           string
+	}
+
+	CreateWorkflowStepResponse struct {
+		WorkflowStep WorkflowStep
+	}
+
+	ListWorkflowStepsRequest struct {
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListWorkflowStepsResponse struct {
+		WorkflowSteps []WorkflowStep
+	}
+
+	DeleteWorkflowStepRequest struct {
+		ID         int64
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListTasksFromWorkflowRequest struct {
+		WorkflowID int64
+		UserID     string
+	}
+
+	ListTasksFromWorkflowResponse struct {
+		Tasks []Task
+	}
 )
 
 const (
@@ -584,6 +705,13 @@ type EventPublishedPayload struct {
 	Name    string
 	Payload string
 	FAQ     []EventFAQ
+	// WorkflowID is set when the publishing task was part of a workflow run.
+	// It scopes the consumer's fan-out to that workflow's steps instead of the
+	// global event triggers; zero keeps the original global behavior.
+	WorkflowID int64
+	// Depth counts how many hops this run has already taken, so a cyclic graph
+	// exhausts a budget instead of spawning tasks forever.
+	Depth int
 }
 
 const (

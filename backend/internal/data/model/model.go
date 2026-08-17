@@ -52,6 +52,17 @@ type (
 		AllowAllCommands bool    `gorm:"default:false"`
 		TriggerID        int64   `gorm:"index:idx_tasks_trigger_id"` // event that caused this task
 		EventID          int64   `gorm:"index:idx_tasks_event_id"`   // event this task emits on completion
+		// WorkflowID carries workflow context through a run: when this task
+		// publishes its event, the consumer routes the fan-out through this
+		// workflow's steps instead of the global triggers, and stamps the same
+		// ID on every task it spawns. Zero means "not part of a workflow run".
+		WorkflowID int64 `gorm:"index:idx_tasks_workflow_id"`
+		// WorkflowDepth is how many hops preceded this task in its run. It has
+		// to be persisted rather than tracked in memory because every hop
+		// crosses a task boundary — the chain is task → publish → task — so
+		// without it the runaway-guard counter would reset to zero each hop and
+		// never trip.
+		WorkflowDepth int `gorm:"default:0"`
 	}
 
 	// ToolCall records a single tool-call permission decision for a task: either
@@ -98,7 +109,50 @@ type (
 		EmitEventID      int64  `gorm:"index:idx_event_triggers_emit_event_id"` // event this trigger's task emits on completion
 	}
 
-	// Message is an entry in a task's chat history
+	// Workflow is a named, self-contained graph of events and workspaces
+	// (experimental). It composes the same edge shape as EventTrigger, but
+	// scoped to one workflow so editing a workflow never changes global event
+	// behavior, and two workflows may route the same event differently.
+	//
+	// A run starts when a task carrying this workflow's ID publishes
+	// StartEventID; from there WorkflowStep rows decide the fan-out, and each
+	// spawned task carries the workflow ID onward so the chain continues.
+	Workflow struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		UserID      int64  `gorm:"index:idx_workflows_user_id"`
+		Name        string `gorm:"type:varchar(140);uniqueIndex:idx_workflows_name_user_id"`
+		Description string `gorm:"type:text"`
+		// StartEventID is the event that begins a run of this workflow.
+		StartEventID int64 `gorm:"index:idx_workflows_start_event_id"`
+		// Layout holds canvas node positions for the graph editor, keyed by
+		// node id ("event:<base62>" / "workspace:<base62>"). Purely
+		// presentational: the executable graph lives in WorkflowStep, so a
+		// missing or stale layout degrades to auto-placement, never to wrong
+		// routing.
+		Layout datatypes.JSON `gorm:"type:text"`
+	}
+
+	// WorkflowStep is one edge of a Workflow: when EventID fires inside this
+	// workflow, create a task in WorkspaceID from the stored template, and
+	// optionally have that task publish EmitEventID on completion (which
+	// advances the run to the next step).
+	WorkflowStep struct {
+		ID               int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		WorkflowID       int64  `gorm:"index:idx_workflow_steps_workflow_id"`
+		UserID           int64  `gorm:"index:idx_workflow_steps_user_id"`
+		EventID          int64  `gorm:"index:idx_workflow_steps_event_id"`
+		WorkspaceID      int64  `gorm:"index:idx_workflow_steps_workspace_id"`
+		EmitEventID      int64  `gorm:"index:idx_workflow_steps_emit_event_id"`
+		Title            string `gorm:"type:varchar(255)"`
+		Body             string `gorm:"type:text"`
+		Assignee         string `gorm:"type:varchar(16)"`
+		AllowAllCommands bool   `gorm:"default:false"`
+	}
+
 	// Message is an entry in a task's chat history
 	Message struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`

@@ -113,6 +113,7 @@ func New(p Params) (Handler, error) {
 		return nil, err
 	}
 	h.registerEventRoutes()
+	h.registerWorkflowRoutes()
 	if p.PushCtrl != nil {
 		h.registerPushRoutes(p.PushCtrl)
 	}

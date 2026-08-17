@@ -1,6 +1,9 @@
 package api
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type (
 	// Workspace views
@@ -315,5 +318,84 @@ type (
 
 	ListEventTriggersResponse struct {
 		EventTriggers []EventTrigger `json:"eventTriggers"`
+	}
+
+	// Workflow views (experimental)
+
+	Workflow struct {
+		ID           string    `json:"id"`
+		CreatedAt    time.Time `json:"createdAt"`
+		UpdatedAt    time.Time `json:"updatedAt"`
+		Name         string    `json:"name"`
+		Description  string    `json:"description"`
+		StartEventID string    `json:"startEventId,omitempty"`
+		// Layout is opaque canvas state owned by the editor: raw JSON, stored
+		// and returned verbatim so the graph editor can evolve its own shape
+		// without a backend change.
+		Layout json.RawMessage `json:"layout,omitempty"`
+	}
+
+	CreateWorkflowRequest struct {
+		Name         string `json:"name"`
+		Description  string `json:"description"`
+		StartEventID string `json:"startEventId,omitempty"`
+	}
+
+	CreateWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	// UpdateWorkflowRequest uses pointers so an omitted field stays unchanged:
+	// saving a canvas layout must not blank the name or description.
+	UpdateWorkflowRequest struct {
+		Name         *string          `json:"name,omitempty"`
+		Description  *string          `json:"description,omitempty"`
+		StartEventID *string          `json:"startEventId,omitempty"`
+		Layout       *json.RawMessage `json:"layout,omitempty"`
+	}
+
+	UpdateWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	GetWorkflowResponse struct {
+		Workflow Workflow `json:"workflow"`
+	}
+
+	ListWorkflowsResponse struct {
+		Workflows []Workflow `json:"workflows"`
+	}
+
+	// WorkflowStep views
+
+	WorkflowStep struct {
+		ID               string    `json:"id"`
+		CreatedAt        time.Time `json:"createdAt"`
+		WorkflowID       string    `json:"workflowId"`
+		EventID          string    `json:"eventId"`
+		WorkspaceID      string    `json:"workspaceId"`
+		EmitEventID      string    `json:"emitEventId,omitempty"`
+		Title            string    `json:"title"`
+		Body             string    `json:"body"`
+		Assignee         string    `json:"assignee"`
+		AllowAllCommands bool      `json:"allowAllCommands"`
+	}
+
+	CreateWorkflowStepRequest struct {
+		EventID          string `json:"eventId"`
+		WorkspaceID      string `json:"workspaceId"`
+		EmitEventID      string `json:"emitEventId,omitempty"`
+		Title            string `json:"title"`
+		Body             string `json:"body"`
+		Assignee         string `json:"assignee"`
+		AllowAllCommands bool   `json:"allowAllCommands"`
+	}
+
+	CreateWorkflowStepResponse struct {
+		WorkflowStep WorkflowStep `json:"workflowStep"`
+	}
+
+	ListWorkflowStepsResponse struct {
+		WorkflowSteps []WorkflowStep `json:"workflowSteps"`
 	}
 )

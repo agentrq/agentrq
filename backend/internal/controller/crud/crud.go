@@ -28,6 +28,8 @@ type (
 		TaskController
 		EventController
 		EventTriggerController
+		WorkflowController
+		WorkflowStepController
 	}
 
 	controller struct {
@@ -66,7 +68,6 @@ func (c *controller) emitEvent(ctx context.Context, e entity.CRUDEvent) {
 		Event:    e,
 	})
 }
-
 
 // WorkspaceController defines workspace operations.
 type WorkspaceController interface {
