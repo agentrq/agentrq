@@ -115,6 +115,12 @@ func ParseWorkflowText(input string) (*ParsedWorkflowText, error) {
 				if value == "" {
 					return nil, textErr(lineNo, "workflow name cannot be empty")
 				}
+				// Same rule the REST path enforces. Checking it here too means
+				// a bad rename is reported against its line rather than as a
+				// bare failure after the graph has already been validated.
+				if !isValidResourceName(value) {
+					return nil, textErr(lineNo, "invalid workflow name %q: use lowercase letters, digits and underscores, starting with a letter", value)
+				}
 				parsed.Name = value
 			case "event":
 				if parsed.StartEvent != "" {

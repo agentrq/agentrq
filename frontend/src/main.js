@@ -35,6 +35,9 @@ const routes = [
   { path: '/events', component: () => import('./views/EventsView.vue') },
   { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
 
+  { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
+  { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },
+
   { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
 ]
 

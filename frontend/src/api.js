@@ -350,3 +350,113 @@ export async function fetchEventTasks(eventId) {
   if (!res.ok) throw new Error('Failed to fetch event tasks');
   return res.json();
 }
+
+// ── Workflows (experimental) ─────────────────────────────────────────────────
+
+export async function fetchWorkflows() {
+  const res = await fetch(`${API_BASE_URL}/workflows`);
+  if (!res.ok) throw new Error('Failed to fetch workflows');
+  return res.json();
+}
+
+export async function getWorkflow(id) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch workflow');
+  return res.json();
+}
+
+export async function createWorkflow({ name, description = '', startEventId = '' }) {
+  const payload = { name, description };
+  if (startEventId) payload.startEventId = startEventId;
+  const res = await fetch(`${API_BASE_URL}/workflows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error?.message || body.error || `Failed to create workflow (${res.status})`);
+  }
+  return res.json();
+}
+
+// Fields are omitted rather than sent empty so a layout save cannot blank the
+// name; the backend treats an absent field as unchanged.
+export async function updateWorkflow(id, { name, description, startEventId, layout } = {}) {
+  const payload = {};
+  if (name !== undefined) payload.name = name;
+  if (description !== undefined) payload.description = description;
+  if (startEventId !== undefined) payload.startEventId = startEventId;
+  if (layout !== undefined) payload.layout = layout;
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('Failed to update workflow');
+  return res.json();
+}
+
+export async function deleteWorkflow(id) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete workflow');
+  return true;
+}
+
+export async function fetchWorkflowSteps(workflowId) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps`);
+  if (!res.ok) throw new Error('Failed to fetch workflow steps');
+  return res.json();
+}
+
+export async function createWorkflowStep(workflowId, { eventId, workspaceId, emitEventId = '', title, body = '', assignee = 'agent', allowAllCommands = false }) {
+  const payload = { eventId, workspaceId, title, body, assignee, allowAllCommands };
+  if (emitEventId) payload.emitEventId = emitEventId;
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    // 409 is a rejected cycle: surface the backend's reason so the editor can
+    // explain which connection was refused, not just that something failed.
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error?.message || body.error || `Failed to create workflow step (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteWorkflowStep(workflowId, stepId) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps/${stepId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete workflow step');
+  return true;
+}
+
+export async function fetchWorkflowTasks(workflowId) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/tasks`);
+  if (!res.ok) throw new Error('Failed to fetch workflow tasks');
+  return res.json();
+}
+
+export async function fetchWorkflowText(workflowId) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/text`);
+  if (!res.ok) throw new Error('Failed to fetch workflow text');
+  return res.json();
+}
+
+// Rejects with a `.line` property when the backend reports a parse error, so
+// the editor can mark the offending row.
+export async function replaceWorkflowFromText(workflowId, text) {
+  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/text`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.error?.message || body.error || `Failed to save workflow (${res.status})`);
+    if (body.error?.line) err.line = body.error.line;
+    throw err;
+  }
+  return res.json();
+}

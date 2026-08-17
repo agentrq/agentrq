@@ -37,7 +37,7 @@ func (c *controller) CreateEvent(ctx context.Context, req entity.CreateEventRequ
 	if uid == 0 {
 		return nil, fmt.Errorf("invalid userID")
 	}
-	if !isValidEventName(req.Name) {
+	if !isValidResourceName(req.Name) {
 		return nil, fmt.Errorf("invalid event name: must match ^[a-z][a-z0-9_]{0,128}$")
 	}
 
@@ -200,7 +200,11 @@ func (c *controller) ListTasksFromEvent(ctx context.Context, req entity.ListTask
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
-func isValidEventName(name string) bool {
+// isValidResourceName enforces the shared identifier convention for names that
+// are referenced textually rather than by id — event names in publishEvent,
+// and workflow and agent names in the workflow text format. Anything with a
+// space or a colon would be ambiguous to parse there, so the rule is one rule.
+func isValidResourceName(name string) bool {
 	if len(name) == 0 || len(name) > 129 {
 		return false
 	}

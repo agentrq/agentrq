@@ -12,12 +12,12 @@ import (
 	"github.com/golang/mock/gomock"
 )
 
-// ── isValidEventName ──────────────────────────────────────────────────────────
+// ── isValidResourceName ──────────────────────────────────────────────────────────
 
 func TestIsValidEventName(t *testing.T) {
 	valid := []string{"a", "abc", "a1", "a_b", "task_done", "a" + repeat("b", 128)}
 	for _, n := range valid {
-		if !isValidEventName(n) {
+		if !isValidResourceName(n) {
 			t.Errorf("expected %q to be valid", n)
 		}
 	}
@@ -26,7 +26,7 @@ func TestIsValidEventName(t *testing.T) {
 		"a" + repeat("b", 129), // 130 chars total — over limit
 	}
 	for _, n := range invalid {
-		if isValidEventName(n) {
+		if isValidResourceName(n) {
 			t.Errorf("expected %q to be invalid", n)
 		}
 	}

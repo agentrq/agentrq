@@ -34,3 +34,17 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	b, _ := json.Marshal(e)
 	return b, code
 }
+
+// FromMessageToHTTPResponse renders an error whose text is meant for the user.
+//
+// FromErrorToHTTPResponse deliberately replaces unrecognized errors with a
+// generic message so internals never leak; this is the opt-in for the cases
+// where the message *is* the point — a rejected workflow cycle has to say which
+// connection was refused, or the editor can only report that something failed.
+func FromMessageToHTTPResponse(message string, code int) []byte {
+	e := httpError{}
+	e.Error.Code = code
+	e.Error.Message = message
+	b, _ := json.Marshal(e)
+	return b
+}

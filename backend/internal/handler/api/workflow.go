@@ -42,6 +42,12 @@ func (h *handler) createWorkflow() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.CreateWorkflow(ctx, *rq)
 		if err != nil {
+			// A malformed name is the user's input, not a server fault; answer
+			// with the rule so the form can show what is actually allowed.
+			if errors.Is(err, _crud.ErrInvalidWorkflowName) {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusUnprocessableEntity))
+			}
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -102,6 +108,10 @@ func (h *handler) updateWorkflow() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.UpdateWorkflow(ctx, *rq)
 		if err != nil {
+			if errors.Is(err, _crud.ErrInvalidWorkflowName) {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusUnprocessableEntity))
+			}
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
@@ -145,12 +155,11 @@ func (h *handler) createWorkflowStep() fiber.Handler {
 		rs, err := h.crud.CreateWorkflowStep(ctx, *rq)
 		if err != nil {
 			// A rejected cycle is the user drawing an invalid graph, not a
-			// server fault: surface it as 409 so the editor can point at the
-			// offending edge instead of showing a generic failure.
+			// server fault: 409 with the real reason, so the editor can say
+			// which connection was refused rather than "something failed".
 			if errors.Is(err, _crud.ErrWorkflowCycle) {
-				e, _ := mapper.FromErrorToHTTPResponse(err)
 				c.Status(http.StatusConflict)
-				return c.Send(e)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
 			}
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)

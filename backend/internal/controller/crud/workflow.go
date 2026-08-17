@@ -36,6 +36,11 @@ type WorkflowStepController interface {
 // the user is still looking at the canvas.
 var ErrWorkflowCycle = fmt.Errorf("this step would create a cycle in the workflow")
 
+// ErrInvalidWorkflowName is returned when a workflow name breaks the shared
+// identifier convention. Exported so the handler can answer 422 with the rule
+// itself rather than a generic failure.
+var ErrInvalidWorkflowName = fmt.Errorf("invalid workflow name: must match ^[a-z][a-z0-9_]{0,128}$")
+
 // ── Workflows ─────────────────────────────────────────────────────────────────
 
 func (c *controller) CreateWorkflow(ctx context.Context, req entity.CreateWorkflowRequest) (*entity.CreateWorkflowResponse, error) {
@@ -43,8 +48,10 @@ func (c *controller) CreateWorkflow(ctx context.Context, req entity.CreateWorkfl
 	if uid == 0 {
 		return nil, fmt.Errorf("invalid userID")
 	}
-	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+	// Workflows share the event naming convention: both are referenced by name
+	// from the text format, where a space or colon would be ambiguous to parse.
+	if !isValidResourceName(req.Name) {
+		return nil, ErrInvalidWorkflowName
 	}
 
 	// A start event is optional at create time so the editor can open an empty
@@ -107,8 +114,8 @@ func (c *controller) UpdateWorkflow(ctx context.Context, req entity.UpdateWorkfl
 	}
 
 	if req.Name != nil {
-		if *req.Name == "" {
-			return nil, fmt.Errorf("name cannot be empty")
+		if !isValidResourceName(*req.Name) {
+			return nil, ErrInvalidWorkflowName
 		}
 		existing.Name = *req.Name
 	}

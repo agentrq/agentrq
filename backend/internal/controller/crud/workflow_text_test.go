@@ -227,6 +227,26 @@ func TestParseWorkflowTextErrors(t *testing.T) {
 			wantLine: 2,
 			wantMsg:  "must not be indented",
 		},
+		{
+			// Workflows share the event naming convention: both are referenced
+			// by name from this format, where a space would be ambiguous.
+			name:     "workflow name with a space",
+			input:    "workflow: my workflow\nevent: s\n",
+			wantLine: 1,
+			wantMsg:  "invalid workflow name",
+		},
+		{
+			name:     "workflow name starting with a digit",
+			input:    "workflow: 1st_pipeline\nevent: s\n",
+			wantLine: 1,
+			wantMsg:  "invalid workflow name",
+		},
+		{
+			name:     "workflow name with uppercase",
+			input:    "workflow: NewFeature\nevent: s\n",
+			wantLine: 1,
+			wantMsg:  "invalid workflow name",
+		},
 	}
 
 	for _, tt := range tests {
