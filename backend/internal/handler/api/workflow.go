@@ -25,6 +25,8 @@ func (h *handler) registerWorkflowRoutes() {
 	h.router.Get("/workflows/:id/steps", h.listWorkflowSteps())
 	h.router.Delete("/workflows/:id/steps/:stepID", h.deleteWorkflowStep())
 	h.router.Get("/workflows/:id/tasks", h.listTasksFromWorkflow())
+	h.router.Get("/workflows/:id/text", h.getWorkflowText())
+	h.router.Put("/workflows/:id/text", h.replaceWorkflowFromText())
 }
 
 func (h *handler) createWorkflow() fiber.Handler {
@@ -198,6 +200,55 @@ func (h *handler) deleteWorkflowStep() fiber.Handler {
 		}
 		c.Status(http.StatusNoContent)
 		return nil
+	}
+}
+
+func (h *handler) getWorkflowText() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToGetWorkflowTextRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.GetWorkflowText(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromGetWorkflowTextResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) replaceWorkflowFromText() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToReplaceWorkflowFromTextRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.ReplaceWorkflowFromText(ctx, *rq)
+		if err != nil {
+			// A malformed document is the user mistyping, not a server fault.
+			// 422 with the line number lets the editor mark the exact row.
+			var textErr *_crud.WorkflowTextError
+			if errors.As(err, &textErr) {
+				c.Status(http.StatusUnprocessableEntity)
+				return c.Send(mapper.FromWorkflowTextErrorToHTTPResponse(textErr.Msg, textErr.Line))
+			}
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromReplaceWorkflowFromTextResponseEntityToHTTPResponse(rs))
 	}
 }
 

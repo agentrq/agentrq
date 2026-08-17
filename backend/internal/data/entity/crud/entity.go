@@ -691,12 +691,43 @@ type (
 	ListTasksFromWorkflowResponse struct {
 		Tasks []Task
 	}
+
+	// Workflow text mode
+
+	GetWorkflowTextRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	GetWorkflowTextResponse struct {
+		Text string
+	}
+
+	ReplaceWorkflowFromTextRequest struct {
+		ID     int64
+		UserID string
+		Text   string
+	}
+
+	ReplaceWorkflowFromTextResponse struct {
+		Workflow  Workflow
+		StepCount int
+	}
 )
 
 const (
 	PubSubTopicCRUD   int64 = 1
 	PubSubTopicMCP    int64 = 2
 	PubSubTopicEvents int64 = 3
+)
+
+// What a task fires when it completes. Stored on Task.CompletionTriggerType to
+// record the author's choice, which a non-zero WorkflowID alone cannot express:
+// choosing a workflow also sets EventID to that workflow's start event.
+const (
+	CompletionTriggerNone     int16 = 0
+	CompletionTriggerEvent    int16 = 1
+	CompletionTriggerWorkflow int16 = 2
 )
 
 // EventPublishedPayload is the message sent on PubSubTopicEvents when an event fires.

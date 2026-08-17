@@ -30,6 +30,7 @@ type (
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController
+		WorkflowTextController
 	}
 
 	controller struct {

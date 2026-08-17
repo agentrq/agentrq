@@ -63,6 +63,13 @@ type (
 		// without it the runaway-guard counter would reset to zero each hop and
 		// never trip.
 		WorkflowDepth int `gorm:"default:0"`
+		// CompletionTriggerType records what the author actually chose on the
+		// task form: CompletionTriggerNone/Event/Workflow. Strictly it is
+		// derivable (a non-zero WorkflowID implies a workflow), but choosing a
+		// workflow also sets EventID to that workflow's start event — so
+		// without this the UI cannot tell "they picked workflow new_feature"
+		// from "they picked event code_changed" and would label it wrong.
+		CompletionTriggerType int16 `gorm:"default:0"`
 	}
 
 	// ToolCall records a single tool-call permission decision for a task: either

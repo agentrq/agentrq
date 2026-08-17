@@ -175,6 +175,51 @@ func FromListTasksFromWorkflowResponseEntityToHTTPResponse(rs *entity.ListTasksF
 	return payload
 }
 
+// ── Workflow text HTTP mappers ────────────────────────────────────────────────
+
+func FromHTTPRequestToGetWorkflowTextRequestEntity(c *fiber.Ctx) *entity.GetWorkflowTextRequest {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	return &entity.GetWorkflowTextRequest{ID: id}
+}
+
+func FromGetWorkflowTextResponseEntityToHTTPResponse(rs *entity.GetWorkflowTextResponse) []byte {
+	payload, _ := json.Marshal(view.GetWorkflowTextResponse{Text: rs.Text})
+	return payload
+}
+
+func FromHTTPRequestToReplaceWorkflowFromTextRequestEntity(c *fiber.Ctx) *entity.ReplaceWorkflowFromTextRequest {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	var payload view.ReplaceWorkflowFromTextRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	return &entity.ReplaceWorkflowFromTextRequest{ID: id, Text: payload.Text}
+}
+
+func FromReplaceWorkflowFromTextResponseEntityToHTTPResponse(rs *entity.ReplaceWorkflowFromTextResponse) []byte {
+	payload, _ := json.Marshal(view.ReplaceWorkflowFromTextResponse{
+		Workflow:  fromEntityWorkflowToView(rs.Workflow),
+		StepCount: rs.StepCount,
+	})
+	return payload
+}
+
+// FromWorkflowTextErrorToHTTPResponse renders a parse failure with its line
+// number preserved, so the editor can point at the row instead of making the
+// user re-read the whole document.
+func FromWorkflowTextErrorToHTTPResponse(message string, line int) []byte {
+	payload, _ := json.Marshal(view.WorkflowTextErrorResponse{
+		Error: view.WorkflowTextError{Message: message, Line: line},
+	})
+	return payload
+}
+
 // ── Internal model↔entity mappers ─────────────────────────────────────────────
 
 func FromModelWorkflowToEntity(m model.Workflow) entity.Workflow {

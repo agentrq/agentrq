@@ -92,6 +92,7 @@ type Repository interface {
 	// Workflows
 	CreateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
 	GetWorkflow(ctx context.Context, id int64, userID int64) (model.Workflow, error)
+	GetWorkflowByName(ctx context.Context, name string, userID int64) (model.Workflow, error)
 	ListWorkflowsByUser(ctx context.Context, userID int64) ([]model.Workflow, error)
 	UpdateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
 	DeleteWorkflow(ctx context.Context, id int64, userID int64) error
@@ -105,6 +106,7 @@ type Repository interface {
 	// request and keys off the workflow the originating task already carried.
 	SystemListWorkflowStepsByEvent(ctx context.Context, workflowID int64, eventID int64) ([]model.WorkflowStep, error)
 	ListTasksByWorkflowID(ctx context.Context, workflowID int64, userID int64) ([]model.Task, error)
+	ReplaceWorkflowSteps(ctx context.Context, workflowID int64, userID int64, steps []model.WorkflowStep) error
 }
 
 type repository struct {
@@ -957,6 +959,15 @@ func (r *repository) GetWorkflow(ctx context.Context, id int64, userID int64) (m
 	return w, err
 }
 
+func (r *repository) GetWorkflowByName(ctx context.Context, name string, userID int64) (model.Workflow, error) {
+	var w model.Workflow
+	err := r.conn(ctx).Where("name = ? AND user_id = ?", name, userID).First(&w).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Workflow{}, ErrNotFound
+	}
+	return w, err
+}
+
 func (r *repository) ListWorkflowsByUser(ctx context.Context, userID int64) ([]model.Workflow, error) {
 	var workflows []model.Workflow
 	err := r.conn(ctx).Where("user_id = ?", userID).Order("created_at desc").Find(&workflows).Error
@@ -1038,4 +1049,22 @@ func (r *repository) ListTasksByWorkflowID(ctx context.Context, workflowID int64
 	var tasks []model.Task
 	err := r.conn(ctx).Where("workflow_id = ? AND user_id = ?", workflowID, userID).Order("created_at desc").Find(&tasks).Error
 	return tasks, err
+}
+
+// ReplaceWorkflowSteps swaps a workflow's whole edge set in one transaction.
+//
+// Text mode edits the graph as a document, so the save is a replace rather than
+// a diff. Doing it transactionally matters: a partial apply would leave a
+// half-rewired graph live, and the consumer reads these rows the moment an
+// event fires.
+func (r *repository) ReplaceWorkflowSteps(ctx context.Context, workflowID int64, userID int64, steps []model.WorkflowStep) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("workflow_id = ? AND user_id = ?", workflowID, userID).Delete(&model.WorkflowStep{}).Error; err != nil {
+			return err
+		}
+		if len(steps) == 0 {
+			return nil
+		}
+		return tx.Create(&steps).Error
+	})
 }

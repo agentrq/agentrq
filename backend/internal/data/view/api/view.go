@@ -398,4 +398,31 @@ type (
 	ListWorkflowStepsResponse struct {
 		WorkflowSteps []WorkflowStep `json:"workflowSteps"`
 	}
+
+	// Workflow text mode
+
+	GetWorkflowTextResponse struct {
+		Text string `json:"text"`
+	}
+
+	ReplaceWorkflowFromTextRequest struct {
+		Text string `json:"text"`
+	}
+
+	ReplaceWorkflowFromTextResponse struct {
+		Workflow  Workflow `json:"workflow"`
+		StepCount int      `json:"stepCount"`
+	}
+
+	// WorkflowTextError reports a parse or validation failure with the source
+	// line, so the editor can mark the offending row rather than showing a bare
+	// message above the document.
+	WorkflowTextError struct {
+		Message string `json:"message"`
+		Line    int    `json:"line,omitempty"`
+	}
+
+	WorkflowTextErrorResponse struct {
+		Error WorkflowTextError `json:"error"`
+	}
 )

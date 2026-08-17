@@ -54,6 +54,10 @@ type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []strin
 // the original global-trigger path.
 type WorkflowRunContext struct {
 	WorkflowID int64
+	// WorkflowName is set when the agent named a workflow explicitly. It starts
+	// a fresh run of that workflow and takes precedence over WorkflowID, which
+	// only says which run the publishing task already belonged to.
+	WorkflowName string
 	// Depth is how many hops already preceded the publishing task, carried so
 	// the consumer's runaway guard survives the task boundary.
 	Depth int
@@ -155,9 +159,10 @@ type CreateTaskParams struct {
 
 // PublishEventParams is the input to the publishEvent tool.
 type PublishEventParams struct {
-	Name    string            `json:"name" jsonschema:"The event name to publish (must match an existing event in this workspace's owner account)"`
-	Payload string            `json:"payload,omitempty" jsonschema:"Unstructured text payload describing what happened"`
-	FAQ     []PublishEventFAQ `json:"faq,omitempty" jsonschema:"Optional question-answer pairs providing additional context"`
+	Name     string            `json:"name" jsonschema:"The event name to publish (must match an existing event in this workspace's owner account)"`
+	Payload  string            `json:"payload,omitempty" jsonschema:"Unstructured text payload describing what happened"`
+	FAQ      []PublishEventFAQ `json:"faq,omitempty" jsonschema:"Optional question-answer pairs providing additional context"`
+	Workflow string            `json:"workflow,omitempty" jsonschema:"Optional workflow name to run. Without it the event fans out to whatever is globally subscribed; with it, only that workflow's steps run. Omit to continue a workflow you are already part of."`
 }
 
 // PublishEventFAQ is a single question-answer pair in a publishEvent call.
@@ -873,7 +878,9 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 	for i, f := range params.FAQ {
 		faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
 	}
-	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq, ps.currentWorkflowRun(ctx, req)); err != nil {
+	run := ps.currentWorkflowRun(ctx, req)
+	run.WorkflowName = params.Workflow
+	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq, run); err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to publish event: %v", err)}},

@@ -545,6 +545,20 @@ func New(cfg Config) (*App, error) {
 				if err != nil {
 					return fmt.Errorf("event %q not found", eventName)
 				}
+
+				// Naming a workflow explicitly starts a fresh run of it, which
+				// overrides whichever run the publishing task belonged to. Depth
+				// restarts with it: this is a new run, not a continuation, and
+				// inheriting the old count would retire it early.
+				workflowID, depth := run.WorkflowID, run.Depth
+				if run.WorkflowName != "" {
+					wf, wfErr := repo.GetWorkflowByName(ctx, run.WorkflowName, uid)
+					if wfErr != nil {
+						return fmt.Errorf("workflow %q not found", run.WorkflowName)
+					}
+					workflowID, depth = wf.ID, 0
+				}
+
 				pubsubSvc.Publish(ctx, pubsub.PublishRequest{
 					PubSubID: entity.PubSubTopicEvents,
 					Event: entity.EventPublishedPayload{
@@ -552,8 +566,8 @@ func New(cfg Config) (*App, error) {
 						Name:       ev.Name,
 						Payload:    payload,
 						FAQ:        faq,
-						WorkflowID: run.WorkflowID,
-						Depth:      run.Depth,
+						WorkflowID: workflowID,
+						Depth:      depth,
 					},
 				})
 				return nil
