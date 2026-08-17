@@ -87,20 +87,24 @@ const maxWorkflowDepth = 32
 func (c *controller) processEvent(ctx context.Context, ev entity.EventPublishedPayload) {
 	faqText := renderFAQ(ev.FAQ)
 
-	// A publish carrying a workflow stays inside that workflow: its steps
-	// decide the fan-out, not the global triggers. This is what makes a
-	// workflow an isolated graph rather than an edit to global event behavior.
+	// A publish carrying a workflow additionally runs that workflow's steps.
 	if ev.WorkflowID != 0 {
 		c.processWorkflowEvent(ctx, ev, faqText)
-		return
 	}
 
+	// Global triggers fire either way: the event was genuinely published, so
+	// anything subscribed to it hears about it, workflow or not. A workflow
+	// adds routing on top of an event rather than replacing it.
 	triggers, err := c.repo.SystemListEventTriggersByEventID(ctx, ev.EventID)
 	if err != nil || len(triggers) == 0 {
 		return
 	}
 
 	for _, trigger := range triggers {
+		// Deliberately not carrying the workflow onto these tasks. A global
+		// subscriber is outside the workflow, so its own chain continues
+		// through global triggers; inheriting the workflow would drag an
+		// unrelated pipeline into a graph that never declared it.
 		c.createTriggeredTask(ctx, trigger, ev.Payload, faqText)
 	}
 }

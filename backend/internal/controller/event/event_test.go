@@ -290,3 +290,112 @@ func TestProcessEvent_WithCronSchedule(t *testing.T) {
 		Name:    "deploy_done",
 	})
 }
+
+// ── Workflow runs ─────────────────────────────────────────────────────────────
+
+// A workflow publish runs the workflow's own steps AND the event's global
+// subscribers. The event was genuinely published, so anything subscribed to it
+// hears about it; a workflow adds routing on top of an event, it does not
+// replace it.
+func TestProcessEvent_WorkflowRunsStepsAndGlobalTriggers(t *testing.T) {
+	c, mockRepo, mockPubSub, mockIDGen := newTestController(t)
+
+	mockRepo.EXPECT().
+		SystemListWorkflowStepsByEvent(gomock.Any(), int64(7), int64(42)).
+		Return([]model.WorkflowStep{
+			{ID: 1, WorkflowID: 7, EventID: 42, WorkspaceID: 10, Title: "workflow step", Assignee: "agent"},
+		}, nil)
+
+	mockRepo.EXPECT().
+		SystemListEventTriggersByEventID(gomock.Any(), int64(42)).
+		Return([]model.EventTrigger{
+			{ID: 2, EventID: 42, WorkspaceID: 20, Title: "global subscriber", Assignee: "agent"},
+		}, nil)
+
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(10)).Return(model.Workspace{ID: 10, UserID: 100}, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(20)).Return(model.Workspace{ID: 20, UserID: 100}, nil)
+	mockIDGen.EXPECT().NextID().Return(int64(111))
+	mockIDGen.EXPECT().NextID().Return(int64(222))
+
+	created := make(map[string]model.Task)
+	mockRepo.EXPECT().
+		CreateTask(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, task model.Task) (model.Task, error) {
+			created[task.Title] = task
+			task.CreatedAt = time.Now()
+			return task, nil
+		}).Times(2)
+
+	mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).Times(2)
+
+	c.processEvent(context.Background(), entity.EventPublishedPayload{
+		EventID:    42,
+		Name:       "code_changed",
+		Payload:    "v1",
+		WorkflowID: 7,
+	})
+
+	if len(created) != 2 {
+		t.Fatalf("expected both a workflow step task and a global trigger task, got %d: %v", len(created), created)
+	}
+
+	// The workflow task carries the run forward so the chain continues.
+	step := created["workflow step"]
+	if step.WorkflowID != 7 {
+		t.Errorf("workflow step task WorkflowID = %d, want 7", step.WorkflowID)
+	}
+	if step.WorkflowDepth != 1 {
+		t.Errorf("workflow step task WorkflowDepth = %d, want 1", step.WorkflowDepth)
+	}
+
+	// The global subscriber sits outside the workflow, so it must NOT inherit
+	// it — otherwise an unrelated pipeline gets dragged into a graph that never
+	// declared it.
+	global := created["global subscriber"]
+	if global.WorkflowID != 0 {
+		t.Errorf("global trigger task WorkflowID = %d, want 0 (must not inherit the workflow)", global.WorkflowID)
+	}
+}
+
+// A publish with no workflow keeps the original behavior exactly.
+func TestProcessEvent_NoWorkflowSkipsWorkflowLookup(t *testing.T) {
+	c, mockRepo, mockPubSub, mockIDGen := newTestController(t)
+
+	// SystemListWorkflowStepsByEvent must not be called at all.
+	mockRepo.EXPECT().
+		SystemListEventTriggersByEventID(gomock.Any(), int64(42)).
+		Return([]model.EventTrigger{
+			{ID: 1, EventID: 42, WorkspaceID: 10, Title: "global only", Assignee: "agent"},
+		}, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(10)).Return(model.Workspace{ID: 10, UserID: 100}, nil)
+	mockIDGen.EXPECT().NextID().Return(int64(1))
+	mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 1}, nil)
+	mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil)
+
+	c.processEvent(context.Background(), entity.EventPublishedPayload{EventID: 42, Name: "deploy_done"})
+}
+
+// The hop cap stops a runaway run. Cycles are refused at setup, so this only
+// fires for rows that reached storage another way — but it must still stop, and
+// it must not suppress the event's global subscribers, which are not part of
+// the loop.
+func TestProcessEvent_WorkflowDepthLimit(t *testing.T) {
+	c, mockRepo, mockPubSub, mockIDGen := newTestController(t)
+
+	mockRepo.EXPECT().
+		SystemListEventTriggersByEventID(gomock.Any(), int64(42)).
+		Return([]model.EventTrigger{
+			{ID: 1, EventID: 42, WorkspaceID: 10, Title: "global still runs", Assignee: "agent"},
+		}, nil)
+	mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), int64(10)).Return(model.Workspace{ID: 10, UserID: 100}, nil)
+	mockIDGen.EXPECT().NextID().Return(int64(1))
+	mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 1}, nil)
+	mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil)
+
+	c.processEvent(context.Background(), entity.EventPublishedPayload{
+		EventID:    42,
+		Name:       "looped",
+		WorkflowID: 7,
+		Depth:      maxWorkflowDepth,
+	})
+}

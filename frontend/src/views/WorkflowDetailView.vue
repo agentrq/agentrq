@@ -1,10 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   getWorkflow, updateWorkflow, fetchWorkflowSteps, createWorkflowStep,
   deleteWorkflowStep, fetchWorkflowTasks, fetchWorkflowText, replaceWorkflowFromText,
-  fetchEvents,
+  fetchEvents, fetchEventTriggers,
 } from '../api';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTooltipStore } from '../stores/tooltipStore';
@@ -45,7 +45,9 @@ const CANVAS_PADDING = 32;
 const positions = ref({});
 
 function nodeKey(node) {
-  return node.kind === 'event' ? `event:${node.eventId}` : `step:${node.stepId}`;
+  if (node.kind === 'event') return `event:${node.eventId}`;
+  if (node.kind === 'global') return `global:${node.triggerId}`;
+  return `step:${node.stepId}`;
 }
 
 // ── Graph model ───────────────────────────────────────────────────────────────
@@ -80,6 +82,51 @@ const stepsByEvent = computed(() => {
   }
   return map;
 });
+
+// Global subscribers to the events this workflow passes through, keyed by
+// event id. These are `EventTrigger` rows owned by /events, not by this
+// workflow — but they DO run when a workflow publishes their event, so hiding
+// them would misrepresent what a run actually does. They are drawn locked.
+const globalTriggers = ref({});
+
+/** Every event this workflow touches: its start plus everything emitted. */
+const graphEventIds = computed(() => {
+  const ids = new Set();
+  if (workflow.value?.startEventId) ids.add(workflow.value.startEventId);
+  for (const s of steps.value) {
+    ids.add(s.eventId);
+    if (s.emitEventId) ids.add(s.emitEventId);
+  }
+  return [...ids];
+});
+
+// Refetch whenever the set of events changes rather than after each mutation:
+// adding a step, clearing an emit, or a text-mode save can all bring a new
+// event into the graph, and a watch cannot be forgotten at one of those sites.
+watch(graphEventIds, (ids, previous) => {
+  if (previous && ids.length === previous.length && ids.every(id => previous.includes(id))) return;
+  loadGlobalTriggers();
+});
+
+async function loadGlobalTriggers() {
+  const ids = graphEventIds.value;
+  if (ids.length === 0) {
+    globalTriggers.value = {};
+    return;
+  }
+  // One request per event: a graph has a handful of them, and there is no bulk
+  // endpoint. Failures degrade to "no global subscribers" rather than blocking
+  // the canvas — the workflow's own steps are the part the user is editing.
+  const results = await Promise.all(ids.map(async id => {
+    try {
+      const data = await fetchEventTriggers(id);
+      return [id, data.eventTriggers ?? []];
+    } catch {
+      return [id, []];
+    }
+  }));
+  globalTriggers.value = Object.fromEntries(results.filter(([, list]) => list.length > 0));
+}
 
 /**
  * Walks outward from the start event assigning each node a column.
@@ -119,6 +166,7 @@ const graph = computed(() => {
   // rows and crossed the edges between them.
   const eventRow = {};
   const stepRow = {};
+  const globalRow = {};
   const visiting = new Set();
   let nextRow = 0;
 
@@ -130,7 +178,8 @@ const graph = computed(() => {
     visiting.add(eventId);
 
     const childSteps = stepsByEvent.value[eventId] ?? [];
-    if (childSteps.length === 0) {
+    const childGlobals = globalTriggers.value[eventId] ?? [];
+    if (childSteps.length === 0 && childGlobals.length === 0) {
       eventRow[eventId] = nextRow++;
     } else {
       const rows = [];
@@ -145,6 +194,13 @@ const graph = computed(() => {
           stepRow[step.id] = nextRow++;
         }
         rows.push(stepRow[step.id]);
+      }
+      // Global subscribers are always leaves here. Their own onward chain runs
+      // through global triggers, not this workflow, so drawing it would grow
+      // the canvas without describing this graph.
+      for (const trigger of childGlobals) {
+        globalRow[trigger.id] = nextRow++;
+        rows.push(globalRow[trigger.id]);
       }
       eventRow[eventId] = rows.reduce((sum, r) => sum + r, 0) / rows.length;
     }
@@ -189,6 +245,26 @@ const graph = computed(() => {
     edges.push({ from: source, to: node });
     if (step.emitEventId && eventNodes[step.emitEventId]) {
       edges.push({ from: node, to: eventNodes[step.emitEventId] });
+    }
+  }
+
+  // Locked nodes for the event's global subscribers.
+  for (const [eventId, triggers] of Object.entries(globalTriggers.value)) {
+    const source = eventNodes[eventId];
+    if (!source) continue;
+    for (const trigger of triggers) {
+      const node = {
+        kind: 'global',
+        triggerId: trigger.id,
+        trigger,
+        eventId,
+        label: workspaceName(trigger.workspaceId),
+        column: source.column + 1,
+        row: globalRow[trigger.id] ?? nextRow++,
+        height: trigger.emitEventId ? NODE_HEIGHT_WITH_EMIT : NODE_HEIGHT,
+      };
+      nodes.push(node);
+      edges.push({ from: source, to: node, global: true });
     }
   }
 
@@ -277,6 +353,9 @@ function startPaletteDrag(kind, id, e) {
 // silently do nothing.
 function canDropOn(node, item = dragItem.value) {
   if (!item) return false;
+  // A global subscriber belongs to the event, not this workflow, so nothing
+  // dropped here could be saved.
+  if (node.kind === 'global') return false;
   if (node.kind === 'event') return item.kind === 'workspace';
   if (node.kind === 'step') {
     if (item.kind !== 'event') return false;
@@ -552,7 +631,7 @@ onMounted(async () => {
       fetchEvents().catch(() => ({ events: [] })),
     ]);
     events.value = eventsRes.events ?? [];
-    await loadTasks();
+    await Promise.all([loadTasks(), loadGlobalTriggers()]);
   } catch (e) {
     notifyError(e.message);
   } finally {
@@ -673,6 +752,8 @@ onMounted(async () => {
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.5"
+                  :stroke-dasharray="edge.global ? '4 3' : undefined"
+                  :opacity="edge.global ? 0.6 : 1"
                   marker-end="url(#wf-arrow)" />
               </svg>
 
@@ -685,7 +766,11 @@ onMounted(async () => {
                 :class="[
                   node.kind === 'event'
                     ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-900/50'
-                    : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800',
+                    : node.kind === 'global'
+                      // Dashed and dimmed: it runs, but this workflow does not
+                      // own it, so it cannot be edited from here.
+                      ? 'bg-gray-50/60 dark:bg-zinc-900/40 border-dashed border-gray-300 dark:border-zinc-700'
+                      : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800',
                   dropTarget === nodeKey(node) ? 'ring-2 ring-black dark:ring-white shadow-lg' : '',
                   dragItem && !canDropOn(node) ? 'opacity-40' : '',
                 ]"
@@ -697,11 +782,31 @@ onMounted(async () => {
                     class="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
                     :class="node.kind === 'event'
                       ? 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40'
-                      : 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800'">
+                      : node.kind === 'global'
+                        ? 'text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800'
+                        : 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800'">
                     {{ node.kind === 'event' ? 'event' : 'agent' }}
                   </span>
-                  <span class="min-w-0 grow truncate text-[11px] font-mono font-semibold text-gray-900 dark:text-zinc-100">{{ node.label }}</span>
+                  <span
+                    class="min-w-0 grow truncate text-[11px] font-mono font-semibold"
+                    :class="node.kind === 'global' ? 'text-gray-500 dark:text-zinc-400' : 'text-gray-900 dark:text-zinc-100'">
+                    {{ node.label }}
+                  </span>
                   <span v-if="node.isStart" class="shrink-0 text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400">start</span>
+                  <!-- Managed on the event, not here: link out rather than
+                       offering a delete this view cannot honour. -->
+                  <router-link
+                    v-if="node.kind === 'global'"
+                    :to="`/events/${node.eventId}`"
+                    @click.stop
+                    @mouseenter="tooltipStore.show($event, 'Global subscriber — always runs on this event. Managed in Events.', 'top')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="shrink-0 flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
+                    <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                    </svg>
+                    global
+                  </router-link>
                   <button
                     v-if="node.kind === 'step'"
                     @click.stop="confirmDeleteStep(node.step)"
@@ -710,6 +815,13 @@ onMounted(async () => {
                       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
+                </div>
+                <!-- A global subscriber may chain onward, but through global
+                     triggers rather than this workflow — shown, not drawn. -->
+                <div v-if="node.kind === 'global' && node.trigger.emitEventId" class="px-3 pb-1.5 -mt-1">
+                  <span class="text-[9px] text-gray-400 dark:text-zinc-500">
+                    emits <span class="font-mono">{{ eventName(node.trigger.emitEventId) }}</span> outside this workflow
+                  </span>
                 </div>
                 <div v-if="node.kind === 'step' && node.step.emitEventId" class="flex items-center gap-1.5 px-3 pb-1.5 -mt-1">
                   <span class="min-w-0 grow truncate text-[9px] text-gray-400 dark:text-zinc-500">
