@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getEvent, updateEvent, deleteEvent, fetchEvents, fetchEventTriggers, createEventTrigger, deleteEventTrigger, fetchEventTasks } from '../api'
+import { getEvent, updateEvent, deleteEvent, fetchEvents, fetchEventTriggers, createEventTrigger, updateEventTrigger, deleteEventTrigger, fetchEventTasks } from '../api'
 import { useToasts } from '../composables/useToasts'
 import { useCron } from '../composables/useCron'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -74,9 +74,10 @@ async function loadTriggers() {
   }
 }
 
-// create trigger form
+// create/edit trigger form
 const showTriggerForm = ref(false)
-const creatingTrigger = ref(false)
+const submittingTrigger = ref(false)
+const editingTriggerId = ref(null)
 
 const triggerForm = ref({
   workspaceId: '',
@@ -164,13 +165,41 @@ function resetTriggerForm() {
   triggerRepeatTime.value = '09:00'
   triggerSelectedDays.value = [1, 2, 3, 4, 5]
   showTriggerForm.value = false
+  editingTriggerId.value = null
 }
 
-async function handleCreateTrigger() {
+function toggleTriggerForm() {
+  if (showTriggerForm.value && !editingTriggerId.value) {
+    showTriggerForm.value = false
+    return
+  }
+  resetTriggerForm()
+  showTriggerForm.value = true
+}
+
+function startEditTrigger(t) {
+  triggerForm.value = {
+    workspaceId: t.workspaceId,
+    title: t.title,
+    body: t.body ?? '',
+    assignee: t.assignee ?? 'agent',
+    allowAllCommands: !!t.allowAllCommands,
+    cronSchedule: t.cronSchedule ?? '',
+    emitEventId: t.emitEventId ?? '',
+  }
+  // Leave the friendly cron picker untouched (default 'none') so the
+  // existing cronSchedule string above isn't overwritten by its watcher —
+  // it only fires when the user actually interacts with the picker.
+  triggerScheduleType.value = 'none'
+  editingTriggerId.value = t.id
+  showTriggerForm.value = true
+}
+
+async function handleSubmitTrigger() {
   if (!triggerForm.value.workspaceId || !triggerForm.value.title) return
-  creatingTrigger.value = true
+  submittingTrigger.value = true
   try {
-    const data = await createEventTrigger(eventId, {
+    const payload = {
       workspaceId: triggerForm.value.workspaceId,
       title: triggerForm.value.title,
       body: triggerForm.value.body,
@@ -178,14 +207,22 @@ async function handleCreateTrigger() {
       cronSchedule: triggerForm.value.cronSchedule,
       allowAllCommands: triggerForm.value.allowAllCommands,
       emitEventId: triggerForm.value.emitEventId,
-    })
-    triggers.value.unshift(data.eventTrigger)
-    notifySuccess('Trigger created')
+    }
+    if (editingTriggerId.value) {
+      const data = await updateEventTrigger(eventId, editingTriggerId.value, payload)
+      const idx = triggers.value.findIndex(t => t.id === editingTriggerId.value)
+      if (idx !== -1) triggers.value[idx] = data.eventTrigger
+      notifySuccess('Trigger updated')
+    } else {
+      const data = await createEventTrigger(eventId, payload)
+      triggers.value.unshift(data.eventTrigger)
+      notifySuccess('Trigger created')
+    }
     resetTriggerForm()
   } catch (e) {
     notifyError(e.message)
   } finally {
-    creatingTrigger.value = false
+    submittingTrigger.value = false
   }
 }
 
@@ -352,16 +389,16 @@ onMounted(async () => {
             <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">Workspaces that receive a task when this event fires.</p>
           </div>
           <button
-            @click="showTriggerForm = !showTriggerForm"
+            @click="toggleTriggerForm"
             class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 shrink-0">
             + Add Trigger
           </button>
         </div>
 
-        <!-- Create Trigger Form -->
+        <!-- Create/Edit Trigger Form -->
         <Transition name="slide-down">
           <div v-if="showTriggerForm" class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 space-y-4 mb-4">
-            <h3 class="text-xs font-bold text-gray-800 dark:text-zinc-200">New Trigger</h3>
+            <h3 class="text-xs font-bold text-gray-800 dark:text-zinc-200">{{ editingTriggerId ? 'Edit Trigger' : 'New Trigger' }}</h3>
 
             <!-- Workspace Picker -->
             <div>
@@ -456,10 +493,10 @@ onMounted(async () => {
             <!-- Form Actions -->
             <div class="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
               <button
-                @click="handleCreateTrigger"
-                :disabled="creatingTrigger || !triggerForm.workspaceId || !triggerForm.title"
+                @click="handleSubmitTrigger"
+                :disabled="submittingTrigger || !triggerForm.workspaceId || !triggerForm.title"
                 class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50">
-                {{ creatingTrigger ? 'Creating…' : 'Create Trigger' }}
+                {{ editingTriggerId ? (submittingTrigger ? 'Saving…' : 'Save Changes') : (submittingTrigger ? 'Creating…' : 'Create Trigger') }}
               </button>
               <button
                 @click="resetTriggerForm"
@@ -499,13 +536,22 @@ onMounted(async () => {
                 <code v-if="t.cronSchedule" class="text-[10px] font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 px-1.5 py-0.5 rounded">{{ t.cronSchedule }}</code>
               </div>
             </div>
-            <button
-              @click="confirmDeleteTrigger(t)"
-              class="p-1.5 text-gray-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all opacity-0 group-hover:opacity-100 shrink-0">
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+            <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+              <button
+                @click="startEditTrigger(t)"
+                class="p-1.5 text-gray-300 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </button>
+              <button
+                @click="confirmDeleteTrigger(t)"
+                class="p-1.5 text-gray-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>

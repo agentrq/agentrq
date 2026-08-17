@@ -322,6 +322,20 @@ type (
 		EventTrigger EventTrigger `json:"eventTrigger"`
 	}
 
+	UpdateEventTriggerRequest struct {
+		WorkspaceID      string `json:"workspaceId"`
+		Title            string `json:"title"`
+		Body             string `json:"body"`
+		Assignee         string `json:"assignee"`
+		CronSchedule     string `json:"cronSchedule,omitempty"`
+		AllowAllCommands bool   `json:"allowAllCommands"`
+		EmitEventID      string `json:"emitEventId,omitempty"`
+	}
+
+	UpdateEventTriggerResponse struct {
+		EventTrigger EventTrigger `json:"eventTrigger"`
+	}
+
 	ListEventTriggersResponse struct {
 		EventTriggers []EventTrigger `json:"eventTriggers"`
 	}

@@ -21,6 +21,7 @@ func (h *handler) registerEventRoutes() {
 	h.router.Delete("/events/:id", h.deleteEvent())
 	h.router.Post("/events/:id/triggers", h.createEventTrigger())
 	h.router.Get("/events/:id/triggers", h.listEventTriggers())
+	h.router.Patch("/events/:id/triggers/:triggerID", h.updateEventTrigger())
 	h.router.Delete("/events/:id/triggers/:triggerID", h.deleteEventTrigger())
 	h.router.Get("/events/:id/tasks", h.listTasksFromEvent())
 }
@@ -185,6 +186,27 @@ func (h *handler) listEventTriggers() fiber.Handler {
 			return c.Send(e)
 		}
 		return c.Send(mapper.FromListEventTriggersResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) updateEventTrigger() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToUpdateEventTriggerRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.UpdateEventTrigger(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromUpdateEventTriggerResponseEntityToHTTPResponse(rs))
 	}
 }
 

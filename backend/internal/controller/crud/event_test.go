@@ -308,6 +308,127 @@ func TestCreateEventTrigger_EmitEventNotOwned(t *testing.T) {
 	}
 }
 
+// ── UpdateEventTrigger ────────────────────────────────────────────────────────
+
+func TestUpdateEventTrigger_Success(t *testing.T) {
+	e := newTestController(t)
+	now := time.Now()
+	updated := model.EventTrigger{
+		ID: 500, EventID: 100, WorkspaceID: 1, UserID: testUserID,
+		Title: "Updated title", Assignee: "agent", UpdatedAt: now,
+	}
+
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+	e.repo.EXPECT().UpdateEventTrigger(gomock.Any(), int64(500), testUserID, gomock.Any()).Return(updated, nil)
+
+	resp, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          500,
+		WorkspaceID: 1,
+		Title:       "Updated title",
+		Assignee:    "agent",
+		UserID:      testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.EventTrigger.Title != "Updated title" {
+		t.Errorf("expected title 'Updated title', got %s", resp.EventTrigger.Title)
+	}
+}
+
+func TestUpdateEventTrigger_NotFound(t *testing.T) {
+	e := newTestController(t)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+	e.repo.EXPECT().UpdateEventTrigger(gomock.Any(), int64(999), testUserID, gomock.Any()).Return(model.EventTrigger{}, base.ErrNotFound)
+
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          999,
+		WorkspaceID: 1,
+		Title:       "My trigger",
+		UserID:      testUserIDStr,
+	})
+	if err == nil {
+		t.Error("expected error for missing trigger")
+	}
+}
+
+func TestUpdateEventTrigger_WorkspaceNotOwned(t *testing.T) {
+	e := newTestController(t)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(99), testUserID).Return(false, nil)
+
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          500,
+		WorkspaceID: 99,
+		Title:       "My trigger",
+		UserID:      testUserIDStr,
+	})
+	if err == nil {
+		t.Error("expected error for unowned workspace")
+	}
+}
+
+func TestUpdateEventTrigger_InvalidCron(t *testing.T) {
+	e := newTestController(t)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:           500,
+		WorkspaceID:  1,
+		Title:        "My trigger",
+		CronSchedule: "*/5 * * * *", // sub-hourly — rejected
+		UserID:       testUserIDStr,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid cron schedule")
+	}
+	if !strings.Contains(err.Error(), "granularity too fine") {
+		t.Errorf("expected granularity error, got %v", err)
+	}
+}
+
+func TestUpdateEventTrigger_EmptyTitle(t *testing.T) {
+	e := newTestController(t)
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          500,
+		WorkspaceID: 1,
+		Title:       "",
+		UserID:      testUserIDStr,
+	})
+	if err == nil {
+		t.Error("expected error for empty title")
+	}
+}
+
+func TestUpdateEventTrigger_InvalidUserID(t *testing.T) {
+	e := newTestController(t)
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          500,
+		WorkspaceID: 1,
+		Title:       "My trigger",
+		UserID:      "",
+	})
+	if err == nil {
+		t.Error("expected error for invalid userID")
+	}
+}
+
+func TestUpdateEventTrigger_EmitEventNotOwned(t *testing.T) {
+	e := newTestController(t)
+	e.repo.EXPECT().CheckWorkspaceAccess(gomock.Any(), int64(1), testUserID).Return(true, nil)
+	e.repo.EXPECT().GetEvent(gomock.Any(), int64(999), testUserID).Return(model.Event{}, base.ErrNotFound)
+
+	_, err := e.controller.UpdateEventTrigger(context.Background(), entity.UpdateEventTriggerRequest{
+		ID:          500,
+		WorkspaceID: 1,
+		Title:       "My trigger",
+		EmitEventID: 999,
+		UserID:      testUserIDStr,
+	})
+	if err == nil {
+		t.Error("expected error when emit event not owned by user")
+	}
+}
+
 // ── ListEventTriggers ─────────────────────────────────────────────────────────
 
 func TestListEventTriggers_Success(t *testing.T) {

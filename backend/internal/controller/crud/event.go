@@ -29,6 +29,7 @@ type EventTriggerController interface {
 	CreateEventTrigger(ctx context.Context, req entity.CreateEventTriggerRequest) (*entity.CreateEventTriggerResponse, error)
 	GetEventTrigger(ctx context.Context, req entity.GetEventTriggerRequest) (*entity.GetEventTriggerResponse, error)
 	ListEventTriggers(ctx context.Context, req entity.ListEventTriggersRequest) (*entity.ListEventTriggersResponse, error)
+	UpdateEventTrigger(ctx context.Context, req entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error)
 	DeleteEventTrigger(ctx context.Context, req entity.DeleteEventTriggerRequest) error
 	ListTasksFromEvent(ctx context.Context, req entity.ListTasksFromEventRequest) (*entity.ListTasksFromEventResponse, error)
 }
@@ -187,6 +188,52 @@ func (c *controller) ListEventTriggers(ctx context.Context, req entity.ListEvent
 		triggers[i] = mapper.FromModelEventTriggerToEntity(m)
 	}
 	return &entity.ListEventTriggersResponse{EventTriggers: triggers}, nil
+}
+
+func (c *controller) UpdateEventTrigger(ctx context.Context, req entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if uid == 0 {
+		return nil, fmt.Errorf("invalid userID")
+	}
+
+	if req.Title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+
+	// Verify the target workspace belongs to this user.
+	ok, err := c.repository.CheckWorkspaceAccess(ctx, req.WorkspaceID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("workspace not found")
+	}
+
+	if req.CronSchedule != "" {
+		if err := schedule.ValidateCronGranularity(req.CronSchedule); err != nil {
+			return nil, err
+		}
+	}
+
+	if req.EmitEventID != 0 {
+		if _, err := c.repository.GetEvent(ctx, req.EmitEventID, uid); err != nil {
+			return nil, fmt.Errorf("emit event not found")
+		}
+	}
+
+	updated, err := c.repository.UpdateEventTrigger(ctx, req.ID, uid, model.EventTrigger{
+		WorkspaceID:      req.WorkspaceID,
+		Title:            req.Title,
+		Body:             req.Body,
+		Assignee:         req.Assignee,
+		CronSchedule:     req.CronSchedule,
+		AllowAllCommands: req.AllowAllCommands,
+		EmitEventID:      req.EmitEventID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &entity.UpdateEventTriggerResponse{EventTrigger: mapper.FromModelEventTriggerToEntity(updated)}, nil
 }
 
 func (c *controller) DeleteEventTrigger(ctx context.Context, req entity.DeleteEventTriggerRequest) error {

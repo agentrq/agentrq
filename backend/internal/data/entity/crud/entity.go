@@ -560,6 +560,22 @@ type (
 		EventTriggers []EventTrigger
 	}
 
+	UpdateEventTriggerRequest struct {
+		ID               int64
+		UserID           string
+		WorkspaceID      int64
+		Title            string
+		Body             string
+		Assignee         string
+		CronSchedule     string
+		AllowAllCommands bool
+		EmitEventID      int64
+	}
+
+	UpdateEventTriggerResponse struct {
+		EventTrigger EventTrigger
+	}
+
 	DeleteEventTriggerRequest struct {
 		ID     int64
 		UserID string

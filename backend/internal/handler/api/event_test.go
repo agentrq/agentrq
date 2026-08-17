@@ -24,6 +24,7 @@ type mockEventCrud struct {
 	listEventsFunc         func(ctx context.Context, req entity.ListEventsRequest) (*entity.ListEventsResponse, error)
 	deleteEventFunc        func(ctx context.Context, req entity.DeleteEventRequest) error
 	createEventTriggerFunc func(ctx context.Context, req entity.CreateEventTriggerRequest) (*entity.CreateEventTriggerResponse, error)
+	updateEventTriggerFunc func(ctx context.Context, req entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error)
 	listEventTriggersFunc  func(ctx context.Context, req entity.ListEventTriggersRequest) (*entity.ListEventTriggersResponse, error)
 	deleteEventTriggerFunc func(ctx context.Context, req entity.DeleteEventTriggerRequest) error
 	listTasksFromEventFunc func(ctx context.Context, req entity.ListTasksFromEventRequest) (*entity.ListTasksFromEventResponse, error)
@@ -44,6 +45,9 @@ func (m *mockEventCrud) DeleteEvent(ctx context.Context, req entity.DeleteEventR
 }
 func (m *mockEventCrud) CreateEventTrigger(ctx context.Context, req entity.CreateEventTriggerRequest) (*entity.CreateEventTriggerResponse, error) {
 	return m.createEventTriggerFunc(ctx, req)
+}
+func (m *mockEventCrud) UpdateEventTrigger(ctx context.Context, req entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error) {
+	return m.updateEventTriggerFunc(ctx, req)
 }
 func (m *mockEventCrud) ListEventTriggers(ctx context.Context, req entity.ListEventTriggersRequest) (*entity.ListEventTriggersResponse, error) {
 	return m.listEventTriggersFunc(ctx, req)
@@ -88,6 +92,10 @@ func newEventApp(ctrl *mockEventCrud) *fiber.App {
 	app.Get("/events/:id/triggers", func(c *fiber.Ctx) error {
 		c.Locals("user_id", "user1")
 		return h.listEventTriggers()(c)
+	})
+	app.Patch("/events/:id/triggers/:triggerID", func(c *fiber.Ctx) error {
+		c.Locals("user_id", "user1")
+		return h.updateEventTrigger()(c)
 	})
 	app.Delete("/events/:id/triggers/:triggerID", func(c *fiber.Ctx) error {
 		c.Locals("user_id", "user1")
@@ -320,6 +328,71 @@ func TestCreateEventTrigger_EventNotOwned(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("expected 404 for unowned event, got %d", resp.StatusCode)
+	}
+}
+
+// ── updateEventTrigger ────────────────────────────────────────────────────────
+
+func TestUpdateEventTrigger_OK(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.updateEventTriggerFunc = func(_ context.Context, req entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error) {
+		return &entity.UpdateEventTriggerResponse{
+			EventTrigger: entity.EventTrigger{ID: req.ID, Title: req.Title},
+		}, nil
+	}
+	app := newEventApp(ctrl)
+
+	wsID := monoflake.ID(1).String()
+	body := []byte(`{"workspaceId":"` + wsID + `","title":"Updated title","assignee":"agent"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID+"/triggers/"+testTriggerID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEventTrigger_InvalidPayload(t *testing.T) {
+	app := newEventApp(&mockEventCrud{})
+	// Missing title → mapper returns nil
+	body := []byte(`{"workspaceId":"` + monoflake.ID(1).String() + `"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID+"/triggers/"+testTriggerID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEventTrigger_InvalidID(t *testing.T) {
+	app := newEventApp(&mockEventCrud{})
+	body := []byte(`{"workspaceId":"` + monoflake.ID(1).String() + `","title":"x"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID+"/triggers/!!!", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("expected 422, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpdateEventTrigger_NotFound(t *testing.T) {
+	ctrl := &mockEventCrud{}
+	ctrl.updateEventTriggerFunc = func(_ context.Context, _ entity.UpdateEventTriggerRequest) (*entity.UpdateEventTriggerResponse, error) {
+		return nil, base.ErrNotFound
+	}
+	app := newEventApp(ctrl)
+
+	wsID := monoflake.ID(1).String()
+	body := []byte(`{"workspaceId":"` + wsID + `","title":"My trigger","assignee":"agent"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/events/"+testEventID+"/triggers/"+testTriggerID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, _ := app.Test(req)
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 

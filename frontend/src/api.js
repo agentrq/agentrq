@@ -342,6 +342,18 @@ export async function createEventTrigger(eventId, { workspaceId, title, body, as
   return res.json();
 }
 
+export async function updateEventTrigger(eventId, triggerId, { workspaceId, title, body, assignee = 'agent', cronSchedule = '', allowAllCommands = false, emitEventId = '' }) {
+  const payload = { workspaceId, title, body, assignee, cronSchedule, allowAllCommands };
+  if (emitEventId) payload.emitEventId = emitEventId;
+  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error('Failed to update event trigger');
+  return res.json();
+}
+
 export async function deleteEventTrigger(eventId, triggerId) {
   const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete event trigger');

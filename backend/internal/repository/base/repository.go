@@ -86,6 +86,7 @@ type Repository interface {
 	GetEventTrigger(ctx context.Context, id int64, userID int64) (model.EventTrigger, error)
 	ListEventTriggersByEvent(ctx context.Context, eventID int64, userID int64) ([]model.EventTrigger, error)
 	SystemListEventTriggersByEventID(ctx context.Context, eventID int64) ([]model.EventTrigger, error)
+	UpdateEventTrigger(ctx context.Context, id int64, userID int64, t model.EventTrigger) (model.EventTrigger, error)
 	DeleteEventTrigger(ctx context.Context, id int64, userID int64) error
 	ListTasksByTriggerID(ctx context.Context, triggerID int64, userID int64) ([]model.Task, error)
 
@@ -942,6 +943,29 @@ func (r *repository) SystemListEventTriggersByEventID(ctx context.Context, event
 	var triggers []model.EventTrigger
 	err := r.conn(ctx).Where("event_id = ?", eventID).Find(&triggers).Error
 	return triggers, err
+}
+
+func (r *repository) UpdateEventTrigger(ctx context.Context, id int64, userID int64, t model.EventTrigger) (model.EventTrigger, error) {
+	var existing model.EventTrigger
+	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.EventTrigger{}, ErrNotFound
+	}
+	if err != nil {
+		return model.EventTrigger{}, err
+	}
+	existing.WorkspaceID = t.WorkspaceID
+	existing.Title = t.Title
+	existing.Body = t.Body
+	existing.Assignee = t.Assignee
+	existing.CronSchedule = t.CronSchedule
+	existing.AllowAllCommands = t.AllowAllCommands
+	existing.EmitEventID = t.EmitEventID
+	existing.UpdatedAt = time.Now()
+	if err := r.conn(ctx).Save(&existing).Error; err != nil {
+		return model.EventTrigger{}, err
+	}
+	return existing, nil
 }
 
 func (r *repository) DeleteEventTrigger(ctx context.Context, id int64, userID int64) error {

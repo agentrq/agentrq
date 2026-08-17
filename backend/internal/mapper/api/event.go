@@ -114,6 +114,40 @@ func FromCreateEventTriggerResponseEntityToHTTPResponse(rs *entity.CreateEventTr
 	return payload
 }
 
+func FromHTTPRequestToUpdateEventTriggerRequestEntity(c *fiber.Ctx) *entity.UpdateEventTriggerRequest {
+	id := monoflake.IDFromBase62(c.Params("triggerID")).Int64()
+	if id == 0 {
+		return nil
+	}
+	var payload view.UpdateEventTriggerRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(payload.WorkspaceID).Int64()
+	if payload.Title == "" || workspaceID == 0 {
+		return nil
+	}
+	assignee := payload.Assignee
+	if assignee == "" {
+		assignee = "agent"
+	}
+	return &entity.UpdateEventTriggerRequest{
+		ID:               id,
+		WorkspaceID:      workspaceID,
+		Title:            payload.Title,
+		Body:             payload.Body,
+		Assignee:         assignee,
+		CronSchedule:     payload.CronSchedule,
+		AllowAllCommands: payload.AllowAllCommands,
+		EmitEventID:      monoflake.IDFromBase62(payload.EmitEventID).Int64(),
+	}
+}
+
+func FromUpdateEventTriggerResponseEntityToHTTPResponse(rs *entity.UpdateEventTriggerResponse) []byte {
+	payload, _ := json.Marshal(view.UpdateEventTriggerResponse{EventTrigger: fromEntityEventTriggerToView(rs.EventTrigger)})
+	return payload
+}
+
 func FromListEventTriggersResponseEntityToHTTPResponse(rs *entity.ListEventTriggersResponse) []byte {
 	triggers := make([]view.EventTrigger, len(rs.EventTriggers))
 	for i, t := range rs.EventTriggers {
