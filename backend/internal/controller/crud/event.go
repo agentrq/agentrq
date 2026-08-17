@@ -2,7 +2,9 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -10,6 +12,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
+	"gorm.io/gorm"
 )
 
 // EventController defines event operations.
@@ -53,6 +56,12 @@ func (c *controller) CreateEvent(ctx context.Context, req entity.CreateEventRequ
 
 	created, err := c.repository.CreateEvent(ctx, m)
 	if err != nil {
+		// A duplicate name is the user picking one that is taken, not a server
+		// fault. Without this it surfaced as a bare 500, which made a name
+		// collision impossible to tell apart from a real failure.
+		if isUniqueConstraintErr(err) {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicateName, req.Name)
+		}
 		return nil, err
 	}
 	return &entity.CreateEventResponse{Event: mapper.FromModelEventToEntity(created)}, nil
@@ -199,6 +208,32 @@ func (c *controller) ListTasksFromEvent(ctx context.Context, req entity.ListTask
 }
 
 // ── Validation helpers ────────────────────────────────────────────────────────
+
+// ErrDuplicateName is returned when a name is already taken by another record
+// of the same kind for this user. Exported so handlers can answer 409 with the
+// name itself rather than a generic failure.
+var ErrDuplicateName = fmt.Errorf("name already exists")
+
+// isUniqueConstraintErr reports whether err is a unique-index violation.
+//
+// gorm.ErrDuplicatedKey is the real check: both drivers here open with
+// TranslateError, which converts the driver's own error into that sentinel.
+// The text matching below is only a fallback for a connection opened without
+// translation — which is exactly how an early version of this function's test
+// was written, so it passed while production still returned 500.
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "unique_violation") ||
+		(strings.Contains(msg, "unique") && strings.Contains(msg, "constraint failed"))
+}
 
 // isValidResourceName enforces the shared identifier convention for names that
 // are referenced textually rather than by id — event names in publishEvent,

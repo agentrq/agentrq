@@ -175,6 +175,17 @@ func New(cfg Config) (*App, error) {
 	// browser per workspace.
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS uni_push_subscriptions_endpoint").Error
 
+	// idx_events_name_user_id / idx_workflows_name_user_id were created over
+	// `name` alone despite their names, because only the Name field carried
+	// the uniqueIndex tag. That made event and workflow names unique across
+	// every account rather than per user. AutoMigrate will not redefine an
+	// index that already exists, so the stale ones are dropped here and
+	// recreated as the composite the model now declares. Dropping is safe:
+	// the new index is strictly looser, so any data valid under the old one
+	// is valid under the new one.
+	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_events_name_user_id").Error
+	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_workflows_name_user_id").Error
+
 	if err := db.Conn(context.Background()).AutoMigrate(
 		&model.Workspace{},
 		&model.Task{},

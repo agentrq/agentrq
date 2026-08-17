@@ -48,6 +48,10 @@ func (h *handler) createWorkflow() fiber.Handler {
 				c.Status(http.StatusUnprocessableEntity)
 				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusUnprocessableEntity))
 			}
+			if errors.Is(err, _crud.ErrDuplicateName) {
+				c.Status(http.StatusConflict)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
+			}
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)

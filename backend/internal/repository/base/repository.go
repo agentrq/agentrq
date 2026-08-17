@@ -890,7 +890,27 @@ func (r *repository) DeleteEvent(ctx context.Context, id int64, userID int64) er
 			Update("emit_event_id", 0).Error; err != nil {
 			return err
 		}
-		return nil
+
+		// Workflow steps need the same cleanup as triggers. A step whose source
+		// event no longer exists can never fire, and one still naming the
+		// deleted event as its emit target would arm a task to publish
+		// something gone — both would sit invisibly in a workflow that looks
+		// intact.
+		if err := tx.Where("event_id = ? AND user_id = ?", id, userID).Delete(&model.WorkflowStep{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.WorkflowStep{}).
+			Where("emit_event_id = ? AND user_id = ?", id, userID).
+			Update("emit_event_id", 0).Error; err != nil {
+			return err
+		}
+
+		// A workflow that started on this event has no entry point left.
+		// Clearing it surfaces the "Pick a start event" prompt instead of
+		// rendering an empty canvas with no explanation.
+		return tx.Model(&model.Workflow{}).
+			Where("start_event_id = ? AND user_id = ?", id, userID).
+			Update("start_event_id", 0).Error
 	})
 }
 

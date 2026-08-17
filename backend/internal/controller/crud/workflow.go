@@ -75,6 +75,9 @@ func (c *controller) CreateWorkflow(ctx context.Context, req entity.CreateWorkfl
 
 	created, err := c.repository.CreateWorkflow(ctx, m)
 	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return nil, fmt.Errorf("%w: %q", ErrDuplicateName, req.Name)
+		}
 		return nil, err
 	}
 	return &entity.CreateWorkflowResponse{Workflow: mapper.FromModelWorkflowToEntity(created)}, nil

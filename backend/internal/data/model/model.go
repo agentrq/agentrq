@@ -91,11 +91,16 @@ type (
 	// Event defines a named event that agents can publish after completing a task.
 	// Other workspaces can subscribe to it via EventTrigger.
 	Event struct {
-		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt         time.Time
-		UpdatedAt         time.Time
-		UserID            int64  `gorm:"index:idx_events_user_id"`
-		Name              string `gorm:"type:varchar(140);uniqueIndex:idx_events_name_user_id"`
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		// The unique index spans (name, user_id): both fields carry the same
+		// index name, which is what makes it composite. Tagging only Name —
+		// even with a name mentioning user_id — silently produces a unique
+		// index on `name` alone, making event names global across every
+		// account, so one user taking "deploy" locks it for everyone.
+		UserID            int64  `gorm:"index:idx_events_user_id;uniqueIndex:idx_events_name_user_id,priority:2"`
+		Name              string `gorm:"type:varchar(140);uniqueIndex:idx_events_name_user_id,priority:1"`
 		PayloadGuidelines string `gorm:"type:text"`
 	}
 
@@ -125,11 +130,12 @@ type (
 	// StartEventID; from there WorkflowStep rows decide the fan-out, and each
 	// spawned task carries the workflow ID onward so the chain continues.
 	Workflow struct {
-		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt   time.Time
-		UpdatedAt   time.Time
-		UserID      int64  `gorm:"index:idx_workflows_user_id"`
-		Name        string `gorm:"type:varchar(140);uniqueIndex:idx_workflows_name_user_id"`
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		// Composite with Name, for the same reason as Event above.
+		UserID      int64  `gorm:"index:idx_workflows_user_id;uniqueIndex:idx_workflows_name_user_id,priority:2"`
+		Name        string `gorm:"type:varchar(140);uniqueIndex:idx_workflows_name_user_id,priority:1"`
 		Description string `gorm:"type:text"`
 		// StartEventID is the event that begins a run of this workflow.
 		StartEventID int64 `gorm:"index:idx_workflows_start_event_id"`

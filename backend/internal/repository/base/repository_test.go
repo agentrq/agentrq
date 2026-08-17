@@ -357,7 +357,7 @@ func TestRepository_Event_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{})
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Workflow{}, &model.WorkflowStep{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -442,7 +442,7 @@ func TestRepository_DeleteEvent_CascadesTriggers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{})
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Workflow{}, &model.WorkflowStep{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -479,7 +479,7 @@ func TestRepository_EventTrigger_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
 	}
-	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Task{})
+	_ = db.AutoMigrate(&model.Event{}, &model.EventTrigger{}, &model.Task{}, &model.Workflow{}, &model.WorkflowStep{})
 	repo := New(&mockDB{db: db})
 
 	ctx := context.Background()
@@ -592,4 +592,3 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 		}
 	}
 }
-

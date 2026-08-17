@@ -1,7 +1,10 @@
 package api
 
 import (
+	"errors"
 	"net/http"
+
+	_crud "github.com/agentrq/agentrq/backend/internal/controller/crud"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -35,6 +38,13 @@ func (h *handler) createEvent() fiber.Handler {
 		defer cancel()
 		rs, err := h.crud.CreateEvent(ctx, *rq)
 		if err != nil {
+			// A taken name is the user's input, not a server fault. It used to
+			// surface as a bare 500, which made a collision impossible to tell
+			// apart from a real failure.
+			if errors.Is(err, _crud.ErrDuplicateName) {
+				c.Status(http.StatusConflict)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
+			}
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)
