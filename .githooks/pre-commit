@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# Formats staged Go files with gofmt before the commit is created.
+#
+# Scoped to *staged* files on purpose. Formatting the whole tree would sweep
+# unrelated pre-existing reformatting into whatever commit happens to run next,
+# which makes diffs unreviewable.
+#
+# Install with: make hooks
+
+set -e
+
+staged_go_files=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.go$' || true)
+[ -z "$staged_go_files" ] && exit 0
+
+# Only consider files that still exist in the worktree (a rename's old path
+# shows up above but is gone on disk).
+existing=""
+for file in $staged_go_files; do
+    [ -f "$file" ] && existing="$existing $file"
+done
+[ -z "$existing" ] && exit 0
+
+# shellcheck disable=SC2086
+unformatted=$(gofmt -l $existing || true)
+[ -z "$unformatted" ] && exit 0
+
+# A file staged only in part is the one case auto-formatting cannot handle
+# safely: re-adding it after gofmt would also commit the unstaged half, which
+# the author never chose to include. Refuse instead of silently widening the
+# commit.
+partial=""
+for file in $unformatted; do
+    if ! git diff --quiet -- "$file"; then
+        partial="$partial  $file
+"
+    fi
+done
+
+if [ -n "$partial" ]; then
+    printf 'pre-commit: these files need gofmt but are only partially staged:\n%s' "$partial"
+    printf 'Formatting them would also commit their unstaged changes.\n'
+    printf 'Run "make fmt", then stage the result yourself.\n'
+    exit 1
+fi
+
+for file in $unformatted; do
+    gofmt -w "$file"
+    git add "$file"
+    printf 'pre-commit: formatted %s\n' "$file"
+done
+
+exit 0

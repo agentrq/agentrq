@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend install stop mocks test
+.PHONY: dev backend frontend install stop mocks test fmt hooks
 
 remote-claude:
 	claude --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
@@ -37,6 +37,20 @@ install:
 	@echo "Installing Dependencies..."
 	@cd backend && go mod download
 	@cd frontend && npm install
+	@make hooks
+
+# Point git at the tracked hooks in .githooks so every clone shares them
+# (.git/hooks itself is not version-controlled).
+hooks:
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/* 2>/dev/null || true
+	@echo "Git hooks installed (core.hooksPath -> .githooks)"
+
+# Format all Go sources. The pre-commit hook formats only staged files; this is
+# the whole-tree version for cleaning up in one deliberate pass.
+fmt:
+	@echo "Formatting Go sources..."
+	@gofmt -w backend/
 
 mocks:
 	@echo "Generating Mocks..."
