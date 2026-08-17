@@ -32,9 +32,12 @@ const mode = ref('graph');
 // that entry returns it to the automatic spot.
 
 const COLUMN_WIDTH = 260;
-const ROW_HEIGHT = 96;
+const ROW_HEIGHT = 104;
 const NODE_WIDTH = 200;
 const NODE_HEIGHT = 56;
+// A step that emits an event renders a second line, so it is taller than the
+// base node. Row spacing has to clear the taller one or branches collide.
+const NODE_HEIGHT_WITH_EMIT = 78;
 const CANVAS_PADDING = 32;
 
 const positions = ref({});
@@ -107,26 +110,59 @@ const graph = computed(() => {
     }
   }
 
+  // Rows are assigned as a tidy tree rather than by a per-column counter:
+  // each leaf takes the next free row and every parent centers on its own
+  // children. A flat counter packed each column independently, which kept
+  // nodes from colliding but scattered a fan-out's branches across unrelated
+  // rows and crossed the edges between them.
+  const eventRow = {};
+  const stepRow = {};
+  const visiting = new Set();
+  let nextRow = 0;
+
+  function assignRows(eventId) {
+    if (eventRow[eventId] !== undefined) return eventRow[eventId];
+    // Defensive: cycles are refused on save, but the canvas must not recurse
+    // forever on data that reached storage another way.
+    if (visiting.has(eventId)) return nextRow;
+    visiting.add(eventId);
+
+    const childSteps = stepsByEvent.value[eventId] ?? [];
+    if (childSteps.length === 0) {
+      eventRow[eventId] = nextRow++;
+    } else {
+      const rows = [];
+      for (const step of childSteps) {
+        const emitted = step.emitEventId;
+        // A step sits on the same row as the event it emits — they are 1:1, so
+        // aligning them makes each branch read as one straight line. A re-join
+        // onto an already-placed event gets its own row instead.
+        if (emitted && eventRow[emitted] === undefined && !visiting.has(emitted)) {
+          stepRow[step.id] = assignRows(emitted);
+        } else {
+          stepRow[step.id] = nextRow++;
+        }
+        rows.push(stepRow[step.id]);
+      }
+      eventRow[eventId] = rows.reduce((sum, r) => sum + r, 0) / rows.length;
+    }
+    visiting.delete(eventId);
+    return eventRow[eventId];
+  }
+  assignRows(startId);
+
   const nodes = [];
   const edges = [];
-  const rowCursor = {};
-
-  function place(column) {
-    const row = rowCursor[column] ?? 0;
-    rowCursor[column] = row + 1;
-    return row;
-  }
-
-  // Events first so their rows are assigned before the steps that hang off them.
   const eventNodes = {};
+
   for (const eventId of order) {
-    const column = eventColumn[eventId];
     const node = {
       kind: 'event',
       eventId,
       label: eventName(eventId),
-      column,
-      row: place(column),
+      column: eventColumn[eventId],
+      row: eventRow[eventId] ?? nextRow++,
+      height: NODE_HEIGHT,
       isStart: eventId === startId,
     };
     eventNodes[eventId] = node;
@@ -136,14 +172,16 @@ const graph = computed(() => {
   for (const step of steps.value) {
     const source = eventNodes[step.eventId];
     if (!source) continue; // orphaned step: its source event is unreachable
-    const column = source.column + 1;
     const node = {
       kind: 'step',
       stepId: step.id,
       step,
       label: workspaceName(step.workspaceId),
-      column,
-      row: place(column),
+      column: source.column + 1,
+      row: stepRow[step.id] ?? nextRow++,
+      // A step that emits carries a second line, so its box is taller. Edges
+      // anchor to the middle, which only lands right if the height is real.
+      height: step.emitEventId ? NODE_HEIGHT_WITH_EMIT : NODE_HEIGHT,
     };
     nodes.push(node);
     edges.push({ from: source, to: node });
@@ -159,10 +197,20 @@ const graph = computed(() => {
   }
 
   const width = Math.max(...nodes.map(n => n.x + NODE_WIDTH), 0) + CANVAS_PADDING;
-  const height = Math.max(...nodes.map(n => n.y + NODE_HEIGHT), 0) + CANVAS_PADDING;
+  const height = Math.max(...nodes.map(n => n.y + n.height), 0) + CANVAS_PADDING;
 
   return { nodes, edges, width, height };
 });
+
+/** A curve from the right edge of one node to the left edge of the next. */
+function edgePath(edge) {
+  const x1 = edge.from.x + NODE_WIDTH;
+  const y1 = edge.from.y + edge.from.height / 2;
+  const x2 = edge.to.x;
+  const y2 = edge.to.y + edge.to.height / 2;
+  const bend = Math.max(30, (x2 - x1) / 2);
+  return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+}
 
 // Orphans are steps whose source event no longer sits on any path from the
 // start event — usually because the start event changed. They would silently
@@ -221,13 +269,17 @@ function startPaletteDrag(kind, id, e) {
   e.dataTransfer.effectAllowed = 'copy';
 }
 
-function canDropOn(node) {
-  if (!dragItem.value) return false;
-  if (node.kind === 'event') return dragItem.value.kind === 'workspace';
+// The item is passed explicitly rather than read from `dragItem`, because the
+// drop handler has to clear that state before awaiting the API call — reading
+// the ref here made every drop evaluate against an already-cleared item and
+// silently do nothing.
+function canDropOn(node, item = dragItem.value) {
+  if (!item) return false;
+  if (node.kind === 'event') return item.kind === 'workspace';
   if (node.kind === 'step') {
-    if (dragItem.value.kind !== 'event') return false;
+    if (item.kind !== 'event') return false;
     if (node.step.emitEventId) return false; // a step emits at most one event
-    return !wouldCreateCycle(node.step.eventId, dragItem.value.id);
+    return !wouldCreateCycle(node.step.eventId, item.id);
   }
   return false;
 }
@@ -248,7 +300,7 @@ async function onNodeDrop(node, e) {
   const item = dragItem.value;
   dropTarget.value = null;
   dragItem.value = null;
-  if (!item || !canDropOn(node)) return;
+  if (!canDropOn(node, item)) return;
 
   if (node.kind === 'event' && item.kind === 'workspace') {
     await addStep(node.eventId, item.id);
@@ -615,7 +667,7 @@ onMounted(async () => {
                 <path
                   v-for="(edge, i) in graph.edges"
                   :key="i"
-                  :d="`M ${edge.from.x + 200} ${edge.from.y + 28} C ${edge.from.x + 230} ${edge.from.y + 28}, ${edge.to.x - 30} ${edge.to.y + 28}, ${edge.to.x} ${edge.to.y + 28}`"
+                  :d="edgePath(edge)"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.5"
