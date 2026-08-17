@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   getWorkflow, updateWorkflow, fetchWorkflowSteps, createWorkflowStep,
@@ -47,6 +47,7 @@ const positions = ref({});
 function nodeKey(node) {
   if (node.kind === 'event') return `event:${node.eventId}`;
   if (node.kind === 'global') return `global:${node.triggerId}`;
+  if (node.kind === 'global-event') return `global-event:${node.triggerId}:${node.eventId}`;
   return `step:${node.stepId}`;
 }
 
@@ -261,10 +262,30 @@ const graph = computed(() => {
         label: workspaceName(trigger.workspaceId),
         column: source.column + 1,
         row: globalRow[trigger.id] ?? nextRow++,
-        height: trigger.emitEventId ? NODE_HEIGHT_WITH_EMIT : NODE_HEIGHT,
+        height: NODE_HEIGHT,
       };
       nodes.push(node);
       edges.push({ from: source, to: node, global: true });
+
+      if (!trigger.emitEventId) continue;
+
+      // The event this subscriber publishes gets its own node rather than an
+      // edge into the workflow's node of the same name. That distinction is
+      // load-bearing: a global subscriber's task does not carry the workflow,
+      // so when it publishes, only that event's *global* subscribers run — the
+      // workflow's own steps for it do not. Drawing into the workflow node
+      // would claim the run continues here when it has actually left.
+      const emitted = {
+        kind: 'global-event',
+        triggerId: trigger.id,
+        eventId: trigger.emitEventId,
+        label: eventName(trigger.emitEventId),
+        column: node.column + 1,
+        row: node.row,
+        height: NODE_HEIGHT,
+      };
+      nodes.push(emitted);
+      edges.push({ from: node, to: emitted, global: true });
     }
   }
 
@@ -355,7 +376,7 @@ function canDropOn(node, item = dragItem.value) {
   if (!item) return false;
   // A global subscriber belongs to the event, not this workflow, so nothing
   // dropped here could be saved.
-  if (node.kind === 'global') return false;
+  if (node.kind === 'global' || node.kind === 'global-event') return false;
   if (node.kind === 'event') return item.kind === 'workspace';
   if (node.kind === 'step') {
     if (item.kind !== 'event') return false;
@@ -384,7 +405,7 @@ async function onNodeDrop(node, e) {
   if (!canDropOn(node, item)) return;
 
   if (node.kind === 'event' && item.kind === 'workspace') {
-    await addStep(node.eventId, item.id);
+    openStepFormForNew(node.eventId, item.id);
   } else if (node.kind === 'step' && item.kind === 'event') {
     await setStepEmit(node.step, item.id);
   }
@@ -442,17 +463,117 @@ async function resetLayout() {
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-async function addStep(eventId, workspaceId) {
+// ── Step editor ───────────────────────────────────────────────────────────────
+// A step is a task template, so its title and instructions are the substance of
+// what the agent will actually be asked to do. Generating them silently made
+// every step say the same uninformative thing, so a drop opens this form
+// instead of writing a placeholder.
+
+// Template tokens the consumer substitutes at fire time. Declared here rather
+// than inline: a literal {{ in a template is parsed as interpolation, even
+// quoted inside an attribute.
+const TOKEN_PAYLOAD = '{' + '{EVENT_PAYLOAD}' + '}';
+const TOKEN_FAQ = '{' + '{EVENT_FAQ}' + '}';
+
+const stepForm = ref(null);
+const savingStep = ref(false);
+const bodyInputRef = ref(null);
+
+/** Open the editor for a workspace being added to an event. */
+function openStepFormForNew(eventId, workspaceId) {
+  stepForm.value = {
+    mode: 'create',
+    eventId,
+    workspaceId,
+    title: `${eventName(eventId)} → ${workspaceName(workspaceId)}`,
+    body: TOKEN_PAYLOAD,
+    assignee: 'agent',
+    allowAllCommands: false,
+    emitEventId: '',
+    stepId: null,
+  };
+}
+
+/** Open the editor for an existing step, so instructions stay changeable. */
+function openStepFormForEdit(step) {
+  stepForm.value = {
+    mode: 'edit',
+    eventId: step.eventId,
+    workspaceId: step.workspaceId,
+    title: step.title,
+    body: step.body,
+    assignee: step.assignee || 'agent',
+    allowAllCommands: !!step.allowAllCommands,
+    emitEventId: step.emitEventId || '',
+    stepId: step.id,
+  };
+}
+
+function closeStepForm() {
+  stepForm.value = null;
+}
+
+/** Insert a template token at the caret rather than always appending. */
+function insertToken(token) {
+  const form = stepForm.value;
+  if (!form) return;
+  const el = bodyInputRef.value;
+  if (!el || typeof el.selectionStart !== 'number') {
+    form.body = `${form.body}${form.body && !form.body.endsWith('\n') ? '\n' : ''}${token}`;
+    return;
+  }
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  form.body = form.body.slice(0, start) + token + form.body.slice(end);
+  nextTick(() => {
+    el.focus();
+    el.setSelectionRange(start + token.length, start + token.length);
+  });
+}
+
+async function saveStepForm() {
+  const form = stepForm.value;
+  if (!form) return;
+  if (!form.title.trim()) {
+    notifyError('Title is required');
+    return;
+  }
+  savingStep.value = true;
   try {
-    const data = await createWorkflowStep(workflowId, {
-      eventId,
-      workspaceId,
-      title: `${workflow.value.name}: ${eventName(eventId)}`,
-      body: '{{EVENT_PAYLOAD}}',
-    });
-    steps.value = [...steps.value, data.workflowStep];
+    const payload = {
+      eventId: form.eventId,
+      workspaceId: form.workspaceId,
+      emitEventId: form.emitEventId,
+      title: form.title.trim(),
+      body: form.body,
+      assignee: form.assignee,
+      allowAllCommands: form.allowAllCommands,
+    };
+
+    if (form.mode === 'edit') {
+      // No PATCH for a step, so an edit is delete-then-create. Delete first:
+      // creating first would briefly double the fan-out for this event.
+      await deleteWorkflowStep(workflowId, form.stepId);
+      const data = await createWorkflowStep(workflowId, payload);
+      // Carry the manual position across, or the node would jump back to its
+      // automatic slot purely because its id changed.
+      const previous = positions.value[`step:${form.stepId}`];
+      if (previous) {
+        const { [`step:${form.stepId}`]: _dropped, ...rest } = positions.value;
+        positions.value = { ...rest, [`step:${data.workflowStep.id}`]: previous };
+        persistLayout();
+      }
+      steps.value = [...steps.value.filter(s => s.id !== form.stepId), data.workflowStep];
+    } else {
+      const data = await createWorkflowStep(workflowId, payload);
+      steps.value = [...steps.value, data.workflowStep];
+    }
+    closeStepForm();
   } catch (e) {
     notifyError(e.message);
+    if (form.mode === 'edit') await loadSteps(); // the delete may have landed
+  } finally {
+    savingStep.value = false;
   }
 }
 
@@ -766,7 +887,9 @@ onMounted(async () => {
                 :class="[
                   node.kind === 'event'
                     ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-900/50'
-                    : node.kind === 'global'
+                    : node.kind === 'global-event'
+                      ? 'bg-violet-50/40 dark:bg-violet-900/10 border-dashed border-violet-200/70 dark:border-violet-900/40'
+                      : node.kind === 'global'
                       // Dashed and dimmed: it runs, but this workflow does not
                       // own it, so it cannot be edited from here.
                       ? 'bg-gray-50/60 dark:bg-zinc-900/40 border-dashed border-gray-300 dark:border-zinc-700'
@@ -782,14 +905,16 @@ onMounted(async () => {
                     class="shrink-0 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded"
                     :class="node.kind === 'event'
                       ? 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40'
-                      : node.kind === 'global'
+                      : node.kind === 'global-event'
+                        ? 'text-violet-600/70 dark:text-violet-400/70 bg-violet-100/60 dark:bg-violet-900/25'
+                        : node.kind === 'global'
                         ? 'text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800'
                         : 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800'">
-                    {{ node.kind === 'event' ? 'event' : 'agent' }}
+                    {{ node.kind === 'event' || node.kind === 'global-event' ? 'event' : 'agent' }}
                   </span>
                   <span
                     class="min-w-0 grow truncate text-[11px] font-mono font-semibold"
-                    :class="node.kind === 'global' ? 'text-gray-500 dark:text-zinc-400' : 'text-gray-900 dark:text-zinc-100'">
+                    :class="node.kind === 'global' || node.kind === 'global-event' ? 'text-gray-500 dark:text-zinc-400' : 'text-gray-900 dark:text-zinc-100'">
                     {{ node.label }}
                   </span>
                   <span v-if="node.isStart" class="shrink-0 text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400">start</span>
@@ -809,19 +934,22 @@ onMounted(async () => {
                   </router-link>
                   <button
                     v-if="node.kind === 'step'"
+                    @click.stop="openStepFormForEdit(node.step)"
+                    @mouseenter="tooltipStore.show($event, 'Edit task title and instructions', 'top')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="shrink-0 p-0.5 text-gray-300 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-200 rounded transition-all">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                    </svg>
+                  </button>
+                  <button
+                    v-if="node.kind === 'step'"
                     @click.stop="confirmDeleteStep(node.step)"
                     class="shrink-0 p-0.5 text-gray-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 rounded transition-all">
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
-                </div>
-                <!-- A global subscriber may chain onward, but through global
-                     triggers rather than this workflow — shown, not drawn. -->
-                <div v-if="node.kind === 'global' && node.trigger.emitEventId" class="px-3 pb-1.5 -mt-1">
-                  <span class="text-[9px] text-gray-400 dark:text-zinc-500">
-                    emits <span class="font-mono">{{ eventName(node.trigger.emitEventId) }}</span> outside this workflow
-                  </span>
                 </div>
                 <div v-if="node.kind === 'step' && node.step.emitEventId" class="flex items-center gap-1.5 px-3 pb-1.5 -mt-1">
                   <span class="min-w-0 grow truncate text-[9px] text-gray-400 dark:text-zinc-500">
@@ -845,6 +973,97 @@ onMounted(async () => {
 
               <div v-if="graph.nodes.length <= 1" class="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <p class="text-xs text-gray-400 dark:text-zinc-500">Drag a workspace onto the start event to begin</p>
+              </div>
+            </div>
+
+            <!-- Step editor. The task template is what the agent is actually
+                 asked to do, so it is entered rather than generated. -->
+            <div v-if="stepForm" class="absolute inset-0 z-20 flex items-start justify-center bg-white/70 dark:bg-zinc-950/70 p-4 overflow-y-auto custom-scrollbar">
+              <div class="w-full max-w-md bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 space-y-4 shadow-2xl">
+                <div>
+                  <h3 class="text-sm font-bold text-gray-800 dark:text-zinc-200">
+                    {{ stepForm.mode === 'edit' ? 'Edit step' : 'Add step' }}
+                  </h3>
+                  <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-0.5">
+                    When <span class="font-mono text-violet-600 dark:text-violet-400">{{ eventName(stepForm.eventId) }}</span> fires,
+                    create this task in <span class="font-mono">{{ workspaceName(stepForm.workspaceId) }}</span>
+                  </p>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-1">
+                    Task title <span class="text-red-500">*</span>
+                  </label>
+                  <input
+                    v-model="stepForm.title"
+                    type="text"
+                    placeholder="Update the changelog"
+                    class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all" />
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Instructions</label>
+                  <textarea
+                    ref="bodyInputRef"
+                    v-model="stepForm.body"
+                    rows="5"
+                    placeholder="What should the agent do when this fires?"
+                    class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all resize-y"></textarea>
+                  <div class="flex items-center gap-1.5 mt-2">
+                    <span class="text-[10px] text-gray-400 dark:text-zinc-500">Insert:</span>
+                    <button
+                      type="button"
+                      @click="insertToken(TOKEN_PAYLOAD)"
+                      @mouseenter="tooltipStore.show($event, 'Replaced with the payload the publisher sent', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="text-[10px] font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-1.5 py-0.5 rounded transition-colors">
+                      {{ TOKEN_PAYLOAD }}
+                    </button>
+                    <button
+                      type="button"
+                      @click="insertToken(TOKEN_FAQ)"
+                      @mouseenter="tooltipStore.show($event, 'Replaced with the publisher\'s question/answer context', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="text-[10px] font-mono text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 hover:bg-violet-100 dark:hover:bg-violet-900/40 px-1.5 py-0.5 rounded transition-colors">
+                      {{ TOKEN_FAQ }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                  <div>
+                    <label class="block text-[11px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-widest mb-1">Assignee</label>
+                    <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg w-fit">
+                      <button
+                        type="button"
+                        v-for="who in ['agent', 'human']"
+                        :key="who"
+                        @click="stepForm.assignee = who"
+                        class="px-4 py-1 rounded-md text-[10px] font-semibold uppercase transition-all"
+                        :class="stepForm.assignee === who ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 border border-transparent'">
+                        {{ who }}
+                      </button>
+                    </div>
+                  </div>
+                  <label class="flex items-center gap-2 pt-4 cursor-pointer">
+                    <input type="checkbox" v-model="stepForm.allowAllCommands" class="accent-black dark:accent-white" />
+                    <span class="text-[11px] font-semibold text-gray-600 dark:text-zinc-400">Allow all commands</span>
+                  </label>
+                </div>
+
+                <div class="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                  <button
+                    @click="saveStepForm"
+                    :disabled="savingStep"
+                    class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50">
+                    {{ savingStep ? 'Saving…' : (stepForm.mode === 'edit' ? 'Save' : 'Add step') }}
+                  </button>
+                  <button
+                    @click="closeStepForm"
+                    class="px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95">
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
