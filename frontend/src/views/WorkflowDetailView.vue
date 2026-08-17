@@ -47,7 +47,10 @@ const positions = ref({});
 function nodeKey(node) {
   if (node.kind === 'event') return `event:${node.eventId}`;
   if (node.kind === 'global') return `global:${node.triggerId}`;
-  if (node.kind === 'global-event') return `global-event:${node.triggerId}:${node.eventId}`;
+  // Keyed by event alone: the global walk draws one node per event no matter
+  // how many subscribers emit it, so a re-join is one node with two incoming
+  // edges rather than duplicates that drag independently.
+  if (node.kind === 'global-event') return `global-event:${node.eventId}`;
   return `step:${node.stepId}`;
 }
 
@@ -109,24 +112,58 @@ watch(graphEventIds, (ids, previous) => {
   loadGlobalTriggers();
 });
 
+// How far to follow the global chain outward from the workflow. Global
+// triggers have no cycle validation of their own (only workflows do), so a
+// loop out there is entirely possible and both the fetch and the draw need a
+// hard stop rather than relying on the data being acyclic.
+const MAX_GLOBAL_CHAIN_DEPTH = 6;
+
 async function loadGlobalTriggers() {
-  const ids = graphEventIds.value;
-  if (ids.length === 0) {
+  const seed = graphEventIds.value;
+  if (seed.length === 0) {
     globalTriggers.value = {};
     return;
   }
-  // One request per event: a graph has a handful of them, and there is no bulk
-  // endpoint. Failures degrade to "no global subscribers" rather than blocking
-  // the canvas — the workflow's own steps are the part the user is editing.
-  const results = await Promise.all(ids.map(async id => {
-    try {
-      const data = await fetchEventTriggers(id);
-      return [id, data.eventTriggers ?? []];
-    } catch {
-      return [id, []];
+
+  // Discovery has to iterate, not just map over the workflow's own events: a
+  // global subscriber can emit an event that is nowhere in the workflow, and
+  // that event has subscribers of its own. Fetching only the seed left every
+  // chain looking like it stopped one hop out.
+  const byEvent = {};
+  let frontier = [...new Set(seed)];
+  let depth = 0;
+
+  while (frontier.length > 0 && depth < MAX_GLOBAL_CHAIN_DEPTH) {
+    // One request per event, in parallel per level: there is no bulk endpoint,
+    // and a graph has a handful of events. A failure degrades that event to
+    // "no subscribers" rather than blocking the canvas.
+    const results = await Promise.all(frontier.map(async id => {
+      try {
+        const data = await fetchEventTriggers(id);
+        return [id, data.eventTriggers ?? []];
+      } catch {
+        return [id, []];
+      }
+    }));
+
+    const next = new Set();
+    for (const [id, list] of results) {
+      byEvent[id] = list;
+      for (const trigger of list) {
+        // Record every event with no triggers too, so a revisit is not
+        // re-fetched and a cycle cannot spin here.
+        if (trigger.emitEventId && !(trigger.emitEventId in byEvent)) next.add(trigger.emitEventId);
+      }
     }
-  }));
-  globalTriggers.value = Object.fromEntries(results.filter(([, list]) => list.length > 0));
+    frontier = [...next];
+    depth += 1;
+  }
+
+  // Keep only events that actually have subscribers; the rest were fetched
+  // purely to walk the chain.
+  globalTriggers.value = Object.fromEntries(
+    Object.entries(byEvent).filter(([, list]) => list.length > 0),
+  );
 }
 
 /**
@@ -160,56 +197,6 @@ const graph = computed(() => {
     }
   }
 
-  // Rows are assigned as a tidy tree rather than by a per-column counter:
-  // each leaf takes the next free row and every parent centers on its own
-  // children. A flat counter packed each column independently, which kept
-  // nodes from colliding but scattered a fan-out's branches across unrelated
-  // rows and crossed the edges between them.
-  const eventRow = {};
-  const stepRow = {};
-  const globalRow = {};
-  const visiting = new Set();
-  let nextRow = 0;
-
-  function assignRows(eventId) {
-    if (eventRow[eventId] !== undefined) return eventRow[eventId];
-    // Defensive: cycles are refused on save, but the canvas must not recurse
-    // forever on data that reached storage another way.
-    if (visiting.has(eventId)) return nextRow;
-    visiting.add(eventId);
-
-    const childSteps = stepsByEvent.value[eventId] ?? [];
-    const childGlobals = globalTriggers.value[eventId] ?? [];
-    if (childSteps.length === 0 && childGlobals.length === 0) {
-      eventRow[eventId] = nextRow++;
-    } else {
-      const rows = [];
-      for (const step of childSteps) {
-        const emitted = step.emitEventId;
-        // A step sits on the same row as the event it emits — they are 1:1, so
-        // aligning them makes each branch read as one straight line. A re-join
-        // onto an already-placed event gets its own row instead.
-        if (emitted && eventRow[emitted] === undefined && !visiting.has(emitted)) {
-          stepRow[step.id] = assignRows(emitted);
-        } else {
-          stepRow[step.id] = nextRow++;
-        }
-        rows.push(stepRow[step.id]);
-      }
-      // Global subscribers are always leaves here. Their own onward chain runs
-      // through global triggers, not this workflow, so drawing it would grow
-      // the canvas without describing this graph.
-      for (const trigger of childGlobals) {
-        globalRow[trigger.id] = nextRow++;
-        rows.push(globalRow[trigger.id]);
-      }
-      eventRow[eventId] = rows.reduce((sum, r) => sum + r, 0) / rows.length;
-    }
-    visiting.delete(eventId);
-    return eventRow[eventId];
-  }
-  assignRows(startId);
-
   const nodes = [];
   const edges = [];
   const eventNodes = {};
@@ -220,7 +207,6 @@ const graph = computed(() => {
       eventId,
       label: eventName(eventId),
       column: eventColumn[eventId],
-      row: eventRow[eventId] ?? nextRow++,
       height: NODE_HEIGHT,
       isStart: eventId === startId,
     };
@@ -237,7 +223,6 @@ const graph = computed(() => {
       step,
       label: workspaceName(step.workspaceId),
       column: source.column + 1,
-      row: stepRow[step.id] ?? nextRow++,
       // A step that emits carries a second line, so its box is taller. Edges
       // anchor to the middle, which only lands right if the height is real.
       height: step.emitEventId ? NODE_HEIGHT_WITH_EMIT : NODE_HEIGHT,
@@ -249,45 +234,128 @@ const graph = computed(() => {
     }
   }
 
-  // Locked nodes for the event's global subscribers.
-  for (const [eventId, triggers] of Object.entries(globalTriggers.value)) {
-    const source = eventNodes[eventId];
-    if (!source) continue;
-    for (const trigger of triggers) {
-      const node = {
-        kind: 'global',
-        triggerId: trigger.id,
-        trigger,
-        eventId,
-        label: workspaceName(trigger.workspaceId),
-        column: source.column + 1,
-        row: globalRow[trigger.id] ?? nextRow++,
-        height: NODE_HEIGHT,
-      };
-      nodes.push(node);
+  // Locked nodes for global subscribers, walked breadth-first to the end of the
+  // chain. An earlier version drew a single hop on the theory that the onward
+  // chain "runs through global triggers, not this workflow" — but that chain is
+  // exactly what a run does next, and stopping at one hop made a second-order
+  // subscriber look like it did not exist.
+  //
+  // The event a subscriber publishes still gets its own node rather than an edge
+  // into the workflow's node of the same name. That distinction is load-bearing:
+  // a global subscriber's task does not carry the workflow, so when it
+  // publishes, only that event's *global* subscribers run — the workflow's own
+  // steps for it do not. Drawing into the workflow node would claim the run
+  // continues here when it has actually left.
+  const globalTriggerNodes = {};
+  const globalEventNodes = {};
+  const globalQueue = order
+    .map(eventId => ({ source: eventNodes[eventId], eventId, depth: 0 }))
+    .filter(item => item.source);
+
+  while (globalQueue.length > 0) {
+    const { source, eventId, depth } = globalQueue.shift();
+    if (depth >= MAX_GLOBAL_CHAIN_DEPTH) continue;
+
+    for (const trigger of globalTriggers.value[eventId] ?? []) {
+      let node = globalTriggerNodes[trigger.id];
+      if (!node) {
+        node = {
+          kind: 'global',
+          triggerId: trigger.id,
+          trigger,
+          eventId,
+          label: workspaceName(trigger.workspaceId),
+          column: source.column + 1,
+          height: NODE_HEIGHT,
+        };
+        globalTriggerNodes[trigger.id] = node;
+        nodes.push(node);
+      }
       edges.push({ from: source, to: node, global: true });
 
       if (!trigger.emitEventId) continue;
 
-      // The event this subscriber publishes gets its own node rather than an
-      // edge into the workflow's node of the same name. That distinction is
-      // load-bearing: a global subscriber's task does not carry the workflow,
-      // so when it publishes, only that event's *global* subscribers run — the
-      // workflow's own steps for it do not. Drawing into the workflow node
-      // would claim the run continues here when it has actually left.
-      const emitted = {
-        kind: 'global-event',
-        triggerId: trigger.id,
-        eventId: trigger.emitEventId,
-        label: eventName(trigger.emitEventId),
-        column: node.column + 1,
-        row: node.row,
-        height: NODE_HEIGHT,
-      };
-      nodes.push(emitted);
+      let emitted = globalEventNodes[trigger.emitEventId];
+      if (!emitted) {
+        emitted = {
+          kind: 'global-event',
+          eventId: trigger.emitEventId,
+          label: eventName(trigger.emitEventId),
+          column: node.column + 1,
+          height: NODE_HEIGHT,
+        };
+        globalEventNodes[trigger.emitEventId] = emitted;
+        nodes.push(emitted);
+        // Queued only on first sight. Global triggers get no cycle check on
+        // save, so a loop out here is real data, not a corrupt edge case —
+        // expanding each event once is what makes the walk terminate.
+        globalQueue.push({ source: emitted, eventId: trigger.emitEventId, depth: depth + 1 });
+      }
       edges.push({ from: node, to: emitted, global: true });
     }
   }
+
+  // A node reached again by a longer path keeps the shorter path's column,
+  // which would point an edge backwards. Relax columns rightward until every
+  // edge runs left-to-right; the chain is depth-capped, so this converges.
+  for (let pass = 0; pass < MAX_GLOBAL_CHAIN_DEPTH * 2; pass++) {
+    let moved = false;
+    for (const edge of edges) {
+      if (edge.to.column <= edge.from.column) {
+        edge.to.column = edge.from.column + 1;
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  // Rows are assigned as a tidy tree over the finished graph rather than by a
+  // per-column counter: each leaf takes the next free row and every parent
+  // centers on its own children. A flat counter packed each column
+  // independently, which kept nodes from colliding but scattered a fan-out's
+  // branches across unrelated rows and crossed the edges between them.
+  const childrenOf = new Map();
+  const hasParent = new Set();
+  for (const edge of edges) {
+    if (!childrenOf.has(edge.from)) childrenOf.set(edge.from, []);
+    childrenOf.get(edge.from).push(edge.to);
+    hasParent.add(edge.to);
+  }
+
+  const rowOf = new Map();
+  const visiting = new Set();
+  let nextRow = 0;
+
+  function assignRow(node) {
+    if (rowOf.has(node)) return rowOf.get(node);
+    // Defensive: workflow cycles are refused on save and the global walk
+    // expands each event once, but the canvas must not recurse forever on data
+    // that reached storage another way.
+    if (visiting.has(node)) return nextRow;
+    visiting.add(node);
+
+    const rows = [];
+    for (const child of childrenOf.get(node) ?? []) {
+      if (visiting.has(child)) continue;
+      rows.push(assignRow(child));
+    }
+    // A parent with exactly one child ends up sharing its row, which is what
+    // makes each linear branch — event → step → emitted event → subscriber —
+    // read as one straight line.
+    const row = rows.length > 0 ? rows.reduce((sum, r) => sum + r, 0) / rows.length : nextRow++;
+
+    rowOf.set(node, row);
+    visiting.delete(node);
+    return row;
+  }
+
+  // Start event first so its branch stays at the top, then any other root, then
+  // anything only reachable through a cycle.
+  if (eventNodes[startId]) assignRow(eventNodes[startId]);
+  for (const node of nodes) if (!hasParent.has(node)) assignRow(node);
+  for (const node of nodes) assignRow(node);
+
+  for (const node of nodes) node.row = rowOf.get(node) ?? 0;
 
   for (const node of nodes) {
     const override = positions.value[nodeKey(node)];
