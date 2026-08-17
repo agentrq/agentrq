@@ -87,9 +87,12 @@ export async function getTask(workspaceId, taskId) {
   return res.json();
 }
 
-export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false, eventId = '') {
+// The trailing eventId/workflowId are mutually exclusive: they are the two
+// forms of "what fires when this completes", and the form only lets one be set.
+export async function createTask(workspaceId, title, body, assignee = 'agent', attachments = [], status = 'notstarted', cronSchedule = '', allowAllCommands = false, eventId = '', workflowId = '') {
   const task = { title, body, createdBy: 'human', assignee, attachments, status, cronSchedule, allowAllCommands };
   if (eventId) task.eventId = eventId;
+  if (workflowId) task.workflowId = workflowId;
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

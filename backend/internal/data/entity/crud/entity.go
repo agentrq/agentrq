@@ -163,28 +163,29 @@ type (
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {
-		ID               int64
-		CreatedAt        time.Time
-		UpdatedAt        time.Time
-		UserID           int64
-		WorkspaceID      int64
-		CreatedBy        string
-		Assignee         string
-		Status           string
-		Title            string
-		Body             string
-		Response         string
-		ReplyText        string
-		Attachments      []Attachment
-		Messages         []Message
-		ToolCalls        []ToolCall
-		CronSchedule     string
-		ParentID         int64
-		SortOrder        float64
-		AllowAllCommands bool
-		EventID          int64
-		WorkflowID       int64
-		WorkflowDepth    int
+		ID                    int64
+		CreatedAt             time.Time
+		UpdatedAt             time.Time
+		UserID                int64
+		WorkspaceID           int64
+		CreatedBy             string
+		Assignee              string
+		Status                string
+		Title                 string
+		Body                  string
+		Response              string
+		ReplyText             string
+		Attachments           []Attachment
+		Messages              []Message
+		ToolCalls             []ToolCall
+		CronSchedule          string
+		ParentID              int64
+		SortOrder             float64
+		AllowAllCommands      bool
+		EventID               int64
+		WorkflowID            int64
+		WorkflowDepth         int
+		CompletionTriggerType int16
 	}
 
 	CreateTaskRequest struct {

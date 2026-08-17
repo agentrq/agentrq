@@ -46,6 +46,7 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 			SortOrder:        payload.Task.SortOrder,
 			AllowAllCommands: payload.Task.AllowAllCommands,
 			EventID:          monoflake.IDFromBase62(payload.Task.EventID).Int64(),
+			WorkflowID:       monoflake.IDFromBase62(payload.Task.WorkflowID).Int64(),
 		},
 	}
 }
@@ -311,6 +312,12 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 	if t.EventID != 0 {
 		res.EventID = monoflake.ID(t.EventID).String()
 	}
+	// Both are needed to label the task: a workflow choice also sets EventID to
+	// that workflow's start event, so the id alone cannot say which was picked.
+	if t.WorkflowID != 0 {
+		res.WorkflowID = monoflake.ID(t.WorkflowID).String()
+	}
+	res.CompletionTriggerType = t.CompletionTriggerType
 	return res
 }
 
@@ -430,6 +437,13 @@ func FromModelTaskToView(t model.Task) view.Task {
 	if t.EventID != 0 {
 		res.EventID = monoflake.ID(t.EventID).String()
 	}
+	// Live SSE pushes go through this mapper too, so a task that appears via
+	// the event stream must carry the same trigger labelling as one fetched
+	// over REST — otherwise the same row renders differently by arrival path.
+	if t.WorkflowID != 0 {
+		res.WorkflowID = monoflake.ID(t.WorkflowID).String()
+	}
+	res.CompletionTriggerType = t.CompletionTriggerType
 	return res
 }
 func FromHTTPRequestToUpdateScheduledTaskRequestEntity(c *fiber.Ctx) *entity.UpdateScheduledTaskRequest {

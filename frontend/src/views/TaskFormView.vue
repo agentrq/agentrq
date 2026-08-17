@@ -207,21 +207,52 @@
                    </div>
                 </div>
 
-                <!-- Emit Event Dropdown -->
-                <div class="relative" v-if="!isEditMode && events.length > 0" v-click-outside="() => showEventMenu = false">
+                <!-- On-completion trigger: a single event, or a whole workflow -->
+                <div class="relative" v-if="!isEditMode && (events.length > 0 || workflows.length > 0)" v-click-outside="() => showEventMenu = false">
                    <button type="button" @click="showEventMenu = !showEventMenu; showScheduleMenu = false; tooltipStore.hide()"
-                           @mouseenter="tooltipStore.show($event, selectedEventId ? 'Event Emitted on Completion' : 'Emit Event on Completion', 'top')"
+                           @mouseenter="tooltipStore.show($event, completionTriggerLabel, 'top')"
                            @mouseleave="tooltipStore.hide()"
-                           :class="selectedEventId ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+                           :class="(selectedEventId || selectedWorkflowId) ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
                            class="flex items-center justify-center w-7 h-7 rounded-md transition-all">
                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                    </button>
-                   <div v-if="showEventMenu" class="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 bottom-4 sm:bottom-full mb-3 w-auto sm:w-[240px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
-                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">Emit Event on Completion</h3>
-                       <select v-model="selectedEventId" class="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-md px-2 py-2 text-[11px] font-semibold text-gray-900 dark:text-zinc-100 outline-none">
+                   <div v-if="showEventMenu" class="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 bottom-4 sm:bottom-full mb-3 w-auto sm:w-[260px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
+                       <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">On Completion</h3>
+
+                       <!-- One control, two kinds. Selecting either clears the
+                            other, so an impossible "both" state cannot be built. -->
+                       <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-lg mb-3">
+                         <button type="button" @click="completionKind = 'event'; selectedWorkflowId = ''"
+                                 class="grow px-3 py-1 rounded-md text-[10px] font-semibold transition-all"
+                                 :class="completionKind === 'event' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 border border-transparent'">
+                           Event
+                         </button>
+                         <button type="button" @click="completionKind = 'workflow'; selectedEventId = ''"
+                                 class="grow px-3 py-1 rounded-md text-[10px] font-semibold transition-all"
+                                 :class="completionKind === 'workflow' ? 'bg-white dark:bg-zinc-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700' : 'text-gray-500 dark:text-zinc-500 border border-transparent'">
+                           Workflow
+                         </button>
+                       </div>
+
+                       <select v-if="completionKind === 'event'" v-model="selectedEventId" class="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-md px-2 py-2 text-[11px] font-semibold text-gray-900 dark:text-zinc-100 outline-none">
                          <option value="">None</option>
                          <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
                        </select>
+
+                       <template v-else>
+                         <select v-model="selectedWorkflowId" class="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-md px-2 py-2 text-[11px] font-semibold text-gray-900 dark:text-zinc-100 outline-none">
+                           <option value="">None</option>
+                           <!-- A workflow with no start event cannot run, so it
+                                is offered as disabled rather than hidden: the
+                                absence would otherwise look like a bug. -->
+                           <option v-for="wf in workflows" :key="wf.id" :value="wf.id" :disabled="!wf.startEventId">
+                             {{ wf.name }}{{ wf.startEventId ? '' : ' (no start event)' }}
+                           </option>
+                         </select>
+                         <p class="text-[10px] text-gray-400 dark:text-zinc-500 mt-2 leading-snug">
+                           Runs the whole pipeline, not just one event
+                         </p>
+                       </template>
                    </div>
                 </div>
 
@@ -248,7 +279,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents } from '../api';
+import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents, fetchWorkflows } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useCron } from '../composables/useCron';
 import { useSpeechToText } from '../composables/useSpeechToText';
@@ -304,10 +335,23 @@ const {
   generateTitle
 } = useAutoTitle(bodyRef, titleRef);
 
-// Event-on-completion
+// What fires when the task completes: a single event, or a whole workflow.
+// Mutually exclusive by construction — picking one clears the other.
 const events = ref([]);
+const workflows = ref([]);
 const selectedEventId = ref('');
+const selectedWorkflowId = ref('');
+const completionKind = ref('event');
 const showEventMenu = ref(false);
+
+const completionTriggerLabel = computed(() => {
+  if (selectedWorkflowId.value) {
+    const wf = workflows.value.find(w => w.id === selectedWorkflowId.value);
+    return `Runs workflow ${wf?.name ?? ''} on completion`;
+  }
+  if (selectedEventId.value) return 'Event Emitted on Completion';
+  return 'Emit Event or Run Workflow on Completion';
+});
 
 // Scheduling state
 const scheduleType = ref('none');
@@ -329,12 +373,16 @@ function handleDrop(e) {
 
 onMounted(async () => {
   try {
-    const [wsRes, eventsRes] = await Promise.all([
+    // Both pickers degrade to empty rather than blocking the form: a task can
+    // always be created without an on-completion trigger.
+    const [wsRes, eventsRes, workflowsRes] = await Promise.all([
       getWorkspace(workspaceId),
       fetchEvents().catch(() => ({ events: [] })),
+      fetchWorkflows().catch(() => ({ workflows: [] })),
     ]);
     workspace.value = wsRes.workspace;
     events.value = eventsRes.events ?? [];
+    workflows.value = workflowsRes.workflows ?? [];
 
     if (isEditMode.value) {
       const taskRes = await getTask(workspaceId, taskId);
@@ -514,7 +562,7 @@ async function submitHumanTask() {
       workspaceId, newTask.value.title, newTask.value.body,
       newTask.value.assignee, newTaskAttachments.value,
       status, newTask.value.cronSchedule, newTask.value.allowAllCommands,
-      selectedEventId.value
+      selectedEventId.value, selectedWorkflowId.value
     );
     notifySuccess('Task Created successfully');
     goBack(status === 'cron');

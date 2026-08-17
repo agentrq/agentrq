@@ -120,6 +120,12 @@ type (
 		SortOrder        float64      `json:"sortOrder"`
 		AllowAllCommands bool         `json:"allowAllCommands"`
 		EventID          string       `json:"eventId,omitempty"`
+		// WorkflowID runs a whole named pipeline on completion instead of
+		// firing a single event. Choosing one also sets EventID to that
+		// workflow's start event, so CompletionTriggerType records which of the
+		// two the author actually picked.
+		WorkflowID            string `json:"workflowId,omitempty"`
+		CompletionTriggerType int16  `json:"completionTriggerType,omitempty"`
 	}
 
 	CreateTaskRequest struct {

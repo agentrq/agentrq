@@ -106,23 +106,44 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		req.Task.Body = appendSelfLearningNote(req.Task.Body, w.SelfLearningLoopNote)
 	}
 
+	// Choosing a workflow means "run this pipeline on completion", which fires
+	// the workflow's own start event — so the workflow choice expands into both
+	// fields, and the discriminator records which one the author picked.
+	eventID := req.Task.EventID
+	completionTrigger := entity.CompletionTriggerNone
+	if req.Task.WorkflowID != 0 {
+		wf, wfErr := c.repository.GetWorkflow(ctx, req.Task.WorkflowID, userID)
+		if wfErr != nil {
+			return nil, fmt.Errorf("workflow not found")
+		}
+		if wf.StartEventID == 0 {
+			return nil, fmt.Errorf("workflow %q has no start event yet", wf.Name)
+		}
+		eventID = wf.StartEventID
+		completionTrigger = entity.CompletionTriggerWorkflow
+	} else if eventID != 0 {
+		completionTrigger = entity.CompletionTriggerEvent
+	}
+
 	m := model.Task{
-		ID:               c.idgen.NextID(),
-		CreatedAt:        now,
-		UpdatedAt:        now,
-		UserID:           userID,
-		WorkspaceID:      req.Task.WorkspaceID,
-		CreatedBy:        req.Task.CreatedBy,
-		Assignee:         req.Task.Assignee,
-		Status:           status,
-		Title:            req.Task.Title,
-		Body:             req.Task.Body,
-		Attachments:      attachJSON,
-		CronSchedule:     req.Task.CronSchedule,
-		ParentID:         req.Task.ParentID,
-		SortOrder:        sortOrder,
-		AllowAllCommands: allowAll,
-		EventID:          req.Task.EventID,
+		ID:                    c.idgen.NextID(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		UserID:                userID,
+		WorkspaceID:           req.Task.WorkspaceID,
+		CreatedBy:             req.Task.CreatedBy,
+		Assignee:              req.Task.Assignee,
+		Status:                status,
+		Title:                 req.Task.Title,
+		Body:                  req.Task.Body,
+		Attachments:           attachJSON,
+		CronSchedule:          req.Task.CronSchedule,
+		ParentID:              req.Task.ParentID,
+		SortOrder:             sortOrder,
+		AllowAllCommands:      allowAll,
+		EventID:               eventID,
+		WorkflowID:            req.Task.WorkflowID,
+		CompletionTriggerType: completionTrigger,
 	}
 	created, err := c.repository.CreateTask(ctx, m)
 	if err != nil {
@@ -648,26 +669,29 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 	}
 
 	return entity.Task{
-		ID:               m.ID,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
-		WorkspaceID:      m.WorkspaceID,
-		UserID:           m.UserID,
-		CreatedBy:        m.CreatedBy,
-		Assignee:         m.Assignee,
-		Status:           m.Status,
-		Title:            m.Title,
-		Body:             m.Body,
-		Response:         m.Response,
-		ReplyText:        m.ReplyText,
-		Attachments:      atts,
-		Messages:         msgs,
-		ToolCalls:        toolCalls,
-		CronSchedule:     m.CronSchedule,
-		ParentID:         m.ParentID,
-		SortOrder:        m.SortOrder,
-		AllowAllCommands: m.AllowAllCommands,
-		EventID:          m.EventID,
+		ID:                    m.ID,
+		CreatedAt:             m.CreatedAt,
+		UpdatedAt:             m.UpdatedAt,
+		WorkspaceID:           m.WorkspaceID,
+		UserID:                m.UserID,
+		CreatedBy:             m.CreatedBy,
+		Assignee:              m.Assignee,
+		Status:                m.Status,
+		Title:                 m.Title,
+		Body:                  m.Body,
+		Response:              m.Response,
+		ReplyText:             m.ReplyText,
+		Attachments:           atts,
+		Messages:              msgs,
+		ToolCalls:             toolCalls,
+		CronSchedule:          m.CronSchedule,
+		ParentID:              m.ParentID,
+		SortOrder:             m.SortOrder,
+		AllowAllCommands:      m.AllowAllCommands,
+		EventID:               m.EventID,
+		WorkflowID:            m.WorkflowID,
+		WorkflowDepth:         m.WorkflowDepth,
+		CompletionTriggerType: m.CompletionTriggerType,
 	}
 }
 
