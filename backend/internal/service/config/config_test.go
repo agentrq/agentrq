@@ -16,14 +16,14 @@ func TestConfig(t *testing.T) {
 	oldConfigPath := _configPath
 	// We can't change _configPath because it's a constant.
 	// But we can change working directory!
-	
+
 	origWd, _ := os.Getwd()
 	os.Chdir(tmpDir)
 	defer os.Chdir(origWd)
 
 	// Setup _config
 	os.Mkdir("_config", 0755)
-	
+
 	baseYaml := `
 app:
   name: "BaseApp"
@@ -55,8 +55,8 @@ database:
 		if s.AppShortName() != "agentrq" {
 			t.Errorf("AppShortName mismatch: %s", s.AppShortName())
 		}
-		if s.Version() != "v0.3.20" {
-			t.Errorf("Expected version v0.3.20, got %s", s.Version())
+		if s.Version() != "v0.4.0" {
+			t.Errorf("Expected version v0.4.0, got %s", s.Version())
 		}
 		if s.Env() != "development" {
 			t.Errorf("Env mismatch: %s", s.Env())
@@ -101,13 +101,13 @@ database:
 	t.Run("EnvVarOverride", func(t *testing.T) {
 		os.Setenv("ENV", "production")
 		defer os.Unsetenv("ENV")
-		
+
 		prodYaml := `
 database:
   host: "prod-db"
 `
 		os.WriteFile("_config/production.yaml", []byte(prodYaml), 0644)
-		
+
 		s, err := New()
 		if err != nil {
 			t.Fatal(err)
@@ -124,21 +124,21 @@ database:
 		if err == nil {
 			t.Error("expected error for missing base.yaml")
 		}
-		
+
 		os.WriteFile("_config/base.yaml", []byte("invalid: yaml: :"), 0644)
 		_, err = New()
 		if err == nil {
 			t.Error("expected error for invalid base.yaml")
 		}
 	})
-	
+
 	_ = oldConfigPath // avoid unused warning in mind
 }
 
 func TestMergeMaps(t *testing.T) {
 	a := map[string]any{"k1": "v1", "k2": map[string]any{"s1": "v2"}}
 	b := map[string]any{"k1": "v1-over", "k2": map[string]any{"s2": "v3"}}
-	
+
 	merged := mergeMaps(a, b)
 	if merged["k1"] != "v1-over" {
 		t.Errorf("k1 mismatch: %v", merged["k1"])
