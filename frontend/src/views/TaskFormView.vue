@@ -333,7 +333,7 @@ const {
   isOverridden,
   markOverridden,
   generateTitle
-} = useAutoTitle(bodyRef, titleRef);
+} = useAutoTitle(bodyRef, titleRef, workspaceId);
 
 // What fires when the task completes: a single event, or a whole workflow.
 // Mutually exclusive by construction — picking one clears the other.

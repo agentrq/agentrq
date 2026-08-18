@@ -250,6 +250,17 @@ type (
 		Endpoint string `json:"endpoint"`
 	}
 
+	// RecordTelemetryRequest reports one occurrence of a client-side action.
+	//
+	// Action is a name from a fixed allowlist rather than free text, and there
+	// is deliberately no field for a count, a timestamp or a payload: the
+	// server decides when the event happened and how much one call is worth,
+	// so a caller cannot backdate an event or claim a thousand at once.
+	RecordTelemetryRequest struct {
+		Action      string `json:"action"`
+		WorkspaceID string `json:"workspaceId"`
+	}
+
 	VAPIDPublicKeyResponse struct {
 		PublicKey string `json:"publicKey"`
 	}

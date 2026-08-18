@@ -114,6 +114,9 @@ func New(p Params) (Handler, error) {
 	}
 	h.registerEventRoutes()
 	h.registerWorkflowRoutes()
+	if err := h.registerTelemetryRoutes(); err != nil {
+		return nil, err
+	}
 	if p.PushCtrl != nil {
 		h.registerPushRoutes(p.PushCtrl)
 	}

@@ -31,6 +31,7 @@ type (
 		WorkflowController
 		WorkflowStepController
 		WorkflowTextController
+		TelemetryController
 	}
 
 	controller struct {

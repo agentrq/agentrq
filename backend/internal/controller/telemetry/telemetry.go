@@ -163,6 +163,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDTaskRejectManual
 	case entity.ActionUserCreate:
 		action = model.ActionIDUserCreate
+	case entity.ActionLocalAITitleGenerate:
+		action = model.ActionIDLocalAITitleGenerate
+	case entity.ActionLocalAIRecordingStart:
+		action = model.ActionIDLocalAIRecordingStart
 	default:
 		return
 	}

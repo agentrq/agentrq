@@ -434,6 +434,15 @@ type (
 		Types       []string // empty = all types
 	}
 
+	// RecordTelemetryRequest reports one client-side occurrence of Action.
+	// Action is already resolved from the allowlist by the time it gets here,
+	// so the controller never sees a name the client invented.
+	RecordTelemetryRequest struct {
+		Action      Action
+		WorkspaceID int64
+		UserID      string
+	}
+
 	DeletePushSubscriptionRequest struct {
 		UserID   int64
 		Endpoint string
@@ -856,7 +865,31 @@ const (
 	ActionMCPPermissionAuto          Action = 22
 	ActionTaskAllowAllCommandsToggle Action = 23
 	ActionEventPublished             Action = 30
+	// Local-AI feature usage, reported by the browser rather than emitted by
+	// the backend: these models run in the user's own tab, so nothing
+	// server-side ever observes them. See ClientReportableAction, which is the
+	// allowlist of what a browser is permitted to claim.
+	ActionLocalAITitleGenerate  Action = 40
+	ActionLocalAIRecordingStart Action = 41
 )
+
+// ClientReportableAction resolves an action name a browser is allowed to
+// report into its Action.
+//
+// The allowlist is the security boundary for the telemetry ingest route.
+// Every other action is emitted by the backend after it has done the work it
+// describes, so accepting an arbitrary name from a client would let a caller
+// mint task or message events it never performed and skew the same counters
+// the real ones feed.
+func ClientReportableAction(name string) (Action, bool) {
+	switch name {
+	case "local_ai_title_generate":
+		return ActionLocalAITitleGenerate, true
+	case "local_ai_recording_start":
+		return ActionLocalAIRecordingStart, true
+	}
+	return 0, false
+}
 
 func (a Action) String() string {
 	switch a {
@@ -900,6 +933,10 @@ func (a Action) String() string {
 		return "task_allow_all_commands_toggle"
 	case ActionEventPublished:
 		return "event_published"
+	case ActionLocalAITitleGenerate:
+		return "local_ai_title_generate"
+	case ActionLocalAIRecordingStart:
+		return "local_ai_recording_start"
 	}
 	return "unknown"
 }

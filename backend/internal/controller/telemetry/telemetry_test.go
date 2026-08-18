@@ -20,7 +20,7 @@ type testDBConn struct {
 }
 
 func (t *testDBConn) Conn(ctx context.Context) *gorm.DB { return t.db }
-func (t *testDBConn) Close(ctx context.Context)          {}
+func (t *testDBConn) Close(ctx context.Context)         {}
 
 func TestTelemetryController(t *testing.T) {
 	// Setup in-memory SQLite
@@ -37,7 +37,7 @@ func TestTelemetryController(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockPubSub := mock_pubsub.NewMockService(ctrl)
-		
+
 		crudChan := make(chan any, 10)
 		mcpChan := make(chan any, 10)
 
@@ -200,4 +200,85 @@ func TestTelemetryController(t *testing.T) {
 			t.Errorf("expected 1 record from interval flush, got %d", count)
 		}
 	})
+}
+
+// The client-reported actions have to survive the whole path — pubsub event to
+// persisted row — with their scoping intact, since a row that loses its user or
+// workspace cannot be shown back to the user it belongs to.
+func TestLocalAIActionsPersistScopedToUserAndWorkspace(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Telemetry{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPubSub := mock_pubsub.NewMockService(ctrl)
+	crudChan := make(chan any, 10)
+	mcpChan := make(chan any, 10)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).
+		Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP}).
+		Return(&pubsub.SubscribeResponse{Events: mcpChan}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := New(Params{
+		DB:        &testDBConn{db: db},
+		PubSub:    mockPubSub,
+		BatchSize: 2,
+		Interval:  50 * time.Millisecond,
+	})
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("failed to start: %v", err)
+	}
+
+	crudChan <- entity.CRUDEvent{
+		UserID: 7, WorkspaceID: 70,
+		Action: entity.ActionLocalAITitleGenerate, Actor: entity.ActorHuman,
+	}
+	crudChan <- entity.CRUDEvent{
+		UserID: 7, WorkspaceID: 70,
+		Action: entity.ActionLocalAIRecordingStart, Actor: entity.ActorHuman,
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	c.Close()
+
+	for _, tc := range []struct {
+		action uint8
+		name   string
+	}{
+		{model.ActionIDLocalAITitleGenerate, "title generate"},
+		{model.ActionIDLocalAIRecordingStart, "recording start"},
+	} {
+		var rows []model.Telemetry
+		if err := db.Where("action = ?", tc.action).Find(&rows).Error; err != nil {
+			t.Fatalf("%s: query failed: %v", tc.name, err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("%s: expected 1 row, got %d", tc.name, len(rows))
+		}
+		if rows[0].UserID != 7 || rows[0].WorkspaceID != 70 {
+			t.Errorf("%s: expected user 7 / workspace 70, got user %d / workspace %d",
+				tc.name, rows[0].UserID, rows[0].WorkspaceID)
+		}
+		if rows[0].Actor != uint8(entity.ActorHuman) {
+			t.Errorf("%s: expected a human actor, got %d", tc.name, rows[0].Actor)
+		}
+		if rows[0].OccurredAt == 0 {
+			t.Errorf("%s: OccurredAt should be stamped by the server", tc.name)
+		}
+	}
+
+	// The two must not collide: distinct action ids are what makes them
+	// separate metrics rather than one.
+	if model.ActionIDLocalAITitleGenerate == model.ActionIDLocalAIRecordingStart {
+		t.Error("the two local-AI actions share an id")
+	}
 }

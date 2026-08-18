@@ -1,7 +1,11 @@
 import { ref, watch, onUnmounted } from 'vue';
 import TitleWorker from '../workers/titleWorker.js?worker';
+import { recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';
 
-export function useAutoTitle(descriptionRef, titleRef) {
+// workspaceId is optional and only used to scope usage telemetry; it may be a
+// plain string, a ref or a getter, matching however the caller's route exposes
+// it. Without one the generation still runs, it just goes uncounted.
+export function useAutoTitle(descriptionRef, titleRef, workspaceId) {
   const isGenerating = ref(false);
   const isModelLoading = ref(false);
   const modelProgress = ref(0);
@@ -62,6 +66,14 @@ export function useAutoTitle(descriptionRef, titleRef) {
     if (!isSupported) return;
     const text = descriptionRef.value || '';
     if (text.trim().length < 5) return;
+
+    // Counted after the guards above, so a click that generates nothing —
+    // unsupported browser, or too little text to work from — is not recorded
+    // as a use of the model.
+    recordTelemetry(
+      TELEMETRY_LOCAL_AI_TITLE_GENERATE,
+      typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId)
+    );
 
     isGenerating.value = true;
     const w = getWorker();

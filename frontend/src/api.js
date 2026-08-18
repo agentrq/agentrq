@@ -475,3 +475,21 @@ export async function replaceWorkflowFromText(workflowId, text) {
   }
   return res.json();
 }
+
+// Telemetry action names the backend accepts. Anything else is rejected there,
+// so these strings must match its allowlist exactly.
+export const TELEMETRY_LOCAL_AI_TITLE_GENERATE = 'local_ai_title_generate';
+export const TELEMETRY_LOCAL_AI_RECORDING_START = 'local_ai_recording_start';
+
+// Records one local-AI feature use. Never throws and never blocks the caller:
+// a metric is not worth failing a user's click over, so a rejected or
+// unreachable report is dropped rather than surfaced.
+export function recordTelemetry(action, workspaceId) {
+  if (!action || !workspaceId) return;
+  fetch(`${API_BASE_URL}/telemetry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, workspaceId }),
+    keepalive: true
+  }).catch(() => {});
+}

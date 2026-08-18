@@ -159,5 +159,53 @@ func TestLimiter_ThreadSafety(t *testing.T) {
 	wg.Wait()
 }
 
+// The telemetry route is called from the browser on a click, so its ceiling is
+// what stops a page from inflating the counters it feeds. Driven through
+// allow() with a synthetic clock: proving a per-minute cap through the real one
+// would mean sleeping through most of a minute.
+func TestTelemetryAllowsTenPerMinute(t *testing.T) {
+	rb := &rotatingBucket{}
 
+	// One per second for ten seconds: all ten fit the minute's budget.
+	for i := 0; i < 10; i++ {
+		if !allow(rb, int64(i), 2, 10) {
+			t.Fatalf("call %d within the minute should be allowed", i+1)
+		}
+	}
 
+	if allow(rb, 10, 2, 10) {
+		t.Error("the 11th call within the same minute must be blocked")
+	}
+
+	// Once the first second ages out of the rolling window its slot frees up,
+	// so the cap throttles rather than locks the user out for good.
+	if !allow(rb, 60, 2, 10) {
+		t.Error("a call after the window rolled should be allowed again")
+	}
+}
+
+// Two different local-AI features can genuinely be used in the same second, so
+// the per-second burst allows a pair while the minute cap still bounds it.
+func TestTelemetryAllowsAPairInOneSecondButNotAThird(t *testing.T) {
+	rb := &rotatingBucket{}
+
+	if !allow(rb, 100, 2, 10) || !allow(rb, 100, 2, 10) {
+		t.Fatal("two calls in the same second should be allowed")
+	}
+	if allow(rb, 100, 2, 10) {
+		t.Error("a third call in the same second must be blocked")
+	}
+}
+
+func TestLimiterExposesTelemetryBucketSeparately(t *testing.T) {
+	l := New()
+	userID := int64(9911)
+
+	if !l.AllowTelemetry(userID) {
+		t.Error("expected the first telemetry report to be allowed")
+	}
+	// Spending the telemetry budget must not spend the task budget with it.
+	if !l.AllowTask(userID) {
+		t.Error("telemetry reports should not consume the task allowance")
+	}
+}

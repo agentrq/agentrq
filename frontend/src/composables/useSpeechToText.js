@@ -2,6 +2,7 @@ import { ref, onUnmounted, watch } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
+import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_START } from '../api';
 
 let hasShownMobileToast = false;
 
@@ -37,11 +38,17 @@ export function useSpeechToText(targetRef, workspaceId) {
 
   const SUPPORTED_LANGUAGES = Object.keys(WHISPER_LANGUAGES);
 
+  // Callers pass the workspace id as a plain string, a ref or a getter,
+  // depending on whether their route makes it reactive.
+  function resolveWorkspaceId() {
+    return typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
+  }
+
   function getResolvedLanguage() {
     if (typeof window === 'undefined') return 'en';
-    
+
     // 1. Check workspace settings override
-    const wsId = typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
+    const wsId = resolveWorkspaceId();
     if (wsId) {
       const saved = localStorage.getItem(`stt_lang_${wsId}`);
       if (saved && saved !== 'auto') return saved;
@@ -232,6 +239,12 @@ export function useSpeechToText(targetRef, workspaceId) {
 
       mediaRecorder.start(250); // Collect data every 250ms
       isRecording.value = true;
+
+      // Counted here rather than in the click handler: toggleRecording fires
+      // again to stop, so counting the click would record two events per
+      // recording, and an attempt that died on a mic permission prompt never
+      // used the feature at all.
+      recordTelemetry(TELEMETRY_LOCAL_AI_RECORDING_START, resolveWorkspaceId());
     } catch (e) {
       if (e.name === 'NotAllowedError') {
         error.value = 'Microphone permission denied';
