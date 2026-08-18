@@ -11,6 +11,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/mustafaturan/monoflake"
@@ -144,20 +145,28 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 		return
 	}
 
-	// If the trigger chains to another event, append publish instruction to the body.
+	// The ID is claimed before the body is built so the instruction can tell the
+	// agent which task it is publishing for.
+	taskID := c.ids.NextID()
+
+	// If the trigger chains to another event, append publish instruction to the
+	// body. A global subscriber is outside any workflow, so no workflow is named.
 	if trigger.EmitEventID != 0 {
 		if emitEv, evErr := c.repo.GetEvent(ctx, trigger.EmitEventID, ws.UserID); evErr == nil {
-			instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(\"%s\", \"<your output payload>\")]", emitEv.Name)
-			if emitEv.PayloadGuidelines != "" {
-				instruction += fmt.Sprintf("\nPayload guidelines: %s", emitEv.PayloadGuidelines)
-			}
-			body += instruction
+			body += eventinstruction.Build(eventinstruction.Params{
+				EventName:         emitEv.Name,
+				TaskID:            monoflake.ID(taskID).String(),
+				PayloadGuidelines: emitEv.PayloadGuidelines,
+			})
+		} else {
+			zlog.Warn().Err(evErr).Int64("emitEventID", trigger.EmitEventID).Int64("triggerID", trigger.ID).
+				Msg("[event-consumer] failed to resolve chained event, on-completion publishEvent instruction omitted")
 		}
 	}
 
 	now := time.Now()
 	task := model.Task{
-		ID:               c.ids.NextID(),
+		ID:               taskID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		WorkspaceID:      trigger.WorkspaceID,
@@ -218,19 +227,30 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 		return
 	}
 
+	// The ID is claimed before the body is built so the instruction can tell the
+	// agent which task it is publishing for.
+	taskID := c.ids.NextID()
+
+	// Naming the task in the instruction is what keeps the run identifiable: the
+	// agent echoes it back on publish, and the workflow and hop count are read
+	// from that task, so the next hop no longer depends on the server resolving
+	// which task was publishing.
 	if step.EmitEventID != 0 {
 		if emitEv, evErr := c.repo.GetEvent(ctx, step.EmitEventID, ws.UserID); evErr == nil {
-			instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(\"%s\", \"<your output payload>\")]", emitEv.Name)
-			if emitEv.PayloadGuidelines != "" {
-				instruction += fmt.Sprintf("\nPayload guidelines: %s", emitEv.PayloadGuidelines)
-			}
-			body += instruction
+			body += eventinstruction.Build(eventinstruction.Params{
+				EventName:         emitEv.Name,
+				TaskID:            monoflake.ID(taskID).String(),
+				PayloadGuidelines: emitEv.PayloadGuidelines,
+			})
+		} else {
+			zlog.Warn().Err(evErr).Int64("emitEventID", step.EmitEventID).Int64("stepID", step.ID).
+				Msg("[event-consumer] failed to resolve chained event, on-completion publishEvent instruction omitted")
 		}
 	}
 
 	now := time.Now()
 	task := model.Task{
-		ID:               c.ids.NextID(),
+		ID:               taskID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		WorkspaceID:      step.WorkspaceID,

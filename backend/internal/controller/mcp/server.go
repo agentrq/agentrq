@@ -53,11 +53,10 @@ type UpdateWorkspaceAutoAllowedToolsFunc func(ctx context.Context, tools []strin
 // The zero value means "not part of a workflow run", which keeps the publish on
 // the original global-trigger path.
 type WorkflowRunContext struct {
+	// WorkflowID is the run the publishing task belongs to, read from the task
+	// itself. The task is the only thing that knows this: an agent is told which
+	// task it is publishing for, never which workflow that task sits in.
 	WorkflowID int64
-	// WorkflowName is set when the agent named a workflow explicitly. It starts
-	// a fresh run of that workflow and takes precedence over WorkflowID, which
-	// only says which run the publishing task already belonged to.
-	WorkflowName string
 	// Depth is how many hops already preceded the publishing task, carried so
 	// the consumer's runaway guard survives the task boundary.
 	Depth int
@@ -159,10 +158,10 @@ type CreateTaskParams struct {
 
 // PublishEventParams is the input to the publishEvent tool.
 type PublishEventParams struct {
-	Name     string            `json:"name" jsonschema:"The event name to publish (must match an existing event in this workspace's owner account)"`
-	Payload  string            `json:"payload,omitempty" jsonschema:"Unstructured text payload describing what happened"`
-	FAQ      []PublishEventFAQ `json:"faq,omitempty" jsonschema:"Optional question-answer pairs providing additional context"`
-	Workflow string            `json:"workflow,omitempty" jsonschema:"Optional workflow name to run. Without it the event fans out to whatever is globally subscribed; with it, only that workflow's steps run. Omit to continue a workflow you are already part of."`
+	Name    string            `json:"name" jsonschema:"The event name to publish (must match an existing event in this workspace's owner account)"`
+	Payload string            `json:"payload,omitempty" jsonschema:"Unstructured text payload describing what happened"`
+	TaskID  string            `json:"taskId,omitempty" jsonschema:"The ID of the task you are completing (base62). Copy it from that task's publishEvent instruction. It identifies which workflow run this publish continues, so omitting it can leave the run stranded."`
+	FAQ     []PublishEventFAQ `json:"faq,omitempty" jsonschema:"Optional question-answer pairs providing additional context"`
 }
 
 // PublishEventFAQ is a single question-answer pair in a publishEvent call.
@@ -340,7 +339,7 @@ func NewWorkspaceServer(
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "publishEvent",
-		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically.",
+		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When the task you are completing includes a publishEvent instruction, copy the name and taskId from it exactly as written — taskId is what identifies the workflow run being continued. Write the payload yourself, plus an optional faq.",
 	}, ps.handlePublishEvent)
 
 	// Add middleware to handle incoming notifications (like permission_request)
@@ -558,7 +557,10 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 					return pendingTasks[i].ID < pendingTasks[j].ID
 				})
 				nextTask := pendingTasks[0]
-				msg := fmt.Sprintf("Next assigned task:\nTitle: %s\nDetails: %s", nextTask.Title, nextTask.Body)
+				// The ID is part of the push because a task body can instruct the
+				// agent to quote it back when publishing an event, and this path
+				// is how workflow-step tasks are delivered.
+				msg := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s", monoflake.ID(nextTask.ID).String(), nextTask.Title, nextTask.Body)
 				if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 					msg += "\n" + atts
 				}
@@ -878,8 +880,7 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 	for i, f := range params.FAQ {
 		faq[i] = entity.EventFAQ{Q: f.Q, A: f.A}
 	}
-	run := ps.currentWorkflowRun(ctx, req)
-	run.WorkflowName = params.Workflow
+	run := ps.currentWorkflowRun(ctx, req, params.TaskID)
 	if err := ps.publishEvent(ctx, params.Name, params.Payload, faq, run); err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
@@ -897,16 +898,25 @@ func (ps *WorkspaceServer) handlePublishEvent(ctx context.Context, req *mcp.Call
 // so a chained event stays inside its own workflow instead of falling back to
 // the global triggers.
 //
-// Best effort by design: the agent never passes the workflow itself (it has no
-// reason to know one exists), so this leans on the same session→task resolution
-// the permission flow uses. If the task cannot be resolved, the zero value
-// means "not in a workflow" and the publish behaves exactly as it did before
-// workflows existed — a missed chain, never a wrong one.
-func (ps *WorkspaceServer) currentWorkflowRun(ctx context.Context, req *mcp.CallToolRequest) WorkflowRunContext {
-	if req == nil || req.GetSession() == nil {
+// paramTaskID is the task the agent says it is completing, copied out of that
+// task's own publishEvent instruction. It is preferred over session lookup
+// because it is the only source that names the run rather than reconstructing
+// it: the session→task map is mutated as a side effect by createTask, reply and
+// updateTaskStatus, so an agent that creates a follow-up task before publishing
+// would otherwise be resolved against that new task and lose its workflow.
+//
+// Falling back to session resolution keeps agents that omit the ID working, but
+// that path stays a guess — its last resort is "whichever task is ongoing" —
+// so it can return a different run rather than none.
+func (ps *WorkspaceServer) currentWorkflowRun(ctx context.Context, req *mcp.CallToolRequest, paramTaskID string) WorkflowRunContext {
+	sessID := ""
+	if req != nil && req.GetSession() != nil {
+		sessID = req.GetSession().ID()
+	}
+	if sessID == "" && paramTaskID == "" {
 		return WorkflowRunContext{}
 	}
-	taskID, ok := ps.resolveTaskID(ctx, req.GetSession().ID(), "")
+	taskID, ok := ps.resolveTaskID(ctx, sessID, paramTaskID)
 	if !ok {
 		return WorkflowRunContext{}
 	}
@@ -1221,18 +1231,25 @@ func (ps *WorkspaceServer) resolveTaskID(ctx context.Context, sessID, payloadTas
 		}
 	}
 
-	ps.sessionTasksMu.RLock()
-	taskID, ok := ps.sessionTasks[sessID]
-	ps.sessionTasksMu.RUnlock()
-	if ok {
-		return taskID, true
+	if sessID != "" {
+		ps.sessionTasksMu.RLock()
+		taskID, ok := ps.sessionTasks[sessID]
+		ps.sessionTasksMu.RUnlock()
+		if ok {
+			return taskID, true
+		}
 	}
 
 	if tasks, err := ps.listTasks(ctx, ListTasksFilter{Status: []string{"ongoing", "blocked"}, Limit: 1}); err == nil {
 		for _, t := range tasks {
-			ps.sessionTasksMu.Lock()
-			ps.sessionTasks[sessID] = t.ID
-			ps.sessionTasksMu.Unlock()
+			// Only cache under a real session key: a caller with no session
+			// would otherwise write an entry that every later sessionless
+			// caller reads back as its own task.
+			if sessID != "" {
+				ps.sessionTasksMu.Lock()
+				ps.sessionTasks[sessID] = t.ID
+				ps.sessionTasksMu.Unlock()
+			}
 			zlog.Debug().Str("session_id", sessID).Int64("task_id", t.ID).Msg("Session not found; resolved task from DB")
 			return t.ID, true
 		}

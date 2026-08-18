@@ -557,19 +557,10 @@ func New(cfg Config) (*App, error) {
 					return fmt.Errorf("event %q not found", eventName)
 				}
 
-				// Naming a workflow explicitly starts a fresh run of it, which
-				// overrides whichever run the publishing task belonged to. Depth
-				// restarts with it: this is a new run, not a continuation, and
-				// inheriting the old count would retire it early.
-				workflowID, depth := run.WorkflowID, run.Depth
-				if run.WorkflowName != "" {
-					wf, wfErr := repo.GetWorkflowByName(ctx, run.WorkflowName, uid)
-					if wfErr != nil {
-						return fmt.Errorf("workflow %q not found", run.WorkflowName)
-					}
-					workflowID, depth = wf.ID, 0
-				}
-
+				// The run comes from the publishing task and nowhere else: the
+				// agent identifies its task, and the task row carries both the
+				// workflow and the hop count. A workflow is never named by the
+				// caller, so there is no second source to reconcile against.
 				pubsubSvc.Publish(ctx, pubsub.PublishRequest{
 					PubSubID: entity.PubSubTopicEvents,
 					Event: entity.EventPublishedPayload{
@@ -577,8 +568,8 @@ func New(cfg Config) (*App, error) {
 						Name:       ev.Name,
 						Payload:    payload,
 						FAQ:        faq,
-						WorkflowID: workflowID,
-						Depth:      depth,
+						WorkflowID: run.WorkflowID,
+						Depth:      run.Depth,
 					},
 				})
 				return nil

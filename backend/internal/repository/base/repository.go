@@ -93,7 +93,6 @@ type Repository interface {
 	// Workflows
 	CreateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
 	GetWorkflow(ctx context.Context, id int64, userID int64) (model.Workflow, error)
-	GetWorkflowByName(ctx context.Context, name string, userID int64) (model.Workflow, error)
 	ListWorkflowsByUser(ctx context.Context, userID int64) ([]model.Workflow, error)
 	UpdateWorkflow(ctx context.Context, w model.Workflow) (model.Workflow, error)
 	DeleteWorkflow(ctx context.Context, id int64, userID int64) error
@@ -997,15 +996,6 @@ func (r *repository) CreateWorkflow(ctx context.Context, w model.Workflow) (mode
 func (r *repository) GetWorkflow(ctx context.Context, id int64, userID int64) (model.Workflow, error) {
 	var w model.Workflow
 	err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&w).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.Workflow{}, ErrNotFound
-	}
-	return w, err
-}
-
-func (r *repository) GetWorkflowByName(ctx context.Context, name string, userID int64) (model.Workflow, error) {
-	var w model.Workflow
-	err := r.conn(ctx).Where("name = ? AND user_id = ?", name, userID).First(&w).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Workflow{}, ErrNotFound
 	}

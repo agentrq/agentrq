@@ -14,6 +14,7 @@ import (
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 )
@@ -105,13 +106,19 @@ func (h *handler) createTask() fiber.Handler {
 				if atts := formatAttachments(rs.Task.Attachments); atts != "" {
 					content += "\n" + atts
 				}
+				// A task bound to a workflow already carries it on the task row, so
+				// the instruction only has to name the task: publishing with that
+				// ID starts the run explicitly rather than by inference.
 				if rs.Task.EventID != 0 {
 					if ev, evErr := h.crud.GetEvent(ctx, entity.GetEventRequest{ID: rs.Task.EventID, UserID: rq.UserID}); evErr == nil {
-						instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(\"%s\", \"<your output payload>\")]", ev.Event.Name)
-						if ev.Event.PayloadGuidelines != "" {
-							instruction += fmt.Sprintf("\nPayload guidelines: %s", ev.Event.PayloadGuidelines)
-						}
-						content += instruction
+						content += eventinstruction.Build(eventinstruction.Params{
+							EventName:         ev.Event.Name,
+							TaskID:            monoflake.ID(rs.Task.ID).String(),
+							PayloadGuidelines: ev.Event.PayloadGuidelines,
+						})
+					} else {
+						zlog.Warn().Err(evErr).Int64("eventID", rs.Task.EventID).Int64("taskID", rs.Task.ID).
+							Msg("failed to resolve linked event, on-completion publishEvent instruction omitted")
 					}
 				}
 				srv.SendChannelNotification(ctx, rs.Task.ID, content)
