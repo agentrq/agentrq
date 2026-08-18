@@ -869,8 +869,8 @@ const (
 	// the backend: these models run in the user's own tab, so nothing
 	// server-side ever observes them. See ClientReportableAction, which is the
 	// allowlist of what a browser is permitted to claim.
-	ActionLocalAITitleGenerate  Action = 40
-	ActionLocalAIRecordingStart Action = 41
+	ActionLocalAITitleGenerate Action = 40
+	ActionLocalAIRecordingEnd  Action = 41
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -885,8 +885,8 @@ func ClientReportableAction(name string) (Action, bool) {
 	switch name {
 	case "local_ai_title_generate":
 		return ActionLocalAITitleGenerate, true
-	case "local_ai_recording_start":
-		return ActionLocalAIRecordingStart, true
+	case "local_ai_recording_end":
+		return ActionLocalAIRecordingEnd, true
 	}
 	return 0, false
 }
@@ -935,8 +935,8 @@ func (a Action) String() string {
 		return "event_published"
 	case ActionLocalAITitleGenerate:
 		return "local_ai_title_generate"
-	case ActionLocalAIRecordingStart:
-		return "local_ai_recording_start"
+	case ActionLocalAIRecordingEnd:
+		return "local_ai_recording_end"
 	}
 	return "unknown"
 }

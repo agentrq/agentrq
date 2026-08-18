@@ -2,7 +2,7 @@ import { ref, onUnmounted, watch } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
-import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_START } from '../api';
+import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_END } from '../api';
 
 let hasShownMobileToast = false;
 
@@ -239,12 +239,6 @@ export function useSpeechToText(targetRef, workspaceId) {
 
       mediaRecorder.start(250); // Collect data every 250ms
       isRecording.value = true;
-
-      // Counted here rather than in the click handler: toggleRecording fires
-      // again to stop, so counting the click would record two events per
-      // recording, and an attempt that died on a mic permission prompt never
-      // used the feature at all.
-      recordTelemetry(TELEMETRY_LOCAL_AI_RECORDING_START, resolveWorkspaceId());
     } catch (e) {
       if (e.name === 'NotAllowedError') {
         error.value = 'Microphone permission denied';
@@ -258,10 +252,20 @@ export function useSpeechToText(targetRef, workspaceId) {
   }
 
   function stopRecording() {
+    // Captured before the flag is cleared, and the count is gated on it:
+    // onUnmounted calls this unconditionally, so without the guard every
+    // teardown of a view holding this composable would report a recording that
+    // never happened. It also keeps a second stop from counting twice.
+    const wasRecording = isRecording.value;
+
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
     }
     isRecording.value = false;
+
+    if (wasRecording) {
+      recordTelemetry(TELEMETRY_LOCAL_AI_RECORDING_END, resolveWorkspaceId());
+    }
   }
 
   function toggleRecording() {

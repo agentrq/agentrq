@@ -244,7 +244,7 @@ func TestLocalAIActionsPersistScopedToUserAndWorkspace(t *testing.T) {
 	}
 	crudChan <- entity.CRUDEvent{
 		UserID: 7, WorkspaceID: 70,
-		Action: entity.ActionLocalAIRecordingStart, Actor: entity.ActorHuman,
+		Action: entity.ActionLocalAIRecordingEnd, Actor: entity.ActorHuman,
 	}
 
 	time.Sleep(300 * time.Millisecond)
@@ -255,7 +255,7 @@ func TestLocalAIActionsPersistScopedToUserAndWorkspace(t *testing.T) {
 		name   string
 	}{
 		{model.ActionIDLocalAITitleGenerate, "title generate"},
-		{model.ActionIDLocalAIRecordingStart, "recording start"},
+		{model.ActionIDLocalAIRecordingEnd, "recording end"},
 	} {
 		var rows []model.Telemetry
 		if err := db.Where("action = ?", tc.action).Find(&rows).Error; err != nil {
@@ -278,7 +278,7 @@ func TestLocalAIActionsPersistScopedToUserAndWorkspace(t *testing.T) {
 
 	// The two must not collide: distinct action ids are what makes them
 	// separate metrics rather than one.
-	if model.ActionIDLocalAITitleGenerate == model.ActionIDLocalAIRecordingStart {
+	if model.ActionIDLocalAITitleGenerate == model.ActionIDLocalAIRecordingEnd {
 		t.Error("the two local-AI actions share an id")
 	}
 }

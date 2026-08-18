@@ -101,7 +101,7 @@ func TestRecordTelemetryIgnoresUnknownFieldsAndRejectsBadWorkspaces(t *testing.T
 	// Extra fields (a forged count, a backdated timestamp, another user) are
 	// simply not read.
 	resp := postTelemetry(app, fmt.Sprintf(
-		`{"action":"local_ai_recording_start","workspaceId":%q,"count":1000,"userId":"someone_else","occurredAt":1}`,
+		`{"action":"local_ai_recording_end","workspaceId":%q,"count":1000,"userId":"someone_else","occurredAt":1}`,
 		testTelemetryWorkspaceID))
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", resp.StatusCode)
@@ -111,8 +111,8 @@ func TestRecordTelemetryIgnoresUnknownFieldsAndRejectsBadWorkspaces(t *testing.T
 	}
 
 	for _, body := range []string{
-		`{"action":"local_ai_recording_start"}`,
-		`{"action":"local_ai_recording_start","workspaceId":""}`,
+		`{"action":"local_ai_recording_end"}`,
+		`{"action":"local_ai_recording_end","workspaceId":""}`,
 		`not json`,
 	} {
 		ctrl := &mockTelemetryCrud{}

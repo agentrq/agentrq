@@ -165,8 +165,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUserCreate
 	case entity.ActionLocalAITitleGenerate:
 		action = model.ActionIDLocalAITitleGenerate
-	case entity.ActionLocalAIRecordingStart:
-		action = model.ActionIDLocalAIRecordingStart
+	case entity.ActionLocalAIRecordingEnd:
+		action = model.ActionIDLocalAIRecordingEnd
 	default:
 		return
 	}

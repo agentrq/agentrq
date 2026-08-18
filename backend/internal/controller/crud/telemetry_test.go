@@ -17,8 +17,8 @@ const testWorkspaceID int64 = 42
 
 func TestClientReportableActionAllowsOnlyTheNamedTwo(t *testing.T) {
 	for name, want := range map[string]entity.Action{
-		"local_ai_title_generate":  entity.ActionLocalAITitleGenerate,
-		"local_ai_recording_start": entity.ActionLocalAIRecordingStart,
+		"local_ai_title_generate": entity.ActionLocalAITitleGenerate,
+		"local_ai_recording_end":  entity.ActionLocalAIRecordingEnd,
 	} {
 		got, ok := entity.ClientReportableAction(name)
 		if !ok || got != want {
@@ -51,7 +51,7 @@ func TestLocalAIActionsStringify(t *testing.T) {
 	if got := entity.ActionLocalAITitleGenerate.String(); got != "local_ai_title_generate" {
 		t.Errorf("got %q", got)
 	}
-	if got := entity.ActionLocalAIRecordingStart.String(); got != "local_ai_recording_start" {
+	if got := entity.ActionLocalAIRecordingEnd.String(); got != "local_ai_recording_end" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -118,11 +118,11 @@ func TestRecordTelemetryPublishesTheActionScopedToUserAndWorkspace(t *testing.T)
 			return &pubsub.PublishResponse{}, nil
 		})
 
-	if err := env.controller.RecordTelemetry(context.Background(), telemetryRequest(entity.ActionLocalAIRecordingStart)); err != nil {
+	if err := env.controller.RecordTelemetry(context.Background(), telemetryRequest(entity.ActionLocalAIRecordingEnd)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if published.Action != entity.ActionLocalAIRecordingStart {
+	if published.Action != entity.ActionLocalAIRecordingEnd {
 		t.Errorf("action: got %v", published.Action)
 	}
 	// The whole point of the metric is that it can be attributed, so both

@@ -269,5 +269,5 @@ const (
 	// These values are stored in telemetry.action, so new ones only ever go on
 	// the end: inserting above would silently reinterpret every existing row.
 	ActionIDLocalAITitleGenerate
-	ActionIDLocalAIRecordingStart
+	ActionIDLocalAIRecordingEnd
 )
