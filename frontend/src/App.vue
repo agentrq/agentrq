@@ -243,7 +243,7 @@
           </div>
 
           <!-- User Profile -->
-          <div class="relative pt-3 border-t border-gray-300/50 dark:border-zinc-600/50 mt-2 overflow-visible">
+          <div ref="userMenuRef" class="relative pt-3 border-t border-gray-300/50 dark:border-zinc-600/50 mt-2 overflow-visible">
             <!-- User Menu Popover -->
             <div v-if="isUserMenuOpen"
                  :class="[
@@ -369,6 +369,7 @@ const isWorkspaceDropdownOpen = ref(false)
 const isCollapsed = ref(true);
 const isMobileMenuOpen = ref(false);
 const workspaceDropdownRef = ref(null)
+const userMenuRef = ref(null)
 const themeStore = useThemeStore()
 const tooltipStore = useTooltipStore()
 const workspaceStore = useWorkspaceStore()
@@ -453,6 +454,9 @@ const handleClickOutside = (e) => {
   if (workspaceDropdownRef.value && !workspaceDropdownRef.value.contains(e.target)) {
     isWorkspaceDropdownOpen.value = false
   }
+  if (userMenuRef.value && !userMenuRef.value.contains(e.target)) {
+    isUserMenuOpen.value = false
+  }
 }
 
 
@@ -463,6 +467,7 @@ onUnmounted(() => {
 watch(() => route.fullPath, (fullPath) => {
   isWorkspaceDropdownOpen.value = false
   isMobileMenuOpen.value = false
+  isUserMenuOpen.value = false
   hideTooltip()
   
   const path = route.path;
