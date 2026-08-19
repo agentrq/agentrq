@@ -184,23 +184,12 @@
 
                     <div v-else-if="activeConnectionTab === 'codex'" class="space-y-4 min-w-0">
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. Install the gateway:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">Start the bridge — npx fetches the latest version each run, so there's nothing to install or upgrade separately:</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npm install -g @agentrq/codex-gateway@latest</code>
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npx @agentrq/codex-gateway@latest -- codex app-server</code>
                           </div>
-                          <button type="button" @click="copyToClipboard('npm install -g @agentrq/codex-gateway@latest', 'codexInstall')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexInstall ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
-                            {{ copiedState.codexInstall ? 'Copied!' : 'Copy' }}
-                          </button>
-                        </div>
-                      </div>
-                      <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge:</p>
-                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
-                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">codex-gateway -- codex app-server</code>
-                          </div>
-                          <button type="button" @click="copyToClipboard('codex-gateway -- codex app-server', 'codexStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                          <button type="button" @click="copyToClipboard('npx @agentrq/codex-gateway@latest -- codex app-server', 'codexStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
                             {{ copiedState.codexStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
@@ -240,23 +229,12 @@
 
                     <div v-else class="space-y-4 min-w-0">
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. Install the gateway:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">Start the bridge — npx fetches the latest version each run, so there's nothing to install or upgrade separately:</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npm install -g @agentrq/acp-gateway@latest</code>
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npx @agentrq/acp-gateway@latest -- gemini --acp</code>
                           </div>
-                          <button type="button" @click="copyToClipboard('npm install -g @agentrq/acp-gateway@latest', 'gatewayInstall')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayInstall ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
-                            {{ copiedState.gatewayInstall ? 'Copied!' : 'Copy' }}
-                          </button>
-                        </div>
-                      </div>
-                      <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge:</p>
-                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
-                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npx @agentrq/acp-gateway -- gemini --acp</code>
-                          </div>
-                          <button type="button" @click="copyToClipboard('npx @agentrq/acp-gateway -- gemini --acp', 'gatewayStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                          <button type="button" @click="copyToClipboard('npx @agentrq/acp-gateway@latest -- gemini --acp', 'gatewayStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
                             {{ copiedState.gatewayStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
@@ -699,10 +677,8 @@ const copiedState = ref({
   config: false,
   permissions: false,
   command: false,
-  gatewayInstall: false,
   gatewayStart: false,
   codexConfig: false,
-  codexInstall: false,
   codexStart: false,
   dshEnv: false,
   dshInstall: false,
