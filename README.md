@@ -20,6 +20,85 @@ Think of AgentRQ as a shared workspace where humans and AI agents work together 
 
 Because agents "see" the workspace state via MCP, they can autonomously pull their assigned tasks, update statuses, request permissions for sensitive actions, and communicate with you—all synchronized instantly across the platform in real-time.
 
+## ✨ Features
+
+Real captures from the running app — no mockups.
+
+<table>
+<tr>
+<td width="50%" valign="middle">
+
+### Visual Task Board
+
+Every task Claude creates appears instantly on your board. See what it's working on, what it needs, and what it just finished — all from a clean, fast dashboard you can open on any device, as a list or a Kanban.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-task-board.gif" alt="AgentRQ active tasks dashboard and kanban board" width="320" /></td>
+</tr>
+<tr>
+<td width="50%"><img src="https://agentrq.com/assets/feature-task-scheduling.gif" alt="AgentRQ scheduled task auto-spawning into the dashboard" width="320" /></td>
+<td width="50%" valign="middle">
+
+### Task Scheduling
+
+Give any task a launch date, or a recurring cadence — every 15 minutes, hourly, daily, weekly, custom days. A background poller ticks every minute and spawns the task the instant it's due, no server or agent needing to stay awake and wait.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Events
+
+Events are named signals — `qa_passed`, `deploy_finished`, `blog_published` — that any task can fire when it completes. Wire one to a workspace and that workspace gets a new task automatically, no polling and no glue code.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-events.gif" alt="AgentRQ events list and configured trigger" width="320" /></td>
+</tr>
+<tr>
+<td width="50%"><img src="https://agentrq.com/assets/feature-workflows.gif" alt="AgentRQ workflow node graph" width="320" /></td>
+<td width="50%" valign="middle">
+
+### Workflows
+
+A Workflow is Events and workspaces arranged on a graph. Drag a workspace onto an event to subscribe it; drag an event onto a workspace to emit it on completion. No decision-tree DSL, no YAML — just the shape of your release process, visible.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Tool Call History
+
+The task detail view's History tab lays out a lane-grouped timeline of every tool call and message in a run — Input, Agent, and Tools. Search it, click into any entry, and see exactly what ran, what it returned, and whether it was allowed or denied.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-tool-call-history.gif" alt="AgentRQ tool call history trajectory panel" width="320" /></td>
+</tr>
+<tr>
+<td width="50%"><img src="https://agentrq.com/assets/feature-auto-title.gif" alt="AgentRQ auto-title generation in action" width="320" /></td>
+<td width="50%" valign="middle">
+
+### Auto-Title Generation
+
+Write your task description, click the sparkle, and a small language model — downloaded once and cached by your browser — reads it and writes the title. No API call, no server, no data leaving your machine.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Speech-to-Text
+
+Click the mic on any task description or reply and dictate it instead. Transcription runs on an in-browser Whisper model — your voice is processed on-device and never uploaded anywhere.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-speech-to-text.gif" alt="AgentRQ speech-to-text mic entry point" width="320" /></td>
+</tr>
+</table>
+
+See the full list at [agentrq.com/features](https://agentrq.com/features).
+
 ## 🏛 Architecture
 
 AgentRQ follows a decoupled service-oriented architecture:
