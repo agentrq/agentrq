@@ -1,11 +1,14 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sort"
 	"strings"
@@ -89,6 +92,8 @@ type WorkspaceServer struct {
 	userID                string
 	mcpServer             *mcp.Server
 	streamServer          *mcp.StreamableHTTPHandler
+	discoverImpl          mcp.Implementation
+	discoverCapabilities  mcp.ServerCapabilities
 	createTask            CreateTaskFunc
 	updateStatus          UpdateTaskStatusFunc
 	getTask               GetTaskFunc
@@ -265,19 +270,28 @@ func NewWorkspaceServer(
 		icons = append(icons, mcp.Icon{Source: icon})
 	}
 
-	mcpSrv := mcp.NewServer(
-		&mcp.Implementation{
-			Name:    fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
-			Version: "1.0.0",
-			Icons:   icons,
+	impl := mcp.Implementation{
+		Name:    fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
+		Version: "1.0.0",
+		Icons:   icons,
+	}
+	caps := mcp.ServerCapabilities{
+		Experimental: map[string]any{
+			"claude/channel":            map[string]any{},
+			"claude/channel/permission": map[string]any{},
 		},
+		// Tools are always registered below, so advertise the capability up
+		// front for server/discover callers that never reach the initialize
+		// handshake.
+		Tools: &mcp.ToolCapabilities{ListChanged: true},
+	}
+	ps.discoverImpl = impl
+	ps.discoverCapabilities = caps
+
+	mcpSrv := mcp.NewServer(
+		&impl,
 		&mcp.ServerOptions{
-			Capabilities: &mcp.ServerCapabilities{
-				Experimental: map[string]any{
-					"claude/channel":            map[string]any{},
-					"claude/channel/permission": map[string]any{},
-				},
-			},
+			Capabilities: &caps,
 			Instructions: fmt.Sprintf(
 				"You are connected to AgentRQ workspace %s.\n\n"+
 					"## HOW THIS WORKS\n"+
@@ -396,8 +410,170 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		}
 
 		zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("session_id", logID).Bool("sse", isSSE).Msg("MCP request")
+
+		if r.Method == http.MethodPost {
+			if body, err := io.ReadAll(r.Body); err == nil {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+
+				if rpcMethod, rpcID := parseJSONRPCRequest(body); rpcMethod != "" {
+					if rpcMethod == mcpMethodServerDiscover {
+						ps.handleServerDiscover(w, rpcID)
+						return
+					}
+
+					// The real MCP spec requires an initialize handshake before any
+					// other call, but this method skipped it (no session at all, or a
+					// version-less client that never negotiated one). Rather than
+					// reject it, transparently perform the handshake on the client's
+					// behalf against a throwaway session, so the call is still served
+					// on the server's default protocol version.
+					if rpcMethod != mcpMethodInitialize && r.Header.Get("Mcp-Session-Id") == "" {
+						if sessionID, cleanup, ok := ps.autoInitializeSession(r); ok {
+							r.Header.Set("Mcp-Session-Id", sessionID)
+							r.Body = io.NopCloser(bytes.NewReader(body))
+							defer cleanup()
+						}
+					}
+				}
+			}
+		}
+
 		ps.streamServer.ServeHTTP(w, r)
 	})
+}
+
+const (
+	mcpMethodInitialize     = "initialize"
+	mcpMethodServerDiscover = "server/discover"
+
+	// defaultMCPProtocolVersion mirrors the go-sdk's own fallback (see
+	// [modelcontextprotocol/go-sdk/mcp.protocolVersion20250326]) for requests
+	// that don't carry an Mcp-Protocol-Version header.
+	defaultMCPProtocolVersion = "2025-03-26"
+
+	// discoverCacheTTL is how long a server/discover result may be cached by
+	// the caller; it is static configuration, so a generous TTL is safe.
+	discoverCacheTTL = 5 * time.Minute
+)
+
+// mcpSupportedProtocolVersions is the set of MCP protocol revisions this
+// server can serve, matching what modelcontextprotocol/go-sdk v1.6.1
+// negotiates (see mcp.supportedProtocolVersions, which is unexported).
+var mcpSupportedProtocolVersions = []string{
+	"2025-11-25",
+	"2025-06-18",
+	"2025-03-26",
+	"2024-11-05",
+}
+
+// parseJSONRPCRequest extracts the method and id from a single (non-batch)
+// JSON-RPC request body. It returns an empty method for anything it can't
+// confidently parse (batches, malformed JSON, responses), so callers treat
+// those as "leave the request alone".
+func parseJSONRPCRequest(body []byte) (method string, id json.RawMessage) {
+	var env struct {
+		Method string          `json:"method"`
+		ID     json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(body, &env); err != nil {
+		return "", nil
+	}
+	return env.Method, env.ID
+}
+
+// handleServerDiscover answers the "server/discover" method directly,
+// bypassing the SDK entirely: it must be answerable without any session or
+// initialize handshake, which the SDK's session machinery can't do since
+// "server/discover" isn't part of the MCP method set it knows about.
+func (ps *WorkspaceServer) handleServerDiscover(w http.ResponseWriter, id json.RawMessage) {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+
+	resp := struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Result  any             `json:"result"`
+	}{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: map[string]any{
+			// The revisions this server can serve; stable across calls since it's
+			// static configuration, not per-request state.
+			"supportedVersions": mcpSupportedProtocolVersions,
+			// CacheableResult hint: callers may cache this result for this long.
+			"ttlMs": discoverCacheTTL.Milliseconds(),
+			"serverInfo": map[string]any{
+				"name":    ps.discoverImpl.Name,
+				"title":   ps.discoverImpl.Title,
+				"version": ps.discoverImpl.Version,
+			},
+			"capabilities": ps.discoverCapabilities,
+		},
+	}
+
+	payload, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, "failed to encode server/discover result", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(discoverCacheTTL.Seconds())))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
+// autoInitializeSession performs a synthetic MCP "initialize" call against
+// this server's own streamable HTTP handler on behalf of a caller who never
+// did the handshake, so that request can still be served on the server's
+// default protocol version instead of being refused. It returns the session
+// ID the SDK assigned and a cleanup func that tears the throwaway session
+// back down; ok is false if the handshake didn't succeed, in which case the
+// caller should proceed unmodified.
+func (ps *WorkspaceServer) autoInitializeSession(r *http.Request) (sessionID string, cleanup func(), ok bool) {
+	protocolVersion := r.Header.Get("Mcp-Protocol-Version")
+	if protocolVersion == "" {
+		protocolVersion = defaultMCPProtocolVersion
+	}
+
+	initBody, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "auto-init",
+		"method":  mcpMethodInitialize,
+		"params": map[string]any{
+			"protocolVersion": protocolVersion,
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "agentrq-auto-negotiated", "version": "1.0.0"},
+		},
+	})
+	if err != nil {
+		return "", nil, false
+	}
+
+	initReq := r.Clone(r.Context())
+	initReq.Method = http.MethodPost
+	initReq.Body = io.NopCloser(bytes.NewReader(initBody))
+	initReq.ContentLength = int64(len(initBody))
+	initReq.Header.Set("Content-Type", "application/json")
+	initReq.Header.Set("Accept", "application/json, text/event-stream")
+	initReq.Header.Del("Mcp-Session-Id")
+
+	rec := httptest.NewRecorder()
+	ps.streamServer.ServeHTTP(rec, initReq)
+	sessionID = rec.Header().Get("Mcp-Session-Id")
+	if rec.Code != http.StatusOK || sessionID == "" {
+		return "", nil, false
+	}
+
+	cleanup = func() {
+		delReq := r.Clone(r.Context())
+		delReq.Method = http.MethodDelete
+		delReq.Body = http.NoBody
+		delReq.Header.Set("Mcp-Session-Id", sessionID)
+		ps.streamServer.ServeHTTP(httptest.NewRecorder(), delReq)
+	}
+	return sessionID, cleanup, true
 }
 
 func (ps *WorkspaceServer) IsAgentConnected() bool {
