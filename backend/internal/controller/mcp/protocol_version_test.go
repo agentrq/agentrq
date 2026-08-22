@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -107,8 +108,80 @@ func TestServerDiscover_ReportsIdentityAndVersions(t *testing.T) {
 	if result["capabilities"] == nil {
 		t.Error("expected server/discover to report capabilities")
 	}
-	if _, ok := result["ttlMs"]; !ok {
-		t.Error("expected server/discover to carry a ttlMs cache hint")
+
+	// Server identity travels in _meta for this revision, per the SDK's own
+	// discover conformance fixture — not as a top-level serverInfo field.
+	meta, _ := result["_meta"].(map[string]any)
+	if meta == nil || meta["io.modelcontextprotocol/serverInfo"] == nil {
+		t.Errorf("expected server identity in _meta, got %v", result["_meta"])
+	}
+}
+
+// server/discover is a CacheableResult, and it is the cheap probe clients make
+// before negotiating. The SDK defaults ttlMs to 0, which its own docs define as
+// "immediately stale" — a hint that tells a client nothing. Everything in the
+// result is fixed at construction, so it should advertise a real lifetime.
+func TestServerDiscover_CarriesUsableCacheHint(t *testing.T) {
+	srv := newProtocolTestServer(t)
+	_, result := discoverResult(t, srv)
+
+	ttl, ok := result["ttlMs"].(float64)
+	if !ok {
+		t.Fatalf("expected a numeric ttlMs, got %v", result["ttlMs"])
+	}
+	if ttl <= 0 {
+		t.Errorf("ttlMs = %v; a zero TTL means immediately stale, which is not a usable cache hint", ttl)
+	}
+	if scope := result["cacheScope"]; scope != "public" {
+		t.Errorf("cacheScope = %v, want public (the result carries no per-user state)", scope)
+	}
+}
+
+// The result is derived entirely from construction-time configuration, so
+// repeated calls within the TTL must not drift.
+func TestServerDiscover_StableAcrossCalls(t *testing.T) {
+	srv := newProtocolTestServer(t)
+
+	_, first := discoverResult(t, srv)
+	_, second := discoverResult(t, srv)
+
+	a, _ := json.Marshal(first)
+	b, _ := json.Marshal(second)
+	if string(a) != string(b) {
+		t.Errorf("server/discover drifted between calls:\n  %s\n  %s", a, b)
+	}
+}
+
+// Refusing a pre-handshake tools/list is correct, not a spec deviation, and
+// this test exists to stop someone "fixing" it.
+//
+// A third-party conformance suite reported that a version-less tools/list
+// "must be served, not refused". The official SDK's own conformance fixture
+// (mcp/testdata/conformance/server/lifecycle.txtar, "rejects non-ping requests
+// until 'initialized' is received") asserts the exact opposite, expecting
+// precisely the error below. Serving such a request would mean failing the
+// reference suite to satisfy a third-party one.
+func TestPreHandshakeRequestIsRefused(t *testing.T) {
+	srv := newProtocolTestServer(t)
+
+	status, out, _ := mcpPost(t, srv.URL, nil, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	if status != http.StatusOK {
+		t.Fatalf("expected a JSON-RPC error carried over HTTP 200, got %d: %s", status, out)
+	}
+
+	var env struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if env.Error == nil {
+		t.Fatal("expected tools/list before initialize to be refused")
+	}
+	if !strings.Contains(env.Error.Message, "invalid during session initialization") {
+		t.Errorf("unexpected refusal reason: %q", env.Error.Message)
 	}
 }
 

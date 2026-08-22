@@ -343,7 +343,7 @@ func NewWorkspaceServer(
 	}, ps.handlePublishEvent)
 
 	// Add middleware to handle incoming notifications (like permission_request)
-	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware)
+	mcpSrv.AddReceivingMiddleware(ps.notificationMiddleware, ps.discoverCacheMiddleware)
 
 	cp := http.NewCrossOriginProtection()
 	// Allow all origins for the MCP server in development (same syntax as ServeMux)
@@ -1119,6 +1119,43 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 		"cursor":   end,
 	})
 	return string(b)
+}
+
+// methodServerDiscover is the SDK's discovery method. The SDK keeps its own
+// constant unexported, so the literal is repeated here.
+const methodServerDiscover = "server/discover"
+
+// discoverCacheTTL is how long a client may cache a server/discover result.
+//
+// Everything the result carries — the advertised protocol revisions, the
+// capabilities, the tool set and the instructions — is fixed when the server is
+// constructed and never mutated afterwards (every AddTool call happens in
+// NewWorkspaceServer). The SDK defaults the hint to 0, which its own docs
+// define as "immediately stale", so without this a client re-fetches static
+// configuration on every connection.
+//
+// An hour is comfortable precisely because the tool set cannot change while
+// the process runs: a client would have to reconnect to a restarted server to
+// see a different answer, and reconnecting re-probes anyway.
+const discoverCacheTTL = time.Hour
+
+// discoverCacheMiddleware supplies the cache hint the SDK leaves at zero.
+// server/discover is a CacheableResult, and answering it is the cheap probe
+// clients use before negotiating, so telling them how long the answer is good
+// for is the difference between a usable hint and a no-op.
+func (ps *WorkspaceServer) discoverCacheMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		res, err := next(ctx, method, req)
+		if err != nil || method != methodServerDiscover {
+			return res, err
+		}
+		// CacheScope is left as the SDK set it ("public"): the result is
+		// identical for every caller, carrying no per-user state.
+		if discoverRes, ok := res.(*mcp.DiscoverResult); ok {
+			discoverRes.TTLMs = int(discoverCacheTTL.Milliseconds())
+		}
+		return res, err
+	}
 }
 
 func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
