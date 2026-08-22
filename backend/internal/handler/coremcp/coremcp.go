@@ -119,6 +119,52 @@ func getTokenVal(r *http.Request) string {
 	return ""
 }
 
+// oauthIdentity holds the URLs identifying the core MCP resource and its
+// authorization server. Both metadata handlers derive them here so the issuer
+// one publishes can never drift from the one the other points clients at.
+type oauthIdentity struct {
+	baseURL string
+	// issuer is the authorization server's issuer identifier (RFC 8414 §2).
+	issuer string
+	// resource is the protected resource identifier (RFC 9728 §2).
+	resource string
+	// prmURL is the RFC 9728 §3.1 metadata URL for resource.
+	prmURL string
+}
+
+func oauthIdentityFor(r *http.Request) oauthIdentity {
+	proto := "https://"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+		proto = "http://"
+	}
+	baseURL := proto + r.Host
+
+	// On a workspace subdomain the resource is the origin root; otherwise the
+	// core MCP endpoint lives under /mcp. The authorization server is the
+	// origin either way, so its RFC 8414 well-known URL needs no path segment.
+	id := oauthIdentity{
+		baseURL:  baseURL,
+		issuer:   baseURL,
+		resource: baseURL + "/mcp",
+		prmURL:   baseURL + "/.well-known/oauth-protected-resource/mcp",
+	}
+	if strings.Contains(r.Host, ".mcp.") {
+		id.resource = baseURL
+		id.prmURL = baseURL + "/.well-known/oauth-protected-resource"
+	}
+	return id
+}
+
+// challengeUnauthorized writes the RFC 9728 §5.1 challenge that tells an
+// unauthenticated client exactly where to find our metadata, instead of making
+// it guess well-known paths.
+func challengeUnauthorized(w http.ResponseWriter, r *http.Request, message string) {
+	id := oauthIdentityFor(r)
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+		`Bearer realm=%q, resource_metadata=%q`, id.resource, id.prmURL))
+	sendJSONRPCError(w, message, -32000, http.StatusUnauthorized)
+}
+
 func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatus int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
@@ -232,13 +278,13 @@ func (h *handler) streamableHandler() http.Handler {
 
 		queryToken := getTokenVal(r)
 		if queryToken == "" {
-			sendJSONRPCError(w, "unauthorized", -32000, http.StatusUnauthorized)
+			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
 
 		claims, err := h.tokenSvc.ValidateToken(queryToken)
 		if err != nil || claims == nil {
-			sendJSONRPCError(w, "unauthorized", -32000, http.StatusUnauthorized)
+			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
 
@@ -255,7 +301,7 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		if !hasCoreMCP || hasRestricted || claims.Subject == "" {
-			sendJSONRPCError(w, "unauthorized", -32000, http.StatusUnauthorized)
+			challengeUnauthorized(w, r, "unauthorized")
 			return
 		}
 
@@ -272,12 +318,8 @@ func (h *handler) streamableHandler() http.Handler {
 func (h *handler) oauthMetadataHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		proto := "https://"
-		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
-			proto = "http://"
-		}
-
-		baseURL := proto + r.Host
+		id := oauthIdentityFor(r)
+		baseURL := id.baseURL
 
 		pathPrefix := ""
 		if !strings.Contains(r.Host, "mcp.") {
@@ -292,12 +334,18 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 		regEndpoint := baseURL + pathPrefix + "/oauth2/register"
 
 		metadata := map[string]interface{}{
-			"issuer":                   baseURL,
+			"issuer":                   id.issuer,
 			"authorization_endpoint":   authEndpoint,
 			"token_endpoint":           tokenEndpoint,
 			"registration_endpoint":    regEndpoint,
 			"response_types_supported": []string{"code"},
-			"grant_types_supported":    []string{"authorization_code", "refresh_token"},
+			// Deliberately no client_credentials: every token here is bound to
+			// a specific user's workspace access, and that grant has no user to
+			// bind one to. Clients are also all public (see below), so there
+			// would be no secret to authenticate with either — any self-
+			// registered client could mint workspace tokens. Headless callers
+			// reuse a refresh token obtained once via authorization_code.
+			"grant_types_supported": []string{"authorization_code", "refresh_token"},
 			// Registered clients are always public (DCR never issues a
 			// client_secret); advertise "none" rather than letting clients
 			// assume the RFC 8414 default of client_secret_basic.
@@ -316,24 +364,17 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 func (h *handler) oauthProtectedResourceHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		proto := "https://"
-		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
-			proto = "http://"
-		}
-
-		baseURL := proto + r.Host
-
-		resource := baseURL + "/mcp"
-		if strings.Contains(r.Host, ".mcp.") {
-			// If it's a workspace subdomain, the resource is the root
-			resource = baseURL
-		}
-
-		authServer := baseURL + "/.well-known/oauth-authorization-server"
+		id := oauthIdentityFor(r)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"resource":             resource,
-			"authorization_server": authServer,
+			"resource": id.resource,
+			// RFC 9728 §2: "authorization_servers" is an ARRAY of issuer
+			// identifiers — not metadata document URLs. The client derives the
+			// RFC 8414 well-known URL from the issuer itself; handing it the
+			// metadata URL made strict clients resolve
+			// .../.well-known/oauth-authorization-server/.well-known/oauth-authorization-server.
+			"authorization_servers":    []string{id.issuer},
+			"bearer_methods_supported": []string{"header"},
 		})
 	})
 }

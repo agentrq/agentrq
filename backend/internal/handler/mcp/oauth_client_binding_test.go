@@ -323,9 +323,11 @@ func TestMetadata_RFC8414IssuerAndWellKnownPath(t *testing.T) {
 	}
 }
 
-// The protected-resource document must point at the same RFC 8414 URL the
-// metadata handler is actually mounted on.
-func TestProtectedResource_PointsAtRFC8414AuthServerURL(t *testing.T) {
+// RFC 9728 §2: the protected-resource document advertises
+// "authorization_servers" — an ARRAY of issuer IDENTIFIERS, not a singular
+// metadata document URL — and the RFC 8414 URL a client derives from that
+// issuer must resolve to the metadata handler.
+func TestProtectedResource_AdvertisesIssuerPerRFC9728(t *testing.T) {
 	mux := setupBindingRouter(&bindingTokenSvc{}, &fakeCIMD{})
 
 	req := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource/mcp/12345", nil)
@@ -345,18 +347,73 @@ func TestProtectedResource_PointsAtRFC8414AuthServerURL(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	authServer, _ := doc["authorization_server"].(string)
-	want := "https://agentrq.com/.well-known/oauth-authorization-server/mcp/" + monoflake.IDFromBase62("12345").String()
-	if authServer != want {
-		t.Errorf("authorization_server = %q, want %q", authServer, want)
+	if _, legacy := doc["authorization_server"]; legacy {
+		t.Error(`non-standard singular "authorization_server" must not be emitted`)
 	}
 
-	// Following that URL must actually resolve.
-	followReq := httptest.NewRequest("GET", strings.TrimPrefix(authServer, "https://agentrq.com"), nil)
+	servers, _ := doc["authorization_servers"].([]any)
+	if len(servers) != 1 {
+		t.Fatalf("authorization_servers = %v, want a single-entry array", doc["authorization_servers"])
+	}
+	issuer, _ := servers[0].(string)
+	wantIssuer := "https://agentrq.com/mcp/" + monoflake.IDFromBase62("12345").String()
+	if issuer != wantIssuer {
+		t.Errorf("authorization_servers[0] = %q, want issuer %q", issuer, wantIssuer)
+	}
+
+	wantResource := wantIssuer
+	if doc["resource"] != wantResource {
+		t.Errorf("resource = %v, want %q", doc["resource"], wantResource)
+	}
+
+	// A client derives the metadata URL from the issuer itself (RFC 8414 §3.1:
+	// the well-known suffix goes between host and the issuer's path). That
+	// derived URL must resolve.
+	derived := strings.Replace(issuer, "https://agentrq.com",
+		"/.well-known/oauth-authorization-server", 1)
+	followReq := httptest.NewRequest("GET", derived, nil)
 	followReq.Host = "agentrq.com"
 	followW := httptest.NewRecorder()
 	mux.ServeHTTP(followW, followReq)
 	if followW.Code != http.StatusOK {
-		t.Errorf("advertised authorization_server URL returned %d, expected it to resolve", followW.Code)
+		t.Errorf("metadata URL %q derived from the advertised issuer returned %d, expected it to resolve", derived, followW.Code)
+	}
+}
+
+// RFC 9728 §5.1 / MCP auth spec: a 401 from the MCP endpoint MUST carry a
+// WWW-Authenticate challenge naming the resource metadata URL, so clients do
+// not have to guess well-known paths.
+func TestUnauthorized_AdvertisesResourceMetadataChallenge(t *testing.T) {
+	mux := setupBindingRouter(&bindingTokenSvc{}, &fakeCIMD{})
+
+	req := httptest.NewRequest("POST", "/mcp/12345", nil)
+	req.SetPathValue("workspaceID", "12345")
+	req.Host = "agentrq.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", w.Code)
+	}
+
+	challenge := w.Header().Get("WWW-Authenticate")
+	wsPath := "/mcp/" + monoflake.IDFromBase62("12345").String()
+	wantMetadata := `resource_metadata="https://agentrq.com/.well-known/oauth-protected-resource` + wsPath + `"`
+	if !strings.Contains(challenge, wantMetadata) {
+		t.Errorf("WWW-Authenticate = %q, want it to contain %s", challenge, wantMetadata)
+	}
+	if !strings.HasPrefix(challenge, "Bearer ") {
+		t.Errorf("WWW-Authenticate = %q, want a Bearer challenge", challenge)
+	}
+
+	// The advertised metadata URL must resolve.
+	followReq := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource"+wsPath, nil)
+	followReq.Host = "agentrq.com"
+	followW := httptest.NewRecorder()
+	mux.ServeHTTP(followW, followReq)
+	if followW.Code != http.StatusOK {
+		t.Errorf("advertised resource_metadata URL returned %d, expected it to resolve", followW.Code)
 	}
 }

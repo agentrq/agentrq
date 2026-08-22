@@ -129,6 +129,62 @@ func getTokenVal(r *http.Request) string {
 	return ""
 }
 
+// oauthIdentity holds the URLs that identify this workspace's OAuth resource
+// and authorization server. Every handler derives them here so the issuer that
+// oauthMetadataHandler publishes can never drift from the one
+// oauthProtectedResourceHandler points clients at.
+type oauthIdentity struct {
+	baseURL string
+	// issuer is the authorization server's issuer identifier (RFC 8414 §2).
+	issuer string
+	// resource is the protected resource identifier (RFC 9728 §2).
+	resource string
+	// prmURL is the RFC 9728 §3.1 metadata URL for resource.
+	prmURL string
+}
+
+func oauthIdentityFor(r *http.Request, workspaceID int64) oauthIdentity {
+	proto := "https://"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
+		proto = "http://"
+	}
+	baseURL := proto + r.Host
+
+	// On a workspace subdomain the workspace *is* the origin, so both the
+	// issuer and the resource sit at the root and the well-known suffixes
+	// need no path component.
+	if strings.Contains(r.Host, ".mcp.") {
+		return oauthIdentity{
+			baseURL:  baseURL,
+			issuer:   baseURL,
+			resource: baseURL,
+			prmURL:   baseURL + "/.well-known/oauth-protected-resource",
+		}
+	}
+
+	// Path-based routing: every workspace shares one host, so the workspace
+	// path segment has to be part of both identifiers or all workspaces would
+	// claim the same identity. RFC 8414 §3.1 and RFC 9728 §3.1 both insert the
+	// well-known suffix between the host and that path component.
+	wsPath := "/mcp/" + monoflake.ID(workspaceID).String()
+	return oauthIdentity{
+		baseURL:  baseURL,
+		issuer:   baseURL + wsPath,
+		resource: baseURL + wsPath,
+		prmURL:   baseURL + "/.well-known/oauth-protected-resource" + wsPath,
+	}
+}
+
+// challengeUnauthorized writes the RFC 9728 §5.1 challenge that tells an
+// unauthenticated client exactly where to find our metadata, instead of making
+// it guess well-known paths.
+func challengeUnauthorized(w http.ResponseWriter, r *http.Request, workspaceID int64, message string) {
+	id := oauthIdentityFor(r, workspaceID)
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+		`Bearer realm=%q, resource_metadata=%q`, id.resource, id.prmURL))
+	sendJSONRPCError(w, message, jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
+}
+
 func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatus int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
@@ -252,7 +308,7 @@ func (h *handler) streamableHandler() http.Handler {
 		queryToken := getTokenVal(r)
 		userID := ""
 		if queryToken == "" {
-			sendJSONRPCError(w, "situational security: mission token required", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
+			challengeUnauthorized(w, r, workspaceID, "situational security: mission token required")
 			return
 		}
 
@@ -274,7 +330,7 @@ func (h *handler) streamableHandler() http.Handler {
 
 		// Final check: userID must be set
 		if userID == "" {
-			sendJSONRPCError(w, "situational security: unauthorized", jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
+			challengeUnauthorized(w, r, workspaceID, "situational security: unauthorized")
 			return
 		}
 
@@ -364,31 +420,17 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 			return
 		}
 
-		workspaceIDBase62 := monoflake.ID(workspaceID).String()
-
-		proto := "https://"
-		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
-			proto = "http://"
-		}
-
-		baseURL := proto + r.Host
-
-		resource := baseURL + "/mcp/" + workspaceIDBase62
-		if strings.Contains(r.Host, ".mcp.") {
-			resource = baseURL
-		}
-
-		// Per RFC 8414 §3.1, the well-known suffix belongs between the host
-		// and the issuer's path component, not after it — this is the URL a
-		// strictly-compliant client computes directly from the issuer.
-		authServer := baseURL + "/.well-known/oauth-authorization-server"
-		if !strings.Contains(r.Host, ".mcp.") {
-			authServer = baseURL + "/.well-known/oauth-authorization-server/mcp/" + workspaceIDBase62
-		}
+		id := oauthIdentityFor(r, workspaceID)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"resource":             resource,
-			"authorization_server": authServer,
+			"resource": id.resource,
+			// RFC 9728 §2: "authorization_servers" is an ARRAY of issuer
+			// identifiers — not metadata document URLs. The client derives the
+			// RFC 8414 well-known URL from the issuer itself; handing it the
+			// metadata URL made strict clients resolve
+			// .../.well-known/oauth-authorization-server/.well-known/oauth-authorization-server.
+			"authorization_servers":    []string{id.issuer},
+			"bearer_methods_supported": []string{"header"},
 		})
 	})
 }
@@ -402,40 +444,29 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			return
 		}
 
-		proto := "https://"
-		if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
-			proto = "http://"
-		}
-
-		baseURL := proto + r.Host
-
 		// issuer MUST identify this specific workspace's authorization
 		// server (RFC 8414 §3.3: "the issuer value returned MUST be
 		// identical to the issuer value... used to construct the URL").
 		// Every workspace shares the same baseURL/host in the path-based
 		// (non-subdomain) case, so the workspace path segment has to be part
 		// of the issuer or every workspace would claim the same identity.
-		issuer := baseURL
-		authEndpoint := baseURL + "/oauth2/authorize"
-		tokenEndpoint := baseURL + "/oauth2/token"
-		regEndpoint := baseURL + "/oauth2/register"
+		id := oauthIdentityFor(r, workspaceID)
 
-		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
-		if !strings.Contains(r.Host, ".mcp.") {
-			workspaceIDBase62 := monoflake.ID(workspaceID).String()
-			issuer = baseURL + "/mcp/" + workspaceIDBase62
-			authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
-			tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
-			regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
-		}
-
+		// The OAuth endpoints hang off the issuer, which already carries the
+		// workspace path segment (or is the subdomain root).
 		metadata := map[string]interface{}{
-			"issuer":                   issuer,
-			"authorization_endpoint":   authEndpoint,
-			"token_endpoint":           tokenEndpoint,
-			"registration_endpoint":    regEndpoint,
+			"issuer":                   id.issuer,
+			"authorization_endpoint":   id.issuer + "/oauth2/authorize",
+			"token_endpoint":           id.issuer + "/oauth2/token",
+			"registration_endpoint":    id.issuer + "/oauth2/register",
 			"response_types_supported": []string{"code"},
-			"grant_types_supported":    []string{"authorization_code", "refresh_token"},
+			// Deliberately no client_credentials: every token here is bound to
+			// a specific user's workspace access, and that grant has no user to
+			// bind one to. Clients are also all public (see below), so there
+			// would be no secret to authenticate with either — any self-
+			// registered client could mint workspace tokens. Headless callers
+			// reuse a refresh token obtained once via authorization_code.
+			"grant_types_supported": []string{"authorization_code", "refresh_token"},
 			// Registered clients are always public (DCR never issues a
 			// client_secret); advertise "none" rather than letting clients
 			// assume the RFC 8414 default of client_secret_basic.
