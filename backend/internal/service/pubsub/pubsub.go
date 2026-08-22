@@ -238,25 +238,35 @@ func (c *service) publish(id int64, e any) (int, error) {
 	}
 
 	pubsub.mutex.RLock()
-	subscribers := make([]subscriber, len(pubsub.subscribers))
-	copy(subscribers, pubsub.subscribers)
+	n := len(pubsub.subscribers)
 	pubsub.mutex.RUnlock()
 
-	go func(e any, subscribers []subscriber) {
+	go func(e any) {
 		timeoutDuration := c.cfg.MaxDurationForSubscriberToReceive
 		opCtx, cancel := context.WithTimeout(context.Background(), timeoutDuration)
 		defer cancel()
+
+		// Hold the read lock for the whole fan-out. Unsubscribe and Delete take the write
+		// lock before they close a subscriber's channel, so while any publish holds the
+		// read lock no channel can be closed mid-send. This removes the send-on-closed data
+		// race; publishers still fan out concurrently since RWMutex permits many readers.
+		pubsub.mutex.RLock()
+		defer pubsub.mutex.RUnlock()
+
 		wg := sync.WaitGroup{}
-		for _, s := range subscribers {
+		for _, s := range pubsub.subscribers {
 			wg.Add(1)
 			go func(s subscriber) {
 				defer wg.Done()
 
+				// Defensive only: the read-lock discipline above already prevents a
+				// send-on-closed, but recovering keeps one bad subscriber from taking
+				// down the whole bus.
 				defer func() {
 					if r := recover(); r != nil {
 						zlog.Warn().
 							Int64("subscriber_id", s.id).
-							Msg(_logPrefix + "recovered from panic (likely send on closed channel)")
+							Msg(_logPrefix + "recovered from panic in subscriber send")
 					}
 				}()
 
@@ -268,9 +278,9 @@ func (c *service) publish(id int64, e any) (int, error) {
 			}(s)
 		}
 		wg.Wait()
-	}(e, subscribers)
+	}(e)
 
-	return len(subscribers), nil
+	return n, nil
 }
 
 // utility functions
