@@ -303,3 +303,86 @@ func TestToolsCall_ReturnsSchemaConformantResult(t *testing.T) {
 		t.Error("expected each content block to carry a type")
 	}
 }
+
+// Rejecting a second initialize on an already-initialized session is correct,
+// not a spec deviation, and this test exists to stop someone "fixing" it.
+//
+// A third-party conformance suite reported the handshake failing with
+//
+//	target does not answer initialize: {"code":0,"message":"duplicate \"initialize\" received"}
+//
+// against the case "the handshake settles on a revision inside the supported
+// window". That invariant is real, and it already holds — see
+// TestEveryAdvertisedVersionCompletesHandshake, which proves every advertised
+// revision completes a handshake, echoes its own version back, and yields a
+// working session. The error only appears when a client sends initialize a
+// SECOND time while reusing the Mcp-Session-Id from the first handshake, which
+// the MCP lifecycle does not permit: a session is initialized exactly once, and
+// a new handshake needs a new session (omit the header).
+//
+// The official SDK asserts this exact behavior, verbatim, in
+// mcp/server_test.go ("second initialize error = %v, want duplicate
+// initialize"). Accepting a repeat initialize would mean failing the reference
+// implementation's own tests to satisfy a third-party suite, and would silently
+// mask a real client bug: re-initializing an established session discards the
+// negotiated state that every later request depends on.
+func TestDuplicateInitializeOnSameSessionIsRefused(t *testing.T) {
+	srv := newProtocolTestServer(t)
+
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+		`"protocolVersion":"2025-11-25","capabilities":{},` +
+		`"clientInfo":{"name":"probe","version":"1"}}}`
+
+	status, out, hdr := mcpPost(t, srv.URL, nil, initialize)
+	if status != http.StatusOK {
+		t.Fatalf("first initialize: expected 200, got %d: %s", status, out)
+	}
+	session := hdr.Get("Mcp-Session-Id")
+	if session == "" {
+		t.Fatal("expected a session id from the first initialize")
+	}
+
+	// Same session, second handshake: must be refused.
+	status, out, _ = mcpPost(t, srv.URL, map[string]string{"Mcp-Session-Id": session}, initialize)
+	if status != http.StatusOK {
+		t.Fatalf("expected a JSON-RPC error carried over HTTP 200, got %d: %s", status, out)
+	}
+
+	var env struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if env.Error == nil {
+		t.Fatal("expected a repeat initialize on the same session to be refused")
+	}
+	if !strings.Contains(env.Error.Message, `duplicate "initialize" received`) {
+		t.Errorf("unexpected refusal reason: %q", env.Error.Message)
+	}
+
+	// The remedy a client applies is to drop the session id, not to give up:
+	// a fresh handshake must still succeed while the old session lives on.
+	status, out, hdr = mcpPost(t, srv.URL, nil, initialize)
+	if status != http.StatusOK {
+		t.Fatalf("fresh initialize: expected 200, got %d: %s", status, out)
+	}
+	if fresh := hdr.Get("Mcp-Session-Id"); fresh == "" || fresh == session {
+		t.Errorf("expected a new session id distinct from %q, got %q", session, fresh)
+	}
+	// Decode into a fresh value: unmarshalling a response with no "error" key
+	// over the previous struct would leave the old non-nil pointer in place.
+	var freshEnv struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &freshEnv); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if freshEnv.Error != nil {
+		t.Errorf("fresh initialize failed: %s", freshEnv.Error.Message)
+	}
+}
