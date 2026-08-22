@@ -32,13 +32,27 @@ type StateClaims struct {
 	RedirectURL string `json:"rurl,omitempty"`
 }
 
+// DynamicClientAudience marks a token minted by the RFC 7591 dynamic client
+// registration endpoint. The token itself IS the client_id: it carries the
+// client's registered redirect_uris so /oauth2/authorize can validate a
+// redirect_uri against the specific client that requested it, without
+// needing a database to persist registrations.
+const DynamicClientAudience = "dynamic_client"
+
+type ClientRegistrationClaims struct {
+	jwt.RegisteredClaims
+	RedirectURIs []string `json:"redirect_uris,omitempty"`
+}
+
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
 	CreateOAuthStateToken(redirectURL, provider string) (string, error)
+	CreateClientRegistrationToken(redirectURIs []string) (string, error)
 	ValidateToken(tokenStr string) (*Claims, error)
 	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
+	ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error)
 }
 
 type tokenService struct {
@@ -109,6 +123,49 @@ func ContextHasAudience(ctx context.Context, audience string) bool {
 	}
 	claims, _ := ctx.Value(CtxKeyMCPClaims).(*Claims)
 	return HasAudience(claims, audience)
+}
+
+// CreateClientRegistrationToken mints the client_id returned by the RFC 7591
+// dynamic client registration endpoint. The client_id IS the token: it's a
+// signed, stateless credential carrying the client's registered
+// redirect_uris, so /oauth2/authorize can later validate a redirect_uri
+// against the specific client that registered it without persisting
+// anything server-side.
+func (s *tokenService) CreateClientRegistrationToken(redirectURIs []string) (string, error) {
+	claims := ClientRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "dynamic_client",
+			Audience:  jwt.ClaimStrings{DynamicClientAudience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * 365 * 24 * time.Hour)), // effectively long-lived
+		},
+		RedirectURIs: redirectURIs,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// ValidateClientRegistrationToken parses a client_id minted by
+// CreateClientRegistrationToken. It returns an error for any client_id that
+// wasn't issued by this server's DCR endpoint (e.g. a legacy or third-party
+// client_id), which callers should treat as "not a recognized dynamic
+// client" rather than a hard authentication failure.
+func (s *tokenService) ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &ClientRegistrationClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return s.secret, nil
+	}, jwt.WithAudience(DynamicClientAudience))
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(*ClientRegistrationClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid client registration token")
+	}
+	return claims, nil
 }
 
 func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {

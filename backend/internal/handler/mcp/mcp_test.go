@@ -46,6 +46,14 @@ func (m *mockTokenSvc) CreateMCPToken(userID, workspaceID, tokenType string) (st
 	return m.validToken, nil
 }
 
+func (m *mockTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth.ClientRegistrationClaims, error) {
+	return nil, jwt.ErrSignatureInvalid
+}
+
+func (m *mockTokenSvc) CreateClientRegistrationToken(redirectURIs []string) (string, error) {
+	return "mocked-client-id-" + strings.Join(redirectURIs, ","), nil
+}
+
 type mockRepo struct {
 	base.Repository
 }

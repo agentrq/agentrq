@@ -29,8 +29,11 @@ type Params struct {
 	MCPManager *mcpctrl.Manager
 	Crud       crud.Controller
 	TokenSvc   auth.TokenService
-	BaseURL    string
-	Mux        *http.ServeMux
+	// CIMD resolves Client ID Metadata Document URLs. Optional: a default
+	// network-backed resolver is used when nil.
+	CIMD    auth.CIMDResolver
+	BaseURL string
+	Mux     *http.ServeMux
 }
 
 type Handler interface{}
@@ -39,6 +42,7 @@ type handler struct {
 	mcpManager *mcpctrl.Manager
 	crud       crud.Controller
 	tokenSvc   auth.TokenService
+	cimd       auth.CIMDResolver
 	baseURL    string
 }
 
@@ -58,10 +62,16 @@ func corsWrapper(h http.Handler) http.Handler {
 }
 
 func New(p Params) (Handler, error) {
+	cimd := p.CIMD
+	if cimd == nil {
+		cimd = auth.NewCIMDResolver()
+	}
+
 	h := &handler{
 		mcpManager: p.MCPManager,
 		crud:       p.Crud,
 		tokenSvc:   p.TokenSvc,
+		cimd:       cimd,
 		baseURL:    p.BaseURL,
 	}
 
@@ -71,6 +81,13 @@ func New(p Params) (Handler, error) {
 
 	// discovery endpoints (path-based)
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-authorization-server", corsWrapper(h.oauthMetadataHandler()))
+	// RFC 8414 §3.1: the well-known suffix MUST be inserted between the host
+	// and any path component of the issuer, not appended after it. This
+	// server's issuer for a given workspace is {baseURL}/mcp/{workspaceID},
+	// so the discovery URL a strictly-compliant client actually computes is
+	// this one — the path-suffixed route above exists only for backward
+	// compatibility with clients that resolve it via oauth-protected-resource.
+	p.Mux.Handle("/.well-known/oauth-authorization-server/mcp/{workspaceID}", corsWrapper(h.oauthMetadataHandler()))
 	p.Mux.Handle("/mcp/{workspaceID}/.well-known/oauth-protected-resource", corsWrapper(h.oauthProtectedResourceHandler()))
 	p.Mux.Handle("/.well-known/oauth-protected-resource/mcp/{workspaceID}", corsWrapper(h.oauthProtectedResourceHandler()))
 
@@ -125,6 +142,44 @@ func sendJSONRPCError(w http.ResponseWriter, message string, code int, httpStatu
 	})
 }
 
+// registrationError writes an RFC 7591 §3.2.2 client registration error
+// response.
+func registrationError(w http.ResponseWriter, errorCode, description string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":             errorCode,
+		"error_description": description,
+	})
+}
+
+// parseRegisteredRedirectURIs extracts and validates the RFC 7591 §2
+// "redirect_uris" client metadata field. A client that doesn't declare any
+// redirect_uris is allowed through (ok=true, empty slice) so registration
+// stays permissive; a malformed field is rejected outright.
+func parseRegisteredRedirectURIs(payload map[string]interface{}) (uris []string, ok bool) {
+	raw, present := payload["redirect_uris"]
+	if !present {
+		return nil, true
+	}
+	items, isArray := raw.([]interface{})
+	if !isArray {
+		return nil, false
+	}
+	for _, item := range items {
+		s, isString := item.(string)
+		if !isString || s == "" {
+			return nil, false
+		}
+		if _, err := url.Parse(s); err != nil {
+			return nil, false
+		}
+		uris = append(uris, s)
+	}
+	return uris, true
+}
+
 func (h *handler) oauthRegisterHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
@@ -133,20 +188,41 @@ func (h *handler) oauthRegisterHandler() http.Handler {
 		}
 
 		var payload map[string]interface{}
-		_ = json.NewDecoder(r.Body).Decode(&payload)
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			registrationError(w, "invalid_client_metadata", "request body must be a JSON object")
+			return
+		}
 
 		if payload == nil {
 			payload = make(map[string]interface{})
 		}
 
-		// Strictly stateless/stateless-like: issue a dynamic auto-generated PKCE clientId string
-		clientID := "dynamic-" + monoflake.ID(time.Now().UnixNano()).String()
+		redirectURIs, ok := parseRegisteredRedirectURIs(payload)
+		if !ok {
+			registrationError(w, "invalid_redirect_uri", "redirect_uris must be an array of non-empty URI strings")
+			return
+		}
+
+		// The client_id IS a signed credential carrying the client's
+		// registered redirect_uris, so /oauth2/authorize can later bind the
+		// authorization request's redirect_uri to what this client actually
+		// registered (RFC 6749 §3.1.2.3) instead of accepting any value.
+		clientID, err := h.tokenSvc.CreateClientRegistrationToken(redirectURIs)
+		if err != nil {
+			registrationError(w, "invalid_client_metadata", "failed to register client")
+			return
+		}
 		payload["client_id"] = clientID
 		payload["client_id_issued_at"] = time.Now().Unix()
-		// Implicitly public clients, so no strictly enforced client_secret, but we set expires_at=0 to satisfy strict SDK parsers
+		// These are always public clients (no client_secret is ever issued),
+		// per RFC 7591 §2's token_endpoint_auth_method metadata field.
+		if _, hasAuthMethod := payload["token_endpoint_auth_method"]; !hasAuthMethod {
+			payload["token_endpoint_auth_method"] = "none"
+		}
 		payload["client_secret_expires_at"] = 0
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(payload)
 	})
@@ -302,9 +378,12 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 			resource = baseURL
 		}
 
+		// Per RFC 8414 §3.1, the well-known suffix belongs between the host
+		// and the issuer's path component, not after it — this is the URL a
+		// strictly-compliant client computes directly from the issuer.
 		authServer := baseURL + "/.well-known/oauth-authorization-server"
 		if !strings.Contains(r.Host, ".mcp.") {
-			authServer = baseURL + "/mcp/" + workspaceIDBase62 + "/.well-known/oauth-authorization-server"
+			authServer = baseURL + "/.well-known/oauth-authorization-server/mcp/" + workspaceIDBase62
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -330,6 +409,13 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 
 		baseURL := proto + r.Host
 
+		// issuer MUST identify this specific workspace's authorization
+		// server (RFC 8414 §3.3: "the issuer value returned MUST be
+		// identical to the issuer value... used to construct the URL").
+		// Every workspace shares the same baseURL/host in the path-based
+		// (non-subdomain) case, so the workspace path segment has to be part
+		// of the issuer or every workspace would claim the same identity.
+		issuer := baseURL
 		authEndpoint := baseURL + "/oauth2/authorize"
 		tokenEndpoint := baseURL + "/oauth2/token"
 		regEndpoint := baseURL + "/oauth2/register"
@@ -337,19 +423,27 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 		// If accessed without a subdomain (e.g. localhost or a custom domain root), append the workspace route
 		if !strings.Contains(r.Host, ".mcp.") {
 			workspaceIDBase62 := monoflake.ID(workspaceID).String()
+			issuer = baseURL + "/mcp/" + workspaceIDBase62
 			authEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/authorize"
 			tokenEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/token"
 			regEndpoint = baseURL + "/mcp/" + workspaceIDBase62 + "/oauth2/register"
 		}
 
 		metadata := map[string]interface{}{
-			"issuer":                                baseURL,
-			"authorization_endpoint":                authEndpoint,
-			"token_endpoint":                        tokenEndpoint,
-			"registration_endpoint":                 regEndpoint,
+			"issuer":                   issuer,
+			"authorization_endpoint":   authEndpoint,
+			"token_endpoint":           tokenEndpoint,
+			"registration_endpoint":    regEndpoint,
+			"response_types_supported": []string{"code"},
+			"grant_types_supported":    []string{"authorization_code", "refresh_token"},
+			// Registered clients are always public (DCR never issues a
+			// client_secret); advertise "none" rather than letting clients
+			// assume the RFC 8414 default of client_secret_basic.
+			"token_endpoint_auth_methods_supported": []string{"none"},
+			// See draft-ietf-oauth-client-id-metadata-document §6: a client_id
+			// that is itself an https URL is resolved as a client metadata
+			// document (oauthAuthorizeHandler's CIMDResolver backs this).
 			"client_id_metadata_document_supported": true,
-			"response_types_supported":              []string{"code"},
-			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		}
 
 		importJson := json.NewEncoder(w)
@@ -375,13 +469,52 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			}
 		}
 
-		// Optional clientID validation can be added here
-		_ = r.URL.Query().Get("client_id")
+		clientID := r.URL.Query().Get("client_id")
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
 
-		// Validate redirectURI to prevent open redirect
-		if redirectURI != "" {
+		// Bind the requested redirect_uri to whatever this client actually
+		// registered (RFC 6749 §3.1.2.3), instead of accepting any value —
+		// this is what makes client registration meaningful instead of
+		// decorative, and it closes custom-scheme redirect_uris (e.g.
+		// "evilapp://callback") that the heuristic below never checked.
+		// client_id can be registered two ways: a Client ID Metadata
+		// Document URL (draft-ietf-oauth-client-id-metadata-document), or a
+		// client_id minted by our own /oauth2/register (RFC 7591 DCR).
+		var registeredRedirectURIs []string
+		switch {
+		case clientID != "" && h.cimd.IsClientIDURL(clientID):
+			metadata, err := h.cimd.Resolve(r.Context(), clientID)
+			if err != nil {
+				// The draft requires aborting the authorization request when
+				// the client's metadata document can't be fetched/validated.
+				zlog.Warn().Err(err).Str("client_id", clientID).Msg("CIMD resolution failed")
+				http.Error(w, "invalid_client: could not resolve client_id metadata document", http.StatusBadRequest)
+				return
+			}
+			registeredRedirectURIs = metadata.RedirectURIs
+		case clientID != "":
+			if claims, err := h.tokenSvc.ValidateClientRegistrationToken(clientID); err == nil {
+				registeredRedirectURIs = claims.RedirectURIs
+			}
+		}
+
+		if redirectURI != "" && len(registeredRedirectURIs) > 0 {
+			matched := false
+			for _, registered := range registeredRedirectURIs {
+				if registered == redirectURI {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				http.Error(w, "invalid redirect_uri: not registered for this client_id", http.StatusBadRequest)
+				return
+			}
+		} else if redirectURI != "" {
+			// No registered client to bind to: fall back to the same-origin
+			// heuristic below, preserving behavior for legacy / first-party
+			// callers that don't use client_id-scoped redirects.
 			if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
 				// OK: local path
 			} else {
@@ -404,7 +537,19 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 
 					isCustomScheme := pRedirect.Scheme != "" && pRedirect.Scheme != "http" && pRedirect.Scheme != "https"
 
-					if !isCustomScheme {
+					if isCustomScheme {
+						// A private-use scheme has no origin to validate
+						// against, so an unregistered one is only accepted if
+						// it belongs to a known native client. Accepting any
+						// scheme here would make the whole check moot: a
+						// caller could present an unrecognized client_id and
+						// have the code delivered to a scheme of their
+						// choosing.
+						if !auth.IsAllowedNativeRedirectScheme(pRedirect.Scheme) {
+							http.Error(w, "invalid redirect_uri: unrecognized custom scheme; register the redirect_uri to use it", http.StatusBadRequest)
+							return
+						}
+					} else {
 						if pRedirect.Scheme != "https" && !isLocal {
 							http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
 							return
@@ -475,6 +620,9 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 func (h *handler) oauthTokenHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// RFC 6749 §5.1: token responses MUST NOT be cached.
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
 
 		err := r.ParseForm()
 		if err != nil {
