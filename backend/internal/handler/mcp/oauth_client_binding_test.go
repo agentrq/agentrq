@@ -417,3 +417,56 @@ func TestUnauthorized_AdvertisesResourceMetadataChallenge(t *testing.T) {
 		t.Errorf("advertised resource_metadata URL returned %d, expected it to resolve", followW.Code)
 	}
 }
+
+// Regression: Claude Code publishes PORTLESS loopback redirect_uris in its
+// Client ID Metadata Document and then listens on an ephemeral port the OS
+// assigns at request time. Exact string matching rejected every such client
+// with "invalid redirect_uri: not registered for this client_id", which broke
+// `claude mcp add` against this server entirely. RFC 8252 §7.3 requires the
+// authorization server to allow any port for loopback redirect URIs.
+func TestAuthorize_LoopbackRedirectURIIgnoresPort(t *testing.T) {
+	const claudeCodeClientID = "https://claude.ai/oauth/claude-code-client-metadata"
+
+	// Verbatim from https://claude.ai/oauth/claude-code-client-metadata.
+	cimd := &fakeCIMD{metadata: map[string]*auth.ClientMetadata{
+		claudeCodeClientID: {
+			RedirectURIs: []string{"http://localhost/callback", "http://127.0.0.1/callback"},
+		},
+	}}
+	mux := setupBindingRouter(&bindingTokenSvc{}, cimd)
+
+	allowed := []string{
+		"http://localhost:3118/callback", // the port from the original report
+		"http://localhost:54321/callback",
+		"http://127.0.0.1:3118/callback",
+		"http://localhost/callback", // still matches exactly
+	}
+	for _, redirectURI := range allowed {
+		t.Run("allowed "+redirectURI, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, authorizeRequest(claudeCodeClientID, redirectURI))
+			if w.Code != http.StatusFound {
+				t.Errorf("expected 302 for loopback redirect_uri %q, got %d: %s",
+					redirectURI, w.Code, strings.TrimSpace(w.Body.String()))
+			}
+		})
+	}
+
+	// Relaxing the port must not relax the host: these are the cases that
+	// would turn the fix into an open redirect.
+	rejected := []string{
+		"http://evil.example.com:3118/callback",
+		"http://localhost.evil.com/callback",
+		"http://localhost:3118/other",
+		"https://localhost:3118/callback",
+	}
+	for _, redirectURI := range rejected {
+		t.Run("rejected "+redirectURI, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, authorizeRequest(claudeCodeClientID, redirectURI))
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for %q, got %d", redirectURI, w.Code)
+			}
+		})
+	}
+}

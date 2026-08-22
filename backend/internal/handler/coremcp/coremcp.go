@@ -419,14 +419,10 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		}
 
 		if redirectURI != "" && len(registeredRedirectURIs) > 0 {
-			matched := false
-			for _, registered := range registeredRedirectURIs {
-				if registered == redirectURI {
-					matched = true
-					break
-				}
-			}
-			if !matched {
+			// Exact match, except that loopback URIs ignore the port — native
+			// clients get an ephemeral port from the OS at request time and so
+			// cannot register it (RFC 8252 §7.3).
+			if !auth.AnyRedirectURIMatches(registeredRedirectURIs, redirectURI) {
 				http.Error(w, "invalid redirect_uri: not registered for this client_id", http.StatusBadRequest)
 				return
 			}
