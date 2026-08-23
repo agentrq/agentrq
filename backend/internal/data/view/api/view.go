@@ -207,6 +207,18 @@ type (
 		Task Task `json:"task"`
 	}
 
+	MoveTaskRequest struct {
+		Workspace TaskWorkspaceMove `json:"workspace"`
+	}
+
+	TaskWorkspaceMove struct {
+		Value string `json:"value"` // destination workspace ID (base62)
+	}
+
+	MoveTaskResponse struct {
+		Task Task `json:"task"`
+	}
+
 	ReplyToTaskRequest struct {
 		Reply TaskReply `json:"reply"`
 	}

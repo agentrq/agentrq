@@ -142,6 +142,16 @@ export async function updateTaskAssignee(workspaceId, taskId, value) {
   return res.json();
 }
 
+export async function moveTask(workspaceId, taskId, destinationWorkspaceId) {
+  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/workspace`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace: { value: destinationWorkspaceId } })
+  });
+  if (!res.ok) throw new Error('Failed to move task');
+  return res.json();
+}
+
 export async function updateTaskAllowAllCommands(workspaceId, taskId, value) {
   const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/allow_all`, {
     method: 'PATCH',

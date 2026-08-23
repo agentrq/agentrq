@@ -28,6 +28,7 @@ const (
 	_routePathOrder      = "/workspaces/:id/tasks/:taskID/order"
 	_routePathScheduled  = "/workspaces/:id/tasks/:taskID/scheduled"
 	_routePathAssignee   = "/workspaces/:id/tasks/:taskID/assignee"
+	_routePathWorkspace  = "/workspaces/:id/tasks/:taskID/workspace"
 	_routePathAllowAll   = "/workspaces/:id/tasks/:taskID/allow_all"
 	_routePathPermission = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathEvents     = "/workspaces/:id/events"
@@ -47,6 +48,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Patch(_routePathStatus, h.updateTaskStatus())
 	h.router.Patch(_routePathOrder, h.updateTaskOrder())
 	h.router.Patch(_routePathAssignee, h.updateTaskAssignee())
+	h.router.Patch(_routePathWorkspace, h.moveTask())
 	h.router.Patch(_routePathAllowAll, h.updateTaskAllowAllCommands())
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
@@ -360,6 +362,41 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) moveTask() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToMoveTaskRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.MoveTask(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to move task")
+			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		// The task leaves the source workspace and appears in the destination one.
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "task.deleted",
+			Payload: map[string]string{"id": monoflake.ID(rq.TaskID).String()},
+		})
+		h.bus.Publish(rq.DestinationWorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "task.created",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromMoveTaskResponseEntityToHTTPResponse(rs))
 	}
 }
 

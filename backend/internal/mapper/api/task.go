@@ -218,6 +218,29 @@ func FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs *entity.UpdateTaskAss
 	return payload
 }
 
+func FromHTTPRequestToMoveTaskRequestEntity(c *fiber.Ctx) *entity.MoveTaskRequest {
+	var payload view.MoveTaskRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	destinationWorkspaceID := monoflake.IDFromBase62(payload.Workspace.Value).Int64()
+	if workspaceID == 0 || taskID == 0 || destinationWorkspaceID == 0 {
+		return nil
+	}
+	return &entity.MoveTaskRequest{
+		WorkspaceID:            workspaceID,
+		TaskID:                 taskID,
+		DestinationWorkspaceID: destinationWorkspaceID,
+	}
+}
+
+func FromMoveTaskResponseEntityToHTTPResponse(rs *entity.MoveTaskResponse) []byte {
+	payload, _ := json.Marshal(view.MoveTaskResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
 func FromHTTPRequestToUpdateTaskAllowAllCommandsRequestEntity(c *fiber.Ctx) *entity.UpdateTaskAllowAllCommandsRequest {
 	var payload view.UpdateTaskAllowAllCommandsRequest
 	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {

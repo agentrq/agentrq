@@ -268,6 +268,17 @@ type (
 		Task Task
 	}
 
+	MoveTaskRequest struct {
+		WorkspaceID            int64
+		TaskID                 int64
+		DestinationWorkspaceID int64
+		UserID                 string
+	}
+
+	MoveTaskResponse struct {
+		Task Task
+	}
+
 	UpdateTaskAllowAllCommandsRequest struct {
 		WorkspaceID      int64
 		TaskID           int64

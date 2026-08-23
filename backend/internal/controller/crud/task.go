@@ -430,6 +430,45 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 	return &entity.UpdateTaskAssigneeResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
+func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (*entity.MoveTaskResponse, error) {
+	if req.DestinationWorkspaceID == req.WorkspaceID {
+		return nil, fmt.Errorf("task is already in this workspace")
+	}
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+	// Ownership of the destination is checked independently of the source so a
+	// task can never be moved into a workspace the caller doesn't own.
+	if _, err := c.ensureActiveWorkspace(ctx, req.DestinationWorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	if err != nil {
+		return nil, err
+	}
+
+	m.WorkspaceID = req.DestinationWorkspaceID
+	m.UpdatedAt = time.Now()
+
+	updated, err := c.repository.UpdateTask(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+
+	return &entity.MoveTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+}
+
 func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.UpdateTaskAllowAllCommandsRequest) (*entity.UpdateTaskAllowAllCommandsResponse, error) {
 	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
 		return nil, err

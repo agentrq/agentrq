@@ -655,6 +655,128 @@ func TestUpdateTaskAssignee_LoopNoteIdempotent(t *testing.T) {
 	}
 }
 
+// ── MoveTask ──────────────────────────────────────────────────────────────────
+
+func TestMoveTask_Success(t *testing.T) {
+	e := newTestController(t)
+
+	source := activeWorkspace()
+	dest := model.Workspace{ID: 2, UserID: testUserID, Name: "dest"}
+	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID, Title: "t"}
+	updated := model.Task{ID: 10, WorkspaceID: 2, UserID: testUserID, Title: "t"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(source, nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(dest, nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		if m.WorkspaceID != 2 {
+			return model.Task{}, fmt.Errorf("expected task to be reassigned to workspace 2, got %d", m.WorkspaceID)
+		}
+		return updated, nil
+	})
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.WorkspaceID != 2 {
+		t.Errorf("expected task moved to workspace 2, got %d", resp.Task.WorkspaceID)
+	}
+}
+
+// TestMoveTask_DestinationNotOwned ensures a task cannot be moved into a
+// workspace the caller does not own, even though the source workspace check
+// passes (IDOR).
+func TestMoveTask_DestinationNotOwned(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{}, base.ErrNotFound)
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error due to unowned destination workspace, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+// TestMoveTask_SourceNotOwned ensures a task in a workspace the caller does
+// not own cannot be moved out of it (IDOR).
+func TestMoveTask_SourceNotOwned(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, base.ErrNotFound)
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error due to unowned source workspace, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+func TestMoveTask_TaskNotFound(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, base.ErrNotFound)
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error when task is not found, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+func TestMoveTask_UpdateTaskError(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("db error"))
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error when update fails, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+func TestMoveTask_SameWorkspace(t *testing.T) {
+	e := newTestController(t)
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 1, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error when moving task to its current workspace, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
 // ── ReplyToTask ───────────────────────────────────────────────────────────────
 
 func TestReplyToTask_Success(t *testing.T) {

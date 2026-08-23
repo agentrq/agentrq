@@ -29,6 +29,7 @@
                  @dragend="onDragEnd"
                  @dragover="onCardDragOver($event, col.id, t)"
                  @click="openTask(t)"
+                 @contextmenu.prevent.stop="openContextMenu($event, t)"
                  :class="[
                    'group relative flex items-center gap-2 px-2.5 py-2 rounded-lg border bg-white dark:bg-zinc-900 shadow-sm transition-all',
                    !isArchived ? 'cursor-grab active:cursor-grabbing hover:border-gray-200 dark:hover:border-zinc-700' : 'cursor-pointer',
@@ -62,21 +63,42 @@
         </div>
       </div>
     </div>
+
+    <!-- Move Task Modal -->
+    <MoveTaskModal
+      :show="showMoveModal"
+      :taskTitle="taskToMoveTitle"
+      :currentWorkspaceId="workspaceId"
+      @close="closeMoveModal"
+      @confirm="onMoveConfirm"
+    />
+
+    <!-- Task Context Menu -->
+    <ContextMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="[{ key: 'move', label: 'Move Task' }]"
+      @close="closeContextMenu"
+      @select="onContextMenuSelect"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchTasks, updateTaskStatus, updateTaskOrder } from '../api';
+import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import LoadingState from '../components/LoadingState.vue';
+import MoveTaskModal from '../components/MoveTaskModal.vue';
+import ContextMenu from '../components/ContextMenu.vue';
 
 const route = useRoute();
 const router = useRouter();
-const { notifyError } = useToasts();
+const { notifyError, notifySuccess } = useToasts();
 const workspaceStore = useWorkspaceStore();
 
 const workspaceId = computed(() => route.params.id);
@@ -255,6 +277,50 @@ async function onDrop(e, colId) {
 function openTask(t) {
   if (draggingId.value) return;
   router.push({ path: `/workspaces/${workspaceId.value}/tasks/${t.id}`, query: route.query });
+}
+
+// ---- Context menu / move task ----
+const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
+const showMoveModal = ref(false);
+const taskToMoveId = ref(null);
+const taskToMoveTitle = ref('');
+
+function openContextMenu(event, task) {
+  contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+}
+
+function closeContextMenu() {
+  contextMenu.value = { ...contextMenu.value, show: false };
+}
+
+function onContextMenuSelect(key) {
+  const task = contextMenu.value.task;
+  if (!task) return;
+  if (key === 'move') {
+    taskToMoveId.value = task.id;
+    taskToMoveTitle.value = task.title;
+    showMoveModal.value = true;
+  }
+}
+
+function closeMoveModal() {
+  showMoveModal.value = false;
+  taskToMoveId.value = null;
+  taskToMoveTitle.value = '';
+}
+
+async function onMoveConfirm(destinationWorkspaceId) {
+  const taskId = taskToMoveId.value;
+  if (!taskId) return;
+  try {
+    await moveTask(workspaceId.value, taskId, destinationWorkspaceId);
+    removeTask(taskId);
+    notifySuccess('Task moved');
+  } catch (err) {
+    notifyError('Move Error: ' + err.message);
+  } finally {
+    closeMoveModal();
+  }
 }
 
 // ---- Live updates ----

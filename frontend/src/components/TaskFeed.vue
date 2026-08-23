@@ -7,12 +7,31 @@
     </div>
     
     <!-- Delete Confirmation Modal -->
-    <DeleteModal 
-      :show="showDeleteModal" 
+    <DeleteModal
+      :show="showDeleteModal"
       :taskTitle="taskToDeleteTitle"
-      title="Delete Task" 
-      @close="closeDeleteModal" 
-      @confirm="onDeleteConfirm" 
+      title="Delete Task"
+      @close="closeDeleteModal"
+      @confirm="onDeleteConfirm"
+    />
+
+    <!-- Move Task Modal -->
+    <MoveTaskModal
+      :show="showMoveModal"
+      :taskTitle="taskToMoveTitle"
+      :currentWorkspaceId="workspaceId"
+      @close="closeMoveModal"
+      @confirm="onMoveConfirm"
+    />
+
+    <!-- Task Context Menu -->
+    <ContextMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :items="[{ key: 'move', label: 'Move Task' }]"
+      @close="closeContextMenu"
+      @select="onContextMenuSelect"
     />
 
     <!-- Action Bar moved to parent for better layout consistency -->
@@ -33,6 +52,7 @@
           <div v-else class="space-y-2">
             <div v-for="(t, idx) in grp.tasks" :key="t.id"
                  @click="openTask(t)"
+                 @contextmenu.prevent.stop="openContextMenu($event, t)"
                  :class="[ 'p-4 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(t.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
               
               <div v-if="String(selectedTaskId) === String(t.id)" class="absolute left-0 top-4 bottom-4 w-1 bg-black dark:bg-white rounded-full"></div>
@@ -114,9 +134,11 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
-import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, fetchTasks, fetchTaskCounts } from '../api';
+import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, moveTask, fetchTasks, fetchTaskCounts } from '../api';
 import { useCron } from '../composables/useCron';
 import DeleteModal from './DeleteModal.vue';
+import MoveTaskModal from './MoveTaskModal.vue';
+import ContextMenu from './ContextMenu.vue';
 import { useToasts } from '../composables/useToasts';
 
 const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
@@ -163,6 +185,12 @@ const activeStatusMenuId = ref(null);
 const showDeleteModal = ref(false);
 const taskToDeleteId = ref(null);
 const taskToDeleteTitle = ref('');
+
+const showMoveModal = ref(false);
+const taskToMoveId = ref(null);
+const taskToMoveTitle = ref('');
+
+const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
 
 const ongoingTasks = ref([]);
 const notStartedTasks = ref([]);
@@ -602,6 +630,57 @@ async function onDeleteConfirm() {
     notifyError('Delete Error: ' + err.message);
   } finally {
     closeDeleteModal();
+  }
+}
+
+function openContextMenu(event, task) {
+  contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+}
+
+function closeContextMenu() {
+  contextMenu.value = { ...contextMenu.value, show: false };
+}
+
+function onContextMenuSelect(key) {
+  const task = contextMenu.value.task;
+  if (!task) return;
+  if (key === 'move') {
+    triggerMove(task);
+  }
+}
+
+function triggerMove(task) {
+  taskToMoveId.value = task.id;
+  taskToMoveTitle.value = task.title;
+  showMoveModal.value = true;
+}
+
+function closeMoveModal() {
+  showMoveModal.value = false;
+  taskToMoveId.value = null;
+  taskToMoveTitle.value = '';
+}
+
+async function onMoveConfirm(destinationWorkspaceId) {
+  const taskId = taskToMoveId.value;
+  if (!taskId) return;
+  try {
+    await moveTask(props.workspaceId, taskId, destinationWorkspaceId);
+    ongoingTasks.value = ongoingTasks.value.filter(x => x.id !== taskId);
+    notStartedTasks.value = notStartedTasks.value.filter(x => x.id !== taskId);
+    scheduledTasks.value = scheduledTasks.value.filter(x => x.id !== taskId);
+    pendingTasks.value = pendingTasks.value.filter(x => x.id !== taskId);
+    completedTasks.value = completedTasks.value.filter(x => x.id !== taskId);
+    emitUpdatedTasks();
+    loadCounts();
+    notifySuccess('Task moved');
+    if (String(props.selectedTaskId) === String(taskId)) {
+      router.push(`/workspaces/${props.workspaceId}`);
+    }
+  } catch (err) {
+    notifyError('Move Error: ' + err.message);
+  } finally {
+    closeMoveModal();
   }
 }
 
