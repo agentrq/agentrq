@@ -171,6 +171,80 @@ func TestRepository_UpdateMessageMetadata(t *testing.T) {
 	}
 }
 
+func TestRepository_UpdateToolCallsWorkspaceID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.ToolCall{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(10)
+	otherTaskID := int64(11)
+
+	db.Create(&model.ToolCall{ID: 1, TaskID: taskID, WorkspaceID: 1, Status: "auto_allowed"})
+	db.Create(&model.ToolCall{ID: 2, TaskID: taskID, WorkspaceID: 1, Status: "pending"})
+	db.Create(&model.ToolCall{ID: 3, TaskID: otherTaskID, WorkspaceID: 1, Status: "pending"})
+
+	if err := repo.UpdateToolCallsWorkspaceID(ctx, taskID, 2); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	var moved []model.ToolCall
+	db.Where("task_id = ?", taskID).Find(&moved)
+	for _, tc := range moved {
+		if tc.WorkspaceID != 2 {
+			t.Errorf("expected tool call %d to be re-scoped to workspace 2, got %d", tc.ID, tc.WorkspaceID)
+		}
+	}
+
+	var untouched model.ToolCall
+	db.First(&untouched, 3)
+	if untouched.WorkspaceID != 1 {
+		t.Errorf("expected tool call for other task to be left alone, got workspace %d", untouched.WorkspaceID)
+	}
+}
+
+func TestRepository_UpdateSlackTaskThreadWorkspaceID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.SlackTaskThread{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(10)
+	otherTaskID := int64(11)
+
+	db.Create(&model.SlackTaskThread{TaskID: taskID, WorkspaceID: 1, SlackChannelID: "C1", ThreadTS: "ts1"})
+	db.Create(&model.SlackTaskThread{TaskID: otherTaskID, WorkspaceID: 1, SlackChannelID: "C2", ThreadTS: "ts2"})
+
+	if err := repo.UpdateSlackTaskThreadWorkspaceID(ctx, taskID, 2); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	var moved model.SlackTaskThread
+	db.First(&moved, "task_id = ?", taskID)
+	if moved.WorkspaceID != 2 {
+		t.Errorf("expected thread to be re-scoped to workspace 2, got %d", moved.WorkspaceID)
+	}
+
+	var untouched model.SlackTaskThread
+	db.First(&untouched, "task_id = ?", otherTaskID)
+	if untouched.WorkspaceID != 1 {
+		t.Errorf("expected thread for other task to be left alone, got workspace %d", untouched.WorkspaceID)
+	}
+
+	// No thread exists for this task — should be a no-op, not an error.
+	if err := repo.UpdateSlackTaskThreadWorkspaceID(ctx, int64(999), 2); err != nil {
+		t.Errorf("expected nil error when no thread exists, got %v", err)
+	}
+}
+
 func TestRepository_ListTasks_PreloadMessages(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

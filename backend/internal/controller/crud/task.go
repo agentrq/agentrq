@@ -457,6 +457,23 @@ func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (
 		return nil, err
 	}
 
+	// ToolCall.WorkspaceID is denormalized from the task at creation time and
+	// is never touched again otherwise, so it must be reconciled here or
+	// existing tool-call rows keep pointing at the task's old workspace.
+	if err := c.repository.UpdateToolCallsWorkspaceID(ctx, updated.ID, updated.WorkspaceID); err != nil {
+		return nil, err
+	}
+	for i := range updated.ToolCalls {
+		updated.ToolCalls[i].WorkspaceID = updated.WorkspaceID
+	}
+
+	// SlackTaskThread.WorkspaceID is denormalized the same way and is used to
+	// route inbound Slack replies (see HandleSlackEvent) — reconcile it too so
+	// a moved task doesn't strand its thread pointing at the old workspace.
+	if err := c.repository.UpdateSlackTaskThreadWorkspaceID(ctx, updated.ID, updated.WorkspaceID); err != nil {
+		return nil, err
+	}
+
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionTaskUpdate,
 		WorkspaceID:  updated.WorkspaceID,

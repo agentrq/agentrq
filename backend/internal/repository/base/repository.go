@@ -40,6 +40,7 @@ type Repository interface {
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
+	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 
 	SystemGetWorkspace(ctx context.Context, id int64) (model.Workspace, error)
 	SystemGetTask(ctx context.Context, id int64) (model.Task, error)
@@ -63,6 +64,7 @@ type Repository interface {
 	GetSlackWorkspaceLinkByChannel(ctx context.Context, channelID string) (model.SlackWorkspaceLink, error)
 	DeleteSlackWorkspaceLink(ctx context.Context, workspaceID int64) error
 	UpsertSlackTaskThread(ctx context.Context, thread model.SlackTaskThread) error
+	UpdateSlackTaskThreadWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 	GetSlackTaskThreadByTask(ctx context.Context, taskID int64) (model.SlackTaskThread, error)
 	GetSlackTaskThreadByChannel(ctx context.Context, channelID, threadTS string) (model.SlackTaskThread, error)
 
@@ -405,6 +407,15 @@ func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status 
 	return tc, nil
 }
 
+// UpdateToolCallsWorkspaceID re-scopes every ToolCall belonging to taskID to
+// workspaceID. ToolCall.WorkspaceID is denormalized from the parent Task at
+// creation time and is otherwise never touched again, so moving a task to a
+// different workspace must reconcile it here or existing tool-call rows keep
+// pointing at the task's old workspace.
+func (r *repository) UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error {
+	return r.conn(ctx).Model(&model.ToolCall{}).Where("task_id = ?", taskID).Update("workspace_id", workspaceID).Error
+}
+
 func (r *repository) GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error) {
 	var attachmentIDs []string
 
@@ -688,6 +699,16 @@ func (r *repository) DeleteSlackWorkspaceLink(ctx context.Context, workspaceID i
 
 func (r *repository) UpsertSlackTaskThread(ctx context.Context, thread model.SlackTaskThread) error {
 	return r.conn(ctx).Save(&thread).Error
+}
+
+// UpdateSlackTaskThreadWorkspaceID re-scopes the task's Slack thread (if any)
+// to workspaceID. SlackTaskThread.WorkspaceID is denormalized from the task
+// at creation time; inbound Slack replies are routed using this stale value
+// (see HandleSlackEvent), so it must be reconciled when a task moves or a
+// reply on the old thread will look up the wrong workspace's bot token and
+// then 404 trying to find the task in a workspace it no longer belongs to.
+func (r *repository) UpdateSlackTaskThreadWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error {
+	return r.conn(ctx).Model(&model.SlackTaskThread{}).Where("task_id = ?", taskID).Update("workspace_id", workspaceID).Error
 }
 
 func (r *repository) GetSlackTaskThreadByTask(ctx context.Context, taskID int64) (model.SlackTaskThread, error) {

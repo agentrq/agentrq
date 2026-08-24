@@ -663,7 +663,10 @@ func TestMoveTask_Success(t *testing.T) {
 	source := activeWorkspace()
 	dest := model.Workspace{ID: 2, UserID: testUserID, Name: "dest"}
 	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID, Title: "t"}
-	updated := model.Task{ID: 10, WorkspaceID: 2, UserID: testUserID, Title: "t"}
+	updated := model.Task{
+		ID: 10, WorkspaceID: 2, UserID: testUserID, Title: "t",
+		ToolCalls: []model.ToolCall{{ID: 100, TaskID: 10, WorkspaceID: 1}},
+	}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(source, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(dest, nil)
@@ -674,6 +677,8 @@ func TestMoveTask_Success(t *testing.T) {
 		}
 		return updated, nil
 	})
+	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(nil)
+	e.repo.EXPECT().UpdateSlackTaskThreadWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(nil)
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
 		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
@@ -683,6 +688,63 @@ func TestMoveTask_Success(t *testing.T) {
 	}
 	if resp.Task.WorkspaceID != 2 {
 		t.Errorf("expected task moved to workspace 2, got %d", resp.Task.WorkspaceID)
+	}
+	if len(resp.Task.ToolCalls) != 1 || resp.Task.ToolCalls[0].WorkspaceID != 2 {
+		t.Errorf("expected tool call to be re-scoped to workspace 2, got %+v", resp.Task.ToolCalls)
+	}
+}
+
+// TestMoveTask_UpdateToolCallsWorkspaceIDError ensures a failure reconciling
+// ToolCall.WorkspaceID (denormalized from the task) surfaces as an error
+// instead of silently leaving tool-call rows pointing at the old workspace.
+func TestMoveTask_UpdateToolCallsWorkspaceIDError(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID}
+	updated := model.Task{ID: 10, WorkspaceID: 2, UserID: testUserID}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
+	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("db error"))
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error when reconciling tool-call workspace fails, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+// TestMoveTask_UpdateSlackTaskThreadWorkspaceIDError ensures a failure
+// reconciling SlackTaskThread.WorkspaceID (denormalized from the task, and
+// used to route inbound Slack replies) surfaces as an error instead of
+// silently stranding the thread on the task's old workspace.
+func TestMoveTask_UpdateSlackTaskThreadWorkspaceIDError(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID}
+	updated := model.Task{ID: 10, WorkspaceID: 2, UserID: testUserID}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
+	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(nil)
+	e.repo.EXPECT().UpdateSlackTaskThreadWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("db error"))
+
+	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
+		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
+	})
+	if err == nil {
+		t.Fatalf("expected error when reconciling slack thread workspace fails, got nil")
+	}
+	if resp != nil {
+		t.Errorf("expected nil response, got %v", resp)
 	}
 }
 
