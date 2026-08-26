@@ -262,31 +262,51 @@ func TestEveryAdvertisedVersionCompletesHandshake(t *testing.T) {
 //	a version-less server/discover must be served, not refused:
 //	{"code":-32601,"message":"method not found: \"server/discover\""}
 //
-// server/discover is itself a >= 2026-07-28 addition, and that revision made
-// every request self-describing: protocol version and capabilities travel in
-// the JSON-RPC `_meta` field on each call rather than in a negotiated
-// session, precisely so a server can be stateless. A request with no
-// version anywhere — no MCP-Protocol-Version header, no `_meta` — carries no
-// signal that the caller knows about `_meta`-based negotiation at all, so
-// the server has no way to distinguish it from a pre-2026-07-28 client
-// blindly calling a method name it doesn't recognize. Pre-2026-07-28,
-// server/discover does not exist, so "method not found" is the only
-// consistent answer.
+// Checked directly against the prescriptive spec text (not just the SDK),
+// at https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http#protocol-version-header:
 //
-// The official SDK's own conformance fixture
-// (mcp/testdata/conformance/server/discover.txtar) agrees: its sole
-// server/discover case always carries the >= 2026-07-28 `_meta` envelope
-// (protocolVersion, clientInfo, clientCapabilities) — there is no
-// version-less fixture. TestServerDiscover_ReportsIdentityAndVersions above
-// already proves discover works with no session and no initialize
-// handshake, using exactly that envelope; the only thing this server
-// declines to do is guess at a version nobody asked for. Serving a bare
-// call would mean inventing behavior the reference implementation itself
-// does not define, to satisfy a third-party suite.
+//	"A server that supports clients implementing protocol versions earlier
+//	than 2025-06-18 (which did not define the MCP-Protocol-Version header)
+//	MAY treat a request that omits the header as protocol version
+//	2025-03-26."
+//
+// This server does support those earlier clients (it advertises
+// 2024-11-05 through 2025-11-25 — see TestEveryAdvertisedVersionCompletesHandshake)
+// and takes exactly that option: a header-less request is treated as
+// speaking protocol 2025-03-26. server/discover is itself a >= 2026-07-28
+// addition (https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
+// so under the assumed 2025-03-26 dialect the method plainly does not
+// exist — "method not found" is the only spec-consistent answer, exactly
+// as it would be for any other unknown method name.
+//
+// That also explains the HTTP status: SEP-2575 mandates 404 for
+// MethodNotFound, but only ">= 2026-07-28" — see extractErrorStatus in the
+// SDK (mcp/streamable.go). A request assumed to be 2025-03-26 predates that
+// rule, so the error rides back on a plain 200, the pre-2026-07-28
+// convention. This isn't the SDK improvising: it's the two spec rules
+// (header-omission fallback, and the version-gated 404) composing
+// correctly, and this test asserts both halves so neither regresses
+// silently.
+//
+// The spec's own example request for server/discover
+// (https://modelcontextprotocol.io/specification/2026-07-28/server/discover#request)
+// always carries the full `_meta` envelope (protocolVersion, clientInfo,
+// clientCapabilities) — there is no version-less example, and the SDK's
+// conformance fixture (mcp/testdata/conformance/server/discover.txtar)
+// agrees. TestServerDiscover_ReportsIdentityAndVersions above already
+// proves discover works with no session and no initialize handshake, using
+// exactly that envelope; the only thing this server declines to do is
+// guess at a version nobody asked for. Serving a bare call would mean
+// inventing behavior neither the spec nor the reference implementation
+// defines, to satisfy a third-party suite.
 func TestVersionlessDiscoverIsRefused(t *testing.T) {
 	srv := newProtocolTestServer(t)
 
 	status, out, _ := mcpPost(t, srv.URL, nil, `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`)
+	// 200, not 404: a header-less request is assumed to speak the pre-2026-07-28
+	// dialect (see the fallback rule cited above), whose error convention embeds
+	// the JSON-RPC error in a 200 response rather than using SEP-2575's
+	// version-gated 404-for-MethodNotFound.
 	if status != http.StatusOK {
 		t.Fatalf("expected a JSON-RPC error carried over HTTP 200, got %d: %s", status, out)
 	}
