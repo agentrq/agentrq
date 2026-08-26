@@ -254,6 +254,67 @@ func TestEveryAdvertisedVersionCompletesHandshake(t *testing.T) {
 	}
 }
 
+// Refusing a version-less server/discover is correct, not a spec deviation,
+// and this test exists to stop someone "fixing" it.
+//
+// A third-party conformance suite reported:
+//
+//	a version-less server/discover must be served, not refused:
+//	{"code":-32601,"message":"method not found: \"server/discover\""}
+//
+// server/discover is itself a >= 2026-07-28 addition, and that revision made
+// every request self-describing: protocol version and capabilities travel in
+// the JSON-RPC `_meta` field on each call rather than in a negotiated
+// session, precisely so a server can be stateless. A request with no
+// version anywhere — no MCP-Protocol-Version header, no `_meta` — carries no
+// signal that the caller knows about `_meta`-based negotiation at all, so
+// the server has no way to distinguish it from a pre-2026-07-28 client
+// blindly calling a method name it doesn't recognize. Pre-2026-07-28,
+// server/discover does not exist, so "method not found" is the only
+// consistent answer.
+//
+// The official SDK's own conformance fixture
+// (mcp/testdata/conformance/server/discover.txtar) agrees: its sole
+// server/discover case always carries the >= 2026-07-28 `_meta` envelope
+// (protocolVersion, clientInfo, clientCapabilities) — there is no
+// version-less fixture. TestServerDiscover_ReportsIdentityAndVersions above
+// already proves discover works with no session and no initialize
+// handshake, using exactly that envelope; the only thing this server
+// declines to do is guess at a version nobody asked for. Serving a bare
+// call would mean inventing behavior the reference implementation itself
+// does not define, to satisfy a third-party suite.
+func TestVersionlessDiscoverIsRefused(t *testing.T) {
+	srv := newProtocolTestServer(t)
+
+	status, out, _ := mcpPost(t, srv.URL, nil, `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}`)
+	if status != http.StatusOK {
+		t.Fatalf("expected a JSON-RPC error carried over HTTP 200, got %d: %s", status, out)
+	}
+
+	var env struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("decode %s: %v", out, err)
+	}
+	if env.Error == nil {
+		t.Fatal("expected a version-less server/discover call to be refused")
+	}
+	if !strings.Contains(env.Error.Message, "method not found") {
+		t.Errorf("unexpected refusal reason: %q", env.Error.Message)
+	}
+
+	// The remedy is on the client: carry the >= 2026-07-28 `_meta` envelope,
+	// which always succeeds — see TestServerDiscover_ReportsIdentityAndVersions.
+	versions, _ := discoverResult(t, srv)
+	if len(versions) == 0 {
+		t.Error("expected the properly-tagged discover call to still succeed")
+	}
+}
+
 // tools/call must return a schema-conformant CallToolResult: "content" is
 // required by the spec, so it must be present and non-empty.
 func TestToolsCall_ReturnsSchemaConformantResult(t *testing.T) {
