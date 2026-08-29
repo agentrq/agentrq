@@ -161,7 +161,7 @@
       </div>
 
       <!-- Messages -->
-      <template v-for="m in sortedMessages" :key="m.id">
+      <template v-for="m in displayMessages" :key="m.id">
 
         <!-- Agent message — left aligned -->
         <div v-if="m.sender === 'agent'" class="group flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%]">
@@ -446,15 +446,20 @@
         </div>
 
         <!-- Human message — right aligned -->
-        <div v-else class="group flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-full md:max-w-[90%]">
+        <div v-else class="group flex gap-3 flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-full md:max-w-[90%]" :class="m._pending ? 'opacity-80' : ''">
           <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-zinc-700 flex items-center justify-center shrink-0 mt-0.5 overflow-hidden">
              <svg class="w-4 h-4 text-gray-600 dark:text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
           </div>
           <div class="flex flex-col items-end min-w-0 max-w-full">
-             <div class="bg-gray-200 text-gray-900 dark:bg-zinc-800 dark:text-zinc-100 border border-gray-300 dark:border-zinc-700 rounded-sm p-3.5 shadow-sm min-w-0 max-w-full">
+             <div class="text-gray-900 dark:text-zinc-100 border rounded-sm p-3.5 shadow-sm min-w-0 max-w-full"
+                  :class="m._pending ? 'bg-gray-100 dark:bg-zinc-800/60 border-dashed border-gray-300 dark:border-zinc-600' : 'bg-gray-200 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700'">
                <div class="flex items-center justify-between mb-1.5">
-                 <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
-                 <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                 <span v-if="m._pending" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right flex items-center gap-1.5">
+                   <span class="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white animate-pulse shrink-0"></span>
+                   Sending in {{ m._secondsLeft }}s&hellip;
+                 </span>
+                 <span v-else class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
+                 <div v-if="!m._pending" class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
                    <button type="button" @click.stop="toggleMessageRender(m.id)"
                            :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                            class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -465,8 +470,14 @@
                    </button>
                  </div>
                </div>
-               <div v-if="!rawMessages.has(m.id)" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(m.text)"></div>
+               <div v-if="m._pending" dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <div v-else-if="!rawMessages.has(m.id)" class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(m.text)"></div>
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-all">{{ m.text }}</div>
+               <!-- Cancel / Send Now controls on the pending message -->
+               <div v-if="m._pending" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
+                 <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
+                 <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
+               </div>
                <!-- Attachments on human message -->
                <div v-if="m.attachments && m.attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-300 dark:border-zinc-600 justify-end">
                  <div v-for="(att, i) in m.attachments" :key="i"
@@ -566,14 +577,6 @@
               </svg>
             </button>
           </div>
-        </div>
-
-        <!-- Pending delayed send: countdown + cancel/send now -->
-        <div v-if="pendingSend" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-105 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
-          <span class="w-2.5 h-2.5 rounded-full bg-gray-900 dark:bg-white animate-pulse shrink-0"></span>
-          <p class="text-[10px] text-gray-700 dark:text-zinc-300 font-bold flex-1 min-w-0 truncate">Sending in {{ pendingSend.secondsLeft }}s&hellip;</p>
-          <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
-          <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
         </div>
 
         <!-- Status Warning Messages -->
@@ -825,6 +828,21 @@ const sortedMessages = computed(() => {
   return [...task.value.messages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
 
+// Appends a synthetic, not-yet-sent message bubble while a delayed send is
+// counting down, so the human can see and cancel exactly what's about to go
+// out instead of it disappearing into the composer footer.
+const displayMessages = computed(() => {
+  if (!pendingSend.value) return sortedMessages.value;
+  return [...sortedMessages.value, {
+    id: '__pending-send__',
+    sender: 'human',
+    text: pendingSend.value.text,
+    attachments: pendingSend.value.atts,
+    _pending: true,
+    _secondsLeft: pendingSend.value.secondsLeft,
+  }];
+});
+
 const activeView = ref('chat');
 
 const sortedToolCalls = computed(() => {
@@ -853,6 +871,13 @@ function scrollToBottom() {
 // to the bottom just from expanding a card.
 watch(sortedMessages, () => {
   scrollToBottom();
+});
+
+// Scroll when the pending bubble first appears, not on every countdown tick
+// thereafter — ticking secondsLeft rebuilds displayMessages every second, and
+// re-scrolling on that would yank the view out from under anyone reading up.
+watch(() => !!pendingSend.value, (isPending) => {
+  if (isPending) scrollToBottom();
 });
 
 async function load() {
