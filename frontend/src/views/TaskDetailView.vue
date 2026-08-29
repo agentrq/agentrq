@@ -1030,16 +1030,17 @@ async function submitReply() {
     return;
   }
 
-  const pending = { text, atts, secondsLeft: delaySeconds };
-  pending.intervalId = setInterval(() => {
-    pending.secondsLeft -= 1;
-    if (pending.secondsLeft <= 0) {
-      clearInterval(pending.intervalId);
+  pendingSend.value = { text, atts, secondsLeft: delaySeconds };
+  pendingSend.value.intervalId = setInterval(() => {
+    if (!pendingSend.value) return;
+    pendingSend.value.secondsLeft -= 1;
+    if (pendingSend.value.secondsLeft <= 0) {
+      clearInterval(pendingSend.value.intervalId);
+      const { text: pendingText, atts: pendingAtts } = pendingSend.value;
       pendingSend.value = null;
-      deliverReply(pending.text, pending.atts);
+      deliverReply(pendingText, pendingAtts);
     }
   }, 1000);
-  pendingSend.value = pending;
 }
 
 function sendPendingNow() {
