@@ -110,6 +110,22 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.available }}
         run: |
           npm run build
+
+          # An empty CSC_LINK is not the same as an unset one. GitHub Actions
+          # defines the variable as "" when the secret does not exist, and
+          # electron-builder then resolves that empty string as a certificate
+          # path -- landing on the working directory and dying with
+          # "<projectDir> not a file" before it packages anything.
+          #
+          # Pull request builds cannot catch this: electron-builder detects a
+          # PR and skips code signing entirely ("Current build is a part of
+          # pull request, code signing will be skipped"), so the empty value is
+          # never resolved. It only surfaces on a tag build, which is the worst
+          # possible moment to find out.
+          if [ "${{ steps.signing.outputs.available }}" != "true" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          fi
+
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Prove it packages; publish nothing.
             npx electron-builder --publish never
