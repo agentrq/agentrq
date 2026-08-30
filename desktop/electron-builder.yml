@@ -63,9 +63,11 @@ dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 win:
+  # arm64 alongside x64: ARM Windows laptops are no longer unusual, and running
+  # the x64 build under emulation there is measurably worse.
   target:
     - target: nsis
-      arch: [x64]
+      arch: [x64, arm64]
 
 nsis:
   oneClick: false
