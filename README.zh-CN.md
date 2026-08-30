@@ -90,7 +90,36 @@ AgentRQ 采用前后端分离和 MCP 服务层组合的架构。
 - Tailwind CSS 提供样式。
 - 通过 SSE 接收后端实时事件，保持任务和消息同步。
 
+### Desktop
+
+- 桌面端直接复用 Web 端的同一套 Vue 组件与路由，两者不会出现功能差异。
+- 系统级通知：窗口在后台时也能收到 Agent 的动态，并在 Dock / 任务栏显示未读数。
+- 托盘图标、全局快捷键（`Cmd/Ctrl+Shift+N` 新建任务）、`agentrq://` 深链接。
+- 自动更新：后台检查并下载，重启后生效。
+
 更多设计细节见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 桌面客户端
+
+AgentRQ 提供 macOS、Windows、Linux 桌面客户端。它是一个**客户端**，需要连接到你自己运行的 AgentRQ 服务端。
+
+**[下载最新版本 →](https://github.com/agentrq/agentrq/releases/latest)**
+
+| 平台 | 下载 |
+|---|---|
+| macOS | `.dmg`（Apple 芯片与 Intel） |
+| Windows | `.exe` 安装包（x64 与 arm64） |
+| Linux | `.AppImage` 或 `.deb`（x64 与 arm64） |
+
+目前的构建**尚未签名**，因此 macOS 与 Windows 首次启动会有安全提示；在补齐签名证书之前，macOS 版本无法自动更新（可手动下载新版本）。安装、连接服务端与常见问题详见[桌面端指南](docs/DESKTOP.md)。
+
+从源码运行：
+
+```bash
+make install       # 安装整个仓库的依赖
+make desktop-dev   # 连接本地服务端启动桌面应用
+make desktop       # 构建安装包到 desktop/release/
+```
 
 ## 快速开始
 

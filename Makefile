@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend install stop mocks test fmt hooks
+.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks
 
 remote-claude:
 	claude --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
@@ -30,13 +30,30 @@ stop:
 	-@pkill -f "go run main.go" || true
 	-@pkill -f "vite" || true
 	-@pkill -f "agentrq_binary" || true
+	-@lsof -ti:5174 | xargs kill -9 2>/dev/null || true
+	-@pkill -f "desktop/node_modules/electron" || true
 	@echo "Cleanup complete."
 
-# Install all dependencies for both frontend and backend
+# Run the desktop app against a local server.
+# It expects a backend on :3000 — `make dev` in another terminal gives you one.
+# Point it elsewhere with AGENTRQ_SERVER_URL=https://... make desktop-dev
+desktop-dev:
+	@echo "Starting Desktop App..."
+	@cd desktop && npm run dev
+
+# Build installers into desktop/release/. Publishes nothing.
+desktop:
+	@echo "Building Desktop App..."
+	@cd desktop && npm run package
+
+# Install all dependencies for the whole repo
 install:
 	@echo "Installing Dependencies..."
 	@cd backend && go mod download
 	@cd frontend && npm install
+	@# The desktop renderer is built from frontend/src, so the frontend's
+	@# dependencies have to be in place before this.
+	@cd desktop && npm install
 	@make hooks
 
 # Point git at the tracked hooks in .githooks so every clone shares them

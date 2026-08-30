@@ -116,6 +116,38 @@ AgentRQ follows a decoupled service-oriented architecture:
 - **Glassmorphism**: A sleek, premium design language with smooth transitions and real-time updates.
 - **Reactive State**: Synchronized with the backend via SSE events.
 
+### Desktop (Electron)
+- **Same application, native shell**: the desktop app renders the *same* Vue components as the browser, so the two never diverge.
+- **Native notifications**: agent activity reaches you while the window is in the background, with a dock or taskbar badge.
+- **Tray, global shortcut, deep links**: `Cmd/Ctrl+Shift+N` from anywhere, and `agentrq://` URLs that open the app at a specific task.
+- **Auto-updating**: checks in the background and installs on restart.
+
+## 💻 Desktop App
+
+AgentRQ has a desktop app for macOS, Windows and Linux. It is a client — it
+connects to whichever AgentRQ server you run.
+
+**[Download the latest release →](https://github.com/agentrq/agentrq/releases/latest)**
+
+| Platform | Download |
+|---|---|
+| macOS | `.dmg` — Apple silicon and Intel |
+| Windows | `.exe` installer — x64 and arm64 |
+| Linux | `.AppImage` or `.deb` — x64 and arm64 |
+
+Builds are currently **unsigned**, so macOS and Windows will warn on first
+launch, and macOS cannot auto-update until signing certificates are in place.
+Installation, connecting to a server, and troubleshooting are covered in the
+[Desktop Guide](docs/DESKTOP.md).
+
+To run it from source:
+
+```bash
+make install       # dependencies for the whole repo
+make desktop-dev   # run the desktop app against a local server
+make desktop       # build installers into desktop/release/
+```
+
 ## 🛠 Getting Started
 
 ### Prerequisites
@@ -145,7 +177,8 @@ make install
 make dev
 ```
 
-The frontend will be available at `http://localhost:5173`.
+The frontend will be available at `http://localhost:5173`. For the desktop app,
+run `make desktop-dev` in another terminal — see the [Desktop Guide](docs/DESKTOP.md).
 
 ### Self-Hosting (Docker)
 For running the production or development stack using the pre-built Docker image, see the [Self-Hosting Setup Guide](SETUP.md).

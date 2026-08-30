@@ -3,8 +3,55 @@
 ## Project layout
 
 - `backend/` — Go backend (Fiber HTTP, GORM, MCP server)
-- `frontend/` — Vue3 frontend
+- `frontend/` — Vue3 frontend, and the single source of UI for **both** the web and desktop builds
+- `desktop/` — Electron shell (see below); its renderer is built from `frontend/src`
 - `plugins/` — harness plugins published from this repo (`plugins/deepseek-harness` → the `@agentrq/dsh-plugin-agentrq` bundle for DeepSeek Harness)
+
+## Desktop app (`desktop/`)
+
+The desktop app renders the *same* Vue application as the browser. Both call
+`createAgentRQApp({ history, platform })` from `frontend/src/app.js`, so there is
+exactly one route table — **never add a route anywhere else**, or the two builds
+drift apart silently.
+
+### The app:// proxy — do not reintroduce cross-origin API calls
+
+The frontend addresses the API with same-origin **relative** URLs (`src/api.js`)
+and authenticates with the `at` cookie. Backend CORS is `AllowOrigins: "*"` with
+no `AllowCredentials`, so a renderer on its own origin could never attach that
+cookie.
+
+The desktop renderer is therefore served from a privileged `app://` scheme, and
+`desktop/src/main/protocol.js` forwards `/api`, `/mcp` and `/.well-known` to the
+configured server from the main process, where Electron's session cookie jar
+holds the credentials. **The renderer only ever sees same-origin traffic.**
+
+Consequences worth knowing before changing anything here:
+
+- **Never introduce an absolute API URL in frontend code.** It would work in the
+  browser and break the desktop app, where it becomes a cross-origin request
+  with no cookie.
+- **Never relax backend CORS to accommodate the desktop app.** It does not need
+  it, and doing so widens the attack surface of every deployment.
+- Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
+  bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
+  never on user-agent sniffing or probing for `window.agentrq`.
+
+### Two traps that are invisible in source
+
+- **Tailwind scans from the build root.** The desktop build's Vite root is
+  `desktop/src/renderer`, so a class used only in a file under `desktop/` is
+  silently dropped from the stylesheet — the DOM looks right and the app renders
+  unstyled. `frontend/src/style.css` declares `@source './'` to fix this, and
+  desktop-only *views* live in `frontend/src/desktop/` for the same reason.
+  Moving them into `desktop/` breaks their styling with no error.
+- **macOS only routes a URL scheme an app declares in its bundle.** Calling
+  `app.setAsDefaultProtocolClient()` is enough for Windows and Linux, but the
+  `protocols` entry in `desktop/electron-builder.yml` is what makes
+  `agentrq://` links work on a packaged macOS build.
+
+Full detail, including the verification scripts, is in `desktop/README.md`.
+User-facing documentation is `docs/DESKTOP.md`.
 
 ## Running tests
 
