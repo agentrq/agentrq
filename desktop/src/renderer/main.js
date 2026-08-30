@@ -33,10 +33,20 @@ const connection = await window.agentrq.connection
   .catch(() => ({ configured: false, serverUrl: '' }))
 
 if (connection.configured) {
-  const { app } = createAgentRQApp({
+  const { app, router } = createAgentRQApp({
     history: createWebHistory('/'),
     platform: 'desktop',
   })
+
+  // Clicking a native notification lands here: the shell has already focused
+  // the window, and the router the shared factory built does the navigating.
+  window.agentrq.notifications?.onActivate((route) => {
+    router.push(route).catch(() => {
+      // An unknown or unchanged route is not worth surfacing — the window is
+      // focused either way, which is most of what the click asked for.
+    })
+  })
+
   app.mount('#app')
 } else {
   createApp(ConnectionView, { initialUrl: connection.serverUrl }).mount('#app')

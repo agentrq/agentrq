@@ -101,9 +101,10 @@ describe('resolveServerUrl', () => {
 
 describe('migrateConfig', () => {
   it('passes a current-shape config through', () => {
-    expect(migrateConfig({ version: 1, serverUrl: 'https://example.com' })).toEqual({
+    expect(migrateConfig({ version: 2, serverUrl: 'https://example.com', mutedWorkspaces: ['ws1'] })).toEqual({
       version: CONFIG_VERSION,
       serverUrl: 'https://example.com',
+      mutedWorkspaces: ['ws1'],
     })
   })
 
@@ -111,7 +112,26 @@ describe('migrateConfig', () => {
     expect(migrateConfig({ serverUrl: 'example.com' })).toEqual({
       version: CONFIG_VERSION,
       serverUrl: 'http://example.com',
+      mutedWorkspaces: [],
     })
+  })
+
+  it('migrates a v1 file forward by defaulting the new field', () => {
+    // v1 had no mute list, and notifying for everything is what it did.
+    expect(migrateConfig({ version: 1, serverUrl: 'https://example.com' })).toEqual({
+      version: CONFIG_VERSION,
+      serverUrl: 'https://example.com',
+      mutedWorkspaces: [],
+    })
+  })
+
+  it('discards a mute list that is not a list of ids', () => {
+    for (const bad of ['ws1', 42, { ws1: true }, null]) {
+      expect(migrateConfig({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: bad }).mutedWorkspaces)
+        .toEqual([])
+    }
+    expect(migrateConfig({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: ['ok', '', 7, null] })
+      .mutedWorkspaces).toEqual(['ok'])
   })
 
   it('normalises whatever it finds rather than trusting it', () => {
@@ -124,6 +144,7 @@ describe('migrateConfig', () => {
     expect(migrateConfig({ version: 99, serverUrl: 'https://example.com', theme: 'dark' })).toEqual({
       version: CONFIG_VERSION,
       serverUrl: 'https://example.com',
+      mutedWorkspaces: [],
     })
   })
 
@@ -131,7 +152,7 @@ describe('migrateConfig', () => {
     // Sending the user to the connection screen is mildly annoying; booting
     // pointed at a URL we could not parse is worse.
     for (const raw of [null, undefined, 'a string', 42, [], { serverUrl: 'file:///x' }, {}]) {
-      expect(migrateConfig(raw)).toEqual({ version: CONFIG_VERSION, serverUrl: '' })
+      expect(migrateConfig(raw)).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
     }
   })
 })
@@ -152,7 +173,7 @@ describe('createServerConfigStore', () => {
 
   it('reads a missing file as not configured — the first run', async () => {
     const { store } = makeStore(null)
-    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '' })
+    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
   })
 
   it('reads a stored server back', async () => {
@@ -163,14 +184,18 @@ describe('createServerConfigStore', () => {
   it('treats corrupt JSON as not configured', async () => {
     // A half-written file must not stop the app from starting.
     const { store } = makeStore('{ not json')
-    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '' })
+    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
   })
 
   it('saves a normalised URL and stamps the version', async () => {
     const { store, read } = makeStore(null)
 
     expect(await store.save('example.com/')).toEqual({ ok: true, url: 'http://example.com' })
-    expect(JSON.parse(read())).toEqual({ version: CONFIG_VERSION, serverUrl: 'http://example.com' })
+    expect(JSON.parse(read())).toEqual({
+      version: CONFIG_VERSION,
+      serverUrl: 'http://example.com',
+      mutedWorkspaces: [],
+    })
   })
 
   it('refuses to store an invalid URL', async () => {
@@ -187,6 +212,44 @@ describe('createServerConfigStore', () => {
     const { store } = makeStore(null)
     await store.save('https://example.com')
     expect((await store.load()).serverUrl).toBe('https://example.com')
+  })
+
+  it('keeps mute choices when the server changes', async () => {
+    // Switching server is not a reason to start notifying about workspaces the
+    // user deliberately silenced.
+    const { store } = makeStore(
+      JSON.stringify({ version: 2, serverUrl: 'https://a.example.com', mutedWorkspaces: ['ws1'] })
+    )
+
+    await store.save('https://b.example.com')
+
+    expect(await store.load()).toEqual({
+      version: CONFIG_VERSION,
+      serverUrl: 'https://b.example.com',
+      mutedWorkspaces: ['ws1'],
+    })
+  })
+
+  it('mutes and unmutes a single workspace', async () => {
+    const { store } = makeStore(JSON.stringify({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: [] }))
+
+    expect(await store.setWorkspaceMuted('ws1', true)).toEqual(['ws1'])
+    expect(await store.setWorkspaceMuted('ws2', true)).toEqual(['ws1', 'ws2'])
+    expect(await store.setWorkspaceMuted('ws1', false)).toEqual(['ws2'])
+    expect((await store.load()).mutedWorkspaces).toEqual(['ws2'])
+  })
+
+  it('does not list a workspace twice when muted again', async () => {
+    const { store } = makeStore(JSON.stringify({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: ['ws1'] }))
+
+    expect(await store.setWorkspaceMuted('ws1', true)).toEqual(['ws1'])
+  })
+
+  it('replaces the whole mute list, dropping junk entries', async () => {
+    const { store } = makeStore(null)
+
+    expect(await store.setMutedWorkspaces(['ws1', 'ws1', '', null, 'ws2'])).toEqual(['ws1', 'ws2'])
+    expect(await store.setMutedWorkspaces()).toEqual([])
   })
 
   it('clears the stored server, sending the app back to the first-run screen', async () => {

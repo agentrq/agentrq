@@ -11,7 +11,7 @@ frontend's platform store, which is how a component offers a desktop-only
 affordance without either build growing its own copy of the view.
 
 Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package covers
-phase 1 (`0hua6QI7nXN`), phase 2 (`0hua7LpaQID`) and phase 3 (`0hua8EL8awL`).
+phases 1-4: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`.
 
 ## Running it
 
@@ -105,6 +105,41 @@ EventSource connects and streams normally:
 **No preload SSE bridge is needed and `useEventBus.js` needs no platform
 branch.**
 
+## Notifications
+
+Web Push cannot work in Electron - there is no push service behind it - so the
+desktop app produces the same user-facing behaviour from the event stream it
+already has. The main process holds its own SSE connection (separate from the
+renderer's, because notifications must keep arriving while the window is in the
+background), maps events to native notifications, and drives the dock badge or
+Windows taskbar overlay. Clicking one focuses the window and routes to the task.
+
+Wording, trigger rules and click destinations mirror
+`backend/internal/controller/push/push.go`, so a user moving between the browser
+and the desktop app sees the same notifications for the same events. Only agent
+activity notifies - being told about your own click is noise. Reconnect and
+backoff match `useEventBus.js`: one second, doubling to thirty, and a hard stop
+on 401.
+
+`frontend/src/composables/usePushNotifications.js` is untouched and still serves
+the browser build; the desktop renderer simply never calls it.
+
+Per-workspace muting lives in the workspace settings, beside the browser's push
+toggle, and is stored locally in the same config file as the server URL.
+
+### The backend publishes each task event twice
+
+One task creation reaches the stream twice: the REST handler publishes
+`task.created` directly, and the CRUD-event consumer publishes it again from the
+same write. The renderer never noticed - it just re-renders - but two identical
+native notifications for one event is plainly wrong. Confirmed against a live
+backend: two events in, one notification out.
+
+Notifications are therefore collapsed by `tag` within a short window. That is the
+same field, carrying the same value, that the browser uses to collapse duplicate
+web-push notifications; this applies the mechanism on our side rather than
+changing the backend's publishing.
+
 ### Tailwind scans from the build root, which is not frontend/
 
 Tailwind v4 decides which files to scan by walking out from the build's root.
@@ -141,6 +176,8 @@ src/main/protocol.js        app:// handler and API proxy — the core of the des
 src/main/server-config.js   which server to talk to: normalisation, storage, probing
 src/main/auth.js            OAuth sign-in taken over from the login view's links
 src/main/menu.js            application menu (switch server, log out)
+src/main/sse.js             event-stream client for the main process
+src/main/notifications.js   events -> native notifications, mute rules, badge
 src/main/index.js           lifecycle, window creation, scheme registration, IPC
 src/preload/index.js        the narrow contextBridge surface
 scripts/                    dev launcher, build, spike, e2e verification

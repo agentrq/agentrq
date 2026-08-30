@@ -25,4 +25,24 @@ contextBridge.exposeInMainWorld('agentrq', {
     /** Validate, store, and reload the window on success. */
     save: (url) => ipcRenderer.invoke('agentrq:connection:save', url),
   },
+
+  notifications: {
+    /** @returns {Promise<{supported: boolean, mutedWorkspaces: string[]}>} */
+    get: () => ipcRenderer.invoke('agentrq:notifications:get'),
+    setMuted: (workspaceId, muted) =>
+      ipcRenderer.invoke('agentrq:notifications:setMuted', workspaceId, muted),
+
+    /**
+     * Called with the in-app route when the user clicks a notification.
+     * Only the callback crosses the bridge — never the IPC event object, which
+     * would hand the renderer a handle back into the main process.
+     *
+     * @returns {() => void} unsubscribe
+     */
+    onActivate: (callback) => {
+      const listener = (_event, route) => callback(route)
+      ipcRenderer.on('agentrq:notification:activate', listener)
+      return () => ipcRenderer.off('agentrq:notification:activate', listener)
+    },
+  },
 })

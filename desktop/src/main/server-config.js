@@ -11,8 +11,15 @@ export const DEFAULT_SERVER_URL = 'http://localhost:3000'
 /** Filename under Electron's userData directory. */
 export const CONFIG_FILENAME = 'agentrq-desktop.json'
 
-/** Shape version of the stored config, for migrations. */
-export const CONFIG_VERSION = 1
+/**
+ * Shape version of the stored config.
+ *
+ * v1: { serverUrl }
+ * v2: adds { mutedWorkspaces } — workspaces the desktop app must not raise
+ *     notifications for. A v1 file migrates forward by defaulting it to empty,
+ *     which is the same behaviour it had.
+ */
+export const CONFIG_VERSION = 2
 
 /** Endpoint used to decide whether a URL is really an AgentRQ server. */
 export const CONFIG_PROBE_PATH = '/api/v1/auth/config'
@@ -83,13 +90,18 @@ export function resolveServerUrl({ env = {}, stored = '' } = {}) {
  * guessed at.
  */
 export function migrateConfig(raw) {
-  const empty = { version: CONFIG_VERSION, serverUrl: '' }
+  const empty = { version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
 
   const normalized = normalizeServerUrl(raw.serverUrl)
   return {
     version: CONFIG_VERSION,
     serverUrl: normalized.ok ? normalized.url : '',
+    // Absent in v1, and anything that is not a list of ids is not something to
+    // guess at. Empty means "notify for everything", which is what v1 did.
+    mutedWorkspaces: Array.isArray(raw.mutedWorkspaces)
+      ? raw.mutedWorkspaces.filter((id) => typeof id === 'string' && id !== '')
+      : [],
   }
 }
 
@@ -101,6 +113,9 @@ export function migrateConfig(raw) {
  * @param {(contents: string) => Promise<void>} deps.writeFile
  */
 export function createServerConfigStore({ readFile, writeFile }) {
+  const write = (config) =>
+    writeFile(JSON.stringify({ ...config, version: CONFIG_VERSION }, null, 2))
+
   return {
     /**
      * @returns {Promise<{ version: number, serverUrl: string }>} always a valid
@@ -130,13 +145,34 @@ export function createServerConfigStore({ readFile, writeFile }) {
       const normalized = normalizeServerUrl(input)
       if (!normalized.ok) return normalized
 
-      await writeFile(JSON.stringify({ version: CONFIG_VERSION, serverUrl: normalized.url }, null, 2))
+      // Read-modify-write: switching server must not silently discard the
+      // user's mute choices.
+      const current = await this.load()
+      await write({ ...current, serverUrl: normalized.url })
       return normalized
     },
 
     /** Forget the configured server, sending the app back to the first-run screen. */
     async clear() {
-      await writeFile(JSON.stringify({ version: CONFIG_VERSION, serverUrl: '' }, null, 2))
+      const current = await this.load()
+      await write({ ...current, serverUrl: '' })
+    },
+
+    /** Replace the muted-workspace list. */
+    async setMutedWorkspaces(ids) {
+      const current = await this.load()
+      const mutedWorkspaces = [...new Set((ids ?? []).filter((id) => typeof id === 'string' && id !== ''))]
+      await write({ ...current, mutedWorkspaces })
+      return mutedWorkspaces
+    },
+
+    /** Turn notifications for one workspace on or off. */
+    async setWorkspaceMuted(workspaceId, muted) {
+      const { mutedWorkspaces } = await this.load()
+      const next = muted
+        ? [...mutedWorkspaces, workspaceId]
+        : mutedWorkspaces.filter((id) => id !== workspaceId)
+      return this.setMutedWorkspaces(next)
     },
   }
 }

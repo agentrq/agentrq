@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain, net, protocol, session, shell } from 'electron'
+import { app, BrowserWindow, Menu, Notification, ipcMain, nativeImage, net, protocol, session, shell } from 'electron'
 import { readFile, writeFile, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -13,6 +13,8 @@ import {
 } from './server-config.js'
 import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './auth.js'
 import { buildMenuTemplate } from './menu.js'
+import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
+import { createEventStreamClient } from './sse.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -57,6 +59,43 @@ async function fileExists(pathname) {
   }
 }
 
+/** Workspace id -> display name, for notification bodies. */
+const workspaceNames = new Map()
+let mutedWorkspaces = []
+let eventStream = null
+let unread = null
+
+// One task creation is published twice by the backend — once by the REST
+// handler and once by the CRUD-event consumer — so identical notifications
+// have to be collapsed before they reach the user.
+const notificationGate = createNotificationGate()
+
+async function refreshWorkspaceNames() {
+  if (!serverUrl) return
+  try {
+    const res = await net.fetch(`${serverUrl}/api/v1/workspaces`)
+    if (!res.ok) return
+    const body = await res.json()
+    for (const ws of Array.isArray(body) ? body : (body?.workspaces ?? [])) {
+      if (ws?.id) workspaceNames.set(ws.id, ws.name ?? '')
+    }
+  } catch {
+    // A name is a nicety; a notification without one is still useful.
+  }
+}
+
+function applyBadge(count) {
+  const { badge, overlay } = badgeFor(count, process.platform)
+
+  if (app.dock) app.dock.setBadge(badge)
+  else if (typeof app.setBadgeCount === 'function') app.setBadgeCount(count)
+
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  if (win && process.platform === 'win32') {
+    win.setOverlayIcon(overlay ? nativeImage.createEmpty() : null, overlay?.description ?? '')
+  }
+}
+
 function connectionState() {
   return { configured: Boolean(serverUrl), serverUrl, locked: isConnectionLocked }
 }
@@ -94,7 +133,62 @@ async function startOAuth(win, pathname, search) {
 
   // On success the cookie is already in the jar, so simply reloading lands the
   // user inside the app. On failure the login view is still there to try again.
-  if (result.ok) reloadToRoot(win)
+  if (result.ok) {
+    startEventStream()
+    reloadToRoot(win)
+  }
+}
+
+function focusMainWindow() {
+  const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  if (!win) return null
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  return win
+}
+
+function handleStreamEvent(event) {
+  const notification = mapEventToNotification(event, {
+    mutedWorkspaces,
+    workspaceName: (id) => workspaceNames.get(id) ?? '',
+  })
+  if (!notification) return
+
+  // An unknown workspace means the list is stale — refresh for next time
+  // rather than blocking this notification on a round trip.
+  if (!workspaceNames.has(event.payload.workspaceId)) refreshWorkspaceNames()
+
+  if (!notificationGate.allow(notification.tag)) return
+  if (!Notification.isSupported()) return
+
+  const native = new Notification({ title: notification.title, body: notification.body })
+  native.on('click', () => {
+    const win = focusMainWindow()
+    unread?.clear()
+    // The renderer owns routing: it has the router the shared factory built.
+    win?.webContents.send('agentrq:notification:activate', notification.route)
+  })
+  native.show()
+  unread?.increment()
+}
+
+function startEventStream() {
+  eventStream?.stop()
+  if (!serverUrl) return
+
+  eventStream = createEventStreamClient({
+    streamUrl: () => `${serverUrl}/api/v1/events/stream`,
+    netFetch: net.fetch,
+    onEvent: handleStreamEvent,
+    delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    onUnauthorized: () => {
+      // Signed out. The renderer's own stream sends the user to the login
+      // screen; this one waits to be restarted after a successful sign-in.
+    },
+  })
+  eventStream.start()
+  refreshWorkspaceNames()
 }
 
 function createWindow() {
@@ -115,6 +209,9 @@ function createWindow() {
   })
 
   win.once('ready-to-show', () => win.show())
+
+  // A badge answers "is there anything new"; looking at the app answers it.
+  win.on('focus', () => unread?.clear())
 
   // Anything that is not the app itself belongs in the user's real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -153,10 +250,13 @@ function installMenu(getWindow) {
         if (isConnectionLocked) return
         await configStore.clear()
         serverUrl = ''
+        eventStream?.stop()
         reloadToRoot(getWindow())
       },
       logOut: async () => {
         await session.defaultSession.clearStorageData({ storages: ['cookies'] })
+        eventStream?.stop()
+        unread?.clear()
         reloadToRoot(getWindow())
       },
     },
@@ -175,6 +275,16 @@ function registerIpc(getWindow) {
     return result.ok ? { ok: true, url: result.url } : result
   })
 
+  ipcMain.handle('agentrq:notifications:get', async () => ({
+    supported: Notification.isSupported(),
+    mutedWorkspaces,
+  }))
+
+  ipcMain.handle('agentrq:notifications:setMuted', async (_event, workspaceId, muted) => {
+    mutedWorkspaces = await configStore.setWorkspaceMuted(workspaceId, muted)
+    return { mutedWorkspaces }
+  })
+
   ipcMain.handle('agentrq:connection:save', async (_event, url) => {
     if (isConnectionLocked) {
       return { ok: false, reason: 'Server is pinned by AGENTRQ_SERVER_URL' }
@@ -187,6 +297,7 @@ function registerIpc(getWindow) {
     if (!saved.ok) return saved
 
     serverUrl = saved.url
+    startEventStream()
     reloadToRoot(getWindow())
     return { ok: true, url: saved.url }
   })
@@ -212,9 +323,13 @@ if (!app.requestSingleInstanceLock()) {
       writeFile: (contents) => writeFile(configPath, contents, 'utf-8'),
     })
 
+    const stored = await configStore.load()
+    mutedWorkspaces = stored.mutedWorkspaces
     if (!isConnectionLocked) {
-      serverUrl = (await configStore.load()).serverUrl
+      serverUrl = stored.serverUrl
     }
+
+    unread = createUnreadCounter({ setBadge: applyBadge })
 
     protocol.handle(
       'app',
@@ -234,6 +349,7 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc(getWindow)
     installMenu(getWindow)
     createWindow()
+    startEventStream()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -243,4 +359,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
+
+  app.on('before-quit', () => eventStream?.stop())
 }

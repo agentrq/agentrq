@@ -371,6 +371,21 @@
                             {{ isPushLoading ? '...' : isPushSubscribed ? 'Push Active' : 'Enable Push' }}
                           </span>
                         </button>
+                        <!--
+                          Desktop only. Web Push has no Electron equivalent, so the desktop app
+                          raises native notifications from the event stream instead; this is the
+                          switch for that, per workspace.
+                        -->
+                        <button v-if="isDesktopAlertsAvailable" type="button" @click="toggleDesktopAlerts" :disabled="isDesktopAlertsLoading"
+                                class="flex items-center gap-3 px-4 py-2.5 rounded-sm transition-all shadow-sm border text-left"
+                                :class="isDesktopAlertsEnabled ? 'bg-violet-50 dark:bg-violet-500/10 border-violet-100 dark:border-violet-500/20 hover:bg-violet-100' : 'bg-gray-50 dark:bg-zinc-800 border-gray-200 dark:border-zinc-700 hover:bg-gray-100'">
+                          <svg class="w-3.5 h-3.5 shrink-0" :class="isDesktopAlertsEnabled ? 'text-violet-600 dark:text-violet-400' : 'text-gray-400 dark:text-zinc-500'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          <span class="text-[10px] font-bold uppercase tracking-widest" :class="isDesktopAlertsEnabled ? 'text-violet-700 dark:text-violet-400' : 'text-gray-600 dark:text-zinc-400'">
+                            {{ isDesktopAlertsLoading ? '...' : isDesktopAlertsEnabled ? 'Desktop Alerts On' : 'Desktop Alerts Off' }}
+                          </span>
+                        </button>
                       </div>
                    </div>
                 </div>
@@ -583,6 +598,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
+import { usePlatformStore } from '../stores/platformStore';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -634,6 +650,41 @@ const INPUT_SEND_DELAY_OPTIONS = [
 ];
 
 const { checkWorkspaceSubscription, subscribeWorkspace, unsubscribeWorkspace } = usePushNotifications();
+
+// Desktop-only alerts. The browser build has Web Push for this; the desktop app
+// cannot use it, so it raises native notifications from the event stream and
+// this is the per-workspace switch. Availability is read from the platform
+// store rather than probed from `window.agentrq`, so the browser build never
+// renders the control at all.
+const platformStore = usePlatformStore();
+const isDesktopAlertsAvailable = ref(false);
+const isDesktopAlertsEnabled = ref(false);
+const isDesktopAlertsLoading = ref(false);
+
+async function refreshDesktopAlerts() {
+  if (!platformStore.isDesktop || !window.agentrq?.notifications) return;
+  const state = await window.agentrq.notifications.get();
+  isDesktopAlertsAvailable.value = state.supported;
+  isDesktopAlertsEnabled.value = !state.mutedWorkspaces.includes(workspaceId.value);
+}
+
+async function toggleDesktopAlerts() {
+  if (isDesktopAlertsLoading.value) return;
+  isDesktopAlertsLoading.value = true;
+  try {
+    // Muted is the stored state, so enabling alerts means removing the mute.
+    const { mutedWorkspaces } = await window.agentrq.notifications.setMuted(
+      workspaceId.value,
+      isDesktopAlertsEnabled.value,
+    );
+    isDesktopAlertsEnabled.value = !mutedWorkspaces.includes(workspaceId.value);
+    notifySuccess(isDesktopAlertsEnabled.value ? 'Desktop alerts enabled' : 'Desktop alerts muted');
+  } catch (err) {
+    notifyError('Could not update desktop alerts');
+  } finally {
+    isDesktopAlertsLoading.value = false;
+  }
+}
 const isPushSubscribed = ref(false);
 const isPushLoading = ref(false);
 const isPushAvailable = ref(false); // true when browser supports push AND server has VAPID configured
@@ -920,6 +971,7 @@ async function load() {
 
     await initPushAvailability();
     await refreshPushStatus();
+    await refreshDesktopAlerts();
   } catch (err) {
     notifyError("Failed to load workspace settings: " + err.message);
     router.push('/');
