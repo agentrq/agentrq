@@ -67,8 +67,12 @@ const CHECKS = `(async () => {
   probe.remove();
   record('stylesheet is applied', parseFloat(radius) > 0, 'rounded-3xl -> ' + radius);
 
-  // The desktop bridge is visible to the renderer.
-  record('desktop bridge exposed', window.agentrq?.isDesktop === true, 'platform ' + window.agentrq?.platform);
+  // The desktop bridge is visible to the renderer, with every surface the
+  // shell needs to reach it.
+  const bridge = window.agentrq ?? {};
+  const surfaces = ['connection', 'notifications', 'navigation', 'theme'].filter((k) => bridge[k]);
+  record('desktop bridge exposed', bridge.isDesktop === true && surfaces.length === 4,
+    'platform ' + bridge.platform + ', surfaces: ' + surfaces.join(', '));
 
   // Relative URL, exactly as src/api.js writes it — no absolute server URL anywhere.
   const anon = await fetch('/api/v1/auth/user');

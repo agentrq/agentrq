@@ -32,17 +32,31 @@ contextBridge.exposeInMainWorld('agentrq', {
     setMuted: (workspaceId, muted) =>
       ipcRenderer.invoke('agentrq:notifications:setMuted', workspaceId, muted),
 
+  },
+
+  navigation: {
     /**
-     * Called with the in-app route when the user clicks a notification.
+     * Called with an in-app route whenever the shell asks the app to go
+     * somewhere: a notification click, a deep link, the tray, the global
+     * shortcut, or the menu.
+     *
      * Only the callback crosses the bridge — never the IPC event object, which
      * would hand the renderer a handle back into the main process.
      *
      * @returns {() => void} unsubscribe
      */
-    onActivate: (callback) => {
+    onNavigate: (callback) => {
       const listener = (_event, route) => callback(route)
-      ipcRenderer.on('agentrq:notification:activate', listener)
-      return () => ipcRenderer.off('agentrq:notification:activate', listener)
+      ipcRenderer.on('agentrq:navigate', listener)
+      return () => ipcRenderer.off('agentrq:navigate', listener)
     },
+  },
+
+  theme: {
+    /**
+     * Tell the shell which theme the app is using, so the native chrome follows
+     * the app's own setting rather than the operating system's.
+     */
+    set: (theme) => ipcRenderer.invoke('agentrq:theme:set', theme),
   },
 })

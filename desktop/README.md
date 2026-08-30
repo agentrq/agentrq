@@ -11,7 +11,8 @@ frontend's platform store, which is how a component offers a desktop-only
 affordance without either build growing its own copy of the view.
 
 Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package covers
-phases 1-4: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`.
+phases 1-5: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`,
+`0huaA6sKHoX`.
 
 ## Running it
 
@@ -105,6 +106,42 @@ EventSource connects and streams normally:
 **No preload SSE bridge is needed and `useEventBus.js` needs no platform
 branch.**
 
+## The native shell
+
+Everything the browser cannot offer lives in the main process and reaches the
+app through one navigation channel, so the shared Vue app needs no knowledge of
+any of it:
+
+- **Application menu** with the platform roles plus New Task, Switch Server, Log
+  Out and Check for Updates. The last is present but disabled until phase 6
+  supplies an updater — a menu item that silently does nothing is worse than one
+  that is visibly not ready.
+- **Tray item** carrying the unread count and the workspaces that have been
+  active most recently, ordered by activity rather than alphabetically: it is a
+  shortcut to what is happening now, not a second sidebar.
+- **Global shortcut** `Cmd/Ctrl+Shift+N` for a new task. `Shift` keeps it clear
+  of the browser-standard new-window binding, which matters for a shortcut
+  registered system-wide. Registration failing because another app owns the
+  combination is the user's environment, not an error worth interrupting them
+  over — the same action stays on the menu and the tray.
+- **`agentrq://` deep links**, e.g. `agentrq://workspaces/<id>/tasks/<id>`.
+  These are untrusted input from outside the app, so a link is checked against
+  the routes that actually exist rather than passed to the router; an
+  unrecognised one opens the default view. macOS delivers them as an event,
+  Windows and Linux as an argument to a second launch, which the single-instance
+  lock forwards rather than opening a rival window.
+- **Window state** across restarts, clamped to a display that still exists.
+  Restoring saved coordinates blindly is how a window ends up off-screen after a
+  monitor is unplugged — visible to no one, draggable by no one.
+- **Theme** follows the app's own `themeStore`, never `prefers-color-scheme`. A
+  user who chose light inside AgentRQ should not get a dark title bar because
+  their system is dark. The window background is set from it too, which is what
+  stops a white flash on reload in dark mode.
+
+The tray icon is deliberately an empty image for now: it is an art asset, and
+shipping a wrong-looking one is worse than the platform default. The menu, count
+and tooltip — the parts carrying information — are real.
+
 ## Notifications
 
 Web Push cannot work in Electron - there is no push service behind it - so the
@@ -178,6 +215,10 @@ src/main/auth.js            OAuth sign-in taken over from the login view's links
 src/main/menu.js            application menu (switch server, log out)
 src/main/sse.js             event-stream client for the main process
 src/main/notifications.js   events -> native notifications, mute rules, badge
+src/main/deep-link.js       agentrq:// links -> in-app routes
+src/main/tray.js            tray menu, recent workspaces
+src/main/theme.js           native chrome follows the app's theme store
+src/main/window-state.js    remembering where the window was, safely
 src/main/index.js           lifecycle, window creation, scheme registration, IPC
 src/preload/index.js        the narrow contextBridge surface
 scripts/                    dev launcher, build, spike, e2e verification

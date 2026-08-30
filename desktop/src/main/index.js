@@ -1,4 +1,19 @@
-import { app, BrowserWindow, Menu, Notification, ipcMain, nativeImage, net, protocol, session, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  globalShortcut,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  net,
+  protocol,
+  screen,
+  session,
+  shell,
+} from 'electron'
 import { readFile, writeFile, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -12,9 +27,19 @@ import {
   validateServerUrl,
 } from './server-config.js'
 import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './auth.js'
-import { buildMenuTemplate } from './menu.js'
+import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
 import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
 import { createEventStreamClient } from './sse.js'
+import { DEEP_LINK_SCHEME, deepLinkFromArgv, parseDeepLink } from './deep-link.js'
+import { buildTrayMenuTemplate, createRecentWorkspaces, trayTooltip } from './tray.js'
+import { applyTheme, backgroundColorFor } from './theme.js'
+import {
+  WINDOW_STATE_FILENAME,
+  captureWindowState,
+  clampToDisplays,
+  createWindowStateStore,
+  debounce,
+} from './window-state.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -70,6 +95,14 @@ let unread = null
 // have to be collapsed before they reach the user.
 const notificationGate = createNotificationGate()
 
+const recentWorkspaces = createRecentWorkspaces()
+let windowStateStore
+let restoredWindowState = null
+let tray = null
+let currentTheme = 'system'
+/** Set when a deep link arrives before the window is ready to receive it. */
+let pendingRoute = null
+
 async function refreshWorkspaceNames() {
   if (!serverUrl) return
   try {
@@ -85,6 +118,7 @@ async function refreshWorkspaceNames() {
 }
 
 function applyBadge(count) {
+  refreshTray()
   const { badge, overlay } = badgeFor(count, process.platform)
 
   if (app.dock) app.dock.setBadge(badge)
@@ -139,6 +173,57 @@ async function startOAuth(win, pathname, search) {
   }
 }
 
+/**
+ * Ask the renderer to navigate. The renderer owns the router the shared factory
+ * built, so routing is its job; the shell only ever names a destination.
+ *
+ * A route arriving before the window exists is held rather than dropped — a
+ * deep link is often what *launched* the app.
+ */
+function navigate(route) {
+  if (!route) return
+  const win = focusMainWindow()
+  if (!win || win.webContents.isLoading()) {
+    pendingRoute = route
+    return
+  }
+  win.webContents.send('agentrq:navigate', route)
+}
+
+function openDeepLink(url) {
+  const route = parseDeepLink(url)
+  // An unrecognised link still opens the app: the user asked to see AgentRQ,
+  // and the default view is a better answer than nothing happening.
+  focusMainWindow()
+  if (route) navigate(route)
+}
+
+/** Where "New Task" goes: the most recent workspace, else the workspace list. */
+function newTaskRoute() {
+  const [recent] = recentWorkspaces.list
+  return recent ? `/workspaces/${recent.id}/tasks/new` : '/'
+}
+
+function refreshTray() {
+  if (!tray) return
+  const count = unread?.value ?? 0
+  tray.setToolTip(trayTooltip(count))
+  tray.setContextMenu(
+    Menu.buildFromTemplate(
+      buildTrayMenuTemplate({
+        workspaces: recentWorkspaces.list,
+        unreadCount: count,
+        actions: {
+          open: () => focusMainWindow(),
+          newTask: () => navigate(newTaskRoute()),
+          openWorkspace: (id) => navigate(`/workspaces/${id}`),
+          quit: () => app.quit(),
+        },
+      })
+    )
+  )
+}
+
 function focusMainWindow() {
   const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
   if (!win) return null
@@ -164,13 +249,14 @@ function handleStreamEvent(event) {
 
   const native = new Notification({ title: notification.title, body: notification.body })
   native.on('click', () => {
-    const win = focusMainWindow()
     unread?.clear()
-    // The renderer owns routing: it has the router the shared factory built.
-    win?.webContents.send('agentrq:notification:activate', notification.route)
+    navigate(notification.route)
   })
   native.show()
   unread?.increment()
+  // The tray is the at-a-glance version of the same news.
+  recentWorkspaces.touch(event.payload.workspaceId, workspaceNames.get(event.payload.workspaceId))
+  refreshTray()
 }
 
 function startEventStream() {
@@ -192,13 +278,20 @@ function startEventStream() {
 }
 
 function createWindow() {
+  // Saved coordinates are only safe if the display they referred to still
+  // exists — clamping is what stops a window reopening off-screen after a
+  // monitor is unplugged.
+  const bounds = clampToDisplays(
+    restoredWindowState,
+    screen.getAllDisplays().map((display) => display.workArea)
+  )
+
   const win = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    ...bounds,
     minWidth: 940,
     minHeight: 600,
     show: false,
-    backgroundColor: '#fafafa',
+    backgroundColor: backgroundColorFor(currentTheme, nativeTheme.shouldUseDarkColors),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: PRELOAD,
@@ -208,10 +301,36 @@ function createWindow() {
     },
   })
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (restoredWindowState?.maximized) win.maximize()
+    win.show()
+  })
 
   // A badge answers "is there anything new"; looking at the app answers it.
   win.on('focus', () => unread?.clear())
+
+  // Dragging a window emits these continuously, so the write is debounced —
+  // otherwise one gesture would be hundreds of writes.
+  const persist = debounce(() => {
+    restoredWindowState = captureWindowState(win)
+    windowStateStore?.save(restoredWindowState)
+  }, 500)
+  for (const event of ['resize', 'move', 'maximize', 'unmaximize']) {
+    win.on(event, persist)
+  }
+  win.on('close', () => {
+    restoredWindowState = captureWindowState(win)
+    windowStateStore?.save(restoredWindowState)
+  })
+
+  // A deep link often *is* what launched the app, so a route that arrived
+  // before the renderer existed is delivered once it is ready.
+  win.webContents.on('did-finish-load', () => {
+    if (!pendingRoute) return
+    const route = pendingRoute
+    pendingRoute = null
+    win.webContents.send('agentrq:navigate', route)
+  })
 
   // Anything that is not the app itself belongs in the user's real browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -246,6 +365,7 @@ function installMenu(getWindow) {
     platform: process.platform,
     appName: app.getName(),
     actions: {
+      newTask: () => navigate(newTaskRoute()),
       switchServer: async () => {
         if (isConnectionLocked) return
         await configStore.clear()
@@ -273,6 +393,16 @@ function registerIpc(getWindow) {
     // The probe response carries auth flags that are of no use to the
     // connection screen and would be a needless leak across the bridge.
     return result.ok ? { ok: true, url: result.url } : result
+  })
+
+  // The renderer is the source of truth for appearance — the theme store the
+  // web app already has — so the shell follows it rather than reading the OS.
+  ipcMain.handle('agentrq:theme:set', (_event, theme) => {
+    currentTheme = theme
+    return applyTheme(theme, {
+      nativeTheme,
+      windows: () => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()),
+    })
   })
 
   ipcMain.handle('agentrq:notifications:get', async () => ({
@@ -303,18 +433,50 @@ function registerIpc(getWindow) {
   })
 }
 
+function installTray() {
+  // An empty image is a deliberate placeholder: a tray icon is an art asset,
+  // and shipping a wrong-looking one is worse than the platform's default. The
+  // menu, count and tooltip — the parts that carry information — are real.
+  tray = new Tray(nativeImage.createEmpty())
+  refreshTray()
+  tray.on('click', () => focusMainWindow())
+}
+
+function installGlobalShortcut() {
+  // Registration fails when another application already owns the combination.
+  // That is the user's environment, not an error worth interrupting them over;
+  // the same action stays available from the menu and the tray.
+  globalShortcut.register(QUICK_CREATE_ACCELERATOR, () => navigate(newTaskRoute()))
+}
+
 // A second launch should surface the running app, not start a rival instance
 // with its own cookie jar.
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    const [win] = BrowserWindow.getAllWindows()
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
-    }
+  // Windows and Linux deliver a deep link as an argument to a second launch,
+  // which the single-instance lock forwards here rather than opening a rival
+  // window.
+  app.on('second-instance', (_event, argv) => {
+    const url = deepLinkFromArgv(argv)
+    if (url) openDeepLink(url)
+    else focusMainWindow()
   })
+
+  // macOS delivers it as an event instead, and can do so before the app is
+  // ready — hence the pending-route handling in navigate().
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    openDeepLink(url)
+  })
+
+  // Claim the scheme so the OS routes agentrq:// links here. In development the
+  // executable is Electron itself, which needs the path spelled out.
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [process.argv[1]])
+  } else {
+    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
+  }
 
   app.whenReady().then(async () => {
     const configPath = join(app.getPath('userData'), CONFIG_FILENAME)
@@ -322,6 +484,13 @@ if (!app.requestSingleInstanceLock()) {
       readFile: () => readFile(configPath, 'utf-8'),
       writeFile: (contents) => writeFile(configPath, contents, 'utf-8'),
     })
+
+    const windowStatePath = join(app.getPath('userData'), WINDOW_STATE_FILENAME)
+    windowStateStore = createWindowStateStore({
+      readFile: () => readFile(windowStatePath, 'utf-8'),
+      writeFile: (contents) => writeFile(windowStatePath, contents, 'utf-8'),
+    })
+    restoredWindowState = await windowStateStore.load()
 
     const stored = await configStore.load()
     mutedWorkspaces = stored.mutedWorkspaces
@@ -350,6 +519,11 @@ if (!app.requestSingleInstanceLock()) {
     installMenu(getWindow)
     createWindow()
     startEventStream()
+    installTray()
+    installGlobalShortcut()
+
+    const launchLink = deepLinkFromArgv(process.argv)
+    if (launchLink) openDeepLink(launchLink)
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -360,5 +534,12 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin') app.quit()
   })
 
-  app.on('before-quit', () => eventStream?.stop())
+  app.on('before-quit', () => {
+    eventStream?.stop()
+    globalShortcut.unregisterAll()
+    // A quit that does not close the window first — Cmd+Q, or the tray's Quit —
+    // would otherwise lose whatever the debounced save had not yet written.
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    if (win) windowStateStore?.save(captureWindowState(win))
+  })
 }

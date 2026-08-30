@@ -19,10 +19,11 @@
  * and updates arrive through electron-updater (phase 6, task 0huaAvwzIuH)
  * rather than a waiting worker.
  */
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createWebHistory } from 'vue-router'
 
 import { createAgentRQApp } from '@app/app'
+import { useThemeStore } from '@app/stores/themeStore'
 import ConnectionView from '@app/desktop/ConnectionView.vue'
 
 // A failure here means the shell could not answer, which is not something the
@@ -38,16 +39,28 @@ if (connection.configured) {
     platform: 'desktop',
   })
 
-  // Clicking a native notification lands here: the shell has already focused
-  // the window, and the router the shared factory built does the navigating.
-  window.agentrq.notifications?.onActivate((route) => {
+  // Every "go here" from the shell arrives on one channel: notification
+  // clicks, agentrq:// deep links, the tray, the global shortcut and the menu.
+  // The shell names a destination; the router the shared factory built does
+  // the navigating.
+  window.agentrq.navigation?.onNavigate((route) => {
     router.push(route).catch(() => {
       // An unknown or unchanged route is not worth surfacing — the window is
-      // focused either way, which is most of what the click asked for.
+      // focused either way, which is most of what the request asked for.
     })
   })
 
   app.mount('#app')
+
+  // The theme store is the app's single source of truth for appearance, so the
+  // native chrome follows it rather than the OS. Mounting first means pinia is
+  // active and the stored preference has already been applied.
+  const themeStore = useThemeStore()
+  window.agentrq.theme?.set(themeStore.theme)
+  watch(
+    () => themeStore.theme,
+    (theme) => window.agentrq.theme?.set(theme)
+  )
 } else {
   createApp(ConnectionView, { initialUrl: connection.serverUrl }).mount('#app')
 }

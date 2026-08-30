@@ -1,13 +1,23 @@
 /**
  * Application menu.
  *
- * Only the entries phase 3 needs live here — switching server and signing out,
- * both of which are shell concerns the web app has no equivalent for. The full
- * menu, tray and shortcuts arrive with phase 5 (task 0huaA6sKHoX).
+ * Two kinds of entry live here: the standard platform roles a desktop app is
+ * expected to have, and the AgentRQ actions the web app has no equivalent for —
+ * creating a task from anywhere, switching server, signing out, and checking
+ * for updates.
  *
  * The template is built as plain data so it can be asserted on without
  * launching Electron.
  */
+
+/**
+ * Global shortcut for quick task creation.
+ *
+ * Cmd/Ctrl+Shift+N: `Shift` keeps it clear of the browser-standard "new window"
+ * on Cmd/Ctrl+N, and this is registered *globally*, so it must not collide with
+ * a common system binding.
+ */
+export const QUICK_CREATE_ACCELERATOR = 'CommandOrControl+Shift+N'
 
 /**
  * @param {object} options
@@ -23,15 +33,34 @@ export function buildMenuTemplate({ platform, appName = 'AgentRQ', actions = {} 
     { id: 'log-out', label: 'Log Out', click: actions.logOut },
   ]
 
+  const newTaskItem = {
+    id: 'new-task',
+    label: 'New Task',
+    accelerator: QUICK_CREATE_ACCELERATOR,
+    click: actions.newTask,
+  }
+
+  // Present from the start so the menu does not shift under users later, but
+  // disabled until phase 6 (task 0huaAvwzIuH) supplies a handler — a menu item
+  // that silently does nothing is worse than one that is visibly not ready.
+  const updateItem = {
+    id: 'check-for-updates',
+    label: 'Check for Updates…',
+    enabled: Boolean(actions.checkForUpdates),
+    click: actions.checkForUpdates,
+  }
+
   const template = []
 
   if (isMac) {
-    // macOS convention puts account-level actions in the application menu,
-    // above Quit.
+    // macOS convention: about and update checks at the top of the application
+    // menu, account actions above Quit.
     template.push({
       label: appName,
       submenu: [
         { role: 'about' },
+        { type: 'separator' },
+        updateItem,
         { type: 'separator' },
         ...accountItems,
         { type: 'separator' },
@@ -49,10 +78,18 @@ export function buildMenuTemplate({ platform, appName = 'AgentRQ', actions = {} 
   template.push({
     label: 'File',
     submenu: isMac
-      ? [{ role: 'close' }]
-      : // Elsewhere there is no application menu, so the same actions live
-        // under File alongside Quit.
-        [...accountItems, { type: 'separator' }, { role: 'quit' }],
+      ? [newTaskItem, { type: 'separator' }, { role: 'close' }]
+      : // Elsewhere there is no application menu, so everything lives under
+        // File alongside Quit.
+        [
+          newTaskItem,
+          { type: 'separator' },
+          ...accountItems,
+          { type: 'separator' },
+          updateItem,
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
   })
 
   template.push({ label: 'Edit', role: 'editMenu' })
@@ -71,6 +108,10 @@ export function buildMenuTemplate({ platform, appName = 'AgentRQ', actions = {} 
     ],
   })
   template.push({ label: 'Window', role: 'windowMenu' })
+
+  if (!isMac) {
+    template.push({ label: 'Help', submenu: [{ role: 'about' }] })
+  }
 
   return template
 }
