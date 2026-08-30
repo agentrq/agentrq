@@ -993,6 +993,15 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 			return
 		}
+
+		// Commit the header block right away. net/http buffers the response
+		// until something is written or flushed, so without this the client
+		// receives nothing at all until the first event or the keepalive tick
+		// below — up to 30 seconds. EventSource only fires `onopen` once the
+		// headers land, which left the UI reporting a healthy stream as
+		// disconnected for that whole window.
+		flusher.Flush()
+
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
