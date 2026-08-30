@@ -2,6 +2,11 @@
 
 TaskID: 0huZWzzheT3
 
+> **Status: all eight phases built.** This document is the plan as written plus
+> what actually happened. Where the two differ, the difference is marked — the
+> record is more useful than the prediction. See "What the build changed" at the
+> end.
+
 ## Goal
 
 Ship an Electron desktop application with **exact functional and visual parity** with the
@@ -259,23 +264,62 @@ surfaces, `rounded-lg` actions, `useToasts` for feedback, never a native `confir
 
 ---
 
+## 6. What the build changed
+
+Five things the plan did not anticipate, each found by building or running
+rather than by reading:
+
+**The desktop app rendered unstyled for two phases.** Tailwind v4 anchors its
+source scan at the build root, which for the desktop build is
+`desktop/src/renderer` — so it saw only that `index.html` and dropped every
+utility the shared views use. A 13 KB stylesheet where the web build produced
+102 KB. The DOM was correct throughout, which is why two rounds of end-to-end
+checks missed it: they asserted structure, never appearance. Fixed with an
+explicit `@source`, and the end-to-end checks now assert a *computed* style.
+This is also why desktop-only views live in `frontend/src/desktop/`.
+
+**The backend publishes every task event twice** — once from the REST handler,
+once from the CRUD-event consumer. The renderer never noticed, because
+re-rendering twice looks identical, but it would have fired two identical
+notifications for every task. Collapsed on the `tag` field, which is the same
+mechanism browsers use for duplicate web push.
+
+**macOS only routes a URL scheme an app declares in its bundle.** Runtime
+registration is enough for Windows and Linux, so the deep links of phase 5
+looked complete — and would have shipped completely dead on packaged macOS.
+Only building an installer revealed it.
+
+**The backend never flushed its SSE headers**, so `EventSource.onopen` fired up
+to 30 seconds late — in the browser as much as the desktop app. Fixed
+separately in #361, since it was never desktop-specific.
+
+**Web Push has no equivalent, as expected — but the event payload is thinner
+than the push controller's.** `reply.received` carries the task, not the
+message, so the desktop notification cannot show the reply text the browser
+shows. It names the workspace instead. Closing that gap needs a backend change
+and was not attempted.
+
 ## 5. Open questions
 
-**Q1 — Code signing.** Do we have (or want to buy) an Apple Developer ID certificate plus
+**Q1 — Code signing. STILL OPEN, and now the only thing blocking a release.**
+The pipeline builds unsigned when no certificate is configured, so Windows and
+Linux install and update normally today; macOS runs but cannot update itself.
+Adding the repository secrets turns signing on with no code change. Do we have (or want to buy) an Apple Developer ID certificate plus
 notarization credentials, and a Windows signing certificate? macOS auto-update is impossible
 without the former. If neither is available yet, phases 1–6 still land and phase 7 ships
 unsigned Linux/Windows builds with macOS auto-update deferred.
 
-**Q2 — Server connection model.** The plan assumes the desktop app **connects to an AgentRQ
+**Q2 — Server connection model. ANSWERED: client model, built.** The plan assumed the desktop app **connects to an AgentRQ
 server** the user points it at. The alternative — bundling the Go backend inside the app for a
 fully self-contained offline instance — is a materially larger scope (per-platform native
 binaries, data-directory migration, signing a bundled executable) and would be a separate
-follow-on. Confirm the client model is what you want for v1.
+follow-on and was not built.
 
-**Q3 — Distribution channel.** GitHub Releases as the update feed (assumed), or an eventual
-Mac App Store / Microsoft Store presence? Store distribution forbids self-updating and would
-change phase 6 substantially.
+**Q3 — Distribution channel. ANSWERED: GitHub Releases, built.** A Mac App Store
+or Microsoft Store presence would forbid self-updating and would change phase 6
+substantially; nothing here prevents adding one later alongside.
 
-**Q4 — First desktop-only capability.** The plan builds the seam (`platform: 'desktop'`) for
-capabilities the browser cannot offer. Knowing the first one you actually want would let us
-validate the seam in phase 5 rather than after.
+**Q4 — First desktop-only capability. ANSWERED by building one.** The seam was
+first exercised by the per-workspace desktop-alerts toggle in phase 4, which
+appears only in the desktop build from the same settings view with no fork of
+the component. It works as intended.

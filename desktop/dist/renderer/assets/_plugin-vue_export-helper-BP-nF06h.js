@@ -1,0 +1,1 @@
+function e(){return{toKebabCase:e=>e?e.toLowerCase().trim().replace(/[^a-z0-9]+/g,`-`).replace(/^-+|-+$/g,``):``,liveKebabCase:e=>e?e.toLowerCase().replace(/[\s_]+/g,`-`).replace(/[^a-z0-9-]/g,``):``}}var t=(e,t)=>{let n=e.__vccOpts||e;for(let[e,r]of t)n[e]=r;return n};export{e as n,t};
