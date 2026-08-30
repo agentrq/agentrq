@@ -1,0 +1,155 @@
+name: Desktop Release
+
+# The published GitHub Release is also the auto-update feed: electron-updater
+# reads the latest*.yml manifests published alongside the installers. Anything
+# that breaks this workflow stops existing installs updating, not just new
+# downloads.
+on:
+  push:
+    tags:
+      - 'v*'
+  # A packaging break is invisible to the ordinary test workflow, which never
+  # runs electron-builder. This job builds without publishing so review catches
+  # it instead of a release attempt.
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'frontend/**'
+      - '.github/workflows/desktop-release.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # Cheap, and it fails the whole release before any 20-minute build starts.
+  versions:
+    name: Version sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check desktop, frontend and backend agree
+        working-directory: desktop
+        # Also asserts the tag matches, so v0.5.0 cannot be cut from a tree
+        # still stamped 0.4.8 — that would publish artifacts named for one
+        # version inside a release named for another, and offer users an
+        # "update" to the build they already have.
+        run: node scripts/check-versions.mjs
+
+  build:
+    name: Build ${{ matrix.os }}
+    needs: versions
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The renderer is built from ../frontend/src, and those modules resolve
+      # their own dependencies out of frontend/node_modules.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Test
+        working-directory: desktop
+        run: npm run test:coverage
+
+      # Signing is credential-gated rather than assumed. Without a certificate
+      # the build still succeeds and ships unsigned: Windows and Linux install
+      # and update normally, while macOS auto-update stays unavailable because
+      # Squirrel.Mac refuses to install onto an unsigned app. Adding the
+      # secrets is all that is needed to turn it on.
+      - name: Detect signing credentials
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.MAC_CERTIFICATE }}${{ secrets.WIN_CERTIFICATE }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing certificate configured; building unsigned. macOS auto-update will not work for this release."
+          fi
+
+      - name: Build and publish
+        working-directory: desktop
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS Developer ID, and the Apple account used to notarize.
+          CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows certificate, reusing electron-builder's CSC_* convention.
+          WIN_CSC_LINK: ${{ secrets.WIN_CERTIFICATE }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTIFICATE_PASSWORD }}
+          # Without this, electron-builder hunts the runner's keychain and
+          # fails confusingly instead of building an unsigned app.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.available }}
+        run: |
+          npm run build
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Prove it packages; publish nothing.
+            npx electron-builder --publish never
+          else
+            npx electron-builder --publish always
+          fi
+
+      # Kept for a tag build too: if publishing ever fails, the installers are
+      # still recoverable from the run rather than needing a rebuild.
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentrq-desktop-${{ matrix.os }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.exe
+            desktop/release/*.AppImage
+            desktop/release/*.deb
+            desktop/release/latest*.yml
+
+  # electron-builder attaches to a draft; publishing only once every platform
+  # has finished means users never see a release missing the installer for
+  # their machine, and electron-updater never reads a half-populated feed.
+  publish:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          echo "Published $TAG" >> "$GITHUB_STEP_SUMMARY"

@@ -68,6 +68,13 @@ describe('describeUpdateError', () => {
     expect(describeUpdateError(new Error('Cannot find latest.yml'))).toBe('No published release to update to')
   })
 
+  it('recognises a build that was never set up to update itself', () => {
+    // Only a build packaged with a publish configuration carries app-update.yml;
+    // an unpackaged or --dir build hits this and the raw ENOENT explains nothing.
+    expect(describeUpdateError(new Error("ENOENT: no such file or directory, open '/x/app-update.yml'")))
+      .toBe('This build has no update configuration')
+  })
+
   it('passes an unrecognised message through rather than hiding it', () => {
     expect(describeUpdateError(new Error('something odd'))).toBe('something odd')
   })

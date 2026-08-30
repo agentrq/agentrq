@@ -2,7 +2,7 @@
   "name": "agentrq-desktop",
   "private": true,
   "version": "0.4.8",
-  "description": "AgentRQ desktop application",
+  "description": "AgentRQ desktop app \u2014 AI-powered task queue for autonomous agents",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
@@ -13,7 +13,10 @@
     "test:coverage": "vitest run --coverage",
     "spike:eventsource": "npm run build && electron scripts/spike-eventsource.mjs",
     "verify:e2e": "npm run build && electron scripts/verify-e2e.mjs",
-    "verify:connection": "npm run build && electron scripts/verify-connection.mjs"
+    "verify:connection": "npm run build && electron scripts/verify-connection.mjs",
+    "check:versions": "node scripts/check-versions.mjs",
+    "package": "npm run build && electron-builder --publish never",
+    "package:dir": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "electron-updater": "^6.6.2"
@@ -30,5 +33,14 @@
   },
   "volta": {
     "node": "25.1.0"
+  },
+  "author": {
+    "name": "AgentRQ",
+    "email": "hi@agentrq.com"
+  },
+  "homepage": "https://agentrq.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentrq/agentrq.git"
   }
 }

@@ -58,8 +58,13 @@ export function describeUpdateError(error) {
   if (/net::|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN/i.test(message)) {
     return 'Could not reach the update server'
   }
-  if (/404|no published versions|latest.yml/i.test(message)) {
+  if (/404|no published versions|latest.*\.yml/i.test(message)) {
     return 'No published release to update to'
+  }
+  // Only a build packaged with a publish configuration carries this file, so
+  // its absence means the build was never set up to update itself.
+  if (/app-update\.yml/i.test(message)) {
+    return 'This build has no update configuration'
   }
   return message
 }

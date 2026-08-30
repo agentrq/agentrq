@@ -1,0 +1,85 @@
+# Packaging for the AgentRQ desktop app.
+#
+# The published GitHub Release is also the auto-update feed: electron-updater
+# reads the `latest*.yml` manifests electron-builder writes alongside the
+# installers, so those files matter as much as the artifacts themselves.
+
+appId: com.agentrq.desktop
+productName: AgentRQ
+copyright: Copyright © 2026 AgentRQ
+
+directories:
+  output: release
+  buildResources: resources
+
+# The renderer, main and preload bundles, plus package.json for the version.
+# Production dependencies (electron-updater) are included automatically.
+files:
+  - dist/**/*
+  - package.json
+
+# Both are the app's own icon, shared with the web build rather than duplicated.
+icon: ../frontend/public/large-icon.png
+
+# Deep links. `app.setAsDefaultProtocolClient()` at runtime is enough for
+# Windows and Linux, but macOS only routes a scheme to an app that declares it
+# in its bundle — without this, agentrq:// links silently do nothing on a
+# packaged macOS build, which no amount of runtime code can fix.
+protocols:
+  - name: AgentRQ
+    schemes: [agentrq]
+
+publish:
+  provider: github
+  owner: agentrq
+  repo: agentrq
+  # Artifacts are attached to a draft release; the workflow publishes it once
+  # every platform has finished, so users never see a release missing the
+  # installer for their machine.
+  releaseType: draft
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    # dmg is what people download; zip is what Squirrel.Mac reads to update.
+    # Both architectures, because an Intel user offered an arm64 update would
+    # be stuck.
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Hardened runtime and the entitlements below are prerequisites for
+  # notarization; harmless on an unsigned build.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    # macOS refuses to show the microphone prompt without a reason string, and
+    # the speech-to-text pipeline would fail silently.
+    NSMicrophoneUsageDescription: AgentRQ uses the microphone for voice dictation.
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Updates are applied by the app itself, so the installer should not demand
+  # the user close and reopen it.
+  deleteAppDataOnUninstall: false
+
+linux:
+  category: Development
+  maintainer: AgentRQ <hi@agentrq.com>
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]

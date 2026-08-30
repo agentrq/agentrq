@@ -11,8 +11,8 @@ frontend's platform store, which is how a component offers a desktop-only
 affordance without either build growing its own copy of the view.
 
 Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package covers
-phases 1-6: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`,
-`0huaA6sKHoX`, `0huaAvwzIuH`.
+phases 1-7: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`,
+`0huaA6sKHoX`, `0huaAvwzIuH`, `0huaBmzhpvl`.
 
 ## Running it
 
@@ -24,6 +24,9 @@ npm run dev                     # Vite dev server + Electron, with HMR
 npm run build                   # bundles renderer, main and preload into dist/
 npm start                       # build, then run the packaged entry
 npm run test:coverage           # unit tests, gated at 100% on main-process modules
+npm run check:versions          # desktop, frontend and backend must agree
+npm run package                 # real installers into release/, published nowhere
+npm run package:dir             # unpacked app, much faster, for checking the bundle
 ```
 
 On first run the app asks which AgentRQ server to connect to, defaulting to
@@ -141,6 +144,57 @@ any of it:
 The tray icon is deliberately an empty image for now: it is an art asset, and
 shipping a wrong-looking one is worse than the platform default. The menu, count
 and tooltip — the parts carrying information — are real.
+
+## Releasing
+
+Tagging `v<version>` runs `.github/workflows/desktop-release.yml`, which builds
+on all three platforms and publishes to a GitHub Release:
+
+| Runner | Targets |
+|---|---|
+| macos-latest | dmg + zip, arm64 and x64 |
+| windows-latest | NSIS, x64 |
+| ubuntu-latest | AppImage + deb, x64 |
+
+That Release is also the update feed, so the `latest*.yml` manifests published
+beside the installers matter as much as the installers do.
+
+Two things guard it. Versions are checked first, in a job that costs seconds and
+fails before any twenty-minute build starts: the desktop, frontend and backend
+versions must agree, and the tag must match them — `v0.5.0` cannot be cut from a
+tree stamped 0.4.8, which would name a release for one version and fill it with
+artifacts for another. And the release is assembled as a **draft**, published
+only once every platform has finished, so nobody ever sees a release missing the
+installer for their machine and no updater reads a half-populated feed.
+
+Pull requests touching `desktop/` or `frontend/` run the same build without
+publishing, because a packaging break is invisible to the ordinary test job —
+that one never runs electron-builder at all.
+
+### Signing
+
+Signing is credential-gated rather than assumed. With no certificate configured
+the build still succeeds and ships unsigned:
+
+- **Windows and Linux** install and update normally; Windows shows a SmartScreen
+  warning on first install.
+- **macOS cannot auto-update at all.** Squirrel.Mac validates the signature
+  before installing, so an unsigned macOS build can be downloaded and run but
+  never updates itself. The app reports this as *"This build is not signed, so
+  it cannot update itself"* rather than a raw error.
+
+Adding these secrets is all that is needed to turn signing on:
+`MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, and optionally
+`WIN_CERTIFICATE` / `WIN_CERTIFICATE_PASSWORD`.
+
+### Deep links have to be declared at packaging time
+
+`app.setAsDefaultProtocolClient()` at runtime is enough for Windows and Linux,
+but macOS only routes a scheme to an app that declares it in its bundle. The
+`protocols` entry in `electron-builder.yml` is what puts `CFBundleURLTypes` in
+`Info.plist`; without it `agentrq://` links silently do nothing on a packaged
+macOS build, and no amount of runtime code fixes that.
 
 ## Auto-update
 
