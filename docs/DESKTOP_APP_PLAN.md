@@ -229,10 +229,19 @@ Phases 1–2 are sequential; 3–6 can proceed in parallel once 2 lands; 7 depen
 with no `AllowCredentials`, so a conventional cross-origin renderer could not authenticate.
 The main-process proxy sidesteps this entirely and needs no backend change.
 
-**R2 — `EventSource` under a custom scheme (needs validation in phase 1).** Chromium may
-restrict `EventSource` to http/https even for a privileged scheme. If it does, the fallback is
-a preload SSE bridge (`window.agentrq.subscribeEvents`) with a small platform branch inside
-`useEventBus.js` — one file, contained.
+**R2 — `EventSource` under a custom scheme. RESOLVED in phase 1: it works.** The concern was
+that Chromium might restrict `EventSource` to http/https even for a privileged scheme, which
+would have forced a preload SSE bridge and a platform branch inside `useEventBus.js`. With the
+scheme registered as `standard` + `secure` + `stream` + `supportFetchAPI`, EventSource
+connects and streams normally — verified both in isolation
+(`desktop/scripts/spike-eventsource.mjs`) and against a real backend through the proxy
+(`desktop/scripts/verify-e2e.mjs`). No bridge is needed and `useEventBus.js` is unchanged.
+
+**R2b — the backend never flushes its SSE headers (found while verifying R2).** Go buffers the
+response until the first event or the 30-second keepalive, so `EventSource.onopen` fires up to
+30 seconds late. This affects the **web** frontend today, not just the desktop app: the
+connection indicator reads disconnected on a healthy stream. Reproduced with plain curl.
+Tracked as `0huclLMe3BB`; the fix is a single `flusher.Flush()` after the headers.
 
 **R3 — macOS auto-update requires signing.** Without a Developer ID certificate and
 notarization, macOS auto-update simply does not function. Blocking for phase 7 (Q1).
