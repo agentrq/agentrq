@@ -129,9 +129,14 @@ describe('tagMatchesVersion', () => {
     expect(tagMatchesVersion(null, '0.4.8').ok).toBe(true)
   })
 
-  it('is not fooled by a branch ref', () => {
-    // refs/heads/main is not a tag; stripping only the tag prefix leaves it
-    // unequal to the version, which is the correct answer for a release build.
-    expect(tagMatchesVersion('refs/heads/main', '0.4.8').ok).toBe(false)
+  it('ignores a ref that is not a tag at all', () => {
+    // This check runs on every build, not only releases. GITHUB_REF is
+    // refs/pull/N/merge on a pull request and refs/heads/<name> on a branch
+    // push; treating either as a mismatched tag fails every non-release build.
+    expect(tagMatchesVersion('refs/pull/367/merge', '0.4.8')).toEqual({
+      ok: true,
+      reason: 'not a tag build',
+    })
+    expect(tagMatchesVersion('refs/heads/main', '0.4.8').ok).toBe(true)
   })
 })

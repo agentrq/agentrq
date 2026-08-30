@@ -82,9 +82,17 @@ export function compareVersions(versions) {
  * @param {string} ref  a git ref such as `refs/tags/v0.5.0`, or a bare tag
  */
 export function tagMatchesVersion(ref, version) {
-  const tag = String(ref ?? '').replace(/^refs\/tags\//, '')
-  if (!tag) return { ok: true, reason: 'no tag to check' }
+  const raw = String(ref ?? '')
+  if (!raw) return { ok: true, reason: 'no tag to check' }
 
+  // GITHUB_REF is set on every build, not only releases: a pull request gets
+  // refs/pull/N/merge and a branch push gets refs/heads/<name>. Neither is a
+  // tag, so there is nothing here to disagree with the version.
+  if (raw.startsWith('refs/') && !raw.startsWith('refs/tags/')) {
+    return { ok: true, reason: 'not a tag build' }
+  }
+
+  const tag = raw.replace(/^refs\/tags\//, '')
   const tagged = tag.replace(/^v/, '')
   if (tagged !== version) {
     return { ok: false, reason: `tag ${tag} does not match version ${version}` }
