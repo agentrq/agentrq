@@ -11,8 +11,8 @@ frontend's platform store, which is how a component offers a desktop-only
 affordance without either build growing its own copy of the view.
 
 Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package covers
-phases 1-5: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`,
-`0huaA6sKHoX`.
+phases 1-6: `0hua6QI7nXN`, `0hua7LpaQID`, `0hua8EL8awL`, `0hua8txMLIn`,
+`0huaA6sKHoX`, `0huaAvwzIuH`.
 
 ## Running it
 
@@ -142,6 +142,38 @@ The tray icon is deliberately an empty image for now: it is an art asset, and
 shipping a wrong-looking one is worse than the platform default. The menu, count
 and tooltip — the parts carrying information — are real.
 
+## Auto-update
+
+Updates come from this repository's GitHub Releases, published by the workflow
+in phase 7. The app checks at launch and every six hours, downloads in the
+background, and installs on quit if the user never acts on the prompt.
+
+The prompt itself is **App.vue's existing "a new version is available" banner** —
+the one the browser build shows when a service worker is waiting. The desktop
+build resolves `virtual:pwa-register/vue` to
+`frontend/src/desktop/useDesktopUpdates.js`, which presents the Electron updater
+through the same interface App.vue already consumes. So the desktop update
+prompt is pixel-identical to the web one by construction, App.vue knows about
+neither, and the design system's ban on native modals is satisfied without
+inventing anything.
+
+Transient states go through the toast system instead: checking, up to date, and
+failures. A background check that finds nothing stays **silent** — six-hourly
+"you are up to date" toasts would be pure noise — while the same answer to a
+question asked from the menu is reported, because someone is waiting for it.
+
+**Updates are hard-disabled when the app is unpackaged**, so `make dev` never
+reaches the update path. Asking from the menu in a development build says so
+rather than appearing broken.
+
+### macOS needs a signed build
+
+Squirrel.Mac validates the code signature before installing, so an unsigned
+macOS build cannot update itself at all. That is a phase 7 concern (signing
+certificates, still an open question in the plan); the failure is recognised and
+reported here as *"This build is not signed, so it cannot update itself"* rather
+than as a raw error nobody could act on. Windows and Linux are unaffected.
+
 ## Notifications
 
 Web Push cannot work in Electron - there is no push service behind it - so the
@@ -219,6 +251,7 @@ src/main/deep-link.js       agentrq:// links -> in-app routes
 src/main/tray.js            tray menu, recent workspaces
 src/main/theme.js           native chrome follows the app's theme store
 src/main/window-state.js    remembering where the window was, safely
+src/main/updater.js         auto-update state machine over electron-updater
 src/main/index.js           lifecycle, window creation, scheme registration, IPC
 src/preload/index.js        the narrow contextBridge surface
 scripts/                    dev launcher, build, spike, e2e verification

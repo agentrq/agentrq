@@ -26,10 +26,12 @@ export default defineConfig({
       // The whole point of the desktop package: the renderer is built from the
       // frontend's own sources, not a copy of them.
       { find: '@app', replacement: FRONTEND_SRC },
-      // vite-plugin-pwa is not in this build, so its virtual module needs a
-      // stand-in — see the stub for why the desktop ships no service worker.
-      // It lives in frontend/ because the frontend's own test run needs it too.
-      { find: 'virtual:pwa-register/vue', replacement: resolvePath('../frontend/stubs/pwa-register.js') },
+      // The desktop ships no service worker, so vite-plugin-pwa's virtual
+      // module needs a stand-in. Rather than an inert one, it resolves to the
+      // Electron updater bridge: App.vue's existing "new version available"
+      // banner is exactly the prompt an app update needs, so the desktop drives
+      // that instead of growing a second banner beside it.
+      { find: 'virtual:pwa-register/vue', replacement: resolvePath('../frontend/src/desktop/useDesktopUpdates.js') },
       // The shared runtime packages come from frontend/node_modules. This
       // package deliberately installs no copy of its own: a file under
       // desktop/src could not otherwise resolve `vue-router`, and two copies of

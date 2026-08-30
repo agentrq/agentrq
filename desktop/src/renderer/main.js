@@ -24,6 +24,7 @@ import { createWebHistory } from 'vue-router'
 
 import { createAgentRQApp } from '@app/app'
 import { useThemeStore } from '@app/stores/themeStore'
+import { useToasts } from '@app/composables/useToasts'
 import ConnectionView from '@app/desktop/ConnectionView.vue'
 
 // A failure here means the shell could not answer, which is not something the
@@ -51,6 +52,26 @@ if (connection.configured) {
   })
 
   app.mount('#app')
+
+  // Transient update states are reported through the toast system. The one
+  // state that is not transient — an update downloaded and waiting — raises
+  // App.vue's existing "new version available" banner instead, which is both
+  // the right affordance and identical to what the browser build shows.
+  const { notifyInfo, notifySuccess, notifyError } = useToasts()
+  let lastUpdateStatus = null
+  window.agentrq.updates?.onStatus((state) => {
+    if (state.status === lastUpdateStatus) return
+    lastUpdateStatus = state.status
+    // A six-hourly background check that finds nothing must stay silent;
+    // the same answer to a question the user asked should be reported.
+    if (!state.announce) return
+
+    if (state.status === 'checking') notifyInfo('Checking for updates…', 'Updates')
+    else if (state.status === 'up-to-date') notifySuccess('AgentRQ is up to date', 'Updates')
+    else if (state.status === 'available') notifyInfo(`Downloading version ${state.version}…`, 'Updates')
+    else if (state.status === 'error') notifyError(state.detail, 'Update failed')
+    else if (state.status === 'disabled') notifyInfo(state.detail, 'Updates')
+  })
 
   // The theme store is the app's single source of truth for appearance, so the
   // native chrome follows it rather than the OS. Mounting first means pinia is

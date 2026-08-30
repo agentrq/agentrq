@@ -32,7 +32,7 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      include: ['src/app.js', 'src/stores/platformStore.js'],
+      include: ['src/app.js', 'src/stores/platformStore.js', 'src/desktop/*.js'],
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 100,

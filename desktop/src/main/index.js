@@ -30,6 +30,11 @@ import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './aut
 import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
 import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
 import { createEventStreamClient } from './sse.js'
+import { UpdateStatus, createUpdater } from './updater.js'
+// Externalised by the build, so this resolves from node_modules at runtime.
+// Importing it is inert; the dev guard is about never *using* it against a
+// development checkout.
+import electronUpdater from 'electron-updater'
 import { DEEP_LINK_SCHEME, deepLinkFromArgv, parseDeepLink } from './deep-link.js'
 import { buildTrayMenuTemplate, createRecentWorkspaces, trayTooltip } from './tray.js'
 import { applyTheme, backgroundColorFor } from './theme.js'
@@ -102,6 +107,9 @@ let tray = null
 let currentTheme = 'system'
 /** Set when a deep link arrives before the window is ready to receive it. */
 let pendingRoute = null
+let updater = null
+/** Last update state, so a renderer that loads later is not left in the dark. */
+let updateState = { status: UpdateStatus.Idle, detail: '', version: '', enabled: false }
 
 async function refreshWorkspaceNames() {
   if (!serverUrl) return
@@ -216,6 +224,7 @@ function refreshTray() {
         actions: {
           open: () => focusMainWindow(),
           newTask: () => navigate(newTaskRoute()),
+      checkForUpdates: () => updater?.checkNow(),
           openWorkspace: (id) => navigate(`/workspaces/${id}`),
           quit: () => app.quit(),
         },
@@ -366,6 +375,7 @@ function installMenu(getWindow) {
     appName: app.getName(),
     actions: {
       newTask: () => navigate(newTaskRoute()),
+      checkForUpdates: () => updater?.checkNow(),
       switchServer: async () => {
         if (isConnectionLocked) return
         await configStore.clear()
@@ -397,6 +407,10 @@ function registerIpc(getWindow) {
 
   // The renderer is the source of truth for appearance — the theme store the
   // web app already has — so the shell follows it rather than reading the OS.
+  ipcMain.handle('agentrq:update:get', () => updateState)
+  ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
+  ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
+
   ipcMain.handle('agentrq:theme:set', (_event, theme) => {
     currentTheme = theme
     return applyTheme(theme, {
@@ -431,6 +445,21 @@ function registerIpc(getWindow) {
     reloadToRoot(getWindow())
     return { ok: true, url: saved.url }
   })
+}
+
+function installUpdater() {
+  updater = createUpdater({
+    autoUpdater: electronUpdater.autoUpdater,
+    // The real guard: unpackaged means no release to compare against, and no
+    // business replacing a development checkout with a downloaded build.
+    isPackaged: app.isPackaged,
+    onStatus: (state) => {
+      updateState = { ...state, enabled: updater?.state.enabled ?? false }
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+      win?.webContents.send('agentrq:update:status', updateState)
+    },
+  })
+  updater.start()
 }
 
 function installTray() {
@@ -521,6 +550,7 @@ if (!app.requestSingleInstanceLock()) {
     startEventStream()
     installTray()
     installGlobalShortcut()
+    installUpdater()
 
     const launchLink = deepLinkFromArgv(process.argv)
     if (launchLink) openDeepLink(launchLink)
@@ -536,6 +566,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     eventStream?.stop()
+    updater?.stop()
     globalShortcut.unregisterAll()
     // A quit that does not close the window first — Cmd+Q, or the tray's Quit —
     // would otherwise lose whatever the debounced save had not yet written.

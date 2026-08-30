@@ -70,8 +70,9 @@ const CHECKS = `(async () => {
   // The desktop bridge is visible to the renderer, with every surface the
   // shell needs to reach it.
   const bridge = window.agentrq ?? {};
-  const surfaces = ['connection', 'notifications', 'navigation', 'theme'].filter((k) => bridge[k]);
-  record('desktop bridge exposed', bridge.isDesktop === true && surfaces.length === 4,
+  const expected = ['connection', 'notifications', 'navigation', 'theme', 'updates'];
+  const surfaces = expected.filter((k) => bridge[k]);
+  record('desktop bridge exposed', bridge.isDesktop === true && surfaces.length === expected.length,
     'platform ' + bridge.platform + ', surfaces: ' + surfaces.join(', '));
 
   // Relative URL, exactly as src/api.js writes it — no absolute server URL anywhere.
@@ -103,8 +104,41 @@ const CHECKS = `(async () => {
   });
   record('SSE stream connects through proxy', sse.pass, sse.detail);
 
+  record('no update banner before there is an update',
+    !document.body.textContent.includes('A new version of AgentRQ is available'),
+    'banner absent');
+
   return out;
 })()`
+
+/** Run after an update is announced: the shared banner should be showing. */
+const UPDATE_CHECKS = `(async () => {
+  const out = [];
+  const record = (name, pass, detail) => out.push({ name, pass, detail });
+
+  const banner = [...document.querySelectorAll('div')].find(
+    (el) => el.textContent.trim().startsWith('A new version of AgentRQ is available')
+  );
+  record('a ready update raises the shared update banner', !!banner, banner ? 'banner shown' : 'not shown');
+
+  const button = banner && [...banner.querySelectorAll('button')].find(
+    (b) => b.textContent.trim().toLowerCase() === 'update now'
+  );
+  record('the banner offers Update now', !!button, button ? button.textContent.trim() : 'no button');
+
+  // Same component as the browser build, so the styling is the browser's.
+  record('the banner is styled', !!button && parseFloat(getComputedStyle(button).borderRadius) > 0,
+    button ? getComputedStyle(button).borderRadius : 'n/a');
+
+  return out;
+})()`
+
+// A verification script that hangs is worse than one that fails: it blocks a
+// run with no signal at all.
+setTimeout(() => {
+  console.error('✗ verification timed out')
+  app.exit(3)
+}, 60000)
 
 app.whenReady().then(async () => {
   // Electron persists the cookie jar across runs, so without this the
@@ -120,6 +154,14 @@ app.whenReady().then(async () => {
     serverUrl,
     locked: true,
   }))
+
+  // Update state, driven by the checks below. The real updater is exercised by
+  // its unit tests; what needs proving here is that a 'ready' state reaches
+  // App.vue's existing banner rather than needing a second one.
+  let updateState = { status: 'idle', detail: '', version: '', enabled: true, announce: false }
+  ipcMain.handle('agentrq:update:get', () => updateState)
+  ipcMain.handle('agentrq:update:install', () => true)
+  ipcMain.handle('agentrq:theme:set', () => ({ source: 'system', color: '#fafafa' }))
 
   protocol.handle(
     'app',
@@ -148,6 +190,17 @@ app.whenReady().then(async () => {
     console.error('✗ checks threw:', err)
     app.exit(1)
     return
+  }
+
+  // Announce a downloaded update and re-check: the desktop drives the same
+  // banner the browser build uses for a waiting service worker.
+  updateState = { status: 'ready', detail: '', version: '9.9.9', enabled: true, announce: true }
+  win.webContents.send('agentrq:update:status', updateState)
+  await new Promise((r) => setTimeout(r, 600))
+  try {
+    results.push(...(await win.webContents.executeJavaScript(UPDATE_CHECKS)))
+  } catch (err) {
+    results.push({ name: 'update banner checks', pass: false, detail: String(err?.message ?? err) })
   }
 
   console.log(`\n─── app:// proxy against ${serverUrl} ───`)

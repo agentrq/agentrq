@@ -52,6 +52,30 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
   },
 
+  updates: {
+    /** @returns {Promise<{status: string, detail: string, version: string, enabled: boolean}>} */
+    get: () => ipcRenderer.invoke('agentrq:update:get'),
+    /** The menu's "Check for Updates…" also routes through here. */
+    check: () => ipcRenderer.invoke('agentrq:update:check'),
+    /** Restart into the downloaded version. */
+    installNow: () => ipcRenderer.invoke('agentrq:update:install'),
+
+    /**
+     * Called on every change of update state. Only the state crosses the
+     * bridge — never the IPC event object.
+     *
+     * @returns {() => void} unsubscribe
+     */
+    onStatus: (callback) => {
+      const listener = (_event, state) => callback(state)
+      ipcRenderer.on('agentrq:update:status', listener)
+      // The shell may have settled on a state before this renderer existed —
+      // a check runs at launch — so the current one is delivered immediately.
+      ipcRenderer.invoke('agentrq:update:get').then(callback).catch(() => {})
+      return () => ipcRenderer.off('agentrq:update:status', listener)
+    },
+  },
+
   theme: {
     /**
      * Tell the shell which theme the app is using, so the native chrome follows
