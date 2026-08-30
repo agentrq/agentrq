@@ -30,7 +30,7 @@ npm run package:dir             # unpacked app, much faster, for checking the bu
 ```
 
 On first run the app asks which AgentRQ server to connect to, defaulting to
-`http://localhost:3000`. The URL is probed before it is stored, so a typo is
+the hosted instance at `https://app.agentrq.com`. The URL is probed before it is stored, so a typo is
 caught there rather than surfacing later as a mysterious failure to sign in. The
 choice lives in `agentrq-desktop.json` under Electron's userData directory, and
 **Switch Server** in the application menu returns to that screen.
@@ -188,6 +188,20 @@ Adding these secrets is all that is needed to turn signing on:
 `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, and optionally
 `WIN_CERTIFICATE` / `WIN_CERTIFICATE_PASSWORD`.
 
+Until those exist, the supported way for a macOS user to move between versions
+is the install script, which lives in the `agentrq-static` repository at
+`src/install.sh` and is published as <https://agentrq.com/install.sh>:
+
+```sh
+curl -fsSL https://agentrq.com/install.sh | sh
+```
+
+It replaces the bundle wholesale rather than asking Squirrel.Mac to patch it, so
+the signature check never enters into it, and it clears the quarantine attribute
+so Gatekeeper does not challenge the result. That matters more than it used to:
+macOS 15 removed the right-click -> Open bypass, so an unsigned app downloaded
+by hand now needs a trip through System Settings.
+
 ### Deep links have to be declared at packaging time
 
 `app.setAsDefaultProtocolClient()` at runtime is enough for Windows and Linux,
@@ -227,6 +241,10 @@ macOS build cannot update itself at all. That is a phase 7 concern (signing
 certificates, still an open question in the plan); the failure is recognised and
 reported here as *"This build is not signed, so it cannot update itself"* rather
 than as a raw error nobody could act on. Windows and Linux are unaffected.
+
+The escape hatch is `https://agentrq.com/install.sh` -- see
+[Signing](#signing). It is worth wiring that command into this message so a
+user does not have to go looking for it.
 
 ## Notifications
 

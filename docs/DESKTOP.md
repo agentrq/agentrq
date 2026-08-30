@@ -14,7 +14,38 @@ connects to it.
 
 ## Installing
 
-Download the build for your machine from the
+### macOS and Linux: one command
+
+```sh
+curl -fsSL https://agentrq.com/install.sh | sh
+```
+
+That is also how you update — run the same command again and it replaces the
+app in place. It works out which build matches your machine, checks the download
+against the checksum published with the release, and installs to `/Applications`
+(or `~/Applications` if that is locked down) on macOS, or `~/.local/bin/agentrq`
+plus a launcher entry on Linux.
+
+On macOS it does one more thing worth knowing about: it clears the quarantine
+flag, so the ["developer cannot be verified" dialog](#the-first-launch-security-warning)
+never appears. Installing this way skips that problem entirely.
+
+Options go after a `--`:
+
+| Option | Effect |
+|---|---|
+| `--quit` | Quit a running AgentRQ instead of refusing to overwrite it |
+| `--version v0.5.0` | Install a specific release rather than the newest |
+| `--dir <path>` | Install somewhere other than the default |
+| `--force` | Reinstall even if that version is already installed |
+
+```sh
+curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
+```
+
+### Windows, or downloading by hand
+
+Take the build for your machine from the
 [latest release](https://github.com/agentrq/agentrq/releases/latest).
 
 | Platform | File | Notes |
@@ -31,27 +62,32 @@ as well as an ordinary desktop.
 ### The first-launch security warning
 
 Until the project has code-signing certificates, the builds are **unsigned** and
-your operating system will say so. This is expected, and it is worth knowing
-exactly what it means rather than clicking through blind:
+your operating system will say so on a **hand-downloaded** build. (The install
+command above avoids this on macOS.) It is worth knowing exactly what the
+warning means rather than clicking through blind:
 
 - **macOS**: "AgentRQ cannot be opened because the developer cannot be
-  verified." Right-click the app → **Open** → **Open**. You only do this once.
+  verified." On macOS 14 and earlier, right-click the app → **Open** →
+  **Open**. On macOS 15 and later Apple removed that shortcut: try to open the
+  app, then go to **System Settings → Privacy & Security**, find the message
+  about AgentRQ near the bottom, and click **Open Anyway**. Once, either way.
 - **Windows**: SmartScreen shows "Windows protected your PC." **More info** →
   **Run anyway**.
 - **Linux**: no warning.
 
-The practical consequence is on macOS, and it is not cosmetic: **an unsigned
-macOS build cannot update itself.** macOS validates an application's signature
-before replacing it, so the app can check for updates and tell you one exists,
-but cannot install it — you download the new version manually. Windows and Linux
+The other consequence is on macOS, and it is not cosmetic: **an unsigned macOS
+build cannot update itself.** macOS validates an application's signature before
+replacing it, so the app can check for updates and tell you one exists, but
+cannot install it. That is what the install command is for. Windows and Linux
 update normally. See [Auto-update](#auto-update).
 
 ---
 
 ## Connecting to a server
 
-On first launch the app asks for your AgentRQ server URL, defaulting to
-`http://localhost:3000`.
+On first launch the app asks for your AgentRQ server URL, defaulting to the
+hosted instance at `https://app.agentrq.com`. If you run your own server, put
+its address in instead -- `http://localhost:3000` for one on this machine.
 
 The address is checked before it is saved, so a typo is caught immediately
 instead of turning into a mysterious failure to sign in later. Then you sign in
@@ -119,8 +155,15 @@ Ignore it and the update installs the next time you quit.
 what it found. A background check that finds nothing stays silent.
 
 > **macOS needs a signed build.** An unsigned build reports *"This build is not
-> signed, so it cannot update itself"* — download the new version manually
-> instead. Windows and Linux are unaffected.
+> signed, so it cannot update itself"* — macOS refuses to replace an unsigned
+> app in place. Update with the install command instead, which is not subject to
+> that check:
+>
+> ```sh
+> curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
+> ```
+>
+> Windows and Linux are unaffected and update themselves normally.
 
 ---
 

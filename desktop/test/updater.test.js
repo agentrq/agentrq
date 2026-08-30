@@ -6,6 +6,8 @@ import {
   UpdateStatus,
   createUpdater,
   describeUpdateError,
+  remedyForUpdateError,
+  INSTALL_COMMAND,
   shouldAnnounce,
   updaterDisabledReason,
 } from '../src/main/updater.js'
@@ -83,6 +85,24 @@ describe('describeUpdateError', () => {
     expect(describeUpdateError('plain string')).toBe('plain string')
     expect(describeUpdateError(null)).toBe('Unknown error')
     expect(describeUpdateError(undefined)).toBe('Unknown error')
+  })
+})
+
+describe('remedyForUpdateError', () => {
+  it('offers the install command for the signature failure', () => {
+    // The whole point: this failure is not a dead end, and the user should not
+    // have to go and find the command in the docs.
+    expect(remedyForUpdateError(new Error('Could not get code signature for running application')))
+      .toBe(INSTALL_COMMAND)
+    expect(remedyForUpdateError(new Error('SQRLUpdater failed'))).toBe(INSTALL_COMMAND)
+  })
+
+  it('offers nothing for failures reinstalling would not fix', () => {
+    // A command that cannot help is worse than no command at all.
+    expect(remedyForUpdateError(new Error('net::ERR_CONNECTION_REFUSED'))).toBe('')
+    expect(remedyForUpdateError(new Error('HttpError: 404 Not Found'))).toBe('')
+    expect(remedyForUpdateError(new Error('something odd'))).toBe('')
+    expect(remedyForUpdateError(undefined)).toBe('')
   })
 })
 

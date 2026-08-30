@@ -6,7 +6,10 @@
  * arguments so the rules can be tested without Electron or a filesystem.
  */
 
-export const DEFAULT_SERVER_URL = 'http://localhost:3000'
+// The hosted instance, so someone who installs the app and has no server of
+// their own still gets somewhere useful. Self-hosters type their own address
+// once on the connection screen, or set AGENTRQ_SERVER_URL.
+export const DEFAULT_SERVER_URL = 'https://app.agentrq.com'
 
 /** Filename under Electron's userData directory. */
 export const CONFIG_FILENAME = 'agentrq-desktop.json'

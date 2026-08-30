@@ -5,7 +5,9 @@ const toasts = ref([]);
 export function useToasts() {
   const addToast = (message, type = 'info', title = null, duration = 4000) => {
     const id = Date.now() + Math.random();
-    const toast = { id, message, type, title };
+    // A zero duration means the toast waits to be dismissed; the progress bar
+    // is a countdown, so it has nothing to show.
+    const toast = { id, message, type, title, persistent: duration <= 0 };
     
     toasts.value.push(toast);
 

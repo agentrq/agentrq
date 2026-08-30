@@ -43,6 +43,19 @@ export function updaterDisabledReason({ isPackaged }) {
 }
 
 /**
+ * The failure an unsigned macOS build hits every single time: Squirrel.Mac
+ * validates the signature before replacing the app, and refuses.
+ */
+const UNSIGNED = /code signature|not signed|SQRLUpdater|codesign/i
+
+/**
+ * The one-command installer, which replaces the bundle wholesale instead of
+ * asking Squirrel.Mac to patch it — so the signature check never applies.
+ * Published from the agentrq-static repository (`src/install.sh`).
+ */
+export const INSTALL_COMMAND = 'curl -fsSL https://agentrq.com/install.sh | sh'
+
+/**
  * Turn an updater failure into something worth showing a person.
  *
  * The signature case is called out by name because it is the predictable one:
@@ -52,7 +65,7 @@ export function updaterDisabledReason({ isPackaged }) {
 export function describeUpdateError(error) {
   const message = String(error?.message ?? error ?? 'Unknown error')
 
-  if (/code signature|not signed|SQRLUpdater|codesign/i.test(message)) {
+  if (UNSIGNED.test(message)) {
     return 'This build is not signed, so it cannot update itself'
   }
   if (/net::|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN/i.test(message)) {
@@ -67,6 +80,18 @@ export function describeUpdateError(error) {
     return 'This build has no update configuration'
   }
   return message
+}
+
+/**
+ * A command that gets the user past this failure, or '' when there is none.
+ *
+ * Only the signature case has one. Every other failure here is a network or
+ * packaging problem that reinstalling would not touch, and offering a command
+ * that cannot help is worse than offering nothing.
+ */
+export function remedyForUpdateError(error) {
+  const message = String(error?.message ?? error ?? '')
+  return UNSIGNED.test(message) ? INSTALL_COMMAND : ''
 }
 
 /**
@@ -102,14 +127,23 @@ export function createUpdater({
 
   let status = disabledReason ? UpdateStatus.Disabled : UpdateStatus.Idle
   let detail = disabledReason ?? ''
+  let remedy = ''
   let manual = false
   let timer = null
   let version = ''
 
-  function publish(next, nextDetail = '') {
+  function publish(next, nextDetail = '', nextRemedy = '') {
     status = next
     detail = nextDetail
-    onStatus({ status, detail, version, manual, announce: shouldAnnounce(next, { manual }) })
+    remedy = nextRemedy
+    onStatus({
+      status,
+      detail,
+      remedy,
+      version,
+      manual,
+      announce: shouldAnnounce(next, { manual }),
+    })
   }
 
   function bindEvents() {
@@ -128,7 +162,7 @@ export function createUpdater({
     autoUpdater.on('update-not-available', () => publish(UpdateStatus.UpToDate))
     autoUpdater.on('error', (error) => {
       logger.warn?.('update failed:', error)
-      publish(UpdateStatus.Error, describeUpdateError(error))
+      publish(UpdateStatus.Error, describeUpdateError(error), remedyForUpdateError(error))
     })
   }
 
@@ -149,7 +183,7 @@ export function createUpdater({
       // electron-updater also emits 'error'; catching here keeps a rejected
       // promise from surfacing as an unhandled rejection.
       const reason = describeUpdateError(error)
-      publish(UpdateStatus.Error, reason)
+      publish(UpdateStatus.Error, reason, remedyForUpdateError(error))
       return { ok: false, reason }
     }
   }
@@ -188,7 +222,7 @@ export function createUpdater({
     },
 
     get state() {
-      return { status, detail, version, enabled: !disabledReason }
+      return { status, detail, remedy, version, enabled: !disabledReason }
     },
   }
 }

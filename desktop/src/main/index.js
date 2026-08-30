@@ -109,7 +109,7 @@ let currentTheme = 'system'
 let pendingRoute = null
 let updater = null
 /** Last update state, so a renderer that loads later is not left in the dark. */
-let updateState = { status: UpdateStatus.Idle, detail: '', version: '', enabled: false }
+let updateState = { status: UpdateStatus.Idle, detail: '', remedy: '', version: '', enabled: false }
 
 async function refreshWorkspaceNames() {
   if (!serverUrl) return

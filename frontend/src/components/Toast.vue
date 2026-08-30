@@ -14,7 +14,7 @@
         <button @click="removeToast(toast.id)" class="toast-close">
           &times;
         </button>
-        <div class="toast-progress"></div>
+        <div v-if="!toast.persistent" class="toast-progress"></div>
       </div>
     </TransitionGroup>
   </div>

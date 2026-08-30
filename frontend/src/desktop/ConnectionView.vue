@@ -24,7 +24,7 @@
           inputmode="url"
           spellcheck="false"
           autocapitalize="off"
-          placeholder="http://localhost:3000"
+          placeholder="https://app.agentrq.com"
           :disabled="connecting"
           class="w-full px-4 py-4 bg-gray-50 dark:bg-zinc-800/50 text-gray-900 dark:text-zinc-50 border border-gray-100 dark:border-zinc-700/50 rounded-2xl outline-none focus:ring-4 focus:ring-black/5 dark:focus:ring-white/10 focus:border-black dark:focus:border-white transition-all text-center placeholder:text-gray-500 disabled:opacity-50"
           required
@@ -76,7 +76,7 @@ const props = defineProps({
   initialUrl: { type: String, default: '' },
 })
 
-const serverUrl = ref(props.initialUrl || 'http://localhost:3000')
+const serverUrl = ref(props.initialUrl || 'https://app.agentrq.com')
 const connecting = ref(false)
 const errorMsg = ref('')
 const inputRef = ref(null)

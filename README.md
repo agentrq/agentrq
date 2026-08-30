@@ -127,7 +127,13 @@ AgentRQ follows a decoupled service-oriented architecture:
 AgentRQ has a desktop app for macOS, Windows and Linux. It is a client — it
 connects to whichever AgentRQ server you run.
 
-**[Download the latest release →](https://github.com/agentrq/agentrq/releases/latest)**
+On macOS and Linux, one command installs it — and updates it later:
+
+```sh
+curl -fsSL https://agentrq.com/install.sh | sh
+```
+
+Or **[download the latest release →](https://github.com/agentrq/agentrq/releases/latest)**
 
 | Platform | Download |
 |---|---|
@@ -135,9 +141,10 @@ connects to whichever AgentRQ server you run.
 | Windows | `.exe` installer — x64 and arm64 |
 | Linux | `.AppImage` or `.deb` — x64 and arm64 |
 
-Builds are currently **unsigned**, so macOS and Windows will warn on first
-launch, and macOS cannot auto-update until signing certificates are in place.
-Installation, connecting to a server, and troubleshooting are covered in the
+Builds are currently **unsigned**, so a hand-downloaded build warns on first
+launch on macOS and Windows, and macOS cannot auto-update until signing
+certificates are in place — the install command above is the way around both.
+Connecting to a server and troubleshooting are covered in the
 [Desktop Guide](docs/DESKTOP.md).
 
 To run it from source:

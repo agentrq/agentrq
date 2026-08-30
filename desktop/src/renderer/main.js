@@ -57,7 +57,7 @@ if (connection.configured) {
   // state that is not transient — an update downloaded and waiting — raises
   // App.vue's existing "new version available" banner instead, which is both
   // the right affordance and identical to what the browser build shows.
-  const { notifyInfo, notifySuccess, notifyError } = useToasts()
+  const { addToast, notifyInfo, notifySuccess, notifyError } = useToasts()
   let lastUpdateStatus = null
   window.agentrq.updates?.onStatus((state) => {
     if (state.status === lastUpdateStatus) return
@@ -69,7 +69,16 @@ if (connection.configured) {
     if (state.status === 'checking') notifyInfo('Checking for updates…', 'Updates')
     else if (state.status === 'up-to-date') notifySuccess('AgentRQ is up to date', 'Updates')
     else if (state.status === 'available') notifyInfo(`Downloading version ${state.version}…`, 'Updates')
-    else if (state.status === 'error') notifyError(state.detail, 'Update failed')
+    else if (state.status === 'error') {
+      // An unsigned macOS build cannot replace itself, but the user is not
+      // stuck — there is a command that does it. A four-second toast is no use
+      // for something you have to retype, so this one waits to be dismissed.
+      if (state.remedy) {
+        addToast(`${state.detail}. Update with:  ${state.remedy}`, 'error', 'Update failed', 0)
+      } else {
+        notifyError(state.detail, 'Update failed')
+      }
+    }
     else if (state.status === 'disabled') notifyInfo(state.detail, 'Updates')
   })
 
