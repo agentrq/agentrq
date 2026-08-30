@@ -1,4 +1,18 @@
 @import 'tailwindcss';
+
+/*
+ * Tailwind v4 auto-detects which files to scan for class names, anchored at the
+ * build's root. That is correct for the web build, whose root is frontend/, but
+ * wrong for the desktop build: its Vite root is desktop/src/renderer, so the
+ * scan found only the body classes in that index.html and every utility used by
+ * the actual views was dropped.
+ *
+ * Declaring the source explicitly relative to this stylesheet fixes it for both
+ * builds and needs no knowledge of either. './' is always frontend/src, so it
+ * also holds in the production Docker image, which copies only ./frontend.
+ */
+@source './';
+
 @custom-variant dark (&:where(.dark, .dark *));
 @import '@fontsource-variable/inter';
 

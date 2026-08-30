@@ -11,7 +11,9 @@
     "start": "npm run build && electron .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "spike:eventsource": "npm run build && electron scripts/spike-eventsource.mjs"
+    "spike:eventsource": "npm run build && electron scripts/spike-eventsource.mjs",
+    "verify:e2e": "npm run build && electron scripts/verify-e2e.mjs",
+    "verify:connection": "npm run build && electron scripts/verify-connection.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.6.2"

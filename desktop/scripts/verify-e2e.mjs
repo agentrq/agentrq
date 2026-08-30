@@ -11,7 +11,7 @@
  *   AGENTRQ_SERVER_URL=http://localhost:3999 \
  *   AGENTRQ_ROOT_TOKEN=... npx electron scripts/verify-e2e.mjs
  */
-import { app, BrowserWindow, net, protocol, session } from 'electron'
+import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron'
 import { readFile, access } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -55,6 +55,18 @@ const CHECKS = `(async () => {
   // createWebHistory on the app:// origin.
   record('shared auth guard routed to /login', location.pathname === '/login', 'at ' + location.pathname);
 
+  // Tailwind's source detection is rooted at the build, and a wrong root
+  // silently drops every utility — the DOM looks correct and the app renders
+  // unstyled. Assert a computed style, not just presence.
+  const styled = getComputedStyle(document.body).fontFamily.includes('Inter')
+    || document.styleSheets.length > 0;
+  const probe = document.createElement('div');
+  probe.className = 'rounded-3xl';
+  document.body.appendChild(probe);
+  const radius = getComputedStyle(probe).borderRadius;
+  probe.remove();
+  record('stylesheet is applied', parseFloat(radius) > 0, 'rounded-3xl -> ' + radius);
+
   // The desktop bridge is visible to the renderer.
   record('desktop bridge exposed', window.agentrq?.isDesktop === true, 'platform ' + window.agentrq?.platform);
 
@@ -96,6 +108,14 @@ app.whenReady().then(async () => {
   // after a successful login — the check would be measuring leftover state
   // rather than the proxy.
   await session.defaultSession.clearStorageData({ storages: ['cookies'] })
+
+  // Mirrors the handler in src/main/index.js: the renderer asks which server it
+  // is pointed at before deciding what to mount.
+  ipcMain.handle('agentrq:connection:get', () => ({
+    configured: true,
+    serverUrl,
+    locked: true,
+  }))
 
   protocol.handle(
     'app',

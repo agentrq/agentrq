@@ -221,7 +221,14 @@ export function createAppProtocolHandler({ serverUrl, netFetch, fileExists, read
   const csp = buildCSP({ dev, devServerUrl })
 
   async function proxyToServer(request, url) {
-    const target = new URL(url.pathname + url.search, serverUrl())
+    const base = serverUrl()
+    if (!base) {
+      // Before the first run's connection screen is answered there is nowhere
+      // to forward to. Saying so plainly beats throwing out of the handler.
+      return Response.json({ error: 'No AgentRQ server is configured' }, { status: 503 })
+    }
+
+    const target = new URL(url.pathname + url.search, base)
     const init = {
       method: request.method,
       headers: filterRequestHeaders(request.headers),

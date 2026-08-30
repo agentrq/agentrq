@@ -1,13 +1,21 @@
 /**
- * Which AgentRQ server the desktop app talks to.
+ * Which AgentRQ server the desktop app talks to, and how that choice is stored.
  *
- * Phase 1 only needs a resolved URL; the first-run connection screen, live
- * validation and the switch-server flow land in phase 3 (task 0hua8EL8awL).
- * The normalisation rules live here now so that work can build on them rather
- * than reinvent them.
+ * The desktop app is a client: the server lives wherever the user runs it, so
+ * the app has to be told once and remember. Everything here takes its I/O as
+ * arguments so the rules can be tested without Electron or a filesystem.
  */
 
 export const DEFAULT_SERVER_URL = 'http://localhost:3000'
+
+/** Filename under Electron's userData directory. */
+export const CONFIG_FILENAME = 'agentrq-desktop.json'
+
+/** Shape version of the stored config, for migrations. */
+export const CONFIG_VERSION = 1
+
+/** Endpoint used to decide whether a URL is really an AgentRQ server. */
+export const CONFIG_PROBE_PATH = '/api/v1/auth/config'
 
 /**
  * Turn whatever the user typed into a URL we can safely resolve against.
@@ -60,4 +68,118 @@ export function resolveServerUrl({ env = {}, stored = '' } = {}) {
     if (result.ok) return result.url
   }
   return DEFAULT_SERVER_URL
+}
+
+/**
+ * Bring a stored config forward to the current shape.
+ *
+ * Anything unrecognised degrades to "no server configured", which sends the
+ * user to the connection screen. That is a mildly annoying outcome and a
+ * completely safe one — far better than booting the app pointed at a URL we
+ * could not actually parse.
+ *
+ * A file written by a *newer* build is treated the same way: its `serverUrl` is
+ * kept if it still looks like a URL, and every other key is dropped rather than
+ * guessed at.
+ */
+export function migrateConfig(raw) {
+  const empty = { version: CONFIG_VERSION, serverUrl: '' }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
+
+  const normalized = normalizeServerUrl(raw.serverUrl)
+  return {
+    version: CONFIG_VERSION,
+    serverUrl: normalized.ok ? normalized.url : '',
+  }
+}
+
+/**
+ * Persisted server choice.
+ *
+ * @param {object} deps
+ * @param {() => Promise<string>} deps.readFile   Rejects when the file is absent.
+ * @param {(contents: string) => Promise<void>} deps.writeFile
+ */
+export function createServerConfigStore({ readFile, writeFile }) {
+  return {
+    /**
+     * @returns {Promise<{ version: number, serverUrl: string }>} always a valid
+     *          shape — a missing or corrupt file reads as "not configured".
+     */
+    async load() {
+      let contents
+      try {
+        contents = await readFile()
+      } catch {
+        // No file yet: first run.
+        return migrateConfig(null)
+      }
+
+      try {
+        return migrateConfig(JSON.parse(contents))
+      } catch {
+        // Corrupt JSON — a half-written file, say. Same answer as no file.
+        return migrateConfig(null)
+      }
+    },
+
+    /**
+     * @returns {Promise<{ ok: true, url: string } | { ok: false, reason: string }>}
+     */
+    async save(input) {
+      const normalized = normalizeServerUrl(input)
+      if (!normalized.ok) return normalized
+
+      await writeFile(JSON.stringify({ version: CONFIG_VERSION, serverUrl: normalized.url }, null, 2))
+      return normalized
+    },
+
+    /** Forget the configured server, sending the app back to the first-run screen. */
+    async clear() {
+      await writeFile(JSON.stringify({ version: CONFIG_VERSION, serverUrl: '' }, null, 2))
+    },
+  }
+}
+
+/**
+ * Check that a URL is actually an AgentRQ server before it is stored.
+ *
+ * `/api/v1/auth/config` is the right probe: it is unauthenticated, it is cheap,
+ * and its response tells the login screen which sign-in methods exist — so a
+ * URL that answers it is a server this app can really use, not merely a host
+ * that happens to be up.
+ *
+ * @param {string} input raw user entry; normalised here so callers need not.
+ * @param {typeof fetch} fetchImpl
+ */
+export async function validateServerUrl(input, fetchImpl) {
+  const normalized = normalizeServerUrl(input)
+  if (!normalized.ok) return normalized
+
+  let res
+  try {
+    res = await fetchImpl(`${normalized.url}${CONFIG_PROBE_PATH}`)
+  } catch (err) {
+    return { ok: false, reason: `Could not reach ${normalized.url}`, detail: String(err?.message ?? err) }
+  }
+
+  if (!res.ok) {
+    return { ok: false, reason: `Server answered with ${res.status}` }
+  }
+
+  let config
+  try {
+    config = await res.json()
+  } catch {
+    return { ok: false, reason: 'That URL is not an AgentRQ server' }
+  }
+
+  // A JSON body alone is not proof: any API might return one. The auth config
+  // always carries these flags, so their absence means we are talking to
+  // something else.
+  if (typeof config?.rootLoginEnabled !== 'boolean' && typeof config?.githubLoginEnabled !== 'boolean') {
+    return { ok: false, reason: 'That URL is not an AgentRQ server' }
+  }
+
+  return { ok: true, url: normalized.url, config }
 }

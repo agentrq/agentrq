@@ -263,6 +263,25 @@ describe('createAppProtocolHandler — proxying', () => {
     expect(await res.text()).toBe('{"ok":true}')
   })
 
+  it('reports 503 when no server has been configured yet', async () => {
+    // First run, before the connection screen is answered: there is nowhere to
+    // forward to, and throwing out of the protocol handler would surface as an
+    // opaque failed load rather than something the app can explain.
+    const netFetch = vi.fn()
+    const handler = createAppProtocolHandler({
+      serverUrl: () => '',
+      netFetch,
+      fileExists: async () => false,
+      readFile: async () => new TextEncoder().encode(''),
+    })
+
+    const res = await handler(makeRequest('app://agentrq/api/v1/auth/user'))
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ error: 'No AgentRQ server is configured' })
+    expect(netFetch).not.toHaveBeenCalled()
+  })
+
   it('reports an unreachable server as 502 instead of throwing', async () => {
     const netFetch = vi.fn(async () => {
       throw new Error('ECONNREFUSED')
