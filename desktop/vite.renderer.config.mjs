@@ -7,6 +7,7 @@ const resolvePath = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 const FRONTEND_SRC = resolvePath('../frontend/src')
 const FRONTEND_ROOT = resolvePath('../frontend')
+const FRONTEND_NODE_MODULES = resolvePath('../frontend/node_modules')
 
 const { version } = JSON.parse(
   await import('node:fs/promises').then((fs) => fs.readFile(resolvePath('./package.json'), 'utf-8'))
@@ -21,17 +22,20 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version),
   },
   resolve: {
-    alias: {
+    alias: [
       // The whole point of the desktop package: the renderer is built from the
       // frontend's own sources, not a copy of them.
-      '@app': FRONTEND_SRC,
+      { find: '@app', replacement: FRONTEND_SRC },
       // vite-plugin-pwa is not in this build, so its virtual module needs a
       // stand-in — see the stub for why the desktop ships no service worker.
-      'virtual:pwa-register/vue': resolvePath('./src/renderer/stubs/pwa-register.js'),
-    },
-    // Frontend sources resolve their imports from frontend/node_modules while
-    // this config lives in desktop/. Without dedupe a second copy of Vue can be
-    // pulled in, and two Vue runtimes break provide/inject and every store.
+      // It lives in frontend/ because the frontend's own test run needs it too.
+      { find: 'virtual:pwa-register/vue', replacement: resolvePath('../frontend/stubs/pwa-register.js') },
+      // The shared runtime packages come from frontend/node_modules. This
+      // package deliberately installs no copy of its own: a file under
+      // desktop/src could not otherwise resolve `vue-router`, and two copies of
+      // Vue in one bundle break provide/inject and every store.
+      { find: /^(vue|vue-router|pinia)$/, replacement: `${FRONTEND_NODE_MODULES}/$1` },
+    ],
     dedupe: ['vue', 'vue-router', 'pinia'],
   },
   plugins: [vue(), tailwindcss()],

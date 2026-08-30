@@ -22,6 +22,7 @@ import { resolveServerUrl } from '../src/main/server-config.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const RENDERER_ROOT = join(__dirname, '../dist/renderer')
+const PRELOAD = join(__dirname, '../dist/preload/index.cjs')
 const serverUrl = resolveServerUrl({ env: process.env })
 const rootToken = process.env.AGENTRQ_ROOT_TOKEN ?? 'qa-root-token'
 
@@ -48,6 +49,14 @@ const CHECKS = `(async () => {
   // The SPA itself must have booted from the bundled assets.
   record('renderer mounted', !!document.querySelector('#app')?.children.length,
     document.querySelector('#app')?.children.length + ' child nodes');
+
+  // The shared auth guard ran and redirected: proof that the frontend's own
+  // route table and navigation guard are driving this window, over
+  // createWebHistory on the app:// origin.
+  record('shared auth guard routed to /login', location.pathname === '/login', 'at ' + location.pathname);
+
+  // The desktop bridge is visible to the renderer.
+  record('desktop bridge exposed', window.agentrq?.isDesktop === true, 'platform ' + window.agentrq?.platform);
 
   // Relative URL, exactly as src/api.js writes it — no absolute server URL anywhere.
   const anon = await fetch('/api/v1/auth/user');
@@ -98,7 +107,12 @@ app.whenReady().then(async () => {
     })
   )
 
-  const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true } })
+  // Same webPreferences the real window uses, preload included — otherwise this
+  // would be checking a window the app never actually creates.
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
   await win.loadURL('app://agentrq/')
   // Let the SPA finish its own boot (router guard, initial fetches) first.
   await new Promise((r) => setTimeout(r, 1500))

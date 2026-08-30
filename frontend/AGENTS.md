@@ -44,3 +44,17 @@ This document outlines the core design principles and UI patterns to ensure cons
 
 - **Naming**: All API data properties must use `camelCase` (e.g., `workspaceId`, `createdAt`).
 - **Standard**: Strictly avoid using `snake_case` for any data received from or sent to the backend.
+
+## 7. Application Bootstrap
+
+- **One route table**: routes, the auth guard, the `v-click-outside` directive and the pinia
+  setup all live in `src/app.js`, exported as `createAgentRQApp({ history, platform })`.
+  `src/main.js` (browser) and `desktop/src/renderer/main.js` are thin bootstraps that call it.
+- **Never add a route anywhere else.** The desktop app mounts this same table, so a second
+  copy would silently let the two builds drift apart. Add the route in `src/app.js` and both
+  applications get it.
+- **Platform-specific behavior**: read `usePlatformStore()` (`platform`, `isDesktop`, `isWeb`)
+  rather than sniffing the user agent or probing for `window.agentrq`. That store is the
+  supported seam for an affordance only one build can offer.
+- **Browser-only concerns** — the base path the backend injects, the service worker — belong
+  in `src/main.js`, not in the shared factory. The desktop build has its own answers for both.

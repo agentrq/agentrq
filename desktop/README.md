@@ -4,8 +4,14 @@ Electron shell around the AgentRQ web frontend. The renderer is built from
 `../frontend/src` — the same `App.vue`, router, views and stores the browser
 gets — so parity is structural rather than something to maintain by hand.
 
-Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package is phase 1
-(TaskID `0hua6QI7nXN`).
+Both builds call the same `createAgentRQApp({ history, platform })` factory in
+`frontend/src/app.js`, so there is exactly one route table. A view added to the
+frontend appears here with no change on this side. `platform` is recorded in the
+frontend's platform store, which is how a component offers a desktop-only
+affordance without either build growing its own copy of the view.
+
+Plan and phase breakdown: `docs/DESKTOP_APP_PLAN.md`. This package covers phase 1
+(TaskID `0hua6QI7nXN`) and phase 2 (`0hua7LpaQID`).
 
 ## Running it
 
@@ -97,6 +103,7 @@ after the headers fixes it.
 ## Layout
 
 ```
+src/renderer/main.js        bootstrap — calls the frontend's createAgentRQApp
 src/main/protocol.js        app:// handler and API proxy — the core of the design
 src/main/server-config.js   which server to talk to, and URL normalisation
 src/main/index.js           app lifecycle, window creation, scheme registration

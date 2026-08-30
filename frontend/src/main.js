@@ -1,81 +1,18 @@
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import { createRouter, createWebHistory } from 'vue-router'
+/**
+ * Browser bootstrap.
+ *
+ * The application itself is assembled in `app.js`, which the desktop renderer
+ * calls too. Only what is genuinely browser-specific belongs here: the base
+ * path the Go backend injects into index.html, and the service worker, which
+ * the desktop build replaces with electron-updater.
+ */
+import { createWebHistory } from 'vue-router'
 
-import './style.css'
-import '@fontsource-variable/inter'
+import { createAgentRQApp } from './app'
 
-import App from './App.vue'
-import { fetchUser } from './api'
-
-const routes = [
-  { path: '/', component: () => import('./views/WorkspaceView.vue') },
-  { 
-    path: '/tasks/:filter', 
-    component: () => import('./views/TaskListView.vue'),
-    children: [
-      { path: ':workspaceId/:taskId', component: () => import('./views/TaskDetailView.vue') },
-      { path: ':workspaceId/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
-    ]
-  },
-  { 
-    path: '/workspaces/:id', 
-    component: () => import('./views/WorkspaceDetailView.vue'),
-    children: [
-      { path: 'board', component: () => import('./views/KanbanBoardView.vue') },
-      { path: 'analytics', component: () => import('./views/WorkspaceAnalyticsView.vue') },
-      { path: 'settings', component: () => import('./views/WorkspaceSettingsView.vue') },
-      { path: 'tasks/:taskId', component: () => import('./views/TaskDetailView.vue') },
-      { path: 'tasks/:taskId/instances', component: () => import('./views/ScheduledTaskInstancesView.vue') }
-    ]
-  },
-  { path: '/workspaces/:id/tasks/new', component: () => import('./views/TaskFormView.vue') },
-  { path: '/workspaces/:id/tasks/:taskId/edit', component: () => import('./views/TaskFormView.vue') },
-
-  { path: '/events', component: () => import('./views/EventsView.vue') },
-  { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
-
-  { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
-  { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },
-
-  { path: '/login', component: () => import('./views/LoginView.vue'), meta: { public: true } }
-]
-
-const router = createRouter({
+const { app } = createAgentRQApp({
   history: createWebHistory(window.__AGENTRQ_BASE_PATH__ || '/'),
-  routes,
+  platform: 'web',
 })
 
-router.beforeEach(async (to, from, next) => {
-  if (to.meta.public) return next()
-
-  try {
-    const user = await fetchUser()
-    if (!user) return next('/login')
-    next()
-  } catch (err) {
-    next('/login')
-  }
-})
-
-const pinia = createPinia()
-const app = createApp(App)
-
-// Global Click Outside Directive
-app.directive('click-outside', {
-  mounted(el, binding) {
-    el._clickOutside = (event) => {
-      if (!(el === event.target || el.contains(event.target))) {
-        binding.value(event);
-      }
-    };
-    document.body.addEventListener('click', el._clickOutside);
-  },
-  unmounted(el) {
-    document.body.removeEventListener('click', el._clickOutside);
-  },
-});
-
-app.use(pinia)
-app.use(router)
 app.mount('#app')

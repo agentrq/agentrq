@@ -1,0 +1,49 @@
+name: Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test with coverage
+        # Thresholds live in vitest.config.js. The scope is the shared app
+        # factory and the platform store — the modules both the browser and the
+        # desktop build depend on, where a regression breaks two apps at once.
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
