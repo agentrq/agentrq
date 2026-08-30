@@ -78,8 +78,11 @@ nsis:
 linux:
   category: Development
   maintainer: AgentRQ <hi@agentrq.com>
+  # arm64 alongside x64: ARM single-board machines and ARM cloud instances are
+  # both ordinary places to run this. Nothing here has a native dependency, so
+  # both architectures cross-build from one runner.
   target:
     - target: AppImage
-      arch: [x64]
+      arch: [x64, arm64]
     - target: deb
-      arch: [x64]
+      arch: [x64, arm64]

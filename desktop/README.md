@@ -154,7 +154,7 @@ on all three platforms and publishes to a GitHub Release:
 |---|---|
 | macos-latest | dmg + zip, arm64 and x64 |
 | windows-latest | NSIS, x64 |
-| ubuntu-latest | AppImage + deb, x64 |
+| ubuntu-latest | AppImage + deb, x64 and arm64 |
 
 That Release is also the update feed, so the `latest*.yml` manifests published
 beside the installers matter as much as the installers do.
