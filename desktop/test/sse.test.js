@@ -114,15 +114,27 @@ describe('createEventStreamClient', () => {
     return { client: handle, onEvent, onStatus, onUnauthorized, delay }
   }
 
-  /** Let the client's async loop advance. */
-  const settle = () => new Promise((r) => setTimeout(r, 5))
+  /**
+   * Wait until a condition holds rather than for a fixed span.
+   *
+   * The reconnect loop is asynchronous, so "has it retried three times yet"
+   * depends on how fast the machine is. A fixed sleep passes locally and fails
+   * on a slower CI runner — which is exactly what it did.
+   */
+  const waitFor = async (predicate, label) => {
+    for (let i = 0; i < 2000; i += 1) {
+      if (predicate()) return
+      await new Promise((r) => setTimeout(r, 1))
+    }
+    throw new Error(`timed out waiting for ${label}`)
+  }
 
   it('asks for an event stream', async () => {
     const netFetch = vi.fn(async () => streamingResponse([]))
     const { client } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => netFetch.mock.calls.length >= 1, 'the first request')
     client.stop()
 
     expect(netFetch.mock.calls[0][0]).toBe('https://example.com/api/v1/events/stream')
@@ -134,7 +146,7 @@ describe('createEventStreamClient', () => {
     const { client, onEvent } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => onEvent.mock.calls.length >= 1, 'the first event')
     client.stop()
 
     expect(onEvent).toHaveBeenCalledWith({ type: 'task.created' })
@@ -146,7 +158,7 @@ describe('createEventStreamClient', () => {
     const { client, onEvent } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => onEvent.mock.calls.length >= 1, 'the parseable event')
     client.stop()
 
     expect(onEvent).toHaveBeenCalledOnce()
@@ -157,7 +169,7 @@ describe('createEventStreamClient', () => {
     const { client, onStatus } = setup()
 
     client.start()
-    await settle()
+    await waitFor(() => onStatus.mock.calls.length >= 2, 'connect and disconnect')
     client.stop()
 
     expect(onStatus).toHaveBeenCalledWith(true)
@@ -169,7 +181,7 @@ describe('createEventStreamClient', () => {
     const { client, onUnauthorized, delay } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => onUnauthorized.mock.calls.length >= 1, 'the 401 handler')
 
     expect(onUnauthorized).toHaveBeenCalledOnce()
     expect(netFetch).toHaveBeenCalledOnce()
@@ -183,7 +195,7 @@ describe('createEventStreamClient', () => {
     const { client, delay } = setup({ netFetch, stopAfterDelays: 3 })
 
     client.start()
-    await settle()
+    await waitFor(() => delay.mock.calls.length >= 3, 'three reconnect delays')
     client.stop()
 
     expect(delay.mock.calls[0][0]).toBe(1000)
@@ -196,7 +208,7 @@ describe('createEventStreamClient', () => {
     const { client, delay } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => delay.mock.calls.length >= 1, 'a retry delay')
     client.stop()
 
     expect(delay).toHaveBeenCalled()
@@ -215,7 +227,7 @@ describe('createEventStreamClient', () => {
     const { client, delay } = setup({ netFetch, stopAfterDelays: 2 })
 
     client.start()
-    await settle()
+    await waitFor(() => delay.mock.calls.length >= 2, 'two reconnect delays')
     client.stop()
 
     expect(delay.mock.calls[0][0]).toBe(1000)
@@ -231,10 +243,13 @@ describe('createEventStreamClient', () => {
     const { client } = setup({ netFetch, streamUrl: () => url, stopAfterDelays: 1 })
 
     client.start()
-    await settle()
+    await waitFor(() => netFetch.mock.calls.length >= 1, 'the first attempt')
     url = 'https://second.example.com/api/v1/events/stream'
     client.start()
-    await settle()
+    await waitFor(
+      () => netFetch.mock.calls.at(-1)[0].includes('second'),
+      'an attempt against the new URL'
+    )
     client.stop()
 
     expect(netFetch.mock.calls.at(-1)[0]).toBe('https://second.example.com/api/v1/events/stream')
@@ -249,7 +264,7 @@ describe('createEventStreamClient', () => {
     client.start()
     expect(client.isRunning()).toBe(true)
 
-    await settle()
+    await waitFor(() => netFetch.mock.calls.length >= 1, 'the first attempt')
     client.stop()
     expect(client.isRunning()).toBe(false)
   })
@@ -270,7 +285,7 @@ describe('createEventStreamClient', () => {
     })
 
     handle.start()
-    await new Promise((r) => setTimeout(r, 10))
+    await waitFor(() => !handle.isRunning(), 'the client to stop')
 
     expect(delay).not.toHaveBeenCalled()
     expect(handle.isRunning()).toBe(false)
@@ -281,7 +296,7 @@ describe('createEventStreamClient', () => {
     const { client, delay } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => delay.mock.calls.length >= 1, 'a retry delay')
     client.stop()
 
     expect(delay).toHaveBeenCalled()
@@ -302,7 +317,7 @@ describe('createEventStreamClient', () => {
     })
 
     client.start()
-    await new Promise((r) => setTimeout(r, 10))
+    await waitFor(() => !client.isRunning(), 'the 401 to stop the client')
 
     expect(client.isRunning()).toBe(false)
   })
@@ -316,7 +331,7 @@ describe('createEventStreamClient', () => {
     const { client } = setup({ netFetch })
 
     client.start()
-    await settle()
+    await waitFor(() => signal !== undefined, 'the request to start')
     client.stop()
 
     expect(signal.aborted).toBe(true)
