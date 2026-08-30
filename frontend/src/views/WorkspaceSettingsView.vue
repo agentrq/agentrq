@@ -734,7 +734,7 @@ const authenticatedUrl = computed(() => {
 });
 
 const serverName = computed(() => `agentrq-${workspaceId.value}`);
-const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value}`);
+const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value} --name ${workspace.value?.name}`);
 
 const mcpConfig = computed(() => ({
   mcpServers: {
