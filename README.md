@@ -95,6 +95,16 @@ Click the mic on any task description or reply and dictate it instead. Transcrip
 </td>
 <td width="50%"><img src="https://agentrq.com/assets/feature-speech-to-text.gif" alt="AgentRQ speech-to-text mic entry point" width="320" /></td>
 </tr>
+<tr>
+<td width="50%"><img src="https://agentrq.com/assets/feature-message-send-delay.gif" alt="AgentRQ message send delay countdown with Send Now and Cancel" width="320" /></td>
+<td width="50%" valign="middle">
+
+### Message Send Delay
+
+Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat message waits that long in the thread before it reaches the agent. **Send Now** delivers it early, **Cancel** pulls it back unsent and puts the exact text and attachments back in your composer. Off by default, per workspace.
+
+</td>
+</tr>
 </table>
 
 See the full list at [agentrq.com/features](https://agentrq.com/features).
