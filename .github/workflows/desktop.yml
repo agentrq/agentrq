@@ -1,0 +1,75 @@
+name: Desktop App
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop/**'
+      - 'frontend/**'
+      - '.github/workflows/desktop.yml'
+  # The renderer is built from frontend/src, so a frontend change can break the
+  # desktop build without touching a single file under desktop/.
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'frontend/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    name: Test and build
+    # The renderer bundles the same sources on every platform, but the main
+    # process touches per-platform paths, so all three are built.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The desktop renderer imports from ../frontend/src, and those modules
+      # resolve their own dependencies out of frontend/node_modules.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Test with coverage
+        working-directory: desktop
+        # The coverage thresholds in vitest.config.mjs are the gate — a drop
+        # below 100% on the main-process modules fails here.
+        run: npm run test:coverage
+
+      - name: Build
+        working-directory: desktop
+        run: npm run build
+
+      - name: Check version is in lockstep with the rest of the repo
+        working-directory: desktop
+        shell: bash
+        run: |
+          DESKTOP="$(node -p "require('./package.json').version")"
+          FRONTEND="$(node -p "require('../frontend/package.json').version")"
+          if [ "$DESKTOP" != "$FRONTEND" ]; then
+            echo "desktop $DESKTOP does not match frontend $FRONTEND" >&2
+            exit 1
+          fi
+          echo "desktop and frontend both at $DESKTOP"

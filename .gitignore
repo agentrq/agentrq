@@ -30,7 +30,10 @@ pnpm-debug.log*
 
 # Go build and test artifacts
 *_binary
-main
+# `go build main.go` inside a cmd directory drops a binary called `main`.
+# Scoped to the Go tree: as a bare pattern this matched *any* path segment named
+# `main`, which silently excluded source directories elsewhere in the repo.
+backend/**/main
 coverage.out
 *.test
 

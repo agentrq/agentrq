@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+    <title>AgentRQ</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      // The Go backend injects this into index.html for web deployments so the
+      // SPA knows its mount point. The desktop app is always served from the
+      // root of the app:// origin, so the equivalent value is the empty string.
+      window.__AGENTRQ_BASE_PATH__ = '';
+    </script>
+  </head>
+  <body class="bg-slate-50 text-slate-900 font-sans antialiased">
+    <div id="app"></div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
