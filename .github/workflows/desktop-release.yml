@@ -27,7 +27,9 @@ jobs:
     name: Version sync
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # write, not read, because this job now also creates the draft release
+      # the build matrix publishes into. See the step at the end.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +44,34 @@ jobs:
         # version inside a release named for another, and offer users an
         # "update" to the build they already have.
         run: node scripts/check-versions.mjs
+
+      # Create the draft up front so nothing downstream ever has to.
+      #
+      # electron-builder creates the release when it finds none, and in v0.4.10
+      # that raced three ways: the matrix runs in parallel, and a single job
+      # runs several publishers at once (macOS logged "creating GitHub release
+      # reason=release doesn't exist" twice in the same second). GitHub permits
+      # more than one *draft* sharing a tag, so the duplicates were accepted
+      # silently and the uploads scattered across them. The publish job then
+      # promoted whichever one `gh` resolved, and v0.4.10 shipped with the
+      # macOS and Windows artifacts but none of the four Linux ones — every job
+      # green, the release quietly incomplete.
+      #
+      # With the draft already present, every publisher takes the "found it"
+      # path and they all upload to the same release.
+      - name: Create the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it alone."
+          else
+            gh release create "$TAG" --draft --title "$TAG" \
+              --generate-notes --repo "$GITHUB_REPOSITORY"
+            echo "Created draft release $TAG"
+          fi
 
   build:
     name: Build ${{ matrix.os }}
