@@ -41,6 +41,7 @@ export default defineConfig({
         'src/composables/usePendingSend.js',
         'src/composables/useDirectoryPicker.js',
         'src/composables/useProfileDisplay.js',
+        'src/composables/useAuthedFetch.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

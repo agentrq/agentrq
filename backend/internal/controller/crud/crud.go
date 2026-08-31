@@ -90,6 +90,7 @@ type WorkspaceController interface {
 type UserController interface {
 	CreateUser(ctx context.Context, u entity.User) (entity.User, error)
 	FindUserByEmail(ctx context.Context, email string) (entity.User, error)
+	FindUserByID(ctx context.Context, id int64) (entity.User, error)
 	FindOrCreateUser(ctx context.Context, req entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error)
 }
 

@@ -194,3 +194,104 @@ func TestTokenService(t *testing.T) {
 		NewTokenService(TokenConfig{})
 	})
 }
+
+func TestRefreshTokens(t *testing.T) {
+	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+
+	t.Run("round trips the user it was minted for", func(t *testing.T) {
+		token, err := s.CreateRefreshToken("user123")
+		if err != nil {
+			t.Fatalf("CreateRefreshToken: %v", err)
+		}
+
+		claims, err := s.ValidateRefreshToken(token)
+		if err != nil {
+			t.Fatalf("ValidateRefreshToken: %v", err)
+		}
+		if claims.Subject != "user123" {
+			t.Errorf("subject = %q, want user123", claims.Subject)
+		}
+	})
+
+	t.Run("carries no profile details", func(t *testing.T) {
+		// They would go stale over a month-long session, and the access token
+		// minted from this is built from the database instead.
+		token, _ := s.CreateRefreshToken("user123")
+		claims, _ := s.ValidateRefreshToken(token)
+
+		if claims.Email != "" || claims.Name != "" || claims.Picture != "" {
+			t.Errorf("refresh token carries profile details: %+v", claims)
+		}
+	})
+
+	t.Run("outlives an access token", func(t *testing.T) {
+		refresh, _ := s.CreateRefreshToken("user123")
+		access, _ := s.CreateToken("user123", "a@b.com", "A", "")
+
+		refreshClaims, _ := s.ValidateRefreshToken(refresh)
+		accessClaims, _ := s.ValidateToken(access)
+
+		if !refreshClaims.ExpiresAt.After(accessClaims.ExpiresAt.Time) {
+			t.Errorf("refresh expiry %v is not after access expiry %v",
+				refreshClaims.ExpiresAt, accessClaims.ExpiresAt)
+		}
+	})
+
+	t.Run("rejects an access token", func(t *testing.T) {
+		// The security-critical case. Without the audience check a stolen
+		// access token could be walked forward into fresh sessions forever.
+		access, _ := s.CreateToken("user123", "a@b.com", "A", "")
+
+		if _, err := s.ValidateRefreshToken(access); err == nil {
+			t.Error("an access token was accepted as a refresh token")
+		}
+	})
+
+	t.Run("rejects an agent refresh token", func(t *testing.T) {
+		// The MCP flow mints its own "refresh" tokens for one workspace. They
+		// stand for an agent, not a person, and must not open a human session.
+		mcp, err := s.CreateMCPToken("user123", "workspace1", "refresh")
+		if err != nil {
+			t.Fatalf("CreateMCPToken: %v", err)
+		}
+
+		if _, err := s.ValidateRefreshToken(mcp); err == nil {
+			t.Error("an MCP refresh token was accepted as a human refresh token")
+		}
+	})
+
+	t.Run("rejects a token this server did not sign", func(t *testing.T) {
+		other := NewTokenService(TokenConfig{JWTSecret: "a-different-secret"})
+		foreign, _ := other.CreateRefreshToken("user123")
+
+		if _, err := s.ValidateRefreshToken(foreign); err == nil {
+			t.Error("a token signed with another secret was accepted")
+		}
+	})
+
+	t.Run("rejects nonsense", func(t *testing.T) {
+		for _, tokenStr := range []string{"", "not.a.token", "a.b.c"} {
+			if _, err := s.ValidateRefreshToken(tokenStr); err == nil {
+				t.Errorf("ValidateRefreshToken(%q) was accepted", tokenStr)
+			}
+		}
+	})
+
+	t.Run("rejects one that has expired", func(t *testing.T) {
+		claims := Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:   "user123",
+				Audience:  jwt.ClaimStrings{RefreshHumanAudience},
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			},
+		}
+		expired, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+
+		if _, err := s.ValidateRefreshToken(expired); err == nil {
+			t.Error("an expired refresh token was accepted")
+		}
+	})
+}

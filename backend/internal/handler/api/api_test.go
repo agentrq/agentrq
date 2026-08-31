@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -12,6 +14,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -453,4 +456,166 @@ func TestRespondToElicitation_InvalidPayload(t *testing.T) {
 			}
 		})
 	}
+}
+
+// refreshTokenSvc is the minimum TokenService the refresh handler touches.
+type refreshTokenSvc struct {
+	auth.TokenService
+	validateRefreshFunc func(tokenStr string) (*auth.Claims, error)
+	createTokenFunc     func(userID, email, name, picture string) (string, error)
+	createRefreshFunc   func(userID string) (string, error)
+}
+
+func (m *refreshTokenSvc) ValidateRefreshToken(tokenStr string) (*auth.Claims, error) {
+	return m.validateRefreshFunc(tokenStr)
+}
+
+func (m *refreshTokenSvc) CreateToken(userID, email, name, picture string) (string, error) {
+	return m.createTokenFunc(userID, email, name, picture)
+}
+
+func (m *refreshTokenSvc) CreateRefreshToken(userID string) (string, error) {
+	if m.createRefreshFunc == nil {
+		return "new-refresh", nil
+	}
+	return m.createRefreshFunc(userID)
+}
+
+type refreshCrud struct {
+	crud.Controller
+	findUserByIDFunc func(ctx context.Context, id int64) (entity.User, error)
+}
+
+func (m *refreshCrud) FindUserByID(ctx context.Context, id int64) (entity.User, error) {
+	return m.findUserByIDFunc(ctx, id)
+}
+
+// TestRefreshCookiePath pins the refresh cookie to the route that reads it.
+//
+// This is the one part of the flow that fails silently: if the path does not
+// match where the route is mounted, the browser simply never sends the cookie,
+// refreshing never happens, and sessions expire exactly as they did before —
+// with nothing in any log to say why.
+func TestRefreshCookiePath(t *testing.T) {
+	if got, want := (&handler{}).refreshCookiePath(), _routeBasePath+"/auth/refresh"; got != want {
+		t.Errorf("refreshCookiePath() = %q, want %q — the route is mounted at %q", got, want, want)
+	}
+
+	// A reverse-proxied deployment serves the API under a prefix; the cookie
+	// has to carry it or the browser will not match the request path.
+	if got, want := (&handler{basePath: "/agentrq"}).refreshCookiePath(), "/agentrq/api/v1/auth/refresh"; got != want {
+		t.Errorf("with a base path: got %q, want %q", got, want)
+	}
+}
+
+func TestRefreshSession(t *testing.T) {
+	newApp := func(h *handler) *fiber.App {
+		app := fiber.New()
+		app.Post("/api/v1/auth/refresh", h.refreshSession())
+		return app
+	}
+
+	post := func(app *fiber.App, cookie string) *http.Response {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+		if cookie != "" {
+			req.Header.Set("Cookie", "rt="+cookie)
+		}
+		res, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		return res
+	}
+
+	t.Run("renews a session and reissues both cookies", func(t *testing.T) {
+		h := &handler{
+			tokenSvc: &refreshTokenSvc{
+				validateRefreshFunc: func(string) (*auth.Claims, error) {
+					return &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "1"}}, nil
+				},
+				createTokenFunc: func(userID, email, name, picture string) (string, error) {
+					if email != "a@b.com" {
+						t.Errorf("access token minted with email %q, want the one from the database", email)
+					}
+					return "new-access", nil
+				},
+			},
+			crud: &refreshCrud{
+				findUserByIDFunc: func(context.Context, int64) (entity.User, error) {
+					return entity.User{ID: 1, Email: "a@b.com", Name: "Ada"}, nil
+				},
+			},
+		}
+
+		res := post(newApp(h), "a-valid-refresh-token")
+
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", res.StatusCode)
+		}
+		cookies := res.Header.Values("Set-Cookie")
+		joined := strings.Join(cookies, "\n")
+		if !strings.Contains(joined, "at=new-access") {
+			t.Errorf("no new access cookie in %q", joined)
+		}
+		if !strings.Contains(joined, "rt=new-refresh") {
+			t.Errorf("refresh cookie was not rotated: %q", joined)
+		}
+	})
+
+	t.Run("refuses and clears when the token is rejected", func(t *testing.T) {
+		// Clearing matters: leaving a dead refresh cookie in place makes the
+		// client retry a credential that can never work again.
+		h := &handler{
+			tokenSvc: &refreshTokenSvc{
+				validateRefreshFunc: func(string) (*auth.Claims, error) {
+					return nil, errors.New("expired")
+				},
+			},
+		}
+
+		res := post(newApp(h), "an-expired-token")
+
+		if res.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", res.StatusCode)
+		}
+		if joined := strings.Join(res.Header.Values("Set-Cookie"), "\n"); !strings.Contains(joined, "rt=;") {
+			t.Errorf("refresh cookie was not cleared: %q", joined)
+		}
+	})
+
+	t.Run("refuses when there is no cookie at all", func(t *testing.T) {
+		h := &handler{
+			tokenSvc: &refreshTokenSvc{
+				validateRefreshFunc: func(tokenStr string) (*auth.Claims, error) {
+					if tokenStr != "" {
+						t.Errorf("expected an empty token, got %q", tokenStr)
+					}
+					return nil, errors.New("no token")
+				},
+			},
+		}
+
+		if res := post(newApp(h), ""); res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", res.StatusCode)
+		}
+	})
+
+	t.Run("refuses a token that outlived its account", func(t *testing.T) {
+		h := &handler{
+			tokenSvc: &refreshTokenSvc{
+				validateRefreshFunc: func(string) (*auth.Claims, error) {
+					return &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "1"}}, nil
+				},
+			},
+			crud: &refreshCrud{
+				findUserByIDFunc: func(context.Context, int64) (entity.User, error) {
+					return entity.User{}, errors.New("not found")
+				},
+			},
+		}
+
+		if res := post(newApp(h), "valid-but-orphaned"); res.StatusCode != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", res.StatusCode)
+		}
+	})
 }

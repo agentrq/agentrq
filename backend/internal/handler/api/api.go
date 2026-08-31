@@ -71,6 +71,14 @@ type (
 const (
 	_routeBasePath = "/api/v1"
 
+	// Cookie names. `at` is sent with every request; `rt` is scoped to the one
+	// route that consumes it, so the long-lived credential is not attached to
+	// every API call the app makes.
+	_accessCookie  = "at"
+	_refreshCookie = "rt"
+
+	_accessTokenTTL = 24 * time.Hour
+
 	_headerContentType = fiber.HeaderContentType
 	_mimeJSON          = fiber.MIMEApplicationJSON
 	_mimeEventStream   = "text/event-stream"
@@ -168,6 +176,10 @@ func (h *handler) registerPublicAuthRoutes() {
 	r.Get("/github/login", h.githubLogin())
 	r.Get("/github/callback", h.githubCallback())
 	r.Post("/root/login", h.rootLogin())
+	// Public on purpose: the whole point is that the access token has expired,
+	// so this route cannot sit behind the middleware that checks it. It
+	// authenticates with the refresh cookie instead.
+	r.Post("/refresh", h.refreshSession())
 }
 
 func (h *handler) registerProtectedAuthRoutes() {
@@ -176,21 +188,106 @@ func (h *handler) registerProtectedAuthRoutes() {
 	r.Post("/logout", h.logout())
 }
 
+// refreshCookiePath scopes the refresh cookie to the route that reads it.
+//
+// Derived from the same base path the routes are mounted under, plus the SPA
+// base path a reverse-proxied deployment adds in front. Getting this wrong
+// fails silently — the browser simply never sends the cookie, and sessions
+// expire exactly as they did before the refresh flow existed — so there is a
+// test asserting it matches where the route actually lives.
+func (h *handler) refreshCookiePath() string {
+	return h.basePath + _routeBasePath + "/auth/refresh"
+}
+
+// sessionCookie applies the settings every session cookie shares.
+func (h *handler) sessionCookie(name, value string, expires time.Time, path string) *fiber.Cookie {
+	cookie := &fiber.Cookie{
+		Name:     name,
+		Value:    value,
+		Expires:  expires,
+		HTTPOnly: true,
+		Secure:   h.cookieSecure,
+		SameSite: "Lax",
+		Path:     path,
+	}
+	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
+		cookie.Domain = "." + h.domain
+	}
+	return cookie
+}
+
+// issueSession sets both halves of a session.
+//
+// One function rather than a block copied into each sign-in path: three of
+// those already existed, and a fourth that set only the access cookie would
+// leave that provider's users signed out after a day with nothing to show why.
+func (h *handler) issueSession(c *fiber.Ctx, accessToken, userID string) {
+	now := time.Now()
+	c.Cookie(h.sessionCookie(_accessCookie, accessToken, now.Add(_accessTokenTTL), "/"))
+
+	refreshToken, err := h.tokenSvc.CreateRefreshToken(userID)
+	if err != nil {
+		// Deliberately not fatal. The person is signed in either way; without
+		// this they simply have the session they would have had before refresh
+		// tokens existed, which is a far better outcome than refusing a login
+		// that otherwise succeeded.
+		zlog.Error().Err(err).Msg("Failed to mint refresh token; session will not survive expiry")
+		return
+	}
+	c.Cookie(h.sessionCookie(_refreshCookie, refreshToken, now.Add(auth.RefreshTokenTTL), h.refreshCookiePath()))
+}
+
+// clearSession expires both halves. The refresh cookie has to be cleared at the
+// path it was set on; a deletion at "/" would not match it and would leave the
+// session renewable after signing out.
+func (h *handler) clearSession(c *fiber.Ctx) {
+	expired := time.Now().Add(-1 * time.Hour)
+	c.Cookie(h.sessionCookie(_accessCookie, "", expired, "/"))
+	c.Cookie(h.sessionCookie(_refreshCookie, "", expired, h.refreshCookiePath()))
+}
+
+// refreshSession exchanges a valid refresh cookie for a fresh session.
+//
+// Both cookies are reissued, so a session in regular use never reaches the idle
+// limit while one that is genuinely abandoned still expires.
+func (h *handler) refreshSession() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+
+		claims, err := h.tokenSvc.ValidateRefreshToken(c.Cookies(_refreshCookie))
+		if err != nil || claims == nil {
+			// Missing or expired is the ordinary end of a session, not a fault.
+			// Clearing both cookies stops the client retrying with a credential
+			// that will never work again.
+			h.clearSession(c)
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "session expired"})
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		user, err := h.crud.FindUserByID(ctx, monoflake.IDFromBase62(claims.Subject).Int64())
+		if err != nil {
+			// A token that outlived the account it names.
+			h.clearSession(c)
+			return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "session expired"})
+		}
+
+		userID := monoflake.ID(user.ID).String()
+		accessToken, err := h.tokenSvc.CreateToken(userID, user.Email, user.Name, user.Picture)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to mint access token on refresh")
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "could not refresh session"})
+		}
+
+		h.issueSession(c, accessToken, userID)
+		return c.JSON(fiber.Map{"status": "ok"})
+	}
+}
+
 func (h *handler) logout() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		cookie := &fiber.Cookie{
-			Name:     "at",
-			Value:    "",
-			Expires:  time.Now().Add(-1 * time.Hour),
-			HTTPOnly: true,
-			Secure:   h.cookieSecure,
-			SameSite: "Lax",
-			Path:     "/",
-		}
-		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
-			cookie.Domain = "." + h.domain
-		}
-		c.Cookie(cookie)
+		h.clearSession(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	}
 }
@@ -295,19 +392,7 @@ func (h *handler) rootLogin() fiber.Handler {
 			return c.Send(e)
 		}
 
-		cookie := &fiber.Cookie{
-			Name:     "at",
-			Value:    tokenString,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HTTPOnly: true,
-			Secure:   h.cookieSecure,
-			SameSite: "Lax",
-			Path:     "/",
-		}
-		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
-			cookie.Domain = "." + h.domain
-		}
-		c.Cookie(cookie)
+		h.issueSession(c, tokenString, userID)
 
 		return c.JSON(fiber.Map{"status": "ok"})
 	}
@@ -377,19 +462,7 @@ func (h *handler) googleCallback() fiber.Handler {
 			return c.Send(e)
 		}
 
-		cookie := &fiber.Cookie{
-			Name:     "at",
-			Value:    tokenString,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HTTPOnly: true,
-			Secure:   h.cookieSecure,
-			SameSite: "Lax",
-			Path:     "/",
-		}
-		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
-			cookie.Domain = "." + h.domain
-		}
-		c.Cookie(cookie)
+		h.issueSession(c, tokenString, userID)
 
 		redirectURL := "/"
 		if h.basePath != "" {
@@ -464,19 +537,7 @@ func (h *handler) githubCallback() fiber.Handler {
 			return c.Send(e)
 		}
 
-		cookie := &fiber.Cookie{
-			Name:     "at",
-			Value:    tokenString,
-			Expires:  time.Now().Add(24 * time.Hour),
-			HTTPOnly: true,
-			Secure:   h.cookieSecure,
-			SameSite: "Lax",
-			Path:     "/",
-		}
-		if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") {
-			cookie.Domain = "." + h.domain
-		}
-		c.Cookie(cookie)
+		h.issueSession(c, tokenString, userID)
 
 		redirectURL := "/"
 		if h.basePath != "" {

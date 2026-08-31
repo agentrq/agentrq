@@ -14,7 +14,21 @@ type ctxKey uint8
 const (
 	CtxKeyMCPClaims    ctxKey = 1
 	ActorHumanAudience        = "actor:human"
+
+	// RefreshHumanAudience marks a browser/desktop refresh token. Deliberately
+	// distinct from the MCP flow's "refresh": that one is an agent credential
+	// for one workspace, this one stands for a signed-in person, and a token
+	// minted for either must never satisfy the other's check.
+	RefreshHumanAudience = "refresh:human"
 )
+
+// RefreshTokenTTL is how long a session survives without being used at all.
+//
+// Every refresh mints a new one, so an active person is never signed out; this
+// is the idle window. Thirty days rather than a year because these tokens are
+// stateless -- there is no way to revoke one before it expires, so its lifetime
+// *is* the blast radius if it leaks.
+const RefreshTokenTTL = 30 * 24 * time.Hour
 
 type TokenConfig struct {
 	JWTSecret string `yaml:"jwt_secret"`
@@ -46,6 +60,8 @@ type ClientRegistrationClaims struct {
 
 type TokenService interface {
 	CreateToken(userID, email, name, picture string) (string, error)
+	CreateRefreshToken(userID string) (string, error)
+	ValidateRefreshToken(tokenStr string) (*Claims, error)
 	CreateMCPToken(userID, workspaceID, tokenType string) (string, error)
 	CreateOAuthCodeToken(userID, workspaceID string) (string, error)
 	CreateOAuthStateToken(redirectURL, provider string) (string, error)
@@ -84,6 +100,41 @@ func (s *tokenService) CreateToken(userID, email, name, picture string) (string,
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
+}
+
+// CreateRefreshToken mints the long-lived half of a session.
+//
+// It carries no email, name or picture: those go stale, and a refresh token is
+// only ever exchanged for an access token that is minted from the database at
+// that moment. Carrying them would mean a month-old name reappearing after a
+// refresh.
+func (s *tokenService) CreateRefreshToken(userID string) (string, error) {
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(RefreshTokenTTL)),
+			Audience:  jwt.ClaimStrings{RefreshHumanAudience},
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// ValidateRefreshToken accepts only a token minted by CreateRefreshToken.
+//
+// The audience check is the point: without it an access token would be
+// accepted here, and a stolen 24-hour access token could be walked forward
+// indefinitely into fresh sessions.
+func (s *tokenService) ValidateRefreshToken(tokenStr string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if !HasAudience(claims, RefreshHumanAudience) {
+		return nil, errors.New("not a refresh token")
+	}
+	return claims, nil
 }
 
 func (s *tokenService) CreateMCPToken(userID, workspaceID, tokenType string) (string, error) {

@@ -1,9 +1,23 @@
 const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
 export const API_BASE_URL = `${cleanBase}/api/v1`;
 
+import { createAuthedFetch } from './composables/useAuthedFetch';
+
+/**
+ * Every call in this module goes through here rather than through fetch.
+ *
+ * An expired access token comes back as a 401, which this renews once and
+ * replays — so a session that is still valid does not drop the user at the
+ * login screen just because the short-lived half of it aged out.
+ */
+const apiFetch = createAuthedFetch({
+  fetchImpl: (input, init) => fetch(input, init),
+  refreshUrl: `${API_BASE_URL}/auth/refresh`,
+});
+
 export async function fetchWorkspaces(includeArchived = false) {
   const url = includeArchived ? `${API_BASE_URL}/workspaces?archived=true` : `${API_BASE_URL}/workspaces`;
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) {
     throw new Error('Failed to fetch workspaces');
   }
@@ -19,7 +33,7 @@ export async function fetchUser() {
 
   _userFetchPromise = (async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/user`);
+      const res = await apiFetch(`${API_BASE_URL}/auth/user`);
       if (!res.ok) {
         if (res.status === 401) return null;
         throw new Error('Failed to fetch user');
@@ -36,7 +50,7 @@ export async function fetchUser() {
 
 
 export async function createWorkspace(name, description, icon = '', selfLearningLoopNote = '', workingDirectory = '') {
-  const res = await fetch(`${API_BASE_URL}/workspaces`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace: { name, description, icon, selfLearningLoopNote, workingDirectory } })
@@ -46,13 +60,13 @@ export async function createWorkspace(name, description, icon = '', selfLearning
 }
 
 export async function getWorkspace(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}`);
   if (!res.ok) throw new Error('Failed to fetch workspace');
   return res.json();
 }
 
 export async function deleteWorkspace(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete workspace');
   return true;
 }
@@ -64,7 +78,7 @@ export async function fetchTasks(workspaceId, { status, filter, limit = 10, offs
   if (limit) params.append('limit', limit);
   if (offset) params.append('offset', offset);
 
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch tasks');
   return res.json();
 }
@@ -76,13 +90,13 @@ export async function fetchGlobalTasks({ status, filter, limit = 10, offset = 0 
   if (limit) params.append('limit', limit);
   if (offset) params.append('offset', offset);
   
-  const res = await fetch(`${API_BASE_URL}/tasks?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE_URL}/tasks?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch global tasks');
   return res.json();
 }
 
 export async function getTask(workspaceId, taskId) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`);
   if (!res.ok) throw new Error('Failed to fetch task');
   return res.json();
 }
@@ -93,7 +107,7 @@ export async function createTask(workspaceId, title, body, assignee = 'agent', a
   const task = { title, body, createdBy: 'human', assignee, attachments, status, cronSchedule, allowAllCommands };
   if (eventId) task.eventId = eventId;
   if (workflowId) task.workflowId = workflowId;
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task })
@@ -103,7 +117,7 @@ export async function createTask(workspaceId, title, body, assignee = 'agent', a
 }
 
 export async function respondToTask(workspaceId, taskId, action, text = '', attachments = []) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/respond`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/respond`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ response: { action, text, attachments } })
@@ -113,7 +127,7 @@ export async function respondToTask(workspaceId, taskId, action, text = '', atta
 }
 
 export async function updateTaskStatus(workspaceId, taskId, value) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/status`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: { value } })
@@ -123,7 +137,7 @@ export async function updateTaskStatus(workspaceId, taskId, value) {
 }
 
 export async function updateTaskOrder(workspaceId, taskId, value) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/order`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/order`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ order: { value } })
@@ -133,7 +147,7 @@ export async function updateTaskOrder(workspaceId, taskId, value) {
 }
 
 export async function updateTaskAssignee(workspaceId, taskId, value) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/assignee`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/assignee`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assignee: { value } })
@@ -143,7 +157,7 @@ export async function updateTaskAssignee(workspaceId, taskId, value) {
 }
 
 export async function moveTask(workspaceId, taskId, destinationWorkspaceId) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/workspace`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/workspace`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace: { value: destinationWorkspaceId } })
@@ -153,7 +167,7 @@ export async function moveTask(workspaceId, taskId, destinationWorkspaceId) {
 }
 
 export async function updateTaskAllowAllCommands(workspaceId, taskId, value) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/allow_all`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/allow_all`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ allowAll: { value } })
@@ -163,7 +177,7 @@ export async function updateTaskAllowAllCommands(workspaceId, taskId, value) {
 }
 
 export async function deleteTask(workspaceId, taskId) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}`, {
     method: 'DELETE'
   });
   if (!res.ok) throw new Error('Failed to delete task');
@@ -171,7 +185,7 @@ export async function deleteTask(workspaceId, taskId) {
 }
 
 export async function archiveWorkspace(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/archive`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/archive`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to archive workspace');
   return true;
 }
@@ -181,19 +195,19 @@ export function getAttachmentUrl(workspaceId, taskId, attachmentId) {
 }
 
 export async function getWorkspaceToken(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/token`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/token`);
   if (!res.ok) throw new Error('Failed to fetch workspace token');
   return res.json();
 }
 
 export async function unarchiveWorkspace(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/unarchive`, { method: 'POST' });
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/unarchive`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to unarchive workspace');
   return true;
 }
 
 export async function updateWorkspace(id, workspace) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ workspace })
@@ -203,7 +217,7 @@ export async function updateWorkspace(id, workspace) {
 }
 
 export async function replyToTask(workspaceId, taskId, text, attachments = []) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/reply`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/reply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ reply: { text, attachments } })
@@ -213,7 +227,7 @@ export async function replyToTask(workspaceId, taskId, text, attachments = []) {
 }
 
 export async function sendPermissionVerdict(workspaceId, taskId, requestId, behavior) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/permission`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/permission`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId, behavior })
@@ -223,7 +237,7 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
 }
 
 export async function respondToElicitation(workspaceId, taskId, requestId, action, content) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/elicitation`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/elicitation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId, action, content })
@@ -232,7 +246,7 @@ export async function respondToElicitation(workspaceId, taskId, requestId, actio
   return res;
 }
 export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/scheduled`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -250,7 +264,7 @@ export async function updateScheduledTask(workspaceId, taskId, title, body, assi
 }
 
 export async function fetchTaskCounts(workspaceId) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/counts`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/counts`);
   if (!res.ok) throw new Error('Failed to fetch task counts');
   return res.json();
 }
@@ -261,13 +275,13 @@ export async function fetchWorkspaceStats(id, range = '7d', from = 0, to = 0) {
   if (from) params.append('from', from);
   if (to) params.append('to', to);
   
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/stats?${params.toString()}`);
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/stats?${params.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch workspace stats');
   return res.json();
 }
 
 export async function setWorkspaceSlackChannel(id, channelId, channelName) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ channelId, channelName })
@@ -277,7 +291,7 @@ export async function setWorkspaceSlackChannel(id, channelId, channelName) {
 }
 
 export async function removeWorkspaceSlackChannel(id) {
-  const res = await fetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/slack`, {
     method: 'DELETE'
   });
   if (!res.ok) throw new Error('Failed to remove workspace Slack channel');
@@ -285,7 +299,7 @@ export async function removeWorkspaceSlackChannel(id) {
 }
 
 export async function fetchGlobalTaskStats() {
-  const res = await fetch(`${API_BASE_URL}/tasks/stats`);
+  const res = await apiFetch(`${API_BASE_URL}/tasks/stats`);
   if (!res.ok) throw new Error('Failed to fetch global task stats');
   return res.json();
 }
@@ -294,7 +308,7 @@ export async function fetchEvents() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`${API_BASE_URL}/events`, { signal: controller.signal });
+    const res = await apiFetch(`${API_BASE_URL}/events`, { signal: controller.signal });
     if (!res.ok) throw new Error('Failed to fetch events');
     return res.json();
   } finally {
@@ -306,7 +320,7 @@ export async function createEvent(name, payloadGuidelines) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`${API_BASE_URL}/events`, {
+    const res = await apiFetch(`${API_BASE_URL}/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, payloadGuidelines }),
@@ -323,13 +337,13 @@ export async function createEvent(name, payloadGuidelines) {
 }
 
 export async function getEvent(id) {
-  const res = await fetch(`${API_BASE_URL}/events/${id}`);
+  const res = await apiFetch(`${API_BASE_URL}/events/${id}`);
   if (!res.ok) throw new Error('Failed to fetch event');
   return res.json();
 }
 
 export async function updateEvent(id, payloadGuidelines) {
-  const res = await fetch(`${API_BASE_URL}/events/${id}`, {
+  const res = await apiFetch(`${API_BASE_URL}/events/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ payloadGuidelines }),
@@ -339,13 +353,13 @@ export async function updateEvent(id, payloadGuidelines) {
 }
 
 export async function deleteEvent(id) {
-  const res = await fetch(`${API_BASE_URL}/events/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE_URL}/events/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete event');
   return true;
 }
 
 export async function fetchEventTriggers(eventId) {
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers`);
+  const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/triggers`);
   if (!res.ok) throw new Error('Failed to fetch event triggers');
   return res.json();
 }
@@ -353,7 +367,7 @@ export async function fetchEventTriggers(eventId) {
 export async function createEventTrigger(eventId, { workspaceId, title, body, assignee = 'agent', cronSchedule = '', allowAllCommands = false, emitEventId = '' }) {
   const payload = { workspaceId, title, body, assignee, cronSchedule, allowAllCommands };
   if (emitEventId) payload.emitEventId = emitEventId;
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers`, {
+  const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/triggers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -365,7 +379,7 @@ export async function createEventTrigger(eventId, { workspaceId, title, body, as
 export async function updateEventTrigger(eventId, triggerId, { workspaceId, title, body, assignee = 'agent', cronSchedule = '', allowAllCommands = false, emitEventId = '' }) {
   const payload = { workspaceId, title, body, assignee, cronSchedule, allowAllCommands };
   if (emitEventId) payload.emitEventId = emitEventId;
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, {
+  const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -375,13 +389,13 @@ export async function updateEventTrigger(eventId, triggerId, { workspaceId, titl
 }
 
 export async function deleteEventTrigger(eventId, triggerId) {
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/triggers/${triggerId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete event trigger');
   return true;
 }
 
 export async function fetchEventTasks(eventId) {
-  const res = await fetch(`${API_BASE_URL}/events/${eventId}/tasks`);
+  const res = await apiFetch(`${API_BASE_URL}/events/${eventId}/tasks`);
   if (!res.ok) throw new Error('Failed to fetch event tasks');
   return res.json();
 }
@@ -389,13 +403,13 @@ export async function fetchEventTasks(eventId) {
 // ── Workflows (experimental) ─────────────────────────────────────────────────
 
 export async function fetchWorkflows() {
-  const res = await fetch(`${API_BASE_URL}/workflows`);
+  const res = await apiFetch(`${API_BASE_URL}/workflows`);
   if (!res.ok) throw new Error('Failed to fetch workflows');
   return res.json();
 }
 
 export async function getWorkflow(id) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}`);
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${id}`);
   if (!res.ok) throw new Error('Failed to fetch workflow');
   return res.json();
 }
@@ -403,7 +417,7 @@ export async function getWorkflow(id) {
 export async function createWorkflow({ name, description = '', startEventId = '' }) {
   const payload = { name, description };
   if (startEventId) payload.startEventId = startEventId;
-  const res = await fetch(`${API_BASE_URL}/workflows`, {
+  const res = await apiFetch(`${API_BASE_URL}/workflows`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -423,7 +437,7 @@ export async function updateWorkflow(id, { name, description, startEventId, layo
   if (description !== undefined) payload.description = description;
   if (startEventId !== undefined) payload.startEventId = startEventId;
   if (layout !== undefined) payload.layout = layout;
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -433,13 +447,13 @@ export async function updateWorkflow(id, { name, description, startEventId, layo
 }
 
 export async function deleteWorkflow(id) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete workflow');
   return true;
 }
 
 export async function fetchWorkflowSteps(workflowId) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps`);
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/steps`);
   if (!res.ok) throw new Error('Failed to fetch workflow steps');
   return res.json();
 }
@@ -447,7 +461,7 @@ export async function fetchWorkflowSteps(workflowId) {
 export async function createWorkflowStep(workflowId, { eventId, workspaceId, emitEventId = '', title, body = '', assignee = 'agent', allowAllCommands = false }) {
   const payload = { eventId, workspaceId, title, body, assignee, allowAllCommands };
   if (emitEventId) payload.emitEventId = emitEventId;
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps`, {
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/steps`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -462,19 +476,19 @@ export async function createWorkflowStep(workflowId, { eventId, workspaceId, emi
 }
 
 export async function deleteWorkflowStep(workflowId, stepId) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/steps/${stepId}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/steps/${stepId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete workflow step');
   return true;
 }
 
 export async function fetchWorkflowTasks(workflowId) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/tasks`);
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/tasks`);
   if (!res.ok) throw new Error('Failed to fetch workflow tasks');
   return res.json();
 }
 
 export async function fetchWorkflowText(workflowId) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/text`);
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/text`);
   if (!res.ok) throw new Error('Failed to fetch workflow text');
   return res.json();
 }
@@ -482,7 +496,7 @@ export async function fetchWorkflowText(workflowId) {
 // Rejects with a `.line` property when the backend reports a parse error, so
 // the editor can mark the offending row.
 export async function replaceWorkflowFromText(workflowId, text) {
-  const res = await fetch(`${API_BASE_URL}/workflows/${workflowId}/text`, {
+  const res = await apiFetch(`${API_BASE_URL}/workflows/${workflowId}/text`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text })

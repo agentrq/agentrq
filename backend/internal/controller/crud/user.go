@@ -127,6 +127,27 @@ func (c *controller) CreateUser(ctx context.Context, u entity.User) (entity.User
 	}, nil
 }
 
+// FindUserByID looks a user up by the id carried in a token subject.
+//
+// Refreshing a session mints a new access token, and that token carries the
+// name and picture the interface displays. Reading them here rather than
+// copying them out of the refresh token means a profile edited during a long
+// session is picked up at the next refresh instead of being frozen at sign-in.
+func (c *controller) FindUserByID(ctx context.Context, id int64) (entity.User, error) {
+	u, err := c.repository.SystemGetUser(ctx, id)
+	if err != nil {
+		return entity.User{}, err
+	}
+	return entity.User{
+		ID:        u.ID,
+		CreatedAt: u.CreatedAt,
+		UpdatedAt: u.UpdatedAt,
+		Email:     u.Email,
+		Name:      u.Name,
+		Picture:   u.Picture,
+	}, nil
+}
+
 func (c *controller) FindUserByEmail(ctx context.Context, email string) (entity.User, error) {
 	u, err := c.repository.FindUserByEmail(ctx, email)
 	if err != nil {

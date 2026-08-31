@@ -2,6 +2,7 @@ package coremcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,12 @@ import (
 // authorizeTokenSvc is the minimum TokenService the authorize handler touches:
 // a valid session cookie and (unused here) DCR client registrations.
 type authorizeTokenSvc struct{}
+
+func (authorizeTokenSvc) CreateRefreshToken(userID string) (string, error) { return "refresh", nil }
+
+func (authorizeTokenSvc) ValidateRefreshToken(tokenStr string) (*auth.Claims, error) {
+	return nil, errors.New("not implemented")
+}
 
 func (authorizeTokenSvc) CreateToken(userID, email, name, picture string) (string, error) {
 	return "", nil
