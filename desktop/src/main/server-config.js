@@ -135,7 +135,18 @@ export function migrateConfig(raw) {
  * @param {() => Promise<string>} deps.readFile   Rejects when the file is absent.
  * @param {(contents: string) => Promise<void>} deps.writeFile
  */
-export function createServerConfigStore({ readFile, writeFile, newProfileId }) {
+/**
+ * A short id for a new profile.
+ *
+ * Lowercase alphanumeric only: the id becomes a directory name, via the
+ * session partition. Uniqueness is checked against what is already stored
+ * rather than assumed, so this only has to make collisions unlikely.
+ */
+function randomProfileId() {
+  return Math.random().toString(36).slice(2, 10).padEnd(8, '0')
+}
+
+export function createServerConfigStore({ readFile, writeFile, newProfileId = randomProfileId }) {
   const write = (state) =>
     writeFile(JSON.stringify({ ...state, version: CONFIG_VERSION }, null, 2))
 

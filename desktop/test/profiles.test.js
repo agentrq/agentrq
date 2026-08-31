@@ -260,3 +260,36 @@ describe('ids and partitions', () => {
     expect(makeProfile(null)).toBeNull()
   })
 })
+
+describe('edges the caller can reach', () => {
+  it('names a profile whose label is not text at all', () => {
+    // Stored state is read off disk, so a label can be any JSON value.
+    for (const label of [42, null, {}, ['x'], true]) {
+      expect(makeProfile({ id: 'one', label }).label).toBe(DEFAULT_PROFILE_LABEL)
+    }
+  })
+
+  it('still produces a usable profile when handed an unusable first id', () => {
+    // The caller supplies this id; it must not be able to produce a profile
+    // with no partition, which would mean the shared default session.
+    for (const bad of ['../escape', 'CAPS', '', undefined, 7]) {
+      const state = migrateProfiles({ serverUrl: 'https://x.test' }, bad)
+
+      expect(state.profiles).toHaveLength(1)
+      expect(isValidProfileId(state.profiles[0].id)).toBe(true)
+      expect(state.profiles[0].partition).toBe(partitionFor(state.profiles[0].id))
+    }
+  })
+
+  it('renames through updateProfile as well as renameProfile', () => {
+    const state = updateProfile(base(), base().profiles[0].id, { label: '  Personal  ' })
+
+    expect(state.profiles[0].label).toBe('Personal')
+  })
+
+  it('leaves the name alone when updateProfile is given none', () => {
+    const state = updateProfile(base(), base().profiles[0].id, { serverUrl: 'https://x.test' })
+
+    expect(state.profiles[0].label).toBe(DEFAULT_PROFILE_LABEL)
+  })
+})

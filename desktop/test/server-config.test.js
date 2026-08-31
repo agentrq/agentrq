@@ -402,3 +402,26 @@ describe('validateServerUrl', () => {
     expect((await validateServerUrl('example.com', async () => res)).ok).toBe(true)
   })
 })
+
+describe('createServerConfigStore without an injected id generator', () => {
+  // The store is constructed in the main process with only its file I/O, so a
+  // required id generator meant addProfile threw "newProfileId is not a
+  // function" the first time anyone pressed Add profile.
+  it('can still add a profile', async () => {
+    let contents = null
+    const store = createServerConfigStore({
+      readFile: async () => {
+        if (contents === null) throw new Error('ENOENT')
+        return contents
+      },
+      writeFile: async (next) => { contents = next },
+    })
+
+    const after = await store.addProfile('Work')
+
+    expect(after.profiles).toHaveLength(2)
+    expect(after.profiles[1].label).toBe('Work')
+    expect(after.profiles[1].id).toMatch(/^[a-z0-9][a-z0-9-]{0,63}$/)
+    expect(after.activeProfileId).toBe(after.profiles[1].id)
+  })
+})
