@@ -552,9 +552,86 @@ func (h *handler) getAttachment() fiber.Handler {
 		}
 
 		c.Set("Content-Type", res.MimeType)
-		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", res.Filename))
+		c.Set("Content-Disposition", contentDisposition(res.Filename))
 		return c.Send(res.Data)
 	}
+}
+
+// contentDisposition builds a Content-Disposition value that is safe to put in
+// an HTTP header.
+//
+// Header values are US-ASCII. Filenames are not: a macOS screenshot is named
+// "Screenshot 2026-08-30 at 5.51.27 PM.png", where the space before PM is
+// U+202F NARROW NO-BREAK SPACE. Interpolating that straight into the header
+// emitted a multi-byte character in a place the protocol does not allow one,
+// and the desktop app's HTTP stack rejects such a header outright rather than
+// mangling it -- taking down its main process with
+//
+//	TypeError: Cannot convert argument to a ByteString because the character
+//	at index 50 has a value of 8239 which is greater than 255
+//
+// Browsers were more forgiving and showed a mis-decoded name, so this only ever
+// looked like a desktop bug.
+//
+// Both forms are emitted, as RFC 6266 section 5 recommends: a plain ASCII
+// filename any client can read, and the exact name in the extended form for
+// clients that understand it. Building the quoted string by hand also closes
+// the injection the old fmt.Sprintf allowed, where a filename containing a
+// quote could end the parameter early and append parameters of its own.
+func contentDisposition(filename string) string {
+	fallback := asciiFilename(filename)
+	if fallback == "" {
+		fallback = "download"
+	}
+
+	disposition := `inline; filename="` + fallback + `"`
+	// Only worth the extended form when there is a real name that the ASCII
+	// fallback does not already carry exactly.
+	if filename != "" && fallback != filename {
+		disposition += "; filename*=UTF-8''" + rfc5987Encode(filename)
+	}
+	return disposition
+}
+
+// asciiFilename reduces a filename to what may appear inside a quoted header
+// value: printable US-ASCII, with anything else replaced rather than dropped so
+// the name keeps its shape. The quote and backslash go too -- one would end the
+// string early, the other escape what follows -- as do control characters,
+// since a carriage return would split the header in two.
+func asciiFilename(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	for _, r := range name {
+		switch {
+		case r < 0x20 || r > 0x7e, r == '"', r == '\\':
+			b.WriteByte('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// rfc5987Encode percent-encodes the UTF-8 bytes of s, leaving only the
+// attr-char set from RFC 5987 section 3.2.1 untouched.
+func rfc5987Encode(s string) string {
+	const hex = "0123456789ABCDEF"
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9',
+			strings.IndexByte("!#$&+-.^_`|~", c) >= 0:
+			b.WriteByte(c)
+		default:
+			b.WriteByte('%')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&0x0f])
+		}
+	}
+	return b.String()
 }
 
 func (h *handler) sendPermissionVerdict() fiber.Handler {
