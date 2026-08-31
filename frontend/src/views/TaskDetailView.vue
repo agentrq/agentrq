@@ -654,6 +654,7 @@ import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
 import { useSpeechToText } from '../composables/useSpeechToText';
+import { usePendingSend } from '../composables/usePendingSend';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { renderMarkdown } from '../utils/markdown';
@@ -672,7 +673,14 @@ const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
 const replyAttachments = ref([]);
-const pendingSend = ref(null); // { text, atts, secondsLeft, intervalId } while a delayed send counts down
+// A held message is addressed to the task it was written in, so switching tasks
+// cannot redirect it. See usePendingSend.
+const {
+  pending: pendingSend,
+  start: holdMessage,
+  flush: flushHeldMessage,
+  cancel: takeBackHeldMessage,
+} = usePendingSend({ deliver: (held) => deliverReply(held.text, held.atts, held.target) });
 
 const {
   isRecording: sttRecording,
@@ -904,7 +912,21 @@ async function load() {
 }
 
 // Automatically reload task when route param changes (important for nested routes)
-watch(() => route.params.taskId, (newTaskId) => {
+watch(() => route.params.taskId, (newTaskId, oldTaskId) => {
+  if (newTaskId === oldTaskId) return;
+
+  // Two things the composer must not carry across tasks. A message still
+  // counting down goes to the task it was written in, before that task stops
+  // being the one on screen. And a half-typed draft belongs to the task it was
+  // typed into, so the next one opens empty rather than pre-filled with
+  // something meant for someone else.
+  flushHeldMessage();
+  replyText.value = '';
+  replyAttachments.value = [];
+  nextTick(() => {
+    adjustTextareaHeight();
+  });
+
   if (newTaskId && newTaskId !== task.value?.id) {
     disconnect();
     load();
@@ -1031,17 +1053,28 @@ const toggleYOLO = async () => {
   }
 };
 
-async function deliverReply(text, atts) {
+// `target` is where the message was written. It defaults to the task on screen
+// for an immediate send, but a held one carries its own and must never fall back
+// to whatever is showing when it finally goes.
+async function deliverReply(text, atts, target = null) {
+  const to = target ?? { workspaceId: workspaceId.value, taskId: taskId.value };
+  const stillViewing = () => String(to.taskId) === String(taskId.value);
   try {
-    const res = await respondToTask(workspaceId.value, taskId.value, 'text', text, atts);
-    task.value = res.task;
+    const res = await respondToTask(to.workspaceId, to.taskId, 'text', text, atts);
+    // Only adopt the reply if that task is still the one being shown; otherwise
+    // this would paint another task's thread over the current one.
+    if (stillViewing()) task.value = res.task;
   } catch(err) {
     notifyError("Failed to deliver message: " + err.message);
-    replyText.value = text;
-    replyAttachments.value = atts;
-    nextTick(() => {
-      adjustTextareaHeight();
-    });
+    // Putting the text back is only right while its own task is on screen. Into
+    // a different task's composer it would be worse than losing it.
+    if (stillViewing()) {
+      replyText.value = text;
+      replyAttachments.value = atts;
+      nextTick(() => {
+        adjustTextareaHeight();
+      });
+    }
   }
 }
 
@@ -1055,40 +1088,27 @@ async function submitReply() {
     adjustTextareaHeight();
   });
 
+  // Captured now, while we know which task this was typed into.
+  const target = { workspaceId: workspaceId.value, taskId: taskId.value };
+
   const delaySeconds = workspace.value?.inputSendDelaySeconds || 0;
   if (delaySeconds <= 0) {
-    await deliverReply(text, atts);
+    await deliverReply(text, atts, target);
     return;
   }
 
-  pendingSend.value = { text, atts, secondsLeft: delaySeconds };
-  pendingSend.value.intervalId = setInterval(() => {
-    if (!pendingSend.value) return;
-    pendingSend.value.secondsLeft -= 1;
-    if (pendingSend.value.secondsLeft <= 0) {
-      clearInterval(pendingSend.value.intervalId);
-      const { text: pendingText, atts: pendingAtts } = pendingSend.value;
-      pendingSend.value = null;
-      deliverReply(pendingText, pendingAtts);
-    }
-  }, 1000);
+  holdMessage({ text, atts, seconds: delaySeconds, target });
 }
 
 function sendPendingNow() {
-  const pending = pendingSend.value;
-  if (!pending) return;
-  clearInterval(pending.intervalId);
-  pendingSend.value = null;
-  deliverReply(pending.text, pending.atts);
+  flushHeldMessage();
 }
 
 function cancelPendingSend() {
-  const pending = pendingSend.value;
-  if (!pending) return;
-  clearInterval(pending.intervalId);
-  pendingSend.value = null;
-  replyText.value = pending.text;
-  replyAttachments.value = pending.atts;
+  const held = takeBackHeldMessage();
+  if (!held) return;
+  replyText.value = held.text;
+  replyAttachments.value = held.atts;
   nextTick(() => {
     adjustTextareaHeight();
     textareaRef.value?.focus();
@@ -1186,7 +1206,9 @@ onMounted(() => {
 });
 onUnmounted(disconnect);
 onUnmounted(() => {
-  if (pendingSend.value) clearInterval(pendingSend.value.intervalId);
+  // Leaving the view resolves a held message the same way switching tasks does:
+  // it was asked for, and it is addressed to a task that is no longer on screen.
+  flushHeldMessage();
 });
 function getSlackUser(m) {
   return m.metadata?.slack_user || 'Slack';
