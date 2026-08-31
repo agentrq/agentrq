@@ -24,11 +24,13 @@ const (
 
 // RefreshTokenTTL is how long a session survives without being used at all.
 //
-// Every refresh mints a new one, so an active person is never signed out; this
-// is the idle window. Thirty days rather than a year because these tokens are
-// stateless -- there is no way to revoke one before it expires, so its lifetime
-// *is* the blast radius if it leaks.
-const RefreshTokenTTL = 30 * 24 * time.Hour
+// Every refresh mints a new one, so someone who opens the app at least this
+// often is never signed out; this is the idle window, not a session cap.
+//
+// Two days, kept deliberately short because these tokens are stateless: there
+// is no way to revoke one before it expires, so its lifetime *is* the blast
+// radius if it leaks -- and on desktop it is stored unencrypted on disk.
+const RefreshTokenTTL = 2 * 24 * time.Hour
 
 type TokenConfig struct {
 	JWTSecret string `yaml:"jwt_secret"`
