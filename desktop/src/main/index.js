@@ -20,6 +20,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
+import { activeProfile, partitionFor } from './profiles.js'
 import {
   CONFIG_FILENAME,
   createServerConfigStore,
