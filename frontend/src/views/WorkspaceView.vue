@@ -34,6 +34,21 @@
                 <textarea v-model="form.description" rows="3" class="w-full bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none focus:border-gray-900 dark:focus:border-white focus:ring-0 shadow-sm" placeholder="What are we building? Describe the mission of this workspace..."></textarea>
               </div>
               <div class="space-y-2">
+                <label for="newWorkingDirectory" class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
+                  Working Directory
+                  <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Optional absolute path the agent works in</span>
+                </label>
+                <div class="flex items-stretch gap-2">
+                  <input id="newWorkingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
+                         class="min-w-0 flex-1 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-4 py-3 text-sm outline-none font-medium text-gray-800 dark:text-zinc-200 focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm"
+                         :placeholder="workingDirectoryPlaceholder" />
+                  <button v-if="canBrowseDirectories" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
+                          class="shrink-0 px-4 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm text-[10px] font-black uppercase tracking-widest text-gray-800 dark:text-zinc-200 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                    {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
+                  </button>
+                </div>
+              </div>
+              <div class="space-y-2">
                 <label class="block text-[10px] font-black text-gray-500 dark:text-zinc-400 flex justify-between items-center">
                   Self Learning Loop Note
                   <span class="text-[9px] text-gray-500 font-medium normal-case tracking-normal">Optional guidelines for agent learning</span>
@@ -232,6 +247,12 @@ import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
+import { usePlatformStore } from '../stores/platformStore';
+import {
+  chooseDirectory,
+  directoryPickerState,
+  workingDirectoryPlaceholder as directoryPlaceholderFor,
+} from '../composables/useDirectoryPicker';
 import LoadingState from '../components/LoadingState.vue';
 
 const { toKebabCase, liveKebabCase } = useFormat();
@@ -239,6 +260,36 @@ const tooltipStore = useTooltipStore();
 
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
+
+const platformStore = usePlatformStore();
+const isChoosingDirectory = ref(false);
+
+// Offered only when it can actually work: the browser cannot produce an
+// absolute path, and a desktop build whose bridge lacks the chooser would give
+// a button that does nothing when clicked.
+const canBrowseDirectories = computed(
+  () => directoryPickerState({ isDesktop: platformStore.isDesktop, bridge: window.agentrq?.dialog }).available
+);
+
+const workingDirectoryPlaceholder = computed(() => directoryPlaceholderFor(window.agentrq?.platform));
+
+async function chooseWorkingDirectory() {
+  if (isChoosingDirectory.value) return;
+  isChoosingDirectory.value = true;
+  try {
+    const chosen = await chooseDirectory({
+      isDesktop: platformStore.isDesktop,
+      bridge: window.agentrq?.dialog,
+      currentPath: form.value.workingDirectory,
+    });
+    // '' means the dialog was dismissed, which must not wipe what is there.
+    if (chosen) form.value.workingDirectory = chosen;
+  } catch (err) {
+    notifyError(err.message);
+  } finally {
+    isChoosingDirectory.value = false;
+  }
+}
 const workspaceStore = useWorkspaceStore();
 const workspaces = computed(() => workspaceStore.workspaces);
 const showCreate = ref(false);
@@ -250,7 +301,7 @@ const iconError = ref('');
 const createFileInput = ref(null);
 const error = ref(null);
 
-const form = ref({ name: '', description: '', icon: '', selfLearningLoopNote: '' });
+const form = ref({ name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' });
 const globalStats = ref({
   totalTasks: 0,
   pendingTasks: 0,
@@ -316,7 +367,7 @@ watch(() => form.value.name, (newVal) => {
 
 watch(showCreate, (val) => {
   if (!val) {
-    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '' };
+    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' };
     iconError.value = '';
   }
 });
@@ -351,11 +402,11 @@ async function submit() {
   loading.value = true;
   error.value = null;
   try {
-    const res = await createWorkspace(form.value.name, form.value.description, form.value.icon, form.value.selfLearningLoopNote);
+    const res = await createWorkspace(form.value.name, form.value.description, form.value.icon, form.value.selfLearningLoopNote, form.value.workingDirectory);
     const newId = res.workspace?.id || res.id;
     
     showCreate.value = false;
-    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '' };
+    form.value = { name: '', description: '', icon: '', selfLearningLoopNote: '', workingDirectory: '' };
     iconError.value = ''; 
     
     if (newId) {

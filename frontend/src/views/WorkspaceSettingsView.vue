@@ -54,12 +54,12 @@
                         <input id="workingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
                                class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all shadow-sm"
                                :placeholder="workingDirectoryPlaceholder" />
-                        <button v-if="platformStore.isDesktop" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
+                        <button v-if="canBrowseDirectories" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
                                 class="shrink-0 px-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-zinc-100 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
                           {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
                         </button>
                       </div>
-                      <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.</p>
+                      <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.<span v-if="!canBrowseDirectories"> Browse for it in the desktop app.</span></p>
                     </div>
                   </div>
 
@@ -612,6 +612,11 @@ import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, de
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
 import { usePlatformStore } from '../stores/platformStore';
+import {
+  chooseDirectory,
+  directoryPickerState,
+  workingDirectoryPlaceholder as directoryPlaceholderFor,
+} from '../composables/useDirectoryPicker';
 import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -939,30 +944,28 @@ const form = ref({
 
 const isChoosingDirectory = ref(false);
 
-// Show an example from the platform the person is actually on. A Windows user
-// told to enter "/Users/you/..." has to translate it before they can start.
-const workingDirectoryPlaceholder = computed(() => {
-  if (!platformStore.isDesktop) return '/home/you/code/project';
-  return window.agentrq?.platform === 'win32'
-    ? 'C:\\Users\\you\\Code\\project'
-    : '/Users/you/Code/project';
-});
+// Both questions matter: only the desktop shell can produce an absolute path,
+// and only a build whose bridge exposes the chooser can actually open one. A
+// button offered without the second is a button that does nothing when clicked.
+const canBrowseDirectories = computed(
+  () => directoryPickerState({ isDesktop: platformStore.isDesktop, bridge: window.agentrq?.dialog }).available
+);
 
-/**
- * Ask the shell for the platform's folder chooser.
- *
- * Desktop only: a browser cannot hand back a real filesystem path, so the web
- * build offers the text field alone rather than a button that cannot work.
- */
+const workingDirectoryPlaceholder = computed(() => directoryPlaceholderFor(window.agentrq?.platform));
+
 async function chooseWorkingDirectory() {
   if (isChoosingDirectory.value) return;
   isChoosingDirectory.value = true;
   try {
-    const chosen = await window.agentrq?.dialog?.chooseDirectory(form.value.workingDirectory);
+    const chosen = await chooseDirectory({
+      isDesktop: platformStore.isDesktop,
+      bridge: window.agentrq?.dialog,
+      currentPath: form.value.workingDirectory,
+    });
     // '' means the dialog was dismissed, which must not wipe what is there.
     if (chosen) form.value.workingDirectory = chosen;
   } catch (err) {
-    notifyError('Could not open the folder chooser: ' + err.message);
+    notifyError(err.message);
   } finally {
     isChoosingDirectory.value = false;
   }

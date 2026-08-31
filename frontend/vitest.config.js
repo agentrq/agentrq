@@ -39,6 +39,7 @@ export default defineConfig({
         'src/composables/useChatScroll.js',
         'src/composables/useTaskGroups.js',
         'src/composables/usePendingSend.js',
+        'src/composables/useDirectoryPicker.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

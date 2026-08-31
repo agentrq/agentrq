@@ -35,11 +35,11 @@ export async function fetchUser() {
 }
 
 
-export async function createWorkspace(name, description, icon = '', selfLearningLoopNote = '') {
+export async function createWorkspace(name, description, icon = '', selfLearningLoopNote = '', workingDirectory = '') {
   const res = await fetch(`${API_BASE_URL}/workspaces`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace: { name, description, icon, selfLearningLoopNote } })
+    body: JSON.stringify({ workspace: { name, description, icon, selfLearningLoopNote, workingDirectory } })
   });
   if (!res.ok) throw new Error('Failed to create workspace');
   return res.json();
