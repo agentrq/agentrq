@@ -30,6 +30,7 @@ import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './aut
 import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
 import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
 import { createEventStreamClient } from './sse.js'
+import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
 import { UpdateStatus, createUpdater } from './updater.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
@@ -145,6 +146,66 @@ function connectionState() {
 /** Send the window back to the app root, picking up whatever the state now is. */
 function reloadToRoot(win) {
   if (win && !win.isDestroyed()) win.loadURL(`${APP_ORIGIN}/`)
+}
+
+/**
+ * Show a link in a window belonging to the app.
+ *
+ * Hardened exactly like the OAuth window below, and for the same reason: this
+ * is rendering a page the app does not control, so it gets no preload, no node
+ * and a sandbox. It also gets its own session partition — the default session
+ * is where the `at` cookie lives, and an arbitrary website has no business
+ * sharing that jar.
+ *
+ * No `parent`, deliberately: a child window is pinned above its parent, which
+ * is the wrong behaviour for something the user may want to read beside the
+ * app rather than on top of it.
+ */
+function openLinkWindow(url, parentWin) {
+  const alive = parentWin && !parentWin.isDestroyed()
+  const { width, height } = linkWindowBounds(alive ? parentWin.getBounds() : null)
+
+  const child = new BrowserWindow({
+    width,
+    height,
+    autoHideMenuBar: true,
+    backgroundColor: backgroundColorFor(currentTheme),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: 'persist:agentrq-links',
+    },
+  })
+
+  // A page opened this way must not be able to spawn further app windows. Its
+  // own popups go to the real browser, where an unfamiliar site belongs.
+  child.webContents.setWindowOpenHandler(({ url: next }) => {
+    const target = classifyLink(next, { appOrigin: APP_ORIGIN })
+    if (target === LinkTarget.Window || target === LinkTarget.System) shell.openExternal(next)
+    return { action: 'deny' }
+  })
+
+  child.loadURL(url)
+  return child
+}
+
+/**
+ * Send a link where it belongs. Blocked targets fall through to nothing on
+ * purpose: a javascript: or file: URL in a message body is not a link the user
+ * meant to follow, and reporting it would only teach them to click through.
+ */
+function routeLink(url, parentWin) {
+  switch (classifyLink(url, { appOrigin: APP_ORIGIN })) {
+    case LinkTarget.Window:
+      openLinkWindow(url, parentWin)
+      break
+    case LinkTarget.System:
+      shell.openExternal(url)
+      break
+    default:
+      break
+  }
 }
 
 async function startOAuth(win, pathname, search) {
@@ -341,16 +402,19 @@ function createWindow() {
     win.webContents.send('agentrq:navigate', route)
   })
 
-  // Anything that is not the app itself belongs in the user's real browser.
+  // A link out of the app opens in a window of the app's own, which the user
+  // closes to get straight back to what they were doing. Handing these to the
+  // system browser instead put the docs, the terms and any URL on a message
+  // behind a context switch with nothing to come back to.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    routeLink(url, win)
     return { action: 'deny' }
   })
 
   win.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith(APP_ORIGIN)) {
       event.preventDefault()
-      shell.openExternal(url)
+      routeLink(url, win)
       return
     }
 
