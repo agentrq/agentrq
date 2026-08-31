@@ -185,6 +185,31 @@ describe('buildCSP', () => {
     expect(csp).not.toContain(`script-src 'self' 'unsafe-inline'`)
   })
 
+  it('allows the sign-in providers to serve profile photos', () => {
+    // user.picture is the provider's own URL, so 'self' alone blocked every
+    // avatar and the sidebar fell back to the initial-letter placeholder.
+    for (const csp of [buildCSP(), buildCSP({ dev: true, devServerUrl: 'http://localhost:5174' })]) {
+      const img = csp.split('; ').find((d) => d.startsWith('img-src'))
+      expect(img).toContain('https://*.googleusercontent.com')
+      expect(img).toContain('https://avatars.githubusercontent.com')
+      expect(img).toContain(`'self'`)
+      expect(img).toContain('data:')
+      expect(img).toContain('blob:')
+    }
+  })
+
+  it('does not open images to arbitrary origins', () => {
+    // An <img> to any host is a working beacon even though it renders nothing,
+    // so the avatar hosts are listed individually rather than allowing https:.
+    const img = buildCSP()
+      .split('; ')
+      .find((d) => d.startsWith('img-src'))
+    // A bare `https:` scheme source, or a lone `*`, would allow any host. The
+    // subdomain wildcard inside https://*.googleusercontent.com is not that.
+    expect(img).not.toMatch(/(^|\s)https:(\s|$)/)
+    expect(img).not.toMatch(/(^|\s)\*(\s|$)/)
+  })
+
   it('relaxes only in dev, where the Vite client needs it', () => {
     const csp = buildCSP({ dev: true, devServerUrl: 'http://localhost:5174' })
     expect(csp).toContain(`'unsafe-eval'`)
