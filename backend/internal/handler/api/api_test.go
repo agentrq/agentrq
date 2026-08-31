@@ -619,3 +619,49 @@ func TestRefreshSession(t *testing.T) {
 		}
 	})
 }
+
+// TestSignInIssuesBothCookies covers what a sign-in actually puts in the
+// browser. The refresh half is invisible in normal use — nothing breaks without
+// it until a day later — so a login that quietly set only the access cookie
+// would look completely healthy right up until everyone was signed out.
+func TestSignInIssuesBothCookies(t *testing.T) {
+	h := &handler{
+		rootLoginEnabled: true,
+		rootToken:        "root-secret",
+		crud: &mockCrudController{
+			findOrCreateUserFunc: func(context.Context, entity.FindOrCreateUserRequest) (*entity.FindOrCreateUserResponse, error) {
+				return &entity.FindOrCreateUserResponse{User: entity.User{ID: 1, Email: "root@agentrq.local"}}, nil
+			},
+		},
+		tokenSvc: &refreshTokenSvc{
+			createTokenFunc:   func(string, string, string, string) (string, error) { return "access-token", nil },
+			createRefreshFunc: func(string) (string, error) { return "refresh-token", nil },
+		},
+	}
+
+	app := fiber.New()
+	app.Post("/api/v1/auth/root/login", h.rootLogin())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/root/login",
+		bytes.NewBufferString(`{"rootToken":"root-secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+
+	joined := strings.Join(res.Header.Values("Set-Cookie"), "\n")
+	if !strings.Contains(joined, "at=access-token") {
+		t.Errorf("no access cookie: %q", joined)
+	}
+	if !strings.Contains(joined, "rt=refresh-token") {
+		t.Errorf("no refresh cookie — signing in set only half a session: %q", joined)
+	}
+	if !strings.Contains(joined, "path=/api/v1/auth/refresh") {
+		t.Errorf("refresh cookie is not scoped to the route that reads it: %q", joined)
+	}
+}
