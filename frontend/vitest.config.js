@@ -40,6 +40,7 @@ export default defineConfig({
         'src/composables/useTaskGroups.js',
         'src/composables/usePendingSend.js',
         'src/composables/useDirectoryPicker.js',
+        'src/composables/useProfileDisplay.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

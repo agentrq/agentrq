@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
 import { activeProfile, partitionFor } from './profiles.js'
+import { fetchProfileIdentity } from './identity.js'
 import {
   CONFIG_FILENAME,
   createServerConfigStore,
@@ -517,6 +518,36 @@ function installMenu(getWindow) {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/**
+ * Who each profile is signed in as, kept between menu openings.
+ *
+ * Cached because the answer changes rarely — signing in or out — while the
+ * menu can be opened repeatedly, and each lookup is a request to a possibly
+ * distant server.
+ */
+const profileIdentities = new Map()
+
+/**
+ * Ask every profile who it is signed in as, each through its own session.
+ *
+ * In parallel, and every lookup already swallows its own failures, so one
+ * unreachable server delays the others by nothing and fails nothing.
+ */
+async function refreshProfileIdentities() {
+  if (!profileState) return
+  await Promise.all(
+    profileState.profiles.map(async (profile) => {
+      const ses = session.fromPartition(profile.partition)
+      const identity = await fetchProfileIdentity({
+        fetchImpl: (input, init) => ses.fetch(input, init),
+        serverUrl: profile.serverUrl,
+        timeout: (ms) => AbortSignal.timeout(ms),
+      })
+      profileIdentities.set(profile.id, identity)
+    })
+  )
+}
+
 /** What the renderer needs to draw the switcher: names, not sessions. */
 function profilesPayload() {
   const state = profileState ?? { profiles: [], activeProfileId: '' }
@@ -527,6 +558,8 @@ function profilesPayload() {
       label,
       serverUrl: url,
       active: id === state.activeProfileId,
+      // null when that profile is signed out or its server cannot answer.
+      identity: profileIdentities.get(id) ?? null,
     })),
   }
 }
@@ -612,7 +645,10 @@ function registerIpc(getWindow) {
 
   // Profiles. Only names and servers cross the bridge — never a session, a
   // partition or a cookie.
-  ipcMain.handle('agentrq:profiles:get', () => profilesPayload())
+  ipcMain.handle('agentrq:profiles:get', async () => {
+    await refreshProfileIdentities()
+    return profilesPayload()
+  })
   ipcMain.handle('agentrq:profiles:switch', (_event, id) => switchProfile(id))
   ipcMain.handle('agentrq:profiles:add', async (_event, label) => {
     profileState = await configStore.addProfile(label)
@@ -630,6 +666,7 @@ function registerIpc(getWindow) {
     profileState = await configStore.removeProfile(id)
     // Its cookies would otherwise outlive it on disk, still signed in.
     await session.fromPartition(partitionFor(id)).clearStorageData()
+    profileIdentities.delete(id)
     return wasActive ? switchProfileToActive() : profilesPayload()
   })
 

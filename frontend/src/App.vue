@@ -252,7 +252,8 @@
                  ]">
               <div class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
                 <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500">{{ activeProfile ? activeProfile.label : 'Account' }}</p>
-                <p class="text-xs font-bold text-gray-700 dark:text-zinc-200 truncate mt-0.5" :title="user?.email">{{ user?.email || 'Loading...' }}</p>
+                <p class="text-xs font-bold text-gray-700 dark:text-zinc-200 truncate mt-0.5" :title="user?.email">{{ user?.name || user?.email || 'Loading...' }}</p>
+                <p v-if="user?.name && user?.email" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="user.email">{{ user.email }}</p>
                 <p v-if="activeProfile?.serverUrl" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="activeProfile.serverUrl">{{ activeProfile.serverUrl }}</p>
               </div>
 
@@ -264,13 +265,13 @@
                   <button v-for="p in otherProfiles" :key="p.id" type="button"
                           @click="switchToProfile(p.id)" :disabled="switchingProfile"
                           class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span class="w-6 h-6 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-gray-600 dark:text-zinc-300">
-                      {{ p.label.charAt(0).toUpperCase() }}
+                    <span class="w-6 h-6 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-gray-600 dark:text-zinc-300 overflow-hidden">
+                      <img v-if="p.identity?.picture" :src="p.identity.picture" class="w-full h-full object-cover" alt="" />
+                      <template v-else>{{ profileInitial(p) }}</template>
                     </span>
                     <span class="min-w-0 flex-1">
-                      <span class="block text-xs font-bold text-gray-700 dark:text-zinc-200 truncate">{{ p.label }}</span>
-                      <span v-if="p.serverUrl" class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate">{{ p.serverUrl }}</span>
-                      <span v-else class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500">Not signed in</span>
+                      <span class="block text-xs font-bold text-gray-700 dark:text-zinc-200 truncate">{{ profileTitle(p) }}</span>
+                      <span class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate" :title="profileSubtitle(p)">{{ profileSubtitle(p) }}</span>
                     </span>
                   </button>
                 </div>
@@ -365,6 +366,7 @@ import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { fetchUser, fetchWorkspaces, API_BASE_URL } from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
+import { profileDisplay } from './composables/useProfileDisplay'
 import { usePlatformStore } from './stores/platformStore'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
@@ -402,6 +404,10 @@ const switchingProfile = ref(false)
 const showProfiles = computed(() => platformStore.isDesktop && profiles.value.length > 0)
 const activeProfile = computed(() => profiles.value.find((p) => p.active) ?? null)
 const otherProfiles = computed(() => profiles.value.filter((p) => !p.active))
+
+const profileInitial = (p) => profileDisplay(p).initial
+const profileTitle = (p) => profileDisplay(p).title
+const profileSubtitle = (p) => profileDisplay(p).subtitle
 
 async function loadProfiles() {
   if (!platformStore.isDesktop || !window.agentrq?.profiles) return
