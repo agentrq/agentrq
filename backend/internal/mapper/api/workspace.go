@@ -26,6 +26,7 @@ func FromHTTPRequestToCreateWorkspaceRequestEntity(c *fiber.Ctx) *entity.CreateW
 			AllowAllCommands:      payload.Workspace.AllowAllCommands,
 			SelfLearningLoopNote:  payload.Workspace.SelfLearningLoopNote,
 			InputSendDelaySeconds: payload.Workspace.InputSendDelaySeconds,
+			WorkingDirectory:      payload.Workspace.WorkingDirectory,
 		},
 	}
 }
@@ -118,6 +119,7 @@ func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateW
 			AllowAllCommands:      payload.Workspace.AllowAllCommands,
 			SelfLearningLoopNote:  payload.Workspace.SelfLearningLoopNote,
 			InputSendDelaySeconds: payload.Workspace.InputSendDelaySeconds,
+			WorkingDirectory:      payload.Workspace.WorkingDirectory,
 		},
 	}
 }
@@ -154,6 +156,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AllowAllCommands:      p.AllowAllCommands,
 		SelfLearningLoopNote:  p.SelfLearningLoopNote,
 		InputSendDelaySeconds: p.InputSendDelaySeconds,
+		WorkingDirectory:      p.WorkingDirectory,
 	}
 	if p.Slack != nil {
 		v.Slack = &view.SlackConfig{

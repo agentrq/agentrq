@@ -22,6 +22,7 @@ type (
 		AllowAllCommands      bool           `gorm:"default:false"`
 		SelfLearningLoopNote  string         `gorm:"type:text"`
 		InputSendDelaySeconds int            `gorm:"default:0"`
+		WorkingDirectory      string         `gorm:"type:text"`
 	}
 
 	// Task hosts a task created by a human or an agent within a workspace

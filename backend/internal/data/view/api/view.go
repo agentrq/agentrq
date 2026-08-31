@@ -24,6 +24,7 @@ type (
 		AllowAllCommands      bool                  `json:"allowAllCommands"`
 		SelfLearningLoopNote  string                `json:"selfLearningLoopNote,omitempty"`
 		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
+		WorkingDirectory      string                `json:"workingDirectory,omitempty"`
 		Slack                 *SlackConfig          `json:"slack,omitempty"`
 	}
 

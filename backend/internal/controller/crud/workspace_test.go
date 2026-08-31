@@ -220,3 +220,95 @@ func TestUpdateWorkspace_Archived_Fails(t *testing.T) {
 		t.Fatalf("expected archived error, got %v", err)
 	}
 }
+
+func TestNormalizeWorkingDirectory_OptionalAndBlank(t *testing.T) {
+	// The field is optional, and whitespace someone left behind is not a value.
+	for _, in := range []string{"", "   ", "\t\n "} {
+		got, err := normalizeWorkingDirectory(in)
+		if err != nil {
+			t.Errorf("normalizeWorkingDirectory(%q) errored: %v", in, err)
+		}
+		if got != "" {
+			t.Errorf("normalizeWorkingDirectory(%q) = %q, want empty", in, got)
+		}
+	}
+}
+
+func TestNormalizeWorkingDirectory_TrimsSurroundingSpace(t *testing.T) {
+	// Paths pasted from a terminal or a file manager routinely arrive padded.
+	got, err := normalizeWorkingDirectory("  /Users/mt/Code/agentrq  ")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "/Users/mt/Code/agentrq"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeWorkingDirectory_AcceptsAbsoluteShapes(t *testing.T) {
+	// The agent may run on a different platform from this server, so all three
+	// shapes have to be accepted here rather than only the local one.
+	for _, in := range []string{
+		"/",
+		"/Users/mt/Code/agentrq",
+		"~",
+		"~/Code/agentrq",
+		`C:\Users\mt\Code`,
+		"C:/Users/mt/Code",
+		`\\server\share\code`,
+	} {
+		got, err := normalizeWorkingDirectory(in)
+		if err != nil {
+			t.Errorf("normalizeWorkingDirectory(%q) errored: %v", in, err)
+		}
+		if got != in {
+			t.Errorf("normalizeWorkingDirectory(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestNormalizeWorkingDirectory_RejectsRelativePaths(t *testing.T) {
+	// A relative path means whatever directory the agent's shell started in,
+	// which looks like it works and then quietly does something else.
+	for _, in := range []string{"Code/agentrq", "./agentrq", "../agentrq", "agentrq", "~agentrq", "C:", "C:x"} {
+		if _, err := normalizeWorkingDirectory(in); err == nil {
+			t.Errorf("normalizeWorkingDirectory(%q) was accepted, want rejected", in)
+		}
+	}
+}
+
+func TestNormalizeWorkingDirectory_RejectsControlCharacters(t *testing.T) {
+	// A newline is an injection anywhere this value is echoed into a line-based
+	// format, and no filesystem accepts one in a path.
+	for _, in := range []string{"/tmp/a\nb", "/tmp/a\rb", "/tmp/a\x00b", "/tmp/a\x7fb", "/tmp/a\tb"} {
+		if _, err := normalizeWorkingDirectory(in); err == nil {
+			t.Errorf("normalizeWorkingDirectory(%q) was accepted, want rejected", in)
+		}
+	}
+}
+
+func TestNormalizeWorkingDirectory_AllowsNonASCIINames(t *testing.T) {
+	// Rejecting control characters must not also reject perfectly ordinary
+	// directory names in other scripts.
+	in := "/Users/mt/Documents/プロジェクト"
+	got, err := normalizeWorkingDirectory(in)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != in {
+		t.Errorf("got %q, want %q", got, in)
+	}
+}
+
+func TestIsDriveLetter(t *testing.T) {
+	for _, b := range []byte{'a', 'z', 'A', 'Z'} {
+		if !isDriveLetter(b) {
+			t.Errorf("isDriveLetter(%q) = false, want true", b)
+		}
+	}
+	for _, b := range []byte{'0', '/', ':', '-'} {
+		if isDriveLetter(b) {
+			t.Errorf("isDriveLetter(%q) = true, want false", b)
+		}
+	}
+}

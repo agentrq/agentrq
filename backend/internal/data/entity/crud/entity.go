@@ -34,6 +34,7 @@ type (
 		AllowAllCommands      bool
 		SelfLearningLoopNote  string
 		InputSendDelaySeconds int
+		WorkingDirectory      string
 		Slack                 *SlackConfig
 	}
 

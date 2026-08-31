@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -19,6 +20,11 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 	}
 
 	now := time.Now()
+	workingDirectory, err := normalizeWorkingDirectory(req.Workspace.WorkingDirectory)
+	if err != nil {
+		return nil, err
+	}
+
 	m := model.Workspace{
 		ID:                    c.idgen.NextID(),
 		CreatedAt:             now,
@@ -29,6 +35,7 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		AllowAllCommands:      req.Workspace.AllowAllCommands,
 		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
 		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
+		WorkingDirectory:      workingDirectory,
 	}
 
 	if req.Workspace.NotificationSettings != nil {
@@ -155,6 +162,59 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 	return err
 }
 
+// normalizeWorkingDirectory validates the optional working directory a workspace
+// hands to its agent, returning the value to store.
+//
+// The server cannot check that the directory exists: the agent usually runs on
+// a different machine, so the path is only meaningful there. What it can do is
+// refuse values that cannot be a directory anywhere.
+//
+// An absolute path is required because a relative one silently means whatever
+// the agent's shell happened to start in, which is the kind of setting that
+// appears to work and then does something else entirely. `~` is accepted since
+// the agent expands it, and it is what a person naturally types.
+func normalizeWorkingDirectory(dir string) (string, error) {
+	trimmed := strings.TrimSpace(dir)
+	if trimmed == "" {
+		// The field is optional; blank means "wherever the agent already is".
+		return "", nil
+	}
+
+	for _, r := range trimmed {
+		// A newline would be a header or log injection anywhere this is echoed,
+		// and no filesystem accepts a control character in a path.
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("working directory must not contain control characters")
+		}
+	}
+
+	if !isAbsolutePath(trimmed) {
+		return "", fmt.Errorf("working directory must be an absolute path, got %q", trimmed)
+	}
+	return trimmed, nil
+}
+
+// isAbsolutePath covers the shapes an absolute path takes on the platforms an
+// agent might run on, rather than only the one this server happens to run on.
+func isAbsolutePath(p string) bool {
+	switch {
+	case strings.HasPrefix(p, "/"): // POSIX
+		return true
+	case p == "~" || strings.HasPrefix(p, "~/"): // home, expanded by the agent
+		return true
+	case strings.HasPrefix(p, `\\`): // Windows UNC share
+		return true
+	case len(p) >= 3 && isDriveLetter(p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/'):
+		return true // Windows drive, C:\ or C:/
+	default:
+		return false
+	}
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 // validInputSendDelaySeconds are the only values the composer's send-delay
 // selector may offer; anything else is rejected rather than silently clamped.
 var validInputSendDelaySeconds = map[int]bool{0: true, 3: true, 5: true, 10: true, 15: true, 30: true, 60: true}
@@ -163,6 +223,10 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	if !validInputSendDelaySeconds[req.Workspace.InputSendDelaySeconds] {
 		return nil, fmt.Errorf("invalid inputSendDelaySeconds: %d", req.Workspace.InputSendDelaySeconds)
+	}
+	workingDirectory, err := normalizeWorkingDirectory(req.Workspace.WorkingDirectory)
+	if err != nil {
+		return nil, err
 	}
 	m, err := c.repository.GetWorkspace(ctx, req.Workspace.ID, uid)
 	if err != nil {
@@ -177,6 +241,7 @@ func (c *controller) UpdateWorkspace(ctx context.Context, req entity.UpdateWorks
 	m.AllowAllCommands = req.Workspace.AllowAllCommands
 	m.SelfLearningLoopNote = req.Workspace.SelfLearningLoopNote
 	m.InputSendDelaySeconds = req.Workspace.InputSendDelaySeconds
+	m.WorkingDirectory = workingDirectory
 	if req.Workspace.NotificationSettings != nil {
 		b, _ := json.Marshal(req.Workspace.NotificationSettings)
 		m.NotificationSettings = datatypes.JSON(b)
@@ -306,6 +371,7 @@ func fromModelWorkspaceToEntity(m model.Workspace) entity.Workspace {
 		AllowAllCommands:      m.AllowAllCommands,
 		SelfLearningLoopNote:  m.SelfLearningLoopNote,
 		InputSendDelaySeconds: m.InputSendDelaySeconds,
+		WorkingDirectory:      m.WorkingDirectory,
 	}
 	if len(m.AutoAllowedTools) > 0 {
 		_ = json.Unmarshal(m.AutoAllowedTools, &res.AutoAllowedTools)

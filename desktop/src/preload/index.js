@@ -34,6 +34,16 @@ contextBridge.exposeInMainWorld('agentrq', {
 
   },
 
+  dialog: {
+    /**
+     * Ask the shell to show the platform's folder chooser.
+     *
+     * @param {string} [currentPath] where to open the dialog
+     * @returns {Promise<string>} the chosen path, or '' if dismissed
+     */
+    chooseDirectory: (currentPath) => ipcRenderer.invoke('agentrq:dialog:chooseDirectory', currentPath),
+  },
+
   navigation: {
     /**
      * Called with an in-app route whenever the shell asks the app to go

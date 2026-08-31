@@ -4,6 +4,7 @@ import {
   Menu,
   Notification,
   Tray,
+  dialog,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -471,6 +472,33 @@ function registerIpc(getWindow) {
 
   // The renderer is the source of truth for appearance — the theme store the
   // web app already has — so the shell follows it rather than reading the OS.
+  // Pick a working directory with the platform's own folder chooser, because
+  // typing an absolute path from memory is exactly the sort of thing people get
+  // subtly wrong. Only the chosen path crosses the bridge; the renderer never
+  // gets a handle to the dialog or the window it is attached to.
+  //
+  // Returns '' when the dialog is dismissed, so the caller has one thing to
+  // check rather than distinguishing cancellation from failure.
+  ipcMain.handle('agentrq:dialog:chooseDirectory', async (event, currentPath) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      title: 'Choose a working directory',
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    // Open where they already pointed it, so changing a path is not a fresh
+    // hunt through the filesystem every time.
+    if (typeof currentPath === 'string' && currentPath.startsWith('/')) {
+      options.defaultPath = currentPath
+    }
+
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+
+    if (result.canceled) return ''
+    return result.filePaths?.[0] ?? ''
+  })
+
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)

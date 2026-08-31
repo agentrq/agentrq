@@ -48,6 +48,19 @@
                       <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Mission Description</label>
                       <textarea v-model="form.description" rows="3" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="What are we building together?"></textarea>
                     </div>
+                    <div class="space-y-2">
+                      <label for="workingDirectory" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Working Directory</label>
+                      <div class="flex items-stretch gap-2">
+                        <input id="workingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
+                               class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all shadow-sm"
+                               :placeholder="workingDirectoryPlaceholder" />
+                        <button v-if="platformStore.isDesktop" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
+                                class="shrink-0 px-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-zinc-100 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                          {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
+                        </button>
+                      </div>
+                      <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.</p>
+                    </div>
                   </div>
 
                   <div class="space-y-2">
@@ -920,8 +933,40 @@ const form = ref({
   autoAllowedTools: [],
   allowAllCommands: false,
   selfLearningLoopNote: '',
-  inputSendDelaySeconds: 0
+  inputSendDelaySeconds: 0,
+  workingDirectory: ''
 });
+
+const isChoosingDirectory = ref(false);
+
+// Show an example from the platform the person is actually on. A Windows user
+// told to enter "/Users/you/..." has to translate it before they can start.
+const workingDirectoryPlaceholder = computed(() => {
+  if (!platformStore.isDesktop) return '/home/you/code/project';
+  return window.agentrq?.platform === 'win32'
+    ? 'C:\\Users\\you\\Code\\project'
+    : '/Users/you/Code/project';
+});
+
+/**
+ * Ask the shell for the platform's folder chooser.
+ *
+ * Desktop only: a browser cannot hand back a real filesystem path, so the web
+ * build offers the text field alone rather than a button that cannot work.
+ */
+async function chooseWorkingDirectory() {
+  if (isChoosingDirectory.value) return;
+  isChoosingDirectory.value = true;
+  try {
+    const chosen = await window.agentrq?.dialog?.chooseDirectory(form.value.workingDirectory);
+    // '' means the dialog was dismissed, which must not wipe what is there.
+    if (chosen) form.value.workingDirectory = chosen;
+  } catch (err) {
+    notifyError('Could not open the folder chooser: ' + err.message);
+  } finally {
+    isChoosingDirectory.value = false;
+  }
+}
 
 watch(() => form.value.name, (newVal) => {
   if (newVal) {
@@ -951,7 +996,8 @@ async function load() {
       autoAllowedTools: workspace.value.autoAllowedTools || [],
       allowAllCommands: workspace.value.allowAllCommands || false,
       selfLearningLoopNote: workspace.value.selfLearningLoopNote || '',
-      inputSendDelaySeconds: workspace.value.inputSendDelaySeconds || 0
+      inputSendDelaySeconds: workspace.value.inputSendDelaySeconds || 0,
+      workingDirectory: workspace.value.workingDirectory || ''
     };
     slackConfig.value = workspace.value.slack || null;
     if (slackConfig.value) {
