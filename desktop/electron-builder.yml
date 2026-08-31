@@ -6,7 +6,12 @@
 
 appId: com.agentrq.desktop
 productName: AgentRQ
-copyright: Copyright © 2026 AgentRQ
+# The legal owner of the app, which is not the product name: this string is
+# what macOS puts in NSHumanReadableCopyright and shows in the About panel
+# the app menu opens, and what Windows records as the executable's legal
+# copyright. appId and productName stay AgentRQ -- changing either would
+# rename the app or orphan existing installs from their updates.
+copyright: Copyright © 2026 Contextual, Inc.
 
 directories:
   output: release
