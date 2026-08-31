@@ -27,7 +27,17 @@ type scheduler struct {
 	idgen  idgen.Service
 	bus    *eventbus.Bus
 	pubsub pubsub.Service
+
+	// lastProcessed is the most recent wall-clock minute the poller has evaluated. It is
+	// touched only by the single ticker goroutine (and directly in tests), so it needs no
+	// lock. It lets tick catch up any minutes skipped by ticker drift or scheduling latency
+	// so a scheduled minute is never silently missed.
+	lastProcessed time.Time
 }
+
+// maxCatchUpMinutes bounds how far back tick will catch up in one pass, so a long pause
+// (suspend, GC stall, clock jump) cannot spawn an unbounded backlog of tasks.
+const maxCatchUpMinutes = 120
 
 func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, ps pubsub.Service) Service {
 	return &scheduler{repo: repo, idgen: idgen, bus: bus, pubsub: ps}
@@ -53,31 +63,66 @@ func (s *scheduler) tick(ctx context.Context) {
 	crons, err := s.repo.SystemListTasksByStatus(ctx, "cron")
 	if err != nil {
 		zlog.Error().Err(err).Msg("scheduler: failed to list crons")
+		return // leave lastProcessed unchanged so the next tick catches up these minutes
+	}
+
+	now := time.Now().UTC().Truncate(time.Minute)
+	minutes := minutesToProcess(s.lastProcessed, now)
+	if len(minutes) == 0 {
 		return
 	}
 
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	now := time.Now().UTC().Truncate(time.Minute)
-
 	for _, c := range crons {
 		if c.CronSchedule == "" {
 			continue
 		}
-
 		sched, err := parser.Parse(c.CronSchedule)
 		if err != nil {
 			zlog.Warn().Err(err).Int64("task_id", c.ID).Str("schedule", c.CronSchedule).Msg("scheduler: invalid cron schedule")
 			continue
 		}
-
-		// Calculate the next run time from the last minute
-		// If the next calculated run time is EXACTLY this minute, we spawn.
-		next := sched.Next(now.Add(-1 * time.Second))
-
-		if next.Equal(now) {
-			s.spawn(ctx, c)
+		// Fire the schedule for every minute in the window that matches. Evaluating each
+		// elapsed minute (not just "now") means ticker drift or latency cannot skip a
+		// scheduled minute; lastProcessed advancing monotonically means none fires twice.
+		for _, minute := range minutes {
+			if sched.Next(minute.Add(-1 * time.Second)).Equal(minute) {
+				s.spawn(ctx, c)
+			}
 		}
 	}
+
+	s.lastProcessed = now
+}
+
+// minutesToProcess returns the minutes in (last, now] that tick should evaluate, each
+// truncated to the minute. On the first run (last is zero) it returns only the current
+// minute. It returns nil when no new full minute has elapsed (or the clock moved
+// backward), and caps the window at maxCatchUpMinutes ending at now.
+func minutesToProcess(last, now time.Time) []time.Time {
+	now = now.Truncate(time.Minute)
+	if now.IsZero() {
+		return nil
+	}
+
+	var start time.Time
+	if last.IsZero() {
+		start = now // first run: only the current minute
+	} else {
+		start = last.Truncate(time.Minute).Add(time.Minute)
+	}
+	if start.After(now) {
+		return nil // no new minute elapsed, or the clock went backward
+	}
+	if earliest := now.Add(-time.Duration(maxCatchUpMinutes-1) * time.Minute); start.Before(earliest) {
+		start = earliest
+	}
+
+	var minutes []time.Time
+	for m := start; !m.After(now); m = m.Add(time.Minute) {
+		minutes = append(minutes, m)
+	}
+	return minutes
 }
 
 func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
