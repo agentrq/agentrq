@@ -66,7 +66,7 @@
               </div>
             </div>
 
-            <!-- Chat / History view toggle -->
+            <!-- Chat / Trajectory view toggle -->
             <div class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg h-7">
               <button @click.stop="activeView = 'chat'"
                       @mouseenter="tooltipStore.show($event, 'Message thread', 'bottom')"
@@ -76,12 +76,12 @@
                 <span class="hidden sm:inline">Chat</span>
                 <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.463L3 21l1.51-4.532A7.965 7.965 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
               </button>
-              <button @click.stop="activeView = 'history'"
-                      @mouseenter="tooltipStore.show($event, 'Tool call history', 'bottom')"
+              <button @click.stop="activeView = 'trajectory'"
+                      @mouseenter="tooltipStore.show($event, 'Tool call trajectory', 'bottom')"
                       @mouseleave="tooltipStore.hide()"
-                      :class="activeView === 'history' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                      :class="activeView === 'trajectory' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center gap-1 justify-center">
-                <span class="hidden sm:inline">History</span>
+                <span class="hidden sm:inline">Trajectory</span>
                 <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 1021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.929a2.548 2.548 0 00-3.586-3.586l-6.837 5.63m5.108-.929l-4.655 5.653" /></svg>
                 <span v-if="sortedToolCalls.length > 0" class="min-w-[13px] h-3 px-1 rounded-full bg-gray-900 dark:bg-white text-white dark:text-black text-[7px] flex items-center justify-center font-black">{{ sortedToolCalls.length }}</span>
               </button>
@@ -494,7 +494,7 @@
       </template>
     </div>
 
-    <!-- Tool Call History (replaces the chat area in place) -->
+    <!-- Tool call trajectory (replaces the chat area in place) -->
     <TrajectoryPanel v-else :messages="sortedMessages" :tool-calls="sortedToolCalls" />
 
     <!-- Reply Box -->
