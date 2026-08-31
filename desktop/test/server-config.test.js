@@ -100,26 +100,28 @@ describe('resolveServerUrl', () => {
 })
 
 describe('migrateConfig', () => {
-  it('passes a current-shape config through', () => {
-    expect(migrateConfig({ version: 2, serverUrl: 'https://example.com', mutedWorkspaces: ['ws1'] })).toEqual({
-      version: CONFIG_VERSION,
+  const onlyProfile = (raw) => migrateConfig(raw).profiles[0]
+
+  it('turns a pre-profiles config into one profile that keeps its settings', () => {
+    // Upgrading must not look like being reconfigured.
+    const config = migrateConfig({ version: 2, serverUrl: 'https://example.com', mutedWorkspaces: ['ws1'] })
+
+    expect(config.version).toBe(CONFIG_VERSION)
+    expect(config.profiles).toHaveLength(1)
+    expect(config.profiles[0]).toMatchObject({
       serverUrl: 'https://example.com',
       mutedWorkspaces: ['ws1'],
     })
+    expect(config.activeProfileId).toBe(config.profiles[0].id)
   })
 
   it('adopts an unversioned file, which predates the version field', () => {
-    expect(migrateConfig({ serverUrl: 'example.com' })).toEqual({
-      version: CONFIG_VERSION,
-      serverUrl: 'http://example.com',
-      mutedWorkspaces: [],
-    })
+    expect(onlyProfile({ serverUrl: 'example.com' }).serverUrl).toBe('http://example.com')
   })
 
-  it('migrates a v1 file forward by defaulting the new field', () => {
+  it('migrates a v1 file forward by defaulting the new fields', () => {
     // v1 had no mute list, and notifying for everything is what it did.
-    expect(migrateConfig({ version: 1, serverUrl: 'https://example.com' })).toEqual({
-      version: CONFIG_VERSION,
+    expect(onlyProfile({ version: 1, serverUrl: 'https://example.com' })).toMatchObject({
       serverUrl: 'https://example.com',
       mutedWorkspaces: [],
     })
@@ -127,39 +129,61 @@ describe('migrateConfig', () => {
 
   it('discards a mute list that is not a list of ids', () => {
     for (const bad of ['ws1', 42, { ws1: true }, null]) {
-      expect(migrateConfig({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: bad }).mutedWorkspaces)
+      expect(onlyProfile({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: bad }).mutedWorkspaces)
         .toEqual([])
     }
-    expect(migrateConfig({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: ['ok', '', 7, null] })
+    expect(onlyProfile({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: ['ok', '', 7, null] })
       .mutedWorkspaces).toEqual(['ok'])
   })
 
   it('normalises whatever it finds rather than trusting it', () => {
-    expect(migrateConfig({ version: 1, serverUrl: 'https://example.com/' }).serverUrl).toBe('https://example.com')
+    expect(onlyProfile({ version: 1, serverUrl: 'https://example.com/' }).serverUrl).toBe('https://example.com')
+  })
+
+  it('re-checks every stored profile URL, not just a legacy one', () => {
+    // The profile model knows nothing about URLs, so this is the only place a
+    // value read off disk is checked before it becomes a fetch base.
+    const config = migrateConfig({
+      profiles: [
+        { id: 'one', label: 'A', serverUrl: 'file:///etc/passwd' },
+        { id: 'two', label: 'B', serverUrl: 'example.com/' },
+      ],
+    })
+
+    expect(config.profiles.map((p) => p.serverUrl)).toEqual(['', 'http://example.com'])
   })
 
   it('keeps only what it understands from a newer file', () => {
-    // Written by a build that knows keys this one does not: take the server
-    // URL, drop the rest rather than guessing at its meaning.
-    expect(migrateConfig({ version: 99, serverUrl: 'https://example.com', theme: 'dark' })).toEqual({
-      version: CONFIG_VERSION,
-      serverUrl: 'https://example.com',
-      mutedWorkspaces: [],
-    })
+    const config = migrateConfig({ version: 99, serverUrl: 'https://example.com', theme: 'dark' })
+
+    expect(config.profiles[0].serverUrl).toBe('https://example.com')
+    expect(config.profiles[0]).not.toHaveProperty('theme')
   })
 
   it('degrades to unconfigured for anything unusable', () => {
     // Sending the user to the connection screen is mildly annoying; booting
     // pointed at a URL we could not parse is worse.
     for (const raw of [null, undefined, 'a string', 42, [], { serverUrl: 'file:///x' }, {}]) {
-      expect(migrateConfig(raw)).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
+      const config = migrateConfig(raw)
+      expect(config.profiles).toHaveLength(1)
+      expect(config.profiles[0].serverUrl).toBe('')
     }
+  })
+
+  it('always leaves exactly one profile active', () => {
+    const config = migrateConfig({
+      profiles: [{ id: 'one', label: 'A' }, { id: 'two', label: 'B' }],
+      activeProfileId: 'gone',
+    })
+
+    expect(config.profiles.some((p) => p.id === config.activeProfileId)).toBe(true)
   })
 })
 
 describe('createServerConfigStore', () => {
   function makeStore(initial = null) {
     let contents = initial
+    let nextId = 0
     const writeFile = vi.fn(async (next) => { contents = next })
     const store = createServerConfigStore({
       readFile: async () => {
@@ -167,35 +191,41 @@ describe('createServerConfigStore', () => {
         return contents
       },
       writeFile,
+      newProfileId: () => `p${++nextId}`,
     })
     return { store, writeFile, read: () => contents }
   }
 
+  const legacy = (extra = {}) =>
+    JSON.stringify({ version: 2, serverUrl: 'https://example.com', ...extra })
+
   it('reads a missing file as not configured — the first run', async () => {
     const { store } = makeStore(null)
-    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
+    const config = await store.load()
+
+    expect(config.version).toBe(CONFIG_VERSION)
+    expect(config.profiles).toHaveLength(1)
+    expect(config.profiles[0].serverUrl).toBe('')
   })
 
   it('reads a stored server back', async () => {
     const { store } = makeStore(JSON.stringify({ version: 1, serverUrl: 'https://example.com' }))
-    expect((await store.load()).serverUrl).toBe('https://example.com')
+    expect((await store.active()).serverUrl).toBe('https://example.com')
   })
 
   it('treats corrupt JSON as not configured', async () => {
     // A half-written file must not stop the app from starting.
     const { store } = makeStore('{ not json')
-    expect(await store.load()).toEqual({ version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] })
+    expect((await store.active()).serverUrl).toBe('')
   })
 
   it('saves a normalised URL and stamps the version', async () => {
     const { store, read } = makeStore(null)
 
     expect(await store.save('example.com/')).toEqual({ ok: true, url: 'http://example.com' })
-    expect(JSON.parse(read())).toEqual({
-      version: CONFIG_VERSION,
-      serverUrl: 'http://example.com',
-      mutedWorkspaces: [],
-    })
+    const written = JSON.parse(read())
+    expect(written.version).toBe(CONFIG_VERSION)
+    expect(written.profiles[0].serverUrl).toBe('http://example.com')
   })
 
   it('refuses to store an invalid URL', async () => {
@@ -211,36 +241,33 @@ describe('createServerConfigStore', () => {
   it('round-trips a save through a load', async () => {
     const { store } = makeStore(null)
     await store.save('https://example.com')
-    expect((await store.load()).serverUrl).toBe('https://example.com')
+    expect((await store.active()).serverUrl).toBe('https://example.com')
   })
 
   it('keeps mute choices when the server changes', async () => {
     // Switching server is not a reason to start notifying about workspaces the
     // user deliberately silenced.
-    const { store } = makeStore(
-      JSON.stringify({ version: 2, serverUrl: 'https://a.example.com', mutedWorkspaces: ['ws1'] })
-    )
+    const { store } = makeStore(legacy({ mutedWorkspaces: ['ws1'] }))
 
     await store.save('https://b.example.com')
 
-    expect(await store.load()).toEqual({
-      version: CONFIG_VERSION,
+    expect(await store.active()).toMatchObject({
       serverUrl: 'https://b.example.com',
       mutedWorkspaces: ['ws1'],
     })
   })
 
   it('mutes and unmutes a single workspace', async () => {
-    const { store } = makeStore(JSON.stringify({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: [] }))
+    const { store } = makeStore(legacy({ mutedWorkspaces: [] }))
 
     expect(await store.setWorkspaceMuted('ws1', true)).toEqual(['ws1'])
     expect(await store.setWorkspaceMuted('ws2', true)).toEqual(['ws1', 'ws2'])
     expect(await store.setWorkspaceMuted('ws1', false)).toEqual(['ws2'])
-    expect((await store.load()).mutedWorkspaces).toEqual(['ws2'])
+    expect((await store.active()).mutedWorkspaces).toEqual(['ws2'])
   })
 
   it('does not list a workspace twice when muted again', async () => {
-    const { store } = makeStore(JSON.stringify({ version: 2, serverUrl: 'https://e.com', mutedWorkspaces: ['ws1'] }))
+    const { store } = makeStore(legacy({ mutedWorkspaces: ['ws1'] }))
 
     expect(await store.setWorkspaceMuted('ws1', true)).toEqual(['ws1'])
   })
@@ -257,7 +284,60 @@ describe('createServerConfigStore', () => {
 
     await store.clear()
 
-    expect((await store.load()).serverUrl).toBe('')
+    expect((await store.active()).serverUrl).toBe('')
+  })
+
+  it('settings belong to one profile, not to all of them', async () => {
+    // The whole point of a profile: signing a second account into a different
+    // server must not move the first one.
+    const { store } = makeStore(legacy())
+    await store.addProfile('Work')
+    await store.save('https://work.example.com')
+
+    const config = await store.load()
+    const [first, second] = config.profiles
+
+    expect(first.serverUrl).toBe('https://example.com')
+    expect(second.serverUrl).toBe('https://work.example.com')
+  })
+
+  it('adds a profile, switches to it, and gives it its own session', async () => {
+    const { store } = makeStore(legacy())
+
+    const after = await store.addProfile('Work')
+
+    expect(after.profiles).toHaveLength(2)
+    expect(after.activeProfileId).toBe(after.profiles[1].id)
+    expect(after.profiles[1].partition).not.toBe(after.profiles[0].partition)
+  })
+
+  it('never reuses an id already stored', async () => {
+    // Two profiles on one id would share a session: the same account twice.
+    const { store } = makeStore(JSON.stringify({ profiles: [{ id: 'p1', label: 'Taken' }] }))
+
+    const after = await store.addProfile('New')
+
+    expect(after.profiles.map((p) => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('switches, renames and removes', async () => {
+    const { store } = makeStore(legacy())
+    const withWork = await store.addProfile('Work')
+    const [first, work] = withWork.profiles
+
+    expect((await store.activateProfile(first.id)).activeProfileId).toBe(first.id)
+    expect((await store.renameProfile(work.id, ' Day job ')).profiles[1].label).toBe('Day job')
+
+    const removed = await store.removeProfile(work.id)
+    expect(removed.profiles).toHaveLength(1)
+    expect(removed.activeProfileId).toBe(first.id)
+  })
+
+  it('keeps the last profile, since the app needs a session to run in', async () => {
+    const { store } = makeStore(legacy())
+    const config = await store.load()
+
+    expect((await store.removeProfile(config.activeProfileId)).profiles).toHaveLength(1)
   })
 })
 

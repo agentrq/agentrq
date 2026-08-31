@@ -34,6 +34,25 @@ contextBridge.exposeInMainWorld('agentrq', {
 
   },
 
+  profiles: {
+    /**
+     * Signed-in profiles and which one is in use.
+     *
+     * Names and servers only — a session, a partition or a cookie never
+     * crosses this boundary.
+     *
+     * @returns {Promise<{ activeProfileId: string, profiles: Array<{id: string, label: string, serverUrl: string, active: boolean}> }>}
+     */
+    get: () => ipcRenderer.invoke('agentrq:profiles:get'),
+    /** Switch profiles. The shell replaces the window; the renderer does not reload itself. */
+    switch: (id) => ipcRenderer.invoke('agentrq:profiles:switch', id),
+    /** Add a profile and switch into it, landing on the connection screen. */
+    add: (label) => ipcRenderer.invoke('agentrq:profiles:add', label),
+    rename: (id, label) => ipcRenderer.invoke('agentrq:profiles:rename', id, label),
+    /** Remove a profile and forget its session. */
+    remove: (id) => ipcRenderer.invoke('agentrq:profiles:remove', id),
+  },
+
   dialog: {
     /**
      * Ask the shell to show the platform's folder chooser.

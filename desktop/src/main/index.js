@@ -9,7 +9,6 @@ import {
   ipcMain,
   nativeImage,
   nativeTheme,
-  net,
   protocol,
   screen,
   session,
@@ -110,13 +109,65 @@ let currentTheme = 'system'
 /** Set when a deep link arrives before the window is ready to receive it. */
 let pendingRoute = null
 let updater = null
+/**
+ * The signed-in profile in use, and the Electron session that carries its
+ * cookies. Everything that talks to the server goes through this session rather
+ * than the default one — that is what makes two profiles two accounts.
+ */
+let profileState = null
+let profileSession = null
+
+/** Sessions that already have the app:// handler; registering twice throws. */
+const handledSessions = new WeakSet()
+
+/**
+ * The session for a partition, with the app:// protocol handler attached.
+ *
+ * The handler has to be registered per session, not once globally: a partition
+ * gets its own protocol registry, so a window opened on one without this would
+ * fail to load the app at all.
+ */
+function sessionFor(partition) {
+  const ses = session.fromPartition(partition)
+  if (!handledSessions.has(ses)) {
+    ses.protocol.handle(
+      'app',
+      createAppProtocolHandler({
+        serverUrl: () => serverUrl,
+        // The profile's own session, so the `at` cookie sent upstream is that
+        // profile's. Using net.fetch here would send the default session's.
+        netFetch: (input, init) => ses.fetch(input, init),
+        fileExists,
+        readFile: (pathname) => readFile(join(RENDERER_ROOT, pathname)),
+        devServerUrl: process.env.AGENTRQ_RENDERER_DEV_URL ?? '',
+      })
+    )
+    handledSessions.add(ses)
+  }
+  return ses
+}
+
+/**
+ * The partition a window should be created on.
+ *
+ * Null-safe on purpose: every current caller runs after the profiles are
+ * loaded, but a window created before that would otherwise throw here rather
+ * than fall back to something sane.
+ */
+function currentPartition() {
+  return profileState ? activeProfile(profileState).partition : partitionFor('default')
+}
+
+/** Fetch through the active profile's session, so its cookies go with it. */
+const profileFetch = (input, init) => (profileSession ?? session.defaultSession).fetch(input, init)
+
 /** Last update state, so a renderer that loads later is not left in the dark. */
 let updateState = { status: UpdateStatus.Idle, detail: '', remedy: '', version: '', enabled: false }
 
 async function refreshWorkspaceNames() {
   if (!serverUrl) return
   try {
-    const res = await net.fetch(`${serverUrl}/api/v1/workspaces`)
+    const res = await profileFetch(`${serverUrl}/api/v1/workspaces`)
     if (!res.ok) return
     const body = await res.json()
     for (const ws of Array.isArray(body) ? body : (body?.workspaces ?? [])) {
@@ -221,16 +272,18 @@ async function startOAuth(win, pathname, search) {
         title: 'Sign in to AgentRQ',
         autoHideMenuBar: true,
         webPreferences: {
-          // No preload and no partition: this window is showing a third-party
-          // sign-in page, so it gets no bridge, and it must stay on the default
-          // session so the cookie it earns is the one net.fetch will send.
+          // No preload: this window shows a third-party sign-in page, so it
+          // gets no bridge. It runs on the *active profile's* partition, which
+          // is the whole mechanism — the `at` cookie the callback sets lands in
+          // that profile's jar, so it signs in that profile and no other.
+          partition: currentPartition(),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
         },
       }),
     hasAuthCookie: async () => {
-      const cookies = await session.defaultSession.cookies.get({ name: AUTH_COOKIE })
+      const cookies = await profileSession.cookies.get({ name: AUTH_COOKIE })
       return cookies.length > 0
     },
   })
@@ -336,7 +389,7 @@ function startEventStream() {
 
   eventStream = createEventStreamClient({
     streamUrl: () => `${serverUrl}/api/v1/events/stream`,
-    netFetch: net.fetch,
+    netFetch: profileFetch,
     onEvent: handleStreamEvent,
     delay: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     onUnauthorized: () => {
@@ -366,6 +419,9 @@ function createWindow() {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: PRELOAD,
+      // Fixed when the window is created and not changeable afterwards, which
+      // is why switching profiles recreates the window rather than reloading.
+      partition: currentPartition(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -449,7 +505,7 @@ function installMenu(getWindow) {
         reloadToRoot(getWindow())
       },
       logOut: async () => {
-        await session.defaultSession.clearStorageData({ storages: ['cookies'] })
+        await profileSession.clearStorageData({ storages: ['cookies'] })
         eventStream?.stop()
         unread?.clear()
         reloadToRoot(getWindow())
@@ -460,11 +516,65 @@ function installMenu(getWindow) {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+/** What the renderer needs to draw the switcher: names, not sessions. */
+function profilesPayload() {
+  const state = profileState ?? { profiles: [], activeProfileId: '' }
+  return {
+    activeProfileId: state.activeProfileId,
+    profiles: state.profiles.map(({ id, label, serverUrl: url }) => ({
+      id,
+      label,
+      serverUrl: url,
+      active: id === state.activeProfileId,
+    })),
+  }
+}
+
+/**
+ * Switch to another profile.
+ *
+ * A window's partition is fixed when it is created, so this replaces the
+ * window rather than reloading it — reloading would keep the old session and
+ * quietly show the previous account's data under the new profile's name.
+ *
+ * The new window is created *before* the old one is destroyed: on Windows and
+ * Linux, closing the last window quits the app, and briefly having none would
+ * do exactly that mid-switch.
+ */
+async function switchProfileToActive() {
+  const profile = activeProfile(profileState)
+
+  eventStream?.stop()
+  eventStream = null
+  unread?.clear()
+  workspaceNames.clear()
+
+  serverUrl = isConnectionLocked ? envServerUrl.url : profile.serverUrl
+  mutedWorkspaces = profile.mutedWorkspaces
+  profileSession = sessionFor(profile.partition)
+
+  const previous = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+  createWindow()
+  previous?.destroy()
+
+  startEventStream()
+  installMenu(() => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()))
+  return profilesPayload()
+}
+
+async function switchProfile(id) {
+  if (!profileState || id === profileState.activeProfileId) return profilesPayload()
+  if (!profileState.profiles.some((p) => p.id === id)) return profilesPayload()
+
+  profileState = await configStore.activateProfile(id)
+  return switchProfileToActive()
+}
+
 function registerIpc(getWindow) {
   ipcMain.handle('agentrq:connection:get', () => connectionState())
 
   ipcMain.handle('agentrq:connection:validate', async (_event, url) => {
-    const result = await validateServerUrl(url, net.fetch)
+    const result = await validateServerUrl(url, profileFetch)
     // The probe response carries auth flags that are of no use to the
     // connection screen and would be a needless leak across the bridge.
     return result.ok ? { ok: true, url: result.url } : result
@@ -499,6 +609,29 @@ function registerIpc(getWindow) {
     return result.filePaths?.[0] ?? ''
   })
 
+  // Profiles. Only names and servers cross the bridge — never a session, a
+  // partition or a cookie.
+  ipcMain.handle('agentrq:profiles:get', () => profilesPayload())
+  ipcMain.handle('agentrq:profiles:switch', (_event, id) => switchProfile(id))
+  ipcMain.handle('agentrq:profiles:add', async (_event, label) => {
+    profileState = await configStore.addProfile(label)
+    // addProfile makes the new one active, so this is a switch into a session
+    // that has never signed in: the window lands on the connection screen.
+    return switchProfileToActive()
+  })
+  ipcMain.handle('agentrq:profiles:rename', async (_event, id, label) => {
+    profileState = await configStore.renameProfile(id, label)
+    installMenu(getWindow)
+    return profilesPayload()
+  })
+  ipcMain.handle('agentrq:profiles:remove', async (_event, id) => {
+    const wasActive = id === profileState?.activeProfileId
+    profileState = await configStore.removeProfile(id)
+    // Its cookies would otherwise outlive it on disk, still signed in.
+    await session.fromPartition(partitionFor(id)).clearStorageData()
+    return wasActive ? switchProfileToActive() : profilesPayload()
+  })
+
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
@@ -526,7 +659,7 @@ function registerIpc(getWindow) {
       return { ok: false, reason: 'Server is pinned by AGENTRQ_SERVER_URL' }
     }
 
-    const validated = await validateServerUrl(url, net.fetch)
+    const validated = await validateServerUrl(url, profileFetch)
     if (!validated.ok) return validated
 
     const saved = await configStore.save(validated.url)
@@ -613,24 +746,17 @@ if (!app.requestSingleInstanceLock()) {
     })
     restoredWindowState = await windowStateStore.load()
 
-    const stored = await configStore.load()
-    mutedWorkspaces = stored.mutedWorkspaces
+    profileState = await configStore.load()
+    const profile = activeProfile(profileState)
+    mutedWorkspaces = profile.mutedWorkspaces
     if (!isConnectionLocked) {
-      serverUrl = stored.serverUrl
+      serverUrl = profile.serverUrl
     }
+    // Attaches the app:// handler to this profile's session before any window
+    // is created on it.
+    profileSession = sessionFor(profile.partition)
 
     unread = createUnreadCounter({ setBadge: applyBadge })
-
-    protocol.handle(
-      'app',
-      createAppProtocolHandler({
-        serverUrl: () => serverUrl,
-        netFetch: net.fetch,
-        fileExists,
-        readFile: (pathname) => readFile(join(RENDERER_ROOT, pathname)),
-        devServerUrl: process.env.AGENTRQ_RENDERER_DEV_URL ?? '',
-      })
-    )
 
     // The main window is looked up lazily: on macOS it can be closed and
     // recreated while the app keeps running, so a captured reference goes stale.

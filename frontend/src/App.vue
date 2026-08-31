@@ -251,8 +251,34 @@
                    (isCollapsed && !isMobileMenuOpen) ? 'left-full bottom-0 ml-2 min-w-[200px] origin-bottom-left' : 'bottom-full left-0 right-0 mb-2 origin-bottom'
                  ]">
               <div class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
-                <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500">Account</p>
+                <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500">{{ activeProfile ? activeProfile.label : 'Account' }}</p>
                 <p class="text-xs font-bold text-gray-700 dark:text-zinc-200 truncate mt-0.5" :title="user?.email">{{ user?.email || 'Loading...' }}</p>
+                <p v-if="activeProfile?.serverUrl" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="activeProfile.serverUrl">{{ activeProfile.serverUrl }}</p>
+              </div>
+
+              <!-- Other profiles. Desktop only: each is a separate session, which
+                   a browser tab cannot give us. -->
+              <div v-if="showProfiles" class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
+                <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500 mb-2">Other Profiles</p>
+                <div v-if="otherProfiles.length" class="space-y-1 mb-1">
+                  <button v-for="p in otherProfiles" :key="p.id" type="button"
+                          @click="switchToProfile(p.id)" :disabled="switchingProfile"
+                          class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span class="w-6 h-6 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-gray-600 dark:text-zinc-300">
+                      {{ p.label.charAt(0).toUpperCase() }}
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-xs font-bold text-gray-700 dark:text-zinc-200 truncate">{{ p.label }}</span>
+                      <span v-if="p.serverUrl" class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate">{{ p.serverUrl }}</span>
+                      <span v-else class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500">Not signed in</span>
+                    </span>
+                  </button>
+                </div>
+                <button type="button" @click="addProfile" :disabled="switchingProfile"
+                        class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-xs font-bold text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" /></svg>
+                  Add profile
+                </button>
               </div>
 
               <!-- Theme Selection inside Menu -->
@@ -339,6 +365,7 @@ import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { fetchUser, fetchWorkspaces, API_BASE_URL } from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
+import { usePlatformStore } from './stores/platformStore'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
@@ -365,6 +392,54 @@ const { notifySuccess, notifyInfo, notifyError } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
 const user = ref(null)
 const isUserMenuOpen = ref(false)
+
+const platformStore = usePlatformStore()
+
+// Signed-in profiles. Each is its own session in the desktop shell, so the
+// browser build has nothing to show and the section stays hidden there.
+const profiles = ref([])
+const switchingProfile = ref(false)
+const showProfiles = computed(() => platformStore.isDesktop && profiles.value.length > 0)
+const activeProfile = computed(() => profiles.value.find((p) => p.active) ?? null)
+const otherProfiles = computed(() => profiles.value.filter((p) => !p.active))
+
+async function loadProfiles() {
+  if (!platformStore.isDesktop || !window.agentrq?.profiles) return
+  try {
+    const state = await window.agentrq.profiles.get()
+    profiles.value = state?.profiles ?? []
+  } catch {
+    // Not being able to list profiles is not a reason to break the sidebar.
+    profiles.value = []
+  }
+}
+
+/**
+ * Switching replaces the window from the shell side, so there is nothing to do
+ * here afterwards — this renderer is about to be replaced along with it.
+ */
+async function switchToProfile(id) {
+  if (switchingProfile.value) return
+  switchingProfile.value = true
+  try {
+    await window.agentrq.profiles.switch(id)
+  } catch (err) {
+    switchingProfile.value = false
+    notifyError('Could not switch profile: ' + err.message)
+  }
+}
+
+/** A new profile has never signed in, so its window opens on the login screen. */
+async function addProfile() {
+  if (switchingProfile.value) return
+  switchingProfile.value = true
+  try {
+    await window.agentrq.profiles.add('')
+  } catch (err) {
+    switchingProfile.value = false
+    notifyError('Could not add a profile: ' + err.message)
+  }
+}
 const isWorkspaceDropdownOpen = ref(false)
 const isCollapsed = ref(true);
 const isMobileMenuOpen = ref(false);
@@ -417,6 +492,7 @@ watch(events, (newEvents) => {
 onMounted(() => {
   themeStore.init()
   loadUser()
+  loadProfiles()
   workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
   document.addEventListener('click', handleClickOutside)

@@ -109,6 +109,43 @@ EventSource connects and streams normally:
 **No preload SSE bridge is needed and `useEventBus.js` needs no platform
 branch.**
 
+## Profiles
+
+Several accounts can be signed in at once, and switched between from the user
+menu in the sidebar — the desktop equivalent of Chrome profiles.
+
+A profile *is* an Electron session partition. That is the whole mechanism:
+cookies are per partition, the `at` cookie is a cookie, so a partition is an
+account. Everything else follows from keeping the list of them coherent.
+
+Three consequences worth knowing before touching this:
+
+- **The `app://` handler is registered per session, not once.** `protocol.handle`
+  attaches to one session's registry, so a window opened on a partition that
+  never had the handler cannot load the app at all. `sessionFor()` attaches it
+  the first time a partition is used, and remembers which sessions already have
+  it — registering twice throws.
+- **Nothing may use `net.fetch` any more.** It sends the *default* session's
+  cookies, so it would talk to the server as whichever account happened to be
+  in that jar. Every request goes through `profileFetch`, which is the active
+  profile's `session.fetch`. The same applies to the OAuth window: it runs on
+  the active profile's partition, so the cookie the callback sets signs in that
+  profile and no other.
+- **Switching replaces the window rather than reloading it.** A window's
+  partition is fixed when it is created. Reloading would keep the old session
+  and quietly show the previous account's data under the new profile's name.
+  The replacement window is created *before* the old one is destroyed: on
+  Windows and Linux, closing the last window quits the app.
+
+Each profile carries its own server URL and muted-workspace list, because an
+account exists on one server — splitting those would let you sign in as one user
+and then point that session at a server where the cookie means nothing.
+
+The profile migrated from a pre-profiles install gets a partition like any
+other, which signs that user out once on upgrade. That was a deliberate trade:
+the session is only valid for 24 hours anyway, and the alternative is one
+profile permanently special-cased wherever a session is resolved.
+
 ## The native shell
 
 Everything the browser cannot offer lives in the main process and reaches the

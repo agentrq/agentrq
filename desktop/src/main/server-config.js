@@ -4,7 +4,21 @@
  * The desktop app is a client: the server lives wherever the user runs it, so
  * the app has to be told once and remember. Everything here takes its I/O as
  * arguments so the rules can be tested without Electron or a filesystem.
+ *
+ * Since profiles, the file holds a list of them rather than one server. Every
+ * method that used to read or write "the" server or mute list now reads or
+ * writes the *active* profile's, which is what those calls always meant — there
+ * was simply only ever one account to mean it about.
  */
+import {
+  activeProfile,
+  addProfile as addProfileToState,
+  activateProfile as activateProfileInState,
+  migrateProfiles,
+  removeProfile as removeProfileFromState,
+  renameProfile as renameProfileInState,
+  updateProfile,
+} from './profiles.js'
 
 // The hosted instance, so someone who installs the app and has no server of
 // their own still gets somewhere useful. Self-hosters type their own address
@@ -17,12 +31,17 @@ export const CONFIG_FILENAME = 'agentrq-desktop.json'
 /**
  * Shape version of the stored config.
  *
+ * v3: { profiles: [{ id, label, partition, serverUrl, mutedWorkspaces }],
+ *       activeProfileId } — several signed-in accounts, each with its own
+ *       session partition. A v2 file becomes a single profile carrying the
+ *       settings it already had.
+ *
  * v1: { serverUrl }
  * v2: adds { mutedWorkspaces } — workspaces the desktop app must not raise
  *     notifications for. A v1 file migrates forward by defaulting it to empty,
  *     which is the same behaviour it had.
  */
-export const CONFIG_VERSION = 2
+export const CONFIG_VERSION = 3
 
 /** Endpoint used to decide whether a URL is really an AgentRQ server. */
 export const CONFIG_PROBE_PATH = '/api/v1/auth/config'
@@ -93,18 +112,19 @@ export function resolveServerUrl({ env = {}, stored = '' } = {}) {
  * guessed at.
  */
 export function migrateConfig(raw) {
-  const empty = { version: CONFIG_VERSION, serverUrl: '', mutedWorkspaces: [] }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return empty
-
-  const normalized = normalizeServerUrl(raw.serverUrl)
+  const state = migrateProfiles(raw)
   return {
     version: CONFIG_VERSION,
-    serverUrl: normalized.ok ? normalized.url : '',
-    // Absent in v1, and anything that is not a list of ids is not something to
-    // guess at. Empty means "notify for everything", which is what v1 did.
-    mutedWorkspaces: Array.isArray(raw.mutedWorkspaces)
-      ? raw.mutedWorkspaces.filter((id) => typeof id === 'string' && id !== '')
-      : [],
+    activeProfileId: state.activeProfileId,
+    // Each profile's server is re-checked here rather than trusted from disk.
+    // The profile model knows nothing about URLs, and something has to: a
+    // stored `file:///x` reaching the fetch base would be a hole, and an
+    // unparseable one would boot the app pointed at nothing. Either becomes
+    // "not configured", which is the connection screen.
+    profiles: state.profiles.map((profile) => {
+      const normalized = normalizeServerUrl(profile.serverUrl)
+      return { ...profile, serverUrl: normalized.ok ? normalized.url : '' }
+    }),
   }
 }
 
@@ -115,14 +135,15 @@ export function migrateConfig(raw) {
  * @param {() => Promise<string>} deps.readFile   Rejects when the file is absent.
  * @param {(contents: string) => Promise<void>} deps.writeFile
  */
-export function createServerConfigStore({ readFile, writeFile }) {
-  const write = (config) =>
-    writeFile(JSON.stringify({ ...config, version: CONFIG_VERSION }, null, 2))
+export function createServerConfigStore({ readFile, writeFile, newProfileId }) {
+  const write = (state) =>
+    writeFile(JSON.stringify({ ...state, version: CONFIG_VERSION }, null, 2))
 
   return {
     /**
-     * @returns {Promise<{ version: number, serverUrl: string }>} always a valid
-     *          shape — a missing or corrupt file reads as "not configured".
+     * @returns {Promise<{ version: number, profiles: object[], activeProfileId: string }>}
+     *          always a valid shape with at least one profile — a missing or
+     *          corrupt file reads as a first run rather than as an error.
      */
     async load() {
       let contents
@@ -141,41 +162,84 @@ export function createServerConfigStore({ readFile, writeFile }) {
       }
     },
 
+    /** The profile in use, with its own server and mute list. */
+    async active() {
+      return activeProfile(await this.load())
+    },
+
     /**
+     * Point the active profile at a server.
+     *
      * @returns {Promise<{ ok: true, url: string } | { ok: false, reason: string }>}
      */
     async save(input) {
       const normalized = normalizeServerUrl(input)
       if (!normalized.ok) return normalized
 
-      // Read-modify-write: switching server must not silently discard the
-      // user's mute choices.
       const current = await this.load()
-      await write({ ...current, serverUrl: normalized.url })
+      await write(updateProfile(current, current.activeProfileId, { serverUrl: normalized.url }))
       return normalized
     },
 
-    /** Forget the configured server, sending the app back to the first-run screen. */
+    /** Forget the active profile's server, sending it back to the first-run screen. */
     async clear() {
       const current = await this.load()
-      await write({ ...current, serverUrl: '' })
+      await write(updateProfile(current, current.activeProfileId, { serverUrl: '' }))
     },
 
-    /** Replace the muted-workspace list. */
+    /** Replace the active profile's muted-workspace list. */
     async setMutedWorkspaces(ids) {
       const current = await this.load()
-      const mutedWorkspaces = [...new Set((ids ?? []).filter((id) => typeof id === 'string' && id !== ''))]
-      await write({ ...current, mutedWorkspaces })
-      return mutedWorkspaces
+      const next = updateProfile(current, current.activeProfileId, { mutedWorkspaces: ids ?? [] })
+      await write(next)
+      return activeProfile(next).mutedWorkspaces
     },
 
-    /** Turn notifications for one workspace on or off. */
+    /** Turn notifications for one workspace on or off, for the active profile. */
     async setWorkspaceMuted(workspaceId, muted) {
-      const { mutedWorkspaces } = await this.load()
+      const { mutedWorkspaces } = await this.active()
       const next = muted
         ? [...mutedWorkspaces, workspaceId]
         : mutedWorkspaces.filter((id) => id !== workspaceId)
       return this.setMutedWorkspaces(next)
+    },
+
+    /**
+     * Add a profile and make it the active one.
+     *
+     * The id is generated here rather than by the caller so it is guaranteed
+     * unique against what is already stored — a collision would mean two
+     * profiles sharing a session, which is the same account twice.
+     */
+    async addProfile(label = '') {
+      const current = await this.load()
+      let id = newProfileId()
+      while (current.profiles.some((p) => p.id === id)) id = newProfileId()
+
+      const next = addProfileToState(current, { id, label })
+      await write(next)
+      return next
+    },
+
+    /** Switch profiles. An unknown id changes nothing. */
+    async activateProfile(id) {
+      const next = activateProfileInState(await this.load(), id)
+      await write(next)
+      return next
+    },
+
+    /** Remove a profile. The last one is kept, since the app needs a session. */
+    async removeProfile(id) {
+      const next = removeProfileFromState(await this.load(), id)
+      await write(next)
+      return next
+    },
+
+    /** Rename a profile. A blank name keeps the old one. */
+    async renameProfile(id, label) {
+      const next = renameProfileInState(await this.load(), id, label)
+      await write(next)
+      return next
     },
   }
 }
