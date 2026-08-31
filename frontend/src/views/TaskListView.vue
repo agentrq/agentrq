@@ -159,6 +159,7 @@ import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict, updateTaskAss
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
+import { buildTaskGroups, pendingOnHuman } from '../composables/useTaskGroups';
 import { useEventBus } from '../useEventBus';
 import { useViewport } from '../composables/useViewport';
 import LoadingState from '../components/LoadingState.vue';
@@ -234,61 +235,13 @@ const filters = [
   { id: 'scheduled', label: 'Scheduled', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' }
 ];
 
-const displayGroups = computed(() => {
-  const f = filterType.value || 'active';
-  
-  const ongoing = tasks.value.filter(t => t.status === 'ongoing');
-  const blocked = tasks.value.filter(t => t.status === 'blocked');
-  const notStarted = tasks.value.filter(t => t.status === 'notstarted');
-  const completed = tasks.value.filter(t => t.status === 'completed');
-  const rejected = tasks.value.filter(t => t.status === 'rejected');
-  const cron = tasks.value.filter(t => t.status === 'cron');
-
-  const groups = [];
-  if (f === 'active' || f === 'ongoing') {
-    groups.push({ title: 'Ongoing', tasks: ongoing });
-    if (blocked.length > 0) groups.push({ title: 'Blocked', tasks: blocked });
-  }
-  if (f === 'active' || f === 'notstarted') {
-    groups.push({ title: 'Not Started', tasks: notStarted });
-  }
-  if (f === 'pending') {
-    const pendingActions = tasks.value.filter(t => 
-      t.status !== 'completed' && t.status !== 'rejected' && (
-        (t.status === 'notstarted' && t.assignee === 'human') ||
-        (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-      )
-    );
-    groups.push({ title: 'Action Required', tasks: pendingActions });
-  }
-  if (f === 'completed') {
-    groups.push({ title: 'Completed', tasks: completed });
-    if (rejected.length > 0) groups.push({ title: 'Rejected', tasks: rejected });
-  }
-  if (f === 'active' || f === 'scheduled') {
-    // Sort cron tasks by next run time
-    const sortedCron = [...cron].sort((a, b) => {
-      const aTime = getNextRunDate(a.cronSchedule).getTime();
-      const bTime = getNextRunDate(b.cronSchedule).getTime();
-      return aTime - bTime;
-    });
-    
-    if (sortedCron.length > 0) {
-      groups.push({ title: 'Scheduled', tasks: sortedCron });
-    }
-  }
-
-  return groups;
-});
+const displayGroups = computed(() =>
+  buildTaskGroups(tasks.value, filterType.value, { nextRunAt: getNextRunDate })
+);
 
 const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cron').length);
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
-const pendingInputCount = computed(() => tasks.value.filter(t => 
-  t.status !== 'completed' && t.status !== 'rejected' && (
-    (t.status === 'notstarted' && t.assignee === 'human') ||
-    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-  )
-).length);
+const pendingInputCount = computed(() => pendingOnHuman(tasks.value).length);
 
 const getWorkspaceName = (workspaceId) => {
   const ws = workspaces.value.find(w => w.id === workspaceId);

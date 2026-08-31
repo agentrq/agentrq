@@ -37,6 +37,7 @@ export default defineConfig({
         'src/stores/platformStore.js',
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
+        'src/composables/useTaskGroups.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {
