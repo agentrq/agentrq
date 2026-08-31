@@ -32,7 +32,12 @@ export default defineConfig({
     css: false,
     coverage: {
       provider: 'v8',
-      include: ['src/app.js', 'src/stores/platformStore.js', 'src/desktop/*.js'],
+      include: [
+        'src/app.js',
+        'src/stores/platformStore.js',
+        'src/desktop/*.js',
+        'src/composables/useChatScroll.js',
+      ],
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 100,

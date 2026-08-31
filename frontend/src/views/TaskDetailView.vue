@@ -654,6 +654,7 @@ import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
 import { useSpeechToText } from '../composables/useSpeechToText';
+import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { renderMarkdown } from '../utils/markdown';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
@@ -857,11 +858,8 @@ watch(() => sortedMessages.value.length, (count) => {
 }, { immediate: true });
 
 function scrollToBottom() {
-  if (scrollContainer.value) {
-    nextTick(() => {
-      scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight;
-    });
-  }
+  // The container is resolved after the wait, not before: see useChatScroll.
+  scrollContainerToBottom(() => scrollContainer.value);
 }
 
 // Not deep: a new/updated message always produces a new array from the
@@ -871,6 +869,14 @@ function scrollToBottom() {
 // to the bottom just from expanding a card.
 watch(sortedMessages, () => {
   scrollToBottom();
+});
+
+// The chat pane is behind a v-if, so switching to History destroys the scroll
+// container and coming back builds a fresh one sitting at the top. Nothing
+// else brings it down again — the message list has not changed, so the watcher
+// above never fires — which left the reader at the oldest message.
+watch(activeView, (view) => {
+  if (shouldScrollOnViewChange(view)) scrollToBottom();
 });
 
 // Scroll when the pending bubble first appears, not on every countdown tick
