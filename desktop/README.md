@@ -141,6 +141,17 @@ Each profile carries its own server URL and muted-workspace list, because an
 account exists on one server — splitting those would let you sign in as one user
 and then point that session at a server where the cookie means nothing.
 
+Adding a profile switches into a session that has never signed in, so the window
+lands on the connection screen. That screen therefore has to offer a way back:
+`connectionState()` reports `canCancel`, which is
+`canDiscardActiveProfile(profileState)` — more than one profile, and the active
+one has no server yet. A first run answers false, because there is nowhere to go
+and the app cannot start without a server. Cancelling *discards* the profile
+rather than leaving it behind: it points at no server, so it can do nothing, and
+the switcher offers no way to delete one. It returns to the profile the add was
+made from, which is why `removeProfile` takes a fallback id — with three or more
+profiles, the first in the list is not where the user came from.
+
 The profile migrated from a pre-profiles install gets a partition like any
 other, which signs that user out once on upgrade. That was a deliberate trade:
 the session is only valid for 24 hours anyway, and the alternative is one

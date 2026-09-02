@@ -6,7 +6,10 @@
  * would: a bad URL must be refused with a readable reason, and a good one must
  * be probed, stored and then honoured by the proxy.
  *
- * The two IPC handlers below mirror the ones in src/main/index.js. They are
+ * It then reaches the same screen the other way — by adding a profile, where
+ * the user chose to come here and must be able to leave again.
+ *
+ * The IPC handlers below mirror the ones in src/main/index.js. They are
  * repeated rather than imported because index.js takes over the Electron app
  * lifecycle at import time; the logic they exercise — validateServerUrl and the
  * config store — is the real thing.
@@ -37,6 +40,10 @@ protocol.registerSchemesAsPrivileged([
 
 let serverUrl = ''
 let configStore
+/** Whether the screen is being shown for a profile that can be abandoned. */
+let canCancel = false
+/** How many times the screen has asked the shell to discard that profile. */
+let cancelCalls = 0
 
 async function fileExists(pathname) {
   try {
@@ -60,6 +67,12 @@ const CHECKS = `(async () => {
   const button = document.querySelector('button[type=submit]');
   record('URL field is focused and prefilled', document.activeElement === input && !!input?.value,
     'value ' + JSON.stringify(input?.value));
+
+  // A first run has nowhere to go back to, and the app cannot start without a
+  // server — so the way out must not be offered here.
+  record('no way out is offered on a first run',
+    document.querySelector('button[type=button]') === null,
+    (document.querySelector('button[type=button]')?.textContent ?? 'none').trim());
 
   // The screen is styled, not just present. Tailwind's source detection is
   // rooted at the build, and a misconfigured root silently drops every
@@ -104,6 +117,35 @@ const CHECKS = `(async () => {
   return out;
 })()`
 
+/**
+ * The same screen reached the other way: by adding a profile.
+ *
+ * Here the user chose to come here and must be able to leave. Everything the
+ * unit tests cover stops at the shell's answer — this is the part they cannot
+ * reach, that the answer arrives through the preload bridge and turns into a
+ * button that calls back.
+ */
+const CANCEL_CHECKS = `(async () => {
+  const out = [];
+  const record = (name, pass, detail) => out.push({ name, pass, detail });
+
+  const cancel = [...document.querySelectorAll('button[type=button]')]
+    .find((b) => b.textContent.trim() === 'Cancel');
+  record('a way back is offered when a profile can be discarded', !!cancel,
+    cancel ? cancel.textContent.trim() : 'no cancel button');
+
+  cancel?.click();
+  await new Promise((r) => setTimeout(r, 300));
+
+  // The shell is replacing the window, so the screen stays inert rather than
+  // offering an action that no longer means anything.
+  record('the screen goes inert once it is on its way out',
+    cancel?.disabled === true && cancel?.textContent.trim() === 'Going back...',
+    'disabled ' + cancel?.disabled + ', label ' + JSON.stringify(cancel?.textContent.trim()));
+
+  return out;
+})()`
+
 app.whenReady().then(async () => {
   await session.defaultSession.clearStorageData({ storages: ['cookies'] })
 
@@ -120,7 +162,15 @@ app.whenReady().then(async () => {
     configured: Boolean(serverUrl),
     serverUrl,
     locked: false,
+    canCancel,
   }))
+  // The real one replaces the window; counting the request is what this run
+  // needs to see, and destroying the window mid-check would take the results
+  // with it.
+  ipcMain.handle('agentrq:connection:cancel', async () => {
+    cancelCalls += 1
+    return true
+  })
   ipcMain.handle('agentrq:connection:validate', async (_e, url) => {
     const result = await validateServerUrl(url, net.fetch)
     return result.ok ? { ok: true, url: result.url } : result
@@ -162,7 +212,36 @@ app.whenReady().then(async () => {
 
   console.log('\n─── first-run connection screen ───')
   for (const r of results) console.log(`${r.pass ? '✓' : '✗'} ${r.name} — ${r.detail}`)
-  const failed = results.filter((r) => !r.pass)
+
+  // The same screen, reached by adding a profile: unconfigured again, but with
+  // somewhere to go back to.
+  serverUrl = ''
+  canCancel = true
+  const second = new BrowserWindow({
+    show: false,
+    webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
+  await second.loadURL('app://agentrq/')
+  await new Promise((r) => setTimeout(r, 1200))
+
+  let cancelResults
+  try {
+    cancelResults = await second.webContents.executeJavaScript(CANCEL_CHECKS)
+  } catch (err) {
+    console.error('✗ cancel checks threw:', err)
+    app.exit(1)
+    return
+  }
+  cancelResults.push({
+    name: 'the shell was asked exactly once',
+    pass: cancelCalls === 1,
+    detail: `calls ${cancelCalls}`,
+  })
+
+  console.log('\n─── added-profile connection screen ───')
+  for (const r of cancelResults) console.log(`${r.pass ? '✓' : '✗'} ${r.name} — ${r.detail}`)
+
+  const failed = [...results, ...cancelResults].filter((r) => !r.pass)
   console.log(failed.length === 0 ? '\n✓ all checks passed' : `\n✗ ${failed.length} check(s) failed`)
   app.exit(failed.length === 0 ? 0 : 1)
 })

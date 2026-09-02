@@ -333,6 +333,20 @@ describe('createServerConfigStore', () => {
     expect(removed.activeProfileId).toBe(first.id)
   })
 
+  it('removes onto the profile the caller names', async () => {
+    // Abandoning an added profile has to land back where it was added from,
+    // which the store cannot work out for itself.
+    const { store } = makeStore(legacy())
+    const [first] = (await store.load()).profiles
+    await store.addProfile('Work')
+    const withThird = await store.addProfile('Third')
+    const third = withThird.profiles[2]
+
+    const removed = await store.removeProfile(third.id, first.id)
+
+    expect(removed.activeProfileId).toBe(first.id)
+  })
+
   it('keeps the last profile, since the app needs a session to run in', async () => {
     const { store } = makeStore(legacy())
     const config = await store.load()

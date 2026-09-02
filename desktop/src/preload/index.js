@@ -18,12 +18,24 @@ contextBridge.exposeInMainWorld('agentrq', {
   },
 
   connection: {
-    /** @returns {Promise<{configured: boolean, serverUrl: string, locked: boolean}>} */
+    /**
+     * `canCancel` is whether this screen has somewhere to go back to — true
+     * for a profile that was added and never connected, false on a first run.
+     *
+     * @returns {Promise<{configured: boolean, serverUrl: string, locked: boolean, canCancel: boolean}>}
+     */
     get: () => ipcRenderer.invoke('agentrq:connection:get'),
     /** Probe a URL without storing it, so the screen can report before committing. */
     validate: (url) => ipcRenderer.invoke('agentrq:connection:validate', url),
     /** Validate, store, and reload the window on success. */
     save: (url) => ipcRenderer.invoke('agentrq:connection:save', url),
+    /**
+     * Discard the profile being set up and return to the previous one. The
+     * shell replaces the window, so the caller does not navigate.
+     *
+     * @returns {Promise<boolean>} false when there was nothing to go back to
+     */
+    cancel: () => ipcRenderer.invoke('agentrq:connection:cancel'),
   },
 
   notifications: {

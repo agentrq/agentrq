@@ -5,6 +5,7 @@ import {
   activateProfile,
   activeProfile,
   addProfile,
+  canDiscardActiveProfile,
   isValidProfileId,
   makeProfile,
   migrateProfiles,
@@ -174,6 +175,72 @@ describe('removeProfile', () => {
   it('ignores an id it does not have', () => {
     const state = addProfile(base(), { id: 'work1', label: 'Work' })
     expect(removeProfile(state, 'nope')).toBe(state)
+  })
+
+  it('goes back to the profile the caller names', () => {
+    // Abandoning a profile has to land on the one it was added from. With
+    // three profiles that is not the first in the list, so falling back to
+    // profiles[0] would drop the user into a third account they never chose.
+    let state = addProfile(base(), { id: 'work1', label: 'Work' })
+    state = addProfile(state, { id: 'work2', label: 'Second' })
+    state = addProfile(state, { id: 'work3', label: 'Third' })
+
+    expect(removeProfile(state, 'work3', 'work1').activeProfileId).toBe('work1')
+  })
+
+  it('falls back to the first remaining when the named one is gone too', () => {
+    const state = addProfile(base(), { id: 'work1', label: 'Work' })
+
+    const after = removeProfile(state, 'work1', 'vanished')
+
+    expect(after.activeProfileId).toBe(after.profiles[0].id)
+  })
+
+  it('never lands on the profile it just removed', () => {
+    const state = addProfile(base(), { id: 'work1', label: 'Work' })
+
+    expect(removeProfile(state, 'work1', 'work1').activeProfileId).not.toBe('work1')
+  })
+
+  it('leaves an untouched active profile alone even when a fallback is named', () => {
+    let state = addProfile(base(), { id: 'work1', label: 'Work' })
+    state = addProfile(state, { id: 'work2', label: 'Second' })
+
+    expect(removeProfile(state, 'work1', 'nonsense').activeProfileId).toBe('work2')
+  })
+})
+
+describe('canDiscardActiveProfile', () => {
+  it('says no during a first run', () => {
+    // The only profile there is, and no server yet: this is the screen the app
+    // cannot start without, not a step the user chose to take.
+    expect(canDiscardActiveProfile(base())).toBe(false)
+  })
+
+  it('says no when the only profile is configured', () => {
+    const state = updateProfile(base(), base().activeProfileId, { serverUrl: 'https://app.agentrq.com' })
+    expect(canDiscardActiveProfile(state)).toBe(false)
+  })
+
+  it('says yes for a profile added and never connected', () => {
+    let state = updateProfile(base(), base().activeProfileId, { serverUrl: 'https://app.agentrq.com' })
+    state = addProfile(state, { id: 'work1', label: 'Work' })
+
+    expect(canDiscardActiveProfile(state)).toBe(true)
+  })
+
+  it('says no once that profile has a server', () => {
+    // It is a working account now; the way out of it is the switcher.
+    let state = addProfile(base(), { id: 'work1', label: 'Work' })
+    state = updateProfile(state, 'work1', { serverUrl: 'https://work.example.com' })
+
+    expect(canDiscardActiveProfile(state)).toBe(false)
+  })
+
+  it('says no rather than throwing when there is no state at all', () => {
+    // Called from the shell, which can ask before the profiles are loaded.
+    expect(canDiscardActiveProfile(null)).toBe(false)
+    expect(canDiscardActiveProfile({})).toBe(false)
   })
 })
 

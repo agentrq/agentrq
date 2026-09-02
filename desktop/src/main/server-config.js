@@ -239,9 +239,15 @@ export function createServerConfigStore({ readFile, writeFile, newProfileId = ra
       return next
     },
 
-    /** Remove a profile. The last one is kept, since the app needs a session. */
-    async removeProfile(id) {
-      const next = removeProfileFromState(await this.load(), id)
+    /**
+     * Remove a profile. The last one is kept, since the app needs a session.
+     *
+     * `fallbackId` is where to land when the one removed was active — the
+     * profile an abandoned one was added from, rather than whichever happens
+     * to be first.
+     */
+    async removeProfile(id, fallbackId = '') {
+      const next = removeProfileFromState(await this.load(), id, fallbackId)
       await write(next)
       return next
     },

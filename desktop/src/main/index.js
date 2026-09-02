@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
-import { activeProfile, partitionFor } from './profiles.js'
+import { activeProfile, canDiscardActiveProfile, partitionFor } from './profiles.js'
 import { fetchProfileIdentity } from './identity.js'
 import {
   CONFIG_FILENAME,
@@ -118,6 +118,15 @@ let updater = null
  */
 let profileState = null
 let profileSession = null
+/**
+ * Where to go back to if the profile being added is abandoned.
+ *
+ * Deliberately not stored on disk: it describes a moment — the connection
+ * screen is up and the previous window is gone — not a setting. Losing it to a
+ * restart costs nothing, because removing a profile already falls back to the
+ * first remaining one.
+ */
+let profileReturnId = null
 
 /** Sessions that already have the app:// handler; registering twice throws. */
 const handledSessions = new WeakSet()
@@ -194,7 +203,15 @@ function applyBadge(count) {
 }
 
 function connectionState() {
-  return { configured: Boolean(serverUrl), serverUrl, locked: isConnectionLocked }
+  return {
+    configured: Boolean(serverUrl),
+    serverUrl,
+    locked: isConnectionLocked,
+    // Whether the connection screen can offer a way out. Adding a profile
+    // lands there with no window to go back to, so without this the only exits
+    // are finishing the setup or quitting the app.
+    canCancel: canDiscardActiveProfile(profileState),
+  }
 }
 
 /** Send the window back to the app root, picking up whatever the state now is. */
@@ -604,6 +621,23 @@ async function switchProfile(id) {
   return switchProfileToActive()
 }
 
+/**
+ * Remove a profile and forget its session.
+ *
+ * Shared by the switcher and by abandoning a half-added profile, because both
+ * have to clear the same three things — the stored profile, its cookies on
+ * disk, and its cached identity — and one that cleared only two would leave a
+ * removed account still signed in.
+ */
+async function forgetProfile(id, fallbackId = '') {
+  const wasActive = id === profileState?.activeProfileId
+  profileState = await configStore.removeProfile(id, fallbackId)
+  // Its cookies would otherwise outlive it on disk, still signed in.
+  await session.fromPartition(partitionFor(id)).clearStorageData()
+  profileIdentities.delete(id)
+  return wasActive ? switchProfileToActive() : profilesPayload()
+}
+
 function registerIpc(getWindow) {
   ipcMain.handle('agentrq:connection:get', () => connectionState())
 
@@ -612,6 +646,19 @@ function registerIpc(getWindow) {
     // The probe response carries auth flags that are of no use to the
     // connection screen and would be a needless leak across the bridge.
     return result.ok ? { ok: true, url: result.url } : result
+  })
+
+  // Abandon a profile that was added and never connected, and go back to the
+  // one it was added from. The profile is discarded rather than left behind:
+  // an unconfigured profile points at no server and can do nothing, and the
+  // switcher offers no way to delete one.
+  ipcMain.handle('agentrq:connection:cancel', async () => {
+    if (!canDiscardActiveProfile(profileState)) return false
+    const discarded = profileState.activeProfileId
+    const returnTo = profileReturnId ?? ''
+    profileReturnId = null
+    await forgetProfile(discarded, returnTo)
+    return true
   })
 
   // The renderer is the source of truth for appearance — the theme store the
@@ -651,6 +698,9 @@ function registerIpc(getWindow) {
   })
   ipcMain.handle('agentrq:profiles:switch', (_event, id) => switchProfile(id))
   ipcMain.handle('agentrq:profiles:add', async (_event, label) => {
+    // Remembered before the add, since adding makes the new profile active:
+    // this is the account to return to if the setup is abandoned.
+    profileReturnId = profileState?.activeProfileId ?? null
     profileState = await configStore.addProfile(label)
     // addProfile makes the new one active, so this is a switch into a session
     // that has never signed in: the window lands on the connection screen.
@@ -661,14 +711,7 @@ function registerIpc(getWindow) {
     installMenu(getWindow)
     return profilesPayload()
   })
-  ipcMain.handle('agentrq:profiles:remove', async (_event, id) => {
-    const wasActive = id === profileState?.activeProfileId
-    profileState = await configStore.removeProfile(id)
-    // Its cookies would otherwise outlive it on disk, still signed in.
-    await session.fromPartition(partitionFor(id)).clearStorageData()
-    profileIdentities.delete(id)
-    return wasActive ? switchProfileToActive() : profilesPayload()
-  })
+  ipcMain.handle('agentrq:profiles:remove', (_event, id) => forgetProfile(id))
 
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })

@@ -92,5 +92,10 @@ if (connection.configured) {
     (theme) => window.agentrq.theme?.set(theme)
   )
 } else {
-  createApp(ConnectionView, { initialUrl: connection.serverUrl }).mount('#app')
+  createApp(ConnectionView, {
+    initialUrl: connection.serverUrl,
+    // A profile added and not yet connected can be abandoned; a first run has
+    // nothing to go back to. The shell knows which this is.
+    canCancel: Boolean(connection.canCancel),
+  }).mount('#app')
 }

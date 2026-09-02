@@ -148,17 +148,39 @@ export function addProfile(state, { id, label, serverUrl = '' }) {
  * Remove a profile.
  *
  * The last one cannot be removed — an app with no profile has no session to
- * run in. Removing the active one falls back to the first remaining.
+ * run in. Removing the active one falls back to `fallbackId` when that profile
+ * is still there, and to the first remaining otherwise.
+ *
+ * The fallback exists for abandoning a profile that was just added: the one to
+ * land on is the one it was added *from*, which with three or more profiles is
+ * not the first in the list.
  */
-export function removeProfile(state, id) {
+export function removeProfile(state, id, fallbackId = '') {
   if (state.profiles.length <= 1) return state
   const profiles = state.profiles.filter((p) => p.id !== id)
   if (profiles.length === state.profiles.length) return state
 
-  const activeProfileId = profiles.some((p) => p.id === state.activeProfileId)
-    ? state.activeProfileId
-    : profiles[0].id
-  return { profiles, activeProfileId }
+  if (profiles.some((p) => p.id === state.activeProfileId)) {
+    return { profiles, activeProfileId: state.activeProfileId }
+  }
+  const preferred = profiles.some((p) => p.id === fallbackId) ? fallbackId : profiles[0].id
+  return { profiles, activeProfileId: preferred }
+}
+
+/**
+ * Whether the profile on screen can be thrown away instead of finished.
+ *
+ * A profile with no server has never been used for anything: it was added and
+ * then abandoned at the connection screen. Discarding it is only offered when
+ * another profile remains to go back to — during a genuine first run there is
+ * nowhere to go, and the app needs a server before it can do anything at all.
+ *
+ * One rule in one place because two callers ask it: the connection screen, to
+ * decide whether to offer a way out, and the shell, before taking one.
+ */
+export function canDiscardActiveProfile(state) {
+  if (!state || !Array.isArray(state.profiles) || state.profiles.length <= 1) return false
+  return !activeProfile(state).serverUrl
 }
 
 /** @returns {object} new state */

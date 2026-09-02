@@ -25,7 +25,7 @@
           spellcheck="false"
           autocapitalize="off"
           placeholder="https://app.agentrq.com"
-          :disabled="connecting"
+          :disabled="busy"
           class="w-full px-4 py-4 bg-gray-50 dark:bg-zinc-800/50 text-gray-900 dark:text-zinc-50 border border-gray-100 dark:border-zinc-700/50 rounded-2xl outline-none focus:ring-4 focus:ring-black/5 dark:focus:ring-white/10 focus:border-black dark:focus:border-white transition-all text-center placeholder:text-gray-500 disabled:opacity-50"
           required
         />
@@ -36,10 +36,20 @@
 
         <button
           type="submit"
-          :disabled="connecting || !serverUrl.trim()"
+          :disabled="busy || !serverUrl.trim()"
           class="w-full py-4 bg-gray-900 dark:bg-zinc-800 text-white dark:text-zinc-200 font-bold rounded-2xl hover:bg-black dark:hover:bg-zinc-700 transform active:scale-[0.98] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {{ connecting ? 'Connecting...' : 'Connect' }}
+        </button>
+
+        <button
+          v-if="canCancel"
+          type="button"
+          :disabled="busy"
+          @click="cancel"
+          class="w-full py-4 text-gray-600 dark:text-zinc-400 font-bold rounded-2xl border border-gray-100 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transform active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {{ cancelling ? 'Going back...' : 'Cancel' }}
         </button>
       </form>
 
@@ -69,11 +79,22 @@
  * copies only ./frontend, so that path would not exist there. Keeping the file
  * here is what makes it actually get styled. Do not move it.
  */
-import { ref, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+
+import { useConnectionCancel } from './useConnectionCancel'
 
 const props = defineProps({
   /** Prefilled when the user is switching away from a server they had. */
   initialUrl: { type: String, default: '' },
+  /**
+   * Whether there is a profile to go back to.
+   *
+   * The screen is reached two ways. On a first run it is the only thing the
+   * app can show, and there is nowhere to go. After "Add profile" it is a step
+   * the user chose to take, and one they must be able to back out of — so the
+   * shell decides, and this says which of the two it is.
+   */
+  canCancel: { type: Boolean, default: false },
 })
 
 const serverUrl = ref(props.initialUrl || 'https://app.agentrq.com')
@@ -81,13 +102,47 @@ const connecting = ref(false)
 const errorMsg = ref('')
 const inputRef = ref(null)
 
+const { cancelling, run: runCancel } = useConnectionCancel()
+
+/** Either action ends this window, so neither should be offered twice. */
+const busy = computed(() => connecting.value || cancelling.value)
+
+// Escape is what a dialog is expected to answer to, and this one has been
+// modal over the whole window since before there was any way out of it.
+function onKeydown(event) {
+  if (event.key === 'Escape') cancel()
+}
+
 onMounted(() => {
   inputRef.value?.focus()
   inputRef.value?.select()
+  if (props.canCancel) window.addEventListener('keydown', onKeydown)
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
+
+/**
+ * Abandon this profile and return to the one it was added from.
+ *
+ * The half-made profile is discarded by the shell rather than left in the
+ * switcher: it points at no server, so it can do nothing, and there is no UI
+ * to delete it later.
+ */
+async function cancel() {
+  if (!props.canCancel || busy.value) return
+
+  // Cleared while the request is in flight, so a stale failure is not left on
+  // screen beside a button that is already disabled.
+  errorMsg.value = ''
+  errorMsg.value = await runCancel()
+}
+
 async function connect() {
-  if (connecting.value) return
+  // `busy`, not `connecting`: pressing Enter would otherwise still submit
+  // while the window is on its way out.
+  if (busy.value) return
 
   connecting.value = true
   errorMsg.value = ''
