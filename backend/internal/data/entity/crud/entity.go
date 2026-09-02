@@ -30,6 +30,7 @@ type (
 		Icon                  string
 		NotificationSettings  *NotificationSettings
 		AgentConnected        bool
+		AgentSupportsStop     bool
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
 		SelfLearningLoopNote  string

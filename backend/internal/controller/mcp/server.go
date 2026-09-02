@@ -566,6 +566,160 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
 }
 
+// stopCapableClients names the MCP clients known to act on a stop request,
+// keyed by the lowercased client name from the initialize handshake.
+//
+// Stopping is not something MCP has: the notification below is this server's
+// own invention, and a client not written to listen for it drops it in
+// silence. Claude Code connected directly is such a client — there is no stop
+// in what it speaks — so a Stop button in front of it would report success and
+// change nothing. Only the ACP gateway acts on it, cancelling the turn of the
+// agent behind it.
+var stopCapableClients = map[string]bool{
+	"acp-gateway": true,
+}
+
+// clientSupportsStop reports whether a session's client acts on a stop request.
+func clientSupportsStop(sess *mcp.ServerSession) bool {
+	if sess == nil {
+		return false
+	}
+	p := sess.InitializeParams()
+	if p == nil || p.ClientInfo == nil {
+		return false
+	}
+	return stopCapableClients[strings.ToLower(strings.TrimSpace(p.ClientInfo.Name))]
+}
+
+// stopCapableSessions lists the connected sessions worth sending a stop to.
+func (ps *WorkspaceServer) stopCapableSessions() []string {
+	if ps.mcpServer == nil {
+		return nil
+	}
+	var ids []string
+	for sess := range ps.mcpServer.Sessions() {
+		if clientSupportsStop(sess) {
+			ids = append(ids, sess.ID())
+		}
+	}
+	return ids
+}
+
+// SupportsStop reports whether anything currently connected can be asked to
+// stop, so the dashboard only offers a Stop button that would do something.
+func (ps *WorkspaceServer) SupportsStop() bool {
+	return len(ps.stopCapableSessions()) > 0
+}
+
+// StopOutcome reports how much of a stop request could actually be carried out.
+type StopOutcome struct {
+	// Stopped is true when a connected agent was asked to stop its turn.
+	Stopped bool
+	// ApprovalsDenied counts the approvals refused on the human's behalf when
+	// the agent itself could not be stopped.
+	ApprovalsDenied int
+}
+
+// Acted reports whether the stop request changed anything at all.
+func (o StopOutcome) Acted() bool { return o.Stopped || o.ApprovalsDenied > 0 }
+
+// SendCancelNotification asks whatever is working on a task to stop, reporting
+// how far it got.
+//
+// Broadcast to every stop-capable session rather than addressed to one: the
+// agent may have reconnected since it started the task, and the point of a stop
+// button is that it works. An agent with nothing running for that task ignores
+// it.
+//
+// A client that cannot stop is passed over rather than told. That is not the
+// end of it: an agent whose turn cannot be ended can still be refused the
+// command it is standing at, which is the nearest thing to a stop it can be
+// given, so the approvals the task is waiting on are denied instead.
+func (ps *WorkspaceServer) SendCancelNotification(ctx context.Context, taskID int64) StopOutcome {
+	params := map[string]any{"task_id": monoflake.ID(taskID).String()}
+
+	sent := 0
+	for _, sessID := range ps.stopCapableSessions() {
+		if ps.notifySession(ctx, sessID, "notifications/claude/channel/cancel", params) {
+			sent++
+		}
+	}
+	if sent == 0 {
+		denied := ps.denyOutstandingRequests(ctx, taskID)
+		zlog.Info().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Int("approvals_denied", denied).
+			Msg("nothing connected can stop a task; refused what it was waiting on instead")
+		return StopOutcome{ApprovalsDenied: denied}
+	}
+	zlog.Info().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Int("sessions", sent).
+		Msg("asked connected agents to stop a task")
+
+	ps.closeOutstandingRequests(ctx, taskID)
+	return StopOutcome{Stopped: true}
+}
+
+// outstandingRequestIDs lists the approval requests a task is waiting on.
+func (ps *WorkspaceServer) outstandingRequestIDs(taskID int64) []string {
+	ps.requestTaskIDsMu.RLock()
+	defer ps.requestTaskIDsMu.RUnlock()
+
+	var requestIDs []string
+	for requestID, id := range ps.requestTaskIDs {
+		if id == taskID {
+			requestIDs = append(requestIDs, requestID)
+		}
+	}
+	return requestIDs
+}
+
+// denyOutstandingRequests refuses, on the human's behalf, every approval a task
+// is waiting on.
+//
+// For an agent that cannot be stopped this is what a Stop can still do: the
+// command it was about to run does not run. Unlike closing the request, the
+// verdict is genuinely delivered, so the agent is answered rather than left
+// holding a question whose reply would never arrive.
+func (ps *WorkspaceServer) denyOutstandingRequests(ctx context.Context, taskID int64) int {
+	denied := 0
+	for _, requestID := range ps.outstandingRequestIDs(taskID) {
+		if err := ps.SendPermissionVerdict(ctx, taskID, requestID, "deny"); err != nil {
+			zlog.Warn().Err(err).Str("request_id", requestID).Int64("task_id", taskID).
+				Msg("could not refuse the approval a task was waiting on")
+			continue
+		}
+		denied++
+	}
+	return denied
+}
+
+// closeOutstandingRequests marks a stopped task's approval requests as no
+// longer answerable.
+//
+// The agent answers them its own way when it stops, so nothing will ever come
+// back for them here. Left alone they would sit in the task as pending
+// questions for the rest of the workspace's life, and the task would keep
+// showing as waiting on someone.
+func (ps *WorkspaceServer) closeOutstandingRequests(ctx context.Context, taskID int64) {
+	for _, requestID := range ps.outstandingRequestIDs(taskID) {
+		ps.permissionResponsesMu.RLock()
+		msgID, hasMsg := ps.permissionResponses[requestID]
+		ps.permissionResponsesMu.RUnlock()
+		if hasMsg && ps.updateMessageMetadata != nil {
+			_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": "cancelled"})
+		}
+
+		ps.toolCallIDsMu.RLock()
+		tcID, hasToolCall := ps.toolCallIDs[requestID]
+		ps.toolCallIDsMu.RUnlock()
+		if hasToolCall && ps.updateToolCallStatus != nil {
+			if err := ps.updateToolCallStatus(ctx, tcID, "cancelled"); err != nil {
+				zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to mark tool call cancelled")
+			}
+		}
+
+		ps.cleanupRequest(requestID)
+	}
+}
+
 // StartPing pings all connected MCP client sessions every minute to keep connections alive.
 // If a session's underlying stream is already closed or times out, it is explicitly closed
 // so the SDK removes it from its session registry, preventing repeated errors.

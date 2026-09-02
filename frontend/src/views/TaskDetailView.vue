@@ -41,7 +41,19 @@
               </button>
             </div>
 
-
+            <!-- Stop: only while the agent is working, and only when what is
+                 connected can actually be stopped. Not every agent can be:
+                 stopping travels over a notification only the ACP gateway acts
+                 on, so offering it to Claude Code speaking MCP directly would
+                 be a button that reports success and changes nothing. -->
+            <button v-if="task.status === 'ongoing' && workspace?.agentSupportsStop"
+                    @click.stop="stopRunningTask"
+                    @mouseenter="tooltipStore.show($event, 'Stop the agent working on this task', 'bottom')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="h-7 px-2 rounded-lg border border-gray-200 dark:border-zinc-700/50 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-800 transition-all flex items-center gap-1 text-[8px] font-black uppercase tracking-tighter">
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+              <span class="hidden sm:inline">Stop</span>
+            </button>
 
             <!-- Status Selector -->
             <div class="relative">
@@ -251,7 +263,7 @@
                        </span>
                        <span class="text-[9px] font-semibold shrink-0"
                              :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-500 dark:text-zinc-400' : 'text-red-600 dark:text-red-500'">
-                         {{ m.metadata.status === 'deny' ? 'Denied' : m.metadata.status === 'allow_always' ? 'Always' : 'Allowed' }}
+                         {{ m.metadata.status === 'deny' ? 'Denied' : m.metadata.status === 'cancelled' ? 'Stopped' : m.metadata.status === 'allow_always' ? 'Always' : 'Allowed' }}
                        </span>
                        <svg class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                      </div>
@@ -649,7 +661,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, updateTaskAllowAllCommands, fetchUser } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1037,6 +1049,25 @@ const updateAssignee = async (newAssignee) => {
     notifySuccess(`Task reassigned to ${newAssignee}`);
   } catch (err) {
     notifyError("Failed to reassign task: " + err.message);
+  }
+};
+
+// Asks the agent to stop what it is doing. The task's own status is left
+// alone: this is a message to the agent, and what it does next is its to say.
+//
+// An agent whose turn cannot be ended is refused the command it was standing
+// at instead, which is a different thing to have happened and is said so.
+const stopRunningTask = async () => {
+  if (!task.value) return;
+  try {
+    const result = await stopTask(workspaceId.value, taskId.value);
+    if (result?.stopped) {
+      notifySuccess("Asked the agent to stop this task.");
+    } else {
+      notifySuccess("This agent cannot be stopped, so the command it was waiting on was refused.");
+    }
+  } catch (err) {
+    notifyError("Failed to stop the task: " + err.message);
   }
 };
 

@@ -151,6 +151,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		ArchivedAt:            p.ArchivedAt,
 		NotificationSettings:  fromEntityNotificationSettingsToView(p.NotificationSettings),
 		AgentConnected:        p.AgentConnected,
+		AgentSupportsStop:     p.AgentSupportsStop,
 		MCPURL:                mcpURL,
 		AutoAllowedTools:      p.AutoAllowedTools,
 		AllowAllCommands:      p.AllowAllCommands,

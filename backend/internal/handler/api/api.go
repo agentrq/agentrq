@@ -611,6 +611,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
+		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusCreated)
@@ -638,6 +639,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 			return c.Send(e)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
+		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -664,6 +666,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 		}
 		for i := range rs.Workspaces {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
+			rs.Workspaces[i].AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspaces[i].ID)
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
@@ -770,6 +773,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 			srv.UpdateAutoAllowedTools(rs.Workspace.AutoAllowedTools)
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
+		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)

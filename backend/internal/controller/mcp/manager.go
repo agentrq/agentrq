@@ -78,6 +78,19 @@ func (m *Manager) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 	return srv.SendPermissionVerdict(ctx, taskID, requestID, behavior)
 }
 
+// SupportsStop reports whether anything connected to the workspace can be asked
+// to stop a task. False for a workspace with no server running: there is
+// nothing connected to it, so there is nothing to ask.
+func (m *Manager) SupportsStop(workspaceID int64) bool {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok || srv == nil {
+		return false
+	}
+	return srv.SupportsStop()
+}
+
 // SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
 func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
 	m.mu.RLock()

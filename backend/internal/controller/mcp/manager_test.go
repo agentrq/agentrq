@@ -72,3 +72,22 @@ func TestManager(t *testing.T) {
 		t.Errorf("expected newFn to be called three times, got %d", newCount)
 	}
 }
+
+// A workspace nothing is connected to cannot be asked to stop anything.
+func TestManager_SupportsStop(t *testing.T) {
+	m := NewManager(func(workspaceID int64, userID string) *WorkspaceServer {
+		return &WorkspaceServer{workspaceID: workspaceID, userID: userID}
+	})
+
+	if m.SupportsStop(1) {
+		t.Error("expected false for a workspace with no server running")
+	}
+
+	srv := m.Get(1, "user1")
+	if m.SupportsStop(1) {
+		t.Error("expected false with nothing connected to the server")
+	}
+	if srv == nil {
+		t.Fatal("expected a server")
+	}
+}

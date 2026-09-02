@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
@@ -375,6 +376,143 @@ func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestStopTask_RequiresWorkspaceAccess(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{}
+
+	// Intentionally no MCPManager: an unauthorized request must be refused
+	// before anything reaches a workspace server.
+	h := &handler{crud: crudCtrl}
+
+	workspaceID := monoflake.ID(1).String()
+	taskID := monoflake.ID(2).String()
+	userID := monoflake.ID(100).String()
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+		c.Locals("user_id", userID)
+		return h.stopTask()(c)
+	})
+
+	crudCtrl.checkWorkspaceAccessFunc = func(ctx context.Context, id int64, gotUserID string) (bool, error) {
+		return false, nil
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+workspaceID+"/tasks/"+taskID+"/stop",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestStopTask_RejectsATaskIDThatIsNotOne(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &handler{crud: crudCtrl}
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.stopTask()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/0/stop",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+// Nothing connected can be stopped, so the request is refused rather than
+// answered with a success the human would read as "the task stopped".
+func TestStopTask_RefusesWhenTheAgentCannotBeStopped(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &handler{
+		crud: crudCtrl,
+		mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
+			// A workspace server with nothing connected to it.
+			return &mcpctrl.WorkspaceServer{}
+		}),
+	}
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.stopTask()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/stop",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("expected 409, got %d", resp.StatusCode)
+	}
+}
+
+// No server for the workspace at all: there is nothing even to ask.
+func TestStopTask_WithoutAWorkspaceServer(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &handler{
+		crud: crudCtrl,
+		mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
+			return nil
+		}),
+	}
+
+	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.stopTask()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/stop",
+		nil,
+	)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 

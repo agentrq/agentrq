@@ -18,6 +18,7 @@ type (
 		Icon                  string                `json:"icon,omitempty"`
 		NotificationSettings  *NotificationSettings `json:"notificationSettings,omitempty"`
 		AgentConnected        bool                  `json:"agentConnected"`
+		AgentSupportsStop     bool                  `json:"agentSupportsStop"`
 		MCPURL                string                `json:"mcpUrl"`
 		MCPToken              string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`

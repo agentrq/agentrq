@@ -32,6 +32,7 @@ const (
 	_routePathAllowAll    = "/workspaces/:id/tasks/:taskID/allow_all"
 	_routePathPermission  = "/workspaces/:id/tasks/:taskID/permission"
 	_routePathElicitation = "/workspaces/:id/tasks/:taskID/elicitation"
+	_routePathStop        = "/workspaces/:id/tasks/:taskID/stop"
 	_routePathEvents      = "/workspaces/:id/events"
 	_routePathAttachment  = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
 	_routePathCounts      = "/workspaces/:id/tasks/counts"
@@ -54,6 +55,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
 	h.router.Post(_routePathPermission, h.sendPermissionVerdict())
 	h.router.Post(_routePathElicitation, h.respondToElicitation())
+	h.router.Post(_routePathStop, h.stopTask())
 	h.router.Delete(_routePathTask, h.deleteTask())
 	h.router.Get(_routePathEvents, h.sseEvents())
 	h.router.Get(_routePathAttachment, h.getAttachment())
@@ -674,6 +676,54 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 		}
 
 		return c.SendStatus(http.StatusOK)
+	}
+}
+
+// stopTask asks whatever agent is working on a task to stop.
+//
+// Nothing about the task itself changes: this is a message to the agent, and
+// the agent decides what its own state becomes.
+//
+// Only an agent that can actually be stopped is asked. Stopping travels over a
+// notification this server invents, and a client not built to listen for it —
+// Claude Code speaking MCP directly, for one — would drop it without a word.
+// Such an agent is instead refused the approval it is standing at, which is as
+// close to a stop as it can be brought.
+func (h *handler) stopTask() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		userID := c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if ok, err := h.crud.CheckWorkspaceAccess(ctx, workspaceID, userID); err != nil || !ok {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+		if taskID == 0 {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid task id"})
+		}
+
+		srv := h.mcpManager.Get(workspaceID, userID)
+		if srv == nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
+		}
+
+		// How much of a stop was possible depends on what is connected, and
+		// the human is told which it was: reporting a plain success for an
+		// agent that never stopped would leave them believing a task had
+		// ended while it is still running.
+		outcome := srv.SendCancelNotification(c.Context(), taskID)
+		if !outcome.Acted() {
+			return c.Status(http.StatusConflict).JSON(fiber.Map{
+				"error": "the connected agent does not support being stopped",
+			})
+		}
+		return c.Status(http.StatusOK).JSON(fiber.Map{
+			"stopped":         outcome.Stopped,
+			"approvalsDenied": outcome.ApprovalsDenied,
+		})
 	}
 }
 

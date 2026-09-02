@@ -236,6 +236,19 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   return res;
 }
 
+export async function stopTask(workspaceId, taskId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/stop`, {
+    method: 'POST'
+  });
+  if (!res.ok) {
+    // The server says why when it refuses — most usefully that whatever is
+    // connected has no stop — and that reason is worth more than "failed".
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || 'Failed to stop the task');
+  }
+  return res.json();
+}
+
 export async function respondToElicitation(workspaceId, taskId, requestId, action, content) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/elicitation`, {
     method: 'POST',

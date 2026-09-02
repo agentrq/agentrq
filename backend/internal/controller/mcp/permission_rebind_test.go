@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -186,15 +188,16 @@ func TestNotifySession_NoServer(t *testing.T) {
 }
 
 // connectedServer attaches a real MCP server with one live client session, so
-// that delivering a verdict actually goes somewhere. Returns the session id and
-// a channel of the notification methods the client receives.
-func connectedServer(t *testing.T, ps *WorkspaceServer) string {
+// that delivering a verdict actually goes somewhere. The client introduces
+// itself under clientName, which is what decides whether it can be stopped.
+// Returns the session id.
+func connectedServer(t *testing.T, ps *WorkspaceServer, clientName string) string {
 	t.Helper()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 	ps.mcpServer = server
 
-	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: "0"}, &mcp.ClientOptions{
+	client := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: "0"}, &mcp.ClientOptions{
 		KeepAlive: 0,
 	})
 
@@ -220,7 +223,7 @@ func connectedServer(t *testing.T, ps *WorkspaceServer) string {
 func TestSendPermissionVerdict_DeliversToALiveSession(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	sessID := connectedServer(t, ps)
+	sessID := connectedServer(t, ps, "agent")
 
 	ps.permissionRequests["req-1"] = sessID
 	ps.permissionResponses["req-1"] = 700
@@ -238,5 +241,240 @@ func TestSendPermissionVerdict_DeliversToALiveSession(t *testing.T) {
 	}
 	if _, ok := ps.undeliveredVerdicts["req-1"]; ok {
 		t.Fatal("a delivered verdict must not be held")
+	}
+}
+
+// A stop request reaches whatever stop-capable agents are connected, without
+// needing to know which connection started the task.
+func TestSendCancelNotification_ReachesConnectedAgents(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	connectedServer(t, ps, "acp-gateway")
+
+	if !ps.SendCancelNotification(context.Background(), 42).Stopped {
+		t.Fatal("expected the stop to reach the connected gateway")
+	}
+}
+
+// Stopping a task closes the approval it was waiting on, so the question does
+// not sit in the task forever.
+func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	connectedServer(t, ps, "acp-gateway")
+
+	var marked map[string]any
+	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+		marked, _ = metadata.(map[string]any)
+		return nil
+	}
+	var toolCallStatus string
+	ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+		toolCallStatus = status
+		return nil
+	}
+
+	ps.requestTaskIDs["req-1"] = 42
+	ps.permissionResponses["req-1"] = 700
+	ps.toolCallIDs["req-1"] = 900
+	// Another task's outstanding request must be left alone.
+	ps.requestTaskIDs["req-other"] = 43
+	ps.permissionResponses["req-other"] = 701
+
+	if !ps.SendCancelNotification(context.Background(), 42).Stopped {
+		t.Fatal("expected the stop to be delivered")
+	}
+
+	if marked == nil || marked["status"] != "cancelled" {
+		t.Fatalf("expected the approval marked cancelled, got %v", marked)
+	}
+	if toolCallStatus != "cancelled" {
+		t.Fatalf("expected the tool call marked cancelled, got %q", toolCallStatus)
+	}
+	if _, ok := ps.permissionResponses["req-1"]; ok {
+		t.Fatal("expected the stopped request to be forgotten")
+	}
+	if _, ok := ps.permissionResponses["req-other"]; !ok {
+		t.Fatal("stopping one task must not close another task's request")
+	}
+}
+
+// A tool call that will not take its new status is logged and stepped over:
+// the rest of the stop still has to happen.
+func TestSendCancelNotification_SurvivesAToolCallThatWillNotClose(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	connectedServer(t, ps, "acp-gateway")
+
+	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+		return nil
+	}
+	ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+		return errors.New("write failed")
+	}
+
+	ps.requestTaskIDs["req-1"] = 42
+	ps.permissionResponses["req-1"] = 700
+	ps.toolCallIDs["req-1"] = 900
+
+	if !ps.SendCancelNotification(context.Background(), 42).Stopped {
+		t.Fatal("expected the stop to be delivered")
+	}
+	if _, ok := ps.permissionResponses["req-1"]; ok {
+		t.Fatal("expected the stopped request to be forgotten regardless")
+	}
+}
+
+// A client with no stop in what it speaks cannot have its turn ended, but the
+// command it is standing at can still be refused — and refused for real, with a
+// verdict the agent receives rather than a request quietly closed behind it.
+func TestSendCancelNotification_RefusesWhatAClientThatCannotStopIsWaitingOn(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	sessID := connectedServer(t, ps, "claude-code")
+
+	var marked map[string]any
+	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+		marked, _ = metadata.(map[string]any)
+		return nil
+	}
+	ps.permissionRequests["req-1"] = sessID
+	ps.requestTaskIDs["req-1"] = 42
+	ps.permissionResponses["req-1"] = 700
+	// Another task's outstanding request must be left alone.
+	ps.permissionRequests["req-other"] = sessID
+	ps.requestTaskIDs["req-other"] = 43
+	ps.permissionResponses["req-other"] = 701
+
+	outcome := ps.SendCancelNotification(context.Background(), 42)
+
+	if outcome.Stopped {
+		t.Fatal("a client that cannot stop must not be reported as stopped")
+	}
+	if outcome.ApprovalsDenied != 1 {
+		t.Fatalf("expected one approval refused, got %d", outcome.ApprovalsDenied)
+	}
+	if marked == nil || marked["status"] != "deny" {
+		t.Fatalf("expected the approval marked denied, got %v", marked)
+	}
+	if _, ok := ps.permissionResponses["req-other"]; !ok {
+		t.Fatal("stopping one task must not refuse another task's request")
+	}
+}
+
+// Nothing to stop and nothing being waited on: the stop achieved nothing, and
+// says so.
+func TestSendCancelNotification_NothingToActOn(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	connectedServer(t, ps, "claude-code")
+
+	if outcome := ps.SendCancelNotification(context.Background(), 42); outcome.Acted() {
+		t.Fatalf("expected nothing to act on, got %+v", outcome)
+	}
+}
+
+// An approval whose session has gone is reported as not refused rather than
+// counted as one.
+func TestSendCancelNotification_ApprovalThatCannotBeRefused(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	connectedServer(t, ps, "claude-code")
+
+	// No entry in permissionRequests, so the verdict has nowhere to go.
+	ps.requestTaskIDs["req-1"] = 42
+	ps.permissionResponses["req-1"] = 700
+
+	if outcome := ps.SendCancelNotification(context.Background(), 42); outcome.Acted() {
+		t.Fatalf("expected the refusal to fail, got %+v", outcome)
+	}
+}
+
+// With no agents connected there is simply nothing to tell.
+func TestSendCancelNotification_NoAgents(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.mcpServer = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+
+	if outcome := ps.SendCancelNotification(context.Background(), 42); outcome.Acted() {
+		t.Fatalf("expected nothing to happen with nothing connected, got %+v", outcome)
+	}
+}
+
+// The dashboard only offers a Stop button when something connected would act on
+// it.
+func TestSupportsStop(t *testing.T) {
+	t.Run("nothing connected", func(t *testing.T) {
+		replies := 0
+		ps := permissionServer(t, &replies)
+		ps.mcpServer = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+		if ps.SupportsStop() {
+			t.Fatal("expected false with no sessions")
+		}
+	})
+
+	t.Run("no MCP server at all", func(t *testing.T) {
+		replies := 0
+		ps := permissionServer(t, &replies)
+		if ps.SupportsStop() {
+			t.Fatal("expected false without an MCP server")
+		}
+	})
+
+	t.Run("a client that cannot stop", func(t *testing.T) {
+		replies := 0
+		ps := permissionServer(t, &replies)
+		connectedServer(t, ps, "claude-code")
+		if ps.SupportsStop() {
+			t.Fatal("expected false for a client with no stop")
+		}
+	})
+
+	t.Run("the ACP gateway", func(t *testing.T) {
+		replies := 0
+		ps := permissionServer(t, &replies)
+		connectedServer(t, ps, "acp-gateway")
+		if !ps.SupportsStop() {
+			t.Fatal("expected true for the ACP gateway")
+		}
+	})
+}
+
+// Client names arrive as the client chose to write them.
+func TestClientSupportsStop_NameHandling(t *testing.T) {
+	if clientSupportsStop(nil) {
+		t.Fatal("a missing session cannot be stopped")
+	}
+
+	cases := map[string]bool{
+		"acp-gateway":   true,
+		"ACP-Gateway":   true,
+		" acp-gateway ": true,
+		"claude-code":   false,
+		"":              false,
+	}
+	for name, want := range cases {
+		if got := stopCapableClients[strings.ToLower(strings.TrimSpace(name))]; got != want {
+			t.Errorf("client %q: expected stop support %v, got %v", name, want, got)
+		}
+	}
+}
+
+// A session that never completed the handshake carries no client name.
+func TestClientSupportsStop_NoClientInfo(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	ps.mcpServer = server
+
+	serverTransport, _ := mcp.NewInMemoryTransports()
+	sess, err := server.Connect(context.Background(), serverTransport, nil)
+	if err != nil {
+		t.Fatalf("connect server: %v", err)
+	}
+	t.Cleanup(func() { _ = sess.Close() })
+
+	if clientSupportsStop(sess) {
+		t.Fatal("a session with no client info cannot be stopped")
 	}
 }
