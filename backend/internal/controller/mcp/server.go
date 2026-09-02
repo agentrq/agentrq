@@ -120,6 +120,8 @@ type WorkspaceServer struct {
 	requestTaskIDs        map[string]int64 // requestID -> taskID (resolved at request time)
 	permissionResponsesMu sync.RWMutex
 	permissionResponses   map[string]int64 // requestID -> messageID
+	undeliveredVerdictsMu sync.RWMutex
+	undeliveredVerdicts   map[string]string // requestID -> verdict the agent never received
 	toolCallIDsMu         sync.RWMutex
 	toolCallIDs           map[string]int64 // requestID -> ToolCall row ID (manual requests only, until resolved)
 	elicitationsMu        sync.Mutex
@@ -348,6 +350,7 @@ func NewWorkspaceServer(
 		sessionTasks:          make(map[string]int64),
 		requestTaskIDs:        make(map[string]int64),
 		permissionResponses:   make(map[string]int64),
+		undeliveredVerdicts:   make(map[string]string),
 		toolCallIDs:           make(map[string]int64),
 		elicitations:          make(map[string]chan elicitationResponse),
 		icon:                  icon,
@@ -1433,6 +1436,15 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 			sessID := ""
 			if req != nil && req.GetSession() != nil {
 				sessID = req.GetSession().ID()
+			}
+
+			// The same request arriving again means the agent reconnected while
+			// waiting for an answer, not that it wants to ask twice.
+			if ps.rebindPermissionRequest(ctx, sessID, p) {
+				return nil, nil
+			}
+
+			if sessID != "" {
 				ps.permissionRequestsMu.Lock()
 				ps.permissionRequests[p.RequestID] = sessID
 				ps.permissionRequestsMu.Unlock()
@@ -1616,14 +1628,22 @@ func (ps *WorkspaceServer) cleanupRequest(requestID string) {
 	delete(ps.permissionResponses, requestID)
 	ps.permissionResponsesMu.Unlock()
 
+	ps.undeliveredVerdictsMu.Lock()
+	delete(ps.undeliveredVerdicts, requestID)
+	ps.undeliveredVerdictsMu.Unlock()
+
 	ps.toolCallIDsMu.Lock()
 	delete(ps.toolCallIDs, requestID)
 	ps.toolCallIDsMu.Unlock()
 }
 
+// SendPermissionVerdict hands a human decision to the agent that asked for it.
+//
+// The request is only forgotten once the agent has actually been told. A
+// verdict that could not be delivered — because the agent's connection went
+// away between asking and being answered — is held for its next connection
+// rather than discarded, which used to lose the decision silently.
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int64, requestID string, behavior string) error {
-	defer ps.cleanupRequest(requestID)
-
 	ps.permissionRequestsMu.RLock()
 	sessID, ok := ps.permissionRequests[requestID]
 	ps.permissionRequestsMu.RUnlock()
@@ -1737,40 +1757,127 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 		"behavior":   effectiveBehavior, // "allow" | "deny"
 	}
 
-	for sess := range ps.mcpServer.Sessions() {
-		if sess.ID() == sessID {
-			// session was found
-			v := reflect.ValueOf(sess).Elem()
-			connField := v.FieldByName("conn")
-			if connField.IsValid() {
-				connField = reflect.NewAt(connField.Type(), unsafe.Pointer(connField.UnsafeAddr())).Elem()
-				if !connField.IsNil() {
-					method := connField.MethodByName("Notify")
-					if method.IsValid() {
-						// Update the original permission request message metadata with the verdict
-						if okTask {
-							ps.permissionResponsesMu.RLock()
-							msgID, hasMsg := ps.permissionResponses[requestID]
-							ps.permissionResponsesMu.RUnlock()
+	if !ps.notifySession(ctx, sessID, "notifications/claude/channel/permission", params) {
+		// The agent's connection went away between asking and being answered —
+		// a reconnection mints a new session id, and this verdict is addressed
+		// to the old one. Keep it: if the agent re-sends the same request on its
+		// new session, the answer is already here and the human is not asked the
+		// same question twice.
+		ps.rememberUndeliveredVerdict(requestID, effectiveBehavior)
+		return fmt.Errorf("session %s not found", sessID)
+	}
 
-							if hasMsg {
-								_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": behavior})
-							}
-						}
+	// Update the original permission request message metadata with the verdict
+	if okTask {
+		ps.permissionResponsesMu.RLock()
+		msgID, hasMsg := ps.permissionResponses[requestID]
+		ps.permissionResponsesMu.RUnlock()
 
-						method.Call([]reflect.Value{
-							reflect.ValueOf(ctx),
-							reflect.ValueOf("notifications/claude/channel/permission"),
-							reflect.ValueOf(params),
-						})
-						return nil
-					}
-				}
-			}
+		if hasMsg {
+			_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": behavior})
 		}
 	}
 
-	return fmt.Errorf("session %s not found", sessID)
+	ps.cleanupRequest(requestID)
+	return nil
+}
+
+// notifySession sends a notification to one MCP session by id, reporting
+// whether that session was still there to receive it.
+//
+// The official SDK exposes no public API for generic notifications, hence the
+// reflection.
+func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method string, params map[string]any) bool {
+	if ps.mcpServer == nil {
+		return false
+	}
+	for sess := range ps.mcpServer.Sessions() {
+		if sess.ID() != sessID {
+			continue
+		}
+		v := reflect.ValueOf(sess).Elem()
+		connField := v.FieldByName("conn")
+		if !connField.IsValid() {
+			continue
+		}
+		connField = reflect.NewAt(connField.Type(), unsafe.Pointer(connField.UnsafeAddr())).Elem()
+		if connField.IsNil() {
+			continue
+		}
+		notify := connField.MethodByName("Notify")
+		if !notify.IsValid() {
+			continue
+		}
+		notify.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(method),
+			reflect.ValueOf(params),
+		})
+		return true
+	}
+	return false
+}
+
+// rememberUndeliveredVerdict keeps a decision the agent never received, so that
+// it can be handed over if the agent asks the same question again.
+func (ps *WorkspaceServer) rememberUndeliveredVerdict(requestID, behavior string) {
+	ps.undeliveredVerdictsMu.Lock()
+	ps.undeliveredVerdicts[requestID] = behavior
+	ps.undeliveredVerdictsMu.Unlock()
+	zlog.Warn().Str("request_id", requestID).Str("behavior", behavior).
+		Msg("permission verdict could not be delivered; holding it for the agent's next connection")
+}
+
+// rebindPermissionRequest handles a permission request the agent has sent
+// before, under the same request id, from a different MCP session.
+//
+// That happens when the agent reconnects with a decision outstanding. Verdicts
+// are addressed to the session a request arrived on, so the agent re-sends to
+// say "still the same decision, here is where to reach me now". Asking the
+// human a second time would be wrong; so would leaving the answer stranded.
+//
+// Reports whether this was such a re-send, in which case there is nothing
+// further to do.
+func (ps *WorkspaceServer) rebindPermissionRequest(
+	ctx context.Context,
+	sessionID string,
+	p PermissionRequestParams,
+) bool {
+	if sessionID == "" {
+		return false
+	}
+
+	ps.permissionResponsesMu.RLock()
+	_, alreadyAsked := ps.permissionResponses[p.RequestID]
+	ps.permissionResponsesMu.RUnlock()
+	if !alreadyAsked {
+		return false
+	}
+
+	ps.permissionRequestsMu.Lock()
+	ps.permissionRequests[p.RequestID] = sessionID
+	ps.permissionRequestsMu.Unlock()
+
+	ps.requestParamsMu.Lock()
+	ps.requestParams[p.RequestID] = &p
+	ps.requestParamsMu.Unlock()
+
+	zlog.Info().Str("request_id", p.RequestID).Str("session_id", sessionID).
+		Msg("permission request re-sent from a new session; re-binding rather than asking again")
+
+	ps.undeliveredVerdictsMu.RLock()
+	behavior, waiting := ps.undeliveredVerdicts[p.RequestID]
+	ps.undeliveredVerdictsMu.RUnlock()
+	if waiting {
+		ps.requestTaskIDsMu.RLock()
+		taskID := ps.requestTaskIDs[p.RequestID]
+		ps.requestTaskIDsMu.RUnlock()
+		zlog.Info().Str("request_id", p.RequestID).Str("behavior", behavior).
+			Msg("delivering the verdict the agent missed while it was away")
+		_ = ps.SendPermissionVerdict(ctx, taskID, p.RequestID, behavior)
+	}
+
+	return true
 }
 
 func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, sessionID string, data []byte) {
@@ -1787,6 +1894,13 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == "notifications/claude/channel/permission_request" {
 		p := msg.Params
+
+		// The same request arriving again means the agent reconnected while
+		// waiting for an answer, not that it wants to ask twice.
+		if ps.rebindPermissionRequest(ctx, sessionID, p) {
+			return
+		}
+
 		ps.permissionRequestsMu.Lock()
 		ps.permissionRequests[p.RequestID] = sessionID
 		ps.permissionRequestsMu.Unlock()
