@@ -157,6 +157,26 @@ other, which signs that user out once on upgrade. That was a deliberate trade:
 the session is only valid for 24 hours anyway, and the alternative is one
 profile permanently special-cased wherever a session is resolved.
 
+## The title bar, and who owns the window
+
+On macOS the window is created with `titleBarStyle: 'hiddenInset'` so the app
+fills it. Two things follow, and neither is visible from that line:
+
+- **A window with no title bar has no handle.** It cannot be moved at all until
+  the page declares one with `-webkit-app-region: drag`. That is the `.app-drag`
+  class in `frontend/src/style.css`, applied to a strip across the top of both
+  `App.vue` and the connection screen. A dragging region also swallows clicks,
+  so anything interactive placed inside one needs `.app-no-drag`.
+- **The traffic lights are drawn over the page.** They sit in the top-left,
+  which is where the sidebar starts, so the same strip reserves the space for
+  them. Without it the close, minimise and zoom buttons land on the logo.
+
+Both are macOS-only: Windows and Linux use `'default'` and keep a real title
+bar, where making page content draggable would take away text selection for
+nothing. The renderer decides with `platformStore.isMacDesktop`, which is why
+the shell passes `os` into `createAgentRQApp` — the connection screen takes it
+as a prop instead, since it is mounted before pinia exists.
+
 ## The native shell
 
 Everything the browser cannot offer lives in the main process and reaches the

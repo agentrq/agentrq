@@ -16,6 +16,25 @@
 @custom-variant dark (&:where(.dark, .dark *));
 @import '@fontsource-variable/inter';
 
+/*
+ * Window dragging, for the desktop app on macOS.
+ *
+ * The shell hides the title bar there so the app can fill the window, and a
+ * window with no title bar has no handle: it cannot be moved at all until the
+ * page says which part of itself is the handle. That is what this is.
+ *
+ * A dragging region swallows clicks, so anything interactive inside one needs
+ * `app-no-drag` to get them back. Both properties are inert in a browser, where
+ * the page does not own the window.
+ */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 :root {
   --accent: #000000;
   --accent-bg: rgba(0, 0, 0, 0.05);

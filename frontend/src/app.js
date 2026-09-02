@@ -102,10 +102,14 @@ export function createAuthGuard(fetchUserFn = fetchUser) {
  * @param {'web'|'desktop'} [options.platform]
  *        Recorded in the platform store, which is the seam components use to
  *        offer a desktop-only affordance without forking.
+ * @param {string} [options.os]
+ *        `process.platform` from the desktop shell. Only macOS behaves
+ *        differently — it hides the title bar, leaving the page to draw the
+ *        window's drag handle — and the browser has no use for it at all.
  * @returns {{ app: import('vue').App, router: import('vue-router').Router, pinia: import('pinia').Pinia }}
  *          Unmounted, so the caller can do platform-specific setup first.
  */
-export function createAgentRQApp({ history, platform = 'web' } = {}) {
+export function createAgentRQApp({ history, platform = 'web', os = '' } = {}) {
   const router = createRouter({ history, routes })
   router.beforeEach(createAuthGuard())
 
@@ -118,7 +122,7 @@ export function createAgentRQApp({ history, platform = 'web' } = {}) {
 
   // Passing the pinia instance explicitly: this runs before mount, so there is
   // no active instance for the store to infer.
-  usePlatformStore(pinia).setPlatform(platform)
+  usePlatformStore(pinia).setPlatform(platform, os)
 
   return { app, router, pinia }
 }

@@ -37,7 +37,7 @@ Consequences worth knowing before changing anything here:
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.
 
-### Two traps that are invisible in source
+### Three traps that are invisible in source
 
 - **Tailwind scans from the build root.** The desktop build's Vite root is
   `desktop/src/renderer`, so a class used only in a file under `desktop/` is
@@ -45,6 +45,13 @@ Consequences worth knowing before changing anything here:
   unstyled. `frontend/src/style.css` declares `@source './'` to fix this, and
   desktop-only *views* live in `frontend/src/desktop/` for the same reason.
   Moving them into `desktop/` breaks their styling with no error.
+- **macOS hides the title bar, so the page owns the window.** The window is
+  created with `titleBarStyle: 'hiddenInset'`, and a window with no title bar
+  cannot be dragged until the page declares a region with `-webkit-app-region:
+  drag` — the `.app-drag` class. The traffic lights are also drawn over the
+  top-left of the page, so that same strip reserves their space. Both are gated
+  on `platformStore.isMacDesktop`; making page content draggable on Windows or
+  Linux would only remove text selection.
 - **macOS only routes a URL scheme an app declares in its bundle.** Calling
   `app.setAsDefaultProtocolClient()` is enough for Windows and Linux, but the
   `protocols` entry in `desktop/electron-builder.yml` is what makes

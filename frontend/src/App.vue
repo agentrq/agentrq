@@ -1,10 +1,23 @@
 <template>
-  <div id="app" class="flex flex-col md:flex-row h-[100dvh] bg-zinc-100 dark:bg-zinc-950 font-inter overflow-hidden">
+  <div id="app"
+       :class="[
+         'flex flex-col md:flex-row h-[100dvh] bg-zinc-100 dark:bg-zinc-950 font-inter overflow-hidden',
+         isMacDesktop ? 'pt-10' : ''
+       ]">
+
+    <!-- The window's drag handle, and the space the traffic lights sit in.
+         macOS desktop only: the shell hides the title bar there, so without
+         this the window cannot be moved and the close, minimise and zoom
+         buttons are drawn on top of the sidebar. -->
+    <div v-if="isMacDesktop" class="app-drag fixed top-0 inset-x-0 h-10 z-[150]" aria-hidden="true"></div>
 
     <!-- PWA Update Banner -->
     <Transition name="slide-down">
       <div v-if="needRefresh && !isUpdating"
-           class="fixed top-0 inset-x-0 z-[200] flex items-center justify-between gap-3 px-4 py-2.5 bg-black text-white text-xs font-medium shadow-lg">
+           :class="[
+             'fixed inset-x-0 z-[200] flex items-center justify-between gap-3 px-4 py-2.5 bg-black text-white text-xs font-medium shadow-lg',
+             isMacDesktop ? 'top-10' : 'top-0'
+           ]">
         <div class="flex items-center gap-2">
           <svg class="w-3.5 h-3.5 shrink-0 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -402,6 +415,9 @@ const platformStore = usePlatformStore()
 const profiles = ref([])
 const switchingProfile = ref(false)
 const showProfiles = computed(() => platformStore.isDesktop && profiles.value.length > 0)
+
+/** Whether this build has to draw its own window chrome. See style.css. */
+const isMacDesktop = computed(() => platformStore.isMacDesktop)
 const activeProfile = computed(() => profiles.value.find((p) => p.active) ?? null)
 const otherProfiles = computed(() => profiles.value.filter((p) => !p.active))
 

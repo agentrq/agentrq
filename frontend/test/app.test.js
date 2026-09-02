@@ -205,6 +205,22 @@ describe('createAgentRQApp', () => {
     expect(usePlatformStore(pinia).isWeb).toBe(true)
   })
 
+  it('carries the shell OS through, so the app knows it owns the window chrome', () => {
+    const { pinia } = createAgentRQApp({
+      history: createMemoryHistory(),
+      platform: 'desktop',
+      os: 'darwin',
+    })
+
+    expect(usePlatformStore(pinia).isMacDesktop).toBe(true)
+  })
+
+  it('records no OS when none is given', () => {
+    const { pinia } = createAgentRQApp({ history: createMemoryHistory(), platform: 'desktop' })
+
+    expect(usePlatformStore(pinia).os).toBe('')
+  })
+
   it('registers the click-outside directive globally', () => {
     const { app } = createAgentRQApp({ history: createMemoryHistory() })
 

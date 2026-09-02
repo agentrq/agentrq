@@ -33,6 +33,43 @@ describe('platformStore', () => {
     expect(store.isWeb).toBe(true)
   })
 
+  it('knows the desktop build on macOS, which draws its own window chrome', () => {
+    const store = usePlatformStore()
+    store.setPlatform('desktop', 'darwin')
+
+    expect(store.os).toBe('darwin')
+    expect(store.isMacDesktop).toBe(true)
+  })
+
+  it('is not macOS chrome on another desktop OS', () => {
+    // Windows and Linux keep a real title bar, so the page must not start
+    // reserving space for buttons that are not there.
+    const store = usePlatformStore()
+    store.setPlatform('desktop', 'win32')
+
+    expect(store.isMacDesktop).toBe(false)
+  })
+
+  it('never remembers an OS for the browser', () => {
+    // A page drawing window chrome in a browser tab would be drawing chrome
+    // for a window it does not own.
+    const store = usePlatformStore()
+    store.setPlatform('web', 'darwin')
+
+    expect(store.os).toBe('')
+    expect(store.isMacDesktop).toBe(false)
+  })
+
+  it('records no OS when the shell does not name one', () => {
+    const store = usePlatformStore()
+
+    for (const value of [undefined, null, 42]) {
+      store.setPlatform('desktop', value)
+      expect(store.os).toBe('')
+      expect(store.isMacDesktop).toBe(false)
+    }
+  })
+
   it('falls back to web for anything unrecognised', () => {
     // Guessing 'desktop' from an unknown value would hand a browser build
     // affordances it cannot deliver, so the safe direction is the other one.

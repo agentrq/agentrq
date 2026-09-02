@@ -74,6 +74,16 @@ const CHECKS = `(async () => {
     document.querySelector('button[type=button]') === null,
     (document.querySelector('button[type=button]')?.textContent ?? 'none').trim());
 
+  // macOS hides the title bar, so this screen has to declare the window's drag
+  // handle itself — without one the window cannot be moved at all. Elsewhere
+  // there is a real title bar and the page must not claim page content as a
+  // handle.
+  const drag = document.querySelector('.app-drag');
+  const region = drag ? getComputedStyle(drag).webkitAppRegion : 'none';
+  record('the window can be dragged where it has no title bar',
+    ${process.platform === 'darwin'} ? region === 'drag' : drag === null,
+    'region ' + region);
+
   // The screen is styled, not just present. Tailwind's source detection is
   // rooted at the build, and a misconfigured root silently drops every
   // utility — which looks fine in the DOM and broken on screen.

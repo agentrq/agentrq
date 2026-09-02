@@ -38,6 +38,9 @@ if (connection.configured) {
   const { app, router } = createAgentRQApp({
     history: createWebHistory('/'),
     platform: 'desktop',
+    // macOS hides the title bar, which leaves the page to draw the window's
+    // drag handle and to keep its own chrome clear of the traffic lights.
+    os: window.agentrq.platform,
   })
 
   // Every "go here" from the shell arrives on one channel: notification
@@ -97,5 +100,8 @@ if (connection.configured) {
     // A profile added and not yet connected can be abandoned; a first run has
     // nothing to go back to. The shell knows which this is.
     canCancel: Boolean(connection.canCancel),
+    // Passed rather than read from the platform store: this view is mounted on
+    // its own, before the application and its pinia exist.
+    isMac: window.agentrq.platform === 'darwin',
   }).mount('#app')
 }

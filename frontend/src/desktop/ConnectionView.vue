@@ -1,4 +1,10 @@
 <template>
+  <!-- The window's drag handle. This screen is the first thing a macOS user
+       sees, and with the title bar hidden there is otherwise nothing on the
+       window to grab. A sibling of the dialog rather than a child: it is part
+       of the window, not part of the dialog. -->
+  <div v-if="isMac" class="app-drag fixed top-0 inset-x-0 h-10 z-[60]" aria-hidden="true"></div>
+
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm" aria-modal="true" role="dialog">
     <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
       <div class="mb-10 text-center">
@@ -95,6 +101,12 @@ const props = defineProps({
    * shell decides, and this says which of the two it is.
    */
   canCancel: { type: Boolean, default: false },
+  /**
+   * Whether the shell hid the title bar, which it does only on macOS. The
+   * card is centred, so nothing here collides with the traffic lights — the
+   * window just needs somewhere to be grabbed by.
+   */
+  isMac: { type: Boolean, default: false },
 })
 
 const serverUrl = ref(props.initialUrl || 'https://app.agentrq.com')
