@@ -25,6 +25,14 @@ import (
 	"github.com/mustafaturan/monoflake"
 )
 
+// customNotificationMethods are the channel notifications the MCP SDK rejects
+// as unsupported methods, so they are recognised here and handed to the
+// workspace server directly instead of reaching its middleware.
+var customNotificationMethods = []string{
+	"notifications/claude/channel/permission_request",
+	mcpctrl.AgentTelemetryNotificationMethod,
+}
+
 type Params struct {
 	MCPManager *mcpctrl.Manager
 	Crud       crud.Controller
@@ -359,14 +367,17 @@ func (h *handler) streamableHandler() http.Handler {
 		}
 
 		if r.Method == "POST" {
-			// Custom handling for notifications/claude/channel/permission_request
-			// because mcp-go (SDK) rejects them as unsupported methods.
-			if strings.Contains(string(body), "notifications/claude/channel/permission_request") {
-				zlog.Debug().Str("session_id", sessionID).Msg("Handling custom permission notification")
-				srv.HandleCustomNotification(ctx, sessionID, body)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				return
+			// Custom handling for the channel notifications the SDK does not
+			// know about, because mcp-go (SDK) rejects them as unsupported
+			// methods before any middleware sees them.
+			for _, method := range customNotificationMethods {
+				if strings.Contains(string(body), method) {
+					zlog.Debug().Str("session_id", sessionID).Str("method", method).Msg("Handling custom channel notification")
+					srv.HandleCustomNotification(ctx, sessionID, body)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					return
+				}
 			}
 		}
 		srv.Handler().ServeHTTP(w, r.WithContext(ctx))

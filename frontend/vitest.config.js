@@ -38,6 +38,7 @@ export default defineConfig({
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
         'src/composables/useTaskGroups.js',
+        'src/composables/useAgentTelemetry.js',
         'src/composables/usePendingSend.js',
         'src/composables/useDirectoryPicker.js',
         'src/composables/useProfileDisplay.js',

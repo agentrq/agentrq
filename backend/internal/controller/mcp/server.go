@@ -124,15 +124,19 @@ type WorkspaceServer struct {
 	undeliveredVerdicts   map[string]string // requestID -> verdict the agent never received
 	toolCallIDsMu         sync.RWMutex
 	toolCallIDs           map[string]int64 // requestID -> ToolCall row ID (manual requests only, until resolved)
-	elicitationsMu        sync.Mutex
-	elicitations          map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
-	metadataMu            sync.RWMutex
-	icon                  string
-	name                  string
-	description           string
-	archivedAt            *time.Time
-	lastUpdateCheckAt     time.Time
-	agentConnections      atomic.Int32
+	// The chat message standing for a plan or for a task's usage counters, so
+	// each revision rewrites that message instead of appending another one.
+	agentTelemetryMessagesMu sync.RWMutex
+	agentTelemetryMessages   map[string]int64 // taskID:kind[:planID] -> messageID
+	elicitationsMu           sync.Mutex
+	elicitations             map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
+	metadataMu               sync.RWMutex
+	icon                     string
+	name                     string
+	description              string
+	archivedAt               *time.Time
+	lastUpdateCheckAt        time.Time
+	agentConnections         atomic.Int32
 
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
 	// removed workspace server does not leak them for the lifetime of the process.
@@ -325,40 +329,41 @@ func NewWorkspaceServer(
 ) *WorkspaceServer {
 	zlog.Info().Int64("workspace_id", workspaceID).Msg("new workspace server created")
 	ps := &WorkspaceServer{
-		workspaceID:           workspaceID,
-		userID:                userID,
-		done:                  make(chan struct{}),
-		createTask:            createTask,
-		updateStatus:          updateStatus,
-		getTask:               getTask,
-		listTasks:             listTasks,
-		getNextTask:           getNextTask,
-		reply:                 reply,
-		updateMessageMetadata: updateMessageMetadata,
-		updateAutoAllowed:     updateAutoAllowed,
-		publishEvent:          publishEvent,
-		recordToolCall:        recordToolCall,
-		updateToolCallStatus:  updateToolCallStatus,
-		bus:                   bus,
-		idgen:                 ids,
-		storage:               store,
-		tokenSvc:              tokenSvc,
-		autoAllowedTools:      autoAllowedTools,
-		permissionRequests:    make(map[string]string),
-		requestTools:          make(map[string]string),
-		requestParams:         make(map[string]*PermissionRequestParams),
-		sessionTasks:          make(map[string]int64),
-		requestTaskIDs:        make(map[string]int64),
-		permissionResponses:   make(map[string]int64),
-		undeliveredVerdicts:   make(map[string]string),
-		toolCallIDs:           make(map[string]int64),
-		elicitations:          make(map[string]chan elicitationResponse),
-		icon:                  icon,
-		name:                  name,
-		description:           description,
-		archivedAt:            archivedAt,
-		pubsub:                pubsub,
-		lastUpdateCheckAt:     time.Now(), // defer first status check by a full hour
+		workspaceID:            workspaceID,
+		userID:                 userID,
+		done:                   make(chan struct{}),
+		createTask:             createTask,
+		updateStatus:           updateStatus,
+		getTask:                getTask,
+		listTasks:              listTasks,
+		getNextTask:            getNextTask,
+		reply:                  reply,
+		updateMessageMetadata:  updateMessageMetadata,
+		updateAutoAllowed:      updateAutoAllowed,
+		publishEvent:           publishEvent,
+		recordToolCall:         recordToolCall,
+		updateToolCallStatus:   updateToolCallStatus,
+		bus:                    bus,
+		idgen:                  ids,
+		storage:                store,
+		tokenSvc:               tokenSvc,
+		autoAllowedTools:       autoAllowedTools,
+		permissionRequests:     make(map[string]string),
+		requestTools:           make(map[string]string),
+		requestParams:          make(map[string]*PermissionRequestParams),
+		sessionTasks:           make(map[string]int64),
+		requestTaskIDs:         make(map[string]int64),
+		permissionResponses:    make(map[string]int64),
+		undeliveredVerdicts:    make(map[string]string),
+		toolCallIDs:            make(map[string]int64),
+		agentTelemetryMessages: make(map[string]int64),
+		elicitations:           make(map[string]chan elicitationResponse),
+		icon:                   icon,
+		name:                   name,
+		description:            description,
+		archivedAt:             archivedAt,
+		pubsub:                 pubsub,
+		lastUpdateCheckAt:      time.Now(), // defer first status check by a full hour
 	}
 
 	workspaceIDStr := monoflake.ID(workspaceID).String()
@@ -2045,6 +2050,18 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 	}
 
 	zlog.Debug().Str("method", msg.Method).Str("session_id", sessionID).Msg("HandleCustomNotification received method")
+
+	if msg.Method == AgentTelemetryNotificationMethod {
+		var telemetry struct {
+			Params AgentTelemetryParams `json:"params"`
+		}
+		if err := json.Unmarshal(data, &telemetry); err != nil {
+			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent telemetry notification")
+			return
+		}
+		ps.HandleAgentTelemetry(ctx, sessionID, telemetry.Params)
+		return
+	}
 
 	if msg.Method == "notifications/claude/channel/permission_request" {
 		p := msg.Params

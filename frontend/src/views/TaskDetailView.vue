@@ -161,8 +161,78 @@
       <!-- Messages -->
       <template v-for="m in displayMessages" :key="m.id">
 
+        <!-- Agent telemetry — the reasoning, plan and counters an ACP gateway
+             streams alongside the answer. Muted and indented under the agent's
+             avatar: this is how the answer came about, not the answer. -->
+        <div v-if="isAgentTelemetry(m)" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%] w-full">
+          <div class="w-8 shrink-0"></div>
+          <div class="flex flex-col items-start min-w-0 w-full">
+
+            <!-- Reasoning: collapsed to a single line until asked for -->
+            <div v-if="agentTelemetryKind(m) === 'thought'"
+                 @click="toggleTelemetry(m.id)"
+                 class="w-full border border-dashed border-gray-200 dark:border-zinc-700 rounded-sm bg-gray-50/70 dark:bg-zinc-900/40 px-3 py-2 cursor-pointer select-none hover:border-gray-300 dark:hover:border-zinc-600 transition-colors">
+              <div class="flex items-center gap-2 min-w-0">
+                <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500 shrink-0">Thinking</span>
+                <span v-if="!expandedTelemetry.has(m.id)" class="text-[11px] italic text-gray-500 dark:text-zinc-400 truncate min-w-0">{{ thoughtPreview(m) }}</span>
+                <span class="flex-1"></span>
+                <span class="text-[8px] font-semibold text-gray-400 dark:text-zinc-600 shrink-0 hidden sm:block">{{ formatDateTime(m.createdAt) }}</span>
+                <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform duration-200" :class="expandedTelemetry.has(m.id) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+              </div>
+              <div v-if="expandedTelemetry.has(m.id)"
+                   class="md-body mt-2 pt-2 border-t border-dashed border-gray-200 dark:border-zinc-700 text-[12px] italic text-gray-600 dark:text-zinc-400"
+                   v-html="renderMarkdown(telemetryText(m))"></div>
+            </div>
+
+            <!-- Plan: one card per plan, rewritten in place as the agent works -->
+            <div v-else-if="agentTelemetryKind(m) === 'plan'"
+                 class="w-full border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm"
+                 :class="planIsWithdrawn(m) ? 'opacity-60' : ''">
+              <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 shrink-0 text-gray-500 dark:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Plan</span>
+                <span v-if="planIsWithdrawn(m)" class="text-[8px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Withdrawn</span>
+                <span class="flex-1"></span>
+                <span v-if="planProgress(m)" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 shrink-0">{{ planProgress(m).done }} / {{ planProgress(m).total }}</span>
+              </div>
+              <div class="p-3 min-w-0">
+                <ul v-if="planContent(m).type === 'items' && planContent(m).entries.length" class="flex flex-col gap-1.5">
+                  <li v-for="(entry, i) in planContent(m).entries" :key="i" class="flex items-start gap-2 text-[11px] min-w-0">
+                    <span class="mt-[3px] w-3 h-3 shrink-0 rounded-[3px] border flex items-center justify-center"
+                          :class="entry.done ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white'
+                                  : entry.active ? 'border-gray-900 dark:border-white'
+                                  : 'border-gray-300 dark:border-zinc-600'">
+                      <svg v-if="entry.done" class="w-2 h-2 text-white dark:text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      <span v-else-if="entry.active" class="w-1.5 h-1.5 rounded-full bg-gray-900 dark:bg-white animate-pulse"></span>
+                    </span>
+                    <span class="min-w-0 break-words"
+                          :class="entry.done ? 'line-through text-gray-400 dark:text-zinc-500'
+                                  : entry.active ? 'font-semibold text-gray-900 dark:text-zinc-100'
+                                  : 'text-gray-600 dark:text-zinc-400'">{{ entry.content }}</span>
+                    <span v-if="entry.priority === 'high' && !entry.done" class="ml-auto shrink-0 text-[8px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-500">High</span>
+                  </li>
+                </ul>
+                <a v-else-if="planContent(m).type === 'file'" :href="planContent(m).uri" target="_blank" rel="noopener noreferrer"
+                   class="text-[11px] font-medium text-gray-700 dark:text-zinc-300 underline break-all">{{ planContent(m).uri }}</a>
+                <div v-else class="md-body text-[12px] text-gray-600 dark:text-zinc-400"
+                     v-html="renderMarkdown(planContent(m).type === 'markdown' ? planContent(m).content : telemetryText(m))"></div>
+              </div>
+            </div>
+
+            <!-- Context and cost: one line per task, rewritten as the turn goes on -->
+            <div v-else class="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-sm bg-gray-50/70 dark:bg-zinc-900/40 border border-gray-100 dark:border-zinc-800">
+              <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+              <span class="text-[10px] font-medium text-gray-500 dark:text-zinc-400 whitespace-nowrap">{{ usageDetail(m).text }}</span>
+              <div v-if="usageDetail(m).percent !== null" class="flex-1 min-w-[40px] h-1 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
+                <div class="h-full rounded-full bg-gray-600 dark:bg-zinc-300 transition-all duration-500" :style="{ width: usageDetail(m).percent + '%' }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Agent message — left aligned -->
-        <div v-if="m.sender === 'agent'" class="group flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%]">
+        <div v-else-if="m.sender === 'agent'" class="group flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%]">
           <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center shrink-0 mt-0.5">
             <svg class="w-4 h-4 text-gray-700 dark:text-zinc-100" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
           </div>
@@ -681,6 +751,16 @@ import { usePendingSend } from '../composables/usePendingSend';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { renderMarkdown } from '../utils/markdown';
+import {
+  agentTelemetryKind,
+  isAgentTelemetry,
+  planContent,
+  planIsWithdrawn,
+  planProgress,
+  telemetryText,
+  thoughtPreview,
+  usageDetail,
+} from '../composables/useAgentTelemetry';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
 const { notifyError, notifySuccess } = useToasts();
@@ -741,6 +821,15 @@ function toggleMessageRender(id) {
   s.has(id) ? s.delete(id) : s.add(id);
   rawMessages.value = s;
 }
+// Reasoning blocks are collapsed by default: they explain the answer, they are
+// not the answer, and a turn can produce a great many of them.
+const expandedTelemetry = ref(new Set());
+function toggleTelemetry(id) {
+  const s = new Set(expandedTelemetry.value);
+  s.has(id) ? s.delete(id) : s.add(id);
+  expandedTelemetry.value = s;
+}
+
 const copiedMessages = ref(new Set());
 async function copyMessageText(id, text) {
   await navigator.clipboard.writeText(text || '');
