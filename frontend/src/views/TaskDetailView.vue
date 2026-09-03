@@ -164,7 +164,7 @@
         <!-- Agent telemetry — the reasoning, plan and counters an ACP gateway
              streams alongside the answer. Muted and indented under the agent's
              avatar: this is how the answer came about, not the answer. -->
-        <div v-if="isAgentTelemetry(m)" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%] w-full">
+        <div v-if="isThreadTelemetry(m)" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%] w-full">
           <div class="w-8 shrink-0"></div>
           <div class="flex flex-col items-start min-w-0 w-full">
 
@@ -186,7 +186,7 @@
             </div>
 
             <!-- Plan: one card per plan, rewritten in place as the agent works -->
-            <div v-else-if="agentTelemetryKind(m) === 'plan'"
+            <div v-else
                  class="w-full border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm"
                  :class="planIsWithdrawn(m) ? 'opacity-60' : ''">
               <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center gap-2">
@@ -217,15 +217,6 @@
                    class="text-[11px] font-medium text-gray-700 dark:text-zinc-300 underline break-all">{{ planContent(m).uri }}</a>
                 <div v-else class="md-body text-[12px] text-gray-600 dark:text-zinc-400"
                      v-html="renderMarkdown(planContent(m).type === 'markdown' ? planContent(m).content : telemetryText(m))"></div>
-              </div>
-            </div>
-
-            <!-- Context and cost: one line per task, rewritten as the turn goes on -->
-            <div v-else class="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-sm bg-gray-50/70 dark:bg-zinc-900/40 border border-gray-100 dark:border-zinc-800">
-              <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-              <span class="text-[10px] font-medium text-gray-500 dark:text-zinc-400 whitespace-nowrap">{{ usageDetail(m).text }}</span>
-              <div v-if="usageDetail(m).percent !== null" class="flex-1 min-w-[40px] h-1 rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden">
-                <div class="h-full rounded-full bg-gray-600 dark:bg-zinc-300 transition-all duration-500" :style="{ width: usageDetail(m).percent + '%' }"></div>
               </div>
             </div>
           </div>
@@ -633,6 +624,28 @@
                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
                 YOLO
               </button>
+              <!-- Context window. Not a message: the counters describe the
+                   session as a whole and only the current value means
+                   anything, so they sit here where they stay in view rather
+                   than scrolling away up the thread. -->
+              <div v-if="contextUsage" role="img" tabindex="0"
+                   :aria-label="contextUsage.tooltip"
+                   @mouseenter="tooltipStore.show($event, contextUsage.tooltip, 'top')"
+                   @mouseleave="tooltipStore.hide()"
+                   @focus="tooltipStore.show($event, contextUsage.tooltip, 'top')"
+                   @blur="tooltipStore.hide()"
+                   class="h-6 w-6 rounded-sm bg-gray-105 dark:bg-zinc-700/50 flex items-center justify-center cursor-default focus:outline-none focus-visible:ring-1 focus-visible:ring-gray-400 dark:focus-visible:ring-zinc-500">
+                <svg class="w-3.5 h-3.5 -rotate-90" viewBox="0 0 20 20" aria-hidden="true">
+                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="3.5" stroke="currentColor" class="text-gray-300 dark:text-zinc-600" />
+                  <circle cx="10" cy="10" r="8" fill="none" stroke-width="3.5" stroke-linecap="round" stroke="currentColor"
+                          :stroke-dasharray="contextUsage.dashArray"
+                          :stroke-dashoffset="contextUsage.dashOffset"
+                          :class="contextUsage.tone === 'critical' ? 'text-red-500'
+                                  : contextUsage.tone === 'high' ? 'text-amber-500'
+                                  : 'text-gray-500 dark:text-zinc-300'"
+                          class="transition-all duration-500" />
+                </svg>
+              </div>
             </div>
 
             <!-- Right actions: stop, then send -->
@@ -753,13 +766,14 @@ import { useEventBus } from '../useEventBus';
 import { renderMarkdown } from '../utils/markdown';
 import {
   agentTelemetryKind,
-  isAgentTelemetry,
+  contextGauge,
+  isThreadTelemetry,
+  latestUsageMessage,
   planContent,
   planIsWithdrawn,
   planProgress,
   telemetryText,
   thoughtPreview,
-  usageDetail,
 } from '../composables/useAgentTelemetry';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
@@ -949,12 +963,22 @@ const sortedMessages = computed(() => {
   return [...task.value.messages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
 
+// The context counters are telemetry, but they belong on the composer's gauge
+// rather than in the thread — see isThreadTelemetry.
+const threadMessages = computed(() =>
+  sortedMessages.value.filter((m) => agentTelemetryKind(m) !== 'usage')
+);
+
+// The session's context and cost as they stand, or null until an agent reports
+// them. Only a connected ACP gateway sends these.
+const contextUsage = computed(() => contextGauge(latestUsageMessage(sortedMessages.value)));
+
 // Appends a synthetic, not-yet-sent message bubble while a delayed send is
 // counting down, so the human can see and cancel exactly what's about to go
 // out instead of it disappearing into the composer footer.
 const displayMessages = computed(() => {
-  if (!pendingSend.value) return sortedMessages.value;
-  return [...sortedMessages.value, {
+  if (!pendingSend.value) return threadMessages.value;
+  return [...threadMessages.value, {
     id: '__pending-send__',
     sender: 'human',
     text: pendingSend.value.text,

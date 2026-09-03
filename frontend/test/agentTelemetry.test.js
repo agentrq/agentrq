@@ -2,13 +2,17 @@ import { describe, it, expect } from 'vitest'
 
 import {
   agentTelemetryKind,
+  contextGauge,
   isAgentTelemetry,
+  isThreadTelemetry,
+  latestUsageMessage,
   planContent,
   planIsWithdrawn,
   planProgress,
   telemetryText,
   thoughtPreview,
   usageDetail,
+  usageTone,
 } from '../src/composables/useAgentTelemetry'
 
 const message = (metadata, text = '') => ({ id: 'm1', sender: 'agent', text, metadata })
@@ -217,5 +221,161 @@ describe('thoughtPreview', () => {
 
   it('has nothing to preview for an empty block', () => {
     expect(thoughtPreview(message({ type: 'agent_thought', text: '   \n  ' }))).toBe('')
+  })
+})
+
+describe('isThreadTelemetry', () => {
+  // Reasoning and plans are moments in a conversation. The context counters
+  // describe the session as a whole, so they live on the composer's gauge and
+  // must not also scroll past in the thread.
+  it('keeps reasoning and plans in the thread', () => {
+    expect(isThreadTelemetry(message({ type: 'agent_thought' }))).toBe(true)
+    expect(isThreadTelemetry(message({ type: 'agent_plan' }))).toBe(true)
+  })
+
+  it('keeps the context counters out of it', () => {
+    expect(isThreadTelemetry(message({ type: 'agent_usage' }))).toBe(false)
+  })
+
+  it('leaves ordinary messages alone', () => {
+    expect(isThreadTelemetry(message({ type: 'permission_request' }))).toBe(false)
+    expect(isThreadTelemetry(undefined)).toBe(false)
+  })
+})
+
+describe('usageTone', () => {
+  it('stays quiet while there is room to spare', () => {
+    expect(usageTone(0)).toBe('normal')
+    expect(usageTone(74)).toBe('normal')
+  })
+
+  it('speaks up as the window fills', () => {
+    expect(usageTone(75)).toBe('high')
+    expect(usageTone(89)).toBe('high')
+  })
+
+  it('escalates when the session is nearly out of room', () => {
+    expect(usageTone(90)).toBe('critical')
+    expect(usageTone(100)).toBe('critical')
+  })
+
+  it('says nothing is wrong when there is nothing to judge', () => {
+    expect(usageTone(null)).toBe('normal')
+    expect(usageTone(undefined)).toBe('normal')
+  })
+})
+
+describe('latestUsageMessage', () => {
+  // The counters are cumulative, so only the last report describes the
+  // session as it stands.
+  it('takes the last report, not the first', () => {
+    const older = message({ type: 'agent_usage', used: 100, size: 200000 })
+    const newer = message({ type: 'agent_usage', used: 50000, size: 200000 })
+
+    expect(latestUsageMessage([older, message({ type: 'agent_plan' }), newer])).toBe(newer)
+  })
+
+  it('has nothing to report before an agent has said anything', () => {
+    expect(latestUsageMessage([message({ type: 'agent_plan' }), message(undefined)])).toBeNull()
+    expect(latestUsageMessage([])).toBeNull()
+    expect(latestUsageMessage(undefined)).toBeNull()
+  })
+})
+
+describe('contextGauge', () => {
+  const usage = message({
+    type: 'agent_usage',
+    used: 50000,
+    size: 200000,
+    percent: 25,
+    cost: { amount: 0.38, currency: 'USD' },
+    text: 'Context 50,000 / 200,000 tokens (25%) · 0.38 USD',
+  })
+
+  it('draws a quarter of the ring for a quarter-full window', () => {
+    const gauge = contextGauge(usage, 8)
+    const circumference = 2 * Math.PI * 8
+
+    expect(gauge.dashArray).toBeCloseTo(circumference, 5)
+    expect(gauge.dashOffset).toBeCloseTo(circumference * 0.75, 5)
+    expect(gauge.percent).toBe(25)
+    expect(gauge.tone).toBe('normal')
+  })
+
+  it('scales the ring to whatever radius the icon uses', () => {
+    expect(contextGauge(usage, 20).dashArray).toBeCloseTo(2 * Math.PI * 20, 5)
+  })
+
+  it('closes the ring completely on a full window', () => {
+    const gauge = contextGauge(message({ type: 'agent_usage', used: 200000, size: 200000 }))
+
+    expect(gauge.dashOffset).toBeCloseTo(0, 5)
+    expect(gauge.tone).toBe('critical')
+  })
+
+  it('names the tokens and the cost on separate lines', () => {
+    expect(contextGauge(usage).tooltip).toBe(
+      'Context 50,000 / 200,000 tokens (25%)\nSession cost 0.38 USD'
+    )
+  })
+
+  it('leaves out the cost line when no cost was reported', () => {
+    const gauge = contextGauge(message({ type: 'agent_usage', used: 10, size: 100, percent: 10 }))
+
+    expect(gauge.tooltip).toBe('Context 10 / 100 tokens (10%)')
+  })
+
+  it('keeps sub-cent costs from rounding away to nothing', () => {
+    const gauge = contextGauge(
+      message({ type: 'agent_usage', used: 10, size: 100, cost: { amount: 0.0023, currency: 'USD' } })
+    )
+
+    expect(gauge.tooltip).toContain('Session cost 0.0023 USD')
+  })
+
+  it('renders a zero cost plainly rather than at four decimals', () => {
+    const gauge = contextGauge(
+      message({ type: 'agent_usage', used: 10, size: 100, cost: { amount: 0, currency: 'EUR' } })
+    )
+
+    expect(gauge.tooltip).toContain('Session cost 0.00 EUR')
+  })
+
+  it('names a cost whose currency the agent left off', () => {
+    const gauge = contextGauge(message({ type: 'agent_usage', used: 10, size: 100, cost: { amount: 2 } }))
+
+    expect(gauge.tooltip).toContain('Session cost 2.00')
+  })
+
+  it('ignores a cost that is not a number', () => {
+    const gauge = contextGauge(
+      message({ type: 'agent_usage', used: 10, size: 100, cost: { amount: 'lots', currency: 'USD' } })
+    )
+
+    expect(gauge.tooltip).toBe('Context 10 / 100 tokens (10%)')
+  })
+
+  // The tooltip is what carries the numbers, so an unreported window size
+  // draws an empty ring rather than hiding the gauge entirely.
+  it('draws an empty ring when the window size is unknown', () => {
+    const gauge = contextGauge(
+      message({ type: 'agent_usage', used: 4000, size: 0, text: 'Context 4,000 / 0 tokens' })
+    )
+
+    expect(gauge.percent).toBeNull()
+    expect(gauge.dashOffset).toBeCloseTo(gauge.dashArray, 5)
+    expect(gauge.tone).toBe('normal')
+    expect(gauge.tooltip).toBe('Context 4,000 / 0 tokens')
+  })
+
+  it('falls back to the agent\'s own rendering when nothing is structured', () => {
+    expect(contextGauge(message({ type: 'agent_usage', text: 'Context unknown' }, 'body')).tooltip).toBe(
+      'Context unknown'
+    )
+  })
+
+  it('has no gauge to draw for anything that is not a context report', () => {
+    expect(contextGauge(message({ type: 'agent_plan' }))).toBeNull()
+    expect(contextGauge(undefined)).toBeNull()
   })
 })

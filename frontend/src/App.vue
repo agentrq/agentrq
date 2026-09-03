@@ -361,11 +361,13 @@
     </main>
 
     <!-- Global Tooltip -->
+    <!-- whitespace-pre, not nowrap: a tooltip may carry more than one line
+         (the context gauge shows tokens and cost on separate lines), and
+         neither should wrap. The interpolation sits tight against the tags so
+         the preserved whitespace is only what the text itself holds. -->
     <div v-if="tooltipStore.visible"
-      class="fixed z-[100] px-3 py-1.5 text-xs font-semibold text-black dark:text-white bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm shadow-lg pointer-events-none whitespace-nowrap"
-      :style="tooltipStore.style">
-      {{ tooltipStore.text }}
-    </div>
+      class="fixed z-[100] px-3 py-1.5 text-xs font-semibold text-black dark:text-white bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm shadow-lg pointer-events-none whitespace-pre"
+      :style="tooltipStore.style">{{ tooltipStore.text }}</div>
 
     <!-- Global Toasts -->
     <Toast />

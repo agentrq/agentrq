@@ -35,6 +35,21 @@ export function isAgentTelemetry(message) {
 }
 
 /**
+ * Telemetry that belongs in the message thread, as opposed to the composer.
+ *
+ * Reasoning and plans are moments in a conversation and are read in sequence.
+ * The context counters are not: they describe the session as a whole, and only
+ * the current value means anything — so they live on the composer as a gauge
+ * rather than as a message that scrolls away.
+ *
+ * @param {object} message
+ */
+export function isThreadTelemetry(message) {
+  const kind = agentTelemetryKind(message);
+  return kind === 'thought' || kind === 'plan';
+}
+
+/**
  * The current rendering of a piece of telemetry.
  *
  * Prefers the metadata, which is rewritten on every revision, and falls back
@@ -135,6 +150,102 @@ export function usageDetail(message) {
 
 function numberOrNull(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** Where a filling context window stops being routine. */
+const CONTEXT_HIGH_PERCENT = 75;
+const CONTEXT_CRITICAL_PERCENT = 90;
+
+/**
+ * How much attention the current context level deserves.
+ *
+ * A number alone does not read at a glance; the gauge changes colour so that
+ * a session about to run out of room is noticeable without being read.
+ *
+ * @param {number|null} percent
+ * @returns {'normal'|'high'|'critical'}
+ */
+export function usageTone(percent) {
+  if (percent === null || percent === undefined) return 'normal';
+  if (percent >= CONTEXT_CRITICAL_PERCENT) return 'critical';
+  if (percent >= CONTEXT_HIGH_PERCENT) return 'high';
+  return 'normal';
+}
+
+/**
+ * The most recent context report in a thread, or null if there is none.
+ *
+ * Searched from the end: the counters are cumulative, so only the last one
+ * describes the session as it stands.
+ *
+ * @param {Array<object>} messages
+ * @returns {object|null}
+ */
+export function latestUsageMessage(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (agentTelemetryKind(list[i]) === 'usage') return list[i];
+  }
+  return null;
+}
+
+/** Thousands-separated, so six-figure token counts stay readable. */
+function formatTokens(tokens) {
+  return tokens.toLocaleString('en-US');
+}
+
+/**
+ * A cost with enough precision to be worth showing. Turns routinely cost
+ * fractions of a cent, and "0.00 USD" says nothing.
+ */
+function formatCost(cost) {
+  const amount =
+    cost.amount !== 0 && Math.abs(cost.amount) < 0.01
+      ? cost.amount.toFixed(4)
+      : cost.amount.toFixed(2);
+  return `${amount} ${cost.currency ?? ''}`.trim();
+}
+
+/** The lines the gauge's tooltip shows on hover. */
+function usageTooltip(message, detail) {
+  const lines = [];
+  if (detail.used !== null && detail.size !== null) {
+    const share = detail.percent === null ? '' : ` (${detail.percent}%)`;
+    lines.push(`Context ${formatTokens(detail.used)} / ${formatTokens(detail.size)} tokens${share}`);
+  }
+  const cost = message?.metadata?.cost;
+  if (cost && numberOrNull(cost.amount) !== null) {
+    lines.push(`Session cost ${formatCost(cost)}`);
+  }
+  // Nothing structured to work from: fall back to whatever the agent rendered.
+  return lines.length > 0 ? lines.join('\n') : detail.text;
+}
+
+/**
+ * Everything the context ring needs, or null when nothing has been reported.
+ *
+ * The ring is drawn as a stroked circle whose dash gap is the unused part, so
+ * the geometry is worked out here rather than in the template.
+ *
+ * @param {object} message  a usage telemetry message
+ * @param {number} [radius] the ring's radius in the SVG's own units
+ * @returns {{percent: number|null, dashArray: number, dashOffset: number,
+ *            tone: string, tooltip: string}|null}
+ */
+export function contextGauge(message, radius = 8) {
+  if (agentTelemetryKind(message) !== 'usage') return null;
+  const detail = usageDetail(message);
+  const circumference = 2 * Math.PI * radius;
+  return {
+    percent: detail.percent,
+    dashArray: circumference,
+    // An agent that reported no window size still gets a ring, drawn empty:
+    // the tooltip carries the numbers, and hiding the ring would hide those
+    // too.
+    dashOffset: circumference * (1 - (detail.percent ?? 0) / 100),
+    tone: usageTone(detail.percent),
+    tooltip: usageTooltip(message, detail),
+  };
 }
 
 /**
