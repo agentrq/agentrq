@@ -1,0 +1,61 @@
+name: Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'Makefile'
+      - '.github/workflows/backend.yml'
+  # The Makefile is in scope because the mock generation the tests depend on
+  # lives there: a change to it can break the build without touching backend/.
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'Makefile'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Tracks the toolchain the module declares rather than a second copy
+          # of the version that would quietly drift from it.
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Install mockgen
+        # The mock packages are generated and gitignored, so a fresh checkout
+        # cannot compile the tests that use them. The version is read from the
+        # module's own dependency on github.com/golang/mock, so the generator
+        # and the gomock runtime the tests link against cannot disagree.
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install "github.com/golang/mock/mockgen@$(go list -m -f '{{.Version}}' github.com/golang/mock)"
+        working-directory: backend
+
+      - name: Generate mocks
+        run: make mocks
+
+      - name: Build
+        run: go build ./...
+        working-directory: backend
+
+      - name: Test
+        run: go test ./internal/...
+        working-directory: backend
