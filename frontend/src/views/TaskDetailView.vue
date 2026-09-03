@@ -41,20 +41,6 @@
               </button>
             </div>
 
-            <!-- Stop: only while the agent is working, and only when what is
-                 connected can actually be stopped. Not every agent can be:
-                 stopping travels over a notification only the ACP gateway acts
-                 on, so offering it to Claude Code speaking MCP directly would
-                 be a button that reports success and changes nothing. -->
-            <button v-if="task.status === 'ongoing' && workspace?.agentSupportsStop"
-                    @click.stop="stopRunningTask"
-                    @mouseenter="tooltipStore.show($event, 'Stop the agent working on this task', 'bottom')"
-                    @mouseleave="tooltipStore.hide()"
-                    class="h-7 px-2 rounded-lg border border-gray-200 dark:border-zinc-700/50 bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-800 transition-all flex items-center gap-1 text-[8px] font-black uppercase tracking-tighter">
-              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
-              <span class="hidden sm:inline">Stop</span>
-            </button>
-
             <!-- Status Selector -->
             <div class="relative">
               <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
@@ -579,15 +565,40 @@
               </button>
             </div>
 
-            <!-- Right circular send button -->
-            <button type="submit"
-                    :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
-                    class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
-                    title="Send Message">
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
-            </button>
+            <!-- Right actions: stop, then send -->
+            <div class="flex items-center gap-2 shrink-0">
+              <!-- Stop sits beside Send because that is where a reply is
+                   composed, which is the moment someone decides the agent has
+                   gone the wrong way.
+
+                   Shown only while the agent is working, and only when what is
+                   connected can actually be stopped. Not every agent can be:
+                   stopping travels over a notification only the ACP gateway
+                   acts on, so offering it to Claude Code speaking MCP directly
+                   would be a button that reports success and changes nothing.
+
+                   type="button" is load-bearing — this sits inside the reply
+                   form, and a button without it submits the form on click. -->
+              <button v-if="task.status === 'ongoing' && workspace?.agentSupportsStop"
+                      type="button"
+                      @click.stop="stopRunningTask"
+                      @mouseenter="tooltipStore.show($event, 'Stop the agent working on this task', 'top')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="h-6 w-6 rounded-sm border border-transparent dark:bg-zinc-700/50 text-gray-400 dark:text-zinc-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-800 transition-all flex items-center justify-center"
+                      title="Stop the agent working on this task">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+              </button>
+
+              <!-- Right circular send button -->
+              <button type="submit"
+                      :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
+                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
+                      title="Send Message">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
