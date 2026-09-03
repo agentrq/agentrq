@@ -768,8 +768,7 @@ func New(cfg Config) (*App, error) {
 	fiberApp.Static("/", "./public", fiber.Static{
 		Compress: false,
 		Next: func(c *fiber.Ctx) bool {
-			path := c.Path()
-			return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") || path == "/" || path == "/index.html"
+			return skipStaticHandler(c.Path())
 		},
 	})
 
@@ -836,12 +835,11 @@ func New(cfg Config) (*App, error) {
 		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") || strings.HasPrefix(path, "/.well-known/") {
 			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Not Found"})
 		}
-		// If it's a request for a static asset file (has an extension like .js, .css, .wasm, etc.), return 404 instead of falling back to index.html
-		if idx := strings.LastIndex(path, "."); idx != -1 && idx > strings.LastIndex(path, "/") {
-			ext := path[idx:]
-			if ext != ".html" {
-				return c.Status(fiber.StatusNotFound).SendString("Not Found")
-			}
+		// A missing static asset is a genuine 404 rather than the app shell:
+		// handing index.html back to a <script src> only turns a missing file
+		// into a syntax error further down the line.
+		if namesAFile(path) && !strings.HasSuffix(path, ".html") {
+			return c.Status(fiber.StatusNotFound).SendString("Not Found")
 		}
 		c.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 		c.Set("Pragma", "no-cache")
@@ -916,6 +914,38 @@ func New(cfg Config) (*App, error) {
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
+}
+
+// namesAFile reports whether a request path names a file rather than a page.
+//
+// A file carries an extension in its last segment; an SPA route — /login, or
+// /workspaces/abc — does not. The frontend build has no extensionless output,
+// so the distinction holds for everything actually on disk.
+func namesAFile(path string) bool {
+	dot := strings.LastIndex(path, ".")
+	return dot != -1 && dot > strings.LastIndex(path, "/")
+}
+
+// skipStaticHandler reports whether a request should bypass the static file
+// handler and go straight to the routes behind it.
+//
+// SPA routes are skipped because there is no file to find: the static handler
+// would open a path that was never going to exist, and it logs every such miss
+// before passing the request on. That log is not suppressed here — the app is
+// mounted into the stdlib mux through an adaptor, whose synthetic request
+// context has no server carrying Fiber's silent logger — so each page a user
+// navigated to wrote an error line for a request that then succeeded.
+//
+// A path that does name a file is still handed over, so a genuinely missing
+// asset is still reported.
+func skipStaticHandler(path string) bool {
+	if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/mcp") {
+		return true
+	}
+	if path == "/" || path == "/index.html" {
+		return true
+	}
+	return !namesAFile(path)
 }
 
 func pubStatsHandler(ctrl pub.StatsController) http.Handler {

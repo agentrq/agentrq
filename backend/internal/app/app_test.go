@@ -3,14 +3,18 @@ package app
 import (
 	"bufio"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/gofiber/fiber/v2"
 )
 
 const testJWTSecret = "test-secret-for-events-handler"
@@ -197,5 +201,107 @@ func TestEventsHandlerRejectsUnparseableWorkspaceID(t *testing.T) {
 
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusUnprocessableEntity)
+	}
+}
+
+// A page is not a file, and the static handler must not be asked to find one.
+// It opens the path to find out, and logs every miss — which is why navigating
+// to /login wrote an error line for a request that then succeeded.
+func TestSkipStaticHandler(t *testing.T) {
+	cases := []struct {
+		path string
+		skip bool
+		why  string
+	}{
+		{"/login", true, "an app route names no file"},
+		{"/workspaces/0i7trFAL0PR", true, "nor does a nested one"},
+		{"/", true, "the root is served by the fallback"},
+		{"/index.html", true, "and so is the shell, so its base path can be injected"},
+		{"/api/v1/workspaces", true, "the API is not static content"},
+		{"/mcp", true, "neither is the MCP endpoint"},
+		{"/assets/index-a1b2c3.js", false, "a hashed asset is a real file"},
+		{"/favicon.ico", false, "so is the favicon"},
+		{"/robots.txt", false, "and robots.txt"},
+		{"/manifest.webmanifest", false, "and the manifest"},
+		{"/sw.js", false, "and the service worker"},
+		{"/missing.js", false, "a missing asset is still worth reporting"},
+		{"/.well-known/oauth-protected-resource", true, "a dot in a directory is not an extension"},
+	}
+
+	for _, tc := range cases {
+		if got := skipStaticHandler(tc.path); got != tc.skip {
+			t.Errorf("skipStaticHandler(%q) = %v, want %v: %s", tc.path, got, tc.skip, tc.why)
+		}
+	}
+}
+
+func TestNamesAFile(t *testing.T) {
+	cases := map[string]bool{
+		"/assets/app.js":   true,
+		"/favicon.ico":     true,
+		"/login":           false,
+		"/":                false,
+		"/a.b/c":           false, // the dot is in a directory, not the file
+		"/a.b/c.d":         true,
+		"":                 false,
+		"/trailing/slash/": false,
+	}
+	for path, want := range cases {
+		if got := namesAFile(path); got != want {
+			t.Errorf("namesAFile(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+// The static handler really is bypassed for an app route, not merely allowed to
+// miss: a file sitting at that exact path must still lose to the app.
+func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
+	public := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		full := filepath.Join(public, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	write("assets/app.js", "console.log(1)")
+	// A file named exactly like an app route. Serving this would mean the
+	// static handler had been consulted after all.
+	write("login", "STATIC FILE")
+
+	app := fiber.New()
+	app.Static("/", public, fiber.Static{
+		Compress: false,
+		Next:     func(c *fiber.Ctx) bool { return skipStaticHandler(c.Path()) },
+	})
+	app.Get("/*", func(c *fiber.Ctx) error { return c.SendString("APP SHELL") })
+
+	cases := []struct {
+		path string
+		body string
+	}{
+		{"/login", "APP SHELL"},
+		{"/assets/app.js", "console.log(1)"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", tc.path, err)
+		}
+		defer resp.Body.Close()
+		buf := new(strings.Builder)
+		if _, err := io.Copy(buf, resp.Body); err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", tc.path, resp.StatusCode)
+		}
+		if buf.String() != tc.body {
+			t.Errorf("GET %s: body %q, want %q", tc.path, buf.String(), tc.body)
+		}
 	}
 }
