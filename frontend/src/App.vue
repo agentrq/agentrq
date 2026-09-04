@@ -198,7 +198,7 @@
           </router-link>
 
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
-            <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Experimental</span>
+            <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Advanced</span>
           </div>
           <div v-else class="mt-4 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50"></div>
 
