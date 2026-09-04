@@ -79,6 +79,25 @@ The coremcp exposes a broad, cross-workspace tool surface:
 | `updateTaskAllowAll(workspaceId, taskId, allowAll)` | Toggle unrestricted permission mode for a task |
 | `updateScheduledTask(workspaceId, taskId, ...)` | Modify a cron task template |
 | `getAttachment(workspaceId, attachmentId)` | Retrieve a file attachment as base64 |
+| `listEvents()` | List the events defined for the user's account |
+| `createEvent(name, payloadGuidelines?)` | Define a named signal workspaces can publish |
+| `getEvent(eventId)` | Fetch a single event |
+| `updateEvent(eventId, payloadGuidelines)` | Revise an event's payload guidelines (its name is fixed) |
+| `deleteEvent(eventId)` | Delete an event; its triggers stop firing |
+| `createEventTrigger(eventId, workspaceId, title, body?, assignee?, cronSchedule?, allowAllCommands?, emitEventId?)` | Create a task in a workspace whenever the event fires |
+| `listEventTriggers(eventId)` | List everything that happens when an event fires |
+| `getEventTrigger(triggerId)` | Fetch a single trigger by ID |
+| `updateEventTrigger(triggerId, workspaceId, title, ...)` | Rewrite a trigger; every field is written as given |
+| `deleteEventTrigger(triggerId)` | Delete a trigger, leaving its event in place |
+| `listEventTasks(eventId)` | List the tasks an event has spawned |
+
+The event tools are what let a supervisor wire workspaces to each other rather
+than relaying every hand-off itself: it defines an event, attaches a trigger
+per workspace that should react, and reads back the tasks the event spawned.
+`emitEventId` chains one system to the next by publishing a second event when
+the spawned task completes. Publishing remains agent-side (`publishEvent` on
+the per-workspace server) — the supervisor builds the wiring, the workers fire
+it.
 
 ### Per-Workspace / Agent Worker MCP Servers
 

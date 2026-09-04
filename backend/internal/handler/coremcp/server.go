@@ -243,6 +243,9 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task"}, s.handleUpdateTaskAllowAll)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task"}, s.handleUpdateScheduledTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata"}, s.handleGetAttachment)
+
+	// Events and their triggers — see events.go.
+	s.registerEventTools()
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

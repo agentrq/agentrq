@@ -148,6 +148,14 @@ func FromUpdateEventTriggerResponseEntityToHTTPResponse(rs *entity.UpdateEventTr
 	return payload
 }
 
+// FromGetEventTriggerResponseEntityToHTTPResponse renders a single trigger.
+// The REST API has no route for one — the UI reads them a whole event at a
+// time — but an agent working from a trigger ID has nothing to list.
+func FromGetEventTriggerResponseEntityToHTTPResponse(rs *entity.GetEventTriggerResponse) []byte {
+	payload, _ := json.Marshal(view.GetEventTriggerResponse{EventTrigger: fromEntityEventTriggerToView(rs.EventTrigger)})
+	return payload
+}
+
 func FromListEventTriggersResponseEntityToHTTPResponse(rs *entity.ListEventTriggersResponse) []byte {
 	triggers := make([]view.EventTrigger, len(rs.EventTriggers))
 	for i, t := range rs.EventTriggers {

@@ -368,6 +368,10 @@ type (
 		EventTrigger EventTrigger `json:"eventTrigger"`
 	}
 
+	GetEventTriggerResponse struct {
+		EventTrigger EventTrigger `json:"eventTrigger"`
+	}
+
 	ListEventTriggersResponse struct {
 		EventTriggers []EventTrigger `json:"eventTriggers"`
 	}
