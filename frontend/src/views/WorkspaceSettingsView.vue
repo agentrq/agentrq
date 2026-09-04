@@ -101,6 +101,43 @@
                     </div>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Hold sent messages for a countdown before delivery, with a chance to cancel.</p>
                   </div>
+
+                  <!-- Local data.
+                       Set apart from everything above it on purpose: those
+                       settings follow the account, and this one does not. A
+                       toggle that looks like its neighbours would be flipped
+                       here and expected to take effect on another machine. -->
+                  <div class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 space-y-4 bg-gray-50/40 dark:bg-zinc-800/20">
+                    <div class="flex items-start justify-between gap-6">
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100">Keep a copy on this device</h4>
+                          <span class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-300 dark:border-zinc-600 rounded-sm px-1.5 py-0.5">This device only</span>
+                        </div>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1.5 font-medium leading-relaxed">
+                          Tasks you open are kept locally so lists appear instantly and you can search their titles and descriptions without a connection.
+                          <span class="block mt-1 text-gray-500 dark:text-zinc-500">This choice is not shared with your other devices, and the server is always what an open task shows.</span>
+                        </p>
+                      </div>
+                      <button type="button" role="switch" :aria-checked="localCacheOn" @click="toggleLocalCache"
+                              class="shrink-0 mt-1 w-11 h-6 rounded-full border transition-colors relative"
+                              :class="localCacheOn ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+                        <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                              :class="localCacheOn ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+                      </button>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-4 pt-3 border-t border-gray-200 dark:border-zinc-700/60">
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
+                        <span v-if="localUsageLabel">This browser is storing <span class="font-bold text-gray-900 dark:text-zinc-100">{{ localUsageLabel }}</span> across all workspaces.</span>
+                        <span v-else>Your browser does not report how much it is storing.</span>
+                      </p>
+                      <button type="button" @click="clearLocalData()" :disabled="isClearingLocal"
+                              class="shrink-0 px-5 py-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 text-[10px] font-bold text-gray-900 dark:text-zinc-100 hover:border-black dark:hover:border-white transition-all shadow-sm rounded-sm uppercase tracking-widest disabled:opacity-50 whitespace-nowrap">
+                        {{ isClearingLocal ? 'Clearing' : 'Clear this workspace' }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Setup -->
@@ -684,13 +721,21 @@ import ArchiveModal from '../components/ArchiveModal.vue';
 import DeleteModal from '../components/DeleteModal.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
+import { isCacheEnabled, sharedCache } from '../composables/useCachedTasks';
+import {
+  clearWorkspaceData,
+  estimateUsage,
+  formatBytes,
+  requestPersistence,
+  setCacheEnabled,
+} from '../composables/useCacheStorage';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
 
 const route = useRoute();
 const router = useRouter();
-const { notifySuccess, notifyError } = useToasts();
+const { notifySuccess, notifyError, notifyInfo } = useToasts();
 const workspaceId = computed(() => route.params.id);
 
 const workspace = ref(null);
@@ -1216,6 +1261,8 @@ async function doDelete() {
   showDeleteConfirm.value = false;
   try {
     await deleteWorkspace(workspaceId.value);
+    // Otherwise the finder keeps offering tasks that no longer exist anywhere.
+    await clearWorkspaceData(sharedCache(), workspaceId.value);
     notifySuccess("Workspace purged");
     router.push('/');
   } catch (err) {
@@ -1231,8 +1278,59 @@ function getShellPattern(tool) {
   return pattern === '*' ? 'all commands' : pattern;
 }
 
+// --- Local data -------------------------------------------------------------
+// Unlike everything else on this screen, this preference never leaves the
+// device. It is read straight from local storage rather than from `form`, which
+// is the shape that gets sent to the server on save.
+
+const localCacheOn = ref(true);
+const localUsage = ref(null);
+const isClearingLocal = ref(false);
+
+const localUsageLabel = computed(() =>
+  localUsage.value ? formatBytes(localUsage.value.usage) : ''
+);
+
+async function refreshLocalUsage() {
+  localUsage.value = await estimateUsage();
+}
+
+async function toggleLocalCache() {
+  const next = !localCacheOn.value;
+  setCacheEnabled(workspaceId.value, next);
+  localCacheOn.value = isCacheEnabled(workspaceId.value);
+
+  // Turning it off clears immediately rather than leaving data behind that
+  // nothing will ever update again.
+  if (!localCacheOn.value) await clearLocalData({ quiet: true });
+  else notifySuccess('This workspace will be kept on this device');
+}
+
+async function clearLocalData({ quiet = false } = {}) {
+  if (isClearingLocal.value) return;
+  isClearingLocal.value = true;
+  try {
+    const { cleared, reclaimed } = await clearWorkspaceData(sharedCache(), workspaceId.value);
+    await refreshLocalUsage();
+    if (quiet) return;
+    if (!cleared) notifyInfo('There was nothing stored on this device');
+    else notifySuccess(
+      reclaimed === null
+        ? 'Local copy cleared'
+        : `Local copy cleared, freeing ${formatBytes(reclaimed)}`
+    );
+  } finally {
+    isClearingLocal.value = false;
+  }
+}
+
 onMounted(() => {
   load();
+  localCacheOn.value = isCacheEnabled(workspaceId.value);
+  refreshLocalUsage();
+  // Asked once, and the answer does not change what the app does — a cache that
+  // gets evicted behaves exactly like one that was never written.
+  requestPersistence();
   if (route.query.tab) {
     activeTab.value = route.query.tab;
   }
