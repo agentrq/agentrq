@@ -5,6 +5,8 @@ import { getEvent, updateEvent, deleteEvent, fetchEvents, fetchEventTriggers, cr
 import { useToasts } from '../composables/useToasts'
 import { useCron } from '../composables/useCron'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { useTooltipStore } from '../stores/tooltipStore'
+import { triggerWorkspaceTooltip, workspaceLabel } from '../composables/useWorkflowLabels'
 import DeleteModal from '../components/DeleteModal.vue'
 import LoadingState from '../components/LoadingState.vue'
 
@@ -13,6 +15,7 @@ const router = useRouter()
 const { notifyError, notifySuccess } = useToasts()
 const { getNextRunLabel, daysOptions } = useCron()
 const workspaceStore = useWorkspaceStore()
+const tooltipStore = useTooltipStore()
 
 const eventId = route.params.id
 
@@ -270,8 +273,16 @@ async function handleDeleteTrigger() {
   }
 }
 
+// Keyed once rather than scanned per row: a busy event lists a trigger for
+// every workspace that reacts to it.
+const workspacesById = computed(() => {
+  const map = {}
+  for (const ws of workspaceStore.workspaces) map[ws.id] = ws
+  return map
+})
+
 function workspaceName(wsId) {
-  return workspaceStore.workspaces.find(w => w.id === wsId)?.name ?? wsId
+  return workspaceLabel(workspacesById.value, wsId)
 }
 
 // ── tasks ─────────────────────────────────────────────────────────────────────
@@ -526,7 +537,10 @@ onMounted(async () => {
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider">{{ workspaceName(t.workspaceId) }}</span>
+                <span
+                  @mouseenter="tooltipStore.show($event, triggerWorkspaceTooltip(workspaceName(t.workspaceId)), 'top')"
+                  @mouseleave="tooltipStore.hide()"
+                  class="max-w-[12rem] truncate text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-wider">{{ workspaceName(t.workspaceId) }}</span>
                 <svg class="w-3 h-3 text-gray-300 dark:text-zinc-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
                 <span class="text-xs font-bold text-gray-800 dark:text-zinc-200 truncate">{{ t.title }}</span>
               </div>

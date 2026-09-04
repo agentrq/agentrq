@@ -9,6 +9,13 @@ import {
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
+import {
+  emittedEventTooltip,
+  eventLabel,
+  nodeTooltip,
+  paletteTooltip,
+  workspaceLabel,
+} from '../composables/useWorkflowLabels';
 import DeleteModal from '../components/DeleteModal.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -71,11 +78,11 @@ const workspacesById = computed(() => {
 });
 
 function eventName(id) {
-  return eventsById.value[id]?.name ?? '(deleted event)';
+  return eventLabel(eventsById.value, id);
 }
 
 function workspaceName(id) {
-  return workspacesById.value[id]?.name ?? '(deleted workspace)';
+  return workspaceLabel(workspacesById.value, id);
 }
 
 // stepsByEvent groups the fan-out for each event.
@@ -894,6 +901,8 @@ onMounted(async () => {
                   draggable="true"
                   @dragstart="startPaletteDrag('workspace', ws.id, $event)"
                   @dragend="dragItem = null; dropTarget = null"
+                  @mouseenter="tooltipStore.show($event, paletteTooltip('workspace', ws.name), 'right')"
+                  @mouseleave="tooltipStore.hide()"
                   class="px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg cursor-grab active:cursor-grabbing hover:border-gray-300 dark:hover:border-zinc-600 transition-all truncate">
                   {{ ws.name }}
                 </div>
@@ -910,6 +919,8 @@ onMounted(async () => {
                   draggable="true"
                   @dragstart="startPaletteDrag('event', ev.id, $event)"
                   @dragend="dragItem = null; dropTarget = null"
+                  @mouseenter="tooltipStore.show($event, paletteTooltip('event', ev.name), 'right')"
+                  @mouseleave="tooltipStore.hide()"
                   class="px-2.5 py-1.5 text-[11px] font-mono font-semibold text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-900/40 rounded-lg cursor-grab active:cursor-grabbing hover:border-violet-300 dark:hover:border-violet-700 transition-all truncate">
                   {{ ev.name }}
                 </div>
@@ -981,6 +992,8 @@ onMounted(async () => {
                     {{ node.kind === 'event' || node.kind === 'global-event' ? 'event' : 'agent' }}
                   </span>
                   <span
+                    @mouseenter="tooltipStore.show($event, nodeTooltip(node), 'top')"
+                    @mouseleave="tooltipStore.hide()"
                     class="min-w-0 grow truncate text-[11px] font-mono font-semibold"
                     :class="node.kind === 'global' || node.kind === 'global-event' ? 'text-gray-500 dark:text-zinc-400' : 'text-gray-900 dark:text-zinc-100'">
                     {{ node.label }}
@@ -1020,7 +1033,10 @@ onMounted(async () => {
                   </button>
                 </div>
                 <div v-if="node.kind === 'step' && node.step.emitEventId" class="flex items-center gap-1.5 px-3 pb-1.5 -mt-1">
-                  <span class="min-w-0 grow truncate text-[9px] text-gray-400 dark:text-zinc-500">
+                  <span
+                    @mouseenter="tooltipStore.show($event, emittedEventTooltip(eventName(node.step.emitEventId)), 'top')"
+                    @mouseleave="tooltipStore.hide()"
+                    class="min-w-0 grow truncate text-[9px] text-gray-400 dark:text-zinc-500">
                     emits <span class="font-mono">{{ eventName(node.step.emitEventId) }}</span>
                   </span>
                   <!-- Removing the emitted event breaks the chain here, so the

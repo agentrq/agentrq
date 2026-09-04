@@ -41,6 +41,7 @@ export default defineConfig({
         'src/composables/useAgentTelemetry.js',
         'src/composables/useTaskEvents.js',
         'src/composables/useTrajectory.js',
+        'src/composables/useWorkflowLabels.js',
         'src/composables/usePendingSend.js',
         'src/composables/useDirectoryPicker.js',
         'src/composables/useProfileDisplay.js',
