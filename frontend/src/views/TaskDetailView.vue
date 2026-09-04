@@ -67,7 +67,7 @@
             <!-- Chat / Trajectory view toggle -->
             <div class="flex p-0.5 bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700/50 rounded-lg h-7">
               <button @click.stop="activeView = 'chat'"
-                      @mouseenter="tooltipStore.show($event, 'Message thread', 'bottom')"
+                      @mouseenter="tooltipStore.show($event, `Message thread  ${viewShortcut('chat-view')}`, 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       :class="activeView === 'chat' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
@@ -75,7 +75,7 @@
                 <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.463L3 21l1.51-4.532A7.965 7.965 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
               </button>
               <button @click.stop="activeView = 'trajectory'"
-                      @mouseenter="tooltipStore.show($event, 'Tool call trajectory', 'bottom')"
+                      @mouseenter="tooltipStore.show($event, `Tool call trajectory  ${viewShortcut('trajectory-view')}`, 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       :class="activeView === 'trajectory' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center gap-1 justify-center">
@@ -758,9 +758,17 @@ import {
 import { belongsInThread } from '../composables/useTrajectory';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
+import {
+  SHORTCUTS,
+  formatShortcut,
+  useShortcuts,
+  usesCommandKey,
+} from '../composables/useKeyboardShortcuts';
+import { usePlatformStore } from '../stores/platformStore';
 
 const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
+const platformStore = usePlatformStore();
 const route = useRoute();
 const router = useRouter();
 const workspaceId = computed(() => route.params.id || route.params.workspaceId);
@@ -962,6 +970,22 @@ const displayMessages = computed(() => {
 });
 
 const activeView = ref('chat');
+
+// The two view shortcuts are registered by the view that owns the state rather
+// than by the shell, which has no `activeView` to switch. Registering on mount
+// also means they only exist while a task is open — pressing C on the board
+// does nothing, which is correct.
+useShortcuts(
+  {
+    'chat-view': () => { activeView.value = 'chat'; },
+    'trajectory-view': () => { activeView.value = 'trajectory'; },
+  },
+  { mac: () => usesCommandKey(platformStore.$state) }
+);
+
+/** The key hint shown in each toggle's tooltip. */
+const viewShortcut = (id) =>
+  formatShortcut(SHORTCUTS.find((s) => s.id === id), { mac: usesCommandKey(platformStore.$state) });
 
 const sortedToolCalls = computed(() => {
   if (!task.value || !task.value.toolCalls) return [];

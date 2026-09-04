@@ -371,6 +371,11 @@
 
     <!-- Global Toasts -->
     <Toast />
+
+    <!-- Keyboard-driven overlays. Both are shell-level: the finder crosses
+         workspaces, and the help sheet describes shortcuts a view may own. -->
+    <CommandPalette :show="isPaletteOpen" :shortcut-label="findTaskLabel" @close="isPaletteOpen = false" />
+    <ShortcutsHelp :show="isHelpOpen" :mac="isMacKeyboard" @close="isHelpOpen = false" />
   </div>
 </template>
 
@@ -389,6 +394,15 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import Toast from './components/Toast.vue'
+import CommandPalette from './components/CommandPalette.vue'
+import ShortcutsHelp from './components/ShortcutsHelp.vue'
+import {
+  SHORTCUTS,
+  formatShortcut,
+  newTaskRoute,
+  useShortcuts,
+  usesCommandKey,
+} from './composables/useKeyboardShortcuts'
 
 const appVersion = __APP_VERSION__
 const { needRefresh, updateServiceWorker } = useRegisterSW()
@@ -476,6 +490,42 @@ const workspaces = computed(() => workspaceStore.workspaces)
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
 
+// --- Keyboard shortcuts -----------------------------------------------------
+// The shell owns the ones that work anywhere. A view registers its own on top
+// of these; see TaskDetailView for the chat/trajectory pair.
+
+const isPaletteOpen = ref(false)
+const isHelpOpen = ref(false)
+
+/** Command on a Mac keyboard, Control everywhere else. */
+const isMacKeyboard = computed(() => usesCommandKey(platformStore.$state))
+const findTaskLabel = computed(() =>
+  formatShortcut(SHORTCUTS.find((s) => s.id === 'find-task'), { mac: isMacKeyboard.value })
+)
+
+useShortcuts(
+  {
+    'find-task': () => {
+      isHelpOpen.value = false
+      isPaletteOpen.value = true
+    },
+    'new-task': () => router.push(newTaskRoute(currentWorkspaceId.value, workspaces.value)),
+    'show-help': () => {
+      isPaletteOpen.value = false
+      isHelpOpen.value = true
+    },
+  },
+  { mac: () => isMacKeyboard.value }
+)
+
+// Escape closes an overlay wherever focus happens to be. The palette handles it
+// on its own input too — this is for the help sheet, which has nothing focused.
+const closeOverlaysOnEscape = (e) => {
+  if (e.key !== 'Escape') return
+  isPaletteOpen.value = false
+  isHelpOpen.value = false
+}
+
 // Setup Global Event Bus (Global stream receives events for all workspaces)
 const { connect, disconnect, events } = useEventBus()
 
@@ -520,6 +570,7 @@ onMounted(() => {
   workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('keydown', closeOverlaysOnEscape)
 })
 
 const showTooltip = (event, text) => {
@@ -562,6 +613,7 @@ const handleClickOutside = (e) => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('keydown', closeOverlaysOnEscape)
 })
 
 watch(() => route.fullPath, (fullPath) => {
