@@ -42,6 +42,21 @@ const canResolveId = computed(
   () => results.value.length === 0 && looksLikeTaskId(query.value) && !resolving.value
 );
 
+/**
+ * How far each kind of search actually reaches.
+ *
+ * The two halves of this box do not have the same range, and the difference is
+ * invisible unless it is said out loud: a title is matched here in the browser
+ * against the tasks that happen to be loaded, while an ID is asked of the
+ * server and finds anything the user owns. Someone who searches a title, sees
+ * nothing, and concludes the task is gone has been misled by a box that looked
+ * like it searched everything.
+ *
+ * Deliberately the real number rather than the 50 the API caps at — claiming a
+ * reach the panel does not have is the same mistake in the other direction.
+ */
+const loadedCount = computed(() => tasks.value.length);
+
 watch(
   () => props.show,
   async (open) => {
@@ -125,7 +140,7 @@ async function submit() {
               <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
             </svg>
             <input ref="inputRef" v-model="query" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Task ID, or part of a title"
+                   placeholder="Task ID, or part of a recent title"
                    class="grow bg-transparent text-[14px] text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 focus:outline-none"
                    @keydown.down.prevent="move(1)"
                    @keydown.up.prevent="move(-1)"
@@ -159,16 +174,32 @@ async function submit() {
             <p v-else-if="canResolveId" class="text-[12px] text-gray-500 dark:text-zinc-400">
               Not in the recent tasks. Press <span class="font-semibold text-gray-900 dark:text-zinc-100">Enter</span> to look this ID up across your workspaces.
             </p>
-            <p v-else-if="query" class="text-[12px] text-gray-400 dark:text-zinc-500">No recent task matches that.</p>
-            <p v-else class="text-[12px] text-gray-400 dark:text-zinc-500">
-              Search your recent tasks<span v-if="shortcutLabel">, or reopen this with {{ shortcutLabel }}</span>.
+            <p v-else-if="query" class="text-[12px] text-gray-500 dark:text-zinc-400">
+              No match in your {{ loadedCount }} most recent tasks.
+              <span class="block mt-1 text-gray-400 dark:text-zinc-500">
+                Title search only covers those — paste a full task ID to search every workspace.
+              </span>
+            </p>
+            <p v-else class="text-[12px] text-gray-500 dark:text-zinc-400">
+              Search the titles of your {{ loadedCount }} most recent tasks.
+              <span class="block mt-1 text-gray-400 dark:text-zinc-500">
+                To reach older ones, paste a task ID<span v-if="shortcutLabel"> — {{ shortcutLabel }} reopens this</span>.
+              </span>
             </p>
           </div>
 
-          <!-- Footer hints -->
-          <div class="flex items-center gap-4 px-4 py-2 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-800/30">
-            <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↑↓ Navigate</span>
-            <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↵ Open</span>
+          <!-- Footer: keys on the left, the reach of each search on the right.
+               The two halves of this box search different amounts of the app,
+               so the panel says so rather than letting the user assume. -->
+          <div class="flex items-center justify-between gap-4 px-4 py-2 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-800/30">
+            <span class="flex items-center gap-4 shrink-0">
+              <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↑↓ Navigate</span>
+              <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↵ Open</span>
+            </span>
+            <span class="text-[9px] text-right text-gray-400 dark:text-zinc-500 truncate">
+              Titles: <span class="text-gray-500 dark:text-zinc-400">{{ loading ? '…' : loadedCount }} recent</span>
+              · IDs: <span class="text-gray-500 dark:text-zinc-400">every workspace</span>
+            </span>
           </div>
         </div>
       </div>

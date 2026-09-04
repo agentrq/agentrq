@@ -37,7 +37,7 @@ export const SHORTCUTS = [
     label: 'Find task by ID',
     // The finder is how you leave a screen you are typing on, so unlike the
     // bare letters it stays live while a text box has focus.
-    hint: 'Search the recent tasks, or paste a task ID from anywhere',
+    hint: 'Titles from your recent tasks; a full ID reaches any task you own',
     scope: 'global',
   },
   {
