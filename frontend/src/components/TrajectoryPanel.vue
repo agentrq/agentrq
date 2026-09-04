@@ -24,6 +24,22 @@
         </div>
       </div>
 
+      <!-- Categories — the trace answers one question at a time: what was said,
+           what the agent thought, what it ran. -->
+      <div v-if="items.length > 0" class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+        <button type="button" @click="laneFilter = null" :class="laneChipClass(null)"
+                class="shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border transition-colors">
+          All <span class="font-bold opacity-60">{{ items.length }}</span>
+        </button>
+        <button v-for="lane in LANES" :key="lane.key" type="button"
+                @click="toggleLane(lane.key)"
+                :disabled="laneCounts[lane.key] === 0"
+                :class="laneChipClass(lane.key)"
+                class="shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          {{ lane.label }} <span class="font-bold opacity-60">{{ laneCounts[lane.key] }}</span>
+        </button>
+      </div>
+
       <!-- Search -->
       <div class="px-4 py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0">
         <div class="relative">
@@ -38,7 +54,7 @@
         <!-- List -->
         <div class="w-2/5 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto custom-scrollbar">
           <div v-if="filteredItems.length === 0" class="py-10 text-center text-[11px] text-gray-400 dark:text-zinc-500 font-medium px-4">
-            {{ items.length === 0 ? 'No activity recorded yet.' : 'No matches for this search.' }}
+            {{ emptyListMessage }}
           </div>
           <button v-for="it in filteredItems" :key="it.id"
                   type="button"
@@ -83,7 +99,7 @@
                 <span class="text-gray-800 dark:text-zinc-200">{{ formatAbsolute(selectedItem.createdAt) }}</span>
               </div>
               <div v-else class="grid grid-cols-[80px_1fr] gap-y-1.5 text-[11px]">
-                <span class="text-gray-400 dark:text-zinc-500 font-semibold">Sender</span>
+                <span class="text-gray-400 dark:text-zinc-500 font-semibold">{{ selectedItem.lane === 'thought' ? 'Kind' : 'Sender' }}</span>
                 <span class="text-gray-800 dark:text-zinc-200">{{ selectedItem.label }}</span>
                 <span class="text-gray-400 dark:text-zinc-500 font-semibold">Created</span>
                 <span class="text-gray-800 dark:text-zinc-200">{{ formatAbsolute(selectedItem.createdAt) }}</span>
@@ -120,109 +136,48 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { renderMarkdown } from '../utils/markdown';
+import {
+  TRAJECTORY_LANES,
+  buildTrajectory,
+  defaultDetailTab,
+  filterTrajectory,
+  trajectoryLaneCounts,
+} from '../composables/useTrajectory';
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   toolCalls: { type: Array, default: () => [] },
 });
 
-const LANES = [
-  { key: 'input', label: 'INPUT' },
-  { key: 'agent', label: 'AGENT' },
-  { key: 'tool', label: 'TOOLS' },
-];
+const LANES = TRAJECTORY_LANES;
 
-function truncate(text, len) {
-  if (!text) return '';
-  const t = String(text).trim().replace(/\s+/g, ' ');
-  return t.length > len ? t.slice(0, len) + '…' : t;
+const items = computed(() => buildTrajectory(props.messages, props.toolCalls));
+
+const laneCounts = computed(() => trajectoryLaneCounts(items.value));
+
+// Which category the reader has narrowed to, or null for all of them. Reading
+// a long run means asking one question at a time — what did it think, what did
+// it run — and the lanes are what separate those.
+const laneFilter = ref(null);
+function toggleLane(key) {
+  laneFilter.value = laneFilter.value === key ? null : key;
 }
 
-function permissionStatus(status) {
-  switch (status) {
-    case 'allow': return 'allowed';
-    case 'allow_always': return 'auto_allowed';
-    case 'deny': return 'denied';
-    default: return status || 'pending';
-  }
+function laneChipClass(key) {
+  return laneFilter.value === key
+    ? 'bg-gray-900 dark:bg-white text-white dark:text-black border-transparent'
+    : 'bg-white dark:bg-zinc-900 text-gray-500 dark:text-zinc-400 border-gray-200 dark:border-zinc-700 hover:border-gray-300 dark:hover:border-zinc-600';
 }
-
-const items = computed(() => {
-  const fromMessages = (props.messages || []).map(m => {
-    const isPermissionRequest = m.metadata?.type === 'permission_request';
-    if (isPermissionRequest) {
-      // The API sends camelCase keys; messages persisted before that change
-      // still have snake_case keys, so fall back to those.
-      const toolName = m.metadata?.toolName || m.metadata?.tool_name || 'Permission Request';
-      const inputPreview = m.metadata?.inputPreview || m.metadata?.input_preview;
-      return {
-        id: `m-${m.id}`,
-        lane: 'tool',
-        laneLabel: 'TOOL',
-        createdAt: m.createdAt,
-        label: toolName,
-        preview: truncate(`${toolName} ${inputPreview || m.metadata?.description || ''}`, 140),
-        raw: {
-          ...m,
-          toolName,
-          description: m.metadata?.description,
-          inputPreview,
-          status: permissionStatus(m.metadata?.status),
-        },
-      };
-    }
-    if (m.metadata?.type === 'elicitation_request') {
-      const label = m.metadata.message || (m.metadata.mode === 'url' ? 'Open link' : 'Answer question');
-      const payload = m.metadata.mode === 'form'
-        ? { mode: 'form', requestedSchema: m.metadata.requestedSchema }
-        : { mode: 'url', url: m.metadata.url };
-      if (m.metadata.content) payload.answer = m.metadata.content;
-      return {
-        id: `m-${m.id}`,
-        lane: 'tool',
-        laneLabel: 'ASK',
-        createdAt: m.createdAt,
-        label,
-        preview: truncate(label, 140),
-        raw: {
-          ...m,
-          toolName: label,
-          inputPreview: JSON.stringify(payload),
-          status: m.metadata.status || 'pending',
-        },
-      };
-    }
-    return {
-      id: `m-${m.id}`,
-      lane: m.sender === 'agent' ? 'agent' : 'input',
-      laneLabel: m.sender === 'agent' ? 'AGENT' : (m.sender === 'slack' ? 'SLACK' : 'INPUT'),
-      createdAt: m.createdAt,
-      label: m.sender === 'agent' ? 'Agent' : (m.sender === 'slack' ? 'Slack' : 'You'),
-      preview: truncate(m.text, 140) || '(no text)',
-      raw: m,
-    };
-  });
-  const fromToolCalls = (props.toolCalls || []).map(tc => ({
-    id: `t-${tc.id}`,
-    lane: 'tool',
-    laneLabel: 'TOOL',
-    createdAt: tc.createdAt,
-    label: tc.toolName,
-    preview: truncate(`${tc.toolName} ${tc.inputPreview || tc.description || ''}`, 140),
-    raw: tc,
-  }));
-  return [...fromMessages, ...fromToolCalls].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-});
 
 const query = ref('');
-const filteredItems = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  if (!q) return items.value;
-  return items.value.filter(it =>
-    it.label?.toLowerCase().includes(q) ||
-    it.preview?.toLowerCase().includes(q) ||
-    it.raw?.description?.toLowerCase().includes(q)
-  );
+const filteredItems = computed(() =>
+  filterTrajectory(items.value, { lane: laneFilter.value, query: query.value })
+);
+
+const emptyListMessage = computed(() => {
+  if (items.value.length === 0) return 'No activity recorded yet.';
+  if (query.value.trim()) return 'No matches for this search.';
+  return 'Nothing in this category.';
 });
 
 const selectedId = ref(null);
@@ -246,8 +201,8 @@ const detailTabs = computed(() => {
     : [{ key: 'summary', label: 'Summary' }, { key: 'content', label: 'Content' }];
 });
 
-watch(selectedItem, () => {
-  activeTab.value = 'summary';
+watch(selectedItem, (item) => {
+  activeTab.value = defaultDetailTab(item);
 });
 
 const formattedPayload = computed(() => {
@@ -294,14 +249,15 @@ function laneDotClass(it) {
         return 'bg-emerald-500';
     }
   }
-  return it.lane === 'agent' ? 'bg-violet-500' : 'bg-sky-400';
+  if (it.lane === 'agent') return 'bg-violet-500';
+  return it.lane === 'thought' ? 'bg-teal-500' : 'bg-sky-400';
 }
 
 function laneBadgeClass(it) {
   if (it.lane === 'tool') return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10';
-  return it.lane === 'agent'
-    ? 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10'
-    : 'text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10';
+  if (it.lane === 'agent') return 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10';
+  if (it.lane === 'thought') return 'text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10';
+  return 'text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10';
 }
 
 function toolCallStatusStyle(status) {

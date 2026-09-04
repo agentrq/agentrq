@@ -161,33 +161,15 @@
       <!-- Messages -->
       <template v-for="m in displayMessages" :key="m.id">
 
-        <!-- Agent telemetry — the reasoning, plan and counters an ACP gateway
-             streams alongside the answer. Muted and indented under the agent's
-             avatar: this is how the answer came about, not the answer. -->
+        <!-- The agent's plan, indented under its avatar. The rest of the
+             telemetry is not in the conversation but about it, and is read in
+             the trajectory instead — see belongsInThread. -->
         <div v-if="isThreadTelemetry(m)" class="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-full md:max-w-[90%] w-full">
           <div class="w-8 shrink-0"></div>
           <div class="flex flex-col items-start min-w-0 w-full">
 
-            <!-- Reasoning: collapsed to a single line until asked for -->
-            <div v-if="agentTelemetryKind(m) === 'thought'"
-                 @click="toggleTelemetry(m.id)"
-                 class="w-full border border-dashed border-gray-200 dark:border-zinc-700 rounded-sm bg-gray-50/70 dark:bg-zinc-900/40 px-3 py-2 cursor-pointer select-none hover:border-gray-300 dark:hover:border-zinc-600 transition-colors">
-              <div class="flex items-center gap-2 min-w-0">
-                <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-                <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500 shrink-0">Thinking</span>
-                <span v-if="!expandedTelemetry.has(m.id)" class="text-[11px] italic text-gray-500 dark:text-zinc-400 truncate min-w-0">{{ thoughtPreview(m) }}</span>
-                <span class="flex-1"></span>
-                <span class="text-[8px] font-semibold text-gray-400 dark:text-zinc-600 shrink-0 hidden sm:block">{{ formatDateTime(m.createdAt) }}</span>
-                <svg class="w-3 h-3 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform duration-200" :class="expandedTelemetry.has(m.id) ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </div>
-              <div v-if="expandedTelemetry.has(m.id)"
-                   class="md-body mt-2 pt-2 border-t border-dashed border-gray-200 dark:border-zinc-700 text-[12px] italic text-gray-600 dark:text-zinc-400"
-                   v-html="renderMarkdown(telemetryText(m))"></div>
-            </div>
-
             <!-- Plan: one card per plan, rewritten in place as the agent works -->
-            <div v-else
-                 class="w-full border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm"
+            <div class="w-full border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm"
                  :class="planIsWithdrawn(m) ? 'opacity-60' : ''">
               <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 shrink-0 text-gray-500 dark:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
@@ -765,7 +747,6 @@ import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } f
 import { useEventBus } from '../useEventBus';
 import { renderMarkdown } from '../utils/markdown';
 import {
-  agentTelemetryKind,
   contextGauge,
   isThreadTelemetry,
   latestUsageMessage,
@@ -773,8 +754,8 @@ import {
   planIsWithdrawn,
   planProgress,
   telemetryText,
-  thoughtPreview,
 } from '../composables/useAgentTelemetry';
+import { belongsInThread } from '../composables/useTrajectory';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
@@ -836,15 +817,6 @@ function toggleMessageRender(id) {
   s.has(id) ? s.delete(id) : s.add(id);
   rawMessages.value = s;
 }
-// Reasoning blocks are collapsed by default: they explain the answer, they are
-// not the answer, and a turn can produce a great many of them.
-const expandedTelemetry = ref(new Set());
-function toggleTelemetry(id) {
-  const s = new Set(expandedTelemetry.value);
-  s.has(id) ? s.delete(id) : s.add(id);
-  expandedTelemetry.value = s;
-}
-
 const copiedMessages = ref(new Set());
 async function copyMessageText(id, text) {
   await navigator.clipboard.writeText(text || '');
@@ -964,11 +936,11 @@ const sortedMessages = computed(() => {
   return [...task.value.messages].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
 
-// The context counters are telemetry, but they belong on the composer's gauge
-// rather than in the thread — see isThreadTelemetry.
-const threadMessages = computed(() =>
-  sortedMessages.value.filter((m) => agentTelemetryKind(m) !== 'usage')
-);
+// What the conversation shows: what was said, and anything still waiting on a
+// human. The agent's reasoning and its resolved permission cards are how the
+// answer came about rather than part of it, and are read in the trajectory —
+// see belongsInThread.
+const threadMessages = computed(() => sortedMessages.value.filter(belongsInThread));
 
 // The session's context and cost as they stand, or null until an agent reports
 // them. Only a connected ACP gateway sends these.

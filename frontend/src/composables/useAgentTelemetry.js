@@ -35,18 +35,22 @@ export function isAgentTelemetry(message) {
 }
 
 /**
- * Telemetry that belongs in the message thread, as opposed to the composer.
+ * Telemetry that belongs in the message thread.
  *
- * Reasoning and plans are moments in a conversation and are read in sequence.
- * The context counters are not: they describe the session as a whole, and only
- * the current value means anything — so they live on the composer as a gauge
- * rather than as a message that scrolls away.
+ * Only the plan does. It is addressed to the human — this is what I am about
+ * to do — and the same card is revised as the agent works, so it reads as part
+ * of the conversation.
+ *
+ * The other two are about the conversation rather than in it. Reasoning is the
+ * agent thinking aloud, and belongs with the tools it ran, in the trajectory
+ * (see belongsInThread in useTrajectory). The context counters describe the
+ * session as a whole, and only the current value means anything — so they live
+ * on the composer as a gauge rather than as a message that scrolls away.
  *
  * @param {object} message
  */
 export function isThreadTelemetry(message) {
-  const kind = agentTelemetryKind(message);
-  return kind === 'thought' || kind === 'plan';
+  return agentTelemetryKind(message) === 'plan';
 }
 
 /**

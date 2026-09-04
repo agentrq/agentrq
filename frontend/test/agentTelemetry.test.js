@@ -225,15 +225,17 @@ describe('thoughtPreview', () => {
 })
 
 describe('isThreadTelemetry', () => {
-  // Reasoning and plans are moments in a conversation. The context counters
-  // describe the session as a whole, so they live on the composer's gauge and
-  // must not also scroll past in the thread.
-  it('keeps reasoning and plans in the thread', () => {
-    expect(isThreadTelemetry(message({ type: 'agent_thought' }))).toBe(true)
+  // A plan is addressed to the human and revised as the agent works, so it
+  // reads as part of the conversation.
+  it('keeps the plan in the thread', () => {
     expect(isThreadTelemetry(message({ type: 'agent_plan' }))).toBe(true)
   })
 
-  it('keeps the context counters out of it', () => {
+  // Reasoning is the agent thinking aloud and belongs with the tools it ran;
+  // the counters describe the session as a whole and live on the composer's
+  // gauge. Neither should scroll past in the thread.
+  it('keeps reasoning and the context counters out of it', () => {
+    expect(isThreadTelemetry(message({ type: 'agent_thought' }))).toBe(false)
     expect(isThreadTelemetry(message({ type: 'agent_usage' }))).toBe(false)
   })
 
