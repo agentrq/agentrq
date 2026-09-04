@@ -336,6 +336,24 @@ export async function listCachedTasks(db, workspaceId, KeyRange = globalThis.IDB
 }
 
 /**
+ * Every cached task, across every workspace, newest first.
+ *
+ * One scan rather than a read per workspace, because the caller that needs this
+ * is the global list on first paint — and at that moment it does not yet know
+ * which workspaces exist. Asking the server for that list first would put a
+ * round trip in front of the very thing the cache exists to avoid.
+ */
+export async function listAllCachedTasks(db) {
+  if (!db) return [];
+
+  return attempt(async () => {
+    const tx = db.transaction(STORE_TASKS, 'readonly');
+    const rows = await requestResult(tx.objectStore(STORE_TASKS).getAll());
+    return rows.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+  }, []);
+}
+
+/**
  * Forget everything cached for one workspace, leaving the others untouched.
  *
  * This is what the settings screen's Clear button runs, and what opting out of

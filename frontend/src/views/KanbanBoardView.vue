@@ -96,6 +96,7 @@ import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
+import { readCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 
 const route = useRoute();
 const router = useRouter();
@@ -156,6 +157,17 @@ function removeTask(id) {
   tasks.value = tasks.value.filter(x => String(x.id) !== String(id));
 }
 
+/**
+ * Paint the board from the local copy before the columns are fetched.
+ *
+ * Only into an empty board: the columns each replace their own tasks as they
+ * arrive, so this is a first frame rather than a source the fetches merge into.
+ */
+async function paintFromCache() {
+  const cached = await readCachedTasks(sharedCache(), workspaceId.value);
+  if (shouldPaintCache(tasks.value, cached)) tasks.value = cached;
+}
+
 async function loadColumn(colId, isLoadMore = false) {
   try {
     const col = columnById[colId];
@@ -179,6 +191,10 @@ async function loadColumn(colId, isLoadMore = false) {
 
 async function loadAll() {
   loading.value = true;
+  // Stale first: an empty board fills from the local copy, then each column
+  // replaces its own tasks as the server answers for it.
+  await paintFromCache();
+  if (tasks.value.length > 0) loading.value = false;
   await Promise.all(columns.map(c => loadColumn(c.id)));
   loading.value = false;
 }

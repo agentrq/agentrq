@@ -164,6 +164,7 @@ import { useEventBus } from '../useEventBus';
 import { useViewport } from '../composables/useViewport';
 import LoadingState from '../components/LoadingState.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
+import { readAllCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
@@ -326,10 +327,19 @@ const fetchInitial = async () => {
   offset.value = 0;
   hasMore.value = true;
   
+  // Stale first, then true — and before any request, including the one for the
+  // workspace list. Reading the cache needs no server round trip, so putting one
+  // in front of it would defeat the point.
+  const cached = await readAllCachedTasks(sharedCache(), { limit });
+  if (shouldPaintCache(tasks.value, cached)) {
+    tasks.value = cached;
+    loading.value = false;
+  }
+
   try {
     const wsRes = await fetchWorkspaces();
     workspaces.value = wsRes.workspaces;
-    
+
     await fetchNext();
   } catch (err) {
     console.error('Failed to fetch tasks:', err);
@@ -351,7 +361,10 @@ const fetchNext = async () => {
       hasMore.value = false;
     }
     
-    tasks.value = [...tasks.value, ...newTasks];
+    // The first page replaces whatever is on screen — which may be the cached
+    // rows painted a moment ago — and later pages append to it. Appending the
+    // first page would show every cached task twice.
+    tasks.value = offset.value === 0 ? newTasks : [...tasks.value, ...newTasks];
     offset.value += newTasks.length;
     // Write-through: the server just told us about these, so the local copy is
     // brought up to date with the same answer the view is rendering.

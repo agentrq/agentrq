@@ -11,6 +11,7 @@ import {
   databaseName,
   destroyCache,
   getCachedTask,
+  listAllCachedTasks,
   listCachedTasks,
   metaKey,
   openCache,
@@ -465,6 +466,21 @@ describe('a cache that fails mid-operation', () => {
 
     expect(await getCachedTask(db, 'ws1', '0iCYTqxKOqv')).toBeNull()
     expect(await putTask(db, makeTask())).toBe(false)
+  })
+})
+
+describe('listAllCachedTasks', () => {
+  it('returns every workspace in one scan, newest first', async () => {
+    const db = await open()
+    await putTask(db, makeTask({ id: 'old', updatedAt: '2026-01-01T00:00:00Z' }))
+    await putTask(db, makeTask({ id: 'new', workspaceId: 'ws2', updatedAt: '2026-09-01T00:00:00Z' }))
+
+    expect((await listAllCachedTasks(db)).map((r) => r.id)).toEqual(['new', 'old'])
+    db.close()
+  })
+
+  it('has nothing to scan without a database', async () => {
+    expect(await listAllCachedTasks(null)).toEqual([])
   })
 })
 
