@@ -775,6 +775,7 @@ import {
   telemetryText,
   thoughtPreview,
 } from '../composables/useAgentTelemetry';
+import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 
 const { notifyError, notifySuccess } = useToasts();
@@ -1341,7 +1342,9 @@ watch(events, (evts) => {
   
   if (['task.updated', 'task.created', 'reply.received', 'respond.ack', 'status.updated'].includes(last.type)) {
     if (last.payload && last.payload.id === taskId.value) {
-      task.value = last.payload;
+      // Merged, not assigned: a payload built without the task's tool calls
+      // would otherwise wipe the trajectory — see useTaskEvents.
+      task.value = mergeTaskUpdate(task.value, last.payload);
     }
   }
 }, { deep: true });

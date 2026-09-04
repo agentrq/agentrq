@@ -666,3 +666,48 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 		}
 	}
 }
+
+// A task's tool calls are what the trajectory's tool lane is drawn from, and
+// anything rebuilding a task without GetTask's preloads has to load them
+// through here. Scoped to the task and ordered oldest-first, the way the
+// trajectory reads them.
+func TestRepository_ListToolCalls(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	_ = db.AutoMigrate(&model.ToolCall{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	taskID := int64(42)
+	base := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+
+	db.Create(&model.ToolCall{ID: 2, TaskID: taskID, WorkspaceID: 10, ToolName: "Edit", CreatedAt: base.Add(time.Minute)})
+	db.Create(&model.ToolCall{ID: 1, TaskID: taskID, WorkspaceID: 10, ToolName: "Read", CreatedAt: base})
+	db.Create(&model.ToolCall{ID: 3, TaskID: 99, WorkspaceID: 10, ToolName: "Bash", CreatedAt: base})
+
+	calls, err := repo.ListToolCalls(ctx, taskID)
+	if err != nil {
+		t.Fatalf("ListToolCalls: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 tool calls for task %d, got %d", taskID, len(calls))
+	}
+	if calls[0].ToolName != "Read" || calls[1].ToolName != "Edit" {
+		t.Errorf("expected oldest-first order, got %s then %s", calls[0].ToolName, calls[1].ToolName)
+	}
+	for _, tc := range calls {
+		if tc.TaskID != taskID {
+			t.Errorf("tool call from another task leaked in: taskID %d", tc.TaskID)
+		}
+	}
+
+	empty, err := repo.ListToolCalls(ctx, 1234)
+	if err != nil {
+		t.Fatalf("ListToolCalls on a task with none: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("expected no tool calls, got %d", len(empty))
+	}
+}

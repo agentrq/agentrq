@@ -39,6 +39,7 @@ type Repository interface {
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
+	ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 
@@ -390,6 +391,17 @@ func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall) (mod
 		return model.ToolCall{}, err
 	}
 	return tc, nil
+}
+
+// ListToolCalls returns a task's tool calls in the order they were made.
+//
+// The task view carries them alongside the messages, so anything rebuilding a
+// task outside GetTask — which preloads both — has to load them itself, or it
+// publishes a task that looks like it never called a tool.
+func (r *repository) ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error) {
+	var tcs []model.ToolCall
+	err := r.conn(ctx).Where("task_id = ?", taskID).Order("created_at asc").Find(&tcs).Error
+	return tcs, err
 }
 
 func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error) {

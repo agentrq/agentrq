@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,9 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	"github.com/gofiber/fiber/v2"
+	"github.com/golang/mock/gomock"
 )
 
 const testJWTSecret = "test-secret-for-events-handler"
@@ -303,5 +307,78 @@ func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
 		if buf.String() != tc.body {
 			t.Errorf("GET %s: body %q, want %q", tc.path, buf.String(), tc.body)
 		}
+	}
+}
+
+// The SSE payload a client replaces its whole task with.
+//
+// The regression: it was built from SystemGetTask, which preloads nothing, and
+// only the messages were loaded back on — so every event carried a task that
+// had never called a tool, and the trajectory's tool lane emptied itself the
+// moment a new message arrived.
+func TestTaskEventPayloadCarriesTheTasksRelations(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{ID: 7, Title: "Ship it"}, nil)
+	repo.EXPECT().ListMessages(ctx, int64(7)).Return([]model.Message{{ID: 1}, {ID: 2}}, nil)
+	repo.EXPECT().ListToolCalls(ctx, int64(7)).Return([]model.ToolCall{{ID: 3, ToolName: "Read"}}, nil)
+
+	task, err := taskEventPayload(ctx, repo, 7)
+	if err != nil {
+		t.Fatalf("taskEventPayload: %v", err)
+	}
+	if len(task.Messages) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(task.Messages))
+	}
+	if len(task.ToolCalls) != 1 {
+		t.Fatalf("expected the task's tool calls, got %d", len(task.ToolCalls))
+	}
+	if task.ToolCalls[0].ToolName != "Read" {
+		t.Errorf("unexpected tool call %q", task.ToolCalls[0].ToolName)
+	}
+}
+
+// A relation that cannot be loaded is worth less than the event itself: the
+// status change still reaches the client.
+func TestTaskEventPayloadStillPublishesWhenARelationFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{ID: 7, Status: "completed"}, nil)
+	repo.EXPECT().ListMessages(ctx, int64(7)).Return(nil, errors.New("messages unavailable"))
+	repo.EXPECT().ListToolCalls(ctx, int64(7)).Return(nil, errors.New("tool calls unavailable"))
+
+	task, err := taskEventPayload(ctx, repo, 7)
+	if err != nil {
+		t.Fatalf("taskEventPayload: %v", err)
+	}
+	if task.Status != "completed" {
+		t.Errorf("expected the task itself, got status %q", task.Status)
+	}
+	if task.Messages != nil || task.ToolCalls != nil {
+		t.Errorf("expected the failed relations to be left empty")
+	}
+}
+
+// No task, no event: a payload for a task that cannot be read would be worse
+// than silence, since the client would replace what it has with it.
+func TestTaskEventPayloadFailsWhenTheTaskCannotBeRead(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock_repository.NewMockRepository(ctrl)
+	ctx := context.Background()
+
+	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{}, errors.New("gone"))
+
+	if _, err := taskEventPayload(ctx, repo, 7); err == nil {
+		t.Fatal("expected an error when the task cannot be read")
 	}
 }

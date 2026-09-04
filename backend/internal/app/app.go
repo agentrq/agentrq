@@ -721,13 +721,8 @@ func New(cfg Config) (*App, error) {
 				}
 
 				if taskID != 0 && eventType != "" {
-					t, err := repo.SystemGetTask(ctx, taskID)
+					t, err := taskEventPayload(ctx, repo, taskID)
 					if err == nil {
-						// Preload task messages
-						messages, err := repo.ListMessages(ctx, t.ID)
-						if err == nil {
-							t.Messages = messages
-						}
 						bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
 							Type:    eventType,
 							Payload: mapper.FromModelTaskToView(t),
@@ -914,6 +909,33 @@ func New(cfg Config) (*App, error) {
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
+}
+
+// taskEventPayload loads the task an SSE event is about, with the relations a
+// task view carries.
+//
+// A client replaces its whole task with this payload, so a relation missing
+// from it is a relation the client loses: publishing a task loaded without its
+// tool calls is what used to empty the trajectory's tool lane every time a new
+// message arrived. SystemGetTask preloads nothing — it is the system-scoped
+// lookup, used in plenty of places that want only the row — so the relations
+// are loaded here rather than widened for every caller.
+//
+// A relation that fails to load is left as it is instead of failing the
+// publish: an event that reports a status change late-but-complete is worth
+// more than no event at all.
+func taskEventPayload(ctx context.Context, repo base.Repository, taskID int64) (model.Task, error) {
+	t, err := repo.SystemGetTask(ctx, taskID)
+	if err != nil {
+		return model.Task{}, err
+	}
+	if messages, err := repo.ListMessages(ctx, t.ID); err == nil {
+		t.Messages = messages
+	}
+	if toolCalls, err := repo.ListToolCalls(ctx, t.ID); err == nil {
+		t.ToolCalls = toolCalls
+	}
+	return t, nil
 }
 
 // namesAFile reports whether a request path names a file rather than a page.
