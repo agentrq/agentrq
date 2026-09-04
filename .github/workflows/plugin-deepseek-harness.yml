@@ -11,7 +11,8 @@ on:
     paths:
       - 'plugins/deepseek-harness/**'
       - '.github/workflows/plugin-deepseek-harness.yml'
-  # Manual re-run, for a publish that failed after the merge landed.
+  # Manual re-run, for a publish that failed after the merge landed. Run it
+  # against main: the publish job checks the ref, not the event.
   workflow_dispatch:
 
 env:
@@ -55,7 +56,12 @@ jobs:
   publish:
     name: Publish to npm
     needs: check
-    if: github.event_name != 'pull_request'
+    # main, not "anything that is not a pull request". A manual run carries the
+    # ref it was launched from, so the looser test let a dispatch from an
+    # unmerged branch publish that branch's version to npm — and npm has no
+    # undo: the version is taken from that moment on. Dispatching against main
+    # still republishes, which is what the trigger exists for.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
