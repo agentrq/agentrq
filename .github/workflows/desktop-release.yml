@@ -32,6 +32,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The tag-is-on-main check below walks history, which a shallow
+          # checkout does not have.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -44,6 +48,22 @@ jobs:
         # version inside a release named for another, and offer users an
         # "update" to the build they already have.
         run: node scripts/check-versions.mjs
+
+      # A tag is just a pointer, and it can be pushed from any commit — a
+      # branch that is still in review, or one that was never opened as a pull
+      # request at all. Shipping that means the release, the auto-update feed
+      # and main all disagree about what the app is. The check is here rather
+      # than in the build matrix so it fails in seconds, before a draft exists
+      # or a 20-minute build starts.
+      - name: Check the tagged commit is on main
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --no-tags --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_REF#refs/tags/} points at a commit that is not on main. Merge it first, then tag the merge."
+            exit 1
+          fi
+          echo "tagged commit is on main"
 
       # Create the draft up front so nothing downstream ever has to.
       #
@@ -156,11 +176,22 @@ jobs:
             unset CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
           fi
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          # A tag is the only thing that publishes. Asking "is this a pull
+          # request?" instead let a manual run from any branch reach the
+          # `always` path: electron-builder finds no release for the version in
+          # package.json, creates one itself, and uploads installers built from
+          # unmerged code under a tag that does not exist yet. Worse, the draft
+          # it leaves behind is then adopted by the real tag build — which
+          # deliberately reuses an existing release for its tag — mixing
+          # artifacts from two different trees into one release.
+          #
+          # Dispatching the workflow against a tag still publishes, which is
+          # the escape hatch for a release that failed halfway.
+          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            npx electron-builder --publish always
+          else
             # Prove it packages; publish nothing.
             npx electron-builder --publish never
-          else
-            npx electron-builder --publish always
           fi
 
       # Kept for a tag build too: if publishing ever fails, the installers are
