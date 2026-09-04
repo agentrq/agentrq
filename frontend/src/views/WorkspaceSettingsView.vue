@@ -107,7 +107,8 @@
                 <div v-if="activeTab === 'setup'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div class="flex gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4">
                     <button type="button" @click="activeConnectionTab = 'claude'" :class="activeConnectionTab === 'claude' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Claude</button>
-                    <button type="button" @click="activeConnectionTab = 'gemini'" :class="activeConnectionTab === 'gemini' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Gemini / ACP</button>
+                    <button type="button" @click="activeConnectionTab = 'acp'" :class="activeConnectionTab === 'acp' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">ACP</button>
+                    <button type="button" @click="activeConnectionTab = 'antigravity'" :class="activeConnectionTab === 'antigravity' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Antigravity</button>
                     <button type="button" @click="activeConnectionTab = 'codex'" :class="activeConnectionTab === 'codex' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Codex</button>
                     <button type="button" @click="activeConnectionTab = 'deepseek'" :class="activeConnectionTab === 'deepseek' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">DeepSeek Harness</button>
                   </div>
@@ -202,7 +203,7 @@
                   <section class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      {{ activeConnectionTab === 'claude' ? 'Start Command' : (activeConnectionTab === 'codex' ? 'Codex Gateway Setup' : (activeConnectionTab === 'deepseek' ? 'Harness Plugin Setup' : 'ACP Gateway Setup')) }}
+                      {{ setupCardTitle }}
                     </h3>
                     
                     <div v-if="activeConnectionTab === 'claude'" class="space-y-3 min-w-0">
@@ -262,18 +263,80 @@
                       <p v-else class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">A profile serves one workspace, so these use the profile <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ dshProfile }}</code>. Repeat from each workspace's Settings page to work several at once — each profile carries its own URL, so nothing to re-export when you switch.</p>
                     </div>
 
-                    <div v-else class="space-y-4 min-w-0">
+                    <div v-else-if="activeConnectionTab === 'antigravity'" class="space-y-4 min-w-0">
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Antigravity will not open a session until it has been logged in to, so that comes first. Run both from this workspace's directory — the one holding the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">.mcp.json</code> above.</p>
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">Start the bridge — npx fetches the latest version each run, so there's nothing to install or upgrade separately:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. Log in. The first run downloads the agent, then hands you its login — pick a method when asked:</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npx @agentrq/acp-gateway@latest -- gemini --acp</code>
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ antigravityLoginCommand }}</code>
                           </div>
-                          <button type="button" @click="copyToClipboard('npx @agentrq/acp-gateway@latest -- gemini --acp', 'gatewayStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                          <button type="button" @click="copyToClipboard(antigravityLoginCommand, 'antigravityLogin')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.antigravityLogin ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.antigravityLogin ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge. Tasks assigned to this workspace's agent arrive from here:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ antigravityStartCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(antigravityStartCommand, 'antigravityStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.antigravityStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.antigravityStart ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium"><code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--allow-unverified-agent</code> is on both because the registry publishes no checksum for Antigravity, and the gateway will not install a download it cannot verify without being told to. Only the first run fetches it. Sign out again with <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--logout</code> in place of <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--login</code>.</p>
+                    </div>
+
+                    <div v-else class="space-y-4 min-w-0">
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Run these from this workspace's directory — the one holding the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">.mcp.json</code> above. npx fetches the gateway each run, so there is nothing to install.</p>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. See which agents the registry publishes. The name on the left is what <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--agent</code> takes:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ acpListAgentsCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(acpListAgentsCommand, 'gatewayList')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayList ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.gatewayList ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Log in, if that agent wants one. It asks which method; an agent needing no login just says so:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ acpLoginCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(acpLoginCommand, 'gatewayLogin')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayLogin ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.gatewayLogin ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">3. Start the bridge. Tasks assigned to this workspace's agent arrive from here:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ acpStartCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(acpStartCommand, 'gatewayStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
                             {{ copiedState.gatewayStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
                       </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">Already have an agent installed? Pass its own command after <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--</code> and nothing is downloaded:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ acpInstalledAgentCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(acpInstalledAgentCommand, 'gatewayInstalled')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.gatewayInstalled ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.gatewayInstalled ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Downloads are checked against the registry's checksum before they run. Google Antigravity publishes none and needs a login first, so it has a tab of its own.</p>
                     </div>
                   </section>
                 </div>
@@ -778,6 +841,11 @@ const copiedState = ref({
   permissions: false,
   command: false,
   gatewayStart: false,
+  gatewayList: false,
+  gatewayLogin: false,
+  gatewayInstalled: false,
+  antigravityLogin: false,
+  antigravityStart: false,
   codexConfig: false,
   codexStart: false,
   dshEnv: false,
@@ -804,6 +872,37 @@ const authenticatedUrl = computed(() => {
 
 const serverName = computed(() => `agentrq-${workspaceId.value}`);
 const startCommand = computed(() => `claude --dangerously-load-development-channels server:${serverName.value} --name ${workspace.value?.name}`);
+
+// The ACP gateway bridges any agent that speaks the Agent Client Protocol, so
+// the example names one rather than implying the bridge belongs to it.
+// Antigravity is published to the ACP registry as a binary with no checksum,
+// and the gateway refuses to install an unverifiable download unless told to —
+// so the flag is part of the command rather than a footnote someone hits as an
+// error.
+const ACP_GATEWAY = 'npx @agentrq/acp-gateway@latest';
+const acpStartCommand = `${ACP_GATEWAY} --agent harn`;
+const acpListAgentsCommand = `${ACP_GATEWAY} --list-agents`;
+const acpLoginCommand = `${ACP_GATEWAY} --login --agent harn`;
+const acpInstalledAgentCommand = `${ACP_GATEWAY} -- harn serve acp`;
+
+// Antigravity gets its own tab because it needs two things the other ACP
+// agents do not: a login before it will open a session, and permission to
+// install a binary the registry publishes no checksum for. Both flags travel
+// on every command, since leaving either off is an error rather than a
+// different behaviour.
+const ANTIGRAVITY_AGENT = '--agent antigravity-acp --allow-unverified-agent';
+const antigravityLoginCommand = `${ACP_GATEWAY} --login ${ANTIGRAVITY_AGENT}`;
+const antigravityStartCommand = `${ACP_GATEWAY} ${ANTIGRAVITY_AGENT}`;
+
+// The card's heading names what is being set up rather than describing it
+// generically, so the tab and the panel below it agree.
+const SETUP_CARD_TITLES = {
+  claude: 'Start Command',
+  codex: 'Codex Gateway Setup',
+  deepseek: 'Harness Plugin Setup',
+  antigravity: 'Antigravity Setup',
+};
+const setupCardTitle = computed(() => SETUP_CARD_TITLES[activeConnectionTab.value] ?? 'ACP Gateway Setup');
 
 const mcpConfig = computed(() => ({
   mcpServers: {
