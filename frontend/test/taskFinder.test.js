@@ -14,16 +14,30 @@ describe('looksLikeTaskId', () => {
     expect(looksLikeTaskId('0iCWbYTwIiH')).toBe(true)
   })
 
+  it('holds to exactly eleven characters', () => {
+    // monoflake zero-pads to a fixed width, so a real ID is never shorter or
+    // longer. Accepting a range would send lookups for strings that cannot be
+    // IDs — every ten- or twelve-character word the user typed.
+    expect('0iCWbYTwIiH').toHaveLength(11)
+    expect(looksLikeTaskId('0iCWbYTwIi')).toBe(false)
+    expect(looksLikeTaskId('0iCWbYTwIiHx')).toBe(false)
+    expect(looksLikeTaskId('00000000001')).toBe(true)
+  })
+
   it('rejects anything that cannot be one', () => {
     expect(looksLikeTaskId('short')).toBe(false)
     expect(looksLikeTaskId('a task about billing')).toBe(false)
     expect(looksLikeTaskId('0iCWbYTwIiH-extra-long-string')).toBe(false)
+    // Eleven characters, but not all base62.
+    expect(looksLikeTaskId('0iCWb-YTwIi')).toBe(false)
     expect(looksLikeTaskId('')).toBe(false)
     expect(looksLikeTaskId(null)).toBe(false)
     expect(looksLikeTaskId(undefined)).toBe(false)
   })
 
   it('ignores the whitespace around a pasted ID', () => {
+    // Copying an ID out of a commit message or a chat usually brings a space
+    // with it, and that is the main way this box gets an ID at all.
     expect(looksLikeTaskId('  0iCWbYTwIiH  ')).toBe(true)
   })
 })

@@ -15,17 +15,31 @@
  *
  * The second lookup is deliberately *not* run while typing: it is one request
  * per workspace, so it waits for the user to commit to the query.
+ *
+ * Each of those requests is `GET /workspaces/:id/tasks/:taskID`, which the
+ * backend answers with `WHERE id = ? AND workspace_id = ? AND user_id = ?`. All
+ * three columns are in the query, so a task is only ever returned to the user it
+ * belongs to — there is no lookup by task ID alone anywhere in this path.
  */
 
-/** Task IDs are base62 monoflakes — 11 characters today, with room to grow. */
-const TASK_ID = /^[0-9A-Za-z]{8,16}$/;
+/**
+ * Task IDs are monoflake base62: **always exactly 11 characters**, because
+ * `monoflake.ID.String()` zero-pads to a fixed width rather than trimming
+ * leading zeros. The length is a property of the encoding, not of how large the
+ * IDs happen to have grown, so it does not drift.
+ */
+const TASK_ID = /^[0-9A-Za-z]{11}$/;
 
 /**
  * Whether `query` could be a task ID.
  *
- * Only a shape test. A real title can pass it ("deadline" is eight letters),
- * which is harmless: this only ever decides whether to *also* try an ID lookup
- * after the filter has already come up empty.
+ * This is the gate on every backend lookup: a query that cannot be an ID never
+ * becomes a request. Without it, typing an ordinary word would fan a round trip
+ * out to every workspace for something that could not possibly be found.
+ *
+ * A shape test is all it can be — an eleven-letter word ("performance") still
+ * passes — but that only costs one lookup that comes back empty, and it is
+ * checked *after* the filter has already failed to match anything.
  *
  * @param {string} query
  */
