@@ -48,6 +48,7 @@ export default defineConfig({
         'src/composables/useAuthedFetch.js',
         'src/composables/useKeyboardShortcuts.js',
         'src/composables/useTaskFinder.js',
+        'src/composables/useLocalCache.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {
