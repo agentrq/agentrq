@@ -95,6 +95,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
+import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 
 const route = useRoute();
 const router = useRouter();
@@ -160,6 +161,9 @@ async function loadColumn(colId, isLoadMore = false) {
     const col = columnById[colId];
     const offset = isLoadMore ? offsets.value[colId] : 0;
     const res = await fetchTasks(workspaceId.value, { status: col.statuses.join(','), limit: PAGE_SIZE, offset });
+    // Write-through, same as the other lists: what the server just returned is
+    // what the local copy should hold.
+    cacheTasks(sharedCache(), res.tasks || []);
     const fetched = res.tasks || [];
     if (!isLoadMore) {
       // Drop any locally-known tasks for this column that no longer exist server-side.

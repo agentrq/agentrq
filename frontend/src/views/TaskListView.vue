@@ -163,6 +163,7 @@ import { buildTaskGroups, pendingOnHuman } from '../composables/useTaskGroups';
 import { useEventBus } from '../useEventBus';
 import { useViewport } from '../composables/useViewport';
 import LoadingState from '../components/LoadingState.vue';
+import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 
 const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
@@ -352,6 +353,9 @@ const fetchNext = async () => {
     
     tasks.value = [...tasks.value, ...newTasks];
     offset.value += newTasks.length;
+    // Write-through: the server just told us about these, so the local copy is
+    // brought up to date with the same answer the view is rendering.
+    cacheTasks(sharedCache(), newTasks);
   } catch (err) {
     console.error('Failed to load more tasks:', err);
   }

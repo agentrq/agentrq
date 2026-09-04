@@ -765,6 +765,7 @@ import {
   usesCommandKey,
 } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
+import { cacheTask, cacheTaskUpdate, sharedCache } from '../composables/useCachedTasks';
 
 const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
@@ -1034,6 +1035,9 @@ async function load() {
     workspace.value = pRes.workspace;
     const tRes = await getTask(workspaceId.value, taskId.value);
     task.value = tRes.task;
+    // The server is the source of truth for an open task, so the cache is
+    // brought in line with what it just said rather than the other way round.
+    cacheTask(sharedCache(), tRes.task);
     connect();
     nextTick(() => {
       scrollToBottom();
@@ -1339,8 +1343,9 @@ watch(events, (evts) => {
   if (['task.updated', 'task.created', 'reply.received', 'respond.ack', 'status.updated'].includes(last.type)) {
     if (last.payload && last.payload.id === taskId.value) {
       // Merged, not assigned: a payload built without the task's tool calls
-      // would otherwise wipe the trajectory — see useTaskEvents.
-      task.value = mergeTaskUpdate(task.value, last.payload);
+      // would otherwise wipe the trajectory — see useTaskEvents. The cache gets
+      // the merge for the same reason, never the raw payload.
+      task.value = cacheTaskUpdate(sharedCache(), task.value, last.payload);
     }
   }
 }, { deep: true });
