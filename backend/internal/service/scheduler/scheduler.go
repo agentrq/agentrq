@@ -2,7 +2,6 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/mustafaturan/monoflake"
@@ -97,25 +97,30 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		return
 	}
 
+	// The ID is claimed before the body is built so the instruction can tell the
+	// agent which task it is publishing for.
+	taskID := s.idgen.NextID()
+
 	body := parent.Body
 	// Keep the event link on spawned runs. The publish instruction must live in
 	// the body because scheduled children reach the agent via getTask/poller
 	// notifications, which have no event-aware path of their own.
 	if parent.EventID != 0 {
-		if ev, err := s.repo.GetEvent(ctx, parent.EventID, parent.UserID); err == nil {
-			instruction := fmt.Sprintf("\n\n[On completion: call publishEvent(%q, \"<your output payload>\")]", ev.Name)
-			if ev.PayloadGuidelines != "" {
-				instruction += fmt.Sprintf("\nPayload guidelines: %s", ev.PayloadGuidelines)
-			}
-			body += instruction
+		if ev, evErr := s.repo.GetEvent(ctx, parent.EventID, parent.UserID); evErr == nil {
+			body += eventinstruction.Build(eventinstruction.Params{
+				EventName:         ev.Name,
+				TaskID:            monoflake.ID(taskID).String(),
+				PayloadGuidelines: ev.PayloadGuidelines,
+			})
 		} else {
-			zlog.Warn().Err(err).Int64("cron_id", parent.ID).Int64("event_id", parent.EventID).Msg("scheduler: linked event not found")
+			zlog.Warn().Err(evErr).Int64("cron_id", parent.ID).Int64("event_id", parent.EventID).
+				Msg("scheduler: linked event not found, on-completion publishEvent instruction omitted")
 		}
 	}
 
 	now := time.Now()
 	child := model.Task{
-		ID:               s.idgen.NextID(),
+		ID:               taskID,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		UserID:           parent.UserID,
@@ -129,6 +134,18 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		ParentID:         parent.ID,
 		AllowAllCommands: parent.AllowAllCommands,
 		EventID:          parent.EventID,
+		// The template carries the whole completion choice, not just the event:
+		// WorkflowID is what routes the publish through that workflow's steps
+		// instead of the global triggers, and CompletionTriggerType is what lets
+		// the UI say "workflow X" rather than mislabelling it as a bare event.
+		// Copying EventID alone leaves a scheduled workflow run fanning out to
+		// the wrong subscribers.
+		//
+		// WorkflowDepth stays at zero deliberately: each scheduled run begins a
+		// fresh run of the workflow, so it is hop zero, not a continuation of
+		// whatever spawned the template.
+		WorkflowID:            parent.WorkflowID,
+		CompletionTriggerType: parent.CompletionTriggerType,
 	}
 
 	created, err := s.repo.CreateTask(ctx, child)
