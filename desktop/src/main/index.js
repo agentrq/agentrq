@@ -15,11 +15,13 @@ import {
   shell,
 } from 'electron'
 import { readFile, writeFile, access } from 'node:fs/promises'
+import * as fsPromises from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
+import { createAttachmentStore } from './attachment-store.js'
 import { activeProfile, canDiscardActiveProfile, partitionFor } from './profiles.js'
 import { fetchProfileIdentity } from './identity.js'
 import {
@@ -138,6 +140,29 @@ const handledSessions = new WeakSet()
  * gets its own protocol registry, so a window opened on one without this would
  * fail to load the app at all.
  */
+/**
+ * The attachment store for a partition, created once and reused.
+ *
+ * Kept under `sessionData`, which is where Electron already writes this
+ * partition's IndexedDB, Cache Storage and disk cache — so everything the
+ * session owns stays in one place. The partition is in the path as well, so two
+ * profiles cannot collide even though they already have separate sessions.
+ */
+const attachmentStores = new Map()
+
+function attachmentStoreFor(partition) {
+  if (!attachmentStores.has(partition)) {
+    attachmentStores.set(
+      partition,
+      createAttachmentStore({
+        dir: join(app.getPath('sessionData'), 'attachments', encodeURIComponent(partition)),
+        fs: fsPromises,
+      })
+    )
+  }
+  return attachmentStores.get(partition)
+}
+
 function sessionFor(partition) {
   const ses = session.fromPartition(partition)
   if (!handledSessions.has(ses)) {
@@ -151,6 +176,9 @@ function sessionFor(partition) {
         fileExists,
         readFile: (pathname) => readFile(join(RENDERER_ROOT, pathname)),
         devServerUrl: process.env.AGENTRQ_RENDERER_DEV_URL ?? '',
+        // The web build caches attachments in a service worker. This build has
+        // none, so the bytes are kept on disk and served from here instead.
+        attachments: attachmentStoreFor(partition),
       })
     )
     handledSessions.add(ses)
@@ -692,6 +720,13 @@ function registerIpc(getWindow) {
 
   // Profiles. Only names and servers cross the bridge — never a session, a
   // partition or a cookie.
+  ipcMain.handle('agentrq:attachments:forgetWorkspace', (_event, workspaceId) =>
+    attachmentStoreFor(currentPartition()).forgetWorkspace(workspaceId)
+  )
+  ipcMain.handle('agentrq:attachments:forgetAll', () =>
+    attachmentStoreFor(currentPartition()).forgetAll()
+  )
+
   ipcMain.handle('agentrq:profiles:get', async () => {
     await refreshProfileIdentities()
     return profilesPayload()

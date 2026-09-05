@@ -116,6 +116,7 @@ export async function clearWorkspaceData(db, workspaceId, options = {}) {
   // reach. Told, not awaited: a clear that the worker has not finished is still
   // a clear, and on a build with no worker there is nothing there to clear.
   tellWorkerToForget(workspaceId, worker);
+  tellShellToForget(workspaceId, options.bridge);
 
   const before = await estimateUsage(manager);
   const cleared = await clearWorkspace(db, workspaceId, KeyRange);
@@ -145,6 +146,35 @@ export function tellWorkerToForget(workspaceId, worker = globalThis.navigator?.s
 }
 
 /**
+ * The same job on the desktop build, which has no worker to ask.
+ *
+ * There the bytes are files the main process owns, so the renderer goes through
+ * the bridge instead. Both paths are attempted rather than branched on the
+ * platform: exactly one of them exists in any given build, and asking the one
+ * that is absent is already a no-op.
+ */
+export async function tellShellToForget(workspaceId, bridge = globalThis.window?.agentrq) {
+  if (!workspaceId || !bridge?.attachments?.forgetWorkspace) return false;
+  try {
+    await bridge.attachments.forgetWorkspace(workspaceId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Everything the shell holds for this profile, for signing out. */
+export async function tellShellToForgetAll(bridge = globalThis.window?.agentrq) {
+  if (!bridge?.attachments?.forgetAll) return false;
+  try {
+    await bridge.attachments.forgetAll();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Everything this device holds for a user, gone.
  *
  * Signing out runs this, and it is deliberately unconditional. A browser that
@@ -153,8 +183,11 @@ export function tellWorkerToForget(workspaceId, worker = globalThis.navigator?.s
  * does not consult the per-workspace setting, and does not care whether the
  * delete was blocked by another tab. The connection is dropped either way.
  */
-export async function forgetEverything({ userId, factory = globalThis.indexedDB } = {}) {
+export async function forgetEverything({ userId, factory = globalThis.indexedDB, bridge } = {}) {
   resetSharedCache();
+  // The desktop build keeps attachment bytes outside the database, so signing
+  // out has to reach those too. A build without the bridge simply has none.
+  await tellShellToForgetAll(bridge);
   if (!userId) return false;
   return destroyCache({ userId, factory });
 }
