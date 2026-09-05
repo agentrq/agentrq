@@ -6,14 +6,16 @@
 
     <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0">
       <div v-for="col in columns" :key="col.id"
-           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl border bg-gray-50/50 dark:bg-zinc-900/40 transition-colors"
-           :class="dragOverColId === col.id ? 'border-gray-900/40 dark:border-white/40' : 'border-gray-100 dark:border-zinc-800'"
+           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl border transition-colors"
+           :class="dragOverColId === col.id
+             ? 'border-gray-900/40 dark:border-white/40 bg-gray-50/70 dark:bg-zinc-900/40'
+             : 'border-transparent bg-transparent'"
            @dragover="onColumnDragOver($event, col.id)"
            @drop="onDrop($event, col.id)">
 
         <!-- Column header -->
         <div class="flex items-center gap-1.5 px-2.5 md:px-3 py-2.5 shrink-0 min-w-0">
-          <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="col.dot"></div>
+          <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="toneDotClass(col.dropStatus)"></div>
           <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-wider md:tracking-widest truncate">{{ col.title }}</h3>
           <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm shrink-0 ml-auto">{{ buckets[col.id].length }}</span>
         </div>
@@ -30,18 +32,26 @@
                  @dragover="onCardDragOver($event, col.id, t)"
                  @click="openTask(t)"
                  @contextmenu.prevent.stop="openContextMenu($event, t)"
+                 :title="`${toneLabel(t)} · ${t.assignee === 'agent' ? 'Agent' : 'Human'}${t.updatedAt ? ' · ' + timeAgo(t.updatedAt) : ''}`"
                  :class="[
-                   'group relative flex items-center gap-2 px-2.5 py-2 rounded-lg border bg-white dark:bg-zinc-900 shadow-sm transition-all',
+                   'group relative flex items-center gap-2 pl-3 pr-2 py-3 rounded-lg border border-l-[3px] shadow-sm transition-colors',
+                   toneEdgeClass(t),
+                   toneSurfaceClass(t),
                    !isArchived ? 'cursor-grab active:cursor-grabbing hover:border-gray-200 dark:hover:border-zinc-700' : 'cursor-pointer',
                    draggingId === t.id ? 'opacity-40' : 'border-gray-100 dark:border-zinc-800'
                  ]">
-              <!-- Assignee icon — same bot/person icons used in the chat view -->
-              <svg v-if="t.assignee === 'agent'" title="Agent" class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
-              <svg v-else title="Human" class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
 
-              <span class="flex-1 min-w-0 text-[12px] md:text-[13px] leading-snug truncate font-medium"
-                    :class="['completed','rejected'].includes(t.status) ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white'">
+              <span class="flex-1 min-w-0 truncate text-[12px] md:text-[13px] leading-snug font-medium"
+                    :class="[toneTitleClass(t), 'group-hover:text-black dark:group-hover:text-white']">
                 {{ t.title }}
+              </span>
+
+              <!-- Who it is on. The reference marks each card with a shape; the
+                   app already has an icon for this, and an icon says which
+                   without anyone having to learn what a shape means. -->
+              <span class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" :class="toneChipClass(t)">
+                <svg v-if="t.assignee === 'agent'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+                <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
               </span>
             </div>
           </template>
@@ -96,6 +106,15 @@ import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
+import {
+  timeAgo,
+  toneChipClass,
+  toneDotClass,
+  toneEdgeClass,
+  toneLabel,
+  toneSurfaceClass,
+  toneTitleClass,
+} from '../composables/useTaskCard';
 import { readCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
 
 const route = useRoute();
@@ -113,10 +132,13 @@ const isArchived = computed(() => !!workspaceStore.workspaces.find(w => w.id == 
 // 'cron' tasks (scheduled templates) are intentionally excluded — their status
 // is immutable and they are not part of the kanban workflow.
 const columns = [
-  { id: 'notstarted', title: 'Not Started', statuses: ['notstarted'], dropStatus: 'notstarted', dot: 'bg-gray-400 dark:bg-zinc-500' },
-  { id: 'ongoing', title: 'Ongoing', statuses: ['ongoing'], dropStatus: 'ongoing', dot: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' },
-  { id: 'blocked', title: 'Blocked', statuses: ['blocked'], dropStatus: 'blocked', dot: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]' },
-  { id: 'done', title: 'Done', statuses: ['completed', 'rejected'], dropStatus: 'completed', dot: 'bg-green-500' },
+  // The heading dot is derived from the same rule the cards use rather than
+  // written out again, so a column and the cards under it can never disagree
+  // about what their status looks like.
+  { id: 'notstarted', title: 'Not Started', statuses: ['notstarted'], dropStatus: 'notstarted' },
+  { id: 'ongoing', title: 'Ongoing', statuses: ['ongoing'], dropStatus: 'ongoing' },
+  { id: 'blocked', title: 'Blocked', statuses: ['blocked'], dropStatus: 'blocked' },
+  { id: 'done', title: 'Done', statuses: ['completed', 'rejected'], dropStatus: 'completed' },
 ];
 
 const columnById = Object.fromEntries(columns.map(c => [c.id, c]));
