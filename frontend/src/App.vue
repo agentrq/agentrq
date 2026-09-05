@@ -395,6 +395,7 @@ import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import Toast from './components/Toast.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
+import { forgetEverything } from './composables/useCacheStorage'
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
 import {
@@ -593,6 +594,10 @@ const hideTooltip = () => {
 
 async function logout() {
   await unsubscribePush()
+  // Unconditional, and before the request: a browser several people use must
+  // not leave one person's task titles readable by the next, and that has to
+  // hold even if the sign-out call itself fails.
+  await forgetEverything({ userId: user.value?.id })
   await fetch(`${API_BASE_URL}/auth/logout`, { method: 'POST' })
   router.push('/login')
 }
