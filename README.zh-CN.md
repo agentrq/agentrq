@@ -4,9 +4,6 @@
   <a href="README.md">English</a>
   <br />
   <br />
-  <a href="https://www.youtube.com/watch?v=GBAoSpuCzrU">Watch on YouTube in HD</a>
-  <br />
-  <br />
   <a href="https://discord.gg/xFSMaEA2b2">
     <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
   </a>
