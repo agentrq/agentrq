@@ -52,6 +52,7 @@ export default defineConfig({
         'src/composables/useTaskIndex.js',
         'src/composables/useCachedTasks.js',
         'src/composables/useCacheStorage.js',
+        'src/composables/useCachedReads.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

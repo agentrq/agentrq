@@ -541,6 +541,16 @@
     <!-- Reply Box -->
     <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 sm:px-4 py-2 sm:py-4 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
 
+      <!-- Offline. The composer stays visible but inert: a box that silently
+           accepts a reply with nowhere to send it is worse than one that says
+           why it cannot. -->
+      <div v-if="offline" class="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20">
+        <svg class="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m-12.728 0a9 9 0 010-12.728m9.9 9.9a5 5 0 010-7.072m-7.072 0a5 5 0 010 7.072M13 12a1 1 0 11-2 0 1 1 0 012 0z" />
+        </svg>
+        <p class="text-[11px] font-medium text-amber-900 dark:text-amber-200 leading-relaxed">{{ OFFLINE_NOTICE }}</p>
+      </div>
+
       <!-- Attachment previews -->
       <div v-if="replyAttachments.length > 0" class="flex flex-wrap gap-2 mb-3">
         <div v-for="(att, i) in replyAttachments" :key="i"
@@ -564,8 +574,8 @@
             @keydown.meta.enter="submitReply"
             @keydown.ctrl.enter="submitReply"
             rows="1"
-            :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-            :placeholder="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)'"
+            :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+            :placeholder="offline ? 'Offline — reconnect to reply' : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
             class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
           ></textarea>
 
@@ -766,10 +776,12 @@ import {
 } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
 import { cacheTask, cacheTaskUpdate, sharedCache } from '../composables/useCachedTasks';
+import { OFFLINE_NOTICE, readCachedTask, useOffline } from '../composables/useCachedReads';
 
 const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
 const platformStore = usePlatformStore();
+const { offline } = useOffline();
 const route = useRoute();
 const router = useRouter();
 const workspaceId = computed(() => route.params.id || route.params.workspaceId);
@@ -1030,13 +1042,21 @@ watch(() => !!pendingSend.value, (isPending) => {
 
 async function load() {
   try {
+    // The first frame, and only the first frame. Everything below replaces
+    // this; nothing merges into it.
+    readCachedTask(sharedCache(), workspaceId.value, taskId.value).then((cached) => {
+      if (cached && !task.value) task.value = cached;
+    });
+
     user.value = await fetchUser();
     const pRes = await getWorkspace(workspaceId.value);
     workspace.value = pRes.workspace;
     const tRes = await getTask(workspaceId.value, taskId.value);
+    // Assigned, not merged. The cached copy may have painted the first frame
+    // above, and the server's answer replaces it outright — a conversation is
+    // the one thing where showing something stale is worse than showing
+    // nothing, so nothing local survives this line.
     task.value = tRes.task;
-    // The server is the source of truth for an open task, so the cache is
-    // brought in line with what it just said rather than the other way round.
     cacheTask(sharedCache(), tRes.task);
     connect();
     nextTick(() => {
@@ -1235,6 +1255,9 @@ async function deliverReply(text, atts, target = null) {
 }
 
 async function submitReply() {
+  // The keyboard shortcuts reach this without touching the disabled textarea,
+  // so the guard lives here too rather than only in the markup.
+  if (offline.value) return;
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
   const text = replyText.value;
   const atts = [...replyAttachments.value];
