@@ -54,6 +54,7 @@ export default defineConfig({
         'src/composables/useCacheStorage.js',
         'src/composables/useCachedReads.js',
         'src/composables/useAttachmentCache.js',
+        'src/composables/useCacheRetention.js',
       ],
       reporter: ['text', 'lcov'],
       thresholds: {

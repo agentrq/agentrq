@@ -106,13 +106,19 @@ function attachmentsOf(task) {
  *
  * @param {object} task    a task as the API sends it
  * @param {string[]} [terms]
+ * @param {number} [now]   stamped as `cachedAt`; injectable for tests
  */
-export function toTaskRecord(task, terms = []) {
+export function toTaskRecord(task, terms = [], now = Date.now()) {
   const record = {
     id: task.id,
     workspaceId: task.workspaceId,
     attachmentCount: attachmentsOf(task).length,
     terms: plain(terms),
+    // When this device last had a reason to keep the record, which is what a
+    // retention limit is measured against. Deliberately not the server's
+    // `updatedAt`: that would expire a task the moment after someone opened an
+    // old one, which is the opposite of what a cache should do.
+    cachedAt: now,
   };
   for (const field of TASK_FIELDS) {
     if (task[field] !== undefined && task[field] !== null) record[field] = plain(task[field]);
@@ -380,6 +386,43 @@ export async function listAllCachedTasks(db) {
     const rows = await requestResult(tx.objectStore(STORE_TASKS).getAll());
     return rows.sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
   }, []);
+}
+
+/**
+ * Forget specific tasks, wherever they live.
+ *
+ * Takes whole records rather than keys because the caller has just read them to
+ * decide, and re-deriving the key from a record is one more place to get the
+ * key shape wrong.
+ *
+ * @param {Array<{workspaceId: string, id: string}>} records
+ * @param {typeof IDBKeyRange} [KeyRange]
+ * @returns {Promise<number>} how many were removed
+ */
+export async function deleteTasks(db, records, KeyRange = globalThis.IDBKeyRange) {
+  const list = Array.isArray(records) ? records : [];
+  if (!db || list.length === 0) return 0;
+
+  return attempt(async () => {
+    const tx = db.transaction([STORE_TASKS, STORE_THREADS, STORE_ATTACHMENTS], 'readwrite');
+    const tasks = tx.objectStore(STORE_TASKS);
+    const threads = tx.objectStore(STORE_THREADS);
+    const attachments = tx.objectStore(STORE_ATTACHMENTS);
+
+    for (const record of list) {
+      const key = [record.workspaceId, record.id];
+      tasks.delete(key);
+      threads.delete(key);
+      // The attachment key carries the attachment id as a third part, so this
+      // is a range over everything belonging to the task rather than one key.
+      attachments.delete(
+        KeyRange.bound([record.workspaceId, record.id], [record.workspaceId, record.id, []])
+      );
+    }
+
+    await transactionDone(tx);
+    return list.length;
+  }, 0);
 }
 
 /**

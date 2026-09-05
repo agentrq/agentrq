@@ -396,6 +396,7 @@ import { usePushNotifications } from './composables/usePushNotifications'
 import Toast from './components/Toast.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetEverything } from './composables/useCacheStorage'
+import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheRetention'
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
 import {
@@ -491,6 +492,26 @@ const workspaceStore = useWorkspaceStore()
 const workspaces = computed(() => workspaceStore.workspaces)
 
 const currentWorkspaceId = computed(() => route.params.id || route.params.workspaceId)
+
+/**
+ * Enforce each workspace's retention limit, at most once a day.
+ *
+ * Started once the cache is open and repeated on a timer, because a desktop app
+ * or a pinned tab can stay open for weeks and would otherwise sweep only at
+ * launch. The daily guard lives in the database, so the interval firing more
+ * often than that costs one cheap check.
+ *
+ * Deliberately not a background job: browsers do not reliably offer one, and
+ * the only cost of sweeping while the app is open is holding data slightly
+ * longer than asked.
+ */
+let sweepTimer = null
+function startRetentionSweep(db) {
+  if (!db || sweepTimer) return
+  const run = () => whenIdle(() => sweepIfDue(db))
+  run()
+  sweepTimer = setInterval(run, SWEEP_INTERVAL_MS)
+}
 
 // --- Keyboard shortcuts -----------------------------------------------------
 // The shell owns the ones that work anywhere. A view registers its own on top
@@ -613,7 +634,10 @@ const loadUser = async () => {
     // The database is named for the signed-in user, so it cannot be opened
     // before we know who that is. Failing to open one is not an error worth
     // showing: the app reads from the network either way.
-    if (user.value?.id) connectCache(user.value.id)
+    if (user.value?.id) {
+      const db = await connectCache(user.value.id)
+      startRetentionSweep(db)
+    }
   } catch (err) {
     console.error('Failed to fetch user:', err)
   }
@@ -632,6 +656,7 @@ const handleClickOutside = (e) => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
+  if (sweepTimer) clearInterval(sweepTimer)
 })
 
 watch(() => route.fullPath, (fullPath) => {

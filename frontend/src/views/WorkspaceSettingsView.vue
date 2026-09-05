@@ -127,6 +127,26 @@
                       </button>
                     </div>
 
+                    <!-- Retention. Only meaningful while something is being
+                         kept, so it follows the switch rather than sitting
+                         beside it. -->
+                    <div v-if="localCacheOn" class="pt-3 border-t border-gray-200 dark:border-zinc-700/60">
+                      <p class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest mb-2">Keep tasks for</p>
+                      <div class="flex flex-wrap gap-2">
+                        <button v-for="opt in retentionOptions" :key="opt.days" type="button"
+                                @click="changeRetention(opt.days)"
+                                class="px-3 py-1.5 rounded-sm border text-[10px] font-bold uppercase tracking-widest transition-all"
+                                :class="retentionDays === opt.days
+                                  ? 'bg-gray-900 dark:bg-white text-white dark:text-zinc-900 border-gray-900 dark:border-white'
+                                  : 'bg-white dark:bg-zinc-900 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-700 hover:border-gray-900 dark:hover:border-white'">
+                          {{ opt.label }}
+                        </button>
+                      </div>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-2 font-medium">
+                        Counted from the last time you opened a task, not from when it was written — so anything you keep coming back to stays.
+                      </p>
+                    </div>
+
                     <div class="flex items-center justify-between gap-4 pt-3 border-t border-gray-200 dark:border-zinc-700/60">
                       <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
                         <span v-if="localUsageLabel">This browser is storing <span class="font-bold text-gray-900 dark:text-zinc-100">{{ localUsageLabel }}</span> across all workspaces.</span>
@@ -729,6 +749,11 @@ import {
   requestPersistence,
   setCacheEnabled,
 } from '../composables/useCacheStorage';
+import {
+  RETENTION_OPTIONS,
+  getRetentionDays,
+  setRetentionDays,
+} from '../composables/useCacheRetention';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
@@ -1284,6 +1309,8 @@ function getShellPattern(tool) {
 // is the shape that gets sent to the server on save.
 
 const localCacheOn = ref(true);
+const retentionDays = ref(0);
+const retentionOptions = RETENTION_OPTIONS;
 const localUsage = ref(null);
 const isClearingLocal = ref(false);
 
@@ -1304,6 +1331,18 @@ async function toggleLocalCache() {
   // nothing will ever update again.
   if (!localCacheOn.value) await clearLocalData({ quiet: true });
   else notifySuccess('This workspace will be kept on this device');
+}
+
+function changeRetention(days) {
+  setRetentionDays(workspaceId.value, days);
+  retentionDays.value = getRetentionDays(workspaceId.value);
+  // The sweep runs at most once a day, so a shortened limit does not bite
+  // immediately. Saying so beats letting someone conclude it did nothing.
+  notifySuccess(
+    retentionDays.value === 0
+      ? 'This workspace will be kept until you clear it'
+      : `Tasks you stop opening will be dropped after ${retentionDays.value} days`
+  );
 }
 
 async function clearLocalData({ quiet = false } = {}) {
@@ -1327,6 +1366,7 @@ async function clearLocalData({ quiet = false } = {}) {
 onMounted(() => {
   load();
   localCacheOn.value = isCacheEnabled(workspaceId.value);
+  retentionDays.value = getRetentionDays(workspaceId.value);
   refreshLocalUsage();
   // Asked once, and the answer does not change what the app does — a cache that
   // gets evicted behaves exactly like one that was never written.

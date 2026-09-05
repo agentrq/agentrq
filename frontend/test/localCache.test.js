@@ -11,6 +11,7 @@ import {
   databaseName,
   destroyCache,
   getCachedTask,
+  deleteTasks,
   listAllCachedTasks,
   listCachedTasks,
   metaKey,
@@ -481,6 +482,44 @@ describe('listAllCachedTasks', () => {
 
   it('has nothing to scan without a database', async () => {
     expect(await listAllCachedTasks(null)).toEqual([])
+  })
+})
+
+describe('deleteTasks', () => {
+  it('removes the named tasks with their threads and attachment rows', async () => {
+    const db = await open()
+    await putTask(db, makeTask({ id: 'goes', attachments: [attachment('a1')] }))
+    await putTask(db, makeTask({ id: 'stays' }))
+
+    expect(await deleteTasks(db, [{ workspaceId: 'ws1', id: 'goes' }], IDBKeyRange)).toBe(1)
+
+    expect(await getCachedTask(db, 'ws1', 'goes')).toBeNull()
+    expect(await getCachedTask(db, 'ws1', 'stays')).not.toBeNull()
+    const atts = await new Promise((resolve) => {
+      const req = db.transaction(STORE_ATTACHMENTS).objectStore(STORE_ATTACHMENTS).getAll()
+      req.onsuccess = () => resolve(req.result)
+    })
+    expect(atts).toEqual([])
+    db.close()
+  })
+
+  it('has nothing to remove without a database or a list', async () => {
+    const db = await open()
+
+    expect(await deleteTasks(null, [{ workspaceId: 'ws1', id: 'x' }], IDBKeyRange)).toBe(0)
+    expect(await deleteTasks(db, [], IDBKeyRange)).toBe(0)
+    expect(await deleteTasks(db, undefined, IDBKeyRange)).toBe(0)
+    db.close()
+  })
+
+  it('reports nothing removed rather than throwing when the delete cannot run', async () => {
+    const broken = {
+      transaction() {
+        throw new Error('gone')
+      },
+    }
+
+    expect(await deleteTasks(broken, [{ workspaceId: 'ws1', id: 'x' }], IDBKeyRange)).toBe(0)
   })
 })
 
