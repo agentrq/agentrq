@@ -18,6 +18,8 @@
  * the routing rules can be tested in plain Node with no Electron binary.
  */
 
+import { isAttachmentRequest } from '../../../frontend/src/composables/useAttachmentCache.js'
+
 /**
  * Path prefixes forwarded to the AgentRQ server. These mirror the backend's own
  * routing in backend/internal/app/app.go — note `/mcp` has no trailing slash
@@ -231,7 +233,14 @@ export function mimeTypeFor(pathname) {
  *                                             so HMR works without breaking the
  *                                             same-origin illusion.
  */
-export function createAppProtocolHandler({ serverUrl, netFetch, fileExists, readFile, devServerUrl = '' }) {
+export function createAppProtocolHandler({
+  serverUrl,
+  netFetch,
+  fileExists,
+  readFile,
+  devServerUrl = '',
+  attachments = null,
+}) {
   const dev = Boolean(devServerUrl)
   const csp = buildCSP({ dev, devServerUrl })
 
@@ -310,10 +319,57 @@ export function createAppProtocolHandler({ serverUrl, netFetch, fileExists, read
     return new Response(body, { status: 200, headers })
   }
 
+  /**
+   * An attachment, served from disk when it has been seen before.
+   *
+   * Only this path buffers a response body. Everything else is streamed
+   * straight through, which is what keeps the SSE event stream live — buffering
+   * that would hold the whole stream in memory and deliver none of it.
+   *
+   * An attachment is safe to buffer because it is capped at a couple of
+   * megabytes and is not a stream in any meaningful sense, and it has to be
+   * buffered to be written at all.
+   */
+  async function proxyAttachment(request, url) {
+    const hit = await attachments.read(url.pathname).catch(() => null)
+    if (hit) {
+      const headers = new Headers({ 'content-type': hit.contentType })
+      if (hit.contentDisposition) headers.set('content-disposition', hit.contentDisposition)
+      return new Response(hit.body, { status: 200, headers })
+    }
+
+    const upstream = await proxyToServer(request, url)
+    // Only a successful body is worth keeping; an error page cached under an
+    // attachment's name would outlive whatever caused it.
+    if (upstream.status !== 200) return upstream
+
+    let buffered
+    try {
+      buffered = await upstream.arrayBuffer()
+    } catch {
+      // The body could not be read, so there is nothing to serve or to store.
+      return new Response('Bad Gateway', { status: 502 })
+    }
+
+    const contentType = upstream.headers.get('content-type') ?? ''
+    await attachments
+      .write(url.pathname, Buffer.from(buffered), {
+        contentType,
+        contentDisposition: upstream.headers.get('content-disposition') ?? '',
+        size: buffered.byteLength,
+      })
+      .catch(() => {})
+
+    return new Response(buffered, { status: 200, headers: upstream.headers })
+  }
+
   return async function handleAppProtocol(request) {
     const url = new URL(request.url)
 
     if (isProxyPath(url.pathname)) {
+      if (attachments && request.method === 'GET' && isAttachmentRequest(url.pathname)) {
+        return proxyAttachment(request, url)
+      }
       return proxyToServer(request, url)
     }
     if (dev) {

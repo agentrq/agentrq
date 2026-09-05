@@ -9,6 +9,14 @@ const { contextBridge, ipcRenderer } = require('electron')
  * object.
  */
 contextBridge.exposeInMainWorld('agentrq', {
+  // The web build clears attachment bytes by messaging its service worker.
+  // There is none here, so the renderer asks the main process instead.
+  attachments: {
+    forgetWorkspace: (workspaceId) =>
+      ipcRenderer.invoke('agentrq:attachments:forgetWorkspace', workspaceId),
+    forgetAll: () => ipcRenderer.invoke('agentrq:attachments:forgetAll'),
+  },
+
   isDesktop: true,
   platform: process.platform,
   versions: {

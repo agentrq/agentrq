@@ -8,6 +8,8 @@ import {
   formatBytes,
   requestPersistence,
   setCacheEnabled,
+  tellShellToForget,
+  tellShellToForgetAll,
   tellWorkerToForget,
 } from '../src/composables/useCacheStorage'
 import {
@@ -286,6 +288,65 @@ describe('tellWorkerToForget', () => {
   })
 })
 
+describe('tellShellToForget', () => {
+  it('asks the desktop shell, which owns the files there', async () => {
+    // The desktop build has no service worker, so the bytes are files the main
+    // process owns and the renderer goes through the bridge.
+    const calls = []
+    const bridge = { attachments: { forgetWorkspace: async (id) => calls.push(id) } }
+
+    expect(await tellShellToForget('ws1', bridge)).toBe(true)
+    expect(calls).toEqual(['ws1'])
+  })
+
+  it('is a no-op in the browser, where there is no shell', async () => {
+    // Both paths are attempted rather than branched on the platform: exactly
+    // one exists in any build, and asking the absent one already does nothing.
+    expect(await tellShellToForget('ws1', undefined)).toBe(false)
+    expect(await tellShellToForget('ws1', {})).toBe(false)
+    expect(await tellShellToForget('ws1', { attachments: {} })).toBe(false)
+    expect(await tellShellToForget('', { attachments: { forgetWorkspace: async () => {} } })).toBe(
+      false
+    )
+  })
+
+  it('reports failure rather than throwing when the bridge rejects', async () => {
+    const bridge = {
+      attachments: {
+        forgetWorkspace: async () => {
+          throw new Error('main process went away')
+        },
+      },
+    }
+
+    expect(await tellShellToForget('ws1', bridge)).toBe(false)
+  })
+})
+
+describe('tellShellToForgetAll', () => {
+  it('drops everything the shell holds for this profile', async () => {
+    let called = false
+    const bridge = { attachments: { forgetAll: async () => { called = true } } }
+
+    expect(await tellShellToForgetAll(bridge)).toBe(true)
+    expect(called).toBe(true)
+  })
+
+  it('is a no-op without a shell, and never throws', async () => {
+    expect(await tellShellToForgetAll(undefined)).toBe(false)
+    expect(await tellShellToForgetAll({})).toBe(false)
+    expect(
+      await tellShellToForgetAll({
+        attachments: {
+          forgetAll: async () => {
+            throw new Error('gone')
+          },
+        },
+      })
+    ).toBe(false)
+  })
+})
+
 describe('forgetEverything', () => {
   it('deletes the database and drops the connection', async () => {
     // Signing out. A browser several people use must not leave one person's
@@ -299,6 +360,15 @@ describe('forgetEverything', () => {
     const fresh = await openCache({ userId: 'u1', factory })
     expect(await listCachedTasks(fresh, 'ws1', IDBKeyRange)).toEqual([])
     fresh.close()
+  })
+
+  it('also clears what the desktop shell holds outside the database', async () => {
+    let clearedShell = false
+    const bridge = { attachments: { forgetAll: async () => { clearedShell = true } } }
+
+    await forgetEverything({ userId: 'u1', factory, bridge })
+
+    expect(clearedShell).toBe(true)
   })
 
   it('does not consult the per-workspace setting', async () => {

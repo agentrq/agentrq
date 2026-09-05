@@ -30,6 +30,21 @@ function makeHandler(overrides = {}) {
       fileExists: overrides.fileExists ?? (async () => false),
       readFile: overrides.readFile ?? (async () => new TextEncoder().encode('<html></html>')),
       ...(overrides.devServerUrl !== undefined ? { devServerUrl: overrides.devServerUrl } : {}),
+      ...(overrides.attachments !== undefined ? { attachments: overrides.attachments } : {}),
+    }),
+  }
+}
+
+const ATTACHMENT = 'app://x/api/v1/workspaces/ws1/tasks/t1/attachments/a1'
+
+/** An attachment store that remembers what it was asked to keep. */
+function makeStore(initial = null) {
+  return {
+    written: [],
+    read: vi.fn(async () => initial),
+    write: vi.fn(async function (pathname, body, meta) {
+      this.written.push({ pathname, body, meta })
+      return true
     }),
   }
 }
@@ -460,5 +475,146 @@ describe('createAppProtocolHandler — dev server mode', () => {
 
     await handler(makeRequest('app://agentrq/src/App.vue?vue&type=style'))
     expect(netFetch.mock.calls[0][0]).toBe('http://localhost:5174/src/App.vue?vue&type=style')
+  })
+})
+
+describe('attachments', () => {
+  it('serves a stored attachment without asking the server', async () => {
+    const attachments = makeStore({
+      body: new Uint8Array([1, 2, 3]),
+      contentType: 'image/png',
+      contentDisposition: 'inline; filename="a.png"',
+    })
+    const { handler, netFetch } = makeHandler({ attachments })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('content-disposition')).toBe('inline; filename="a.png"')
+    expect(netFetch).not.toHaveBeenCalled()
+  })
+
+  it('omits a disposition the store did not have', async () => {
+    const attachments = makeStore({ body: new Uint8Array([1]), contentType: 'image/png' })
+    const { handler } = makeHandler({ attachments })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.headers.get('content-disposition')).toBeNull()
+  })
+
+  it('forwards a miss and keeps what comes back', async () => {
+    const attachments = makeStore(null)
+    const netFetch = vi.fn(
+      async () =>
+        new Response(new Uint8Array([9, 9]), {
+          status: 200,
+          headers: { 'content-type': 'image/png', 'content-disposition': 'inline' },
+        })
+    )
+    const { handler } = makeHandler({ attachments, netFetch })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(200)
+    expect(netFetch).toHaveBeenCalledOnce()
+    expect(attachments.written).toHaveLength(1)
+    expect(attachments.written[0].meta).toMatchObject({ contentType: 'image/png', size: 2 })
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([9, 9]))
+  })
+
+  it('keeps nothing when the server did not answer with the file', async () => {
+    // An error page stored under an attachment's name would outlive whatever
+    // caused it.
+    const attachments = makeStore(null)
+    const netFetch = vi.fn(async () => new Response('nope', { status: 404 }))
+    const { handler } = makeHandler({ attachments, netFetch })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(404)
+    expect(attachments.write).not.toHaveBeenCalled()
+  })
+
+  it('reports a bad gateway when the body fails mid-read', async () => {
+    // A stream that errors after the response headers have already been sent,
+    // which is the only way a 200 can still fail to produce bytes.
+    const attachments = makeStore(null)
+    const netFetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.error(new Error('stream broke'))
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'image/png' } }
+        )
+    )
+    const { handler } = makeHandler({ attachments, netFetch })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(502)
+    expect(attachments.write).not.toHaveBeenCalled()
+  })
+
+  it('keeps a response that arrived without headers describing it', async () => {
+    const attachments = makeStore(null)
+    const netFetch = vi.fn(async () => new Response(new Uint8Array([7]), { status: 200 }))
+    const { handler } = makeHandler({ attachments, netFetch })
+
+    await handler(makeRequest(ATTACHMENT))
+
+    expect(attachments.written[0].meta).toMatchObject({ contentDisposition: '' })
+  })
+
+  it('still serves when the store itself fails', async () => {
+    // A cache that cannot be read behaves like one that was never written.
+    const attachments = {
+      read: vi.fn(async () => {
+        throw new Error('disk gone')
+      }),
+      write: vi.fn(async () => {
+        throw new Error('disk gone')
+      }),
+    }
+    const { handler, netFetch } = makeHandler({ attachments })
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(200)
+    expect(netFetch).toHaveBeenCalledOnce()
+  })
+
+  it('leaves every other request streaming, which is what keeps SSE live', async () => {
+    const attachments = makeStore(null)
+    const { handler } = makeHandler({ attachments })
+
+    await handler(makeRequest('app://x/api/v1/workspaces/ws1/events'))
+    await handler(makeRequest('app://x/api/v1/workspaces/ws1/tasks'))
+
+    expect(attachments.read).not.toHaveBeenCalled()
+  })
+
+  it('does not intercept a write to an attachment path', async () => {
+    const attachments = makeStore(null)
+    const { handler } = makeHandler({ attachments })
+
+    await handler(makeRequest(ATTACHMENT, { method: 'POST' }))
+
+    expect(attachments.read).not.toHaveBeenCalled()
+  })
+
+  it('behaves exactly as before on a build with no store', async () => {
+    // The web build has a service worker instead, and this argument is how the
+    // desktop build opts in.
+    const { handler, netFetch } = makeHandler()
+
+    const res = await handler(makeRequest(ATTACHMENT))
+
+    expect(res.status).toBe(200)
+    expect(netFetch).toHaveBeenCalledOnce()
   })
 })
