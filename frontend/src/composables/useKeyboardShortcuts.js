@@ -25,24 +25,23 @@ import { onMounted, onUnmounted } from 'vue';
  * to the page, and a bare letter collides with nothing at all as long as it is
  * suppressed while the user is typing (see `isTypingTarget`).
  *
- * ## The modifier alternates, and where they are real
+ * ## Why there is no Cmd/Ctrl+Shift alternate
  *
- * The three action shortcuts also answer to **Cmd/Ctrl+Shift+key**, which is
- * what people reach for first. Those chords are bound, but they are not
- * available everywhere, and the difference is not ours to fix:
+ * There was one, on the theory that a chord is what people reach for first. It
+ * earned its keep nowhere:
  *
- * - **In the desktop app they work.** It owns its own menu bar, so nothing
- *   above the page claims them. Cmd/Ctrl+Shift+N already opened the task form
- *   there through the application menu before this existed.
- * - **In a browser most of them never arrive.** Cmd+Shift+T reopens the last
- *   closed tab, Cmd+Shift+N opens a private window, and Cmd+Shift+M switches
- *   profile in Chrome. The browser's own menu takes those before the page is
- *   offered the event.
+ * - **In a browser most of those chords never arrive.** Cmd+Shift+T reopens the
+ *   last closed tab and Cmd+Shift+N opens a private window; the browser's own
+ *   menu takes both before the page is offered the event.
+ * - **The ones that did arrive were redundant.** The bare letter was already
+ *   there, and was what the help sheet advertised.
+ * - **On the desktop the one chord worth having is not the page's to bind.**
+ *   Cmd/Ctrl+Shift+N opens the task form through the application menu and a
+ *   global shortcut, both in the main process, so it works whether or not the
+ *   window even has focus — see `desktop/src/main/menu.js`.
  *
- * So the bare letters stay, and stay the advertised binding on the web. They
- * are the ones that work in every build. The help sheet shows the chord only
- * where it can actually fire, because advertising a shortcut that silently
- * does nothing is worse than not having one.
+ * So a bare letter is the whole scheme: one binding to explain, and one thing
+ * that can break.
  */
 export const SHORTCUTS = [
   {
@@ -61,7 +60,6 @@ export const SHORTCUTS = [
     label: 'New task',
     hint: 'Opens the task form for the workspace you are in',
     scope: 'global',
-    withModifier: true,
   },
   {
     id: 'show-help',
@@ -78,7 +76,6 @@ export const SHORTCUTS = [
     label: 'Chat view',
     hint: 'The message thread',
     scope: 'task',
-    withModifier: true,
   },
   {
     id: 'trajectory-view',
@@ -86,7 +83,6 @@ export const SHORTCUTS = [
     label: 'Trajectory view',
     hint: "The agent's reasoning and tool calls",
     scope: 'task',
-    withModifier: true,
   },
 ];
 
@@ -164,13 +160,13 @@ export function matchShortcut(event, { mac = false, shortcuts = SHORTCUTS } = {}
       // Cmd+Shift+K is not silently the same shortcut.
       if (s.mod) return modPressed && clean && !shift;
 
-      // The modifier alternate: the same action reached as Cmd/Ctrl+Shift+key.
-      // Held with the modifier it is unambiguous, so it fires while typing too.
-      if (modPressed) return Boolean(s.withModifier) && clean && shift;
-
+      // A bare letter is only ever bare. A held modifier means the keystroke
+      // belongs to the browser or the system — Cmd+M minimises a window — and
+      // answering to it here would fire the shortcut on the way past.
+      //
       // `?` is Shift+/ on most layouts, so Shift is judged by the resulting
       // character rather than by the flag.
-      return !typing && clean;
+      return !modPressed && !typing && clean;
     }) ?? null
   );
 }
@@ -183,13 +179,10 @@ export function matchShortcut(event, { mac = false, shortcuts = SHORTCUTS } = {}
  * `+`.
  *
  * @param {{ key: string, mod?: boolean }} shortcut
- * @param {{ mac?: boolean, modifier?: boolean }} [options]
- *        `modifier` renders the Cmd/Ctrl+Shift alternate rather than the key
- *        on its own.
+ * @param {{ mac?: boolean }} [options]
  */
-export function formatShortcut(shortcut, { mac = false, modifier = false } = {}) {
+export function formatShortcut(shortcut, { mac = false } = {}) {
   const key = shortcut.key.toUpperCase();
-  if (modifier) return mac ? `⌘⇧${key}` : `Ctrl+Shift+${key}`;
   if (!shortcut.mod) return key;
   return mac ? `⌘${key}` : `Ctrl+${key}`;
 }

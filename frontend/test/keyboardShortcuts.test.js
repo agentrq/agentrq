@@ -49,15 +49,6 @@ describe('SHORTCUTS', () => {
     expect(claimed).toEqual(['k'])
   })
 
-  it('offers a modifier alternate for the actions, and only for those', () => {
-    // Cmd/Ctrl+Shift+key is what people reach for first, and it works in the
-    // desktop app, which owns its own menu bar. The help sheet is what decides
-    // whether to advertise it.
-    const withChord = SHORTCUTS.filter((s) => s.withModifier).map((s) => s.id)
-
-    expect(withChord.sort()).toEqual(['chat-view', 'new-task', 'trajectory-view'])
-  })
-
   it('gives every shortcut an id, a key and a scope the help sheet groups by', () => {
     for (const s of SHORTCUTS) {
       expect(s.id).toBeTruthy()
@@ -128,30 +119,19 @@ describe('matchShortcut', () => {
     expect(matchShortcut(press('k'))).toBeNull()
   })
 
-  it('reads the modifier alternate for the actions that declare one', () => {
-    expect(matchShortcut(press('n', { metaKey: true, shiftKey: true }), { mac: true }).id).toBe(
-      'new-task'
-    )
-    expect(matchShortcut(press('m', { ctrlKey: true, shiftKey: true })).id).toBe('chat-view')
-    expect(matchShortcut(press('t', { ctrlKey: true, shiftKey: true })).id).toBe('trajectory-view')
-  })
-
-  it('fires the modifier alternate even while typing', () => {
-    // Held with a modifier it cannot be mistaken for text, unlike the bare key.
-    const inReply = { target: { tagName: 'TEXTAREA' }, ctrlKey: true, shiftKey: true }
-
-    expect(matchShortcut(press('m', inReply)).id).toBe('chat-view')
-  })
-
-  it('needs the shift for the alternate, and refuses it for a declared chord', () => {
-    // Cmd+M alone is Minimize on macOS and would never arrive; matching it
-    // would be claiming a key we do not get. And Cmd+Shift+K is not Cmd+K.
+  it('leaves a bare letter alone whenever a modifier is held', () => {
+    // Those keystrokes belong to the browser or the system — Cmd+M minimises a
+    // window, Cmd+Shift+T reopens a tab — and most never arrive at all.
+    // Answering to them would fire the shortcut on the way past.
     expect(matchShortcut(press('m', { ctrlKey: true }))).toBeNull()
-    expect(matchShortcut(press('k', { ctrlKey: true, shiftKey: true }))).toBeNull()
+    expect(matchShortcut(press('m', { ctrlKey: true, shiftKey: true }))).toBeNull()
+    expect(matchShortcut(press('t', { metaKey: true, shiftKey: true }), { mac: true })).toBeNull()
+    expect(matchShortcut(press('n', { metaKey: true, shiftKey: true }), { mac: true })).toBeNull()
   })
 
-  it('offers no alternate for a shortcut that did not ask for one', () => {
-    expect(matchShortcut(press('?', { ctrlKey: true, shiftKey: true }))).toBeNull()
+  it('refuses a shifted version of a declared chord', () => {
+    // Cmd+Shift+K is not Cmd+K.
+    expect(matchShortcut(press('k', { ctrlKey: true, shiftKey: true }))).toBeNull()
   })
 
   it('reads the bare letters', () => {
@@ -209,10 +189,6 @@ describe('formatShortcut', () => {
     expect(formatShortcut({ key: '?' })).toBe('?')
   })
 
-  it('writes the modifier alternate when asked for it', () => {
-    expect(formatShortcut({ key: 'm' }, { mac: true, modifier: true })).toBe('⌘⇧M')
-    expect(formatShortcut({ key: 'm' }, { modifier: true })).toBe('Ctrl+Shift+M')
-  })
 })
 
 describe('dispatchShortcut', () => {

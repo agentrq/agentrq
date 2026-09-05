@@ -9,7 +9,6 @@
 import { computed } from 'vue';
 
 import { SHORTCUTS, formatShortcut } from '../composables/useKeyboardShortcuts';
-import { usePlatformStore } from '../stores/platformStore';
 
 const props = defineProps({
   show: Boolean,
@@ -17,8 +16,6 @@ const props = defineProps({
   mac: Boolean,
 });
 const emit = defineEmits(['close']);
-
-const platformStore = usePlatformStore();
 
 const GROUPS = [
   { scope: 'global', title: 'Anywhere' },
@@ -31,14 +28,6 @@ const groups = computed(() =>
     items: SHORTCUTS.filter((s) => s.scope === group.scope).map((s) => ({
       ...s,
       combo: formatShortcut(s, { mac: props.mac }),
-      // Only where it can actually fire. In a browser these chords are taken
-      // by the browser's own menu — reopen closed tab, private window, switch
-      // profile — and never reach the page, so advertising them there would be
-      // advertising nothing.
-      alsoCombo:
-        platformStore.isDesktop && s.withModifier
-          ? formatShortcut(s, { mac: props.mac, modifier: true })
-          : '',
     })),
   }))
 );
@@ -71,10 +60,6 @@ const groups = computed(() =>
                 </span>
                 <span class="shrink-0 flex items-center gap-1.5">
                   <kbd class="text-[10px] font-mono text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5">{{ item.combo }}</kbd>
-                  <template v-if="item.alsoCombo">
-                    <span class="text-[10px] text-gray-400 dark:text-zinc-600">or</span>
-                    <kbd class="text-[10px] font-mono text-gray-700 dark:text-zinc-200 border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5">{{ item.alsoCombo }}</kbd>
-                  </template>
                 </span>
               </li>
             </ul>
