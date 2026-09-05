@@ -8,6 +8,7 @@ import {
   formatBytes,
   requestPersistence,
   setCacheEnabled,
+  tellWorkerToForget,
 } from '../src/composables/useCacheStorage'
 import {
   cacheSettingKey,
@@ -178,9 +179,14 @@ describe('clearWorkspaceData', () => {
     await cacheTask(db, makeTask(), { storage: allOn })
     await cacheTask(db, makeTask({ id: 'keep', workspaceId: 'ws2' }), { storage: allOn })
 
-    const result = await clearWorkspaceData(db, 'ws1', { KeyRange: IDBKeyRange })
+    const posted = []
+    const worker = { controller: { postMessage: (msg) => posted.push(msg) } }
+
+    const result = await clearWorkspaceData(db, 'ws1', { KeyRange: IDBKeyRange, worker })
 
     expect(result.cleared).toBe(true)
+    // The bytes go with the rows.
+    expect(posted).toEqual([{ type: 'FORGET_WORKSPACE', workspaceId: 'ws1' }])
     expect(await listCachedTasks(db, 'ws1', IDBKeyRange)).toEqual([])
     expect(await listCachedTasks(db, 'ws2', IDBKeyRange)).toHaveLength(1)
     db.close()
@@ -246,6 +252,37 @@ describe('clearWorkspaceData', () => {
       cleared: false,
       reclaimed: null,
     })
+  })
+})
+
+describe('tellWorkerToForget', () => {
+  it('asks the worker, because only it can reach the attachment bytes', () => {
+    const posted = []
+    const worker = { controller: { postMessage: (msg) => posted.push(msg) } }
+
+    expect(tellWorkerToForget('ws1', worker)).toBe(true)
+    expect(posted).toEqual([{ type: 'FORGET_WORKSPACE', workspaceId: 'ws1' }])
+  })
+
+  it('is a no-op where there is no worker to ask', () => {
+    // The desktop renderer is built without one, so there is nothing listening
+    // and nothing there to forget.
+    expect(tellWorkerToForget('ws1', undefined)).toBe(false)
+    expect(tellWorkerToForget('ws1', {})).toBe(false)
+    expect(tellWorkerToForget('ws1', { controller: null })).toBe(false)
+    expect(tellWorkerToForget('', { controller: { postMessage: () => {} } })).toBe(false)
+  })
+
+  it('reports failure rather than throwing when the message cannot be sent', () => {
+    const worker = {
+      controller: {
+        postMessage() {
+          throw new Error('worker went away')
+        },
+      },
+    }
+
+    expect(tellWorkerToForget('ws1', worker)).toBe(false)
   })
 })
 

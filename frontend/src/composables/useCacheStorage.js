@@ -109,8 +109,13 @@ export async function requestPersistence(manager = globalThis.navigator?.storage
  * @returns {Promise<{cleared: boolean, reclaimed: number|null}>}
  */
 export async function clearWorkspaceData(db, workspaceId, options = {}) {
-  const { KeyRange = globalThis.IDBKeyRange, manager } = options;
+  const { KeyRange = globalThis.IDBKeyRange, manager, worker } = options;
   if (!db || !workspaceId) return { cleared: false, reclaimed: null };
+
+  // The attachment bytes live in the service worker's cache, which only it can
+  // reach. Told, not awaited: a clear that the worker has not finished is still
+  // a clear, and on a build with no worker there is nothing there to clear.
+  tellWorkerToForget(workspaceId, worker);
 
   const before = await estimateUsage(manager);
   const cleared = await clearWorkspace(db, workspaceId, KeyRange);
@@ -120,6 +125,23 @@ export async function clearWorkspaceData(db, workspaceId, options = {}) {
   const reclaimed =
     before && after ? Math.max(0, before.usage - after.usage) : null;
   return { cleared: true, reclaimed };
+}
+
+/**
+ * Ask the service worker to forget a workspace's cached attachment bytes.
+ *
+ * Only the worker can reach that cache, and only the web build has a worker at
+ * all — the desktop renderer is built without one. So this is best effort by
+ * design: on desktop there is nothing listening, and nothing to forget.
+ */
+export function tellWorkerToForget(workspaceId, worker = globalThis.navigator?.serviceWorker) {
+  if (!workspaceId || !worker?.controller) return false;
+  try {
+    worker.controller.postMessage({ type: 'FORGET_WORKSPACE', workspaceId });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
