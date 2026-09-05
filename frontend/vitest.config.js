@@ -34,7 +34,9 @@ export default defineConfig({
       provider: 'v8',
       include: [
         'src/app.js',
+        'src/useEventBus.js',
         'src/stores/platformStore.js',
+        'src/stores/workspaceStore.js',
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
         'src/composables/useTaskGroups.js',

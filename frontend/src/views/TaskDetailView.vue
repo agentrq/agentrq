@@ -755,6 +755,7 @@ import { useSpeechToText } from '../composables/useSpeechToText';
 import { usePendingSend } from '../composables/usePendingSend';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { renderMarkdown } from '../utils/markdown';
 import {
   contextGauge,
@@ -787,7 +788,15 @@ const router = useRouter();
 const workspaceId = computed(() => route.params.id || route.params.workspaceId);
 const taskId = computed(() => route.params.taskId);
 
-const workspace = ref(null);
+// Prefer the store's copy: it is the one the shell keeps current from the event
+// stream. A workspace fetched once at load meant `agentConnected` was frozen at
+// whatever it was then, so the reply box stayed disabled with "Waiting for
+// agent..." for as long as this view was open, however long ago the agent had
+// actually connected. The fetched copy is only the fallback for the moment
+// before the shell's workspace list has landed.
+const workspaceStore = useWorkspaceStore();
+const localWorkspace = ref(null);
+const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
 const task = ref(null);
 const user = ref(null);
 const descExpanded = ref(false);
@@ -1050,7 +1059,8 @@ async function load() {
 
     user.value = await fetchUser();
     const pRes = await getWorkspace(workspaceId.value);
-    workspace.value = pRes.workspace;
+    localWorkspace.value = pRes.workspace;
+    workspaceStore.updateWorkspaceMetadata(pRes.workspace);
     const tRes = await getTask(workspaceId.value, taskId.value);
     // Assigned, not merged. The cached copy may have painted the first frame
     // above, and the server's answer replaces it outright — a conversation is

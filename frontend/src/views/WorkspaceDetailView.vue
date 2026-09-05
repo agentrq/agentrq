@@ -199,7 +199,10 @@ const isFullPane = computed(() => !!sectionLabel.value);
 const isBoard = computed(() => route.path.endsWith('/board'));
 
 const workspaceStore = useWorkspaceStore();
-const workspace = computed(() => workspaceStore.workspaces.find(w => w.id == workspaceId.value) || localWorkspace.value);
+// The store first, because it is the copy the event stream keeps current. The
+// locally fetched one is only a fallback for the moment before the shell's
+// workspace list has landed.
+const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
 const localWorkspace = ref(null);
 const tasks = ref([]);
 const loading = ref(true);
@@ -223,7 +226,9 @@ const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron
 const activeTaskCount = computed(() => tasks.value.length - scheduledCount.value);
 const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy === 'agent' && (t.status === 'notstarted')).length);
 
-const isAgentConnected = ref(false);
+// Derived, not stored. A ref set at load time is exactly what made this header
+// dot lie until the page was reloaded.
+const isAgentConnected = computed(() => workspace.value?.agentConnected === true);
 
 onMounted(() => {
   load();
@@ -263,17 +268,6 @@ watch(workspaceId, (newId) => {
   }
 });
 
-watch(events, (evts) => {
-  const last = evts[evts.length - 1];
-  if (!last) return;
-
-  if (last.type === 'agent.connected') {
-    if (last.payload && String(last.payload.workspaceId) === String(workspaceId.value)) {
-      isAgentConnected.value = last.payload.connected;
-    }
-  }
-}, { deep: true });
-
 watch(isConnected, (val, old) => {
   if (val && old === false) {
     // Re-fetch everything if reconnected
@@ -287,7 +281,6 @@ async function load(showLoading = true) {
     const pRes = await getWorkspace(workspaceId.value);
     localWorkspace.value = pRes.workspace;
     workspaceStore.updateWorkspaceMetadata(pRes.workspace);
-    isAgentConnected.value = workspace.value?.agentConnected;
     if (!isConnected.value) connect();
   } catch (err) {
     error.value = err.message;

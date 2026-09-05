@@ -550,13 +550,18 @@ const closeOverlaysOnEscape = (e) => {
 }
 
 // Setup Global Event Bus (Global stream receives events for all workspaces)
-const { connect, disconnect, events } = useEventBus()
+//
+// The shell owns this one subscription for the whole app: it is what keeps the
+// workspace store — and with it every agent-connection indicator on screen —
+// current, so a view never has to open a stream of its own just to learn that
+// an agent came online.
+//
+// Handled per event rather than by watching the buffer. Reacting to a
+// transition means seeing every event, and a watcher only ever showed the
+// handler the last one in the flush.
+const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false })
 
-// Watch for noteworthy events
-watch(events, (newEvents) => {
-  if (newEvents.length === 0) return
-  const event = newEvents[newEvents.length - 1]
-  
+onEvent((event) => {
   // Handle agent connection status updates globally
   if (event.type === 'agent.connected') {
     const { connected, workspaceId } = event.payload
@@ -567,7 +572,7 @@ watch(events, (newEvents) => {
   if (event.type === 'workspace.updated') {
     workspaceStore.updateWorkspaceMetadata(event.payload)
   }
-  
+
   // Keep the local copy current. Merged against what the cache already holds
   // rather than written straight through: a payload built without its relations
   // is indistinguishable from one whose relations are genuinely empty, and this
@@ -588,7 +593,7 @@ watch(events, (newEvents) => {
   } else if (event.type === 'task.updated') {
     const task = event.payload
     const lastMsg = task.messages?.[task.messages.length - 1]
-    
+
     // Check for permission requests
     if (lastMsg?.metadata?.type === 'permission_request' && lastMsg.metadata.status !== 'allow' && lastMsg.metadata.status !== 'deny') {
       notifyError(`Permission required: ${lastMsg.metadata.tool_name}`, 'Action Needed')
@@ -599,7 +604,15 @@ watch(events, (newEvents) => {
       notifyInfo(`Task "${task.title}" is now ${status}`)
     }
   }
-}, { deep: true })
+})
+
+// Nothing replays the events missed while the stream was down, and a dropped
+// `agent.connected` is invisible — the dot simply keeps showing the state from
+// before the drop, forever. Re-reading the list on every reconnect is what
+// bounds how long the indicator can be wrong to the length of the outage.
+watch(isConnected, (now, before) => {
+  if (now && before === false) workspaceStore.fetchWorkspaces()
+})
 
 onMounted(() => {
   themeStore.init()

@@ -155,12 +155,13 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchGlobalTasks, fetchWorkspaces, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder } from '../api';
+import { fetchGlobalTasks, sendPermissionVerdict, updateTaskAssignee, updateTaskStatus, updateTaskOrder } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
 import { buildTaskGroups, pendingOnHuman } from '../composables/useTaskGroups';
 import { useEventBus } from '../useEventBus';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useViewport } from '../composables/useViewport';
 import LoadingState from '../components/LoadingState.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
@@ -173,7 +174,10 @@ const { notifySuccess, notifyError } = useToasts();
 const { isMobile } = useViewport();
 
 const tasks = ref([]);
-const workspaces = ref([]);
+// Read, never written: the shell keeps the store's agentConnected current from
+// the event stream, so the per-row dots below follow an agent coming and going
+// instead of freezing at whatever was true when this list was fetched.
+const workspaceStore = useWorkspaceStore();
 const loading = ref(false);
 const offset = ref(0);
 const limit = 10;
@@ -245,15 +249,9 @@ const activeTaskCount = computed(() => tasks.value.filter(t => t.status !== 'cro
 const scheduledCount = computed(() => tasks.value.filter(t => t.status === 'cron').length);
 const pendingInputCount = computed(() => pendingOnHuman(tasks.value).length);
 
-const getWorkspaceName = (workspaceId) => {
-  const ws = workspaces.value.find(w => w.id === workspaceId);
-  return ws ? ws.name : '...';
-};
+const getWorkspaceName = (workspaceId) => workspaceStore.getWorkspace(workspaceId)?.name || '...';
 
-const isAgentConnected = (workspaceId) => {
-  const ws = workspaces.value.find(w => w.id === workspaceId);
-  return ws ? ws.agentConnected : false;
-};
+const isAgentConnected = (workspaceId) => workspaceStore.isAgentConnected(workspaceId);
 
 const getLastMessageText = (task) => {
   if (!task.messages || task.messages.length === 0) return 'No message content available.';
@@ -337,8 +335,11 @@ const fetchInitial = async () => {
   }
 
   try {
-    const wsRes = await fetchWorkspaces();
-    workspaces.value = wsRes.workspaces;
+    // Only when the shell has not already filled it. This runs again on every
+    // task event, and re-fetching a list the store keeps live from the event
+    // stream would be a request per event plus a re-render everywhere it is
+    // rendered.
+    if (workspaceStore.workspaces.length === 0) await workspaceStore.fetchWorkspaces();
 
     await fetchNext();
   } catch (err) {

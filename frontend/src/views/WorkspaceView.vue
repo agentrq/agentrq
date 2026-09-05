@@ -239,11 +239,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { fetchWorkspaces, createWorkspace, unarchiveWorkspace, fetchGlobalTasks, fetchGlobalTaskStats } from '../api';
+import { createWorkspace, unarchiveWorkspace, fetchGlobalTasks, fetchGlobalTaskStats } from '../api';
 import { useToasts } from '../composables/useToasts';
-import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
@@ -437,36 +436,14 @@ function goToWorkspace(id) {
   router.push(`/workspaces/${id}`);
 }
 
-const { connect, disconnect, events } = useEventBus();
-
-watch(events, (newEvents) => {
-  if (newEvents.length === 0) return;
-  const event = newEvents[newEvents.length - 1];
-
-  if (event.type === 'agent.connected') {
-    const { connected, workspaceId } = event.payload;
-    const ws = workspaces.value.find(w => w.id === workspaceId);
-    if (ws) {
-      ws.agentConnected = connected;
-    }
-  }
-
-  if (event.type === 'workspace.updated') {
-    const updatedWs = event.payload;
-    const idx = workspaces.value.findIndex(w => w.id === updatedWs.id);
-    if (idx !== -1) {
-      workspaces.value[idx] = { ...workspaces.value[idx], ...updatedWs };
-    }
-  }
-}, { deep: true });
+// No event stream here on purpose. This view renders the workspace store, and
+// the shell already subscribes once for the whole app and writes agent
+// connection state and workspace metadata into that store. A second
+// subscription would be a second SSE connection per user doing the same work,
+// against a copy of the same list.
 
 onMounted(async () => {
   await loadWorkspaces();
-  connect();
-});
-
-onUnmounted(() => {
-  disconnect();
 });
 </script>
 

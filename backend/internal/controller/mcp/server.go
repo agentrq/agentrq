@@ -491,24 +491,34 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		if isSSE {
 			count := ps.agentConnections.Add(1)
 			if count == 1 {
-				ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
-					Type:    "agent.connected",
-					Payload: map[string]any{"connected": true, "workspaceId": ps.workspaceID},
-				})
+				ps.publishAgentConnected(true)
 				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
 				if ps.agentConnections.Add(-1) == 0 {
-					ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
-						Type:    "agent.connected",
-						Payload: map[string]any{"connected": false, "workspaceId": ps.workspaceID},
-					})
+					ps.publishAgentConnected(false)
 				}
 			}()
 		}
 
 		zlog.Debug().Str("method", r.Method).Str("path", r.URL.Path).Str("session_id", logID).Bool("sse", isSSE).Msg("MCP request")
 		ps.streamServer.ServeHTTP(w, r)
+	})
+}
+
+// publishAgentConnected tells the human clients whether an agent is attached.
+//
+// The workspace ID goes out base62-encoded, the way every other event on this
+// bus carries it: the REST API only ever names a workspace by its base62 ID
+// (see view.Workspace), so a raw int64 here matched nothing the frontend held
+// and the live indicator never moved off whatever the last page load fetched.
+func (ps *WorkspaceServer) publishAgentConnected(connected bool) {
+	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
+		Type: "agent.connected",
+		Payload: map[string]any{
+			"connected":   connected,
+			"workspaceId": monoflake.ID(ps.workspaceID).String(),
+		},
 	})
 }
 
