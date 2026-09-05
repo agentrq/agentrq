@@ -2,485 +2,1888 @@ openapi: 3.0.3
 info:
   title: AgentRQ API
   version: 1.0.0
-  description: OpenAPI Specification for AgentRQ Backend API
+  description: |
+    OpenAPI specification for the AgentRQ backend HTTP API.
+
+    ## Authentication
+
+    Every route except those under `/auth` requires the `at` session cookie,
+    set by one of the login flows. There is no bearer-token path: the frontend
+    and the desktop app both address the API with same-origin relative URLs and
+    let the cookie ride along.
+
+    ## Conventions
+
+    - All request and response JSON uses `camelCase`.
+    - IDs are base62-encoded monoflakes rendered as strings, never numbers.
+    - Most payloads are wrapped in a single named key — `{"task": {...}}`,
+      `{"workspaces": [...]}` — rather than returned bare.
+
+    ## Errors
+
+    Two shapes are in use. Handlers that map a domain error return the
+    structured envelope (`ErrorResponse`); several that validate inline return
+    a flat `{"error": "message"}` (`SimpleError`). Each operation below names
+    the one it returns.
 servers:
   - url: /api/v1
+
+tags:
+  - name: Auth
+  - name: Workspaces
+  - name: Tasks
+  - name: Attachments
+  - name: Events
+  - name: Workflows
+  - name: Push
+  - name: Telemetry
+  - name: Streaming
+
 paths:
+  # ── Auth ────────────────────────────────────────────────────────────────────
+  /auth/config:
+    get:
+      tags: [Auth]
+      summary: Which login methods this deployment offers
+      description: Public. Read before rendering a login screen.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rootLoginEnabled: { type: boolean }
+                  githubLoginEnabled: { type: boolean }
+                  basePath:
+                    type: string
+                    description: Path prefix the app is served under, if any.
+
+  /auth/google/login:
+    get:
+      tags: [Auth]
+      summary: Begin the Google OAuth flow
+      security: []
+      parameters:
+        - name: redirect_url
+          in: query
+          required: false
+          schema: { type: string }
+          description: Where to land after login. Sanitized server-side.
+      responses:
+        '302': { description: Redirect to Google }
+
+  /auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Google OAuth callback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '302':
+          description: Session cookies set, then redirect.
+
+  /auth/github/login:
+    get:
+      tags: [Auth]
+      summary: Begin the GitHub OAuth flow
+      security: []
+      parameters:
+        - name: redirect_url
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '302': { description: Redirect to GitHub }
+        '403':
+          description: GitHub login is not configured
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /auth/github/callback:
+    get:
+      tags: [Auth]
+      summary: GitHub OAuth callback
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        '302':
+          description: Session cookies set, then redirect.
+
+  /auth/root/login:
+    post:
+      tags: [Auth]
+      summary: Log in with the root token
+      description: |
+        Only available when root login is enabled for the deployment; check
+        `rootLoginEnabled` from `/auth/config` first.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: Session cookies set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '401':
+          description: Invalid root token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Root login disabled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange the refresh cookie for a fresh session
+      description: |
+        Public by design — the whole point is that the access token has already
+        expired. Reads the `rt` cookie, which is scoped to this path.
+      security: []
+      responses:
+        '200':
+          description: New session cookies set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        '401':
+          description: Session expired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /auth/user:
+    get:
+      tags: [Auth]
+      summary: The authenticated user
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthenticatedUser' }
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Clear the session cookies
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  # ── Workspaces ──────────────────────────────────────────────────────────────
   /workspaces:
     get:
-      summary: List Workspaces
+      tags: [Workspaces]
+      summary: List workspaces
       parameters:
         - name: archived
           in: query
-          schema:
-            type: boolean
+          required: false
+          schema: { type: string, enum: ['true'] }
+          description: Pass `true` to list archived workspaces instead of active ones.
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ListWorkspacesResponse'
+                type: object
+                properties:
+                  workspaces:
+                    type: array
+                    items: { $ref: '#/components/schemas/Workspace' }
     post:
-      summary: Create Workspace
+      tags: [Workspaces]
+      summary: Create a workspace
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateWorkspaceRequest'
+              type: object
+              properties:
+                workspace: { $ref: '#/components/schemas/Workspace' }
       responses:
-        '201':
+        '200':
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateWorkspaceResponse'
+                type: object
+                properties:
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
 
   /workspaces/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
     get:
-      summary: Get Workspace
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Workspaces]
+      summary: Get a workspace
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GetWorkspaceResponse'
+                type: object
+                properties:
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
-      summary: Update Workspace
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Workspaces]
+      summary: Update a workspace
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+              type: object
+              properties:
+                workspace: { $ref: '#/components/schemas/Workspace' }
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GetWorkspaceResponse'
+                type: object
+                properties:
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
     delete:
-      summary: Delete Workspace
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Workspaces]
+      summary: Delete a workspace
       responses:
-        '204':
-          description: No Content
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/token:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      summary: Mint this workspace's MCP token
+      description: |
+        Returns a long-lived token (365 days) whose audience is this workspace
+        plus `access`. This is the token that goes in `.mcp.json`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workspaces/{id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Archive a workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: archived }
+
+  /workspaces/{id}/unarchive:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Restore an archived workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: unarchived }
 
   /workspaces/{id}/stats:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
     get:
-      summary: Get Workspace Stats (Metrics)
+      tags: [Workspaces]
+      summary: Activity statistics for a workspace
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
         - name: range
           in: query
+          required: false
           schema:
             type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
         - name: from
           in: query
-          schema:
-            type: integer
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
         - name: to
           in: query
-          schema:
-            type: integer
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
       responses:
         '200':
           description: OK
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/GetDetailedWorkspaceStatsResponse'
+              schema: { $ref: '#/components/schemas/WorkspaceStats' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
 
-  /tasks:
-    get:
-      summary: List all tasks globally
-      parameters:
-        - name: filter
-          in: query
-          schema:
-            type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-        - name: created_by
-          in: query
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListTasksResponse'
-
-  /workspaces/{id}/tasks:
-    get:
-      summary: List Tasks in Workspace
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: filter
-          in: query
-          schema:
-            type: string
-        - name: status
-          in: query
-          schema:
-            type: string
-        - name: created_by
-          in: query
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ListTasksResponse'
-    post:
-      summary: Create Task
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+  /workspaces/{id}/slack:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    put:
+      tags: [Workspaces]
+      summary: Bind this workspace to a Slack channel
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateTaskRequest'
+              type: object
+              required: [channelId, channelName]
+              properties:
+                channelId: { type: string }
+                channelName: { type: string }
       responses:
-        '201':
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+        '400':
+          description: Missing fields, or Slack is not enabled for this deployment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+    delete:
+      tags: [Workspaces]
+      summary: Unbind the Slack channel
+      responses:
+        '200': { description: OK }
+        '400':
+          description: Slack is not enabled for this deployment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  # ── Tasks ───────────────────────────────────────────────────────────────────
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks across every workspace
+      description: Same filters as the per-workspace list, without the workspace bound.
+      parameters:
+        - $ref: '#/components/parameters/TaskStatusFilter'
+        - $ref: '#/components/parameters/TaskCreatedByFilter'
+        - $ref: '#/components/parameters/TaskFilter'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+
+  /tasks/stats:
+    get:
+      tags: [Tasks]
+      summary: Counts that drive the global badges
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pendingTasks: { type: integer, format: int64 }
+                  scheduledTasks: { type: integer, format: int64 }
+
+  /workspaces/{id}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Tasks]
+      summary: List tasks in a workspace
+      parameters:
+        - $ref: '#/components/parameters/TaskStatusFilter'
+        - $ref: '#/components/parameters/TaskCreatedByFilter'
+        - $ref: '#/components/parameters/TaskFilter'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+    post:
+      tags: [Tasks]
+      summary: Create a task
+      description: |
+        A `cronSchedule` makes the task recurring and sets its status to `cron`.
+        The minute field must be a single fixed integer: granularity below
+        hourly is rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task: { $ref: '#/components/schemas/Task' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/counts:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Tasks]
+      summary: Task counts by category
+      description: |
+        Categories collapse several statuses: `ongoing` also counts `blocked`,
+        `scheduled` counts `cron`, and `completed` counts `rejected`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: integer, format: int64 }
+                properties:
+                  notstarted: { type: integer, format: int64 }
+                  ongoing: { type: integer, format: int64 }
+                  scheduled: { type: integer, format: int64 }
+                  completed: { type: integer, format: int64 }
+
+  /workspaces/{id}/tasks/{taskID}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      summary: Get a task, with its messages and tool calls
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/respond:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Answer a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                response:
+                  type: object
+                  properties:
+                    action:
+                      type: string
+                      enum: [allow, reject, allow_all, text]
+                    text: { type: string }
+                    attachments:
+                      type: array
+                      items: { $ref: '#/components/schemas/Attachment' }
+                    metadata: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/reply:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Post a message to the task thread
+      description: |
+        Attachment bytes travel as base64 in `data`, inside this JSON body. The
+        server mints the attachment ID and clears `data` before storing the
+        metadata, so any `id` sent by the caller is ignored. The whole request
+        is subject to the server's 4 MB body limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reply:
+                  type: object
+                  properties:
+                    text: { type: string }
+                    attachments:
+                      type: array
+                      items: { $ref: '#/components/schemas/Attachment' }
+                    metadata: {}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/status:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Change a task's status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: object
+                  properties:
+                    value: { $ref: '#/components/schemas/TaskStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/order:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Reorder a task on the board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order:
+                  type: object
+                  properties:
+                    value: { type: number, format: double }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/assignee:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Reassign a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assignee:
+                  type: object
+                  properties:
+                    value: { type: string, enum: [human, agent] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/workspace:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Move a task to another workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspace:
+                  type: object
+                  properties:
+                    value:
+                      type: string
+                      description: Destination workspace ID (base62).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/allow_all:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Toggle blanket command approval for a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowAll:
+                  type: object
+                  properties:
+                    value: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/scheduled:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    put:
+      tags: [Tasks]
+      summary: Change or clear a task's schedule
+      description: |
+        Only tasks in `cron` or `notstarted` can be edited. An empty
+        `cronSchedule` clears the schedule and returns the task to
+        `notstarted`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task: { $ref: '#/components/schemas/Task' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/permission:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Allow or deny a pending tool call
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, behavior]
+              properties:
+                requestId: { type: string }
+                behavior: { type: string, enum: [allow, deny] }
+      responses:
+        '200': { description: Verdict delivered }
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '410':
+          description: |
+            The request expired — usually the server restarted. The agent has
+            to ask again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /workspaces/{id}/tasks/{taskID}/elicitation:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Answer an agent's elicitation request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, action]
+              properties:
+                requestId: { type: string }
+                action: { type: string, enum: [accept, decline, cancel] }
+                content:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200': { description: Answer delivered }
+        '400':
+          description: Missing `requestId`, or an action outside the enum
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '410':
+          description: The agent stopped waiting, or the server restarted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  /workspaces/{id}/tasks/{taskID}/stop:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      tags: [Tasks]
+      summary: Ask the agent to stop working on a task
+      description: |
+        A message to the agent, not a state change: the task's own status is
+        untouched, and the agent decides what happens next.
+      responses:
+        '200':
+          description: The agent acted on the request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stopped: { type: boolean }
+                  approvalsDenied: { type: integer }
+        '400':
+          description: Invalid task id
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: The connected agent does not support being stopped
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
+  # ── Attachments ─────────────────────────────────────────────────────────────
+  /workspaces/{id}/tasks/{taskID}/attachments/{attachmentID}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+      - name: attachmentID
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Attachments]
+      summary: Download an attachment
+      description: |
+        Streams the raw bytes — not base64 — with the stored MIME type and a
+        `Content-Disposition` filename. Both task-level and message-level
+        attachments are searched, and the task's owner is verified first, so an
+        attachment on someone else's task is a 404 rather than a 403.
+      responses:
+        '200':
+          description: OK
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  # ── Events ──────────────────────────────────────────────────────────────────
+  /events:
+    get:
+      tags: [Events]
+      summary: List events
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+    post:
+      tags: [Events]
+      summary: Create an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                payloadGuidelines: { type: string }
+      responses:
+        '200':
           description: Created
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateTaskResponse'
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
 
-  /workspaces/{id}/tasks/{taskID}:
+  /events/{id}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
     get:
-      summary: Get Task
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: taskID
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Events]
+      summary: Get an event
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GetTaskResponse'
-    delete:
-      summary: Delete Task
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: taskID
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: No Content
-
-  /workspaces/{id}/attachments/{attachmentID}:
-    get:
-      summary: Get Attachment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: attachmentID
-          in: path
-          required: true
-          schema:
-            type: string
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Events]
+      summary: Update an event's payload guidelines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payloadGuidelines: { type: string }
       responses:
         '200':
           description: OK
           content:
-            application/octet-stream:
+            application/json:
               schema:
-                type: string
-                format: binary
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+    delete:
+      tags: [Events]
+      summary: Delete an event
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}/triggers:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      summary: List the triggers subscribed to an event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventTriggers:
+                    type: array
+                    items: { $ref: '#/components/schemas/EventTrigger' }
+    post:
+      tags: [Events]
+      summary: Subscribe a workspace to an event
+      description: |
+        `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` are substituted into `body`
+        when the trigger fires. The title is static text and is never
+        substituted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventTriggerInput' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventTrigger: { $ref: '#/components/schemas/EventTrigger' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /events/{id}/triggers/{triggerID}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+      - name: triggerID
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Events]
+      summary: Update a trigger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventTriggerInput' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eventTrigger: { $ref: '#/components/schemas/EventTrigger' }
+    delete:
+      tags: [Events]
+      summary: Delete a trigger
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      summary: Tasks spawned by this event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+
+  # ── Workflows ───────────────────────────────────────────────────────────────
+  /workflows:
+    get:
+      tags: [Workflows]
+      summary: List workflows
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflows:
+                    type: array
+                    items: { $ref: '#/components/schemas/Workflow' }
+    post:
+      tags: [Workflows]
+      summary: Create a workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                startEventId: { type: string }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow: { $ref: '#/components/schemas/Workflow' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workflows/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      summary: Get a workflow
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow: { $ref: '#/components/schemas/Workflow' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Workflows]
+      summary: Update a workflow
+      description: |
+        Every field is optional and an omitted one is left alone — saving a
+        canvas layout must not blank the name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                startEventId: { type: string }
+                layout:
+                  description: Opaque canvas state, stored and returned verbatim.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow: { $ref: '#/components/schemas/Workflow' }
+    delete:
+      tags: [Workflows]
+      summary: Delete a workflow and its steps
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workflows/{id}/steps:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      summary: List a workflow's steps
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflowSteps:
+                    type: array
+                    items: { $ref: '#/components/schemas/WorkflowStep' }
+    post:
+      tags: [Workflows]
+      summary: Add a step
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId: { type: string }
+                workspaceId: { type: string }
+                emitEventId: { type: string }
+                title: { type: string }
+                body: { type: string }
+                assignee: { type: string, enum: [human, agent] }
+                allowAllCommands: { type: boolean }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflowStep: { $ref: '#/components/schemas/WorkflowStep' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workflows/{id}/steps/{stepID}:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+      - name: stepID
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [Workflows]
+      summary: Delete a step
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /workflows/{id}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      summary: Tasks spawned by this workflow
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskList' }
+
+  /workflows/{id}/text:
+    parameters:
+      - $ref: '#/components/parameters/WorkflowId'
+    get:
+      tags: [Workflows]
+      summary: The workflow as editable text
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text: { type: string }
+    put:
+      tags: [Workflows]
+      summary: Replace the workflow from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow: { $ref: '#/components/schemas/Workflow' }
+                  stepCount: { type: integer }
+        '400':
+          description: |
+            Parse or validation failure. Carries the offending source line so
+            the editor can mark the row rather than showing a bare message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      message: { type: string }
+                      line: { type: integer }
+
+  # ── Push notifications ──────────────────────────────────────────────────────
+  /push/vapid-public-key:
+    get:
+      tags: [Push]
+      summary: The VAPID public key for Web Push
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  publicKey: { type: string }
+
+  /push/subscription:
+    get:
+      tags: [Push]
+      summary: Whether an endpoint is subscribed for a workspace
+      parameters:
+        - name: workspaceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: endpoint
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscribed: { type: boolean }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Push]
+      summary: Remove every subscription for a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspaceId: { type: string }
+      responses:
+        '204': { description: Deleted }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /push/subscribe:
+    post:
+      tags: [Push]
+      summary: Subscribe a browser endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys, workspaceId]
+              properties:
+                endpoint: { type: string }
+                keys:
+                  type: object
+                  properties:
+                    p256dh: { type: string }
+                    auth: { type: string }
+                workspaceId: { type: string }
+                types:
+                  type: array
+                  items: { type: string }
+                  description: Omit or leave empty for every notification type.
+      responses:
+        '201':
+          description: Subscribed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: subscribed }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Push]
+      summary: Unsubscribe one endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endpoint: { type: string }
+      responses:
+        '204': { description: Unsubscribed }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  # ── Telemetry ───────────────────────────────────────────────────────────────
+  /telemetry:
+    post:
+      tags: [Telemetry]
+      summary: Record one client-side action
+      description: |
+        `action` comes from a fixed allowlist rather than being free text, and
+        there is deliberately no field for a count, a timestamp or a payload:
+        the server decides when the event happened and what one call is worth,
+        so a caller cannot backdate an event or claim a thousand at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, workspaceId]
+              properties:
+                action: { type: string }
+                workspaceId: { type: string }
+      responses:
+        '204': { description: Recorded }
+        '403': { $ref: '#/components/responses/AccessDenied' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  # ── Streaming ───────────────────────────────────────────────────────────────
+  /events/stream:
+    get:
+      tags: [Streaming]
+      summary: Server-sent events across every workspace
+      description: |
+        Long-lived `text/event-stream`. Authenticated by the `at` cookie like
+        every other route.
+
+        Event types: `task.created`, `task.updated`, `task.deleted`,
+        `status.updated`, `reply.received`, `respond.ack`, `agent.connected`.
+
+        Served by the standard-library mux rather than by Fiber, because Fiber's
+        response buffering is unsuited to a stream that never ends.
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { description: Unauthenticated }
+
+  /workspaces/{id}/events:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Streaming]
+      summary: Server-sent events for one workspace
+      description: |
+        The same stream as `/events/stream`, narrowed to one workspace. Also
+        served by the standard-library mux, which takes exact path matches
+        ahead of Fiber.
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { description: Unauthenticated }
 
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: at
+      description: Access token cookie, set by any of the `/auth` login flows.
+
+  parameters:
+    WorkspaceId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Workspace ID (base62).
+    TaskId:
+      name: taskID
+      in: path
+      required: true
+      schema: { type: string }
+      description: Task ID (base62).
+    EventId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Event ID (base62).
+    WorkflowId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Workflow ID (base62).
+    TaskStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema: { type: string }
+      description: Comma-separated list of statuses, e.g. `ongoing,blocked`.
+    TaskCreatedByFilter:
+      name: created_by
+      in: query
+      required: false
+      schema: { type: string, enum: [human, agent] }
+      description: |
+        Note the snake_case spelling — this query parameter predates the
+        camelCase convention that governs JSON bodies.
+    TaskFilter:
+      name: filter
+      in: query
+      required: false
+      schema: { type: string, enum: [pending_approval] }
+      description: Named filter. `pending_approval` selects tasks whose most recent message is a permission request.
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, default: 10, maximum: 50 }
+      description: Clamped server-side to 50; a value of 0 or less falls back to 10.
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema: { type: integer, default: 0 }
+
+  responses:
+    InvalidPayload:
+      description: Invalid request payload
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    AccessDenied:
+      description: Access denied
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   schemas:
+    ErrorResponse:
+      type: object
+      description: The structured envelope returned by handlers that map a domain error.
+      properties:
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            code: { type: integer }
+
+    SimpleError:
+      type: object
+      description: |
+        The flat shape returned by handlers that validate inline. Both forms
+        are live; each operation above names which one it returns.
+      properties:
+        error: { type: string }
+
+    AuthenticatedUser:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        picture: { type: string }
+
     Workspace:
       type: object
       properties:
-        id:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        name:
-          type: string
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        name: { type: string }
         description:
           type: string
-        archived_at:
-          type: string
-          format: date-time
-        icon:
-          type: string
-        notification_settings:
-          $ref: '#/components/schemas/NotificationSettings'
-        agent_connected:
+          description: The workspace's mission, shown to the agent.
+        archivedAt: { type: string, format: date-time, nullable: true }
+        icon: { type: string }
+        notificationSettings: { $ref: '#/components/schemas/NotificationSettings' }
+        agentConnected:
           type: boolean
-        mcp_url:
+          description: Whether an agent currently holds an MCP session.
+        agentSupportsStop: { type: boolean }
+        mcpUrl: { type: string }
+        mcpToken:
           type: string
-        mcp_token:
-          type: string
-        auto_allowed_tools:
+          description: Only present where the caller is entitled to see it.
+        autoAllowedTools:
           type: array
-          items:
-            type: string
+          items: { type: string }
+        allowAllCommands: { type: boolean }
+        selfLearningLoopNote: { type: string }
+        inputSendDelaySeconds:
+          type: integer
+          description: |
+            Seconds a chat message waits in the thread before reaching the
+            agent. 0 disables the delay.
+        workingDirectory: { type: string }
+        slack: { $ref: '#/components/schemas/SlackConfig' }
+
+    SlackConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        installed: { type: boolean }
+        channelId: { type: string }
+        channelName: { type: string }
+        autoCreated: { type: boolean }
+        clientId: { type: string }
+        authUrl: { type: string }
 
     NotificationSettings:
       type: object
       properties:
-        task_created:
-          type: boolean
-        task_status_updated:
-          type: boolean
-        task_received_message:
-          type: boolean
+        taskCreated: { type: boolean }
+        taskStatusUpdated: { type: boolean }
+        taskReceivedMessage: { type: boolean }
+        workspaceArchived: { type: boolean }
+        workspaceUnarchived: { type: boolean }
         channels:
           type: array
-          items:
-            type: string
-            enum:
-              - email
+          items: { type: string }
           example: ["email"]
 
-    CreateWorkspaceRequest:
+    WorkspaceStats:
       type: object
       properties:
-        workspace:
-          $ref: '#/components/schemas/Workspace'
+        summary:
+          type: object
+          properties:
+            tasksCompleted: { type: integer, format: int64 }
+            tasksScheduled: { type: integer, format: int64 }
+            messages: { type: integer, format: int64 }
+            manualApprovals: { type: integer, format: int64 }
+            autoApprovals: { type: integer, format: int64 }
+            denies: { type: integer, format: int64 }
+        timeseries:
+          type: object
+          properties:
+            tasksCompleted:
+              type: array
+              items: { $ref: '#/components/schemas/DailyStat' }
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/DailyStat' }
+        heatmap:
+          type: object
+          properties:
+            granularity: { type: string, enum: [hour, day] }
+            rangeStart: { type: integer, format: int64 }
+            rangeEnd: { type: integer, format: int64 }
+            tasksCompleted:
+              type: array
+              items: { $ref: '#/components/schemas/HeatmapStat' }
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/HeatmapStat' }
 
-    CreateWorkspaceResponse:
+    DailyStat:
       type: object
       properties:
-        workspace:
-          $ref: '#/components/schemas/Workspace'
+        date: { type: string }
+        count: { type: integer, format: int64 }
 
-    UpdateWorkspaceRequest:
+    HeatmapStat:
       type: object
       properties:
-        workspace:
-          $ref: '#/components/schemas/Workspace'
+        bucket: { type: string }
+        count: { type: integer, format: int64 }
 
-    GetWorkspaceResponse:
-      type: object
-      properties:
-        workspace:
-          $ref: '#/components/schemas/Workspace'
+    TaskStatus:
+      type: string
+      enum: [notstarted, ongoing, completed, rejected, cron, blocked]
 
-    ListWorkspacesResponse:
+    Task:
       type: object
       properties:
-        workspaces:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        workspaceId: { type: string }
+        createdBy: { type: string, enum: [human, agent] }
+        assignee: { type: string, enum: [human, agent] }
+        status: { $ref: '#/components/schemas/TaskStatus' }
+        title: { type: string }
+        body: { type: string }
+        response: { type: string }
+        replyText: { type: string }
+        attachments:
           type: array
-          items:
-            $ref: '#/components/schemas/Workspace'
+          items: { $ref: '#/components/schemas/Attachment' }
+        metadata: {}
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        toolCalls:
+          type: array
+          items: { $ref: '#/components/schemas/ToolCall' }
+        cronSchedule:
+          type: string
+          description: |
+            Cron expression. Granularity below hourly is rejected: the minute
+            field must be a single fixed integer, not a wildcard, step, range
+            or comma-list.
+        parentId: { type: string }
+        sortOrder: { type: number, format: double }
+        allowAllCommands: { type: boolean }
+        eventId:
+          type: string
+          description: Links the task to an event it should publish on completion.
+        workflowId:
+          type: string
+          description: |
+            Runs a whole named pipeline on completion instead of firing a
+            single event. Setting one also sets `eventId` to that workflow's
+            start event.
+        completionTriggerType:
+          type: integer
+          description: Records which of `eventId` or `workflowId` the author actually picked.
+
+    TaskEnvelope:
+      type: object
+      properties:
+        task: { $ref: '#/components/schemas/Task' }
+
+    TaskList:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items: { $ref: '#/components/schemas/Task' }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        taskId: { type: string }
+        userId: { type: string }
+        sender: { type: string }
+        text: { type: string }
+        attachments:
+          type: array
+          items: { $ref: '#/components/schemas/Attachment' }
+        metadata: {}
+
+    ToolCall:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        taskId: { type: string }
+        toolName: { type: string }
+        description: { type: string }
+        inputPreview: { type: string }
+        status:
+          type: string
+          enum: [auto_allowed, pending, allowed, denied]
 
     Attachment:
       type: object
       properties:
         id:
           type: string
-        filename:
-          type: string
-        mimeType:
-          type: string
+          description: |
+            Server-minted. Ignored on the way in — a caller-supplied ID is
+            always overwritten — and the only field that identifies the file
+            afterwards.
+        filename: { type: string }
+        mimeType: { type: string }
         data:
           type: string
+          description: |
+            Base64 on the way in only. Cleared before the metadata is stored,
+            so it is absent from every response; use the attachment download
+            route to get the bytes back.
 
-    Message:
+    Event:
       type: object
       properties:
-        id:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        name: { type: string }
+        payloadGuidelines:
           type: string
-        created_at:
-          type: string
-          format: date-time
-        task_id:
-          type: string
-        user_id:
-          type: string
-        sender:
-          type: string
-        text:
-          type: string
-        attachments:
-          type: array
-          items:
-            $ref: '#/components/schemas/Attachment'
-        metadata:
-          type: object
+          description: Guidance shown to the agent on what to put in the payload.
 
-    Task:
+    EventTrigger:
       type: object
       properties:
-        id:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        eventId: { type: string }
+        workspaceId: { type: string }
+        title: { type: string }
+        body: { type: string }
+        assignee: { type: string, enum: [human, agent] }
+        cronSchedule: { type: string }
+        allowAllCommands: { type: boolean }
+        emitEventId:
           type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        workspace_id:
-          type: string
-        created_by:
-          type: string
-        assignee:
-          type: string
-        status:
-          type: string
-        title:
-          type: string
-        body:
-          type: string
-        response:
-          type: string
-        reply_text:
-          type: string
-        attachments:
-          type: array
-          items:
-            $ref: '#/components/schemas/Attachment'
-        metadata:
-          type: object
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/Message'
-        cron_schedule:
-          type: string
-        parent_id:
-          type: string
-        sort_order:
-          type: number
-        allow_all_commands:
-          type: boolean
+          description: |
+            Chains events: when the task this trigger spawned completes, it
+            publishes this second event.
 
-    CreateTaskRequest:
+    EventTriggerInput:
       type: object
       properties:
-        task:
-          $ref: '#/components/schemas/Task'
+        workspaceId: { type: string }
+        title: { type: string }
+        body: { type: string }
+        assignee: { type: string, enum: [human, agent] }
+        cronSchedule: { type: string }
+        allowAllCommands: { type: boolean }
+        emitEventId: { type: string }
 
-    CreateTaskResponse:
+    Workflow:
       type: object
       properties:
-        task:
-          $ref: '#/components/schemas/Task'
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        name: { type: string }
+        description: { type: string }
+        startEventId: { type: string }
+        layout:
+          description: |
+            Opaque canvas state owned by the editor: stored and returned
+            verbatim so the graph editor can change its own shape without a
+            backend change.
 
-    GetTaskResponse:
+    WorkflowStep:
       type: object
       properties:
-        task:
-          $ref: '#/components/schemas/Task'
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        workflowId: { type: string }
+        eventId: { type: string }
+        workspaceId: { type: string }
+        emitEventId: { type: string }
+        title: { type: string }
+        body: { type: string }
+        assignee: { type: string, enum: [human, agent] }
+        allowAllCommands: { type: boolean }
 
-    ListTasksResponse:
-      type: object
-      properties:
-        tasks:
-          type: array
-          items:
-            $ref: '#/components/schemas/Task'
-
-    DailyStat:
-      type: object
-      properties:
-        date:
-          type: string
-        count:
-          type: integer
-
-    WorkspaceStatsSummary:
-      type: object
-      properties:
-        tasks_completed:
-          type: integer
-        tasks_scheduled:
-          type: integer
-        messages:
-          type: integer
-        manual_approvals:
-          type: integer
-        auto_approvals:
-          type: integer
-        denies:
-          type: integer
-
-    WorkspaceStatsTimeseries:
-      type: object
-      properties:
-        tasks_completed:
-          type: array
-          items:
-            $ref: '#/components/schemas/DailyStat'
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/DailyStat'
-
-    GetDetailedWorkspaceStatsResponse:
-      type: object
-      properties:
-        summary:
-          $ref: '#/components/schemas/WorkspaceStatsSummary'
-        timeseries:
-          $ref: '#/components/schemas/WorkspaceStatsTimeseries'
+security:
+  - sessionCookie: []
