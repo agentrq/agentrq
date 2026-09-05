@@ -11,6 +11,8 @@ import { useRouter } from 'vue-router';
 
 import { fetchGlobalTasks, getTask } from '../api';
 import { looksLikeTaskId, matchTasks, resolveTaskById, taskRoute } from '../composables/useTaskFinder';
+import { searchCachedTasks } from '../composables/useCachedReads';
+import { sharedCache } from '../composables/useCachedTasks';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const props = defineProps({
@@ -31,10 +33,32 @@ const resolving = ref(false);
 const notFound = ref(false);
 const inputRef = ref(null);
 
-const results = computed(() => matchTasks(tasks.value, query.value));
+/**
+ * The rows on screen, and which search produced them.
+ *
+ * Not a computed, because the better of the two searches is asynchronous. The
+ * local index answers across every task this device has saved; the fallback
+ * filters whatever the recent-task fetch happened to return. `searchedLocally`
+ * exists so the panel can say which one answered — the two do not reach the
+ * same distance, and a box that hides the difference misleads whoever searches
+ * a title, finds nothing, and concludes the task is gone.
+ */
+const results = ref([]);
+const searchedLocally = ref(false);
+
+async function runSearch() {
+  const asked = query.value;
+  const local = await searchCachedTasks(sharedCache(), asked, { limit: 8 });
+
+  // A slower search for an older query must not overwrite a newer one's answer.
+  if (asked !== query.value) return;
+
+  searchedLocally.value = local !== null;
+  results.value = local ?? matchTasks(tasks.value, asked);
+}
 
 /**
- * Offer the ID lookup only when the filter has come up empty — until then the
+ * Offer the ID lookup only when the search has come up empty — until then the
  * query is answered by rows the user can already see, and firing one request
  * per workspace behind that would be noise.
  */
@@ -42,20 +66,29 @@ const canResolveId = computed(
   () => results.value.length === 0 && looksLikeTaskId(query.value) && !resolving.value
 );
 
-/**
- * How far each kind of search actually reaches.
- *
- * The two halves of this box do not have the same range, and the difference is
- * invisible unless it is said out loud: a title is matched here in the browser
- * against the tasks that happen to be loaded, while an ID is asked of the
- * server and finds anything the user owns. Someone who searches a title, sees
- * nothing, and concludes the task is gone has been misled by a box that looked
- * like it searched everything.
- *
- * Deliberately the real number rather than the 50 the API caps at — claiming a
- * reach the panel does not have is the same mistake in the other direction.
- */
+/** How many recent tasks the fallback has to work with. */
 const loadedCount = computed(() => tasks.value.length);
+
+/**
+ * Whether this device can answer a text search on its own.
+ *
+ * Drives the resting copy, which has to promise the right thing before anyone
+ * has typed: the local index reaches every task saved here, and the fallback
+ * reaches only what the last fetch returned.
+ */
+const canSearchLocally = computed(() => Boolean(sharedCache()));
+
+/**
+ * How far a title search actually reaches, in the fewest honest words.
+ *
+ * "Saved here" rather than "everything": the cache holds what has been opened,
+ * not a whole history, and claiming otherwise would be the same mistake this
+ * line exists to prevent.
+ */
+const titlesReach = computed(() => {
+  if (loading.value) return '…';
+  return canSearchLocally.value ? 'saved here' : `${loadedCount.value} recent`;
+});
 
 watch(
   () => props.show,
@@ -64,6 +97,8 @@ watch(
     query.value = '';
     highlighted.value = 0;
     notFound.value = false;
+    results.value = [];
+    searchedLocally.value = false;
     await nextTick();
     inputRef.value?.focus();
     loadRecent();
@@ -73,7 +108,12 @@ watch(
 watch(query, () => {
   highlighted.value = 0;
   notFound.value = false;
+  runSearch();
 });
+
+// The recent-task fetch only matters to the fallback, but it lands after the
+// panel opens, so the resting list has to be refreshed when it does.
+watch(tasks, () => runSearch());
 
 async function loadRecent() {
   loading.value = true;
@@ -140,7 +180,7 @@ async function submit() {
               <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
             </svg>
             <input ref="inputRef" v-model="query" type="text" autocomplete="off" spellcheck="false"
-                   placeholder="Task ID, or part of a recent title"
+                   :placeholder="canSearchLocally ? 'Task ID, or any word in a title or description' : 'Task ID, or part of a recent title'"
                    class="grow bg-transparent text-[14px] text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 focus:outline-none"
                    @keydown.down.prevent="move(1)"
                    @keydown.up.prevent="move(-1)"
@@ -175,15 +215,18 @@ async function submit() {
               Not in the recent tasks. Press <span class="font-semibold text-gray-900 dark:text-zinc-100">Enter</span> to look this ID up across your workspaces.
             </p>
             <p v-else-if="query" class="text-[12px] text-gray-500 dark:text-zinc-400">
-              No match in your {{ loadedCount }} most recent tasks.
+              <span v-if="searchedLocally">No match in the tasks saved on this device.</span>
+              <span v-else>No match in your {{ loadedCount }} most recent tasks.</span>
               <span class="block mt-1 text-gray-400 dark:text-zinc-500">
-                Title search only covers those — paste a full task ID to search every workspace.
+                <template v-if="searchedLocally">A task you have never opened here was never saved — paste its ID to search every workspace.</template>
+                <template v-else>Title search only covers those — paste a full task ID to search every workspace.</template>
               </span>
             </p>
             <p v-else class="text-[12px] text-gray-500 dark:text-zinc-400">
-              Search the titles of your {{ loadedCount }} most recent tasks.
+              <span v-if="canSearchLocally">Search the titles and descriptions of every task saved on this device, offline.</span>
+              <span v-else>Search the titles of your {{ loadedCount }} most recent tasks.</span>
               <span class="block mt-1 text-gray-400 dark:text-zinc-500">
-                To reach older ones, paste a task ID<span v-if="shortcutLabel"> — {{ shortcutLabel }} reopens this</span>.
+                To reach a task that is not here, paste its ID<span v-if="shortcutLabel"> — {{ shortcutLabel }} reopens this</span>.
               </span>
             </p>
           </div>
@@ -197,7 +240,7 @@ async function submit() {
               <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">↵ Open</span>
             </span>
             <span class="text-[9px] text-right text-gray-400 dark:text-zinc-500 truncate">
-              Titles: <span class="text-gray-500 dark:text-zinc-400">{{ loading ? '…' : loadedCount }} recent</span>
+              Titles: <span class="text-gray-500 dark:text-zinc-400">{{ titlesReach }}</span>
               · IDs: <span class="text-gray-500 dark:text-zinc-400">every workspace</span>
             </span>
           </div>

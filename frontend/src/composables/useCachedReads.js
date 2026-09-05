@@ -1,7 +1,14 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 
 import { isCacheEnabled } from './useCachedTasks';
-import { getCachedTask, listAllCachedTasks, listCachedTasks } from './useLocalCache';
+import {
+  getCachedTask,
+  listAllCachedTasks,
+  listCachedTasks,
+  taskKeysForTerm,
+  tasksByKeys,
+} from './useLocalCache';
+import { intersect, rank, termRanges } from './useTaskIndex';
 
 /**
  * Reading the local copy, and the rules about when it is allowed to be shown.
@@ -79,6 +86,39 @@ export async function readAllCachedTasks(db, options = {}) {
   });
 
   return limit > 0 ? rows.slice(0, limit) : rows;
+}
+
+/**
+ * Search cached task titles and descriptions, with no request at all.
+ *
+ * This is the point of the whole cache. Each word becomes a seek into the term
+ * index rather than a scan of every task, the seeks are intersected so a second
+ * word narrows rather than widens, and only the survivors are read as records.
+ *
+ * Returns null — not an empty array — when the local index cannot answer, which
+ * the caller needs to tell apart from "searched and found nothing". Null means
+ * fall back to filtering whatever is already loaded; empty means the local index
+ * genuinely holds no match.
+ *
+ * @returns {Promise<Array<object>|null>}
+ */
+export async function searchCachedTasks(db, query, options = {}) {
+  const { storage, KeyRange = globalThis.IDBKeyRange, limit = 8 } = options;
+  if (!db) return null;
+
+  const ranges = termRanges(query, KeyRange);
+  // A query of nothing, or of nothing but stopwords, constrains nothing — and
+  // an unconstrained "search" is just the recent list, which the caller already
+  // has. Saying so is more useful than returning everything.
+  if (ranges.length === 0) return null;
+
+  const keyLists = await Promise.all(ranges.map((range) => taskKeysForTerm(db, range)));
+  const keys = intersect(keyLists);
+  if (keys.length === 0) return [];
+
+  const rows = await tasksByKeys(db, keys);
+  const visible = rows.filter((row) => isCacheEnabled(row.workspaceId, storage));
+  return rank(visible, query, limit);
 }
 
 /**
