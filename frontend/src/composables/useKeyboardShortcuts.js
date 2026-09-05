@@ -25,9 +25,24 @@ import { onMounted, onUnmounted } from 'vue';
  * to the page, and a bare letter collides with nothing at all as long as it is
  * suppressed while the user is typing (see `isTypingTarget`).
  *
- * The desktop build additionally reaches New Task through its application menu
- * on Cmd/Ctrl+Shift+N. That accelerator is consumed by the menu and never
- * arrives here, so it is described rather than bound — see `SHORTCUTS`.
+ * ## The modifier alternates, and where they are real
+ *
+ * The three action shortcuts also answer to **Cmd/Ctrl+Shift+key**, which is
+ * what people reach for first. Those chords are bound, but they are not
+ * available everywhere, and the difference is not ours to fix:
+ *
+ * - **In the desktop app they work.** It owns its own menu bar, so nothing
+ *   above the page claims them. Cmd/Ctrl+Shift+N already opened the task form
+ *   there through the application menu before this existed.
+ * - **In a browser most of them never arrive.** Cmd+Shift+T reopens the last
+ *   closed tab, Cmd+Shift+N opens a private window, and Cmd+Shift+M switches
+ *   profile in Chrome. The browser's own menu takes those before the page is
+ *   offered the event.
+ *
+ * So the bare letters stay, and stay the advertised binding on the web. They
+ * are the ones that work in every build. The help sheet shows the chord only
+ * where it can actually fire, because advertising a shortcut that silently
+ * does nothing is worse than not having one.
  */
 export const SHORTCUTS = [
   {
@@ -46,8 +61,7 @@ export const SHORTCUTS = [
     label: 'New task',
     hint: 'Opens the task form for the workspace you are in',
     scope: 'global',
-    /** Shown in the help sheet on the desktop build only. */
-    desktopAlso: 'CommandOrControl+Shift+N',
+    withModifier: true,
   },
   {
     id: 'show-help',
@@ -64,6 +78,7 @@ export const SHORTCUTS = [
     label: 'Chat view',
     hint: 'The message thread',
     scope: 'task',
+    withModifier: true,
   },
   {
     id: 'trajectory-view',
@@ -71,6 +86,7 @@ export const SHORTCUTS = [
     label: 'Trajectory view',
     hint: "The agent's reasoning and tool calls",
     scope: 'task',
+    withModifier: true,
   },
 ];
 
@@ -137,15 +153,24 @@ export function matchShortcut(event, { mac = false, shortcuts = SHORTCUTS } = {}
   const otherMod = mac ? Boolean(event.ctrlKey) : Boolean(event.metaKey);
   const typing = isTypingTarget(event.target);
 
+  const clean = !otherMod && !event.altKey;
+  const shift = Boolean(event.shiftKey);
+
   return (
     shortcuts.find((s) => {
       if (event.key.toLowerCase() !== s.key) return false;
 
-      if (s.mod) return modPressed && !otherMod && !event.altKey;
+      // A chord the table declares outright, like Cmd+K. Shift is pinned so
+      // Cmd+Shift+K is not silently the same shortcut.
+      if (s.mod) return modPressed && clean && !shift;
+
+      // The modifier alternate: the same action reached as Cmd/Ctrl+Shift+key.
+      // Held with the modifier it is unambiguous, so it fires while typing too.
+      if (modPressed) return Boolean(s.withModifier) && clean && shift;
 
       // `?` is Shift+/ on most layouts, so Shift is judged by the resulting
       // character rather than by the flag.
-      return !typing && !modPressed && !otherMod && !event.altKey;
+      return !typing && clean;
     }) ?? null
   );
 }
@@ -158,28 +183,15 @@ export function matchShortcut(event, { mac = false, shortcuts = SHORTCUTS } = {}
  * `+`.
  *
  * @param {{ key: string, mod?: boolean }} shortcut
- * @param {{ mac?: boolean }} [options]
+ * @param {{ mac?: boolean, modifier?: boolean }} [options]
+ *        `modifier` renders the Cmd/Ctrl+Shift alternate rather than the key
+ *        on its own.
  */
-export function formatShortcut(shortcut, { mac = false } = {}) {
+export function formatShortcut(shortcut, { mac = false, modifier = false } = {}) {
   const key = shortcut.key.toUpperCase();
+  if (modifier) return mac ? `⌘⇧${key}` : `Ctrl+Shift+${key}`;
   if (!shortcut.mod) return key;
   return mac ? `⌘${key}` : `Ctrl+${key}`;
-}
-
-/**
- * The same, for an Electron accelerator string like `CommandOrControl+Shift+N`.
- * Only used to describe the desktop menu's binding in the help sheet.
- *
- * @param {string} accelerator
- * @param {{ mac?: boolean }} [options]
- */
-export function formatAccelerator(accelerator, { mac = false } = {}) {
-  const parts = accelerator.split('+');
-  const glyphs = { CommandOrControl: '⌘', Command: '⌘', Control: '⌃', Shift: '⇧', Alt: '⌥' };
-  const words = { CommandOrControl: 'Ctrl', Command: 'Ctrl', Control: 'Ctrl', Shift: 'Shift', Alt: 'Alt' };
-
-  if (mac) return parts.map((p) => glyphs[p] ?? p.toUpperCase()).join('');
-  return parts.map((p) => words[p] ?? p.toUpperCase()).join('+');
 }
 
 /**

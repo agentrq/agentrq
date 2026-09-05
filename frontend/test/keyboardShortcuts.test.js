@@ -4,7 +4,6 @@ import { createApp, h } from 'vue'
 import {
   SHORTCUTS,
   dispatchShortcut,
-  formatAccelerator,
   formatShortcut,
   isTypingTarget,
   matchShortcut,
@@ -41,13 +40,22 @@ afterEach(() => {
 })
 
 describe('SHORTCUTS', () => {
-  it('binds nothing to a key the operating system or browser has already taken', () => {
-    // The point of the whole scheme. Cmd+N is New Window, Cmd+H is Hide on
-    // macOS and Cmd+M is Minimize — a handler on any of them would never run,
-    // so the table must not claim them.
+  it('binds nothing to a bare modifier combination the platform has taken', () => {
+    // Cmd+N is New Window, Cmd+H is Hide on macOS and Cmd+M is Minimize — a
+    // handler on any of them would never run. Cmd+K is the one such chord
+    // browsers leave to the page.
     const claimed = SHORTCUTS.filter((s) => s.mod).map((s) => s.key)
 
     expect(claimed).toEqual(['k'])
+  })
+
+  it('offers a modifier alternate for the actions, and only for those', () => {
+    // Cmd/Ctrl+Shift+key is what people reach for first, and it works in the
+    // desktop app, which owns its own menu bar. The help sheet is what decides
+    // whether to advertise it.
+    const withChord = SHORTCUTS.filter((s) => s.withModifier).map((s) => s.id)
+
+    expect(withChord.sort()).toEqual(['chat-view', 'new-task', 'trajectory-view'])
   })
 
   it('gives every shortcut an id, a key and a scope the help sheet groups by', () => {
@@ -120,6 +128,32 @@ describe('matchShortcut', () => {
     expect(matchShortcut(press('k'))).toBeNull()
   })
 
+  it('reads the modifier alternate for the actions that declare one', () => {
+    expect(matchShortcut(press('n', { metaKey: true, shiftKey: true }), { mac: true }).id).toBe(
+      'new-task'
+    )
+    expect(matchShortcut(press('m', { ctrlKey: true, shiftKey: true })).id).toBe('chat-view')
+    expect(matchShortcut(press('t', { ctrlKey: true, shiftKey: true })).id).toBe('trajectory-view')
+  })
+
+  it('fires the modifier alternate even while typing', () => {
+    // Held with a modifier it cannot be mistaken for text, unlike the bare key.
+    const inReply = { target: { tagName: 'TEXTAREA' }, ctrlKey: true, shiftKey: true }
+
+    expect(matchShortcut(press('m', inReply)).id).toBe('chat-view')
+  })
+
+  it('needs the shift for the alternate, and refuses it for a declared chord', () => {
+    // Cmd+M alone is Minimize on macOS and would never arrive; matching it
+    // would be claiming a key we do not get. And Cmd+Shift+K is not Cmd+K.
+    expect(matchShortcut(press('m', { ctrlKey: true }))).toBeNull()
+    expect(matchShortcut(press('k', { ctrlKey: true, shiftKey: true }))).toBeNull()
+  })
+
+  it('offers no alternate for a shortcut that did not ask for one', () => {
+    expect(matchShortcut(press('?', { ctrlKey: true, shiftKey: true }))).toBeNull()
+  })
+
   it('reads the bare letters', () => {
     expect(matchShortcut(press('n')).id).toBe('new-task')
     expect(matchShortcut(press('N')).id).toBe('new-task')
@@ -174,17 +208,10 @@ describe('formatShortcut', () => {
     expect(formatShortcut({ key: 'n' }, { mac: true })).toBe('N')
     expect(formatShortcut({ key: '?' })).toBe('?')
   })
-})
 
-describe('formatAccelerator', () => {
-  it('renders the desktop menu’s accelerator the way each platform writes it', () => {
-    expect(formatAccelerator('CommandOrControl+Shift+N', { mac: true })).toBe('⌘⇧N')
-    expect(formatAccelerator('CommandOrControl+Shift+N')).toBe('Ctrl+Shift+N')
-  })
-
-  it('passes through parts it has no name for', () => {
-    expect(formatAccelerator('Command+Control+Alt+F1', { mac: true })).toBe('⌘⌃⌥F1')
-    expect(formatAccelerator('Control+Alt+F1')).toBe('Ctrl+Alt+F1')
+  it('writes the modifier alternate when asked for it', () => {
+    expect(formatShortcut({ key: 'm' }, { mac: true, modifier: true })).toBe('⌘⇧M')
+    expect(formatShortcut({ key: 'm' }, { modifier: true })).toBe('Ctrl+Shift+M')
   })
 })
 

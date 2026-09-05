@@ -8,7 +8,7 @@
  */
 import { computed } from 'vue';
 
-import { SHORTCUTS, formatAccelerator, formatShortcut } from '../composables/useKeyboardShortcuts';
+import { SHORTCUTS, formatShortcut } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
 
 const props = defineProps({
@@ -31,11 +31,13 @@ const groups = computed(() =>
     items: SHORTCUTS.filter((s) => s.scope === group.scope).map((s) => ({
       ...s,
       combo: formatShortcut(s, { mac: props.mac }),
-      // The desktop menu owns this one; the renderer never sees the key, so it
-      // is described rather than claimed.
+      // Only where it can actually fire. In a browser these chords are taken
+      // by the browser's own menu — reopen closed tab, private window, switch
+      // profile — and never reach the page, so advertising them there would be
+      // advertising nothing.
       alsoCombo:
-        platformStore.isDesktop && s.desktopAlso
-          ? formatAccelerator(s.desktopAlso, { mac: props.mac })
+        platformStore.isDesktop && s.withModifier
+          ? formatShortcut(s, { mac: props.mac, modifier: true })
           : '',
     })),
   }))
