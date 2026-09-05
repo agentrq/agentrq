@@ -304,6 +304,57 @@ describe('evict', () => {
   })
 })
 
+describe('forgetTask', () => {
+  it('removes one task and leaves the rest of the workspace', async () => {
+    // A directory removal, because the task is a directory — the shape this
+    // store was given for exactly this.
+    const fs = makeFs()
+    const s = store(fs)
+    const otherTask = '/api/v1/workspaces/0iCYS9XKlnN/tasks/0iCYVCihMfJ/attachments/0iCt6L19zvR'
+    await s.write(A, 'A', png)
+    await s.write(B, 'B', png)
+    await s.write(otherTask, 'C', png)
+
+    expect(await s.forgetTask('0iCYS9XKlnN', '0iCYTqxKOqv')).toBe(true)
+
+    expect(await s.read(A)).toBeNull()
+    expect(await s.read(B)).toBeNull()
+    expect(await s.read(otherTask)).not.toBeNull()
+  })
+
+  it('does not reach into another workspace holding the same task id', async () => {
+    const fs = makeFs()
+    const s = store(fs)
+    const sameTaskElsewhere = '/api/v1/workspaces/0aBcDeFgHiJ/tasks/0iCYTqxKOqv/attachments/0iCt6L19zvS'
+    await s.write(A, 'A', png)
+    await s.write(sameTaskElsewhere, 'B', png)
+
+    await s.forgetTask('0iCYS9XKlnN', '0iCYTqxKOqv')
+
+    expect(await s.read(sameTaskElsewhere)).not.toBeNull()
+  })
+
+  it('refuses ids that must not become a path', async () => {
+    const fs = makeFs()
+    await store(fs).write(A, 'A', png)
+
+    expect(await store(fs).forgetTask('../..', 't')).toBe(false)
+    expect(await store(fs).forgetTask('0iCYS9XKlnN', '../..')).toBe(false)
+    expect(await store(fs).forgetTask('', '0iCYTqxKOqv')).toBe(false)
+    expect(await store(fs).forgetTask('0iCYS9XKlnN', '')).toBe(false)
+    expect(await store(fs).read(A)).not.toBeNull()
+  })
+
+  it('reports failure rather than throwing', async () => {
+    const fs = makeFs()
+    fs.rm = async () => {
+      throw new Error('busy')
+    }
+
+    expect(await store(fs).forgetTask('0iCYS9XKlnN', '0iCYTqxKOqv')).toBe(false)
+  })
+})
+
 describe('forgetWorkspace', () => {
   it('removes one workspace and leaves the others', async () => {
     // One directory removal, because the workspace is a directory. This is what

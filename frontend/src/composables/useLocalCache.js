@@ -389,6 +389,21 @@ export async function listAllCachedTasks(db) {
 }
 
 /**
+ * The cached record for a task id, whichever workspace holds it.
+ *
+ * Needed because a deletion is announced with the task id alone — the event
+ * envelope carries no workspace — while the store is keyed by both. Task ids
+ * are monoflakes and globally unique, so at most one record can match, and a
+ * scan is the honest way to find it: deletions are rare, and an index existing
+ * only for them would be paid for on every write.
+ */
+export async function findCachedTaskById(db, taskId) {
+  if (!db || !taskId) return null;
+  const rows = await listAllCachedTasks(db);
+  return rows.find((row) => String(row.id) === String(taskId)) ?? null;
+}
+
+/**
  * Forget specific tasks, wherever they live.
  *
  * Takes whole records rather than keys because the caller has just read them to

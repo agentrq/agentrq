@@ -4,6 +4,7 @@ import { CacheFirst, NetworkFirst } from 'workbox-strategies'
 import { CacheableResponsePlugin } from 'workbox-cacheable-response'
 
 import {
+  attachmentUrlsForTask,
   attachmentUrlsForWorkspace,
   budgetFor,
   evictionPlan,
@@ -18,6 +19,11 @@ self.addEventListener('message', event => {
   // worker can reach the cache they live in.
   if (event.data && event.data.type === 'FORGET_WORKSPACE') {
     event.waitUntil(forgetWorkspace(event.data.workspaceId))
+  }
+  // A deleted task's bytes outlive its rows unless something removes them, and
+  // only the worker can reach the cache they are in.
+  if (event.data && event.data.type === 'FORGET_TASK') {
+    event.waitUntil(forgetTask(event.data.workspaceId, event.data.taskId))
   }
 })
 
@@ -92,6 +98,13 @@ async function enforceBudget(cacheName) {
   // The platform is not knowable from inside the worker, and only the web build
   // registers one at all — so the web budget is the only one that applies here.
   for (const url of evictionPlan(entries, budgetFor('web'))) await cache.delete(url)
+}
+
+/** Forget one task's cached attachment bytes. */
+async function forgetTask(workspaceId, taskId) {
+  const cache = await caches.open(ATTACHMENT_CACHE)
+  const urls = (await cache.keys()).map(request => request.url)
+  for (const url of attachmentUrlsForTask(urls, workspaceId, taskId)) await cache.delete(url)
 }
 
 /** Forget one workspace's cached attachment bytes. */

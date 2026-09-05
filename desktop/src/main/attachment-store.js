@@ -204,6 +204,25 @@ export function createAttachmentStore({ dir, fs, budget = budgetFor('desktop') }
     },
 
     /**
+     * Forget one task's attachments.
+     *
+     * A directory removal, because the task *is* a directory — the shape this
+     * store was given for exactly this reason. Deleting a task has to reach its
+     * bytes as well as its rows, or the bytes outlive the task that explained
+     * them.
+     */
+    async forgetTask(workspaceId, taskId) {
+      if (!workspaceId || !taskId) return false
+      if (!SAFE_ID.test(workspaceId) || !SAFE_ID.test(taskId)) return false
+      try {
+        await fs.rm(`${workspaceDir(workspaceId)}/${taskId}`, { recursive: true, force: true })
+        return true
+      } catch {
+        return false
+      }
+    },
+
+    /**
      * Forget one workspace's attachments, leaving every other workspace's alone.
      *
      * One directory removal, because the workspace *is* a directory. This is

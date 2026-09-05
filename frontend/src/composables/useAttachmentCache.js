@@ -115,6 +115,18 @@ export function evictionPlan(entries, budget) {
 }
 
 /**
+ * The cached attachment URLs belonging to one task.
+ *
+ * Deleting a task has to reach its bytes as well as its rows, and both ids are
+ * already in the path, so no bookkeeping is needed to find them.
+ */
+export function attachmentUrlsForTask(urls, workspaceId, taskId) {
+  if (!workspaceId || !taskId) return [];
+  const needle = `/workspaces/${workspaceId}/tasks/${taskId}/attachments/`;
+  return (Array.isArray(urls) ? urls : []).filter((url) => String(url).includes(needle));
+}
+
+/**
  * The cached attachment URLs belonging to one workspace.
  *
  * Clearing a workspace has to reach the bytes as well as the rows, and the

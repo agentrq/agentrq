@@ -4,6 +4,8 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import {
   clearWorkspaceData,
   estimateUsage,
+  forgetCachedTask,
+  forgetTaskBytes,
   forgetEverything,
   formatBytes,
   requestPersistence,
@@ -285,6 +287,81 @@ describe('tellWorkerToForget', () => {
     }
 
     expect(tellWorkerToForget('ws1', worker)).toBe(false)
+  })
+})
+
+describe('forgetTaskBytes', () => {
+  it('asks both layers, because exactly one exists in any build', () => {
+    const posted = []
+    const asked = []
+    const worker = { controller: { postMessage: (m) => posted.push(m) } }
+    const bridge = { attachments: { forgetTask: (w, t) => asked.push([w, t]) } }
+
+    forgetTaskBytes('ws1', 't1', { worker, bridge })
+
+    expect(posted).toEqual([{ type: 'FORGET_TASK', workspaceId: 'ws1', taskId: 't1' }])
+    expect(asked).toEqual([['ws1', 't1']])
+  })
+
+  it('is a no-op where neither exists, and never throws', () => {
+    // With nothing supplied it reads this device's own worker and shell, which
+    // in a plain browser test are simply absent.
+    expect(() => forgetTaskBytes('ws1', 't1')).not.toThrow()
+    expect(() => forgetTaskBytes('ws1', 't1', {})).not.toThrow()
+    expect(() => forgetTaskBytes('ws1', 't1', { worker: null, bridge: null })).not.toThrow()
+    expect(() => forgetTaskBytes('ws1', 't1', { worker: {}, bridge: {} })).not.toThrow()
+    expect(() =>
+      forgetTaskBytes('ws1', 't1', {
+        worker: {
+          controller: {
+            postMessage() {
+              throw new Error('worker gone')
+            },
+          },
+        },
+        bridge: {
+          attachments: {
+            forgetTask() {
+              throw new Error('shell gone')
+            },
+          },
+        },
+      })
+    ).not.toThrow()
+  })
+})
+
+describe('forgetCachedTask', () => {
+  it('removes the task and asks for its bytes, finding the workspace itself', async () => {
+    // The deletion event carries only the task id, so the workspace has to come
+    // from the record before anything can be removed.
+    const db = await openCache({ userId: 'u1', factory })
+    await cacheTask(db, makeTask({ id: 'goes' }), { storage: allOn })
+    await cacheTask(db, makeTask({ id: 'stays' }), { storage: allOn })
+    const posted = []
+    const worker = { controller: { postMessage: (m) => posted.push(m) } }
+
+    expect(await forgetCachedTask(db, 'goes', { worker, KeyRange: IDBKeyRange })).toBe(true)
+
+    expect(await listCachedTasks(db, 'ws1', IDBKeyRange)).toHaveLength(1)
+    expect(posted).toEqual([{ type: 'FORGET_TASK', workspaceId: 'ws1', taskId: 'goes' }])
+    db.close()
+  })
+
+  it('reports nothing held for a task this device never cached', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+
+    expect(await forgetCachedTask(db, 'never-seen', { KeyRange: IDBKeyRange })).toBe(false)
+    db.close()
+  })
+
+  it('does nothing without a database or a task id', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+
+    expect(await forgetCachedTask(null, 't1', {})).toBe(false)
+    expect(await forgetCachedTask(db, '', {})).toBe(false)
+    expect(await forgetCachedTask(db, undefined, {})).toBe(false)
+    db.close()
   })
 })
 

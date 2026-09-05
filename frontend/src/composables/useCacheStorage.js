@@ -1,5 +1,5 @@
 import { cacheSettingKey, resetSharedCache, SETTING_OFF } from './useCachedTasks';
-import { clearWorkspace, destroyCache } from './useLocalCache';
+import { clearWorkspace, deleteTasks, destroyCache, findCachedTaskById } from './useLocalCache';
 
 /**
  * Owning the local copy: turning it off, seeing what it costs, and getting rid
@@ -172,6 +172,58 @@ export async function tellShellToForgetAll(bridge = globalThis.window?.agentrq) 
   } catch {
     return false;
   }
+}
+
+/**
+ * Ask whichever layer holds attachment bytes to forget one task's.
+ *
+ * The browser has a service worker and the desktop app has a file store the
+ * shell owns; exactly one exists in any build, so both are asked and the absent
+ * one is already a no-op. Neither is awaited for its answer — a task whose rows
+ * are gone is deleted as far as anyone can tell, and bytes that outlive them by
+ * a moment are invisible.
+ */
+export function forgetTaskBytes(workspaceId, taskId, options = {}) {
+  const {
+    worker = globalThis.navigator?.serviceWorker,
+    bridge = globalThis.window?.agentrq,
+  } = options;
+
+  try {
+    worker?.controller?.postMessage({ type: 'FORGET_TASK', workspaceId, taskId });
+  } catch {
+    // A worker that has gone away holds nothing worth reaching.
+  }
+  try {
+    bridge?.attachments?.forgetTask?.(workspaceId, taskId);
+  } catch {
+    // Likewise for a shell that is not there.
+  }
+}
+
+/**
+ * Forget everything held for a task that no longer exists.
+ *
+ * Driven by the deletion event rather than by the button that caused it, so it
+ * covers a task deleted on another device or by an agent as well as one deleted
+ * here. The event carries only the task id, which is why the workspace is
+ * looked up from the record before anything is removed.
+ *
+ * A move publishes the same deletion for the workspace a task is leaving, and
+ * removing the local copy there is right: the matching creation event in the
+ * destination workspace writes it back under its new key.
+ *
+ * @returns {Promise<boolean>} whether anything was held to forget
+ */
+export async function forgetCachedTask(db, taskId, options = {}) {
+  if (!db || !taskId) return false;
+
+  const record = await findCachedTaskById(db, taskId);
+  if (!record) return false;
+
+  await deleteTasks(db, [record], options.KeyRange);
+  forgetTaskBytes(record.workspaceId, record.id, options);
+  return true;
 }
 
 /**

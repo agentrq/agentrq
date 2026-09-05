@@ -4,6 +4,7 @@ import {
   DESKTOP_BUDGET_BYTES,
   MAX_ATTACHMENT_BYTES,
   WEB_BUDGET_BYTES,
+  attachmentUrlsForTask,
   attachmentUrlsForWorkspace,
   budgetFor,
   evictionPlan,
@@ -150,6 +151,30 @@ describe('evictionPlan', () => {
     expect(evictionPlan([], 100)).toEqual([])
     expect(evictionPlan(null, 100)).toEqual([])
     expect(evictionPlan(undefined, 100)).toEqual([])
+  })
+})
+
+describe('attachmentUrlsForTask', () => {
+  const urls = [
+    'https://x/api/v1/workspaces/ws1/tasks/t1/attachments/a1',
+    'https://x/api/v1/workspaces/ws1/tasks/t1/attachments/a2',
+    'https://x/api/v1/workspaces/ws1/tasks/t2/attachments/a3',
+    'https://x/api/v1/workspaces/ws2/tasks/t1/attachments/a4',
+  ]
+
+  it('finds one task\'s attachments and no other task\'s', () => {
+    expect(attachmentUrlsForTask(urls, 'ws1', 't1')).toEqual([urls[0], urls[1]])
+  })
+
+  it('does not confuse the same task id in another workspace', () => {
+    expect(attachmentUrlsForTask(urls, 'ws2', 't1')).toEqual([urls[3]])
+  })
+
+  it('has nothing to find without both ids or a list', () => {
+    expect(attachmentUrlsForTask(urls, 'ws1', '')).toEqual([])
+    expect(attachmentUrlsForTask(urls, '', 't1')).toEqual([])
+    expect(attachmentUrlsForTask(null, 'ws1', 't1')).toEqual([])
+    expect(attachmentUrlsForTask(undefined, 'ws1', 't1')).toEqual([])
   })
 })
 

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('agentrq', {
   attachments: {
     forgetWorkspace: (workspaceId) =>
       ipcRenderer.invoke('agentrq:attachments:forgetWorkspace', workspaceId),
+    forgetTask: (workspaceId, taskId) =>
+      ipcRenderer.invoke('agentrq:attachments:forgetTask', workspaceId, taskId),
     forgetAll: () => ipcRenderer.invoke('agentrq:attachments:forgetAll'),
   },
 

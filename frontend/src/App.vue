@@ -395,7 +395,7 @@ import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import Toast from './components/Toast.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
-import { forgetEverything } from './composables/useCacheStorage'
+import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
 import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheRetention'
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
@@ -574,6 +574,13 @@ watch(events, (newEvents) => {
   // stream carries tasks nobody has open to merge against. See useCachedTasks.
   if (event.type === 'task.created' || event.type === 'task.updated') {
     cacheTaskEvent(sharedCache(), event.payload)
+  }
+
+  // A deleted task must not outlive itself on this device. Driven by the event
+  // rather than by the button, so it also covers a task deleted from another
+  // device or by an agent.
+  if (event.type === 'task.deleted') {
+    forgetCachedTask(sharedCache(), event.payload?.id)
   }
 
   if (event.type === 'task.created' && event.payload.createdBy === 'agent') {

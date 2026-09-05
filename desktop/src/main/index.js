@@ -723,6 +723,9 @@ function registerIpc(getWindow) {
   ipcMain.handle('agentrq:attachments:forgetWorkspace', (_event, workspaceId) =>
     attachmentStoreFor(currentPartition()).forgetWorkspace(workspaceId)
   )
+  ipcMain.handle('agentrq:attachments:forgetTask', (_event, workspaceId, taskId) =>
+    attachmentStoreFor(currentPartition()).forgetTask(workspaceId, taskId)
+  )
   ipcMain.handle('agentrq:attachments:forgetAll', () =>
     attachmentStoreFor(currentPartition()).forgetAll()
   )

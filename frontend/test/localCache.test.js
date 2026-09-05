@@ -12,6 +12,7 @@ import {
   destroyCache,
   getCachedTask,
   deleteTasks,
+  findCachedTaskById,
   listAllCachedTasks,
   listCachedTasks,
   metaKey,
@@ -482,6 +483,28 @@ describe('listAllCachedTasks', () => {
 
   it('has nothing to scan without a database', async () => {
     expect(await listAllCachedTasks(null)).toEqual([])
+  })
+})
+
+describe('findCachedTaskById', () => {
+  it('finds a task without being told which workspace holds it', async () => {
+    // A deletion is announced with the task id alone — the event envelope
+    // carries no workspace — while the store is keyed by both.
+    const db = await open()
+    await putTask(db, makeTask({ id: 'here', workspaceId: 'ws2' }))
+
+    expect((await findCachedTaskById(db, 'here')).workspaceId).toBe('ws2')
+    db.close()
+  })
+
+  it('finds nothing for a task it has never seen', async () => {
+    const db = await open()
+    await putTask(db, makeTask())
+
+    expect(await findCachedTaskById(db, 'never')).toBeNull()
+    expect(await findCachedTaskById(db, '')).toBeNull()
+    expect(await findCachedTaskById(null, 'x')).toBeNull()
+    db.close()
   })
 })
 
