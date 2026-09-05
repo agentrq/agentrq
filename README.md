@@ -102,6 +102,16 @@ Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Search & Keyboard Shortcuts
+
+<kbd>⌘K</kbd> (<kbd>Ctrl+K</kbd> off macOS) opens a task finder that matches any word in a title or description, straight from the copy your device already saved — so it answers offline, and tells you how far it looked. Everything else is a bare letter: <kbd>N</kbd> for a new task, <kbd>M</kbd> and <kbd>T</kbd> to flip between a task's chat and its trajectory, <kbd>?</kbd> for the list. Nothing to configure, and nothing to memorise.
+
+</td>
+<td width="50%"><img src="https://agentrq.com/assets/feature-keyboard-shortcuts.gif" alt="AgentRQ task finder and keyboard shortcuts sheet" width="320" /></td>
+</tr>
 </table>
 
 See the full list at [agentrq.com/features](https://agentrq.com/features).
