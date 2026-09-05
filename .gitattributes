@@ -1,0 +1,11 @@
+# JavaScript sources are text, even when one holds a control character as data.
+#
+# `keySignature` in frontend/src/composables/useTaskIndex.js joins a compound key
+# on NUL, and that byte was written into the source literally. Git's binary
+# heuristic looks for exactly that byte, so the whole file was treated as binary
+# and every diff on it rendered as "Binary files differ" — the change was
+# invisible in review. The literal is now an escape, and this keeps any future
+# one from hiding a diff again.
+*.js diff
+*.mjs diff
+*.cjs diff

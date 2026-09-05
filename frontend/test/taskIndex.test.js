@@ -186,6 +186,36 @@ describe('intersect', () => {
     expect(intersect(null)).toEqual([])
     expect(intersect(undefined)).toEqual([])
   })
+
+  // A prefix seek over a multiEntry index returns one key per matching *term*,
+  // so a task indexed under both "task" and "tasks" comes back twice for the
+  // query "task". Undeduplicated it is read twice and drawn twice.
+  it('returns a key once however many times a list repeats it', () => {
+    const result = intersect([[k('a'), k('b'), k('a'), k('a')]])
+
+    expect(result.map((key) => key[1])).toEqual(['a', 'b'])
+  })
+
+  it('keeps the first occurrence, so the incoming order still holds', () => {
+    const result = intersect([[k('c'), k('a'), k('c'), k('b')]])
+
+    expect(result.map((key) => key[1])).toEqual(['c', 'a', 'b'])
+  })
+
+  it('deduplicates a key that survives the intersection', () => {
+    // The repeat has to be dropped *and* the AND semantics kept: "a" appears
+    // twice on the left and once on the right, "b" only on the left.
+    const result = intersect([
+      [k('a'), k('b'), k('a')],
+      [k('a')],
+    ])
+
+    expect(result.map((key) => key[1])).toEqual(['a'])
+  })
+
+  it('drops a repeated key that no other list holds', () => {
+    expect(intersect([[k('a'), k('a')], [k('b')]])).toEqual([])
+  })
 })
 
 describe('matchRank', () => {
