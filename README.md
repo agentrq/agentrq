@@ -464,6 +464,10 @@ Copy the filled-in commands and config block from **Workspace Settings → Setup
 AgentRQ supports multi-tenant Slack integration for real-time task creation, thread replies sync, and agent permission requests:
 - [Slack Integration Setup & Usage Guide](integrations/slack/README.md)
 
+## 🙌 Contributing
+
+Bug reports go in a [GitHub issue](https://github.com/agentrq/agentrq/issues/new) and feature or architecture ideas go in a short written proposal — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## 🤝 Credits
 
 - [AgentRQ](https://agentrq.com) — The official Agent-Human collaboration platform.
