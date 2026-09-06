@@ -501,6 +501,38 @@ type (
 		A string
 	}
 
+	// Memory is one of a workspace's remembered notes. Size travels with the
+	// list so a caller can show what is there without fetching every memory in
+	// full; Content is only populated when one was asked for by name.
+	Memory struct {
+		ID          int64
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		WorkspaceID int64
+		Name        string
+		Content     string
+		SizeBytes   int
+	}
+
+	ListMemoriesRequest struct {
+		WorkspaceID int64
+		UserID      string
+	}
+
+	ListMemoriesResponse struct {
+		Memories []Memory
+	}
+
+	GetMemoryRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+	}
+
+	GetMemoryResponse struct {
+		Memory Memory
+	}
+
 	Event struct {
 		ID                int64
 		CreatedAt         time.Time
