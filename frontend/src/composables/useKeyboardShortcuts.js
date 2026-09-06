@@ -52,6 +52,11 @@ export const SHORTCUTS = [
     // The finder is how you leave a screen you are typing on, so unlike the
     // bare letters it stays live while a text box has focus.
     hint: 'Titles from your recent tasks; a full ID reaches any task you own',
+    // Shown in the workspace header, where it is the one shortcut worth
+    // advertising: a keystroke nobody discovers is a keystroke nobody uses.
+    // Deliberately shorter and more verb-like than `label`, which titles a row
+    // in the help sheet — here it has to read as an instruction at a glance.
+    hintLabel: 'Search tasks',
     scope: 'global',
   },
   {
@@ -185,6 +190,23 @@ export function formatShortcut(shortcut, { mac = false } = {}) {
   const key = shortcut.key.toUpperCase();
   if (!shortcut.mod) return key;
   return mac ? `⌘${key}` : `Ctrl+${key}`;
+}
+
+/**
+ * A shortcut worth showing in the interface's own chrome, or null.
+ *
+ * Only shortcuts that declare a `hintLabel` are advertised — a hint is a claim
+ * on space beside the controls, and most of the table does not earn one. The
+ * help sheet is where the rest live.
+ *
+ * @param {string} id
+ * @param {{ mac?: boolean, shortcuts?: typeof SHORTCUTS }} [options]
+ * @returns {{ keys: string, label: string } | null}
+ */
+export function shortcutHint(id, { mac = false, shortcuts = SHORTCUTS } = {}) {
+  const shortcut = shortcuts.find((s) => s.id === id);
+  if (!shortcut?.hintLabel) return null;
+  return { keys: formatShortcut(shortcut, { mac }), label: shortcut.hintLabel };
 }
 
 /**

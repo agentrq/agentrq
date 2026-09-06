@@ -42,6 +42,18 @@
         <!-- Stats & Actions Row -->
         <div class="flex items-center gap-4 shrink-0 justify-between sm:justify-end">
           <div class="flex items-center gap-2">
+            <!-- How to reach the finder.
+                 Beside the controls because that is where someone looks when
+                 they want to get somewhere, and a keystroke nobody discovers is
+                 a keystroke nobody uses. Hidden below `lg`: the row is already
+                 tight at that width, and a hint is the first thing that should
+                 give up its space. Not a button — it says which key to press,
+                 and pressing it is the thing being taught. -->
+            <span v-if="findTaskHint" class="hidden lg:flex items-center gap-1.5 mr-1 text-gray-400 dark:text-zinc-500 select-none">
+              <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5 bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
+              <span class="text-[10px] font-medium">{{ findTaskHint.label }}</span>
+            </span>
+
             <!-- Filters Toggle & Menu Wrapper -->
             <div class="relative flex items-center">
               <button @click="showMobileFilters = !showMobileFilters" 
@@ -176,6 +188,8 @@ import { useTooltipStore } from '../stores/tooltipStore';
 import { useViewport } from '../composables/useViewport';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
+import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcuts';
+import { usePlatformStore } from '../stores/platformStore';
 import TaskFeed from '../components/TaskFeed.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -185,6 +199,14 @@ const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
 const { isMobile } = useViewport();
+
+const platformStore = usePlatformStore();
+// Which modifier this keyboard has is a per-machine fact, so the hint is
+// computed rather than written: ⌘K on a Mac, Ctrl+K everywhere else, in both
+// the browser and the desktop app.
+const findTaskHint = computed(() =>
+  shortcutHint('find-task', { mac: usesCommandKey(platformStore.$state) })
+);
 const workspaceId = computed(() => route.params.id);
 const selectedTaskId = computed(() => route.params.taskId);
 

@@ -4,6 +4,7 @@ import { createApp, h } from 'vue'
 import {
   SHORTCUTS,
   dispatchShortcut,
+  shortcutHint,
   formatShortcut,
   isTypingTarget,
   matchShortcut,
@@ -189,6 +190,46 @@ describe('formatShortcut', () => {
     expect(formatShortcut({ key: '?' })).toBe('?')
   })
 
+})
+
+describe('shortcutHint', () => {
+  it('spells the finder for a Mac keyboard', () => {
+    expect(shortcutHint('find-task', { mac: true })).toEqual({ keys: '⌘K', label: 'Search tasks' })
+  })
+
+  it('spells it for every other keyboard', () => {
+    expect(shortcutHint('find-task', { mac: false })).toEqual({ keys: 'Ctrl+K', label: 'Search tasks' })
+  })
+
+  it('defaults to the non-Mac spelling rather than guessing', () => {
+    expect(shortcutHint('find-task').keys).toBe('Ctrl+K')
+  })
+
+  it('offers nothing for a shortcut that does not ask to be advertised', () => {
+    // A hint takes space beside the controls; most of the table has not earned
+    // one and lives in the help sheet instead.
+    expect(shortcutHint('new-task')).toBeNull()
+    expect(shortcutHint('trajectory-view')).toBeNull()
+  })
+
+  it('offers nothing for a shortcut that does not exist', () => {
+    expect(shortcutHint('no-such-shortcut')).toBeNull()
+  })
+
+  it('reads the table it is given, so a caller can test its own', () => {
+    const table = [{ id: 'x', key: 'j', mod: true, label: 'X', hintLabel: 'Do the thing' }]
+
+    expect(shortcutHint('x', { mac: true, shortcuts: table }))
+      .toEqual({ keys: '⌘J', label: 'Do the thing' })
+  })
+
+  it('advertises exactly one shortcut today', () => {
+    // Guards the claim the header makes: adding a hintLabel puts a hint on
+    // screen, so it should be a decision rather than a side effect.
+    const advertised = SHORTCUTS.filter((s) => s.hintLabel).map((s) => s.id)
+
+    expect(advertised).toEqual(['find-task'])
+  })
 })
 
 describe('dispatchShortcut', () => {
