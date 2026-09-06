@@ -201,6 +201,7 @@ func New(cfg Config) (*App, error) {
 		&model.Workflow{},
 		&model.WorkflowStep{},
 		&model.ToolCall{},
+		&model.Memory{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}

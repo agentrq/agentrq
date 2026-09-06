@@ -11,6 +11,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -36,6 +37,12 @@ type Repository interface {
 	ListMessages(ctx context.Context, taskID int64) ([]model.Message, error)
 	UpdateMessageMetadata(ctx context.Context, taskID int64, messageID int64, metadata []byte) error
 	GetWorkspaceAttachmentIDs(ctx context.Context, workspaceID int64) ([]string, error)
+
+	// Memory — the workspace's own notes, written by agents through the MCP
+	// memory tools. Keyed per (owner, workspace, name); see model.Memory.
+	GetMemory(ctx context.Context, userID, workspaceID int64, name string) (model.Memory, error)
+	UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error)
+	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
@@ -882,6 +889,57 @@ func (r *repository) ListPushSubscriptionsByUserAndWorkspace(ctx context.Context
 }
 
 // ── Events ─────────────────────────────────────────────────────────────────────
+
+// ── Memories ──────────────────────────────────────────────────────────────────
+
+func (r *repository) GetMemory(ctx context.Context, userID, workspaceID int64, name string) (model.Memory, error) {
+	var m model.Memory
+	err := r.conn(ctx).
+		Where("user_id = ? AND workspace_id = ? AND name = ?", userID, workspaceID, name).
+		First(&m).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.Memory{}, ErrNotFound
+	}
+	return m, err
+}
+
+// UpsertMemory writes a memory, replacing whatever was stored under that name.
+//
+// Overwriting is the whole semantic of saveMemory, so this is one statement
+// rather than a read followed by a write: two agents saving the same memory at
+// once would otherwise race, and the loser's insert would fail against the
+// unique key rather than simply being overwritten.
+//
+// The caller supplies a fresh ID for the insert case. On conflict the stored
+// row keeps the ID it already had — only the content and the timestamp move —
+// so a memory's identity survives being rewritten.
+func (r *repository) UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error) {
+	err := r.conn(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}, {Name: "workspace_id"}, {Name: "name"}},
+		DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
+	}).Create(&m).Error
+	if err != nil {
+		return model.Memory{}, err
+	}
+	// Read back rather than returning the struct that went in: on the update
+	// path the row's ID and creation time are the ones it already had, not the
+	// ones this call generated.
+	return r.GetMemory(ctx, m.UserID, m.WorkspaceID, m.Name)
+}
+
+// ListMemoriesByWorkspace returns every memory in a workspace, ordered by name.
+//
+// Content comes back with them: the rows are capped at 16 KiB and a workspace
+// holds a handful, so a second query per memory would cost more than it saves.
+// Callers that only need the index — the settings list — drop it themselves.
+func (r *repository) ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error) {
+	var memories []model.Memory
+	err := r.conn(ctx).
+		Where("user_id = ? AND workspace_id = ?", userID, workspaceID).
+		Order("name asc").
+		Find(&memories).Error
+	return memories, err
+}
 
 func (r *repository) CreateEvent(ctx context.Context, e model.Event) (model.Event, error) {
 	if err := r.conn(ctx).Create(&e).Error; err != nil {

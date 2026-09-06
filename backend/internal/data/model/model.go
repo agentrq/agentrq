@@ -169,6 +169,34 @@ type (
 	}
 
 	// Message is an entry in a task's chat history
+	// Memory is what an agent has chosen to remember about a workspace.
+	//
+	// Scoped to the workspace's owner rather than to whichever agent wrote it:
+	// this is the workspace's memory, so every agent working there reads and
+	// writes the same rows. Keyed per (owner, workspace, name), so several
+	// named memories can live side by side; MEMORY.md is the one agents read
+	// first and is where the index to the others belongs.
+	//
+	// The unique index spans all three columns, and every one of them carries
+	// the same index name with a priority — see the note on Event for what
+	// happens otherwise. Here the consequence would be a memory name that is
+	// unique across every workspace and every account, so one workspace saving
+	// "MEMORY.md" would take the name from everybody else.
+	//
+	// Content is capped at 16 KiB by the tools that write it, which is where
+	// there is a caller to refuse. The column is deliberately larger: the cap
+	// is counted in bytes of UTF-8, and 64000 characters is comfortably above
+	// what 16 KiB can encode.
+	Memory struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UpdatedAt   time.Time
+		UserID      int64  `gorm:"index:idx_memories_user_id;uniqueIndex:uk_user_id_workspace_id_name,priority:1"`
+		WorkspaceID int64  `gorm:"index:idx_memories_workspace_id;uniqueIndex:uk_user_id_workspace_id_name,priority:2"`
+		Name        string `gorm:"type:varchar(32);uniqueIndex:uk_user_id_workspace_id_name,priority:3"`
+		Content     string `gorm:"type:varchar(64000)"`
+	}
+
 	Message struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time
