@@ -1622,6 +1622,12 @@ components:
           type: boolean
           description: Whether an agent currently holds an MCP session.
         agentSupportsStop: { type: boolean }
+        agentModels:
+          allOf: [{ $ref: '#/components/schemas/AgentModels' }]
+          description: |
+            What the connected agent can switch between. Absent when no agent is
+            connected, or when the connected one has not reported any, so its
+            presence means a choice exists.
         mcpUrl: { type: string }
         mcpToken:
           type: string
@@ -1638,6 +1644,35 @@ components:
             agent. 0 disables the delay.
         workingDirectory: { type: string }
         slack: { $ref: '#/components/schemas/SlackConfig' }
+
+    AgentModels:
+      type: object
+      description: |
+        Live state read off the workspace's MCP session rather than a stored
+        column: it arrives as a `notifications/claude/channel/models`
+        notification from the gateway and is reported only while the session
+        that sent it is still connected.
+      properties:
+        configId:
+          type: string
+          description: |
+            The agent session config option these were advertised under, which
+            is what a selection would have to be written back to.
+        currentModel: { type: string }
+        models:
+          type: array
+          items: { $ref: '#/components/schemas/AgentModel' }
+
+    AgentModel:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        current: { type: boolean }
+        group:
+          type: string
+          description: Optional grouping, e.g. the provider name.
 
     SlackConfig:
       type: object

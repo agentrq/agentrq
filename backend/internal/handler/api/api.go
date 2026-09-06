@@ -612,6 +612,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
+		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusCreated)
@@ -640,6 +641,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
+		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -667,6 +669,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 		for i := range rs.Workspaces {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspaces[i].ID)
+			rs.Workspaces[i].AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspaces[i].ID))
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
@@ -774,6 +777,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		}
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)
+		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rq.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -939,5 +943,30 @@ func (h *handler) enrichWorkspaceSlack(ctx context.Context, ws *entity.Workspace
 	cfg, err := h.slackCtrl.GetWorkspaceSlackConfig(ctx, ws.ID)
 	if err == nil && cfg != nil {
 		ws.Slack = cfg
+	}
+}
+
+// agentModelsEntity converts a live MCP snapshot into the entity the workspace
+// carries, so the API layer keeps its own shape rather than exposing the MCP
+// controller's type through the view.
+func agentModelsEntity(s *mcpctrl.AgentModelsSnapshot) *entity.AgentModels {
+	if s == nil {
+		return nil
+	}
+
+	models := make([]entity.AgentModel, len(s.Models))
+	for i, m := range s.Models {
+		models[i] = entity.AgentModel{
+			ID:          m.ID,
+			Name:        m.Name,
+			Description: m.Description,
+			Current:     m.Current,
+			Group:       m.Group,
+		}
+	}
+	return &entity.AgentModels{
+		ConfigID:     s.ConfigID,
+		CurrentModel: s.CurrentModel,
+		Models:       models,
 	}
 }

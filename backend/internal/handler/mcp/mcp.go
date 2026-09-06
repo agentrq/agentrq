@@ -31,6 +31,7 @@ import (
 var customNotificationMethods = []string{
 	"notifications/claude/channel/permission_request",
 	mcpctrl.AgentTelemetryNotificationMethod,
+	mcpctrl.AgentModelsNotificationMethod,
 }
 
 type Params struct {

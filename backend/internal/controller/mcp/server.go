@@ -128,15 +128,20 @@ type WorkspaceServer struct {
 	// each revision rewrites that message instead of appending another one.
 	agentTelemetryMessagesMu sync.RWMutex
 	agentTelemetryMessages   map[string]int64 // taskID:kind[:planID] -> messageID
-	elicitationsMu           sync.Mutex
-	elicitations             map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
-	metadataMu               sync.RWMutex
-	icon                     string
-	name                     string
-	description              string
-	archivedAt               *time.Time
-	lastUpdateCheckAt        time.Time
-	agentConnections         atomic.Int32
+	// What each connected session says it can switch between. Cached because it
+	// only ever arrives by notification, and read back filtered to live
+	// sessions so a disconnected agent stops advertising its models.
+	agentModelsMu     sync.RWMutex
+	agentModels       map[string]AgentModelsSnapshot // sessionID -> models last reported
+	elicitationsMu    sync.Mutex
+	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
+	metadataMu        sync.RWMutex
+	icon              string
+	name              string
+	description       string
+	archivedAt        *time.Time
+	lastUpdateCheckAt time.Time
+	agentConnections  atomic.Int32
 
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
 	// removed workspace server does not leak them for the lifetime of the process.
@@ -357,6 +362,7 @@ func NewWorkspaceServer(
 		undeliveredVerdicts:    make(map[string]string),
 		toolCallIDs:            make(map[string]int64),
 		agentTelemetryMessages: make(map[string]int64),
+		agentModels:            make(map[string]AgentModelsSnapshot),
 		elicitations:           make(map[string]chan elicitationResponse),
 		icon:                   icon,
 		name:                   name,
@@ -2070,6 +2076,18 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			return
 		}
 		ps.HandleAgentTelemetry(ctx, sessionID, telemetry.Params)
+		return
+	}
+
+	if msg.Method == AgentModelsNotificationMethod {
+		var models struct {
+			Params AgentModelsParams `json:"params"`
+		}
+		if err := json.Unmarshal(data, &models); err != nil {
+			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent models notification")
+			return
+		}
+		ps.HandleAgentModels(ctx, sessionID, models.Params)
 		return
 	}
 

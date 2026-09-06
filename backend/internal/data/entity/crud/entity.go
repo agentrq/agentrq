@@ -31,6 +31,7 @@ type (
 		NotificationSettings  *NotificationSettings
 		AgentConnected        bool
 		AgentSupportsStop     bool
+		AgentModels           *AgentModels
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
 		SelfLearningLoopNote  string
@@ -40,6 +41,25 @@ type (
 	}
 
 	// SlackConfig holds the Slack channel linked to a workspace.
+	// AgentModels is what the workspace's connected agent says it can switch
+	// between. Live state read off the MCP session rather than a stored column,
+	// so it is absent whenever no agent is connected or none has reported any.
+	AgentModels struct {
+		// ConfigID names the session config option the agent advertised these
+		// under, which is what a selection has to be written back to.
+		ConfigID     string
+		CurrentModel string
+		Models       []AgentModel
+	}
+
+	AgentModel struct {
+		ID          string
+		Name        string
+		Description string
+		Current     bool
+		Group       string
+	}
+
 	SlackConfig struct {
 		Enabled     bool   `json:"enabled"`
 		Installed   bool   `json:"installed"`

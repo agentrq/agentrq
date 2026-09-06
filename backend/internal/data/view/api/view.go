@@ -19,6 +19,7 @@ type (
 		NotificationSettings  *NotificationSettings `json:"notificationSettings,omitempty"`
 		AgentConnected        bool                  `json:"agentConnected"`
 		AgentSupportsStop     bool                  `json:"agentSupportsStop"`
+		AgentModels           *AgentModels          `json:"agentModels,omitempty"`
 		MCPURL                string                `json:"mcpUrl"`
 		MCPToken              string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
@@ -27,6 +28,23 @@ type (
 		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
 		WorkingDirectory      string                `json:"workingDirectory,omitempty"`
 		Slack                 *SlackConfig          `json:"slack,omitempty"`
+	}
+
+	// AgentModels is what the connected agent can switch between. Omitted
+	// entirely when no agent is connected or none has reported any, so a client
+	// can treat its presence as "a choice exists".
+	AgentModels struct {
+		ConfigID     string       `json:"configId"`
+		CurrentModel string       `json:"currentModel,omitempty"`
+		Models       []AgentModel `json:"models"`
+	}
+
+	AgentModel struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+		Current     bool   `json:"current,omitempty"`
+		Group       string `json:"group,omitempty"`
 	}
 
 	SlackConfig struct {

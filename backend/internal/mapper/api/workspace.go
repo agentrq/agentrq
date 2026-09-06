@@ -152,6 +152,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		NotificationSettings:  fromEntityNotificationSettingsToView(p.NotificationSettings),
 		AgentConnected:        p.AgentConnected,
 		AgentSupportsStop:     p.AgentSupportsStop,
+		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
 		MCPURL:                mcpURL,
 		AutoAllowedTools:      p.AutoAllowedTools,
 		AllowAllCommands:      p.AllowAllCommands,
@@ -198,5 +199,32 @@ func fromViewNotificationSettingsToEntity(p *view.NotificationSettings) *entity.
 		WorkspaceArchived:   p.WorkspaceArchived,
 		WorkspaceUnarchived: p.WorkspaceUnarchived,
 		Channels:            p.Channels,
+	}
+}
+
+// fromEntityAgentModelsToView renders the models the connected agent offers.
+//
+// nil rather than an empty object when nothing is connected or nothing was
+// reported: the field is omitted from the response entirely, so a client can
+// read its presence as "there is a choice to make here".
+func fromEntityAgentModelsToView(m *entity.AgentModels) *view.AgentModels {
+	if m == nil {
+		return nil
+	}
+
+	models := make([]view.AgentModel, len(m.Models))
+	for i, one := range m.Models {
+		models[i] = view.AgentModel{
+			ID:          one.ID,
+			Name:        one.Name,
+			Description: one.Description,
+			Current:     one.Current,
+			Group:       one.Group,
+		}
+	}
+	return &view.AgentModels{
+		ConfigID:     m.ConfigID,
+		CurrentModel: m.CurrentModel,
+		Models:       models,
 	}
 }
