@@ -120,6 +120,27 @@ registered on sign-in and withdrawn on sign-out.
 - User-facing documentation is `docs/WEBMCP.md`; `cd desktop && npm run
   verify:webmcp` drives the whole path in a real browser with no backend.
 
+## Telemetry
+
+Most actions are emitted by the backend right after it does the work, which
+makes them self-evidently true. A few happen entirely in the browser and are
+*reported* by it instead — the local-AI features, and interface usage
+(shortcuts, search, copies, the trajectory view).
+
+- The allowlist in `entity.ClientReportableAction` is the security boundary for
+  `POST /api/v1/telemetry`: only names in it may be reported, and the controller
+  additionally checks the caller owns the workspace.
+- Adding one means four places, or it reads as zero: the `Action` constant and
+  its `String()`, the allowlist, the `model.ActionID*` constant (**append only**
+  — the value is stored), and the mapping in `controller/telemetry`.
+- `frontend/src/composables/useUiTelemetry.js` resolves the workspace from the
+  route and **drops the report when there is none**, rather than guessing one.
+  Interface counts are therefore actions-with-a-workspace-in-context.
+- The route is rate limited per user. It was raised to 60/minute when interface
+  usage was added; ordinary use passes the old ceiling of 10 easily, and being
+  short there loses reports silently and starves the local-AI metrics that share
+  the bucket.
+
 ## Commit convention
 
 Include `Task: <taskID>` in the commit body for traceability.

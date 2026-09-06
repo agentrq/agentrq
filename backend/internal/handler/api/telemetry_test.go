@@ -74,10 +74,51 @@ func TestRecordTelemetryAcceptsAnAllowlistedAction(t *testing.T) {
 	}
 }
 
+// Each interface-usage name has to survive the whole edge — JSON, allowlist,
+// workspace parse — and arrive at the controller as its own action. A name the
+// frontend sends that dies here is a metric that silently reads zero.
+func TestRecordTelemetryAcceptsEachUIAction(t *testing.T) {
+	for name, want := range map[string]entity.Action{
+		"ui_shortcut_use":    entity.ActionUIShortcutUse,
+		"ui_search":          entity.ActionUISearch,
+		"ui_search_open":     entity.ActionUISearchOpen,
+		"ui_copy_link":       entity.ActionUICopyLink,
+		"ui_copy_markdown":   entity.ActionUICopyMarkdown,
+		"ui_trajectory_view": entity.ActionUITrajectoryView,
+	} {
+		ctrl := &mockTelemetryCrud{}
+		app := newTelemetryApp(ctrl)
+
+		resp := postTelemetry(app, fmt.Sprintf(`{"action":%q,"workspaceId":%q}`, name, testTelemetryWorkspaceID))
+
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("%s: expected 204, got %d", name, resp.StatusCode)
+			continue
+		}
+		if len(ctrl.calls) != 1 {
+			t.Errorf("%s: expected one controller call, got %d", name, len(ctrl.calls))
+			continue
+		}
+		if got := ctrl.calls[0].Action; got != want {
+			t.Errorf("%s: action got %v, want %v", name, got, want)
+		}
+		// Still the session's user, never the body's — same rule as every
+		// other action on this route.
+		if got := ctrl.calls[0].UserID; got != "user1" {
+			t.Errorf("%s: userID got %q, want the session's user", name, got)
+		}
+	}
+}
+
 // The allowlist is the security boundary for this route: an action the server
 // emits for real work must never be settable by a client.
 func TestRecordTelemetryRejectsActionsOutsideTheAllowlist(t *testing.T) {
-	for _, action := range []string{"task_create", "message_create", "mcp_tool_call", "", "nonsense"} {
+	for _, action := range []string{
+		"task_create", "message_create", "mcp_tool_call", "", "nonsense",
+		// Near-misses for the new names, so the allowlist stays a list of
+		// exact strings rather than anything prefix-shaped.
+		"ui_", "ui_search_", "UI_SEARCH", "task_allow_all_commands_toggle",
+	} {
 		ctrl := &mockTelemetryCrud{}
 		app := newTelemetryApp(ctrl)
 

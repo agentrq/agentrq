@@ -58,6 +58,7 @@ export default defineConfig({
         'src/composables/useAttachmentCache.js',
         'src/composables/useCacheRetention.js',
         'src/composables/useMarkdownLinks.js',
+        'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
         'src/utils/markdown.js',
         'src/webmcp/*.js',

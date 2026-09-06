@@ -223,6 +223,96 @@ describe('dispatchShortcut', () => {
     expect(unclaimed.preventDefault).not.toHaveBeenCalled()
   })
 
+  it('reports a shortcut that actually ran', () => {
+    const onUse = vi.fn()
+    const { options, mount } = fakeLifecycle()
+    useShortcuts({ 'new-task': vi.fn() }, options)
+    mount()
+
+    dispatchShortcut(press('n'), { onUse })
+
+    expect(onUse).toHaveBeenCalledWith('new-task')
+  })
+
+  it('reports nothing for a key nobody handled', () => {
+    // Pressing a key on a screen that ignores it is not a use of the feature.
+    const onUse = vi.fn()
+    const { options, mount } = fakeLifecycle()
+    useShortcuts({ 'new-task': vi.fn() }, options)
+    mount()
+
+    dispatchShortcut(press('m'), { onUse })
+    dispatchShortcut(press('z'), { onUse })
+
+    expect(onUse).not.toHaveBeenCalled()
+  })
+
+  it('does not treat the reporter as a shortcut table', () => {
+    // `onUse` is pulled out of the options before they reach matchShortcut;
+    // leaving it in would make every match fail.
+    const { options, mount } = fakeLifecycle()
+    useShortcuts({ 'new-task': vi.fn() }, options)
+    mount()
+
+    expect(dispatchShortcut(press('n'), { onUse: vi.fn() })).toBe('new-task')
+  })
+
+  it('needs no reporter at all', () => {
+    const { options, mount } = fakeLifecycle()
+    useShortcuts({ 'new-task': vi.fn() }, options)
+    mount()
+
+    expect(() => dispatchShortcut(press('n'))).not.toThrow()
+  })
+
+  it('passes the reporter through the listener useShortcuts installs', () => {
+    // The production path: the component gives onUse to useShortcuts, not to
+    // dispatchShortcut, so the keydown listener has to carry it.
+    const onUse = vi.fn()
+    const { options, mount } = fakeLifecycle()
+    const { onKeydown } = useShortcuts({ 'new-task': vi.fn() }, { ...options, onUse })
+    mount()
+
+    onKeydown(press('n'))
+
+    expect(onUse).toHaveBeenCalledWith('new-task')
+  })
+
+  it('answers one keypress once, however many listeners see it', () => {
+    // Two registrations means two window listeners, so the same event reaches
+    // dispatch twice. Running the handler twice was invisible while handlers
+    // were idempotent; counting the press made it visible.
+    const shell = vi.fn()
+    const view = vi.fn()
+    const onUse = vi.fn()
+    const a = fakeLifecycle()
+    const b = fakeLifecycle()
+    useShortcuts({ 'chat-view': shell }, a.options)
+    a.mount()
+    useShortcuts({ 'chat-view': view }, b.options)
+    b.mount()
+
+    const event = press('m')
+    expect(dispatchShortcut(event, { onUse })).toBe('chat-view')
+    expect(dispatchShortcut(event, { onUse })).toBeNull()
+
+    expect(view).toHaveBeenCalledOnce()
+    expect(shell).not.toHaveBeenCalled()
+    expect(onUse).toHaveBeenCalledOnce()
+  })
+
+  it('still answers the next keypress', () => {
+    const handler = vi.fn()
+    const { options, mount } = fakeLifecycle()
+    useShortcuts({ 'new-task': handler }, options)
+    mount()
+
+    dispatchShortcut(press('n'))
+    dispatchShortcut(press('n'))
+
+    expect(handler).toHaveBeenCalledTimes(2)
+  })
+
   it('survives an event object with no preventDefault', () => {
     const handler = vi.fn()
     const { options, mount } = fakeLifecycle()

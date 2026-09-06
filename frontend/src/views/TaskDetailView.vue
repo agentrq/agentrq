@@ -74,7 +74,7 @@
                 <span class="hidden sm:inline">Chat</span>
                 <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.463L3 21l1.51-4.532A7.965 7.965 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
               </button>
-              <button @click.stop="activeView = 'trajectory'"
+              <button @click.stop="showTrajectory()"
                       @mouseenter="tooltipStore.show($event, `Tool call trajectory  ${viewShortcut('trajectory-view')}`, 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       :class="activeView === 'trajectory' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
@@ -747,7 +747,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -767,6 +767,8 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread } from '../composables/useTrajectory';
+import { recordUiAction } from '../composables/useUiTelemetry';
+import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import {
@@ -848,8 +850,35 @@ function toggleMessageRender(id) {
   rawMessages.value = s;
 }
 const copiedMessages = ref(new Set());
+
+/**
+ * Put text on the clipboard, saying so when it does not work.
+ *
+ * `navigator.clipboard.writeText` rejects outright when the document is not
+ * focused, and these buttons used to await it bare: the rejection went nowhere,
+ * so a failed copy looked exactly like a successful one — no tick, no message,
+ * nothing on the clipboard. `writeClipboard` prefers the desktop shell, which
+ * has no such condition, and the caller now hears about a failure either way.
+ *
+ * @returns {Promise<boolean>} whether the text actually got there
+ */
+async function copyToClipboard(text) {
+  try {
+    await writeClipboard(text || '', {
+      bridge: window.agentrq?.clipboard,
+      clipboard: navigator.clipboard,
+    });
+    // Only a copy that happened is a copy that gets counted.
+    recordUiAction(TELEMETRY_UI_COPY_MARKDOWN, route);
+    return true;
+  } catch {
+    notifyError('Could not copy to the clipboard.');
+    return false;
+  }
+}
+
 async function copyMessageText(id, text) {
-  await navigator.clipboard.writeText(text || '');
+  if (!(await copyToClipboard(text))) return;
   const s = new Set(copiedMessages.value);
   s.add(id);
   copiedMessages.value = s;
@@ -925,8 +954,7 @@ function toggleTaskBodyRender() {
 }
 
 async function copyTaskBodyText() {
-  const text = stripNote(task.value?.body || '');
-  await navigator.clipboard.writeText(text);
+  if (!(await copyToClipboard(stripNote(task.value?.body || '')))) return;
   taskBodyCopied.value = true;
   setTimeout(() => {
     taskBodyCopied.value = false;
@@ -1000,10 +1028,23 @@ const activeView = ref('chat');
 useShortcuts(
   {
     'chat-view': () => { activeView.value = 'chat'; },
-    'trajectory-view': () => { activeView.value = 'trajectory'; },
+    'trajectory-view': () => showTrajectory(),
   },
-  { mac: () => usesCommandKey(platformStore.$state) }
+  { mac: () => usesCommandKey(platformStore.$state), onUse: () => recordUiAction(TELEMETRY_UI_SHORTCUT_USE, route) }
 );
+
+/**
+ * Switch to the trajectory, and count it.
+ *
+ * Both ways in go through here — the toggle and the `T` shortcut — because the
+ * question is how often people read the trajectory, not which control they
+ * reached for. Switching to it while already there is not a second read.
+ */
+function showTrajectory() {
+  if (activeView.value === 'trajectory') return;
+  activeView.value = 'trajectory';
+  recordUiAction(TELEMETRY_UI_TRAJECTORY_VIEW, route);
+}
 
 /** The key hint shown in each toggle's tooltip. */
 const viewShortcut = (id) =>

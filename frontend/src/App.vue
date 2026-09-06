@@ -385,7 +385,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
-import { fetchUser, fetchWorkspaces, API_BASE_URL } from './api'
+import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
 import * as api from './api'
@@ -393,6 +393,7 @@ import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { profileDisplay } from './composables/useProfileDisplay'
 import { connectWebMCP } from './composables/useWebMCP'
+import { recordUiAction } from './composables/useUiTelemetry'
 import { usePlatformStore } from './stores/platformStore'
 import {
   copyLinkTarget,
@@ -462,6 +463,9 @@ async function onMarkdownLinkActivate(event) {
     const copied = await copyLinkTarget(copyTarget, { copyText })
     const notify = copied.tone === 'error' ? notifyError : notifySuccess
     notify(copied.message, copied.title)
+    // Only a copy that worked: a refused clipboard is a failure to count, not
+    // a use of the feature.
+    if (copied.tone !== 'error') recordUiAction(TELEMETRY_UI_COPY_LINK, route)
     return
   }
 
@@ -590,8 +594,20 @@ useShortcuts(
       isHelpOpen.value = true
     },
   },
-  { mac: () => isMacKeyboard.value }
+  { mac: () => isMacKeyboard.value, onUse: recordShortcutUse }
 )
+
+/**
+ * Count a shortcut that actually ran.
+ *
+ * Both registrations report through the same function so the metric does not
+ * depend on each place remembering to; the id is not sent, only that a
+ * shortcut was used, because the telemetry route records an action and nothing
+ * else about it.
+ */
+function recordShortcutUse() {
+  recordUiAction(TELEMETRY_UI_SHORTCUT_USE, route)
+}
 
 // Escape closes an overlay wherever focus happens to be. The palette handles it
 // on its own input too — this is for the help sheet, which has nothing focused.

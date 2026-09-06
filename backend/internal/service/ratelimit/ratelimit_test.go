@@ -184,16 +184,41 @@ func TestTelemetryAllowsTenPerMinute(t *testing.T) {
 	}
 }
 
-// Two different local-AI features can genuinely be used in the same second, so
-// the per-second burst allows a pair while the minute cap still bounds it.
-func TestTelemetryAllowsAPairInOneSecondButNotAThird(t *testing.T) {
+// A burst is allowed because one interaction can be two metrics — a shortcut
+// that also switches view — while the per-second ceiling still bounds a loop.
+func TestTelemetryAllowsABurstInOneSecondButNotBeyondIt(t *testing.T) {
 	rb := &rotatingBucket{}
 
-	if !allow(rb, 100, 2, 10) || !allow(rb, 100, 2, 10) {
-		t.Fatal("two calls in the same second should be allowed")
+	for i := 0; i < 5; i++ {
+		if !allow(rb, 100, 5, 60) {
+			t.Fatalf("call %d in the same second should be allowed", i+1)
+		}
 	}
-	if allow(rb, 100, 2, 10) {
-		t.Error("a third call in the same second must be blocked")
+	if allow(rb, 100, 5, 60) {
+		t.Error("a sixth call in the same second must be blocked")
+	}
+}
+
+// The budget has to fit ordinary interface use. Ten a minute was sized for two
+// rare local-AI events; shortcuts, searches and copies pass that without
+// trying, and being short here loses reports silently.
+func TestTelemetryBudgetFitsAMinuteOfInterfaceUse(t *testing.T) {
+	rb := &rotatingBucket{}
+
+	// Synthetic timestamps, because the limiter reads the real clock: a loop
+	// calling AllowTelemetry lands entirely inside one second and would measure
+	// the burst ceiling instead of the minute budget.
+	allowed := 0
+	for second := 0; second < 30; second++ {
+		for i := 0; i < 2; i++ {
+			if allow(rb, int64(100+second), 5, 60) {
+				allowed++
+			}
+		}
+	}
+
+	if allowed < 60 {
+		t.Errorf("a minute of interface use should fit: only %d of 60 reports allowed", allowed)
 	}
 }
 

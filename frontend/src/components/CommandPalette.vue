@@ -7,9 +7,10 @@
  * and the navigation, and nothing else.
  */
 import { computed, nextTick, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
-import { fetchGlobalTasks, getTask } from '../api';
+import { fetchGlobalTasks, getTask, TELEMETRY_UI_SEARCH, TELEMETRY_UI_SEARCH_OPEN } from '../api';
+import { createOncePerEpisode, recordUiAction } from '../composables/useUiTelemetry';
 import { looksLikeTaskId, matchTasks, resolveTaskById, taskRoute } from '../composables/useTaskFinder';
 import { searchCachedTasks } from '../composables/useCachedReads';
 import { sharedCache } from '../composables/useCachedTasks';
@@ -23,7 +24,21 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const router = useRouter();
+const route = useRoute();
 const workspaceStore = useWorkspaceStore();
+
+/**
+ * How often the finder is searched, and how often a search leads somewhere.
+ *
+ * One search per opening rather than one per keystroke — the panel searches as
+ * you type, so counting each would report typing "deploy" as six searches.
+ *
+ * Both halves resolve the workspace the same way, at the moment they fire, so
+ * the ratio between them stays meaningful. Neither is recorded when the finder
+ * is used from a page with no workspace in context; see `useUiTelemetry` for
+ * why that is preferred to guessing one.
+ */
+const searchEpisode = createOncePerEpisode();
 
 const query = ref('');
 const tasks = ref([]);
@@ -48,6 +63,9 @@ const searchedLocally = ref(false);
 
 async function runSearch() {
   const asked = query.value;
+  // Counted on what the user typed, not on what came back: a search that finds
+  // nothing is still a search, and is the more interesting half of the funnel.
+  if (asked.trim()) searchEpisode.fire(() => recordUiAction(TELEMETRY_UI_SEARCH, route));
   const local = await searchCachedTasks(sharedCache(), asked, { limit: 8 });
 
   // A slower search for an older query must not overwrite a newer one's answer.
@@ -98,6 +116,7 @@ watch(
     highlighted.value = 0;
     notFound.value = false;
     results.value = [];
+    searchEpisode.reset();
     searchedLocally.value = false;
     await nextTick();
     inputRef.value?.focus();
@@ -138,6 +157,9 @@ function move(delta) {
 }
 
 function open(task) {
+  // Before navigating: the route is what attributes the report, and it is
+  // about to become the task's own page.
+  recordUiAction(TELEMETRY_UI_SEARCH_OPEN, route);
   emit('close');
   router.push(taskRoute(task));
 }
@@ -156,6 +178,8 @@ async function submit() {
       getTask
     );
     if (found) {
+      // The other way out of the finder, and just as much a search that landed.
+      recordUiAction(TELEMETRY_UI_SEARCH_OPEN, route);
       emit('close');
       router.push(taskRoute(found.task, found.workspaceId));
       return;

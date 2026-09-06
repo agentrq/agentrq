@@ -16,6 +16,7 @@
     "verify:connection": "npm run build && electron scripts/verify-connection.mjs",
     "verify:markdown-links": "npm run build && electron scripts/verify-markdown-links.mjs",
     "verify:webmcp": "npm run build && electron scripts/verify-webmcp.mjs",
+    "verify:ui-telemetry": "npm run build && electron scripts/verify-ui-telemetry.mjs",
     "check:versions": "node scripts/check-versions.mjs",
     "package": "npm run build && electron-builder --publish never",
     "package:dir": "npm run build && electron-builder --dir"

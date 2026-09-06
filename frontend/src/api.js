@@ -528,6 +528,17 @@ export async function replaceWorkflowFromText(workflowId, text) {
 export const TELEMETRY_LOCAL_AI_TITLE_GENERATE = 'local_ai_title_generate';
 export const TELEMETRY_LOCAL_AI_RECORDING_END = 'local_ai_recording_end';
 
+// Interface usage. Reported for the same reason as the local-AI actions: a
+// keypress, a search and a copy all begin and end in the tab, so nothing
+// server-side would otherwise know they happened. See `useUiTelemetry`, which
+// is how these are sent.
+export const TELEMETRY_UI_SHORTCUT_USE = 'ui_shortcut_use';
+export const TELEMETRY_UI_SEARCH = 'ui_search';
+export const TELEMETRY_UI_SEARCH_OPEN = 'ui_search_open';
+export const TELEMETRY_UI_COPY_LINK = 'ui_copy_link';
+export const TELEMETRY_UI_COPY_MARKDOWN = 'ui_copy_markdown';
+export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
+
 // Records one local-AI feature use. Never throws and never blocks the caller:
 // a metric is not worth failing a user's click over, so a rejected or
 // unreachable report is dropped rather than surfaced.

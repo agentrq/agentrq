@@ -272,4 +272,13 @@ const (
 	// the end: inserting above would silently reinterpret every existing row.
 	ActionIDLocalAITitleGenerate
 	ActionIDLocalAIRecordingEnd
+	// Interface usage, also browser-reported: which of the shortcuts, the
+	// finder and the copy affordances people actually reach for. Nothing
+	// server-side sees any of them.
+	ActionIDUIShortcutUse
+	ActionIDUISearch
+	ActionIDUISearchOpen
+	ActionIDUICopyLink
+	ActionIDUICopyMarkdown
+	ActionIDUITrajectoryView
 )

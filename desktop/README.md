@@ -84,6 +84,8 @@ npm run spike:eventsource                    # is EventSource allowed on app://?
 AGENTRQ_SERVER_URL=http://localhost:3999 \
 AGENTRQ_ROOT_TOKEN=... npx electron scripts/verify-e2e.mjs
 npm run build && npx electron scripts/verify-markdown-links.mjs  # needs no backend
+AGENTRQ_SERVER_URL=http://localhost:3997 AGENTRQ_QA_DB=… \
+AGENTRQ_QA_WORKSPACE=… npx electron scripts/verify-ui-telemetry.mjs
 ```
 
 `verify:e2e` runs the real protocol handler against a real backend and checks
@@ -101,7 +103,22 @@ on the real clipboard. The `shell.openPath` / `showItemInFolder` calls are
 recorded rather than made — a passing run would otherwise launch an editor and a
 Finder window on whoever ran it — and the clipboard is put back afterwards.
 
-That last check is why copies go through the shell at all:
+`verify:ui-telemetry` drives the real interface against a scratch backend and
+checks that a keypress, a copy, a search and a view switch each report exactly
+once, attributed to the workspace they happened in — and that an action taken
+where no workspace is in context reports nothing rather than guessing one.
+
+It watches the report the *page* makes rather than the row the server stores,
+and the reason is worth knowing before changing it: three delays sit between a
+click and a row — `keepalive` sends the renderer defers until the document
+unloads, a rate limit that drops a script's burst with a 429, and the
+controller's five-second batch. Reading the table after each click measures the
+browser's send schedule, not the application. That a report becomes a row is
+covered by the Go tests instead, and the script still closes the window at the
+end to force delivery and read one row back, so the two halves are known to be
+connected.
+
+That copy-link check is why copies go through the shell at all:
 `navigator.clipboard.writeText` throws *"Document is not focused"* in a window
 that is not frontmost, with or without a user gesture behind it. A copy button
 that works only when nothing has stolen focus is the same silent nothing as the

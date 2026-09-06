@@ -282,3 +282,93 @@ func TestLocalAIActionsPersistScopedToUserAndWorkspace(t *testing.T) {
 		t.Error("the two local-AI actions share an id")
 	}
 }
+
+// Every interface-usage action must reach a stored row with its own id.
+//
+// The mapping is a switch with a silent `default: return`, so an action added
+// to the allowlist but not to that switch is accepted by the API, reported by
+// the browser, and then dropped — a metric that reads as zero rather than as
+// broken. This is the test that fails instead.
+func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open database: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Telemetry{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockPubSub := mock_pubsub.NewMockService(ctrl)
+	crudChan := make(chan any, 10)
+	mcpChan := make(chan any, 10)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicCRUD}).
+		Return(&pubsub.SubscribeResponse{Events: crudChan}, nil)
+	mockPubSub.EXPECT().Subscribe(gomock.Any(), pubsub.SubscribeRequest{PubSubID: entity.PubSubTopicMCP}).
+		Return(&pubsub.SubscribeResponse{Events: mcpChan}, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := New(Params{
+		DB:        &testDBConn{db: db},
+		PubSub:    mockPubSub,
+		BatchSize: 2,
+		Interval:  50 * time.Millisecond,
+	})
+	if err := c.Start(ctx); err != nil {
+		t.Fatalf("failed to start: %v", err)
+	}
+
+	cases := []struct {
+		action entity.Action
+		stored uint8
+		name   string
+	}{
+		{entity.ActionUIShortcutUse, model.ActionIDUIShortcutUse, "shortcut use"},
+		{entity.ActionUISearch, model.ActionIDUISearch, "search"},
+		{entity.ActionUISearchOpen, model.ActionIDUISearchOpen, "search open"},
+		{entity.ActionUICopyLink, model.ActionIDUICopyLink, "copy link"},
+		{entity.ActionUICopyMarkdown, model.ActionIDUICopyMarkdown, "copy markdown"},
+		{entity.ActionUITrajectoryView, model.ActionIDUITrajectoryView, "trajectory view"},
+	}
+
+	for _, tc := range cases {
+		crudChan <- entity.CRUDEvent{
+			UserID: 7, WorkspaceID: 70,
+			Action: tc.action, Actor: entity.ActorHuman,
+		}
+	}
+
+	time.Sleep(400 * time.Millisecond)
+	c.Close()
+
+	seen := map[uint8]string{}
+	for _, tc := range cases {
+		var rows []model.Telemetry
+		if err := db.Where("action = ?", tc.stored).Find(&rows).Error; err != nil {
+			t.Fatalf("%s: query failed: %v", tc.name, err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("%s: expected 1 row, got %d", tc.name, len(rows))
+		}
+		if rows[0].UserID != 7 || rows[0].WorkspaceID != 70 {
+			t.Errorf("%s: expected user 7 / workspace 70, got user %d / workspace %d",
+				tc.name, rows[0].UserID, rows[0].WorkspaceID)
+		}
+		if other, clash := seen[tc.stored]; clash {
+			t.Errorf("%s and %s share stored id %d", tc.name, other, tc.stored)
+		}
+		seen[tc.stored] = tc.name
+	}
+
+	// And they must not collide with the actions already stored, which would
+	// silently merge two metrics that were never the same thing.
+	for _, existing := range []uint8{model.ActionIDLocalAITitleGenerate, model.ActionIDLocalAIRecordingEnd, model.ActionIDTaskCreate} {
+		if _, clash := seen[existing]; clash {
+			t.Errorf("a UI action reuses stored id %d", existing)
+		}
+	}
+}

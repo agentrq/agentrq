@@ -15,11 +15,22 @@ import (
 
 const testWorkspaceID int64 = 42
 
-func TestClientReportableActionAllowsOnlyTheNamedTwo(t *testing.T) {
-	for name, want := range map[string]entity.Action{
-		"local_ai_title_generate": entity.ActionLocalAITitleGenerate,
-		"local_ai_recording_end":  entity.ActionLocalAIRecordingEnd,
-	} {
+// The allowlist is the security boundary for the ingest route, so it is
+// spelled out here in full: a name added to the switch without a line here is
+// a name nobody decided to accept.
+var clientReportable = map[string]entity.Action{
+	"local_ai_title_generate": entity.ActionLocalAITitleGenerate,
+	"local_ai_recording_end":  entity.ActionLocalAIRecordingEnd,
+	"ui_shortcut_use":         entity.ActionUIShortcutUse,
+	"ui_search":               entity.ActionUISearch,
+	"ui_search_open":          entity.ActionUISearchOpen,
+	"ui_copy_link":            entity.ActionUICopyLink,
+	"ui_copy_markdown":        entity.ActionUICopyMarkdown,
+	"ui_trajectory_view":      entity.ActionUITrajectoryView,
+}
+
+func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
+	for name, want := range clientReportable {
 		got, ok := entity.ClientReportableAction(name)
 		if !ok || got != want {
 			t.Errorf("%s: got (%v, %v), want (%v, true)", name, got, ok, want)
@@ -38,6 +49,9 @@ func TestClientReportableActionAllowsOnlyTheNamedTwo(t *testing.T) {
 		"",
 		"unknown",
 		"LOCAL_AI_TITLE_GENERATE",
+		"UI_SEARCH",
+		"ui_",
+		"task_allow_all_commands_toggle",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)
@@ -45,14 +59,26 @@ func TestClientReportableActionAllowsOnlyTheNamedTwo(t *testing.T) {
 	}
 }
 
-// Both new actions have to stringify, or they land in telemetry as "unknown"
-// and cannot be told apart when the counts are read back.
-func TestLocalAIActionsStringify(t *testing.T) {
-	if got := entity.ActionLocalAITitleGenerate.String(); got != "local_ai_title_generate" {
-		t.Errorf("got %q", got)
+// Every client-reportable action has to stringify back to the name it was
+// reported under, or it lands in telemetry as "unknown" and the counts cannot
+// be told apart when they are read back.
+func TestClientReportableActionsStringify(t *testing.T) {
+	for name, action := range clientReportable {
+		if got := action.String(); got != name {
+			t.Errorf("%v: got %q, want %q", action, got, name)
+		}
 	}
-	if got := entity.ActionLocalAIRecordingEnd.String(); got != "local_ai_recording_end" {
-		t.Errorf("got %q", got)
+}
+
+// Distinct values, because they are stored as the action column: two actions
+// sharing a number would be indistinguishable rows forever after.
+func TestClientReportableActionsAreDistinct(t *testing.T) {
+	seen := map[entity.Action]string{}
+	for name, action := range clientReportable {
+		if other, clash := seen[action]; clash {
+			t.Errorf("%s and %s are both %v", name, other, action)
+		}
+		seen[action] = name
 	}
 }
 

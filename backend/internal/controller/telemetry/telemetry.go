@@ -167,6 +167,18 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDLocalAITitleGenerate
 	case entity.ActionLocalAIRecordingEnd:
 		action = model.ActionIDLocalAIRecordingEnd
+	case entity.ActionUIShortcutUse:
+		action = model.ActionIDUIShortcutUse
+	case entity.ActionUISearch:
+		action = model.ActionIDUISearch
+	case entity.ActionUISearchOpen:
+		action = model.ActionIDUISearchOpen
+	case entity.ActionUICopyLink:
+		action = model.ActionIDUICopyLink
+	case entity.ActionUICopyMarkdown:
+		action = model.ActionIDUICopyMarkdown
+	case entity.ActionUITrajectoryView:
+		action = model.ActionIDUITrajectoryView
 	default:
 		return
 	}

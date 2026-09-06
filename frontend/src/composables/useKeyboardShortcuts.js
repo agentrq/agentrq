@@ -199,6 +199,20 @@ export function formatShortcut(shortcut, { mac = false } = {}) {
  */
 const registrations = [];
 
+/**
+ * Events already answered.
+ *
+ * Every `useShortcuts` call installs its own keydown listener, so on a screen
+ * with two registrations — the shell and the task view — one keypress reaches
+ * `dispatchShortcut` twice and used to run the winning handler twice with it.
+ * That went unnoticed while the handlers were idempotent (opening a panel
+ * twice looks like opening it once), and stopped being invisible the moment a
+ * keypress started being counted: one press, two reports.
+ *
+ * Weak, so an event is forgotten as soon as the browser is done with it.
+ */
+const answered = new WeakSet();
+
 /** Test seam: forget every registration. */
 export function resetShortcuts() {
   registrations.length = 0;
@@ -212,19 +226,29 @@ export function resetShortcuts() {
  * handled. An unclaimed shortcut is left alone so the browser keeps its
  * behaviour on screens that do not implement it.
  *
+ * Counted here rather than in each handler: this is the one point every
+ * shortcut passes through, so a shortcut added later cannot quietly go
+ * unmeasured. Only a shortcut that actually ran is counted — a key nobody is
+ * listening for is not a use of the feature.
+ *
  * @param {KeyboardEvent} event
- * @param {{ mac?: boolean, shortcuts?: typeof SHORTCUTS }} [options]
+ * @param {{ mac?: boolean, shortcuts?: typeof SHORTCUTS, onUse?: (id: string) => void }} [options]
  * @returns {string | null} the id that ran, for tests and callers
  */
-export function dispatchShortcut(event, options = {}) {
+export function dispatchShortcut(event, { onUse, ...options } = {}) {
   const shortcut = matchShortcut(event, options);
   if (!shortcut) return null;
+  // The topmost handler has already had this keypress; a second listener
+  // seeing the same event is the same press, not another one.
+  if (answered.has(event)) return null;
 
   for (let i = registrations.length - 1; i >= 0; i -= 1) {
     const handler = registrations[i][shortcut.id];
     if (!handler) continue;
     event.preventDefault?.();
+    answered.add(event);
     handler(event);
+    onUse?.(shortcut.id);
     return shortcut.id;
   }
   return null;
@@ -235,18 +259,19 @@ export function dispatchShortcut(event, options = {}) {
  *
  * @param {Record<string, (event: KeyboardEvent) => void>} handlers
  *        keyed by shortcut id; ids nobody handles simply do nothing
- * @param {{ mac?: () => boolean, target?: EventTarget,
+ * @param {{ mac?: () => boolean, target?: EventTarget, onUse?: (id: string) => void,
  *           onMounted?: Function, onUnmounted?: Function }} [options]
  */
 export function useShortcuts(handlers, options = {}) {
   const {
     mac = () => false,
     target = globalThis.window,
+    onUse,
     onMounted: mount = onMounted,
     onUnmounted: unmount = onUnmounted,
   } = options;
 
-  const onKeydown = (event) => dispatchShortcut(event, { mac: mac() });
+  const onKeydown = (event) => dispatchShortcut(event, { mac: mac(), onUse });
 
   mount(() => {
     registrations.push(handlers);

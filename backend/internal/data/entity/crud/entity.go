@@ -905,6 +905,15 @@ const (
 	// allowlist of what a browser is permitted to claim.
 	ActionLocalAITitleGenerate Action = 40
 	ActionLocalAIRecordingEnd  Action = 41
+	// Interface usage, reported by the browser for the same reason: a keypress,
+	// a search and a copy all begin and end in the tab, so the report is the
+	// only evidence there is. Same allowlist, same ownership check.
+	ActionUIShortcutUse    Action = 50
+	ActionUISearch         Action = 51
+	ActionUISearchOpen     Action = 52
+	ActionUICopyLink       Action = 53
+	ActionUICopyMarkdown   Action = 54
+	ActionUITrajectoryView Action = 55
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -921,6 +930,18 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionLocalAITitleGenerate, true
 	case "local_ai_recording_end":
 		return ActionLocalAIRecordingEnd, true
+	case "ui_shortcut_use":
+		return ActionUIShortcutUse, true
+	case "ui_search":
+		return ActionUISearch, true
+	case "ui_search_open":
+		return ActionUISearchOpen, true
+	case "ui_copy_link":
+		return ActionUICopyLink, true
+	case "ui_copy_markdown":
+		return ActionUICopyMarkdown, true
+	case "ui_trajectory_view":
+		return ActionUITrajectoryView, true
 	}
 	return 0, false
 }
@@ -971,6 +992,18 @@ func (a Action) String() string {
 		return "local_ai_title_generate"
 	case ActionLocalAIRecordingEnd:
 		return "local_ai_recording_end"
+	case ActionUIShortcutUse:
+		return "ui_shortcut_use"
+	case ActionUISearch:
+		return "ui_search"
+	case ActionUISearchOpen:
+		return "ui_search_open"
+	case ActionUICopyLink:
+		return "ui_copy_link"
+	case ActionUICopyMarkdown:
+		return "ui_copy_markdown"
+	case ActionUITrajectoryView:
+		return "ui_trajectory_view"
 	}
 	return "unknown"
 }
