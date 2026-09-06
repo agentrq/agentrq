@@ -193,6 +193,26 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.fetchWorkspaceStats(workspaceId, range, from, to),
     }),
     tool({
+      name: 'listWorkspaceMemories',
+      description:
+        'What the agents working in a workspace have written down for each other: name, size and when ' +
+        'each was last changed. The content is not included — read one by name for that. MEMORY.md is ' +
+        'the index the others hang off.',
+      properties: { workspaceId: WORKSPACE_ID },
+      required: ['workspaceId'],
+      readOnly: true,
+      run: ({ workspaceId }) => api.fetchWorkspaceMemories(workspaceId),
+    }),
+    tool({
+      name: 'getWorkspaceMemory',
+      description:
+        'One of a workspace\'s memories, in full. Start with MEMORY.md, which indexes the rest.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The memory\'s name, as listWorkspaceMemories reports it.') },
+      required: ['workspaceId', 'name'],
+      readOnly: true,
+      run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
+    }),
+    tool({
       name: 'setWorkspaceSlackChannel',
       description: 'Connect a workspace to a Slack channel so its activity is posted there.',
       properties: {

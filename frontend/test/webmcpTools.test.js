@@ -18,6 +18,7 @@ const EVERY_FIELD = {
   requestId: 'req1',
   path: '/events',
   name: 'a name',
+  content: 'some content',
   title: 'a title',
   body: 'a body',
   text: 'some text',
@@ -230,6 +231,13 @@ describe('each tool calls the interface the way the UI does', () => {
       { workspaceId: 'ws1', range: '30d', from: 1, to: 2 },
       'fetchWorkspaceStats',
       ['ws1', '30d', 1, 2],
+    ],
+    ['listWorkspaceMemories', { workspaceId: 'ws1' }, 'fetchWorkspaceMemories', ['ws1']],
+    [
+      'getWorkspaceMemory',
+      { workspaceId: 'ws1', name: 'MEMORY.md' },
+      'getWorkspaceMemory',
+      ['ws1', 'MEMORY.md'],
     ],
     [
       'setWorkspaceSlackChannel',
