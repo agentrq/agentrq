@@ -47,8 +47,14 @@ func clientIdentityFromRequest(req mcp.Request) clientIdentity {
 		return clientIdentity{}
 	}
 	var meta map[string]any
+	// `p != nil` is not enough: GetParams returns an interface, and a request
+	// whose params were never set hands back a non-nil interface wrapping a nil
+	// pointer, which then panics on GetMeta. Same reason the request itself is
+	// checked with reflect a few lines up.
 	if p := req.GetParams(); p != nil {
-		meta = p.GetMeta()
+		if v := reflect.ValueOf(p); v.Kind() != reflect.Pointer || !v.IsNil() {
+			meta = p.GetMeta()
+		}
 	}
 	var userAgent string
 	if extra := req.GetExtra(); extra != nil && extra.Header != nil {

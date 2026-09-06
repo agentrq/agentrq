@@ -575,6 +575,36 @@ func New(cfg Config) (*App, error) {
 				})
 				return nil
 			},
+			// The workspace's memory. Scoped to the workspace and its owner here,
+			// so the tools themselves only ever name a memory — an agent cannot
+			// reach another workspace's notes by asking for them.
+			func(ctx context.Context, name string) (string, bool, error) {
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				m, err := repo.GetMemory(ctx, uid, workspaceID, name)
+				if errors.Is(err, base.ErrNotFound) {
+					// A memory nobody has written yet: the ordinary state of a
+					// fresh workspace, and not a failure to report.
+					return "", false, nil
+				}
+				if err != nil {
+					return "", false, err
+				}
+				return m.Content, true, nil
+			},
+			func(ctx context.Context, name string, content string) error {
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				now := time.Now()
+				_, err := repo.UpsertMemory(ctx, model.Memory{
+					ID:          ids.NextID(),
+					CreatedAt:   now,
+					UpdatedAt:   now,
+					UserID:      uid,
+					WorkspaceID: workspaceID,
+					Name:        name,
+					Content:     content,
+				})
+				return err
+			},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
 				created, err := repo.CreateToolCall(ctx, tc)
 				if err == nil {

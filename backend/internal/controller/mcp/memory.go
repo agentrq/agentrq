@@ -1,0 +1,163 @@
+package mcp
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// Per-workspace memory: what an agent chooses to remember about a workspace,
+// so that what it learned in one task is still there in the next.
+//
+// The memory belongs to the workspace rather than to the agent that wrote it,
+// so several agents working the same workspace share one set of notes. Any
+// number of named memories can live side by side; MEMORY.md is the one agents
+// are told to read first, which makes it the natural place for an index to the
+// rest.
+//
+// Both limits below are enforced here rather than in the repository, because
+// this is where there is a caller to answer. An agent that is told its memory
+// was too large can split it and try again; an agent whose memory was silently
+// cut in half at the storage layer has no idea anything went wrong.
+
+const (
+	// DefaultMemoryName is what both tools read and write when given no name.
+	// The index, by convention — an agent that calls loadMemory with no
+	// arguments should land on something that tells it what else is here.
+	DefaultMemoryName = "MEMORY.md"
+
+	// MaxMemoryNameLength matches the column. Counted in characters, as the
+	// column is.
+	MaxMemoryNameLength = 32
+
+	// MaxMemoryBytes caps one memory at 16 KiB of UTF-8.
+	MaxMemoryBytes = 16 * 1024
+)
+
+// LoadMemoryFunc reads one of the workspace's memories.
+//
+// `found` is separate from `err` because a memory that was never written is
+// the ordinary case, not a failure: every agent's first call on a fresh
+// workspace misses, and answering that with an error would teach agents to
+// stop asking.
+type LoadMemoryFunc func(ctx context.Context, name string) (content string, found bool, err error)
+
+// SaveMemoryFunc writes one of the workspace's memories, replacing whatever
+// was stored under that name.
+type SaveMemoryFunc func(ctx context.Context, name string, content string) error
+
+// LoadMemoryParams is the input to the loadMemory tool.
+type LoadMemoryParams struct {
+	Name string `json:"name,omitempty" jsonschema:"Which memory to read. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
+}
+
+// SaveMemoryParams is the input to the saveMemory tool.
+type SaveMemoryParams struct {
+	Name    string `json:"name,omitempty" jsonschema:"Which memory to write. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
+	Content string `json:"content" jsonschema:"The full new content. This replaces the memory entirely — there is no append, so include everything worth keeping."`
+}
+
+// resolveMemoryName turns what an agent asked for into the name to store under.
+//
+// An empty name means the index, which is what makes `loadMemory()` with no
+// arguments useful. Everything else is checked rather than repaired: a name
+// quietly trimmed or truncated files the memory somewhere the agent did not
+// choose, and the next loadMemory for the name it thinks it used will miss.
+func resolveMemoryName(name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return DefaultMemoryName, nil
+	}
+	if name != strings.TrimSpace(name) {
+		return "", fmt.Errorf("memory name %q has leading or trailing whitespace; use %q", name, strings.TrimSpace(name))
+	}
+	if n := utf8.RuneCountInString(name); n > MaxMemoryNameLength {
+		return "", fmt.Errorf("memory name is %d characters; the limit is %d", n, MaxMemoryNameLength)
+	}
+	// A name is a label, not a path. Allowing separators would suggest these
+	// are files in a directory that an agent could traverse, and they are not.
+	if strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("memory name %q must not contain a path separator; it is a name, not a path", name)
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("memory name %q contains a control character", name)
+		}
+	}
+	return name, nil
+}
+
+// validateMemoryContent refuses a memory that is over the cap.
+//
+// Refusing rather than truncating: an agent told that its memory is too large
+// can decide what to drop, which is a judgement only it can make.
+func validateMemoryContent(content string) error {
+	if n := len(content); n > MaxMemoryBytes {
+		return fmt.Errorf("memory is %d bytes; the limit is %d bytes (16 KiB). Split it across named memories and list them in %s", n, MaxMemoryBytes, DefaultMemoryName)
+	}
+	return nil
+}
+
+func toolError(format string, args ...any) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(format, args...)}},
+	}
+}
+
+func (ps *WorkspaceServer) handleLoadMemory(ctx context.Context, req *mcp.CallToolRequest, params LoadMemoryParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "loadMemory", clientIdentityFromRequest(req))
+
+	name, err := resolveMemoryName(params.Name)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+	if ps.loadMemory == nil {
+		return toolError("memory is not available on this server"), nil, nil
+	}
+
+	content, found, err := ps.loadMemory(ctx, name)
+	if err != nil {
+		return toolError("failed to load memory %q: %v", name, err), nil, nil
+	}
+	if !found {
+		// Not an error: this is what a fresh workspace looks like, and saying
+		// so plainly is what tells the agent to write one.
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{
+				Text: fmt.Sprintf("No memory saved under %q yet. Use saveMemory to write one.", name),
+			}},
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: content}},
+	}, nil, nil
+}
+
+func (ps *WorkspaceServer) handleSaveMemory(ctx context.Context, req *mcp.CallToolRequest, params SaveMemoryParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "saveMemory", clientIdentityFromRequest(req))
+
+	name, err := resolveMemoryName(params.Name)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+	if err := validateMemoryContent(params.Content); err != nil {
+		return toolError("%v", err), nil, nil
+	}
+	if ps.saveMemory == nil {
+		return toolError("memory is not available on this server"), nil, nil
+	}
+
+	if err := ps.saveMemory(ctx, name, params.Content); err != nil {
+		return toolError("failed to save memory %q: %v", name, err), nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("Saved %q (%d bytes).", name, len(params.Content)),
+		}},
+	}, nil, nil
+}

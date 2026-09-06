@@ -98,6 +98,8 @@ type WorkspaceServer struct {
 	updateMessageMetadata UpdateMessageMetadataFunc
 	updateAutoAllowed     UpdateWorkspaceAutoAllowedToolsFunc
 	publishEvent          PublishEventFunc
+	loadMemory            LoadMemoryFunc
+	saveMemory            SaveMemoryFunc
 	recordToolCall        RecordToolCallFunc
 	updateToolCallStatus  UpdateToolCallStatusFunc
 	bus                   *eventbus.Bus
@@ -319,6 +321,8 @@ func NewWorkspaceServer(
 	updateMessageMetadata UpdateMessageMetadataFunc,
 	updateAutoAllowed UpdateWorkspaceAutoAllowedToolsFunc,
 	publishEvent PublishEventFunc,
+	loadMemory LoadMemoryFunc,
+	saveMemory SaveMemoryFunc,
 	recordToolCall RecordToolCallFunc,
 	updateToolCallStatus UpdateToolCallStatusFunc,
 	bus *eventbus.Bus,
@@ -346,6 +350,8 @@ func NewWorkspaceServer(
 		updateMessageMetadata:  updateMessageMetadata,
 		updateAutoAllowed:      updateAutoAllowed,
 		publishEvent:           publishEvent,
+		loadMemory:             loadMemory,
+		saveMemory:             saveMemory,
 		recordToolCall:         recordToolCall,
 		updateToolCallStatus:   updateToolCallStatus,
 		bus:                    bus,
@@ -413,7 +419,10 @@ func NewWorkspaceServer(
 					"   - \"Tests pass (12/12). Moving on to the frontend changes.\"\n"+
 					"   - \"I ran `npm run build` and got this error: [error]. Investigating.\"\n\n"+
 					"4. **ASK VIA REPLY**: If you need permission, clarification, or more info, use `reply` to ask. Do NOT ask in your text output — the human won't see it.\n\n"+
-					"5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to 'completed'. Use 'blocked' if you are stuck and need human help.\n",
+					"5. **COMPLETE**: When done, send a summary of all changes via `reply`, then set the task status to 'completed'. Use 'blocked' if you are stuck and need human help.\n\n"+
+					"6. **REMEMBER**: This workspace has a memory that outlives the task. Call `loadMemory` before you start — with no arguments it reads "+
+					"`MEMORY.md`, the index of everything this workspace remembers, and it may already answer what you were about to ask. When you learn "+
+					"something that would save the next agent the same detour, `saveMemory` it. The memory belongs to the workspace, so everyone working here shares it.\n",
 				workspaceIDStr,
 			),
 		},
@@ -454,6 +463,22 @@ func NewWorkspaceServer(
 		Name:        "publishEvent",
 		Description: "Publish a named event so that subscriber workspaces are notified and their trigger tasks are created automatically. When the task you are completing includes a publishEvent instruction, copy the name and taskId from it exactly as written — taskId is what identifies the workflow run being continued. Write the payload yourself, plus an optional faq.",
 	}, ps.handlePublishEvent)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "loadMemory",
+		Description: "Read what this workspace remembers. Call this at the start of a task, before asking the human something they may already have told you. " +
+			"With no name it reads " + DefaultMemoryName + ", the index — start there, and it will tell you which other memories are worth loading. " +
+			"A name that has never been written is not an error; it just means nothing has been remembered under it yet.",
+	}, ps.handleLoadMemory)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "saveMemory",
+		Description: "Write something worth remembering about this workspace, so the next task starts with it. " +
+			"This replaces the named memory completely — there is no append, so pass the full new content. " +
+			"With no name it writes " + DefaultMemoryName + ", which should stay an index: keep detail in named memories and list them there. " +
+			"One memory holds at most 16 KiB; a larger one is refused rather than truncated, so split it and index the parts. " +
+			"The memory belongs to the workspace, not to you — other agents working here read the same notes.",
+	}, ps.handleSaveMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "elicit",
