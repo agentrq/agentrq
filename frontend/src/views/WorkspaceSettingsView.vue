@@ -197,20 +197,6 @@
                     </div>
                   </section>
 
-                  <section v-if="activeConnectionTab === 'codex'" class="space-y-4 min-w-0 w-full overflow-hidden">
-                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">2. Codex Config</h3>
-                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium px-1">Add this to <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">.codex/config.toml</code> to allow tool usage.</p>
-                    <div class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm p-5 relative group border border-gray-200 dark:border-zinc-800 w-full max-w-full overflow-hidden">
-                      <div class="flex justify-between items-center mb-4">
-                        <span class="text-[10px] font-semibold text-gray-500 dark:text-zinc-500 font-mono">config.toml</span>
-                        <button type="button" @click="copyToClipboard(codexConfigToml, 'codexConfig')" class="text-[10px] font-bold text-gray-400 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors uppercase tracking-widest">
-                          {{ copiedState.codexConfig ? 'Copied!' : 'Copy Config' }}
-                        </button>
-                      </div>
-                      <pre class="text-[11px] text-gray-800 dark:text-zinc-300 font-mono leading-relaxed p-1 overflow-x-auto custom-scrollbar whitespace-pre max-w-full block"><code>{{ codexConfigToml }}</code></pre>
-                    </div>
-                  </section>
-
                   <section v-if="activeConnectionTab === 'deepseek'" class="space-y-3 min-w-0 w-full overflow-hidden">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Entry point</h3>
                     <div class="flex gap-2">
@@ -276,17 +262,30 @@
                     </div>
 
                     <div v-else-if="activeConnectionTab === 'codex'" class="space-y-4 min-w-0">
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">Codex will not open a session until it has been logged in to, so that comes first. Run both from this workspace's directory — the one holding the <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">.mcp.json</code> above.</p>
                       <div class="space-y-2">
-                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">Start the bridge — npx fetches the latest version each run, so there's nothing to install or upgrade separately:</p>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">1. Log in. The first run fetches the agent, then hands you its login — pick a method when asked:</p>
                         <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
                           <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
-                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">npx @agentrq/acp-gateway@latest --max-concurrency 1 -- npx @agentclientprotocol/codex-acp</code>
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ codexLoginCommand }}</code>
                           </div>
-                          <button type="button" @click="copyToClipboard('npx @agentrq/acp-gateway@latest --max-concurrency 1 -- npx @agentclientprotocol/codex-acp', 'codexStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                          <button type="button" @click="copyToClipboard(codexLoginCommand, 'codexLogin')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexLogin ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
+                            {{ copiedState.codexLogin ? 'Copied!' : 'Copy' }}
+                          </button>
+                        </div>
+                      </div>
+                      <div class="space-y-2">
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">2. Start the bridge. Tasks assigned to this workspace's agent arrive from here:</p>
+                        <div class="bg-white dark:bg-zinc-900 p-3 rounded-sm border border-gray-200 dark:border-zinc-700 flex items-center justify-between group shadow-sm overflow-hidden">
+                          <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                            <code class="text-[10px] text-gray-900 dark:text-white font-bold whitespace-nowrap">{{ codexStartCommand }}</code>
+                          </div>
+                          <button type="button" @click="copyToClipboard(codexStartCommand, 'codexStart')" class="text-[9px] font-bold uppercase tracking-widest pl-4 shrink-0 transition-colors" :class="copiedState.codexStart ? 'text-green-500' : 'text-gray-400 hover:text-black dark:hover:text-white'">
                             {{ copiedState.codexStart ? 'Copied!' : 'Copy' }}
                           </button>
                         </div>
                       </div>
+                      <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">The registry publishes Codex as an npm package, so npx fetches it on the first run and there is nothing to install or upgrade separately. Sign out again with <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--logout</code> in place of <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">--login</code>.</p>
                     </div>
 
                     <div v-else-if="activeConnectionTab === 'deepseek'" class="space-y-4 min-w-0">
@@ -916,7 +915,7 @@ const copiedState = ref({
   gatewayInstalled: false,
   antigravityLogin: false,
   antigravityStart: false,
-  codexConfig: false,
+  codexLogin: false,
   codexStart: false,
   dshEnv: false,
   dshInstall: false,
@@ -961,6 +960,12 @@ const acpInstalledAgentCommand = `${ACP_GATEWAY} -- harn serve acp`;
 // on every command, since leaving either off is an error rather than a
 // different behaviour.
 const ANTIGRAVITY_AGENT = '--agent antigravity-acp --allow-unverified-agent';
+// Codex ships through the registry as an npm package, so unlike Antigravity
+// it needs no --allow-unverified-agent: the gateway only checksums binary
+// downloads, and an npx distribution never reaches that path.
+const CODEX_AGENT = '--agent codex-acp';
+const codexLoginCommand = `${ACP_GATEWAY} --login ${CODEX_AGENT}`;
+const codexStartCommand = `${ACP_GATEWAY} ${CODEX_AGENT}`;
 const antigravityLoginCommand = `${ACP_GATEWAY} --login ${ANTIGRAVITY_AGENT}`;
 const antigravityStartCommand = `${ACP_GATEWAY} ${ANTIGRAVITY_AGENT}`;
 
@@ -1002,32 +1007,6 @@ const permissionsConfig = computed(() => ({
 }));
 
 const permissionsConfigJson = computed(() => JSON.stringify(permissionsConfig.value, null, 2));
-
-const codexConfigToml = computed(() => {
-  return `[mcp_servers.${serverName.value}]
-url = "${authenticatedUrl.value}"
-
-[mcp_servers.${serverName.value}.tools.updateTaskStatus]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.getWorkspace]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.reply]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.createTask]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.downloadAttachment]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.getTask]
-approval_mode = "approve"
-
-[mcp_servers.${serverName.value}.tools.publishEvent]
-approval_mode = "approve"`;
-});
 
 // DeepSeek Harness installs the AgentRQ bundle rather than an MCP config file:
 // the bundle's own patch mounts both the MCP bridge and the delivery plugin,

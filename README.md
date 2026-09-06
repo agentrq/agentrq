@@ -297,77 +297,36 @@ The gateway will automatically:
 - Spawn the agent subprocess and bridge standard I/O.
 - Forward task assignments, messages, and permission requests in real-time.
 
-## 🌌 Codex Gateway (Bridge for OpenAI Codex)
+## 🌌 Codex (via the ACP Gateway)
 
-Similar to the ACP Gateway, the `@agentrq/codex-gateway` connects [OpenAI Codex](https://github.com/openai/codex) to AgentRQ workspaces by bridging the Model Context Protocol (MCP) with the Codex app-server protocol.
+[OpenAI Codex](https://github.com/openai/codex) connects through the same
+[ACP Gateway](#-acp-gateway-bridge-for-acp-agents) as every other agent. The
+gateway resolves `codex-acp` from the [ACP registry](https://github.com/agentclientprotocol/registry)
+and runs it for you, so there is nothing to install and nothing to configure
+beyond the `.mcp.json` the gateway reads.
 
-### Installation
-
-```bash
-npm install -g @agentrq/codex-gateway@latest
-```
+> Earlier releases used a separate `@agentrq/codex-gateway` package and a
+> `.codex/config.toml`. Neither is needed now.
 
 ### Setup
 
-**1. Configure agentrq MCP server for Codex (project-level)**
-
-Codex reads project-level MCP server config from `.codex/config.toml`. Create this file so the Codex agent can use agentrq tools directly during task execution (replace `<WORKSPACEID>` and `<TOKEN>` with your values from the agentrq dashboard):
-
-```bash
-mkdir -p .codex
-cat >> .codex/config.toml << 'EOF'
-
-[mcp_servers.agentrq-workspace]
-url = "https://<WORKSPACEID>.mcp.agentrq.com/?token=<TOKEN>"
-
-[mcp_servers.agentrq-<ID>.tools.updateTaskStatus]
-approval_mode = "approve"
-
-[mcp_servers.agentrq-<ID>.tools.getWorkspace]
-approval_mode = "approve"
-
-[mcp_servers.agentrq-<ID>.tools.reply]
-approval_mode = "approve"
-
-[mcp_servers.agentrq-<ID>.tools.createTask]
-approval_mode = "approve"
-
-[mcp_servers.agentrq-<ID>.tools.downloadAttachment]
-approval_mode = "approve"
-
-[mcp_servers.agentrq-<ID>.tools.getTask]
-approval_mode = "approve"
-EOF
-```
-
-**2. Configure the gateway's agentrq connection**
-
-Create a `.mcp.json` in your project root so `codex-gateway` can connect to the same agentrq workspace:
-
-```json
-{
-  "mcpServers": {
-    "agentrq": {
-      "type": "http",
-      "url": "https://<WORKSPACEID>.mcp.agentrq.com/mcp?token=<TOKEN>"
-    }
-  }
-}
-```
-
-> **Note:** `.mcp.json` is used by `codex-gateway` to receive tasks. `.codex/config.toml` is used by the Codex agent itself to call agentrq tools (e.g. `reply`, `updateTaskStatus`) during execution.
-
-### Usage
-
-Run `codex-gateway` from your agentrq workspace root (the directory containing `.mcp.json`):
+1. Ensure you have a [`.mcp.json`](#step-1--mcpjson) in your project root.
+2. Log in — Codex will not open a session until you have. The first run fetches
+   the agent, then hands you its login:
 
 ```bash
-# Default: runs `codex app-server`
-codex-gateway
-
-# Custom codex command
-codex-gateway -- codex app-server
+npx @agentrq/acp-gateway@latest --login --agent codex-acp
 ```
+
+3. Start the bridge. Run it from the same directory as `.mcp.json`:
+
+```bash
+npx @agentrq/acp-gateway@latest --agent codex-acp
+```
+
+Sign out again with `--logout` in place of `--login`. The registry publishes
+Codex as an npm package, so npx fetches it on first use and keeps it current —
+unlike the binary agents, it needs no `--allow-unverified-agent`.
 
 ## 👑 Supervisor (CoreMCP)
 
