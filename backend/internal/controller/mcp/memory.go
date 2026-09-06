@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -27,7 +28,11 @@ const (
 	// DefaultMemoryName is what both tools read and write when given no name.
 	// The index, by convention — an agent that calls loadMemory with no
 	// arguments should land on something that tells it what else is here.
-	DefaultMemoryName = "MEMORY.md"
+	//
+	// Stored lowercase like every other name, so an agent that asks for
+	// MEMORY.md — the spelling the README-style convention suggests — lands on
+	// the same memory rather than creating a second one beside it.
+	DefaultMemoryName = "memory.md"
 
 	// MaxMemoryNameLength matches the column. Counted in characters, as the
 	// column is.
@@ -60,33 +65,45 @@ type SaveMemoryParams struct {
 	Content string `json:"content" jsonschema:"The full new content. This replaces the memory entirely — there is no append, so include everything worth keeping."`
 }
 
+// memoryNamePattern is the shape a stored name takes: a lowercase slug with a
+// .md suffix. Hyphens separate words and never double up or sit at an edge.
+//
+// Being this strict is what lets `memory://<name>` links inside a memory be
+// parsed at all — a name with a space in it is not a URL — and it rules out
+// path separators, control characters and everything else in one rule rather
+// than a list of individual refusals.
+var memoryNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*\.md$`)
+
 // resolveMemoryName turns what an agent asked for into the name to store under.
 //
-// An empty name means the index, which is what makes `loadMemory()` with no
-// arguments useful. Everything else is checked rather than repaired: a name
-// quietly trimmed or truncated files the memory somewhere the agent did not
-// choose, and the next loadMemory for the name it thinks it used will miss.
+// Strict about what is kept, forgiving about what is accepted: case is folded
+// and surrounding whitespace dropped, so MEMORY.md, Memory.md and memory.md are
+// one memory rather than three that each look like the only one. Anything that
+// is still not a valid name after that is refused rather than repaired — a name
+// bent into shape files the memory somewhere the agent did not choose, and its
+// next load will miss.
+//
+// Folding here rather than in a query is deliberate. AgentRQ runs on SQLite and
+// Postgres, `=` is case-sensitive by default in both, and a NOCASE collation
+// does not port between them — so canonicalising once at this boundary is what
+// makes the unique key behave the same on either database.
 func resolveMemoryName(name string) (string, error) {
-	if strings.TrimSpace(name) == "" {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
 		return DefaultMemoryName, nil
 	}
-	if name != strings.TrimSpace(name) {
-		return "", fmt.Errorf("memory name %q has leading or trailing whitespace; use %q", name, strings.TrimSpace(name))
-	}
-	if n := utf8.RuneCountInString(name); n > MaxMemoryNameLength {
+
+	canonical := strings.ToLower(trimmed)
+	if n := utf8.RuneCountInString(canonical); n > MaxMemoryNameLength {
 		return "", fmt.Errorf("memory name is %d characters; the limit is %d", n, MaxMemoryNameLength)
 	}
-	// A name is a label, not a path. Allowing separators would suggest these
-	// are files in a directory that an agent could traverse, and they are not.
-	if strings.ContainsAny(name, `/\`) {
-		return "", fmt.Errorf("memory name %q must not contain a path separator; it is a name, not a path", name)
+	if !memoryNamePattern.MatchString(canonical) {
+		return "", fmt.Errorf(
+			"memory name %q is not usable; names are lowercase words joined by single hyphens and ending in .md, like %q or %q",
+			name, DefaultMemoryName, "release-notes.md",
+		)
 	}
-	for _, r := range name {
-		if r < 0x20 || r == 0x7f {
-			return "", fmt.Errorf("memory name %q contains a control character", name)
-		}
-	}
-	return name, nil
+	return canonical, nil
 }
 
 // validateMemoryContent refuses a memory that is over the cap.

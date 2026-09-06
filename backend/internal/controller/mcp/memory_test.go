@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -210,12 +211,18 @@ func TestMemoryNamesThatMustBeRefused(t *testing.T) {
 	ctx := context.Background()
 
 	for _, tc := range []struct{ name, why string }{
-		{strings.Repeat("n", MaxMemoryNameLength+1), "longer than the column"},
-		{" MEMORY.md", "leading whitespace"},
-		{"MEMORY.md ", "trailing whitespace"},
+		{strings.Repeat("n", MaxMemoryNameLength+1) + ".md", "longer than the column"},
 		{"notes/deploys.md", "a path separator"},
 		{`notes\deploys.md`, "a windows path separator"},
 		{"notes\x00.md", "a control character"},
+		{"release notes.md", "a space"},
+		{"release_notes.md", "an underscore rather than a hyphen"},
+		{"-deploys.md", "a leading hyphen"},
+		{"deploys-.md", "a trailing hyphen"},
+		{"release--notes.md", "a doubled hyphen"},
+		{"deploys", "no .md suffix"},
+		{"deploys.txt", "the wrong suffix"},
+		{".md", "nothing but a suffix"},
 	} {
 		save, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{Name: tc.name, Content: "x"})
 		if err != nil {
@@ -240,7 +247,7 @@ func TestMemoryNamesThatMustBeRefused(t *testing.T) {
 func TestMemoryNameAtTheLimitIsAccepted(t *testing.T) {
 	store := &memoryStore{}
 	ps := newMemoryServer(t, store)
-	name := strings.Repeat("n", MaxMemoryNameLength)
+	name := strings.Repeat("n", MaxMemoryNameLength-3) + ".md"
 
 	res, _, err := ps.handleSaveMemory(context.Background(), &mcp.CallToolRequest{}, SaveMemoryParams{Name: name, Content: "x"})
 
@@ -252,20 +259,77 @@ func TestMemoryNameAtTheLimitIsAccepted(t *testing.T) {
 	}
 }
 
-// A name is counted in characters, as the column is, so an accented name of 32
-// characters fits even though it is more than 32 bytes.
-func TestMemoryNameIsCountedInCharacters(t *testing.T) {
-	ps := newMemoryServer(t, &memoryStore{})
+// Case is folded rather than refused, so the three spellings an agent might
+// reach for are one memory instead of three that each look like the only one.
+func TestMemoryNamesAreFoldedToOne(t *testing.T) {
+	store := &memoryStore{}
+	ps := newMemoryServer(t, store)
+	ctx := context.Background()
 
-	res, _, err := ps.handleSaveMemory(context.Background(), &mcp.CallToolRequest{}, SaveMemoryParams{
-		Name: strings.Repeat("é", MaxMemoryNameLength), Content: "x",
+	for i, spelling := range []string{"MEMORY.md", "Memory.md", "memory.md", "  MEMORY.md  "} {
+		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Name: spelling, Content: fmt.Sprintf("write %d", i),
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", spelling, err)
+		}
+		if res.IsError {
+			t.Fatalf("%s must be accepted: %s", spelling, resultText(t, res))
+		}
+		if store.saveName != DefaultMemoryName {
+			t.Errorf("%s stored as %q, want %q", spelling, store.saveName, DefaultMemoryName)
+		}
+	}
+
+	// One memory, holding the last thing written to it — not four.
+	if len(store.saved) != 1 {
+		t.Errorf("expected one memory, got %d: %v", len(store.saved), store.saved)
+	}
+	if store.saved[DefaultMemoryName] != "write 3" {
+		t.Errorf("got %q, want the last write", store.saved[DefaultMemoryName])
+	}
+}
+
+// The same folding on the way in, so a load finds what a differently-spelled
+// save stored.
+func TestLoadMemoryFoldsTheNameToo(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"release-notes.md": "what shipped"}}
+	ps := newMemoryServer(t, store)
+
+	res, _, err := ps.handleLoadMemory(context.Background(), &mcp.CallToolRequest{}, LoadMemoryParams{
+		Name: "Release-Notes.MD",
 	})
 
 	if err != nil {
-		t.Fatalf("saveMemory: %v", err)
+		t.Fatalf("loadMemory: %v", err)
 	}
-	if res.IsError {
-		t.Errorf("32 characters must fit whatever they encode to: %s", resultText(t, res))
+	if got := resultText(t, res); got != "what shipped" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestMemoryNamesThatAreAccepted(t *testing.T) {
+	ctx := context.Background()
+
+	for _, name := range []string{
+		"memory.md",
+		"deploys.md",
+		"release-notes.md",
+		"a-b-c-d.md",
+		"api2.md",
+		"2024-review.md",
+	} {
+		store := &memoryStore{}
+		ps := newMemoryServer(t, store)
+
+		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{Name: name, Content: "x"})
+
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if res.IsError {
+			t.Errorf("%s must be accepted: %s", name, resultText(t, res))
+		}
 	}
 }
 

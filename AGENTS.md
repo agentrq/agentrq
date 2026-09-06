@@ -93,9 +93,17 @@ Mock packages are **generated** (gitignored). Run `make mocks` before testing if
   the *workspace's* memory, so every agent working there shares it. Keying it to
   the connecting client would make it per-agent memory wearing a workspace's
   name.
-- `MEMORY.md` is the default for both tools and is meant to stay an index of the
-  other named memories. The server instructions tell connecting agents to load
-  it first.
+- `memory.md` is the default for both tools and is meant to stay an index of the
+  other named memories, linking them as `memory://<name>`. The server
+  instructions tell connecting agents to load it first.
+- **Names are canonicalised at the tool boundary**: trimmed, lowercased, and
+  then required to match `^[a-z0-9]+(-[a-z0-9]+)*\.md$`. So `MEMORY.md`,
+  `Memory.md` and `memory.md` are one memory rather than three. Folding here
+  rather than in a query is deliberate — `=` is case-sensitive by default on
+  both SQLite and Postgres and a `NOCASE` collation does not port between them,
+  so one stored spelling is what makes the unique key behave the same on either.
+  The strict shape is also what lets `memory://<name>` be parsed as a URL at
+  all: a name with a space in it is not one.
 - **Limits are enforced at the tool boundary, not in the repository**: 16 KiB of
   UTF-8 per memory and 32 characters per name, both refused rather than
   truncated — an agent told its memory is too large can split it, while one
