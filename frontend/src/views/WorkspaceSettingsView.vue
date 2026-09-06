@@ -522,6 +522,75 @@
                    </div>
                 </div>
 
+                <!-- Memories.
+                     What the workspace's agents have chosen to remember. Read
+                     only: agents write these through the memory tools, and a
+                     human quietly rewriting one under an agent that has already
+                     read it is confusing from both sides. -->
+                <div v-if="activeTab === 'memories'" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div class="space-y-1">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Workspace Memory</h3>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium ml-1">
+                      What agents working here have written down for the next one. They read
+                      <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ INDEX_MEMORY }}</code>
+                      first, which indexes the rest. Every agent in this workspace shares them.
+                    </p>
+                  </div>
+
+                  <p v-if="memoriesView === MemoriesState.Loading" class="text-[11px] text-gray-400 dark:text-zinc-500 ml-1">Loading memories…</p>
+
+                  <div v-else-if="memoriesView === MemoriesState.Failed" class="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-sm">
+                    <p class="text-[11px] font-bold text-red-600 dark:text-red-400">Could not load this workspace's memories.</p>
+                    <button type="button" @click="loadMemories" class="mt-2 text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 hover:underline">Try again</button>
+                  </div>
+
+                  <div v-else-if="memoriesView === MemoriesState.Empty" class="p-6 bg-gray-50 dark:bg-zinc-800/50 rounded-sm border border-gray-100 dark:border-zinc-800 text-center">
+                    <p class="text-[11px] font-bold text-gray-700 dark:text-zinc-200">Nothing remembered yet.</p>
+                    <p class="mt-1 text-[11px] text-gray-500 dark:text-zinc-400">
+                      This is how every workspace starts. Agents write here themselves when they learn
+                      something worth keeping — there is nothing to set up.
+                    </p>
+                  </div>
+
+                  <div v-else class="space-y-2">
+                    <div v-for="m in orderedMemories" :key="m.name"
+                         class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm border border-gray-100 dark:border-zinc-800 overflow-hidden">
+                      <button type="button" @click="toggleMemory(m.name)"
+                              class="w-full flex items-center justify-between gap-4 p-4 text-left hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                        <span class="flex items-center gap-3 min-w-0">
+                          <svg class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500 transition-transform"
+                               :class="openMemory === m.name ? 'rotate-90' : ''"
+                               fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <span class="truncate text-xs font-bold text-gray-800 dark:text-zinc-100 font-mono">{{ m.name }}</span>
+                          <span v-if="m.name === INDEX_MEMORY"
+                                class="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5">Index</span>
+                        </span>
+                        <span class="shrink-0 flex items-center gap-3 text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">
+                          <span>{{ formatMemorySize(m.sizeBytes) }}</span>
+                          <span class="hidden sm:inline">{{ memoryUpdatedAgo(m.updatedAt) }}</span>
+                        </span>
+                      </button>
+
+                      <div v-if="openMemory === m.name" class="border-t border-gray-100 dark:border-zinc-800 p-4 space-y-3">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
+                            {{ memoryFullness(m.sizeBytes) }}% of the 16 KB limit
+                          </span>
+                          <button type="button" @click="showRawMemory = !showRawMemory"
+                                  :class="showRawMemory ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                                  class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">Raw</button>
+                        </div>
+                        <p v-if="memoryError" class="text-[11px] font-bold text-red-600 dark:text-red-400">Could not load this memory.</p>
+                        <p v-else-if="memoryLoading" class="text-[11px] text-gray-400 dark:text-zinc-500">Loading…</p>
+                        <div v-else-if="showRawMemory" class="text-[12px] text-gray-800 dark:text-zinc-200 whitespace-pre-wrap break-words font-mono">{{ memoryContent }}</div>
+                        <div v-else class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(memoryContent)"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- Slack Integration -->
                 <div v-if="activeTab === 'slack'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div class="space-y-6">
@@ -727,7 +796,17 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
+import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel, fetchWorkspaceMemories, getWorkspaceMemory } from '../api';
+import { renderMarkdown } from '../utils/markdown';
+import {
+  INDEX_MEMORY,
+  MemoriesState,
+  formatMemorySize,
+  memoriesState,
+  memoryFullness,
+  memoryUpdatedAgo,
+  orderMemories,
+} from '../composables/useMemories';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
 import { usePlatformStore } from '../stores/platformStore';
@@ -757,6 +836,7 @@ import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
 
+
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError, notifyInfo } = useToasts();
@@ -767,6 +847,63 @@ const loading = ref(true);
 const saving = ref(false);
 const workspaceStore = useWorkspaceStore();
 const activeTab = ref('general');
+
+// ── Memories ────────────────────────────────────────────────────────────────
+// Read-only: agents write these through the memory tools.
+const memories = ref([]);
+const memoriesLoading = ref(false);
+const memoriesError = ref(null);
+const openMemory = ref('');
+const memoryContent = ref('');
+const memoryLoading = ref(false);
+const memoryError = ref(null);
+const showRawMemory = ref(false);
+
+const orderedMemories = computed(() => orderMemories(memories.value));
+const memoriesView = computed(() =>
+  memoriesState({ loading: memoriesLoading.value, error: memoriesError.value, memories: memories.value })
+);
+
+async function loadMemories() {
+  memoriesLoading.value = true;
+  memoriesError.value = null;
+  try {
+    const res = await fetchWorkspaceMemories(workspaceId.value);
+    memories.value = res.memories || [];
+  } catch (err) {
+    // Kept apart from an empty list: "your agents have remembered nothing" and
+    // "we could not ask" look identical on screen and must not read the same.
+    memoriesError.value = err;
+  } finally {
+    memoriesLoading.value = false;
+  }
+}
+
+async function toggleMemory(name) {
+  if (openMemory.value === name) {
+    openMemory.value = '';
+    return;
+  }
+  openMemory.value = name;
+  memoryContent.value = '';
+  memoryError.value = null;
+  memoryLoading.value = true;
+  try {
+    const res = await getWorkspaceMemory(workspaceId.value, name);
+    // The list is fetched without content, so opening one is a second request.
+    memoryContent.value = res.memory?.content || '';
+  } catch (err) {
+    memoryError.value = err;
+  } finally {
+    memoryLoading.value = false;
+  }
+}
+
+// Fetched when the tab is first opened rather than on mount: most visits to
+// settings are not about memories, and this is a request per workspace.
+watch(activeTab, (tab) => {
+  if (tab === 'memories' && memories.value.length === 0 && !memoriesError.value) loadMemories();
+});
 const fileInput = ref(null);
 const iconError = ref('');
 const showArchiveConfirm = ref(false);
@@ -1062,6 +1199,7 @@ const navItems = [
   { id: 'setup', label: 'Setup', icon: `<svg viewBox="0 0 16 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.62524 8.11636L7.6712 2.07042C8.50598 1.23564 9.85941 1.23564 10.6941 2.07042C11.5289 2.90518 11.5289 4.25861 10.6941 5.09339L6.12821 9.65934" stroke="currentColor"></path><path d="M6.19116 9.59684L10.6941 5.09385C11.5289 4.25908 12.8823 4.25908 13.7171 5.09385L13.7486 5.12534C14.5834 5.96011 14.5834 7.31354 13.7486 8.14831L8.28059 13.6164C8.00233 13.8946 8.00233 14.3457 8.28059 14.6239L9.40336 15.7468" stroke="currentColor"></path><path d="M9.18266 3.58203L4.71116 8.05351C3.87639 8.88826 3.87639 10.2417 4.71116 11.0765C5.54593 11.9112 6.89936 11.9112 7.73414 11.0765L12.2056 6.605" stroke="currentColor"></path></svg>` },
   { id: 'automations', label: 'Automations', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
+  { id: 'memories', label: 'Memories', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
   { id: 'slack', label: 'Slack', icon: `<svg viewBox="0 0 127 127" fill="currentColor"><path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80z"/></svg>` }
 ];
 
