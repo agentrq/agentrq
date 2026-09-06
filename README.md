@@ -164,6 +164,19 @@ certificates are in place — the install command above is the way around both.
 Connecting to a server and troubleshooting are covered in the
 [Desktop Guide](docs/DESKTOP.md).
 
+## Driving AgentRQ from a browser agent
+
+If your browser supports [WebMCP](https://github.com/webmachinelearning/webmcp),
+an AI agent you talk to there can use AgentRQ directly — list your workspaces,
+open a task, reply in it, build a workflow. Everything the interface can do is
+offered as a tool, including asking which page you are on, so "reply to this
+task" resolves to the task you have open.
+
+The tools run in the page as you, with your session, so an agent gets exactly
+your permissions and nothing more, and they are withdrawn when you sign out.
+Nothing to install or configure; a browser without WebMCP simply sees no tools.
+See the [WebMCP Guide](docs/WEBMCP.md).
+
 To run it from source:
 
 ```bash

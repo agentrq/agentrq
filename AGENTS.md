@@ -102,6 +102,24 @@ Named signals that let one workspace trigger tasks in another.
 - **`EventTrigger.emitEventId`**: optional field that chains events — when the trigger's spawned task completes it publishes this second event. The consumer appends the same `publishEvent` instruction to the task body. Triggered tasks always start as `notstarted` (no cron scheduling).
 - **Frontend**: `/events` list + `/events/:id` detail (triggers CRUD + resulting tasks, 10 shown with load-more). Both the task-creation form and the trigger-creation form have an optional "Emit event on completion" selector.
 
+## WebMCP (`frontend/src/webmcp/`)
+
+The interface offers itself to a browser agent as WebMCP tools — 52 of them,
+registered on sign-in and withdrawn on sign-out.
+
+- `modelContext.js` is the browser seam (finds `document.modelContext`, falling
+  back to the deprecated `navigator.modelContext`); `tools.js` is the pure
+  catalogue; `composables/useWebMCP.js` is the only Vue-aware part.
+- **The catalogue mirrors `frontend/src/api.js` function for function.** That is
+  what makes "anything the UI can do" checkable, and
+  `frontend/test/webmcpTools.test.js` enforces it: add an API function without a
+  tool and it fails. Exemptions live in that test with a reason.
+- Tools act as the signed-in user with their cookie, so they inherit exactly the
+  user's permissions. The registration is withdrawn on logout because the page
+  is not reloaded in between.
+- User-facing documentation is `docs/WEBMCP.md`; `cd desktop && npm run
+  verify:webmcp` drives the whole path in a real browser with no backend.
+
 ## Commit convention
 
 Include `Task: <taskID>` in the commit body for traceability.

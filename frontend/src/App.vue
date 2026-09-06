@@ -386,9 +386,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { fetchUser, fetchWorkspaces, API_BASE_URL } from './api'
+// The whole module, because the WebMCP catalogue mirrors it function for
+// function — naming each one here would be a second list to keep in step.
+import * as api from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { profileDisplay } from './composables/useProfileDisplay'
+import { connectWebMCP } from './composables/useWebMCP'
 import { usePlatformStore } from './stores/platformStore'
 import {
   copyLinkTarget,
@@ -681,7 +685,15 @@ const hideTooltip = () => {
   tooltipStore.hide();
 }
 
+/** The registration handle, so the tools can be withdrawn on sign-out. */
+let webmcp = null
+
 async function logout() {
+  // Before anything else: these tools act as the signed-in user, and the page
+  // is not reloaded on sign-out, so leaving them registered would leave an
+  // agent holding the last person's session.
+  webmcp?.unregister()
+  webmcp = null
   await unsubscribePush()
   // Unconditional, and before the request: a browser several people use must
   // not leave one person's task titles readable by the next, and that has to
@@ -705,9 +717,28 @@ const loadUser = async () => {
     if (user.value?.id) {
       const db = await connectCache(user.value.id)
       startRetentionSweep(db)
+      offerWebMCPTools()
     }
   } catch (err) {
     console.error('Failed to fetch user:', err)
+  }
+}
+
+/**
+ * Hand the interface's own capabilities to an agent running in this browser.
+ *
+ * Only once signed in: the tools act as this user, with their cookie and their
+ * permissions, so there is nothing to offer before we know who that is. The
+ * browser is usually one without WebMCP at all, which is not a failure — the
+ * catalogue is simply not registered and nothing else changes.
+ */
+async function offerWebMCPTools() {
+  if (webmcp) return
+  try {
+    webmcp = await connectWebMCP({ api, router })
+  } catch (err) {
+    // An agent-facing extra must never cost the person their interface.
+    console.error('Failed to register WebMCP tools:', err)
   }
 }
 
