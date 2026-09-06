@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
+import { renderMarkdown } from '../src/utils/markdown';
 import {
   INDEX_MEMORY,
+  MEMORY_LINK_ATTR,
+  memoryLinkFromEvent,
+  memoryLinkTarget,
   MEMORY_LIMIT_BYTES,
   MemoriesState,
   formatMemorySize,
@@ -152,5 +156,107 @@ describe('memoriesState', () => {
 
   it('survives a state with nothing in it', () => {
     expect(memoriesState({ loading: false, error: null, memories: undefined })).toBe(MemoriesState.Empty);
+  });
+});
+
+describe('memoryLinkTarget', () => {
+  it('reads the memory a link names', () => {
+    expect(memoryLinkTarget('memory://deploys.md')).toBe('deploys.md');
+  });
+
+  it('canonicalises the name the way the tools store it', () => {
+    // memory://MEMORY.md and memory://memory.md are the same memory, so the
+    // link has to resolve to the one stored spelling.
+    expect(memoryLinkTarget('memory://MEMORY.md')).toBe('memory.md');
+    expect(memoryLinkTarget('memory://Release-Notes.MD')).toBe('release-notes.md');
+  });
+
+  it('accepts the single-slash spelling too', () => {
+    expect(memoryLinkTarget('memory:/deploys.md')).toBe('deploys.md');
+    expect(memoryLinkTarget('memory:deploys.md')).toBe('deploys.md');
+  });
+
+  it('is not fooled by something that merely mentions memory', () => {
+    expect(memoryLinkTarget('https://example.com/memory://x.md')).toBe('');
+    expect(memoryLinkTarget('deploys.md')).toBe('');
+    expect(memoryLinkTarget('')).toBe('');
+    expect(memoryLinkTarget(undefined)).toBe('');
+  });
+});
+
+describe('memory links in rendered markdown', () => {
+  const render = (md) => {
+    document.body.innerHTML = `<div id="root">${renderMarkdown(md)}</div>`;
+    return document.querySelector('#root');
+  };
+
+  it('renders a link the app answers rather than one the browser follows', () => {
+    const root = render('[how we ship](memory://deploys.md)');
+    const anchor = root.querySelector('a');
+
+    expect(anchor.getAttribute(MEMORY_LINK_ATTR)).toBe('deploys.md');
+    // No href at all: the browser must never navigate to this.
+    expect(anchor.hasAttribute('href')).toBe(false);
+    expect(anchor.textContent).toBe('how we ship');
+  });
+
+  it('offers to copy the memory name', () => {
+    const root = render('[i](memory://deploys.md)');
+
+    expect(root.querySelector('button')?.getAttribute('data-copy-text')).toBe('deploys.md');
+  });
+
+  it('renders a link the app cannot follow as text, not as a dead anchor', () => {
+    // This is the bug it exists for: a relative link used to navigate the whole
+    // page to a path no route matches, blanking the screen.
+    const root = render('[notes](deploys.md)');
+
+    expect(root.querySelector('a')).toBeNull();
+    expect(root.querySelector('.md-dead-link')?.textContent).toBe('notes');
+    // The target is kept where it can still be read.
+    expect(root.querySelector('.md-dead-link')?.getAttribute('title')).toBe('deploys.md');
+  });
+
+  it('leaves links that do work alone', () => {
+    for (const [md, href] of [
+      ['[web](https://agentrq.com)', 'https://agentrq.com'],
+      ['[mail](mailto:hi@agentrq.com)', 'mailto:hi@agentrq.com'],
+    ]) {
+      const root = render(md);
+      expect(root.querySelector('a')?.getAttribute('href')).toBe(href);
+    }
+  });
+
+  it('still renders a local file link as one', () => {
+    const root = render('[plan](file:///Users/mt/plan.md)');
+
+    expect(root.querySelector('a')?.getAttribute('data-file-url')).toBe('file:///Users/mt/plan.md');
+  });
+});
+
+describe('memoryLinkFromEvent', () => {
+  const mount = (md) => {
+    document.body.innerHTML = `<div id="root">${renderMarkdown(md)}</div>`;
+    return document.querySelector('a');
+  };
+
+  it('finds the memory a click landed on', () => {
+    const anchor = mount('[how we ship](memory://deploys.md)');
+
+    expect(memoryLinkFromEvent({ target: anchor })).toBe('deploys.md');
+  });
+
+  it('finds it from a click on text inside the link', () => {
+    const anchor = mount('[**bold**](memory://deploys.md)');
+
+    expect(memoryLinkFromEvent({ target: anchor.querySelector('strong') })).toBe('deploys.md');
+  });
+
+  it('ignores a click on anything else', () => {
+    mount('[web](https://agentrq.com)');
+
+    expect(memoryLinkFromEvent({ target: document.querySelector('a') })).toBe('');
+    expect(memoryLinkFromEvent({ target: null })).toBe('');
+    expect(memoryLinkFromEvent(undefined)).toBe('');
   });
 });

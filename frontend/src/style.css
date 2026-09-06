@@ -144,6 +144,12 @@ html, body, #app {
 .md-body a:hover { opacity: 0.75; }
 /* A link to a local file carries no href — the app opens it rather than the
    browser navigating to it — so the pointer cursor has to be asked for. */
+/* A link to another memory. Same affordance as a file link — the app answers
+   it rather than the browser following it — so it needs the pointer asked for. */
+.md-body a.md-memory-link { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
+/* A link the app cannot follow, rendered as text. Kept visually quiet: it is
+   not a control, and dressing it as one is what made it a trap. */
+.md-body .md-dead-link { text-decoration: underline dotted; text-decoration-color: currentColor; opacity: 0.75; cursor: help; }
 .md-body a.md-file-link { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
 /* Every link gets a button that copies where it points. Faint until wanted, so
    a paragraph of links does not read as a row of icons. */

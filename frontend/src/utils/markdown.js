@@ -2,6 +2,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 import { COPY_TEXT_ATTR, FILE_LINK_ATTR, filePathFromUrl } from '../composables/useMarkdownLinks';
+import { MEMORY_LINK_ATTR, memoryLinkTarget } from '../composables/useMemories';
 
 function escapeHtml(text) {
   return text
@@ -21,23 +22,60 @@ marked.use({ renderer: { html({ text }) { return escapeHtml(text); } } });
 
 const FILE_SCHEME = /^file:/i;
 
-// A link to a local file gets no href at all: DOMPurify would strip a `file:`
-// one anyway, and both builds refuse to navigate to it — see `useMarkdownLinks`,
-// which turns the surviving `data-file-url` back into an open request. Every
-// other scheme falls through to marked's own anchor, which is why this returns
-// false rather than rendering one itself.
+// Where a link can point and actually be followed: the web, a mail client, a
+// dialler. Everything else either gets its own treatment below or becomes text.
+const FOLLOWABLE_SCHEME = /^(https?:|mailto:|tel:|sms:)/i;
+
+// Links the app answers itself rather than letting the browser follow.
+//
+// Two of the three cases here get no href at all: DOMPurify strips an unknown
+// scheme's href anyway, and neither build should navigate to one — so the
+// target travels in a data attribute and a delegated handler decides what to
+// do. The third case is a link that points nowhere the app can go, which is
+// rendered as plain text.
+//
+// A scheme this does not recognise falls through to marked's own anchor, which
+// is why those branches return false rather than rendering one.
 marked.use({
   renderer: {
     link(token) {
-      if (!FILE_SCHEME.test(token.href)) return false;
-      const path = filePathFromUrl(token.href);
-      // The tooltip is the decoded path, because the link text is usually just
-      // a filename and where the file actually lives is the useful part.
-      const title = escapeHtml(token.title || path || token.href);
-      return (
-        `<a class="md-file-link" ${FILE_LINK_ATTR}="${escapeHtml(token.href)}"` +
-        ` role="link" tabindex="0" title="${title}">${this.parser.parseInline(token.tokens)}</a>`
-      );
+      const href = token.href;
+
+      // A link between memories, which an index is made of. The scheme makes
+      // the intent explicit where a bare `deploys.md` could as easily be a repo
+      // path or a typo.
+      const memory = memoryLinkTarget(href);
+      if (memory) {
+        return (
+          `<a class="md-memory-link" ${MEMORY_LINK_ATTR}="${escapeHtml(memory)}"` +
+          ` role="link" tabindex="0" title="${escapeHtml(memory)}">${this.parser.parseInline(token.tokens)}</a>`
+        );
+      }
+
+      if (FILE_SCHEME.test(href)) {
+        const path = filePathFromUrl(href);
+        // The tooltip is the decoded path, because the link text is usually
+        // just a filename and where the file actually lives is the useful part.
+        const title = escapeHtml(token.title || path || href);
+        return (
+          `<a class="md-file-link" ${FILE_LINK_ATTR}="${escapeHtml(href)}"` +
+          ` role="link" tabindex="0" title="${title}">${this.parser.parseInline(token.tokens)}</a>`
+        );
+      }
+
+      // Anything left that the app cannot follow becomes text.
+      //
+      // A relative link like `[notes](deploys.md)` used to render as a real
+      // anchor, and clicking one navigated the whole page to a path no route
+      // matches — a blank screen, and the reader loses their place. That is
+      // worse than not being a link at all, and it happens in task bodies and
+      // messages as much as in memories, because agents write relative paths
+      // constantly. The target is kept as a tooltip so nothing is lost.
+      if (href && !FOLLOWABLE_SCHEME.test(href)) {
+        return `<span class="md-dead-link" title="${escapeHtml(href)}">${this.parser.parseInline(token.tokens)}</span>`;
+      }
+
+      return false;
     },
   },
 });
@@ -62,9 +100,12 @@ const COPY_ICON =
 function addCopyButtons(fragment) {
   for (const anchor of fragment.querySelectorAll('a')) {
     // A local file link has no href by then; the useful thing to copy is the
-    // path it names, not the URL form of it.
+    // path it names, not the URL form of it. A memory link has no href either,
+    // and what is worth copying is the name.
     const fileUrl = anchor.getAttribute(FILE_LINK_ATTR);
-    const target = fileUrl ? filePathFromUrl(fileUrl) || fileUrl : anchor.getAttribute('href');
+    const target =
+      anchor.getAttribute(MEMORY_LINK_ATTR) ||
+      (fileUrl ? filePathFromUrl(fileUrl) || fileUrl : anchor.getAttribute('href'));
     if (!target) continue;
 
     const button = document.createElement('button');

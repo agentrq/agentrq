@@ -183,7 +183,15 @@ describe('renderMarkdown', () => {
   });
 
   it('still refuses a javascript: link', () => {
-    expect(renderMarkdown('[x](javascript:alert(1))')).not.toContain('javascript:');
+    const html = renderMarkdown('[x](javascript:alert(1))');
+
+    // Nothing navigable survives: it is not even an anchor now, since a scheme
+    // the app cannot follow renders as text. The URL appears only as an escaped
+    // tooltip, which is inert — the property that matters is that there is no
+    // href and nothing to click.
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    expect(doc.querySelector('a')).toBeNull();
+    expect(html).not.toContain('href');
   });
 
   it('escapes a quote in the file URL rather than breaking out of the attribute', () => {
@@ -328,6 +336,14 @@ describe('copy buttons', () => {
     const [button] = buttons('[report](file://fileserver/share/report.pdf)');
 
     expect(button.getAttribute(COPY_TEXT_ATTR)).toBe('file://fileserver/share/report.pdf');
+  });
+
+  it('adds nothing to a link with no target at all', () => {
+    // `[x]()` is a link markdown renders with an empty href. There is nothing
+    // to put on a clipboard, so it gets no button.
+    document.body.innerHTML = `<div id="root">${renderMarkdown('[x]()')}</div>`;
+
+    expect(document.querySelectorAll('button')).toHaveLength(0);
   });
 
   it('adds nothing to a link the sanitizer emptied', () => {

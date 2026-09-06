@@ -585,7 +585,9 @@
                         <p v-if="memoryError" class="text-[11px] font-bold text-red-600 dark:text-red-400">Could not load this memory.</p>
                         <p v-else-if="memoryLoading" class="text-[11px] text-gray-400 dark:text-zinc-500">Loading…</p>
                         <div v-else-if="showRawMemory" class="text-[12px] text-gray-800 dark:text-zinc-200 whitespace-pre-wrap break-words font-mono">{{ memoryContent }}</div>
-                        <div v-else class="md-body text-[13px] text-gray-800 dark:text-zinc-200" v-html="renderMarkdown(memoryContent)"></div>
+                        <div v-else class="md-body text-[13px] text-gray-800 dark:text-zinc-200"
+                             @click="onMemoryLinkClick"
+                             v-html="renderMarkdown(memoryContent)"></div>
                       </div>
                     </div>
                   </div>
@@ -804,6 +806,7 @@ import {
   formatMemorySize,
   memoriesState,
   memoryFullness,
+  memoryLinkFromEvent,
   memoryUpdatedAgo,
   orderMemories,
 } from '../composables/useMemories';
@@ -877,6 +880,31 @@ async function loadMemories() {
   } finally {
     memoriesLoading.value = false;
   }
+}
+
+/**
+ * Follow a `memory://` link from inside a memory.
+ *
+ * The index is built of these, so this is the ordinary way to move between
+ * memories. Delegated from the panel rather than bound per link, because the
+ * links are inside markdown the app injects as HTML.
+ */
+function onMemoryLinkClick(event) {
+  const name = memoryLinkFromEvent(event);
+  if (!name) return;
+  event.preventDefault();
+  // A link to a memory nobody has written is not a failure worth a toast: an
+  // index written ahead of its entries is normal. The row simply is not there.
+  if (!memories.value.some((m) => m.name === name)) {
+    notifyInfo(`Nothing saved under ${name} yet.`);
+    return;
+  }
+  openNamedMemory(name);
+}
+
+async function openNamedMemory(name) {
+  openMemory.value = '';
+  await toggleMemory(name);
 }
 
 async function toggleMemory(name) {

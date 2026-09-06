@@ -9,7 +9,43 @@
  */
 
 /** The memory agents read first, and where the index to the others belongs. */
-export const INDEX_MEMORY = 'MEMORY.md';
+export const INDEX_MEMORY = 'memory.md';
+
+/**
+ * Where `renderMarkdown` parks a link to another memory, and what the click
+ * handler looks for.
+ *
+ * Agents write `[how we ship](memory://deploys.md)` in the index. The scheme is
+ * what makes that unambiguous — a bare `deploys.md` could equally be a repo
+ * path or a typo — and the sanitizer strips the href for us, so the link is
+ * never navigable and the name has to travel in an attribute instead.
+ */
+export const MEMORY_LINK_ATTR = 'data-memory-link';
+export const MEMORY_LINK_SELECTOR = `[${MEMORY_LINK_ATTR}]`;
+
+// Two slashes is the spelling agents are taught, but one or none cost nothing
+// to accept and are the obvious things to mistype. Same leniency as the names
+// themselves: strict about what is stored, forgiving about what arrives.
+const MEMORY_SCHEME = /^memory:\/{0,2}/i;
+
+/**
+ * The memory a `memory://` link names, canonicalised the way the tools store
+ * it, or '' when the link is not one.
+ *
+ * Parsed by stripping the prefix rather than with `new URL`. The two agree
+ * today only because names are slugs — `new URL('memory://release notes.md')`
+ * throws, and a name is not required by anything here to stay space-free
+ * forever. Whoever relaxes that rule should not discover this by watching links
+ * break.
+ *
+ * @param {string} raw
+ * @returns {string}
+ */
+export function memoryLinkTarget(raw) {
+  const text = String(raw ?? '');
+  if (!MEMORY_SCHEME.test(text)) return '';
+  return text.replace(MEMORY_SCHEME, '').trim().toLowerCase();
+}
 
 /**
  * The memories in the order they should be read.
@@ -78,6 +114,16 @@ export function memoryUpdatedAgo(updatedAt, now = new Date()) {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
   return then.toLocaleDateString();
+}
+
+/**
+ * The memory a click asked for, or '' when the click was not on one.
+ *
+ * @param {Event} event
+ */
+export function memoryLinkFromEvent(event) {
+  const anchor = event?.target?.closest?.(MEMORY_LINK_SELECTOR);
+  return anchor?.getAttribute(MEMORY_LINK_ATTR) || '';
 }
 
 /** What the panel should be showing. */
