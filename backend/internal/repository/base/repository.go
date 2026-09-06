@@ -167,8 +167,18 @@ func (r *repository) UpdateWorkspace(ctx context.Context, p model.Workspace) (mo
 
 func (r *repository) DeleteWorkspace(ctx context.Context, id int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Delete all messages for all tasks in this workspace
-		if err := tx.Where("task_id IN (?)", tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)).Delete(&model.Message{}).Error; err != nil {
+		// 1. Delete everything that references any task in this workspace.
+		//    Tool calls matter as much as messages here: they carry the same
+		//    foreign key to tasks.id, so leaving them would refuse the delete
+		//    in step 2 exactly as it did for a single task.
+		taskIDs := tx.Model(&model.Task{}).Select("id").Where("workspace_id = ?", id)
+		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.Message{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.ToolCall{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
 			return err
 		}
 
@@ -352,10 +362,27 @@ func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, 
 	return t, nil
 }
 
+// DeleteTask removes a task and everything that points at it.
+//
+// Every child has to go first, and every child means every child: Task declares
+// both Messages and ToolCalls as associations, so AutoMigrate gives each a real
+// foreign key back to tasks.id, and a row left in either one refuses the delete
+// outright with "violates foreign key constraint". Clearing only the messages
+// is what made deleting any task that had run a tool fail.
+//
+// The Slack thread mapping carries no such constraint, so it cannot block the
+// delete — it is cleared anyway, because a row keyed by a task id that no
+// longer exists is never going to be read again.
 func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Delete all messages for this task
+		// 1. Delete everything that references this task
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.Message{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.ToolCall{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.SlackTaskThread{}).Error; err != nil {
 			return err
 		}
 
