@@ -311,6 +311,21 @@ export async function removeWorkspaceSlackChannel(id) {
   return true;
 }
 
+// A workspace's memories, as the settings screen lists them. The content is
+// deliberately absent here — each memory is up to 16 KiB, and the list only
+// needs names and sizes.
+export async function fetchWorkspaceMemories(workspaceId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/memories`);
+  if (!res.ok) throw new Error('Failed to fetch workspace memories');
+  return res.json();
+}
+
+export async function getWorkspaceMemory(workspaceId, name) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/memories/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error('Failed to fetch memory');
+  return res.json();
+}
+
 export async function fetchGlobalTaskStats() {
   const res = await apiFetch(`${API_BASE_URL}/tasks/stats`);
   if (!res.ok) throw new Error('Failed to fetch global task stats');

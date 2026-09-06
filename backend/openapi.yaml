@@ -391,6 +391,55 @@ paths:
               schema: { $ref: '#/components/schemas/WorkspaceStats' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /workspaces/{id}/memories:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      summary: What this workspace remembers
+      description: >
+        The workspace's memories, written by agents through the `saveMemory` MCP
+        tool. `content` is omitted here — each memory runs to 16 KiB, so the list
+        carries only names and sizes. Fetch one by name for its content.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items: { $ref: '#/components/schemas/Memory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/memories/{name}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: name
+        in: path
+        required: true
+        schema: { type: string, maxLength: 32 }
+        description: >
+          The memory's name, as the agent saved it. `MEMORY.md` is the index
+          agents read first.
+    get:
+      tags: [Workspaces]
+      summary: One memory, in full
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memory: { $ref: '#/components/schemas/Memory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/slack:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1697,6 +1746,26 @@ components:
           type: array
           items: { type: string }
           example: ["email"]
+
+    Memory:
+      type: object
+      description: >
+        One of a workspace's remembered notes. Written by agents, read-only over
+        this API.
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        workspaceId: { type: string }
+        name: { type: string, maxLength: 32 }
+        sizeBytes:
+          type: integer
+          description: Size of the content in bytes. At most 16384.
+        content:
+          type: string
+          description: >
+            Present only when a single memory was requested by name; the list
+            omits it.
 
     WorkspaceStats:
       type: object

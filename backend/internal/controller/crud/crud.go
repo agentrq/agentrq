@@ -27,6 +27,7 @@ type (
 		UserController
 		TaskController
 		EventController
+		MemoryController
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController

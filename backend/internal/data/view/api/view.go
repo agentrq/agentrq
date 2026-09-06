@@ -310,6 +310,27 @@ type (
 
 	// Event views
 
+	// Memory as the interface sees it. `content` is omitted from the list: a
+	// workspace's memories are 16 KiB each, and sending them all to render a
+	// list of names would ship the whole store to draw an index.
+	Memory struct {
+		ID          string    `json:"id"`
+		CreatedAt   time.Time `json:"createdAt"`
+		UpdatedAt   time.Time `json:"updatedAt"`
+		WorkspaceID string    `json:"workspaceId"`
+		Name        string    `json:"name"`
+		SizeBytes   int       `json:"sizeBytes"`
+		Content     string    `json:"content,omitempty"`
+	}
+
+	ListMemoriesResponse struct {
+		Memories []Memory `json:"memories"`
+	}
+
+	GetMemoryResponse struct {
+		Memory Memory `json:"memory"`
+	}
+
 	Event struct {
 		ID                string    `json:"id"`
 		CreatedAt         time.Time `json:"createdAt"`

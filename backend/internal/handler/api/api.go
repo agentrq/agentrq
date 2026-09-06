@@ -586,6 +586,8 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Post("/:id/archive", h.archiveWorkspace())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
 	r.Get("/:id/stats", h.getWorkspaceStats())
+	r.Get("/:id/memories", h.listWorkspaceMemories())
+	r.Get("/:id/memories/:name", h.getWorkspaceMemory())
 	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
 	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
 	return nil
@@ -857,6 +859,55 @@ func (h *handler) getWorkspaceStats() fiber.Handler {
 			return c.Send(e)
 		}
 		return c.Status(http.StatusOK).JSON(rs)
+	}
+}
+
+// The workspace's memories, as the settings screen shows them.
+//
+// Read-only by design: agents write these through the MCP memory tools, and a
+// human quietly rewriting one under an agent that has already read it is a
+// confusing failure from both sides.
+func (h *handler) listWorkspaceMemories() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToListMemoriesRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.ListMemories(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromListMemoriesResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) getWorkspaceMemory() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToGetMemoryRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.GetMemory(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Send(mapper.FromGetMemoryResponseEntityToHTTPResponse(rs))
 	}
 }
 
