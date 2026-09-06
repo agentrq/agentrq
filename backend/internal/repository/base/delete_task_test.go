@@ -329,3 +329,70 @@ func TestDeleteWorkspace_WrongOwnerChangesNothing(t *testing.T) {
 		t.Errorf("workspace should survive a refused delete, got count %d", workspaces)
 	}
 }
+
+// Deleting one workspace must not touch another's rows.
+//
+// This guards the subquery specifically. DeleteWorkspace builds
+// `SELECT id FROM tasks WHERE workspace_id = ?` once and feeds it to two
+// deletes, and a *gorm.DB carries its conditions with it — so if the second use
+// inherited anything from the first, or lost its WHERE, this would take the
+// other workspace's tool calls with it and the counts below would drop to zero.
+func TestDeleteWorkspace_LeavesOtherWorkspacesAlone(t *testing.T) {
+	db := deleteTaskDB(t)
+	if err := db.AutoMigrate(&model.Workspace{}); err != nil {
+		t.Fatalf("migrate workspace: %v", err)
+	}
+	now := time.Now()
+
+	otherWorkspace := int64(498041479541817346)
+	otherTask := int64(599436328429420547)
+	for _, w := range []struct {
+		id   int64
+		name string
+	}{{dtWorkspaceID, "doomed"}, {otherWorkspace, "keep me"}} {
+		if err := db.Create(&model.Workspace{
+			ID: w.id, CreatedAt: now, UpdatedAt: now, UserID: dtUserID, Name: w.name,
+		}).Error; err != nil {
+			t.Fatalf("seed workspace %s: %v", w.name, err)
+		}
+	}
+	seedTask(t, db)
+
+	if err := db.Create(&model.Task{
+		ID: otherTask, CreatedAt: now, UpdatedAt: now,
+		WorkspaceID: otherWorkspace, UserID: dtUserID, Status: "ongoing", Title: "survivor",
+	}).Error; err != nil {
+		t.Fatalf("seed other task: %v", err)
+	}
+	if err := db.Create(&model.Message{ID: 10, CreatedAt: now, TaskID: otherTask, UserID: dtUserID, Sender: "human", Text: "still here"}).Error; err != nil {
+		t.Fatalf("seed other message: %v", err)
+	}
+	if err := db.Create(&model.ToolCall{ID: 11, CreatedAt: now, TaskID: otherTask, ToolName: "Grep", Status: "allowed"}).Error; err != nil {
+		t.Fatalf("seed other tool call: %v", err)
+	}
+
+	repo := New(&mockDB{db: db})
+	if err := repo.DeleteWorkspace(context.Background(), dtWorkspaceID, dtUserID); err != nil {
+		t.Fatalf("DeleteWorkspace: %v", err)
+	}
+
+	for _, c := range []struct {
+		what  string
+		model any
+		where string
+		id    int64
+	}{
+		{"workspace", &model.Workspace{}, "id = ?", otherWorkspace},
+		{"task", &model.Task{}, "id = ?", otherTask},
+		{"message", &model.Message{}, "task_id = ?", otherTask},
+		{"tool call", &model.ToolCall{}, "task_id = ?", otherTask},
+	} {
+		var n int64
+		if err := db.Model(c.model).Where(c.where, c.id).Count(&n).Error; err != nil {
+			t.Fatalf("count other %s: %v", c.what, err)
+		}
+		if n != 1 {
+			t.Errorf("other workspace's %s: expected 1 row, got %d", c.what, n)
+		}
+	}
+}
