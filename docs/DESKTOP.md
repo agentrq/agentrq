@@ -134,6 +134,21 @@ agentrq://workflows
 
 Useful in a Slack message, a calendar invite, or a script.
 
+**Local file links.** A `file:///…` link in a task or a message is clickable
+here. Documents, images, source files and media open in whatever application you
+normally use for them. Anything that would *run* — a script, a `.app`, an `.exe`,
+an archive, an `.html` page, or a file with no extension at all — is shown in
+Finder or your file manager instead, and the app says so. AgentRQ never runs a
+file because a message linked to it.
+
+In the browser the same link cannot be opened at all — no web page may reach
+your filesystem — so clicking it copies the path to your clipboard instead.
+
+**Copying a link.** Every link in a task or a message has a small copy button
+beside it, in both the desktop app and the browser. It puts the link's target on
+your clipboard: the plain filesystem path for a local file, the URL for anything
+else.
+
 **Window state.** Position and size are remembered between launches — and
 checked against the displays you currently have, so the window never reopens on
 a monitor you have unplugged.

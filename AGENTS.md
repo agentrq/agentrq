@@ -36,6 +36,17 @@ Consequences worth knowing before changing anything here:
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.
+- **Never make a `file:` URL followable.** `classifyLink` blocks the scheme on
+  purpose — message bodies are agent-written, and a followed `file:` link is how
+  one reaches the machine. Rendered markdown therefore strips the href and
+  parks the URL in `data-file-url` (`frontend/src/utils/markdown.js`); clicking
+  it is a bridge request answered by `desktop/src/main/files.js`, which opens
+  only file types that are read rather than run and reveals everything else in
+  the file manager.
+- **Copying from the renderer goes through the shell on desktop.**
+  `navigator.clipboard.writeText` throws in a window that is not frontmost, so
+  `writeClipboard` prefers `window.agentrq.clipboard` and falls back to the
+  browser API only where there is no shell.
 
 ### Three traps that are invisible in source
 

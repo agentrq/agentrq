@@ -77,12 +77,13 @@ still works.
 
 ## Verifying the architecture
 
-Two scripts, both kept so the claims stay reproducible:
+Scripts, all kept so the claims stay reproducible:
 
 ```bash
 npm run spike:eventsource                    # is EventSource allowed on app://?
 AGENTRQ_SERVER_URL=http://localhost:3999 \
 AGENTRQ_ROOT_TOKEN=... npx electron scripts/verify-e2e.mjs
+npm run build && npx electron scripts/verify-markdown-links.mjs  # needs no backend
 ```
 
 `verify:e2e` runs the real protocol handler against a real backend and checks
@@ -92,7 +93,21 @@ connects. `verify:connection` starts from nothing stored and drives the
 first-run screen: a bad URL is refused with a reason and nothing is saved; a
 good one is probed, stored, and reachable through the proxy.
 
-Both assert a *computed* style rather than DOM presence alone — see the Tailwind
+`verify:markdown-links` needs no backend: it boots the app, drops a rendered
+link into the running window and clicks it, then checks that the click crossed
+the bridge, that a document was opened, that a script was *revealed* rather than
+run, that a missing file said which one, and that the copy button put the path
+on the real clipboard. The `shell.openPath` / `showItemInFolder` calls are
+recorded rather than made — a passing run would otherwise launch an editor and a
+Finder window on whoever ran it — and the clipboard is put back afterwards.
+
+That last check is why copies go through the shell at all:
+`navigator.clipboard.writeText` throws *"Document is not focused"* in a window
+that is not frontmost, with or without a user gesture behind it. A copy button
+that works only when nothing has stolen focus is the same silent nothing as the
+bug it was added for.
+
+The first two assert a *computed* style rather than DOM presence alone — see the Tailwind
 note below for why that check earns its place.
 
 ### Spike result: EventSource works over `app://`

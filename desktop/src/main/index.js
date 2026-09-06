@@ -4,6 +4,7 @@ import {
   Menu,
   Notification,
   Tray,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -35,6 +36,7 @@ import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
 import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
 import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
+import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
@@ -716,6 +718,52 @@ function registerIpc(getWindow) {
 
     if (result.canceled) return ''
     return result.filePaths?.[0] ?? ''
+  })
+
+  // Opening a local file a message linked to.
+  //
+  // The renderer cannot do this itself: a `file:` URL is unnavigable there by
+  // design, which is the whole reason the click comes across the bridge as a
+  // request instead. What arrives is the URL, never a path the renderer
+  // composed — and `files.js` decides whether the thing it names may be handed
+  // to its default application or only shown in the file manager, because the
+  // link was written by an agent and a `.command` file dressed up as `plan.md`
+  // must not run on a click.
+  ipcMain.handle('agentrq:files:open', async (_event, rawUrl) => {
+    const path = localPathFromFileUrl(rawUrl)
+    if (!path) return { ok: false, error: 'That link does not point at a file on this computer.' }
+
+    let stats
+    try {
+      stats = await fsPromises.stat(path)
+    } catch {
+      // Deliberately not distinguishing "gone" from "cannot look": the path is
+      // the useful half of the message either way.
+      return { ok: false, error: `No such file: ${path}` }
+    }
+
+    if (fileOpenAction(path, { isDirectory: stats.isDirectory() }) === FileOpenAction.Reveal) {
+      shell.showItemInFolder(path)
+      return { ok: true, revealed: true }
+    }
+
+    // `openPath` resolves to a message on failure and an empty string on
+    // success — a no-permission or no-handler case that would otherwise look
+    // like nothing happened at all.
+    const failure = await shell.openPath(path)
+    if (failure) return { ok: false, error: failure }
+    return { ok: true, revealed: false }
+  })
+
+  // Copying a link's target out of a message body.
+  //
+  // The renderer could reach `navigator.clipboard`, but that refuses to write
+  // from a document which is not focused — a condition the shell's clipboard
+  // does not have, and one nobody would think to blame for a copy button that
+  // does nothing.
+  ipcMain.handle('agentrq:clipboard:write', (_event, text) => {
+    clipboard.writeText(String(text ?? ''))
+    return true
   })
 
   // Profiles. Only names and servers cross the bridge — never a session, a

@@ -1442,6 +1442,15 @@ function stripNote(body) {
 .md-body blockquote p { margin: 0.2em 0; }
 .md-body a { text-decoration: underline; }
 .md-body a:hover { opacity: 0.75; }
+/* A link to a local file carries no href — the app opens it rather than the
+   browser navigating to it — so the pointer cursor has to be asked for. */
+.md-body a.md-file-link { cursor: pointer; text-decoration-style: dotted; text-underline-offset: 2px; }
+/* Every link gets a button that copies where it points. Faint until wanted, so
+   a paragraph of links does not read as a row of icons. */
+.md-body .md-copy-link { display: inline-flex; vertical-align: -0.12em; margin: 0 0.05em 0 0.2em; padding: 0.1em; border-radius: 4px; border: none; background: none; color: currentColor; opacity: 0.4; cursor: pointer; transition: opacity 0.15s, background-color 0.15s; }
+.md-body .md-copy-link svg { width: 0.95em; height: 0.95em; }
+.md-body .md-copy-link:hover, .md-body .md-copy-link:focus-visible { opacity: 1; background: rgba(0,0,0,0.06); }
+.dark .md-body .md-copy-link:hover, .dark .md-body .md-copy-link:focus-visible { background: rgba(255,255,255,0.12); }
 .md-body strong { font-weight: 700; }
 .md-body em { font-style: italic; }
 .md-body hr { border: none; border-top: 1px solid #e5e7eb; margin: 0.85em 0; }

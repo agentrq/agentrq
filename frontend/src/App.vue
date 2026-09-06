@@ -1,5 +1,7 @@
 <template>
   <div id="app"
+       @click="onMarkdownLinkActivate"
+       @keydown="onMarkdownLinkActivate"
        :class="[
          'flex flex-col md:flex-row h-[100dvh] bg-zinc-100 dark:bg-zinc-950 font-inter overflow-hidden',
          isMacDesktop ? 'pt-10' : ''
@@ -388,6 +390,13 @@ import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
 import { profileDisplay } from './composables/useProfileDisplay'
 import { usePlatformStore } from './stores/platformStore'
+import {
+  copyLinkTarget,
+  copyTargetFromEvent,
+  fileLinkFromEvent,
+  followFileLink,
+  writeClipboard,
+} from './composables/useMarkdownLinks'
 import { useThemeStore } from './stores/themeStore'
 import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
@@ -428,6 +437,45 @@ const user = ref(null)
 const isUserMenuOpen = ref(false)
 
 const platformStore = usePlatformStore()
+
+/** The clipboard, through the shell where there is one. */
+const copyText = (text) =>
+  writeClipboard(text, { bridge: window.agentrq?.clipboard, clipboard: navigator.clipboard })
+
+/**
+ * Acting on a link in rendered markdown: copying where it points, or — for a
+ * `file:///…` link — following it.
+ *
+ * Delegated from the app root, so one wiring serves every view that injects a
+ * message body as HTML. Enter and space are bound as well as click because a
+ * file link is an anchor with no href — see `useMarkdownLinks` for why — and
+ * something standing in for a link owes that to a person not using a mouse.
+ */
+async function onMarkdownLinkActivate(event) {
+  const copyTarget = copyTargetFromEvent(event)
+  if (copyTarget) {
+    event.preventDefault()
+    const copied = await copyLinkTarget(copyTarget, { copyText })
+    const notify = copied.tone === 'error' ? notifyError : notifySuccess
+    notify(copied.message, copied.title)
+    return
+  }
+
+  const fileUrl = fileLinkFromEvent(event)
+  if (!fileUrl) return
+  event.preventDefault()
+
+  const { tone, message } = await followFileLink(fileUrl, {
+    isDesktop: platformStore.isDesktop,
+    bridge: window.agentrq?.files,
+    copyText,
+  })
+
+  // A file that simply opened says so by opening; a toast would only be noise.
+  if (!message) return
+  if (tone === 'error') notifyError(message, 'Could not open file')
+  else notifyInfo(message)
+}
 
 // Signed-in profiles. Each is its own session in the desktop shell, so the
 // browser build has nothing to show and the section stays hidden there.

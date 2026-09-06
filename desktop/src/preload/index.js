@@ -75,6 +75,36 @@ contextBridge.exposeInMainWorld('agentrq', {
     remove: (id) => ipcRenderer.invoke('agentrq:profiles:remove', id),
   },
 
+  files: {
+    /**
+     * Open a local file that a message linked to.
+     *
+     * The `file:` URL crosses as-is; the shell decides what may be opened and
+     * what is only revealed, because that judgement must not live on the side
+     * of the boundary that renders message content.
+     *
+     * @param {string} fileUrl
+     * @returns {Promise<{ok: boolean, revealed?: boolean, error?: string}>}
+     *          `revealed` is true when the file was shown in the file manager
+     *          rather than opened, so the app can say which happened.
+     */
+    open: (fileUrl) => ipcRenderer.invoke('agentrq:files:open', fileUrl),
+  },
+
+  clipboard: {
+    /**
+     * Put text on the system clipboard.
+     *
+     * The renderer has `navigator.clipboard`, but that one refuses to write
+     * from a document which is not focused. The shell's has no such condition,
+     * so a copy here always lands.
+     *
+     * @param {string} text
+     * @returns {Promise<boolean>}
+     */
+    write: (text) => ipcRenderer.invoke('agentrq:clipboard:write', text),
+  },
+
   dialog: {
     /**
      * Ask the shell to show the platform's folder chooser.
