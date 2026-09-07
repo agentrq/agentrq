@@ -232,6 +232,14 @@ export function mimeTypeFor(pathname) {
  *                                             the Vite dev server instead of disk,
  *                                             so HMR works without breaking the
  *                                             same-origin illusion.
+ * @param {(method: string, pathname: string) => void} [deps.onRequestProxied]
+ *                                             Called with every request forwarded
+ *                                             to the server, before the fetch is
+ *                                             made. This is the only place the main
+ *                                             process sees the renderer's own
+ *                                             outgoing calls — notifications.js
+ *                                             uses it to recognise a reply/respond
+ *                                             this desktop instance just sent.
  */
 export function createAppProtocolHandler({
   serverUrl,
@@ -240,11 +248,14 @@ export function createAppProtocolHandler({
   readFile,
   devServerUrl = '',
   attachments = null,
+  onRequestProxied = () => {},
 }) {
   const dev = Boolean(devServerUrl)
   const csp = buildCSP({ dev, devServerUrl })
 
   async function proxyToServer(request, url) {
+    onRequestProxied(request.method, url.pathname)
+
     const base = serverUrl()
     if (!base) {
       // Before the first run's connection screen is answered there is nowhere

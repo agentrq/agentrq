@@ -33,7 +33,14 @@ import {
 } from './server-config.js'
 import { AUTH_COOKIE, matchOAuthLogin, oauthStartUrl, runOAuthFlow } from './auth.js'
 import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate } from './menu.js'
-import { badgeFor, createNotificationGate, createUnreadCounter, mapEventToNotification } from './notifications.js'
+import {
+  badgeFor,
+  createNotificationGate,
+  createSelfActionGate,
+  createUnreadCounter,
+  mapEventToNotification,
+  taskIdFromSelfActionRequest,
+} from './notifications.js'
 import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
@@ -106,6 +113,13 @@ let unread = null
 // handler and once by the CRUD-event consumer — so identical notifications
 // have to be collapsed before they reach the user.
 const notificationGate = createNotificationGate()
+
+// The SSE stream carries the task, not the message, so it cannot say whether
+// a reply/respond event was the human's own action or the agent's. This is
+// marked from the protocol handler's onRequestProxied hook the moment the
+// renderer's own reply/respond call goes out, and checked in handleStreamEvent
+// before a notification is shown.
+const selfActionGate = createSelfActionGate()
 
 const recentWorkspaces = createRecentWorkspaces()
 let windowStateStore
@@ -181,6 +195,10 @@ function sessionFor(partition) {
         // The web build caches attachments in a service worker. This build has
         // none, so the bytes are kept on disk and served from here instead.
         attachments: attachmentStoreFor(partition),
+        onRequestProxied: (method, pathname) => {
+          const taskId = taskIdFromSelfActionRequest(method, pathname)
+          if (taskId) selfActionGate.markSelf(taskId)
+        },
       })
     )
     handledSessions.add(ses)
@@ -412,6 +430,9 @@ function handleStreamEvent(event) {
     workspaceName: (id) => workspaceNames.get(id) ?? '',
   })
   if (!notification) return
+  // This desktop instance sent the reply/respond that produced this event
+  // itself — being told about your own message is noise, not news.
+  if (selfActionGate.isRecentSelfAction(event.payload.id)) return
 
   // An unknown workspace means the list is stale — refresh for next time
   // rather than blocking this notification on a round trip.

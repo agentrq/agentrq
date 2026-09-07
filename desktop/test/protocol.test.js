@@ -31,6 +31,7 @@ function makeHandler(overrides = {}) {
       readFile: overrides.readFile ?? (async () => new TextEncoder().encode('<html></html>')),
       ...(overrides.devServerUrl !== undefined ? { devServerUrl: overrides.devServerUrl } : {}),
       ...(overrides.attachments !== undefined ? { attachments: overrides.attachments } : {}),
+      ...(overrides.onRequestProxied !== undefined ? { onRequestProxied: overrides.onRequestProxied } : {}),
     }),
   }
 }
@@ -341,6 +342,31 @@ describe('createAppProtocolHandler — proxying', () => {
 
     const res = await handler(makeRequest('app://agentrq/api/v1/auth/user'))
     expect((await res.json()).detail).toBe('socket hang up')
+  })
+
+  it('reports every forwarded request to onRequestProxied before fetching', async () => {
+    // This hook is the only place the main process sees the renderer's own
+    // outgoing calls; notifications.js relies on it firing before the fetch,
+    // not after, so a reply can be marked as self-sent before its SSE echo
+    // has any chance to arrive.
+    const seen = []
+    const netFetch = vi.fn(async () => {
+      expect(seen).toEqual([['POST', '/api/v1/workspaces/ws1/tasks/t1/reply']])
+      return new Response('ok', { status: 200 })
+    })
+    const { handler } = makeHandler({
+      netFetch,
+      onRequestProxied: (method, pathname) => seen.push([method, pathname]),
+    })
+
+    await handler(makeRequest('app://agentrq/api/v1/workspaces/ws1/tasks/t1/reply', { method: 'POST' }))
+
+    expect(seen).toEqual([['POST', '/api/v1/workspaces/ws1/tasks/t1/reply']])
+  })
+
+  it('defaults to a no-op hook so callers that do not care are unaffected', async () => {
+    const { handler } = makeHandler()
+    await expect(handler(makeRequest('app://agentrq/api/v1/tasks'))).resolves.toBeDefined()
   })
 })
 

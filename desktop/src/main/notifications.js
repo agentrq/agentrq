@@ -11,6 +11,13 @@
  * `frontend/src/composables/usePushNotifications.js` is untouched and still
  * serves the browser; the desktop renderer simply never calls it.
  *
+ * One rule the push controller does not need: the SSE payload is a task, not
+ * a message, so there is no sender field to check before deciding whether a
+ * reply/respond notification is about the human's own action. `protocol.js`
+ * sees every outgoing request the renderer makes, so it reports reply/respond
+ * calls here instead — `taskIdFromSelfActionRequest` and `createSelfActionGate`
+ * are how that becomes "mute the next notification for this task".
+ *
  * Pure functions, so the mapping and mute rules are testable without Electron.
  */
 
@@ -90,6 +97,57 @@ export function mapEventToNotification(event, { mutedWorkspaces = [], workspaceN
         route: `${workspaceRoute}/tasks/${task.id}`,
         tag: `reply-${task.id}`,
       }
+  }
+}
+
+/**
+ * The task ID a reply/respond request names, or null when the request is
+ * neither.
+ *
+ * These are the two ways this desktop instance's own action reaches the
+ * server — a human typing a reply, or clicking allow/deny — and both land
+ * back on this same SSE stream, indistinguishable from an agent's, because
+ * the payload carries the task rather than the message (see module doc).
+ * Recognising the outgoing request here, at the point the renderer's own API
+ * call is proxied, is what lets the desktop tell "I just did this" apart from
+ * "the agent did this" without the backend having to say so.
+ */
+export function taskIdFromSelfActionRequest(method, pathname) {
+  if (method.toUpperCase() !== 'POST') return null
+  const match = /^\/api\/v1\/workspaces\/[^/]+\/tasks\/([^/]+)\/(?:reply|respond)$/.exec(pathname)
+  return match ? match[1] : null
+}
+
+/** How long a task stays muted after this desktop sends a reply/respond for it. */
+export const SELF_ACTION_WINDOW_MS = 10000
+
+/**
+ * Tracks tasks this desktop instance just acted on itself, so the
+ * notification that same action produces on the SSE stream a moment later
+ * can be suppressed.
+ *
+ * A time window rather than a one-shot latch consumed by the next event: a
+ * genuine, later agent reply on the same task must still notify, and an
+ * unrelated event of a different type arriving first (say, `task.updated`)
+ * must not use up the mute before the actual echo of this action arrives.
+ */
+export function createSelfActionGate({ windowMs = SELF_ACTION_WINDOW_MS, now = () => Date.now() } = {}) {
+  const markedAt = new Map()
+
+  return {
+    markSelf(taskId) {
+      if (taskId) markedAt.set(taskId, now())
+    },
+    /** @returns {boolean} true when this task was actioned by this desktop instance moments ago. */
+    isRecentSelfAction(taskId) {
+      const at = markedAt.get(taskId)
+      if (at === undefined) return false
+      if (now() - at >= windowMs) {
+        markedAt.delete(taskId)
+        return false
+      }
+      return true
+    },
   }
 }
 
