@@ -58,6 +58,7 @@ type Repository interface {
 	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
+	GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
 	GetWorkspaceTaskCountsByCategory(ctx context.Context, workspaceID int64, userID int64) (map[string]int64, error)
 	GetTelemetryActionCounts(ctx context.Context) (map[uint8]int64, error)
@@ -559,6 +560,73 @@ func (r *repository) SystemCheckTaskExists(ctx context.Context, workspaceID, par
 }
 
 func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
+	return r.detailedStats(ctx, "workspace_id = ?", workspaceID, startTime, endTime)
+}
+
+// GetDetailedUserStats is the same five aggregations summed over every
+// workspace the user owns, plus the per-workspace breakdown.
+//
+// It scopes on telemetries.user_id, which every writer sets and which carries
+// its own index, rather than joining through the workspace list. The one
+// difference that follows from scoping this way is that rows belonging to no
+// workspace (user creation, action 18) are in scope — none of them are actions
+// the summary buckets, so the account totals still add up to exactly the sum of
+// the per-workspace views.
+func (r *repository) GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error) {
+	var res entity.GetDetailedUserStatsRows
+
+	base, err := r.detailedStats(ctx, "user_id = ?", userID, startTime, endTime)
+	if err != nil {
+		return res, err
+	}
+	res.Summary = base.Summary
+	res.Timeseries = base.Timeseries
+	res.Heatmap = base.Heatmap
+
+	// Conditional sums keep this to one pass over the window instead of one
+	// query per metric. The LEFT JOIN is what supplies the name; a workspace
+	// that has since been deleted still has telemetry rows, and those come back
+	// with an empty name rather than being dropped — dropping them would make
+	// the breakdown quietly fail to add up to the summary above.
+	//
+	// workspace_id = 0 is excluded because it is not a workspace: those are the
+	// account-level rows described above, and they have no row to join to.
+	res.Workspaces = make([]entity.WorkspaceStatsBreakdownRow, 0)
+	err = r.conn(ctx).Model(&model.Telemetry{}).
+		Select(
+			"telemetries.workspace_id as workspace_id,"+
+				" COALESCE(workspaces.name, '') as name,"+
+				" SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) as tasks_completed,"+
+				" SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) as messages",
+			model.ActionIDTaskComplete, model.ActionIDMessageCreate).
+		Joins("LEFT JOIN workspaces ON workspaces.id = telemetries.workspace_id").
+		Where("telemetries.user_id = ?", userID).
+		Where("telemetries.occurred_at >= ? AND telemetries.occurred_at <= ?", startTime, endTime).
+		Where("telemetries.workspace_id <> 0").
+		// Postgres requires every non-aggregated column in the GROUP BY, so the
+		// name is grouped alongside the ID rather than merely selected.
+		Group("telemetries.workspace_id, workspaces.name").
+		// A workspace with neither a completion nor a message in the window has
+		// nothing to say on this panel — it would still be listed, because
+		// other action types (a rename, a permission prompt) put a row in
+		// range. The expressions are repeated rather than referenced by alias:
+		// Postgres allows a select alias in ORDER BY but not in HAVING.
+		Having(
+			"SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) > 0"+
+				" OR SUM(CASE WHEN telemetries.action = ? THEN 1 ELSE 0 END) > 0",
+			model.ActionIDTaskComplete, model.ActionIDMessageCreate).
+		Order("tasks_completed DESC, messages DESC, telemetries.workspace_id ASC").
+		Scan(&res.Workspaces).Error
+
+	return res, err
+}
+
+// detailedStats runs the five aggregations behind both statistics endpoints.
+//
+// scopeClause is a parameterised predicate ("workspace_id = ?" or
+// "user_id = ?") rather than a column name pasted into a string, so widening
+// the scope cannot become a way to inject SQL.
+func (r *repository) detailedStats(ctx context.Context, scopeClause string, scopeValue int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {
 	var res entity.GetDetailedWorkspaceStatsResponse
 
 	// Dialect specific date formatting
@@ -581,7 +649,8 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 	var summaryResults []countResult
 	err := r.conn(ctx).Model(&model.Telemetry{}).
 		Select("action, count(*) as count").
-		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ?", workspaceID, startTime, endTime).
+		Where(scopeClause, scopeValue).
+		Where("occurred_at >= ? AND occurred_at <= ?", startTime, endTime).
 		Group("action").
 		Scan(&summaryResults).Error
 	if err != nil {
@@ -608,7 +677,8 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 	// 2. Get Timeseries for Tasks Completed
 	err = r.conn(ctx).Model(&model.Telemetry{}).
 		Select(dateExpr+" as date, count(*) as count").
-		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDTaskComplete).
+		Where(scopeClause, scopeValue).
+		Where("occurred_at >= ? AND occurred_at <= ? AND action = ?", startTime, endTime, model.ActionIDTaskComplete).
 		Group("date").
 		Order("date ASC").
 		Scan(&res.Timeseries.TasksCompleted).Error
@@ -619,7 +689,8 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 	// 3. Get Timeseries for Messages
 	err = r.conn(ctx).Model(&model.Telemetry{}).
 		Select(dateExpr+" as date, count(*) as count").
-		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDMessageCreate).
+		Where(scopeClause, scopeValue).
+		Where("occurred_at >= ? AND occurred_at <= ? AND action = ?", startTime, endTime, model.ActionIDMessageCreate).
 		Group("date").
 		Order("date ASC").
 		Scan(&res.Timeseries.Messages).Error
@@ -640,7 +711,8 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 
 	err = r.conn(ctx).Model(&model.Telemetry{}).
 		Select(bucketExpr+" as bucket, count(*) as count").
-		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDTaskComplete).
+		Where(scopeClause, scopeValue).
+		Where("occurred_at >= ? AND occurred_at <= ? AND action = ?", startTime, endTime, model.ActionIDTaskComplete).
 		Group("bucket").
 		Order("bucket ASC").
 		Scan(&res.Heatmap.TasksCompleted).Error
@@ -650,7 +722,8 @@ func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID 
 
 	err = r.conn(ctx).Model(&model.Telemetry{}).
 		Select(bucketExpr+" as bucket, count(*) as count").
-		Where("workspace_id = ? AND occurred_at >= ? AND occurred_at <= ? AND action = ?", workspaceID, startTime, endTime, model.ActionIDMessageCreate).
+		Where(scopeClause, scopeValue).
+		Where("occurred_at >= ? AND occurred_at <= ? AND action = ?", startTime, endTime, model.ActionIDMessageCreate).
 		Group("bucket").
 		Order("bucket ASC").
 		Scan(&res.Heatmap.Messages).Error

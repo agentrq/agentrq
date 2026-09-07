@@ -193,6 +193,19 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.fetchWorkspaceStats(workspaceId, range, from, to),
     }),
     tool({
+      name: 'getAccountStats',
+      description:
+        'Activity statistics across every workspace the user owns, over a time range, with a ' +
+        'per-workspace breakdown of what drove the totals.',
+      properties: {
+        range: str('Range such as "7d" or "30d". Defaults to "7d".'),
+        from: int('Optional start as a Unix timestamp.'),
+        to: int('Optional end as a Unix timestamp.'),
+      },
+      readOnly: true,
+      run: ({ range = '7d', from = 0, to = 0 }) => api.fetchUserStats(range, from, to),
+    }),
+    tool({
       name: 'listWorkspaceMemories',
       description:
         'What the agents working in a workspace have written down for each other: name, size and when ' +

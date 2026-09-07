@@ -576,6 +576,11 @@ func (h *handler) sanitizeRedirectURL(raw string) string {
 // ── Workspaces ──────────────────────────────────────────────────────────────────
 
 func (h *handler) registerWorkspaceRoutes() error {
+	// Account-wide statistics are not under /workspaces: they are not scoped to
+	// one, and hanging them off the collection would read as "stats about the
+	// list of workspaces".
+	h.router.Get("/stats", h.getUserStats())
+
 	r := h.router.Group("/workspaces")
 	r.Post("", h.createWorkspace())
 	r.Get("", h.listWorkspaces())
@@ -854,6 +859,42 @@ func (h *handler) getWorkspaceStats() fiber.Handler {
 		if err != nil {
 			zlog.Error().Err(err).Msg("Failed to get workspace stats")
 			c.Set(_headerContentType, _mimeJSON)
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.Status(http.StatusOK).JSON(rs)
+	}
+}
+
+// Account-wide statistics: the same shape as the per-workspace endpoint, summed
+// over every workspace the caller owns, plus a per-workspace breakdown.
+//
+// The scope comes from the session rather than the path, so there is no ID to
+// authorize — a caller can only ever ask for their own totals.
+func (h *handler) getUserStats() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		userID, ok := c.Locals("user_id").(string)
+		if !ok || userID == "" {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+
+		rng := c.Query("range", "7d")
+		from, _ := strconv.ParseInt(c.Query("from"), 10, 64)
+		to, _ := strconv.ParseInt(c.Query("to"), 10, 64)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.GetDetailedUserStats(ctx, entity.GetUserStatsRequest{
+			UserID: userID,
+			Range:  rng,
+			From:   from,
+			To:     to,
+		})
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to get user stats")
 			e, status := mapper.FromErrorToHTTPResponse(err)
 			c.Status(status)
 			return c.Send(e)

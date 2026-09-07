@@ -426,6 +426,64 @@ type (
 		Messages       []HeatmapStat `json:"messages"`
 	}
 
+	// GetUserStatsRequest asks for the same statistics as
+	// GetWorkspaceStatsRequest, but summed over every workspace the user owns.
+	// There is no ID to pass: the scope *is* the caller, taken from the
+	// session, which is what makes the endpoint safe without an ownership
+	// check of its own.
+	GetUserStatsRequest struct {
+		UserID string `json:"userId"`
+		Range  string `json:"range"` // 1d, 7d, week, 30d, month, custom
+		From   int64  `json:"from"`  // unix timestamp for custom range
+		To     int64  `json:"to"`    // unix timestamp for custom range
+	}
+
+	// GetDetailedUserStatsResponse embeds the per-workspace response shape
+	// verbatim so the account dashboard can render the very same components,
+	// and adds the breakdown that only makes sense once several workspaces are
+	// in view.
+	GetDetailedUserStatsResponse struct {
+		Summary    WorkspaceStatsSummary     `json:"summary"`
+		Timeseries WorkspaceStatsTimeseries  `json:"timeseries"`
+		Heatmap    WorkspaceStatsHeatmap     `json:"heatmap"`
+		Workspaces []WorkspaceStatsBreakdown `json:"workspaces"`
+	}
+
+	// GetDetailedUserStatsRows is what the repository returns: the same
+	// aggregates, but with the breakdown still keyed by raw int64 ID. The
+	// repository deals in int64 throughout and does not know about base62, so
+	// the controller is what turns this into GetDetailedUserStatsResponse.
+	GetDetailedUserStatsRows struct {
+		Summary    WorkspaceStatsSummary
+		Timeseries WorkspaceStatsTimeseries
+		Heatmap    WorkspaceStatsHeatmap
+		Workspaces []WorkspaceStatsBreakdownRow
+	}
+
+	// WorkspaceStatsBreakdownRow is the repository's shape for a breakdown
+	// entry, keyed by the raw ID.
+	WorkspaceStatsBreakdownRow struct {
+		WorkspaceID    int64
+		Name           string
+		TasksCompleted int64
+		Messages       int64
+	}
+
+	// WorkspaceStatsBreakdown is one workspace's contribution to the account
+	// totals over the same window.
+	//
+	// Name is resolved from the workspaces table rather than stored on the
+	// telemetry row, so a renamed workspace reads correctly in history. A
+	// workspace the user has since deleted keeps its rows and surfaces with an
+	// empty name; the frontend labels that case rather than dropping the count,
+	// which would make the breakdown fail to add up to the total.
+	WorkspaceStatsBreakdown struct {
+		WorkspaceID    string `json:"workspaceId"`
+		Name           string `json:"name"`
+		TasksCompleted int64  `json:"tasksCompleted"`
+		Messages       int64  `json:"messages"`
+	}
+
 	User struct {
 		ID        int64
 		CreatedAt time.Time

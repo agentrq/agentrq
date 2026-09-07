@@ -299,12 +299,19 @@ func (c *controller) UpdateWorkspaceAutoAllowedTools(ctx context.Context, req en
 	return err
 }
 
-func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error) {
-	now := time.Now()
-	var startTime, endTime int64
+// statsWindow resolves a range selector into the [start, end] unix window the
+// statistics queries run over.
+//
+// Shared by the per-workspace and account-wide endpoints deliberately: the two
+// dashboards offer the same range buttons, and "this week" meaning one thing on
+// one screen and something else on the other is the kind of discrepancy nobody
+// reports as a bug, they just stop trusting the numbers.
+//
+// now is a parameter so the calendar cases can be tested at a fixed date.
+func statsWindow(rng string, from, to int64, now time.Time) (startTime, endTime int64) {
 	endTime = now.Unix()
 
-	switch req.Range {
+	switch rng {
 	case "1d":
 		startTime = now.AddDate(0, 0, -1).Unix()
 	case "7d":
@@ -326,14 +333,19 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 		startTime = start.Unix()
 		endTime = start.AddDate(0, 1, 0).Unix() - 1
 	case "custom":
-		startTime = req.From
-		if req.To > 0 {
-			endTime = req.To
+		startTime = from
+		if to > 0 {
+			endTime = to
 		}
 	default:
 		// Default to 7d
 		startTime = now.AddDate(0, 0, -7).Unix()
 	}
+	return startTime, endTime
+}
+
+func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.GetWorkspaceStatsRequest) (*entity.GetDetailedWorkspaceStatsResponse, error) {
+	startTime, endTime := statsWindow(req.Range, req.From, req.To, time.Now())
 
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	// Verify user ownership to prevent IDOR
@@ -347,6 +359,43 @@ func (c *controller) GetDetailedWorkspaceStats(ctx context.Context, req entity.G
 	}
 
 	return &res, nil
+}
+
+// GetDetailedUserStats is the account-wide counterpart: the same statistics
+// summed across every workspace the caller owns.
+//
+// There is no ownership check because there is nothing to check against — the
+// scope is the caller's own ID, taken from the session by the handler, so the
+// query cannot be pointed at anyone else's data.
+func (c *controller) GetDetailedUserStats(ctx context.Context, req entity.GetUserStatsRequest) (*entity.GetDetailedUserStatsResponse, error) {
+	startTime, endTime := statsWindow(req.Range, req.From, req.To, time.Now())
+
+	// No zero-check on uid: the handler rejects an unusable session before it
+	// gets here, and a zero would in any case scope the query to a user that
+	// owns nothing rather than widening it.
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+
+	res, err := c.repository.GetDetailedUserStats(ctx, uid, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	// The repository deals in raw IDs; base62 is the API's currency.
+	out := entity.GetDetailedUserStatsResponse{
+		Summary:    res.Summary,
+		Timeseries: res.Timeseries,
+		Heatmap:    res.Heatmap,
+		Workspaces: make([]entity.WorkspaceStatsBreakdown, 0, len(res.Workspaces)),
+	}
+	for _, row := range res.Workspaces {
+		out.Workspaces = append(out.Workspaces, entity.WorkspaceStatsBreakdown{
+			WorkspaceID:    monoflake.ID(row.WorkspaceID).String(),
+			Name:           row.Name,
+			TasksCompleted: row.TasksCompleted,
+			Messages:       row.Messages,
+		})
+	}
+	return &out, nil
 }
 
 func (c *controller) SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error) {

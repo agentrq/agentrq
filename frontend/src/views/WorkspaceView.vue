@@ -9,10 +9,32 @@
           </div>
         </div>
       </div>
+
+      <!-- Tabs -->
+      <div class="flex items-center gap-1.5 bg-gray-100 dark:bg-zinc-900/90 p-1 border border-gray-200 dark:border-zinc-800 rounded-sm max-w-max shadow-sm shrink-0">
+        <button
+          v-for="tab in TABS"
+          :key="tab.id"
+          type="button"
+          @click="activeTab = tab.id"
+          class="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all"
+          :class="activeTab === tab.id
+            ? 'bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 shadow-sm border border-gray-200 dark:border-zinc-700'
+            : 'text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-50'"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Performance: the same analytics as a single workspace, summed across
+         every workspace the user owns. -->
+    <div v-if="activeTab === 'performance'" class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
+      <AccountStats />
     </div>
 
     <!-- Create workspace form -->
-    <Transition name="fade-down">
+    <Transition v-if="activeTab === 'workspaces'" name="fade-down">
       <div v-if="showCreate" class="fixed inset-0 z-[110] flex items-center justify-center p-4 md:relative md:inset-auto md:p-0 md:bg-transparent md:z-10 md:block">
         <div class="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden" @click="showCreate = false"></div>
         
@@ -68,12 +90,12 @@
       </div>
     </Transition>
 
-    <div v-if="error" class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 px-5 py-3 rounded-sm text-[10px] font-black shadow-sm">
+    <div v-if="error && activeTab === 'workspaces'" class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-700 dark:text-red-400 px-5 py-3 rounded-sm text-[10px] font-black shadow-sm">
       {{ error }}
     </div>
 
     <!-- Workspace list -->
-    <div class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
+    <div v-if="activeTab === 'workspaces'" class="flex-1 overflow-y-auto px-4 pb-10 custom-scrollbar">
       <div v-if="loadingWorkspaces" class="py-8">
         <LoadingState label="Loading Workspaces..." />
       </div>
@@ -204,7 +226,7 @@
     </div>
 
     <!-- Bottom Stats -->
-    <div v-if="!loadingWorkspaces && workspaces.length > 0" class="px-4 pb-4 flex flex-wrap items-center gap-6 border-t border-gray-100 dark:border-zinc-800 pt-3">
+    <div v-if="activeTab === 'workspaces' && !loadingWorkspaces && workspaces.length > 0" class="px-4 pb-4 flex flex-wrap items-center gap-6 border-t border-gray-100 dark:border-zinc-800 pt-3">
       <div class="flex items-center gap-1.5 cursor-help" 
            @mouseenter="tooltipStore.show($event, 'Online Agents', 'top')"
            @mouseleave="tooltipStore.hide()">
@@ -253,6 +275,21 @@ import {
   workingDirectoryPlaceholder as directoryPlaceholderFor,
 } from '../composables/useDirectoryPicker';
 import LoadingState from '../components/LoadingState.vue';
+import AccountStats from '../components/AccountStats.vue';
+
+/**
+ * The overview screen's tabs. "Workspaces" is the list this page has always
+ * been; "Performance" is the account-wide analytics.
+ *
+ * The tab is local state rather than a route: it is a view of the same
+ * overview page, and giving it a URL would mean a second route table entry for
+ * something the desktop build would have to mirror.
+ */
+const TABS = Object.freeze([
+  { id: 'workspaces', label: 'Workspaces' },
+  { id: 'performance', label: 'Performance' },
+]);
+const activeTab = ref('workspaces');
 
 const { toKebabCase, liveKebabCase } = useFormat();
 const tooltipStore = useTooltipStore();

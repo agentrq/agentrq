@@ -711,3 +711,162 @@ func TestRepository_ListToolCalls(t *testing.T) {
 		t.Errorf("expected no tool calls, got %d", len(empty))
 	}
 }
+
+// TestRepository_GetDetailedUserStats covers the account-wide aggregation: what
+// it sums, whose rows it refuses to sum, and how the per-workspace breakdown is
+// shaped.
+func TestRepository_GetDetailedUserStats(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+
+	_ = db.AutoMigrate(&model.Telemetry{}, &model.Workspace{})
+	repo := New(&mockDB{db: db})
+
+	ctx := context.Background()
+	now := time.Now()
+	const (
+		userID    = int64(7)
+		otherUser = int64(8)
+		wsBusy    = int64(101)
+		wsQuiet   = int64(102)
+		wsNoisy   = int64(103)
+		wsGone    = int64(104)
+	)
+
+	db.Create(&model.Workspace{ID: wsBusy, UserID: userID, Name: "busy"})
+	db.Create(&model.Workspace{ID: wsQuiet, UserID: userID, Name: "quiet"})
+	db.Create(&model.Workspace{ID: wsNoisy, UserID: userID, Name: "noisy"})
+	// wsGone deliberately has no workspaces row: a workspace deleted after its
+	// telemetry was recorded.
+
+	at := func(hoursAgo int) int64 { return now.Add(-time.Duration(hoursAgo) * time.Hour).Unix() }
+	add := func(user, ws int64, action uint8, hoursAgo int) {
+		db.Create(&model.Telemetry{UserID: user, WorkspaceID: ws, OccurredAt: at(hoursAgo), Action: action})
+	}
+
+	// The busy workspace: three completions and one message.
+	add(userID, wsBusy, model.ActionIDTaskComplete, 3)
+	add(userID, wsBusy, model.ActionIDTaskComplete, 2)
+	add(userID, wsBusy, model.ActionIDTaskComplete, 1)
+	add(userID, wsBusy, model.ActionIDMessageCreate, 1)
+	// The quiet workspace: one message only.
+	add(userID, wsQuiet, model.ActionIDMessageCreate, 2)
+	// The noisy workspace: activity, but none of it a completion or a message,
+	// so it must not reach the breakdown.
+	add(userID, wsNoisy, model.ActionIDWorkspaceUpdate, 2)
+	add(userID, wsNoisy, model.ActionIDMCPPermissionAuto, 2)
+	// A deleted workspace still holding one completion.
+	add(userID, wsGone, model.ActionIDTaskComplete, 2)
+	// Account-level row belonging to no workspace at all.
+	add(userID, 0, model.ActionIDUserCreate, 2)
+	// Another user's activity, which must not be counted anywhere.
+	add(otherUser, wsBusy, model.ActionIDTaskComplete, 2)
+	add(otherUser, wsBusy, model.ActionIDMessageCreate, 2)
+	// In range for nobody: older than the window.
+	add(userID, wsBusy, model.ActionIDTaskComplete, 100)
+
+	start, end := at(6), at(0)
+	res, err := repo.GetDetailedUserStats(ctx, userID, start, end)
+	if err != nil {
+		t.Fatalf("GetDetailedUserStats failed: %v", err)
+	}
+
+	// Summary sums the user's rows across every workspace, and only theirs.
+	if res.Summary.TasksCompleted != 4 {
+		t.Errorf("expected 4 completions across workspaces, got %d", res.Summary.TasksCompleted)
+	}
+	if res.Summary.Messages != 2 {
+		t.Errorf("expected 2 messages across workspaces, got %d", res.Summary.Messages)
+	}
+	if res.Summary.AutoApprovals != 1 {
+		t.Errorf("expected 1 auto approval, got %d", res.Summary.AutoApprovals)
+	}
+
+	// The window is honoured: the 100-hours-ago completion is excluded above,
+	// and widening the window brings it in.
+	wide, err := repo.GetDetailedUserStats(ctx, userID, at(200), end)
+	if err != nil {
+		t.Fatalf("GetDetailedUserStats (wide) failed: %v", err)
+	}
+	if wide.Summary.TasksCompleted != 5 {
+		t.Errorf("expected 5 completions over the wider window, got %d", wide.Summary.TasksCompleted)
+	}
+
+	// Breakdown: busiest first, all-zero workspaces dropped, the workspace-less
+	// row excluded, and the deleted workspace present but unnamed.
+	if len(res.Workspaces) != 3 {
+		t.Fatalf("expected 3 workspaces in the breakdown, got %d: %+v", len(res.Workspaces), res.Workspaces)
+	}
+	if got := res.Workspaces[0]; got.WorkspaceID != wsBusy || got.Name != "busy" || got.TasksCompleted != 3 || got.Messages != 1 {
+		t.Errorf("expected busy workspace first with 3 tasks and 1 message, got %+v", got)
+	}
+	if got := res.Workspaces[1]; got.WorkspaceID != wsGone || got.Name != "" || got.TasksCompleted != 1 {
+		t.Errorf("expected the deleted workspace second with an empty name and 1 task, got %+v", got)
+	}
+	if got := res.Workspaces[2]; got.WorkspaceID != wsQuiet || got.Name != "quiet" || got.TasksCompleted != 0 || got.Messages != 1 {
+		t.Errorf("expected quiet workspace last with 0 tasks and 1 message, got %+v", got)
+	}
+	for _, w := range res.Workspaces {
+		if w.WorkspaceID == wsNoisy {
+			t.Errorf("a workspace with no completions and no messages must not be listed: %+v", w)
+		}
+		if w.WorkspaceID == 0 {
+			t.Errorf("account-level rows have no workspace and must not be listed: %+v", w)
+		}
+	}
+
+	// The breakdown adds up to the summary for the metrics it reports, which is
+	// the property that makes the two panels believable side by side.
+	var tasks, messages int64
+	for _, w := range res.Workspaces {
+		tasks += w.TasksCompleted
+		messages += w.Messages
+	}
+	if tasks != res.Summary.TasksCompleted {
+		t.Errorf("breakdown tasks %d do not add up to summary %d", tasks, res.Summary.TasksCompleted)
+	}
+	if messages != res.Summary.Messages {
+		t.Errorf("breakdown messages %d do not add up to summary %d", messages, res.Summary.Messages)
+	}
+
+	// Timeseries and heatmap come from the shared aggregation, so a spot check
+	// that they are scoped to the user is enough.
+	var series int64
+	for _, d := range res.Timeseries.TasksCompleted {
+		series += d.Count
+	}
+	if series != 4 {
+		t.Errorf("expected the timeseries to total 4 completions, got %d", series)
+	}
+	if res.Heatmap.Granularity != "hour" {
+		t.Errorf("expected hour granularity for a 6-hour window, got %q", res.Heatmap.Granularity)
+	}
+
+	// A user with nothing recorded gets empty results, not an error, and an
+	// empty breakdown rather than a nil one so it serialises as [].
+	empty, err := repo.GetDetailedUserStats(ctx, int64(999), start, end)
+	if err != nil {
+		t.Fatalf("GetDetailedUserStats for an unknown user failed: %v", err)
+	}
+	if empty.Summary.TasksCompleted != 0 || empty.Workspaces == nil || len(empty.Workspaces) != 0 {
+		t.Errorf("expected zeroed stats and an empty (non-nil) breakdown, got %+v", empty)
+	}
+}
+
+// A failure in the shared aggregation must surface rather than being reported
+// as an account with no activity, which is what an ignored error would look
+// like on the dashboard.
+func TestRepository_GetDetailedUserStats_AggregationError(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to connect database: %v", err)
+	}
+	// Deliberately not migrated: there is no telemetries table to query.
+	repo := New(&mockDB{db: db})
+
+	if _, err := repo.GetDetailedUserStats(context.Background(), 1, 0, 1); err == nil {
+		t.Error("expected an error when the telemetry table is missing, got nil")
+	}
+}

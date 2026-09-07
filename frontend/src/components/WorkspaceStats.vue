@@ -1,296 +1,74 @@
 <template>
-  <div class="flex flex-col gap-8">
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900/90 p-1 border border-gray-200 dark:border-zinc-800 rounded-sm max-w-max shadow-sm">
-      <button 
-        v-for="opt in rangeOptions" 
-        :key="opt.id"
-        @click="setRange(opt.id)"
-        class="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all"
-        :class="activeRange === opt.id 
-          ? 'bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 shadow-sm border border-gray-200 dark:border-zinc-700' 
-          : 'text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-50'"
-      >
-        {{ opt.label }}
-      </button>
-      
-      <!-- Custom Date Inputs (only if custom is selected) -->
-      <div v-if="activeRange === 'custom'" class="flex items-center gap-2 px-2 border-l border-gray-200 dark:border-zinc-800 ml-1">
-        <input type="date" v-model="customFrom" class="text-[10px] bg-transparent border-none focus:ring-0 text-gray-900 dark:text-zinc-50 font-black p-0 w-24" />
-        <span class="text-[10px] font-black text-gray-500 dark:text-zinc-500">–</span>
-        <input type="date" v-model="customTo" class="text-[10px] bg-transparent border-none focus:ring-0 text-gray-900 dark:text-zinc-50 font-black p-0 w-24" />
-        <button @click="load" class="p-1 text-gray-500 hover:text-black dark:hover:text-white transition-all">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7" /></svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Summary Cards -->
-    <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      <!-- Tasks Completed -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-[#aec477]/40 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400 dark:group-hover:text-[#aec477] transition-colors">Completed</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksCompleted.toLocaleString() }}</span>
-      </div>
-
-      <!-- Tasks Scheduled -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Scheduled</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksScheduled.toLocaleString() }}</span>
-      </div>
-
-      <!-- Messages -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-[#a8a3d9]/40 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400 dark:group-hover:text-[#a8a3d9] transition-colors">Messages</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.messages.toLocaleString() }}</span>
-      </div>
-
-      <!-- Manual Approvals -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Manual</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.manualApprovals.toLocaleString() }}</span>
-      </div>
-
-      <!-- Auto Approvals -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Auto</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.autoApprovals.toLocaleString() }}</span>
-      </div>
-
-      <!-- Denies -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
-        <div class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
-          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Denies</span>
-        </div>
-        <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.denies.toLocaleString() }}</span>
-      </div>
-    </div>
-
-    <!-- Heatmaps Section -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Task Heatmap -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
-            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Activity Heatmap</h3>
-          </div>
-          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
-        </div>
-        <div class="h-56 w-full relative">
-          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
-            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
-          </div>
-          <HeatmapChart
-            v-if="stats && stats.heatmap"
-            :data="stats.heatmap.tasksCompleted || []"
-            :granularity="heatmapGranularity"
-            :range-start="stats.heatmap.rangeStart"
-            :range-end="stats.heatmap.rangeEnd"
-            :weekday-column-labels="activeRange === 'week'"
-            metric-label="Tasks"
-            :color="taskHeatmapColor"
-          />
-        </div>
-      </div>
-
-      <!-- Message Heatmap -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
-            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Message Activity Heatmap</h3>
-          </div>
-          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
-        </div>
-        <div class="h-56 w-full relative">
-          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
-            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
-          </div>
-          <HeatmapChart
-            v-if="stats && stats.heatmap"
-            :data="stats.heatmap.messages || []"
-            :granularity="heatmapGranularity"
-            :range-start="stats.heatmap.rangeStart"
-            :range-end="stats.heatmap.rangeEnd"
-            :weekday-column-labels="activeRange === 'week'"
-            metric-label="Messages"
-            :color="messageHeatmapColor"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Charts Section -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Task Chart -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
-            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Completion Velocity</h3>
-          </div>
-          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Daily Trend</div>
-        </div>
-        <div class="h-56 w-full relative">
-          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
-            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
-          </div>
-          <ChartSVG
-            v-if="stats && stats.timeseries"
-            :data="stats.timeseries.tasksCompleted || []"
-            :color="taskChartColor"
-            :fixed-length="chartFixedLength"
-            :last-date="chartEndDate"
-          />
-        </div>
-      </div>
-
-      <!-- Message Chart -->
-      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
-            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Communication Volume</h3>
-          </div>
-          <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Total Messages</div>
-        </div>
-        <div class="h-56 w-full relative">
-          <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10">
-            <div class="text-[10px] font-black text-gray-300 dark:text-zinc-400 animate-pulse">Computing...</div>
-          </div>
-          <ChartSVG
-            v-if="stats && stats.timeseries"
-            :data="stats.timeseries.messages || []"
-            :color="messageChartColor"
-            :fixed-length="chartFixedLength"
-            :last-date="chartEndDate"
-          />
-        </div>
-      </div>
-    </div>
-  </div>
+  <StatsPanels
+    :stats="stats"
+    :loading="loading"
+    :active-range="activeRange"
+    :range-options="rangeOptions"
+    :custom-from="customFrom"
+    :custom-to="customTo"
+    :chart-fixed-length="chartFixedLength"
+    :chart-end-date="chartEndDate"
+    :heatmap-granularity="heatmapGranularity"
+    :palette="palette"
+    @update:active-range="setRange"
+    @update:custom-from="onCustomFrom"
+    @update:custom-to="onCustomTo"
+    @apply="apply"
+  />
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+/**
+ * One workspace's analytics. The account-wide counterpart is `AccountStats.vue`
+ * — both are thin: the panels come from `StatsPanels`, the range behaviour from
+ * `useStatsRange`, and all either adds is which endpoint to call.
+ */
+import { computed, onMounted, watch } from 'vue';
 import { fetchWorkspaceStats } from '../api';
-import ChartSVG from './ChartSVG.vue';
-import HeatmapChart from './HeatmapChart.vue';
+import StatsPanels from './StatsPanels.vue';
+import { useStatsRange, statsPalette } from '../composables/useStatsRange';
 import { useThemeStore } from '../stores/themeStore';
 
 const props = defineProps({
-  workspaceId: { type: [String, Number], required: true }
+  workspaceId: { type: [String, Number], required: true },
 });
 
 const themeStore = useThemeStore();
-const stats = ref(null);
-const loading = ref(true);
-const activeRange = ref('7d');
-const customFrom = ref('');
-const customTo = ref('');
+const palette = computed(() => statsPalette(themeStore.isDark));
 
-const isDark = computed(() => {
-  if (themeStore.theme === 'dark') return true;
-  if (themeStore.theme === 'light') return false;
-  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
-    return true;
-  }
-  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches) {
-    return true;
-  }
-  return false;
+const {
+  stats,
+  loading,
+  activeRange,
+  customFrom,
+  customTo,
+  load,
+  setRange,
+  apply,
+  rangeOptions,
+  chartFixedLength,
+  chartEndDate,
+  heatmapGranularity,
+} = useStatsRange({
+  fetchStats: (range, from, to) => fetchWorkspaceStats(props.workspaceId, range, from, to),
 });
 
-// Original light mode color #27272a; dark mode uses matte tones sampled from reference ss (#aec477, #a8a3d9) with zero glow
-const taskChartColor = computed(() => isDark.value ? '#aec477' : '#27272a');
-const messageChartColor = computed(() => isDark.value ? '#a8a3d9' : '#27272a');
-const taskHeatmapColor = computed(() => isDark.value ? 'yellow' : 'gray');
-const messageHeatmapColor = computed(() => isDark.value ? 'violet' : 'gray');
-
-const rangeOptions = [
-  { id: '1d', label: '1d' },
-  { id: '7d', label: '7d' },
-  { id: 'week', label: 'Wk' },
-  { id: '30d', label: '30d' },
-  { id: 'month', label: 'Mo' },
-  { id: 'custom', label: 'Cust' }
-];
-
-async function load() {
-  loading.value = true;
-  try {
-    let fromTs = 0;
-    let toTs = 0;
-    
-    if (activeRange.value === 'custom') {
-      if (customFrom.value) fromTs = Math.floor(new Date(customFrom.value).getTime() / 1000);
-      if (customTo.value) toTs = Math.floor(new Date(customTo.value).getTime() / 1000);
-    }
-    
-    const res = await fetchWorkspaceStats(props.workspaceId, activeRange.value, fromTs, toTs);
-    stats.value = res;
-  } catch (err) {
-    console.error('Failed to load stats:', err);
-    stats.value = null;
-  } finally {
-    loading.value = false;
-  }
+// Setting either end of a custom range loads as soon as both are present, so
+// the common case needs no extra click; the tick button re-runs a range that is
+// already complete.
+function onCustomFrom(value) {
+  customFrom.value = value;
+  apply();
+}
+function onCustomTo(value) {
+  customTo.value = value;
+  apply();
 }
 
-const chartEndDate = computed(() => {
-  if (activeRange.value === 'custom' && customTo.value) {
-    return customTo.value;
-  }
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-});
-
-const heatmapGranularity = computed(() => stats.value?.heatmap?.granularity || 'day');
-
-const chartFixedLength = computed(() => {
-  if (activeRange.value === '7d' || activeRange.value === 'week') return 7;
-  if (activeRange.value === '30d' || activeRange.value === 'month') return 30;
-  if (activeRange.value === 'custom' && customFrom.value && customTo.value) {
-    const f = new Date(customFrom.value);
-    const t = new Date(customTo.value);
-    const diff = Math.ceil((t - f) / (1000 * 60 * 60 * 24));
-    return diff >= 0 ? diff + 1 : 0;
-  }
-  return 0;
-});
-
-watch([customFrom, customTo], () => {
-  if (activeRange.value === 'custom' && customFrom.value && customTo.value) {
-    load();
-  }
-});
-
-function setRange(range) {
-  activeRange.value = range;
-  if (range !== 'custom') {
-    load();
-  }
-}
+// The analytics tab is reached by changing a route parameter, so switching
+// workspace does not remount this — without the watch, the previous
+// workspace's numbers would stay on screen under the new workspace's name.
+watch(() => props.workspaceId, load);
 
 onMounted(load);
 </script>

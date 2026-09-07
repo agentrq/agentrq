@@ -359,6 +359,40 @@ paths:
                 properties:
                   status: { type: string, example: unarchived }
 
+  /stats:
+    get:
+      tags: [Workspaces]
+      summary: Activity statistics across every workspace the caller owns
+      description: >
+        The same aggregates as `/workspaces/{id}/stats`, summed over the whole
+        account, plus a per-workspace breakdown of what drove them. The scope is
+        the authenticated caller, so there is no id to pass.
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['1d', '7d', 'week', '30d', 'month', 'custom']
+            default: '7d'
+        - name: from
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+        - name: to
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+          description: Unix timestamp. Used only when `range=custom`.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserStats' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/stats:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -1800,6 +1834,28 @@ components:
             messages:
               type: array
               items: { $ref: '#/components/schemas/HeatmapStat' }
+
+    UserStats:
+      allOf:
+        - $ref: '#/components/schemas/WorkspaceStats'
+        - type: object
+          properties:
+            workspaces:
+              type: array
+              description: >
+                Per-workspace contribution to the totals above, busiest first.
+                Workspaces with no completions and no messages in the window are
+                omitted. A workspace deleted since the events were recorded
+                still appears, with an empty name.
+              items: { $ref: '#/components/schemas/WorkspaceStatsBreakdown' }
+
+    WorkspaceStatsBreakdown:
+      type: object
+      properties:
+        workspaceId: { type: string }
+        name: { type: string }
+        tasksCompleted: { type: integer, format: int64 }
+        messages: { type: integer, format: int64 }
 
     DailyStat:
       type: object

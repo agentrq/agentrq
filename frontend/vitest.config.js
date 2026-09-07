@@ -63,6 +63,7 @@ export default defineConfig({
         'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
         'src/composables/useWorkspaceSettings.js',
+        'src/composables/useStatsRange.js',
         'src/utils/markdown.js',
         'src/webmcp/*.js',
       ],
