@@ -1,37 +1,66 @@
 import { defineStore } from 'pinia'
 
+function getStoredTheme() {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage?.getItem?.('theme') : null
+  } catch {
+    return null
+  }
+}
+
 export const useThemeStore = defineStore('theme', {
   state: () => ({
-    theme: localStorage.getItem('theme') || 'system'
+    theme: getStoredTheme() || 'system'
   }),
+  getters: {
+    isDark(state) {
+      if (state.theme === 'dark') return true
+      if (state.theme === 'light') return false
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches
+      }
+      return false
+    }
+  },
   actions: {
     setTheme(newTheme) {
       this.theme = newTheme
-      localStorage.setItem('theme', newTheme)
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage?.setItem?.('theme', newTheme)
+        }
+      } catch {
+        // ignore storage errors
+      }
       this.applyTheme()
     },
     applyTheme() {
-      const isDark = this.theme === 'dark' || (this.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      const prefersDark = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+      const isDark = this.theme === 'dark' || (this.theme === 'system' && prefersDark)
 
-      if (isDark) {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
+      if (typeof document !== 'undefined') {
+        if (isDark) {
+          document.documentElement.classList.add('dark')
+        } else {
+          document.documentElement.classList.remove('dark')
+        }
+
+        const themeColorMeta = document.querySelector('meta[name="theme-color"]')
+        if (themeColorMeta) themeColorMeta.setAttribute('content', isDark ? '#09090b' : '#f4f4f5')
+
+        const statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+        if (statusBarMeta) statusBarMeta.setAttribute('content', isDark ? 'black' : 'default')
       }
-
-      const themeColorMeta = document.querySelector('meta[name="theme-color"]')
-      if (themeColorMeta) themeColorMeta.setAttribute('content', isDark ? '#09090b' : '#f4f4f5')
-
-      const statusBarMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
-      if (statusBarMeta) statusBarMeta.setAttribute('content', isDark ? 'black' : 'default')
     },
     init() {
       this.applyTheme()
-      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if (this.theme === 'system') {
-          this.applyTheme()
-        }
-      })
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+          if (this.theme === 'system') {
+            this.applyTheme()
+          }
+        })
+      }
     }
   }
 })

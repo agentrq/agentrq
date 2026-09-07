@@ -1,15 +1,15 @@
 <template>
   <div class="flex flex-col gap-8">
     <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900 p-1 border border-gray-200 dark:border-zinc-800 rounded-sm max-w-max">
+    <div class="flex flex-wrap items-center gap-1.5 bg-gray-100 dark:bg-zinc-900/90 p-1 border border-gray-200 dark:border-zinc-800 rounded-sm max-w-max shadow-sm">
       <button 
         v-for="opt in rangeOptions" 
         :key="opt.id"
         @click="setRange(opt.id)"
         class="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all"
         :class="activeRange === opt.id 
-          ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm border border-gray-200 dark:border-zinc-700 rounded-sm'
-          : 'text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-50 rounded-sm'"
+          ? 'bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 shadow-sm border border-gray-200 dark:border-zinc-700' 
+          : 'text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-50'"
       >
         {{ opt.label }}
       </button>
@@ -28,38 +28,56 @@
     <!-- Summary Cards -->
     <div v-if="stats && stats.summary" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <!-- Tasks Completed -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Completed</span>
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-[#aec477]/40 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400 dark:group-hover:text-[#aec477] transition-colors">Completed</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksCompleted.toLocaleString() }}</span>
       </div>
 
-      <!-- Scheduled -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Scheduled</span>
+      <!-- Tasks Scheduled -->
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Scheduled</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.tasksScheduled.toLocaleString() }}</span>
       </div>
 
       <!-- Messages -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Messages</span>
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-[#a8a3d9]/40 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400 dark:group-hover:text-[#a8a3d9] transition-colors">Messages</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.messages.toLocaleString() }}</span>
       </div>
 
-      <!-- Manual -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Manual</span>
+      <!-- Manual Approvals -->
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Manual</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.manualApprovals.toLocaleString() }}</span>
       </div>
 
-      <!-- Auto -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Auto</span>
+      <!-- Auto Approvals -->
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Auto</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.autoApprovals.toLocaleString() }}</span>
       </div>
 
       <!-- Denies -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-5 flex flex-col gap-1 shadow-sm hover:shadow-md transition-all duration-200">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Denies</span>
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 group">
+        <div class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-zinc-500"></span>
+          <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-400">Denies</span>
+        </div>
         <span class="text-3xl font-black text-gray-900 dark:text-zinc-50 tabular-nums leading-none">{{ stats.summary.denies.toLocaleString() }}</span>
       </div>
     </div>
@@ -67,9 +85,12 @@
     <!-- Heatmaps Section -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Task Heatmap -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Activity Heatmap</h3>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
+            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Activity Heatmap</h3>
+          </div>
           <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
         </div>
         <div class="h-56 w-full relative">
@@ -84,14 +105,18 @@
             :range-end="stats.heatmap.rangeEnd"
             :weekday-column-labels="activeRange === 'week'"
             metric-label="Tasks"
+            :color="taskHeatmapColor"
           />
         </div>
       </div>
 
       <!-- Message Heatmap -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Message Activity Heatmap</h3>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
+            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Message Activity Heatmap</h3>
+          </div>
           <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">{{ heatmapGranularity === 'hour' ? 'By Hour' : 'By Day' }}</div>
         </div>
         <div class="h-56 w-full relative">
@@ -106,6 +131,7 @@
             :range-end="stats.heatmap.rangeEnd"
             :weekday-column-labels="activeRange === 'week'"
             metric-label="Messages"
+            :color="messageHeatmapColor"
           />
         </div>
       </div>
@@ -114,9 +140,12 @@
     <!-- Charts Section -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Task Chart -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Completion Velocity</h3>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#aec477]"></span>
+            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Task Completion Velocity</h3>
+          </div>
           <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Daily Trend</div>
         </div>
         <div class="h-56 w-full relative">
@@ -126,7 +155,7 @@
           <ChartSVG
             v-if="stats && stats.timeseries"
             :data="stats.timeseries.tasksCompleted || []"
-            :color="isDark ? '#d4d4d8' : '#27272a'"
+            :color="taskChartColor"
             :fixed-length="chartFixedLength"
             :last-date="chartEndDate"
           />
@@ -134,9 +163,12 @@
       </div>
 
       <!-- Message Chart -->
-      <div class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm p-6 shadow-sm">
+      <div class="bg-white dark:bg-zinc-900/90 border border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700/80 rounded-sm p-6 shadow-sm transition-all">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Communication Volume</h3>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-zinc-800 dark:bg-[#a8a3d9]"></span>
+            <h3 class="text-[11px] font-black uppercase tracking-widest text-gray-900 dark:text-zinc-50">Communication Volume</h3>
+          </div>
           <div class="text-gray-400 dark:text-zinc-500 text-[9px] font-black uppercase tracking-widest">Total Messages</div>
         </div>
         <div class="h-56 w-full relative">
@@ -146,7 +178,7 @@
           <ChartSVG
             v-if="stats && stats.timeseries"
             :data="stats.timeseries.messages || []"
-            :color="isDark ? '#d4d4d8' : '#27272a'"
+            :color="messageChartColor"
             :fixed-length="chartFixedLength"
             :last-date="chartEndDate"
           />
@@ -174,10 +206,23 @@ const activeRange = ref('7d');
 const customFrom = ref('');
 const customTo = ref('');
 
-const isDark = computed(() =>
-  themeStore.theme === 'dark' ||
-  (themeStore.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-);
+const isDark = computed(() => {
+  if (themeStore.theme === 'dark') return true;
+  if (themeStore.theme === 'light') return false;
+  if (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')) {
+    return true;
+  }
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches) {
+    return true;
+  }
+  return false;
+});
+
+// Original light mode color #27272a; dark mode uses matte tones sampled from reference ss (#aec477, #a8a3d9) with zero glow
+const taskChartColor = computed(() => isDark.value ? '#aec477' : '#27272a');
+const messageChartColor = computed(() => isDark.value ? '#a8a3d9' : '#27272a');
+const taskHeatmapColor = computed(() => isDark.value ? 'yellow' : 'gray');
+const messageHeatmapColor = computed(() => isDark.value ? 'violet' : 'gray');
 
 const rangeOptions = [
   { id: '1d', label: '1d' },
@@ -203,6 +248,7 @@ async function load() {
     stats.value = res;
   } catch (err) {
     console.error('Failed to load stats:', err);
+    stats.value = null;
   } finally {
     loading.value = false;
   }
@@ -210,7 +256,7 @@ async function load() {
 
 const chartEndDate = computed(() => {
   if (activeRange.value === 'custom' && customTo.value) {
-    return customTo.value; // Already YYYY-MM-DD from input[type=date]
+    return customTo.value;
   }
   const now = new Date();
   const y = now.getFullYear();

@@ -4,19 +4,22 @@
       <span class="text-[10px] font-black text-gray-300 dark:text-zinc-500 uppercase tracking-widest italic">No data points</span>
     </div>
 
-    <div v-else class="flex-1 flex flex-col gap-1.5 min-h-0">
-      <!-- Column labels (months, or days) -->
-      <div class="flex gap-[3px] pl-6">
-        <div
-          v-for="(col, i) in columns"
-          :key="'lbl-' + i"
-          class="relative flex-1 min-w-0 text-[9px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest leading-none"
-        >
-          <span
-            v-if="col.label"
-            class="absolute top-0 whitespace-nowrap"
-            :class="i >= columns.length - 2 ? 'right-0' : 'left-0'"
-          >{{ col.label }}</span>
+    <div v-else class="flex-1 flex flex-col min-h-0">
+      <!-- Column labels (months, or days) - Dedicated height prevents title/content overlap -->
+      <div class="flex gap-[3px] h-3.5 mb-1.5 flex-shrink-0">
+        <div class="w-6 flex-shrink-0" />
+        <div class="flex-1 flex gap-[3px]">
+          <div
+            v-for="(col, i) in columns"
+            :key="'lbl-' + i"
+            class="relative flex-1 min-w-0 text-[9px] font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest leading-none"
+          >
+            <span
+              v-if="col.label"
+              class="absolute top-0 whitespace-nowrap"
+              :class="i >= columns.length - 2 ? 'right-0' : 'left-0'"
+            >{{ col.label }}</span>
+          </div>
         </div>
       </div>
 
@@ -37,9 +40,8 @@
             <div
               v-for="(cell, ri) in col.cells"
               :key="'cell-' + ri"
-              class="rounded-sm transition-colors"
-              :class="[levelClass(cell), cell.dimmed ? 'opacity-30' : 'cursor-pointer flex-1']"
-              :style="{ flex: cell.dimmed ? '1 1 0%' : undefined }"
+              class="flex-1 rounded-sm transition-colors"
+              :class="[levelClass(cell), cell.dimmed ? 'opacity-30' : 'cursor-pointer']"
               @mouseenter="!cell.dimmed && onCellEnter($event, cell)"
               @mouseleave="hovered = null"
             />
@@ -51,7 +53,7 @@
     <Teleport to="body">
       <div
         v-if="hovered"
-        class="fixed z-50 bg-black dark:bg-white text-white dark:text-black px-2 py-1 text-[10px] font-black uppercase tracking-widest pointer-events-none rounded shadow-lg whitespace-nowrap"
+        class="fixed z-50 bg-black dark:bg-zinc-900 text-white dark:text-zinc-100 border border-gray-700 dark:border-zinc-700 px-2 py-1 text-[10px] font-black uppercase tracking-widest pointer-events-none rounded shadow-md whitespace-nowrap"
         :style="{ left: hovered.x + 'px', top: hovered.y + 'px', transform: `translate(-50%, ${hovered.showBelow ? '0' : '-100%'})` }"
       >{{ hovered.label }}: {{ hovered.count }}</div>
     </Teleport>
@@ -67,7 +69,8 @@ const props = defineProps({
   rangeStart: { type: Number, default: 0 }, // unix seconds
   rangeEnd: { type: Number, default: 0 }, // unix seconds
   metricLabel: { type: String, default: 'Count' },
-  weekdayColumnLabels: { type: Boolean, default: false } // show "Mon"/"Tue" column headers instead of dates
+  weekdayColumnLabels: { type: Boolean, default: false }, // show "Mon"/"Tue" column headers instead of dates
+  color: { type: String, default: 'gray' } // 'yellow' | 'violet' | 'gray'
 });
 
 const hovered = ref(null);
@@ -84,12 +87,28 @@ function onCellEnter(e, cell) {
   };
 }
 
-const LEVEL_CLASSES = [
+const GRAY_LEVEL_CLASSES = [
   'bg-gray-100 dark:bg-zinc-800/60',
   'bg-gray-300 dark:bg-zinc-600',
   'bg-gray-500 dark:bg-zinc-500',
   'bg-gray-700 dark:bg-zinc-300',
   'bg-black dark:bg-zinc-50'
+];
+
+const YELLOW_LEVEL_CLASSES = [
+  'bg-gray-100 dark:bg-zinc-800/60',
+  'bg-gray-300 dark:bg-[#aec477]/25',
+  'bg-gray-500 dark:bg-[#aec477]/50',
+  'bg-gray-700 dark:bg-[#aec477]/75',
+  'bg-black dark:bg-[#aec477]'
+];
+
+const VIOLET_LEVEL_CLASSES = [
+  'bg-gray-100 dark:bg-zinc-800/60',
+  'bg-gray-300 dark:bg-[#a8a3d9]/25',
+  'bg-gray-500 dark:bg-[#a8a3d9]/50',
+  'bg-gray-700 dark:bg-[#a8a3d9]/75',
+  'bg-black dark:bg-[#a8a3d9]'
 ];
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -125,7 +144,14 @@ function levelForCount(count) {
 }
 
 function levelClass(cell) {
-  return LEVEL_CLASSES[levelForCount(cell.count)];
+  const lvl = levelForCount(cell.count);
+  if (props.color === 'yellow') {
+    return YELLOW_LEVEL_CLASSES[lvl];
+  }
+  if (props.color === 'violet') {
+    return VIOLET_LEVEL_CLASSES[lvl];
+  }
+  return GRAY_LEVEL_CLASSES[lvl];
 }
 
 const rowLabels = computed(() => {
@@ -200,10 +226,6 @@ const dayColumns = computed(() => {
     for (let d = 0; d < 7; d++) {
       const dateStr = toISODate(cur);
       const dimmed = cur < rangeStartDate || cur > rangeEndDate;
-      // Label the first column of each month (even if the month name repeats
-      // for ranges spanning more than a year), skipping a month that only has
-      // its very first day inside the window — a boundary sliver with no
-      // real data, e.g. a trailing "Jan" when the range ends exactly on Jan 1st.
       if (cur.getDate() === 1 && cur >= rangeStartDate && cur < rangeEndDate) {
         week.label = MONTH_NAMES[cur.getMonth()];
       }
