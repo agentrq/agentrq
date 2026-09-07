@@ -658,7 +658,7 @@ onEvent((event) => {
 
   if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
     notifySuccess(`Agent started a new task: ${event.payload.title}`)
-  } else if (event.type === 'task.updated') {
+  } else if (event.type === 'reply.received') {
     const task = event.payload
     const lastMsg = task.messages?.[task.messages.length - 1]
 
