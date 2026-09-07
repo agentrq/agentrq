@@ -1,7 +1,10 @@
-.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks
+.PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek
 
 remote-claude:
-	claude --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
+	claude --name agentrq-code --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
+
+remote-agy:
+	npx @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp
 
 # Default command to start everything in development mode
 dev:
