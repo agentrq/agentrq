@@ -261,14 +261,18 @@ export function buildTrajectory(messages, toolCalls) {
  * The tab an entry opens on.
  *
  * A tool's summary is the interesting part — what ran, and whether it was
- * allowed. Reasoning and plans are the opposite: the summary knows only when
- * they were written, and what the reader came for is the text itself.
+ * allowed, neither of which the payload says. Everything else in a trajectory
+ * is something that was written — a request, an answer, a piece of reasoning,
+ * a plan — and its summary knows only who wrote it and when. Opening those on
+ * the summary costs a second click to reach the words the reader came for, so
+ * they open on the content instead.
  *
  * @param {object|null} item
  * @returns {'summary'|'content'}
  */
 export function defaultDetailTab(item) {
-  return item?.lane === 'thought' ? 'content' : 'summary';
+  if (!item) return 'summary';
+  return item.lane === 'tool' ? 'summary' : 'content';
 }
 
 /**

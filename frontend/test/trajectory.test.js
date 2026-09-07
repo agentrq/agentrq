@@ -376,15 +376,25 @@ describe('filterTrajectory', () => {
 })
 
 describe('defaultDetailTab', () => {
-  // What a reader came to a thought for is the text; the summary of one knows
-  // only when it was written.
+  // What a reader came to any written entry for is the text; its summary knows
+  // only who wrote it and when.
   it('opens reasoning and plans on their content', () => {
     expect(defaultDetailTab({ lane: 'thought' })).toBe('content')
   })
 
-  it('opens everything else on its summary', () => {
+  it('opens what a person and an agent wrote on its content', () => {
+    expect(defaultDetailTab({ lane: 'input' })).toBe('content')
+    expect(defaultDetailTab({ lane: 'agent' })).toBe('content')
+  })
+
+  // The one entry whose summary is the point: the payload says what was asked
+  // for, but not what ran or whether it was allowed.
+  it('opens a tool call on its summary', () => {
     expect(defaultDetailTab({ lane: 'tool' })).toBe('summary')
-    expect(defaultDetailTab({ lane: 'agent' })).toBe('summary')
+  })
+
+  it('falls back to the summary with nothing selected', () => {
     expect(defaultDetailTab(null)).toBe('summary')
+    expect(defaultDetailTab(undefined)).toBe('summary')
   })
 })

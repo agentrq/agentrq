@@ -193,7 +193,9 @@ watch(items, (list) => {
   }
 }, { immediate: true });
 
-const activeTab = ref('summary');
+// The newest entry is selected before this runs, and it deserves the same tab
+// a clicked one gets — the watcher below fires only on a *change* of selection.
+const activeTab = ref(defaultDetailTab(selectedItem.value));
 const detailTabs = computed(() => {
   if (!selectedItem.value) return [];
   return selectedItem.value.lane === 'tool'
