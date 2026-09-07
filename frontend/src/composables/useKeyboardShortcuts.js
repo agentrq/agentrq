@@ -67,6 +67,18 @@ export const SHORTCUTS = [
     scope: 'global',
   },
   {
+    // `W` for workspace, and bare is the only way it could be bound: Cmd/Ctrl+W
+    // closes the tab, which is about the least recoverable thing a shortcut on
+    // this letter could do. Nothing here interferes with it — a bare letter is
+    // ignored the moment any modifier is held — so Cmd+W still closes the tab,
+    // and the page never sees the keystroke it would have to swallow to stop it.
+    id: 'switch-workspace',
+    key: 'w',
+    label: 'Switch workspace',
+    hint: 'Search your workspaces by name and jump to one',
+    scope: 'global',
+  },
+  {
     id: 'show-help',
     key: '?',
     label: 'Show keyboard shortcuts',

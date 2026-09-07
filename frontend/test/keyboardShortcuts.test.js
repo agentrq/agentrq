@@ -50,6 +50,24 @@ describe('SHORTCUTS', () => {
     expect(claimed).toEqual(['k'])
   })
 
+  it('binds no two shortcuts to the same key', () => {
+    // A duplicate would not error — `matchShortcut` takes the first match — so
+    // the second binding would simply never fire.
+    const keys = SHORTCUTS.map((s) => `${s.mod ? 'mod+' : ''}${s.key}`);
+
+    expect(keys).toEqual([...new Set(keys)]);
+  });
+
+  it('leaves Cmd/Ctrl+W to the browser, which closes the tab with it', () => {
+    // `w` is bound bare, and a bare letter never fires with a modifier held.
+    // Answering to Cmd+W here would mean swallowing a keystroke people expect
+    // to close the tab.
+    const w = SHORTCUTS.find((s) => s.key === 'w');
+
+    expect(w).toBeTruthy();
+    expect(w.mod).toBeFalsy();
+  });
+
   it('gives every shortcut an id, a key and a scope the help sheet groups by', () => {
     for (const s of SHORTCUTS) {
       expect(s.id).toBeTruthy()

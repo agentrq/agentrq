@@ -376,8 +376,9 @@
 
     <!-- Keyboard-driven overlays. Both are shell-level: the finder crosses
          workspaces, and the help sheet describes shortcuts a view may own. -->
-    <CommandPalette :show="isPaletteOpen" :shortcut-label="findTaskLabel" @close="isPaletteOpen = false" />
-    <ShortcutsHelp :show="isHelpOpen" :mac="isMacKeyboard" @close="isHelpOpen = false" />
+    <CommandPalette :show="overlay === 'palette'" :shortcut-label="findTaskLabel" @close="closeOverlay()" />
+    <WorkspaceSwitcher :show="overlay === 'switcher'" :current-workspace-id="currentWorkspaceId ?? ''" @close="closeOverlay()" />
+    <ShortcutsHelp :show="overlay === 'help'" :mac="isMacKeyboard" @close="closeOverlay()" />
   </div>
 </template>
 
@@ -413,6 +414,7 @@ import { forgetCachedTask, forgetEverything } from './composables/useCacheStorag
 import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheRetention'
 import CommandPalette from './components/CommandPalette.vue'
 import ShortcutsHelp from './components/ShortcutsHelp.vue'
+import WorkspaceSwitcher from './components/WorkspaceSwitcher.vue'
 import {
   SHORTCUTS,
   formatShortcut,
@@ -573,8 +575,16 @@ function startRetentionSweep(db) {
 // The shell owns the ones that work anywhere. A view registers its own on top
 // of these; see TaskDetailView for the chat/trajectory pair.
 
-const isPaletteOpen = ref(false)
-const isHelpOpen = ref(false)
+/**
+ * Which full-screen overlay is up, if any: 'palette', 'switcher' or 'help'.
+ *
+ * One value rather than a flag each, because they are mutually exclusive and
+ * every opener would otherwise have to remember to close the other two — a
+ * rule that held for two overlays and would not survive a fourth.
+ */
+const overlay = ref(null)
+const openOverlay = (name) => { overlay.value = name }
+const closeOverlay = () => { overlay.value = null }
 
 /** Command on a Mac keyboard, Control everywhere else. */
 const isMacKeyboard = computed(() => usesCommandKey(platformStore.$state))
@@ -584,15 +594,10 @@ const findTaskLabel = computed(() =>
 
 useShortcuts(
   {
-    'find-task': () => {
-      isHelpOpen.value = false
-      isPaletteOpen.value = true
-    },
+    'find-task': () => openOverlay('palette'),
     'new-task': () => router.push(newTaskRoute(currentWorkspaceId.value, workspaces.value)),
-    'show-help': () => {
-      isPaletteOpen.value = false
-      isHelpOpen.value = true
-    },
+    'switch-workspace': () => openOverlay('switcher'),
+    'show-help': () => openOverlay('help'),
   },
   { mac: () => isMacKeyboard.value, onUse: recordShortcutUse }
 )
@@ -612,10 +617,7 @@ function recordShortcutUse() {
 // Escape closes an overlay wherever focus happens to be. The palette handles it
 // on its own input too — this is for the help sheet, which has nothing focused.
 
-const openCommandPaletteHandler = () => {
-  isHelpOpen.value = false
-  isPaletteOpen.value = true
-}
+const openCommandPaletteHandler = () => openOverlay('palette')
 
 onMounted(() => {
   window.addEventListener('open-command-palette', openCommandPaletteHandler)
@@ -627,8 +629,7 @@ onUnmounted(() => {
 
 const closeOverlaysOnEscape = (e) => {
   if (e.key !== 'Escape') return
-  isPaletteOpen.value = false
-  isHelpOpen.value = false
+  closeOverlay()
 }
 
 // Setup Global Event Bus (Global stream receives events for all workspaces)

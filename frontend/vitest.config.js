@@ -64,6 +64,7 @@ export default defineConfig({
         'src/composables/useWebMCP.js',
         'src/composables/useWorkspaceSettings.js',
         'src/composables/useStatsRange.js',
+        'src/composables/useWorkspaceSwitcher.js',
         'src/utils/markdown.js',
         'src/webmcp/*.js',
       ],
