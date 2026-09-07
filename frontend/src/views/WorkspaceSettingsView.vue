@@ -764,7 +764,7 @@
               </div>
 
               <!-- Action Bar Footer -->
-              <div v-if="activeTab !== 'setup' && activeTab !== 'slack'" class="px-8 py-6 bg-gray-50/50 dark:bg-zinc-800/50 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-3">
+              <div v-if="showActionBar" class="px-8 py-6 bg-gray-50/50 dark:bg-zinc-800/50 border-t border-gray-100 dark:border-zinc-800 flex justify-end gap-3">
                 <button type="button" @click="router.back()" class="px-6 py-2.5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white uppercase tracking-widest transition-all">Cancel</button>
                 <button type="submit" class="bg-gray-900 dark:bg-white text-white dark:text-zinc-900 px-10 py-2.5 rounded-sm text-[10px] font-bold hover:bg-black dark:hover:bg-zinc-100 shadow-xl shadow-black/10 transition-all active:scale-95 flex items-center gap-2 uppercase tracking-widest" :disabled="saving">
                   <svg v-if="saving" class="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 12a8 8 0 018-8v8H4z" /></svg>
@@ -835,6 +835,7 @@ import {
   getRetentionDays,
   setRetentionDays,
 } from '../composables/useCacheRetention';
+import { shouldShowSettingsActionBar } from '../composables/useWorkspaceSettings';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
@@ -850,6 +851,9 @@ const loading = ref(true);
 const saving = ref(false);
 const workspaceStore = useWorkspaceStore();
 const activeTab = ref('general');
+const showActionBar = computed(() =>
+  shouldShowSettingsActionBar(activeTab.value, workspace.value)
+);
 
 // ── Memories ────────────────────────────────────────────────────────────────
 // Read-only: agents write these through the memory tools.
