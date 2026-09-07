@@ -223,6 +223,15 @@ type GetAttachmentParams struct {
 	AttachmentID string `json:"attachmentId"`
 }
 
+type ListMemoriesParams struct {
+	WorkspaceID string `json:"workspaceId"`
+}
+
+type GetMemoryParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	Name        string `json:"name" jsonschema:"The memory's name, as listMemories reports it."`
+}
+
 // ── Tool Definitions ──────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) registerTools() {
@@ -243,6 +252,8 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task"}, s.handleUpdateTaskAllowAll)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task"}, s.handleUpdateScheduledTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata"}, s.handleGetAttachment)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that."}, s.handleListMemories)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off."}, s.handleGetMemory)
 
 	// Events and their triggers — see events.go.
 	s.registerEventTools()
@@ -610,4 +621,33 @@ func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Call
 	}
 
 	return jsonResponse(res), nil, nil
+}
+
+func (s *WorkspaceServer) handleListMemories(ctx context.Context, req *mcp.CallToolRequest, args ListMemoriesParams) (*mcp.CallToolResult, any, error) {
+	userID := getUserID(ctx)
+	res, err := s.crud.ListMemories(ctx, entity.ListMemoriesRequest{
+		UserID:      userID,
+		WorkspaceID: parseID(args.WorkspaceID),
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	b := apiMapper.FromListMemoriesResponseEntityToHTTPResponse(res)
+	return textResponse(string(b)), nil, nil
+}
+
+func (s *WorkspaceServer) handleGetMemory(ctx context.Context, req *mcp.CallToolRequest, args GetMemoryParams) (*mcp.CallToolResult, any, error) {
+	userID := getUserID(ctx)
+	res, err := s.crud.GetMemory(ctx, entity.GetMemoryRequest{
+		UserID:      userID,
+		WorkspaceID: parseID(args.WorkspaceID),
+		Name:        args.Name,
+	})
+	if err != nil {
+		return errorResponse(err), nil, nil
+	}
+
+	b := apiMapper.FromGetMemoryResponseEntityToHTTPResponse(res)
+	return textResponse(string(b)), nil, nil
 }
