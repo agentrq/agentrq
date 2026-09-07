@@ -147,7 +147,7 @@ connects to whichever AgentRQ server you run.
 On macOS and Linux, one command installs it — and updates it later:
 
 ```sh
-curl -fsSL https://agentrq.com/install.sh | sh
+curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit
 ```
 
 Or **[download the latest release →](https://github.com/agentrq/agentrq/releases/latest)**
