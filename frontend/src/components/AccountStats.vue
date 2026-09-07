@@ -42,19 +42,31 @@
             <span class="w-20 text-right text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Completed</span>
             <span class="w-20 text-right text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Messages</span>
             <span class="hidden sm:block w-28 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Share</span>
+            <span class="shrink-0 w-4" aria-hidden="true"></span>
           </div>
 
-          <button
+          <!-- A real anchor, not a button that pushes a route: these rows are
+               links to another screen, so they have to behave like links —
+               cmd-click and middle-click open a new tab, the URL shows in the
+               status bar, and "Copy Link Address" works. Opening two
+               workspaces' analytics side by side is most of why you would read
+               this panel at all.
+
+               `component is` rather than two v-for blocks: a deleted workspace
+               has nothing to link to, and an anchor with no destination is
+               worse than a plain row. -->
+          <component
+            :is="row.name ? 'router-link' : 'div'"
             v-for="row in breakdown"
             :key="row.workspaceId"
-            type="button"
-            @click="openWorkspace(row)"
-            :disabled="!row.name"
-            class="group flex items-center gap-4 px-2 py-3 border-b border-gray-100 dark:border-zinc-800/60 text-left transition-colors enabled:hover:bg-gray-50 dark:enabled:hover:bg-zinc-800/40 disabled:cursor-default"
+            :to="row.name ? analyticsRoute(row) : undefined"
+            :title="row.name ? `Analytics for ${row.name}` : undefined"
+            class="group flex items-center gap-4 px-2 py-3 border-b border-gray-100 dark:border-zinc-800/60 text-left transition-colors"
+            :class="row.name ? 'hover:bg-gray-50 dark:hover:bg-zinc-800/40 cursor-pointer' : 'cursor-default'"
           >
             <span class="flex-1 min-w-0 flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="row.name ? 'bg-zinc-800 dark:bg-[#aec477]' : 'bg-gray-300 dark:bg-zinc-700'"></span>
-              <span v-if="row.name" class="text-[11px] font-black text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors">{{ row.name }}</span>
+              <span v-if="row.name" class="text-[11px] font-black text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white group-hover:underline decoration-1 underline-offset-2 transition-colors">{{ row.name }}</span>
               <!-- Telemetry outlives the workspace it was recorded in. The row
                    is kept rather than dropped so the breakdown still adds up to
                    the totals above, but there is nothing to navigate to. -->
@@ -67,7 +79,16 @@
                 <span class="block h-full rounded-sm bg-zinc-800 dark:bg-[#aec477]" :style="{ width: shareOf(row) }"></span>
               </span>
             </span>
-          </button>
+            <!-- Visible at rest, not only on hover: a row whose only clue is a
+                 hover background is a link nobody finds. Faint until you reach
+                 for it, then it commits. -->
+            <span class="shrink-0 w-4 flex justify-end">
+              <svg v-if="row.name" class="w-3.5 h-3.5 text-gray-300 dark:text-zinc-600 group-hover:text-gray-900 dark:group-hover:text-white transition-colors"
+                   fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+          </component>
         </div>
       </div>
     </template>
@@ -84,13 +105,12 @@
  * `useStatsRange`; all this adds is the endpoint and the breakdown panel.
  */
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import { fetchUserStats } from '../api';
 import StatsPanels from './StatsPanels.vue';
 import { useStatsRange, statsPalette } from '../composables/useStatsRange';
+import { workspaceRoute } from '../composables/useWorkspaceSwitcher';
 import { useThemeStore } from '../stores/themeStore';
 
-const router = useRouter();
 const themeStore = useThemeStore();
 const palette = computed(() => statsPalette(themeStore.isDark));
 
@@ -123,10 +143,11 @@ function shareOf(row) {
   return `${Math.round(((row.tasksCompleted + row.messages) / busiest.value) * 100)}%`;
 }
 
-function openWorkspace(row) {
-  if (!row.name) return;
-  router.push(`/workspaces/${row.workspaceId}/analytics`);
-}
+/**
+ * Straight to that workspace's own analytics, not its overview: the reader is
+ * already looking at numbers and wants the same numbers for one workspace.
+ */
+const analyticsRoute = (row) => workspaceRoute(row.workspaceId, 'analytics');
 
 function onCustomFrom(value) {
   customFrom.value = value;

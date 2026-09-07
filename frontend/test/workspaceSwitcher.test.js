@@ -192,6 +192,34 @@ describe('workspaceRoute', () => {
     expect(workspaceRoute({})).toBe('/');
     expect(workspaceRoute('')).toBe('/');
   });
+
+  describe('with a section', () => {
+    it('reaches a tab inside the workspace', () => {
+      // What the account dashboard's per-workspace rows link to.
+      expect(workspaceRoute({ id: 'ws1' }, 'analytics')).toBe('/workspaces/ws1/analytics');
+      expect(workspaceRoute('ws1', 'analytics')).toBe('/workspaces/ws1/analytics');
+    });
+
+    it('builds the paths the route table actually declares', () => {
+      // The three single-segment children of /workspaces/:id in src/app.js,
+      // named here so a section that was never a route cannot be introduced by
+      // a typo at a call site.
+      expect(workspaceRoute('ws1', 'board')).toBe('/workspaces/ws1/board');
+      expect(workspaceRoute('ws1', 'analytics')).toBe('/workspaces/ws1/analytics');
+      expect(workspaceRoute('ws1', 'settings')).toBe('/workspaces/ws1/settings');
+    });
+
+    it('ignores an empty section rather than leaving a trailing slash', () => {
+      expect(workspaceRoute('ws1', '')).toBe('/workspaces/ws1');
+      expect(workspaceRoute('ws1', undefined)).toBe('/workspaces/ws1');
+    });
+
+    it('still falls back to the overview with no workspace, section or not', () => {
+      // A section is not a destination on its own: '/analytics' is not a route.
+      expect(workspaceRoute(null, 'analytics')).toBe('/');
+      expect(workspaceRoute({}, 'analytics')).toBe('/');
+    });
+  });
 });
 
 describe('isCurrentWorkspace', () => {

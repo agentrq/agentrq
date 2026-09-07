@@ -74,18 +74,28 @@ export function matchWorkspaces(workspaces, query, limit = 8) {
 }
 
 /**
- * Where the switcher sends you.
+ * A workspace's URL — the one place in the app that builds one.
  *
- * The workspace's own page, which is what its sidebar entry and its card on the
- * overview both open — switching workspaces should land where clicking the
- * workspace lands, not on some switcher-only destination.
+ * With no section it is the workspace's own page, which is what its sidebar
+ * entry and its card on the overview both open: switching workspaces should
+ * land where clicking the workspace lands, not on some switcher-only
+ * destination.
+ *
+ * `section` reaches a tab within it (`'analytics'`, `'board'`, `'settings'`) and
+ * is what lets the account dashboard's per-workspace rows link straight to that
+ * workspace's own analytics. It lives here rather than being interpolated at
+ * each call site so there is one answer to "what is a workspace's URL" —
+ * these paths are also declared in the router's single route table, and a
+ * second hand-built copy is how the two drift.
  *
  * @param {{ id?: string } | string | null | undefined} workspace
+ * @param {string} [section] a tab under the workspace, e.g. 'analytics'
  * @returns {string} a route, or the overview when there is nothing to open
  */
-export function workspaceRoute(workspace) {
+export function workspaceRoute(workspace, section = '') {
   const id = typeof workspace === 'string' ? workspace : workspace?.id;
-  return id ? `/workspaces/${id}` : '/';
+  if (!id) return '/';
+  return section ? `/workspaces/${id}/${section}` : `/workspaces/${id}`;
 }
 
 /**
