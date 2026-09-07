@@ -30,7 +30,7 @@ func newProtocolTestServer(t *testing.T) *httptest.Server {
 	ps := NewWorkspaceServer(
 		1, "user", "http://localhost",
 		nil, nil, nil, listTasks, nil, nil, nil, nil, nil,
-		nil, nil, // loadMemory, saveMemory
+		nil, nil, nil, // loadMemory, saveMemory, deleteMemory
 		nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)

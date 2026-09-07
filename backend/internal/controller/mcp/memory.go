@@ -54,6 +54,13 @@ type LoadMemoryFunc func(ctx context.Context, name string) (content string, foun
 // was stored under that name.
 type SaveMemoryFunc func(ctx context.Context, name string, content string) error
 
+// DeleteMemoryFunc removes one of the workspace's memories.
+//
+// `deleted` mirrors LoadMemoryFunc's `found`: deleting a memory that was never
+// written (or already deleted) is not a failure, so the tool can say plainly
+// that there was nothing to remove instead of erroring on a harmless retry.
+type DeleteMemoryFunc func(ctx context.Context, name string) (deleted bool, err error)
+
 // LoadMemoryParams is the input to the loadMemory tool.
 type LoadMemoryParams struct {
 	Name string `json:"name,omitempty" jsonschema:"Which memory to read. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
@@ -63,6 +70,11 @@ type LoadMemoryParams struct {
 type SaveMemoryParams struct {
 	Name    string `json:"name,omitempty" jsonschema:"Which memory to write. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
 	Content string `json:"content" jsonschema:"The full new content. This replaces the memory entirely — there is no append, so include everything worth keeping."`
+}
+
+// DeleteMemoryParams is the input to the deleteMemory tool.
+type DeleteMemoryParams struct {
+	Name string `json:"name,omitempty" jsonschema:"Which memory to delete. Defaults to MEMORY.md, the index that says what else this workspace remembers."`
 }
 
 // memoryNamePattern is the shape a stored name takes: a lowercase slug with a
@@ -176,5 +188,35 @@ func (ps *WorkspaceServer) handleSaveMemory(ctx context.Context, req *mcp.CallTo
 		Content: []mcp.Content{&mcp.TextContent{
 			Text: fmt.Sprintf("Saved %q (%d bytes).", name, len(params.Content)),
 		}},
+	}, nil, nil
+}
+
+func (ps *WorkspaceServer) handleDeleteMemory(ctx context.Context, req *mcp.CallToolRequest, params DeleteMemoryParams) (*mcp.CallToolResult, any, error) {
+	ps.emitTelemetry(ctx, ActionMCPToolCall, "deleteMemory", clientIdentityFromRequest(req))
+
+	name, err := resolveMemoryName(params.Name)
+	if err != nil {
+		return toolError("%v", err), nil, nil
+	}
+	if ps.deleteMemory == nil {
+		return toolError("memory is not available on this server"), nil, nil
+	}
+
+	deleted, err := ps.deleteMemory(ctx, name)
+	if err != nil {
+		return toolError("failed to delete memory %q: %v", name, err), nil, nil
+	}
+	if !deleted {
+		// Not an error: deleting something that was never written, or was
+		// already removed, ends in the same state the caller wanted.
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{
+				Text: fmt.Sprintf("No memory was stored under %q; nothing to delete.", name),
+			}},
+		}, nil, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Deleted %q.", name)}},
 	}, nil, nil
 }

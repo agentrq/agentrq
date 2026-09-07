@@ -100,6 +100,7 @@ type WorkspaceServer struct {
 	publishEvent          PublishEventFunc
 	loadMemory            LoadMemoryFunc
 	saveMemory            SaveMemoryFunc
+	deleteMemory          DeleteMemoryFunc
 	recordToolCall        RecordToolCallFunc
 	updateToolCallStatus  UpdateToolCallStatusFunc
 	bus                   *eventbus.Bus
@@ -323,6 +324,7 @@ func NewWorkspaceServer(
 	publishEvent PublishEventFunc,
 	loadMemory LoadMemoryFunc,
 	saveMemory SaveMemoryFunc,
+	deleteMemory DeleteMemoryFunc,
 	recordToolCall RecordToolCallFunc,
 	updateToolCallStatus UpdateToolCallStatusFunc,
 	bus *eventbus.Bus,
@@ -352,6 +354,7 @@ func NewWorkspaceServer(
 		publishEvent:           publishEvent,
 		loadMemory:             loadMemory,
 		saveMemory:             saveMemory,
+		deleteMemory:           deleteMemory,
 		recordToolCall:         recordToolCall,
 		updateToolCallStatus:   updateToolCallStatus,
 		bus:                    bus,
@@ -483,6 +486,13 @@ func NewWorkspaceServer(
 			"One memory holds at most 16 KiB; a larger one is refused rather than truncated, so split it and index the parts. " +
 			"The memory belongs to the workspace, not to you — other agents working here read the same notes.",
 	}, ps.handleSaveMemory)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name: "deleteMemory",
+		Description: "Delete one of the workspace's memories. " +
+			"With no name it deletes " + DefaultMemoryName + " itself — think before doing that, since it is the index the other memories link from. " +
+			"Deleting a name nobody wrote under (or one already deleted) is not an error; it just says there was nothing to remove.",
+	}, ps.handleDeleteMemory)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "elicit",

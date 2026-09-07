@@ -220,3 +220,69 @@ func TestUpsertMemory_ReportsAWriteThatFailed(t *testing.T) {
 		t.Error("expected an error when the write cannot land")
 	}
 }
+
+func TestDeleteMemory_RemovesTheRow(t *testing.T) {
+	db := memoryDB(t)
+	repo := New(&mockDB{db: db})
+	ctx := context.Background()
+
+	if _, err := repo.UpsertMemory(ctx, memory(1, memUserID, memWorkspaceID, "MEMORY.md", "x")); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if err := repo.DeleteMemory(ctx, memUserID, memWorkspaceID, "MEMORY.md"); err != nil {
+		t.Fatalf("DeleteMemory: %v", err)
+	}
+
+	if _, err := repo.GetMemory(ctx, memUserID, memWorkspaceID, "MEMORY.md"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("got %v, want ErrNotFound after delete", err)
+	}
+}
+
+func TestDeleteMemory_MissingIsNotFound(t *testing.T) {
+	repo := New(&mockDB{db: memoryDB(t)})
+
+	err := repo.DeleteMemory(context.Background(), memUserID, memWorkspaceID, "never-written.md")
+
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("got %v, want ErrNotFound", err)
+	}
+}
+
+// The delete is scoped by all three columns, the same as every other memory
+// lookup — deleting under one owner/workspace must never remove another's row
+// that merely shares a name.
+func TestDeleteMemory_ScopedToOwnerAndWorkspace(t *testing.T) {
+	repo := New(&mockDB{db: memoryDB(t)})
+	ctx := context.Background()
+
+	if _, err := repo.UpsertMemory(ctx, memory(1, memUserID, memWorkspaceID, "MEMORY.md", "mine")); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	if _, err := repo.UpsertMemory(ctx, memory(2, memUserID, memOtherWSID, "MEMORY.md", "other workspace")); err != nil {
+		t.Fatalf("seed other workspace: %v", err)
+	}
+	if _, err := repo.UpsertMemory(ctx, memory(3, memOtherUserID, memWorkspaceID, "MEMORY.md", "other owner")); err != nil {
+		t.Fatalf("seed other owner: %v", err)
+	}
+
+	if err := repo.DeleteMemory(ctx, memUserID, memWorkspaceID, "MEMORY.md"); err != nil {
+		t.Fatalf("DeleteMemory: %v", err)
+	}
+
+	for _, tc := range []struct {
+		userID, workspaceID int64
+		want                string
+	}{
+		{memUserID, memOtherWSID, "other workspace"},
+		{memOtherUserID, memWorkspaceID, "other owner"},
+	} {
+		got, err := repo.GetMemory(ctx, tc.userID, tc.workspaceID, "MEMORY.md")
+		if err != nil {
+			t.Fatalf("GetMemory(%d, %d): %v", tc.userID, tc.workspaceID, err)
+		}
+		if got.Content != tc.want {
+			t.Errorf("GetMemory(%d, %d): got %q, want %q", tc.userID, tc.workspaceID, got.Content, tc.want)
+		}
+	}
+}

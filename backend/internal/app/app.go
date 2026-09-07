@@ -605,6 +605,17 @@ func New(cfg Config) (*App, error) {
 				})
 				return err
 			},
+			func(ctx context.Context, name string) (bool, error) {
+				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
+				err := repo.DeleteMemory(ctx, uid, workspaceID, name)
+				if errors.Is(err, base.ErrNotFound) {
+					return false, nil
+				}
+				if err != nil {
+					return false, err
+				}
+				return true, nil
+			},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
 				created, err := repo.CreateToolCall(ctx, tc)
 				if err == nil {

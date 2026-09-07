@@ -43,6 +43,7 @@ type Repository interface {
 	GetMemory(ctx context.Context, userID, workspaceID int64, name string) (model.Memory, error)
 	UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error)
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
+	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
@@ -939,6 +940,22 @@ func (r *repository) ListMemoriesByWorkspace(ctx context.Context, userID, worksp
 		Order("name asc").
 		Find(&memories).Error
 	return memories, err
+}
+
+// DeleteMemory removes one named memory. Deleting a name nobody wrote under
+// is reported as ErrNotFound rather than silently succeeding, so a caller can
+// tell "removed" apart from "was never there" the same way GetMemory does.
+func (r *repository) DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error {
+	res := r.conn(ctx).
+		Where("user_id = ? AND workspace_id = ? AND name = ?", userID, workspaceID, name).
+		Delete(&model.Memory{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *repository) CreateEvent(ctx context.Context, e model.Event) (model.Event, error) {

@@ -15,11 +15,13 @@ import (
 // A server with the memory tools wired to an in-memory store, so a save and the
 // load that follows it exercise the same path a real agent takes.
 type memoryStore struct {
-	saved    map[string]string
-	loadErr  error
-	saveErr  error
-	loadName string
-	saveName string
+	saved      map[string]string
+	loadErr    error
+	saveErr    error
+	deleteErr  error
+	loadName   string
+	saveName   string
+	deleteName string
 }
 
 func newMemoryServer(t *testing.T, store *memoryStore) *WorkspaceServer {
@@ -50,6 +52,17 @@ func newMemoryServer(t *testing.T, store *memoryStore) *WorkspaceServer {
 			}
 			store.saved[name] = content
 			return nil
+		},
+		deleteMemory: func(ctx context.Context, name string) (bool, error) {
+			store.deleteName = name
+			if store.deleteErr != nil {
+				return false, store.deleteErr
+			}
+			if _, ok := store.saved[name]; !ok {
+				return false, nil
+			}
+			delete(store.saved, name)
+			return true, nil
 		},
 	}
 }
@@ -333,6 +346,89 @@ func TestMemoryNamesThatAreAccepted(t *testing.T) {
 	}
 }
 
+func TestDeleteMemoryRemovesWhatWasSaved(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"notes.md": "keep this"}}
+	ps := newMemoryServer(t, store)
+	ctx := context.Background()
+
+	res, _, err := ps.handleDeleteMemory(ctx, &mcp.CallToolRequest{}, DeleteMemoryParams{Name: "notes.md"})
+	if err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("deleteMemory reported an error: %s", resultText(t, res))
+	}
+	if _, ok := store.saved["notes.md"]; ok {
+		t.Error("the memory should have been removed")
+	}
+
+	loaded, _, err := ps.handleLoadMemory(ctx, &mcp.CallToolRequest{}, LoadMemoryParams{Name: "notes.md"})
+	if err != nil {
+		t.Fatalf("loadMemory: %v", err)
+	}
+	if loaded.IsError {
+		t.Fatalf("a load after delete should miss, not error: %s", resultText(t, loaded))
+	}
+}
+
+// Deleting a name nobody wrote under ends in the state the caller wanted, so
+// it must not read as a failure.
+func TestDeleteMemoryMissIsNotAnError(t *testing.T) {
+	ps := newMemoryServer(t, &memoryStore{})
+
+	res, _, err := ps.handleDeleteMemory(context.Background(), &mcp.CallToolRequest{}, DeleteMemoryParams{Name: "never-written.md"})
+
+	if err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("a miss must not be an error: %s", resultText(t, res))
+	}
+	text := resultText(t, res)
+	if !strings.Contains(text, "never-written.md") {
+		t.Errorf("a miss should name the memory; got %q", text)
+	}
+}
+
+func TestDeleteMemoryDefaultsToTheIndex(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{DefaultMemoryName: "x"}}
+	ps := newMemoryServer(t, store)
+
+	if _, _, err := ps.handleDeleteMemory(context.Background(), &mcp.CallToolRequest{}, DeleteMemoryParams{}); err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if store.deleteName != DefaultMemoryName {
+		t.Errorf("deleted %q, want %q", store.deleteName, DefaultMemoryName)
+	}
+}
+
+// The same folding as save/load, so a differently-spelled delete still finds
+// the memory a save stored.
+func TestDeleteMemoryFoldsTheNameToo(t *testing.T) {
+	store := &memoryStore{saved: map[string]string{"release-notes.md": "what shipped"}}
+	ps := newMemoryServer(t, store)
+
+	if _, _, err := ps.handleDeleteMemory(context.Background(), &mcp.CallToolRequest{}, DeleteMemoryParams{Name: "Release-Notes.MD"}); err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if store.deleteName != "release-notes.md" {
+		t.Errorf("deleted %q, want the folded name", store.deleteName)
+	}
+}
+
+func TestDeleteMemoryRefusesAnUnusableName(t *testing.T) {
+	ps := newMemoryServer(t, &memoryStore{})
+
+	res, _, err := ps.handleDeleteMemory(context.Background(), &mcp.CallToolRequest{}, DeleteMemoryParams{Name: "release notes.md"})
+
+	if err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if !res.IsError {
+		t.Error("an unusable name must be refused")
+	}
+}
+
 func TestMemoryToolsReportStorageFailures(t *testing.T) {
 	ctx := context.Background()
 
@@ -365,6 +461,21 @@ func TestMemoryToolsReportStorageFailures(t *testing.T) {
 			t.Errorf("got %q", resultText(t, res))
 		}
 	})
+
+	t.Run("delete", func(t *testing.T) {
+		ps := newMemoryServer(t, &memoryStore{deleteErr: errors.New("disk on fire")})
+
+		res, _, err := ps.handleDeleteMemory(ctx, &mcp.CallToolRequest{}, DeleteMemoryParams{})
+
+		if err != nil {
+			t.Fatalf("deleteMemory: %v", err)
+		}
+		// Distinct from a miss: "nothing to remove" and "could not delete" call
+		// for different responses from the agent.
+		if !res.IsError || !strings.Contains(resultText(t, res), "disk on fire") {
+			t.Errorf("got %q", resultText(t, res))
+		}
+	})
 }
 
 // A server built without the memory funcs must say so rather than panic — the
@@ -392,5 +503,13 @@ func TestMemoryToolsWithoutStorage(t *testing.T) {
 	}
 	if !save.IsError {
 		t.Error("saveMemory should report that memory is unavailable")
+	}
+
+	del, _, err := ps.handleDeleteMemory(ctx, &mcp.CallToolRequest{}, DeleteMemoryParams{})
+	if err != nil {
+		t.Fatalf("deleteMemory: %v", err)
+	}
+	if !del.IsError {
+		t.Error("deleteMemory should report that memory is unavailable")
 	}
 }
