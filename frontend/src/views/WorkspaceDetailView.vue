@@ -56,6 +56,15 @@
 
             <!-- Filters Toggle & Menu Wrapper -->
             <div class="relative flex items-center">
+              <!-- Mobile Search Button -->
+              <button @click="openSearch" 
+                      class="md:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0 mr-1" 
+                      title="Search Tasks">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+
               <button @click="showMobileFilters = !showMobileFilters" 
                       class="md:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
                       :class="{'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white': showMobileFilters}"
@@ -231,6 +240,11 @@ const loading = ref(true);
 const error = ref(null);
 const activeFilter = ref(route.query.filter || 'active');
 const showMobileFilters = ref(false);
+
+function openSearch() {
+  window.dispatchEvent(new CustomEvent('open-command-palette'));
+}
+
 const tooltipStore = useTooltipStore();
 const filters = [
   { id: 'active', label: 'Active', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },

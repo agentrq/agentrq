@@ -611,6 +611,20 @@ function recordShortcutUse() {
 
 // Escape closes an overlay wherever focus happens to be. The palette handles it
 // on its own input too — this is for the help sheet, which has nothing focused.
+
+const openCommandPaletteHandler = () => {
+  isHelpOpen.value = false
+  isPaletteOpen.value = true
+}
+
+onMounted(() => {
+  window.addEventListener('open-command-palette', openCommandPaletteHandler)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('open-command-palette', openCommandPaletteHandler)
+})
+
 const closeOverlaysOnEscape = (e) => {
   if (e.key !== 'Escape') return
   isPaletteOpen.value = false

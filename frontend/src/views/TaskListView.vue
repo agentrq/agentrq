@@ -11,6 +11,16 @@
 
       <!-- Filters Segment Control (Top Right) -->
       <div class="flex items-center gap-2">
+        
+        <!-- Mobile Search Button -->
+        <button @click="openSearch" 
+                class="md:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
+                title="Search Tasks">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </button>
+
         <!-- Filters Toggle (Mobile) -->
         <button @click="showMobileFilters = !showMobileFilters" 
                 class="md:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
@@ -185,6 +195,11 @@ const limit = 10;
 const hasMore = ref(true);
 const tooltipStore = useTooltipStore();
 const showMobileFilters = ref(false);
+
+function openSearch() {
+  window.dispatchEvent(new CustomEvent('open-command-palette'));
+}
+
 
 // Setup Global Event Bus
 const { connect, disconnect, events } = useEventBus();
