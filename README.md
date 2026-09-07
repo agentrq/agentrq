@@ -246,18 +246,23 @@ Create a `.mcp.json` file in your local project directory (the leading dot is re
 
 ### Step 2 — `.claude/settings.local.json`
 
-Add a `.claude/settings.local.json` file in the same project directory to pre-approve the AgentRQ tools and avoid permission prompts on every action:
+Add a `.claude/settings.local.json` file in the same project directory to pre-approve the AgentRQ tools and avoid permission prompts on every action. The list below covers every tool the workspace exposes — drop any line you would rather be asked about:
 
 ```json
 {
   "permissions": {
     "allow": [
-      "mcp__agentrq-WORKSPACE_ID__updateTaskStatus",
-      "mcp__agentrq-WORKSPACE_ID__getWorkspace",
-      "mcp__agentrq-WORKSPACE_ID__reply",
       "mcp__agentrq-WORKSPACE_ID__createTask",
+      "mcp__agentrq-WORKSPACE_ID__updateTaskStatus",
+      "mcp__agentrq-WORKSPACE_ID__reply",
       "mcp__agentrq-WORKSPACE_ID__downloadAttachment",
-      "mcp__agentrq-WORKSPACE_ID__getTask"
+      "mcp__agentrq-WORKSPACE_ID__getWorkspace",
+      "mcp__agentrq-WORKSPACE_ID__getTask",
+      "mcp__agentrq-WORKSPACE_ID__publishEvent",
+      "mcp__agentrq-WORKSPACE_ID__loadMemory",
+      "mcp__agentrq-WORKSPACE_ID__saveMemory",
+      "mcp__agentrq-WORKSPACE_ID__deleteMemory",
+      "mcp__agentrq-WORKSPACE_ID__elicit"
     ]
   },
   "enableAllProjectMcpServers": true,
@@ -283,6 +288,11 @@ When connected, the AI agent has access to:
 - `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
 - `getTask`: Fetch a task — with no `taskId` it dequeues the next "not started" task assigned to the agent; with a `taskId` it returns that task. Pass `includeConversation: true` to also include the chat history (cursor-based pagination).
 - `downloadAttachment`: Retrieve an attachment by its ID.
+- `publishEvent`: Fire a named event so subscriber workspaces spawn their trigger tasks.
+- `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
+- `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
+- `deleteMemory`: Remove one of the workspace's notes.
+- `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
 ## 🌉 ACP Gateway (Bridge for ACP Agents)

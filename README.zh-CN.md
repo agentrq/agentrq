@@ -255,7 +255,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 }
 ```
 
-也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
+也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示；建议把下列全部工具都列进去。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
 
 连接后，Agent 常用的 Workspace MCP 工具包括：
 
@@ -265,6 +265,11 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `getWorkspace`：读取工作区名称、任务说明和统计信息。
 - `getTask`：获取任务——不传 `taskId` 时返回分配给 Agent 的下一个未开始任务，传入 `taskId` 时返回该任务；设置 `includeConversation: true` 可一并返回对话历史（游标分页）。
 - `downloadAttachment`：按 ID 下载附件。
+- `publishEvent`：触发命名事件，让订阅的 Workspace 自动创建对应的触发任务。
+- `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
+- `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。
+- `deleteMemory`：删除某一条 Workspace 记忆。
+- `elicit`：向人类提问并等待回答，支持表单模式和链接确认模式。
 
 ### Codex Gateway
 

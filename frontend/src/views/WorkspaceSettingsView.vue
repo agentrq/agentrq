@@ -835,7 +835,7 @@ import {
   getRetentionDays,
   setRetentionDays,
 } from '../composables/useCacheRetention';
-import { shouldShowSettingsActionBar } from '../composables/useWorkspaceSettings';
+import { shouldShowSettingsActionBar, buildClaudePermissionsConfig } from '../composables/useWorkspaceSettings';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
@@ -1159,21 +1159,9 @@ const mcpConfig = computed(() => ({
 
 const configJson = computed(() => JSON.stringify(mcpConfig.value, null, 2));
 
-const permissionsConfig = computed(() => ({
-  permissions: {
-    allow: [
-      `mcp__${serverName.value}__updateTaskStatus`,
-      `mcp__${serverName.value}__getWorkspace`,
-      `mcp__${serverName.value}__reply`,
-      `mcp__${serverName.value}__createTask`,
-      `mcp__${serverName.value}__downloadAttachment`,
-      `mcp__${serverName.value}__getTask`,
-      `mcp__${serverName.value}__publishEvent`,
-    ]
-  },
-  enableAllProjectMcpServers: true,
-  enabledMcpjsonServers: [serverName.value]
-}));
+// The allow list is built from the composable's tool list rather than spelled
+// out here, so it stays in step with what the MCP server actually registers.
+const permissionsConfig = computed(() => buildClaudePermissionsConfig(serverName.value));
 
 const permissionsConfigJson = computed(() => JSON.stringify(permissionsConfig.value, null, 2));
 
