@@ -1,8 +1,8 @@
 {
   "name": "agentrq-desktop",
   "private": true,
-  "version": "0.5.12",
-  "description": "AgentRQ desktop app \u2014 AI-powered task queue for autonomous agents",
+  "version": "0.5.13",
+  "description": "AgentRQ desktop app — AI-powered task queue for autonomous agents",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
