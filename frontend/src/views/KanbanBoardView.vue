@@ -70,7 +70,7 @@
               </h3>
               
               <!-- Quick actions for Pending -->
-              <div v-if="isPendingOnHuman(t)" class="mt-3" @click.stop>
+              <div v-if="isPendingOnHuman(t) && requiresAllowDeny(t)" class="mt-3" @click.stop>
                 <div class="flex flex-wrap gap-2" v-if="isAgentConnected">
                   <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
                     Allow
@@ -145,6 +145,14 @@ const workspaceId = computed(() => route.params.id);
 const isArchived = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.archivedAt);
 
 const isAgentConnected = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.agentConnected);
+
+
+function requiresAllowDeny(t) {
+  if (!t || typeof t !== 'object') return false;
+  if (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending')) return true;
+  if (t.status === 'notstarted' && t.assignee === 'human' && t.createdBy === 'agent') return true;
+  return false;
+}
 
 function isPendingOnHuman(t) {
   if (!t || typeof t !== 'object') return false;

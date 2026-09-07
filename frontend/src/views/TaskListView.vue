@@ -109,12 +109,14 @@
                   <!-- Quick actions for Pending -->
                   <div v-if="filterType === 'pending'" class="mt-3" @click.stop>
                     <div class="flex flex-wrap gap-2" v-if="isAgentConnected(task.workspaceId)">
-                      <button @click="handleAction(task, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
-                        Allow
-                      </button>
-                      <button @click="handleAction(task, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
-                        Deny
-                      </button>
+                      <template v-if="requiresAllowDeny(task)">
+                        <button @click="handleAction(task, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
+                          Allow
+                        </button>
+                        <button @click="handleAction(task, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
+                          Deny
+                        </button>
+                      </template>
                       <button @click="openTask(task)" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all shadow-sm">
                         Review
                       </button>
@@ -274,6 +276,14 @@ const getLastMessageText = (task) => {
   const last = task.messages[task.messages.length - 1];
   return last.text || 'No message content available.';
 };
+
+
+function requiresAllowDeny(t) {
+  if (!t || typeof t !== 'object') return false;
+  if (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending')) return true;
+  if (t.status === 'notstarted' && t.assignee === 'human' && t.createdBy === 'agent') return true;
+  return false;
+}
 
 const handleAction = async (task, action) => {
   try {
