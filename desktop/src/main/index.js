@@ -195,10 +195,7 @@ function sessionFor(partition) {
         // The web build caches attachments in a service worker. This build has
         // none, so the bytes are kept on disk and served from here instead.
         attachments: attachmentStoreFor(partition),
-        onRequestProxied: (method, pathname) => {
-          const taskId = taskIdFromSelfActionRequest(method, pathname)
-          if (taskId) selfActionGate.markSelf(taskId)
-        },
+        onRequestProxied: (method, pathname) => selfActionGate.markSelf(taskIdFromSelfActionRequest(method, pathname)),
       })
     )
     handledSessions.add(ses)
@@ -432,7 +429,7 @@ function handleStreamEvent(event) {
   if (!notification) return
   // This desktop instance sent the reply/respond that produced this event
   // itself — being told about your own message is noise, not news.
-  if (selfActionGate.isRecentSelfAction(event.payload.id)) return
+  if (selfActionGate.isRecentSelfAction(event.payload.id, event.type)) return
 
   // An unknown workspace means the list is stale — refresh for next time
   // rather than blocking this notification on a round trip.

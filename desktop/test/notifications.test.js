@@ -169,26 +169,42 @@ describe('taskIdFromSelfActionRequest', () => {
 
 describe('createSelfActionGate', () => {
   it('reports no recent self-action for a task never marked', () => {
-    expect(createSelfActionGate().isRecentSelfAction('t1')).toBe(false)
+    expect(createSelfActionGate().isRecentSelfAction('t1', 'reply.received')).toBe(false)
   })
 
   it('reports a recent self-action right after it is marked', () => {
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t1')).toBe(true)
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
+  })
+
+  it('recognises task.updated as the other type a reply/respond can echo as', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t1', 'task.updated')).toBe(true)
+  })
+
+  it('does not mute a type a reply/respond could never produce', () => {
+    // task.created and status.updated are never the result of sending a
+    // reply, so a real one of either must still notify even for a task this
+    // desktop instance just replied to.
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+    expect(gate.isRecentSelfAction('t1', 'task.created')).toBe(false)
+    expect(gate.isRecentSelfAction('t1', 'status.updated')).toBe(false)
   })
 
   it('does not mark a task when given no id', () => {
     const gate = createSelfActionGate()
     gate.markSelf(null)
     gate.markSelf(undefined)
-    expect(gate.isRecentSelfAction(null)).toBe(false)
+    expect(gate.isRecentSelfAction(null, 'reply.received')).toBe(false)
   })
 
   it('does not confuse one task for another', () => {
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t2')).toBe(false)
+    expect(gate.isRecentSelfAction('t2', 'reply.received')).toBe(false)
   })
 
   it('expires the mute once the window passes', () => {
@@ -197,9 +213,9 @@ describe('createSelfActionGate', () => {
 
     gate.markSelf('t1')
     clock = 999
-    expect(gate.isRecentSelfAction('t1')).toBe(true)
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
     clock = 1000
-    expect(gate.isRecentSelfAction('t1')).toBe(false)
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
   })
 
   it('lets a genuine later reply on the same task notify again', () => {
@@ -210,7 +226,24 @@ describe('createSelfActionGate', () => {
 
     gate.markSelf('t1')
     clock = 2000
-    expect(gate.isRecentSelfAction('t1')).toBe(false)
+    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
+  })
+
+  it('forgets a stale mark even when only markSelf is ever called for it again', () => {
+    // markSelf fires on every reply/respond regardless of what the stream
+    // echoes back, so isRecentSelfAction may never run for a given task (a
+    // muted workspace, say). Pruning has to happen from markSelf too, or the
+    // map would grow for the life of the process.
+    let clock = 0
+    const gate = createSelfActionGate({ windowMs: 1000, now: () => clock })
+
+    gate.markSelf('stale-task')
+    clock = 5000
+    gate.markSelf('other-task')
+
+    clock = 5001
+    expect(gate.isRecentSelfAction('stale-task', 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction('other-task', 'reply.received')).toBe(true)
   })
 
   it('has a sane default window', () => {

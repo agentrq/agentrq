@@ -122,31 +122,59 @@ export function taskIdFromSelfActionRequest(method, pathname) {
 export const SELF_ACTION_WINDOW_MS = 10000
 
 /**
+ * Event types that can be the SSE echo of a reply/respond this desktop
+ * instance just sent — a message create republishes as `reply.received`, and
+ * the task row touched by that same write republishes as `task.updated`.
+ *
+ * Deliberately not "every notifiable type": `task.created` and
+ * `status.updated` are never the result of sending a reply, so muting them
+ * just because a reply on the same task happened moments ago would drop a
+ * genuine, unrelated notification instead of the self-sent echo this gate
+ * exists to catch.
+ */
+const SELF_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
+
+/**
+ * Removes entries whose timestamp is at least `windowMs` old.
+ *
+ * Shared by the two windowed-key trackers below, which differ in what they
+ * key on and when they check but not in how a window expires.
+ */
+function pruneStale(map, windowMs, at) {
+  for (const [key, timestamp] of map) {
+    if (at - timestamp >= windowMs) map.delete(key)
+  }
+}
+
+/**
  * Tracks tasks this desktop instance just acted on itself, so the
  * notification that same action produces on the SSE stream a moment later
  * can be suppressed.
  *
  * A time window rather than a one-shot latch consumed by the next event: a
  * genuine, later agent reply on the same task must still notify, and an
- * unrelated event of a different type arriving first (say, `task.updated`)
- * must not use up the mute before the actual echo of this action arrives.
+ * unrelated event of a different type arriving first (say, `task.created`)
+ * must not use up the mute before the actual echo of this action arrives —
+ * see `SELF_ECHO_TYPES`.
+ *
+ * Pruned on every call, not just a matching one: `markSelf` fires on every
+ * reply/respond regardless of what (if anything) the stream echoes back for
+ * it, so a check keyed only to the same task id could otherwise never run for
+ * a stale entry and the map would grow for the life of the process.
  */
 export function createSelfActionGate({ windowMs = SELF_ACTION_WINDOW_MS, now = () => Date.now() } = {}) {
   const markedAt = new Map()
 
   return {
     markSelf(taskId) {
-      if (taskId) markedAt.set(taskId, now())
+      const at = now()
+      pruneStale(markedAt, windowMs, at)
+      if (taskId) markedAt.set(taskId, at)
     },
-    /** @returns {boolean} true when this task was actioned by this desktop instance moments ago. */
-    isRecentSelfAction(taskId) {
-      const at = markedAt.get(taskId)
-      if (at === undefined) return false
-      if (now() - at >= windowMs) {
-        markedAt.delete(taskId)
-        return false
-      }
-      return true
+    /** @returns {boolean} true when this event is likely this desktop's own reply/respond echoing back. */
+    isRecentSelfAction(taskId, eventType) {
+      pruneStale(markedAt, windowMs, now())
+      return SELF_ECHO_TYPES.has(eventType) && markedAt.has(taskId)
     },
   }
 }
@@ -177,10 +205,7 @@ export function createNotificationGate({ windowMs = DEDUPE_WINDOW_MS, now = () =
     /** @returns {boolean} true when this notification should be shown. */
     allow(tag) {
       const at = now()
-
-      for (const [key, timestamp] of seen) {
-        if (at - timestamp >= windowMs) seen.delete(key)
-      }
+      pruneStale(seen, windowMs, at)
 
       if (seen.has(tag)) return false
       seen.set(tag, at)
