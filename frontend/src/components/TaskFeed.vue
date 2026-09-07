@@ -59,7 +59,7 @@
               
               <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2">
-                  <div class="w-1.5 h-1.5 rounded-full" :class="getTaskDotStyle(t)"></div>
+                  <div class="w-1.5 h-1.5 rounded-full" :class="taskDotClass(t)"></div>
                   <span class="text-[10px] font-medium text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded uppercase tracking-tight group-hover:bg-gray-100 dark:group-hover:bg-zinc-700 group-hover:text-black dark:group-hover:text-white transition-colors">{{ t.assignee === 'agent' ? 'Agent' : 'Human' }}</span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -136,6 +136,7 @@ import { useRouter } from 'vue-router';
 import cronParser from 'cron-parser';
 import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, moveTask, fetchTasks, fetchTaskCounts } from '../api';
 import { useCron } from '../composables/useCron';
+import { taskDotClass } from '../composables/useTaskStatusStyle';
 import DeleteModal from './DeleteModal.vue';
 import MoveTaskModal from './MoveTaskModal.vue';
 import ContextMenu from './ContextMenu.vue';
@@ -546,35 +547,6 @@ const displayGroups = computed(() => {
 
   return groups;
 });
-
-function getTaskDotStyle(t) {
-  const status = typeof t === 'string' ? t : t.status;
-  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
-    (t.status === 'notstarted' && t.assignee === 'human') ||
-    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-  );
-
-  if (isPendingOnMe) {
-    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
-  }
-
-  switch (status) {
-    case 'ongoing':
-      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
-    case 'notstarted':
-      return 'bg-gray-400 dark:bg-zinc-500';
-    case 'completed':
-      return 'bg-green-500';
-    case 'rejected':
-      return 'bg-red-500';
-    case 'blocked':
-      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
-    case 'cron':
-      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
-    default:
-      return 'bg-gray-300 dark:bg-zinc-600';
-  }
-}
 
 function startCreate() {
   router.push(`/workspaces/${props.workspaceId}/tasks/new`);

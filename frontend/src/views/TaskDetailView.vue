@@ -47,7 +47,7 @@
                       @mouseenter="tooltipStore.show($event, 'Change Task Status', 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       class="px-2 md:px-4 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg border border-transparent hover:border-black/10 transition-all flex items-center gap-1.5 shadow-sm uppercase tracking-tighter h-7">
-                <div class="w-1.5 h-1.5 rounded-full" :class="getTaskDotStyle(task.status)"></div>
+                <div class="w-1.5 h-1.5 rounded-full" :class="taskDotClass(task.status)"></div>
                 <span class="hidden md:inline">{{ task.status }}</span>
                 <svg class="w-2.5 h-2.5 transition-transform" :class="isStatusMenuOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
               </button>
@@ -58,7 +58,7 @@
                         @click="updateStatus(s); isStatusMenuOpen = false"
                         class="w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:py-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
                         :title="s">
-                  <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(s)"></div>
+                  <div class="w-2 h-2 rounded-full shrink-0" :class="taskDotClass(s)"></div>
                   <span class="hidden md:inline text-gray-900 dark:text-zinc-100">{{ s }}</span>
                 </button>
               </div>
@@ -770,6 +770,7 @@ import { belongsInThread } from '../composables/useTrajectory';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
+import { taskDotClass } from '../composables/useTaskStatusStyle';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import {
   SHORTCUTS,
@@ -1353,36 +1354,6 @@ function adjustTextareaHeight() {
   el.style.height = '46px';
   const newHeight = Math.min(el.scrollHeight, 150);
   el.style.height = newHeight + 'px';
-}
-
-function getTaskDotStyle(t) {
-  const status = typeof t === 'string' ? t : t.status;
-  // If it's the task object, check if it's "Pending on Me"
-  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
-    (t.status === 'notstarted' && t.assignee === 'human') ||
-    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-  );
-
-  if (isPendingOnMe) {
-    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
-  }
-
-  switch (status) {
-    case 'ongoing':
-      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
-    case 'notstarted':
-      return 'bg-gray-400 dark:bg-zinc-500';
-    case 'completed':
-      return 'bg-green-500';
-    case 'rejected':
-      return 'bg-red-500';
-    case 'blocked':
-      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
-    case 'cron':
-      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
-    default:
-      return 'bg-gray-300 dark:bg-zinc-600';
-  }
 }
 
 function formatDateTime(dateStr) {

@@ -68,7 +68,7 @@
                   
                   <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2">
-                      <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(task)"></div>
+                      <div class="w-2 h-2 rounded-full shrink-0" :class="taskDotClass(task)"></div>
                       <span class="text-[10px] font-bold text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded uppercase tracking-tight group-hover:bg-gray-100 dark:group-hover:bg-zinc-700 group-hover:text-black dark:group-hover:text-white transition-colors">
                         {{ getWorkspaceName(task.workspaceId) }}
                       </span>
@@ -160,6 +160,7 @@ import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useCron } from '../composables/useCron';
 import { buildTaskGroups, pendingOnHuman } from '../composables/useTaskGroups';
+import { taskDotClass } from '../composables/useTaskStatusStyle';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useViewport } from '../composables/useViewport';
@@ -448,36 +449,6 @@ const headerIconPath = computed(() => {
 const headerIconClass = computed(() => {
   return 'text-gray-700 dark:text-zinc-400';
 });
-
-function getTaskDotStyle(t) {
-  const status = typeof t === 'string' ? t : t.status;
-  // If it's the task object, check if it's "Pending on Me"
-  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
-    (t.status === 'notstarted' && t.assignee === 'human') ||
-    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-  );
-
-  if (isPendingOnMe) {
-    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
-  }
-
-  switch (status) {
-    case 'ongoing':
-      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
-    case 'notstarted':
-      return 'bg-gray-400 dark:bg-zinc-500';
-    case 'completed':
-      return 'bg-green-500';
-    case 'rejected':
-      return 'bg-red-500';
-    case 'blocked':
-      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
-    case 'cron':
-      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
-    default:
-      return 'bg-gray-300 dark:bg-zinc-600';
-  }
-}
 
 const getTaskBgStyle = (t) => {
   const isSelected = String(selectedTaskId.value) === String(t.id);

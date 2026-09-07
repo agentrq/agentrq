@@ -100,7 +100,7 @@
                class="flex items-center justify-between p-3 cursor-pointer border border-gray-100 dark:border-zinc-800/50 bg-gray-50/30 dark:bg-zinc-900/30 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-sm group transition-all">
             
             <div class="flex items-center gap-3 min-w-0">
-              <div class="w-2 h-2 rounded-full shrink-0" :class="getTaskDotStyle(instance)"></div>
+              <div class="w-2 h-2 rounded-full shrink-0" :class="taskDotClass(instance)"></div>
               <span class="text-[11px] font-bold text-gray-700 dark:text-zinc-200 truncate uppercase tracking-tight group-hover:text-black dark:group-hover:text-white">{{ formatDateShort(instance.createdAt) }}</span>
             </div>
             
@@ -130,6 +130,7 @@ import cronParser from 'cron-parser';
 import { renderMarkdown } from '../utils/markdown';
 import { fetchTasks, getWorkspace } from '../api';
 import { useCron } from '../composables/useCron';
+import { taskDotClass } from '../composables/useTaskStatusStyle';
 
 const { formatCron, getNextRunLabel, getNextRunDateTime } = useCron();
 
@@ -220,36 +221,6 @@ function getTaskBgStyle(status) {
   if (status === 'blocked') return 'border-red-200 dark:border-red-500/30';
   if (status === 'completed') return 'border-gray-900 dark:border-white';
   return 'border-gray-200 dark:border-zinc-800';
-}
-
-function getTaskDotStyle(t) {
-  const status = typeof t === 'string' ? t : t.status;
-  // If it's the task object, check if it's "Pending on Me"
-  const isPendingOnMe = typeof t === 'object' && t.status !== 'completed' && t.status !== 'rejected' && (
-    (t.status === 'notstarted' && t.assignee === 'human') ||
-    (t.messages && t.messages.some(m => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'))
-  );
-
-  if (isPendingOnMe) {
-    return 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]';
-  }
-
-  switch (status) {
-    case 'ongoing':
-      return 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse';
-    case 'notstarted':
-      return 'bg-gray-400 dark:bg-zinc-500';
-    case 'completed':
-      return 'bg-green-500';
-    case 'rejected':
-      return 'bg-red-500';
-    case 'blocked':
-      return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
-    case 'cron':
-      return 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.4)]';
-    default:
-      return 'bg-gray-300 dark:bg-zinc-600';
-  }
 }
 
 function getTaskBadgeStyle(status) {

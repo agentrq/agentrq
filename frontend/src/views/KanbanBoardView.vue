@@ -5,9 +5,14 @@
     </div>
 
     <div v-else class="flex-1 flex gap-2 md:gap-3 p-3 md:p-4 min-h-0">
+      <!-- Columns are frameless: the header and the cards are enough to read one
+           as a column, and four nested borders inside the page's own container
+           read as a table. While a card is in flight the column still has to
+           say which one would receive it, so the drop target is a tinted
+           background rather than a border that only exists mid-drag. -->
       <div v-for="col in columns" :key="col.id"
-           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl border bg-gray-50/50 dark:bg-zinc-900/40 transition-colors"
-           :class="dragOverColId === col.id ? 'border-gray-900/40 dark:border-white/40' : 'border-gray-100 dark:border-zinc-800'"
+           class="flex-1 min-w-0 flex flex-col min-h-0 rounded-xl transition-colors"
+           :class="dragOverColId === col.id ? 'bg-gray-100/80 dark:bg-zinc-800/40' : 'bg-transparent'"
            @dragover="onColumnDragOver($event, col.id)"
            @drop="onDrop($event, col.id)">
 
@@ -24,6 +29,11 @@
             <!-- Insertion indicator -->
             <div v-if="dragOverColId === col.id && dragOverBeforeId === t.id" class="h-0.5 rounded-full bg-gray-900 dark:bg-white mx-1"></div>
 
+            <!-- Cards carry the Active feed's layout: status dot, who it is on,
+                 when it arrived, then up to two lines of title. A column is
+                 narrower than that feed, so the title wraps instead of being
+                 truncated — a one-line card here showed little more than the
+                 first few words of most task titles. -->
             <div :draggable="!isArchived"
                  @dragstart="onDragStart($event, t, col.id)"
                  @dragend="onDragEnd"
@@ -31,18 +41,45 @@
                  @click="openTask(t)"
                  @contextmenu.prevent.stop="openContextMenu($event, t)"
                  :class="[
-                   'group relative flex items-center gap-2 px-2.5 py-2 rounded-lg border bg-white dark:bg-zinc-900 shadow-sm transition-all',
-                   !isArchived ? 'cursor-grab active:cursor-grabbing hover:border-gray-200 dark:hover:border-zinc-700' : 'cursor-pointer',
-                   draggingId === t.id ? 'opacity-40' : 'border-gray-100 dark:border-zinc-800'
+                   'group relative p-3 pl-4 rounded-xl bg-gray-100 dark:bg-zinc-800 transition-all',
+                   !isArchived ? 'cursor-grab active:cursor-grabbing hover:bg-gray-200 dark:hover:bg-zinc-700' : 'cursor-pointer',
+                   draggingId === t.id ? 'opacity-40' : ''
                  ]">
-              <!-- Assignee icon — same bot/person icons used in the chat view -->
-              <svg v-if="t.assignee === 'agent'" title="Agent" class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
-              <svg v-else title="Human" class="w-3.5 h-3.5 shrink-0 text-gray-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              <!-- The card's only edge: no border, so the shape comes from the
+                   fill against the canvas and the one bar that carries meaning.
+                   Inset and rounded, the same bar the Active feed draws down a
+                   selected task — there it marks the selection, here it marks
+                   the status, and it is on every card rather than one. -->
+              <div class="absolute left-0 top-3 bottom-3 w-1 rounded-full" :class="taskAccentClass(t)"></div>
 
-              <span class="flex-1 min-w-0 text-[12px] md:text-[13px] leading-snug truncate font-medium"
-                    :class="['completed','rejected'].includes(t.status) ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white'">
+              <div class="flex items-center justify-between gap-2 mb-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-gray-500 dark:text-zinc-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors shrink-0" :title="t.assignee === 'agent' ? 'Agent' : 'Human'">
+                    <svg v-if="t.assignee === 'agent'" class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+                    <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                  </span>
+                </div>
+                <span class="text-[10px] text-gray-500 dark:text-zinc-400 font-medium uppercase tracking-wider tabular-nums shrink-0">
+                  {{ formatTime(t.createdAt) }}
+                </span>
+              </div>
+
+              <h3 class="text-[12px] md:text-[13px] leading-snug line-clamp-2 font-medium transition-colors"
+                  :class="['completed','rejected'].includes(t.status) ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white'">
                 {{ t.title }}
-              </span>
+              </h3>
+              
+              <!-- Quick actions for Pending -->
+              <div v-if="isPendingOnHuman(t)" class="mt-3" @click.stop>
+                <div class="flex flex-wrap gap-2" v-if="isAgentConnected">
+                  <button @click="handleAction(t, 'allow')" class="px-2.5 py-1.5 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-black dark:hover:bg-gray-100 transition-all shadow-sm">
+                    Allow
+                  </button>
+                  <button @click="handleAction(t, 'deny')" class="px-2.5 py-1.5 bg-white dark:bg-zinc-800 text-red-600 dark:text-red-400 border border-gray-100 dark:border-zinc-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/10 transition-all shadow-sm">
+                    Deny
+                  </button>
+                </div>
+              </div>
             </div>
           </template>
 
@@ -57,7 +94,7 @@
 
           <!-- Load more -->
           <button v-if="hasMore[col.id]" @click.stop="loadColumn(col.id, true)"
-                  class="w-full py-1.5 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 text-[10px] font-semibold hover:border-gray-300 dark:hover:border-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-all">
+                  class="w-full py-1.5 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 text-gray-500 dark:text-zinc-400 text-[10px] font-semibold hover:border-gray-300 dark:hover:border-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800/50 transition-all">
             Load More
           </button>
         </div>
@@ -88,7 +125,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask } from '../api';
+import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssignee, sendPermissionVerdict } from '../api';
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -97,6 +134,7 @@ import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
 import { cacheTasks, sharedCache } from '../composables/useCachedTasks';
 import { readCachedTasks, shouldPaintCache } from '../composables/useCachedReads';
+import { taskAccentClass } from '../composables/useTaskStatusStyle';
 
 const route = useRoute();
 const router = useRouter();
@@ -105,6 +143,52 @@ const workspaceStore = useWorkspaceStore();
 
 const workspaceId = computed(() => route.params.id);
 const isArchived = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.archivedAt);
+
+const isAgentConnected = computed(() => !!workspaceStore.workspaces.find(w => w.id == workspaceId.value)?.agentConnected);
+
+function isPendingOnHuman(t) {
+  if (!t || typeof t !== 'object') return false;
+  if (t.status === 'completed' || t.status === 'rejected') return false;
+  if (t.status === 'notstarted' && t.assignee === 'human') return true;
+  return !!(
+    t.messages &&
+    t.messages.some(
+      (m) => m.metadata?.type === 'permission_request' && m.metadata?.status === 'pending'
+    )
+  );
+}
+
+const handleAction = async (task, action) => {
+  try {
+    if (task.status === 'notstarted' && task.assignee === 'human') {
+      if (action === 'allow') {
+        await updateTaskAssignee(task.workspaceId, task.id, 'agent');
+        await updateTaskStatus(task.workspaceId, task.id, 'ongoing');
+        notifySuccess('Task started and assigned to agent');
+      } else {
+        await updateTaskStatus(task.workspaceId, task.id, 'rejected');
+        notifySuccess('Task rejected');
+      }
+      return;
+    }
+
+    const pendingMsg = [...(task.messages || [])].reverse().find(m => 
+      m.metadata?.type === 'permission_request' && 
+      m.metadata?.status !== 'allow' && 
+      m.metadata?.status !== 'deny'
+    );
+    
+    const requestId = pendingMsg?.metadata?.request_id || pendingMsg?.metadata?.requestId;
+    if (!requestId) throw new Error('No pending permission request found');
+    
+    const behavior = action === 'allow' ? 'allow' : 'deny';
+    await sendPermissionVerdict(task.workspaceId, task.id, requestId, behavior);
+    notifySuccess(`Permission ${action === 'allow' ? 'allowed' : 'denied'}`);
+  } catch (err) {
+    notifyError(`Failed to ${action} task: ` + err.message);
+  }
+};
+
 
 // Each column buckets one or more task statuses. Dropping a card into a column
 // from a different column sets its status to the column's `dropStatus`; dropping
@@ -126,6 +210,27 @@ const loading = ref(true);
 const tasks = ref([]);
 const offsets = ref(Object.fromEntries(columns.map(c => [c.id, 0])));
 const hasMore = ref(Object.fromEntries(columns.map(c => [c.id, false])));
+
+function formatTime(dateStr) {
+  if (!dateStr) return 'Just now';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Just now';
+  
+  const diff = Date.now() - d.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const months = Math.floor(days / 30);
+  const years = Math.floor(days / 365);
+  
+  if (years > 0) return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+  if (months > 0) return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+  if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  if (hours > 0) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  if (minutes > 0) return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  return 'Just now';
+}
 
 function getOrder(t) {
   if (t.sortOrder) return t.sortOrder;
