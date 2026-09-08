@@ -1684,7 +1684,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request")
 				go func() {
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-					_ = ps.SendPermissionVerdict(context.Background(), 0, p.RequestID, "allow")
+					_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
 				}()
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 				if ok {
@@ -1699,7 +1699,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("auto-allowing permission request (task level)")
 					go func() {
 						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-						_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
+						_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
 					}()
 					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 					ps.persistToolCall(ctx, taskID, p, "auto_allowed")
@@ -1851,13 +1851,55 @@ func (ps *WorkspaceServer) cleanupRequest(requestID string) {
 	ps.toolCallIDsMu.Unlock()
 }
 
+// verdictOrigin says where a permission verdict came from, which is what
+// decides whether answering the agent counts as a human approval.
+//
+// It exists because one function delivers every verdict, but only some of them
+// represent a person stopping to decide something — and the approval counters
+// on the analytics screen are only meaningful if "manual" means exactly that.
+type verdictOrigin uint8
+
+const (
+	// A person allowed or denied this, just now: through the web UI, a Slack
+	// button, or by stopping a task and refusing what it was waiting on.
+	verdictFromHuman verdictOrigin = iota
+	// A rule or a task setting allowed it with nobody asked. The auto approval
+	// is reported by the caller at the point the decision is made rather than
+	// here: that call site always runs, whereas delivery can bail out early
+	// when the request has already been cleaned up, and an approval that
+	// happened must not go uncounted because the delivery missed.
+	//
+	// This suppresses the manual count only, and does not make the automatic
+	// count exactly-once. An auto-allowed request never posts a message to the
+	// task, so permissionResponses has no entry for it and
+	// rebindPermissionRequest does not recognise a re-send: an agent that
+	// reconnects and asks again re-runs the auto-allow branch, reporting a
+	// second automatic approval and writing a second tool_call row for the one
+	// call. That is a separate gap from the one this type fixes, and it is in
+	// the automatic counter rather than the manual one.
+	verdictAutomatic
+	// A verdict already given, being re-delivered because the agent reconnected
+	// and asked again. It was counted when the human decided; counting it again
+	// would report one decision as two.
+	verdictReplayed
+)
+
 // SendPermissionVerdict hands a human decision to the agent that asked for it.
 //
 // The request is only forgotten once the agent has actually been told. A
 // verdict that could not be delivered — because the agent's connection went
 // away between asking and being answered — is held for its next connection
 // rather than discarded, which used to lose the decision silently.
+//
+// Every caller outside this file is a human-driven one — the HTTP route, the
+// Slack button, a Stop that refuses outstanding approvals — so this reports a
+// manual decision. The paths that answer on nobody's behalf call sendVerdict
+// directly and say so.
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int64, requestID string, behavior string) error {
+	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromHuman)
+}
+
+func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, requestID string, behavior string, origin verdictOrigin) error {
 	ps.permissionRequestsMu.RLock()
 	sessID, ok := ps.permissionRequests[requestID]
 	ps.permissionRequestsMu.RUnlock()
@@ -1941,13 +1983,20 @@ func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int
 		}
 	}
 
-	// No inbound MCP request is available here (this is a human-triggered verdict, not
-	// itself a request handler), so client identity is unknown for these two events.
-	switch effectiveBehavior {
-	case "allow":
-		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_allow", clientIdentity{})
-	case "deny":
-		ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny", clientIdentity{})
+	// Only a decision a person actually made is reported here, and only once.
+	// An automatic allow is counted by the caller at the point it decides, and a
+	// re-delivery was counted when the human first answered — reporting either
+	// of them again is what inflated the manual approval count.
+	//
+	// No inbound MCP request is available here (this is a verdict, not itself a
+	// request handler), so client identity is unknown for these two events.
+	if origin == verdictFromHuman {
+		switch effectiveBehavior {
+		case "allow":
+			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_allow", clientIdentity{})
+		case "deny":
+			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_manual_deny", clientIdentity{})
+		}
 	}
 
 	if ps.updateToolCallStatus != nil {
@@ -2088,7 +2137,7 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 		ps.requestTaskIDsMu.RUnlock()
 		zlog.Info().Str("request_id", p.RequestID).Str("behavior", behavior).
 			Msg("delivering the verdict the agent missed while it was away")
-		_ = ps.SendPermissionVerdict(ctx, taskID, p.RequestID, behavior)
+		_ = ps.sendVerdict(ctx, taskID, p.RequestID, behavior, verdictReplayed)
 	}
 
 	return true
@@ -2163,7 +2212,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				_ = ps.SendPermissionVerdict(context.Background(), 0, p.RequestID, "allow")
+				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
 			}()
 			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
 			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
@@ -2181,7 +2230,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
 				go func() {
 					time.Sleep(100 * time.Millisecond)
-					_ = ps.SendPermissionVerdict(context.Background(), taskID, p.RequestID, "allow")
+					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
 				}()
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
 				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
