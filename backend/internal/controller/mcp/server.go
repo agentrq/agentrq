@@ -198,7 +198,11 @@ type PublishEventFAQ struct {
 // UpdateTaskStatusParams is the input to the update_task_status tool.
 type UpdateTaskStatusParams struct {
 	TaskID string `json:"taskId" jsonschema:"The ID of the task to update"`
-	Status string `json:"status" jsonschema:"New status: 'ongoing', 'completed', 'blocked', 'rejected', or 'notstarted'"`
+	// Prose rather than an enum because `cron` needs a caveat: it is what the
+	// server sets on a task that has a schedule, not a state an agent moves a
+	// task into. The other five are the agent's to use, and `blocked` is how it
+	// asks a human for something.
+	Status string `json:"status" jsonschema:"New status: 'ongoing', 'blocked' (waiting on the human), 'completed', 'rejected', or 'notstarted'. Scheduled tasks are set to 'cron' by the server; you do not need to set it."`
 }
 
 // ReplyParams is the input to the reply tool.
@@ -450,7 +454,7 @@ func NewWorkspaceServer(
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "updateTaskStatus",
-		Description: "Update the status of a task. Useful for moving tasks to ongoing or completed.",
+		Description: "Update the status of a task: 'ongoing' when you start, 'completed' when you finish, or 'blocked' when you need something from the human.",
 	}, ps.handleUpdateTaskStatus)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{

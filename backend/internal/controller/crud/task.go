@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -854,12 +855,38 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	return &entity.UpdateScheduledTaskResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
+// ValidTaskStatuses is every status a task may be moved to.
+//
+// Exported because it is also what the MCP tool schemas advertise to agents,
+// and those are struct tags — which the compiler will not let us build from a
+// slice, so they have to repeat the list by hand. This is the list they are
+// tested against (see TestToolSchemaEnumsMatchTheValidators), so the copy in a
+// tag cannot drift from what the server actually accepts. It has: an agent was
+// once told it could use `done` and `failed`, neither of which validates, and
+// never told about `blocked`, which is how it asks a human for help.
+var ValidTaskStatuses = []string{
+	"notstarted",
+	"ongoing",
+	"blocked",
+	"completed",
+	"rejected",
+	"cron",
+}
+
+// ValidTaskResponseActions is every action RespondToTask accepts. Kept here
+// beside the statuses, and tested against the tool schema, for the same reason.
+//
+// Note `reject` rather than `deny`: the schema advertised `deny` for a while,
+// which the switch in RespondToTask has never handled.
+var ValidTaskResponseActions = []string{
+	"allow",
+	"allow_all",
+	"reject",
+	"text",
+}
+
 func isValidTaskStatus(status string) bool {
-	switch status {
-	case "notstarted", "ongoing", "completed", "rejected", "cron", "blocked":
-		return true
-	}
-	return false
+	return slices.Contains(ValidTaskStatuses, status)
 }
 
 func validateCronForContext(ctx context.Context, cronSchedule string) error {

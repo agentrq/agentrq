@@ -175,8 +175,9 @@ type GetTaskParams struct {
 type RespondToTaskParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	TaskID      string `json:"taskId"`
-	Action      string `json:"action" jsonschema:"enum: allow, deny"`
-	Text        string `json:"text,omitempty"`
+	// Must match crud.ValidTaskResponseActions. `reject`, not `deny`.
+	Action string `json:"action" jsonschema:"enum: allow, allow_all, reject, text"`
+	Text   string `json:"text,omitempty"`
 }
 
 type ReplyToTaskParams struct {
@@ -188,7 +189,9 @@ type ReplyToTaskParams struct {
 type UpdateTaskStatusParams struct {
 	WorkspaceID string `json:"workspaceId"`
 	TaskID      string `json:"taskId"`
-	Status      string `json:"status" jsonschema:"enum: notstarted, ongoing, waiting, completed, done, cron, failed"`
+	// Must match crud.ValidTaskStatuses — a struct tag cannot be built from that
+	// slice, so a test compares them instead.
+	Status string `json:"status" jsonschema:"enum: notstarted, ongoing, blocked, completed, rejected, cron"`
 }
 
 type UpdateTaskOrderParams struct {
@@ -244,7 +247,7 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listAllTasks", Description: "List all tasks across all workspaces"}, s.handleListAllTasks)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "createTask", Description: "Create a new task in a workspace"}, s.handleCreateTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getTask", Description: "Get a specific task by ID"}, s.handleGetTask)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "respondToTask", Description: "Submit an allow/deny response to a task"}, s.handleRespondToTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "respondToTask", Description: "Answer a permission request a task is waiting on: allow, allow_all, reject, or text to reply without deciding"}, s.handleRespondToTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "replyToTask", Description: "Post a message to a task thread"}, s.handleReplyToTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskStatus", Description: "Update a task's status"}, s.handleUpdateTaskStatus)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskOrder", Description: "Update a task's sort order"}, s.handleUpdateTaskOrder)
