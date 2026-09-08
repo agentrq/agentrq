@@ -271,30 +271,27 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `deleteMemory`：删除某一条 Workspace 记忆。
 - `elicit`：向人类提问并等待回答，支持表单模式和链接确认模式。
 
-### Codex Gateway
+### ACP Gateway（Antigravity / Codex）
 
-Codex 可通过 `@agentrq/codex-gateway` 连接 AgentRQ：
-
-```bash
-npm install -g @agentrq/codex-gateway@latest
-codex-gateway
-```
-
-它通常需要同时配置：
-
-- `.mcp.json`：供 `codex-gateway` 接收 AgentRQ 任务。
-- `.codex/config.toml`：供 Codex agent 在执行任务时直接调用 AgentRQ MCP tools。
-
-详细配置见英文 [README.md](README.md) 的 `Codex Gateway` 部分。
-
-### ACP / Gemini
-
-ACP Agent 可通过 `@agentrq/acp-gateway` 接入，例如 Gemini CLI：
+ACP Agent 通过 `@agentrq/acp-gateway` 接入，无需安装：`npx` 拉取 Gateway，
+Gateway 再拉取你指定的 Agent。先登录一次，然后在 `.mcp.json` 所在目录启动：
 
 ```bash
-npm install -g @agentrq/acp-gateway
-acp-gateway -- gemini --acp
+# Antigravity
+npx @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
+npx @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
 ```
+
+```bash
+# Codex
+npx @agentrq/acp-gateway@latest --login --agent codex-acp
+npx @agentrq/acp-gateway@latest --agent codex-acp
+```
+
+Antigravity 以二进制形式发布且 registry 未提供校验和，因此每条命令都需要
+`--allow-unverified-agent`；Codex 以 npm 包发布，不需要该参数。把 `--login`
+换成 `--logout` 即可登出。旧版本的 `@agentrq/codex-gateway` 和
+`.codex/config.toml` 均已不再需要。
 
 详细说明见英文 [README.md](README.md) 的 `ACP Gateway` 部分。
 
@@ -321,8 +318,7 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 
 - Claude Code plugin marketplace extension
 - Gemini CLI extension
-- ACP Gateway
-- Codex Gateway
+- ACP Gateway（Antigravity / Codex）
 - DeepSeek Harness plugin
 
 Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent）：

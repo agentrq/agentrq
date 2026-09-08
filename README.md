@@ -297,23 +297,32 @@ When connected, the AI agent has access to:
 
 ## 🌉 ACP Gateway (Bridge for ACP Agents)
 
-While Claude Code has native support for `claude/notifications`, other agents like **Gemini CLI** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` bridges the [Agent Client Protocol (ACP)](https://agentclientprotocol.com) with MCP to enable this.
+While Claude Code has native support for `claude/notifications`, other agents like **Antigravity** and **Codex** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` bridges the [Agent Client Protocol (ACP)](https://agentclientprotocol.com) with MCP to enable this.
 
-### Installation
-
-```bash
-npm install -g @agentrq/acp-gateway
-```
+There is nothing to install — `npx` fetches the gateway, and the gateway fetches
+the agent you name.
 
 ### Usage
 
 1. Ensure you have a [`.mcp.json`](#step-1--mcpjson) in your project root.
-2. Run the gateway followed by your agent's ACP command:
+2. Log in to your agent once, then start the gateway from the same directory as
+   `.mcp.json`:
 
 ```bash
-# Using Gemini CLI
-acp-gateway -- gemini --acp
+# Using Antigravity
+npx @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
+npx @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
 ```
+
+```bash
+# Using Codex
+npx @agentrq/acp-gateway@latest --login --agent codex-acp
+npx @agentrq/acp-gateway@latest --agent codex-acp
+```
+
+Antigravity is published as a binary the registry carries no checksum for, so it
+needs `--allow-unverified-agent` on every command; Codex ships as an npm package
+and does not. Sign out again with `--logout` in place of `--login`.
 
 The gateway will automatically:
 - Connect to your AgentRQ workspace via the URL in `.mcp.json`.
