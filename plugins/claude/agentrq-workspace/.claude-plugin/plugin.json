@@ -1,0 +1,24 @@
+{
+  "name": "agentrq-workspace",
+  "description": "Workspace agent that executes tasks assigned by humans or supervisors, communicates progress via reply, and manages task lifecycle within a specific AgentRQ workspace",
+  "version": "1.0.2",
+  "userConfig": {
+    "agentrq_workspace_mcp_url": {
+      "type": "string",
+      "title": "Workspace MCP URL",
+      "description": "Your unique AgentRQ Workspace MCP URL (e.g., https://<WORKSPACEID>.mcp.agentrq.com/?token=...)",
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "agentrq-workspace": {
+      "type": "http",
+      "url": "${user_config.agentrq_workspace_mcp_url}"
+    }
+  },
+  "author": {
+    "name": "Mustafa Turan",
+    "email": "dev@agentrq.com",
+    "url": "https://github.com/mustafaturan"
+  }
+}

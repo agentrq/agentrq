@@ -1,0 +1,124 @@
+name: Claude Code Plugins
+
+# The two Claude Code plugins are installed straight from this repository — a
+# marketplace is a git URL, not a published package — so there is nothing to
+# build and nothing to publish. What can break is the manifests parsing, a
+# source path pointing at a directory that is not there, and the documented
+# tool lists drifting from the servers. All three are checked here.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.claude-plugin/**'
+      - 'plugins/claude/**'
+      - 'backend/internal/handler/coremcp/**'
+      - 'backend/internal/controller/mcp/**'
+      - '.github/workflows/plugin-claude.yml'
+  pull_request:
+    paths:
+      - '.claude-plugin/**'
+      - 'plugins/claude/**'
+      - 'backend/internal/handler/coremcp/**'
+      - 'backend/internal/controller/mcp/**'
+      - '.github/workflows/plugin-claude.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  manifests:
+    name: Manifests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Every manifest must parse, every plugin the marketplace lists must
+      # exist at the path it names and carry its own plugin.json, and the two
+      # version fields in each plugin must agree — an installed plugin whose
+      # package.json and plugin.json disagree gives two different answers to
+      # "which version is this".
+      - name: Validate marketplace and plugin manifests
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          root = pathlib.Path('.')
+          problems = []
+
+          market = json.loads((root / '.claude-plugin' / 'marketplace.json').read_text())
+          listed = market.get('plugins', [])
+          if not listed:
+              problems.append('marketplace.json lists no plugins')
+
+          names = [p.get('name') for p in listed]
+          if len(names) != len(set(names)):
+              problems.append(f'duplicate plugin names in marketplace.json: {names}')
+
+          for entry in listed:
+              name, source = entry.get('name'), entry.get('source', '')
+              if not name or not source:
+                  problems.append(f'marketplace entry missing name or source: {entry}')
+                  continue
+
+              d = (root / source).resolve()
+              if not d.is_dir():
+                  problems.append(f'{name}: source {source} is not a directory')
+                  continue
+
+              manifest = d / '.claude-plugin' / 'plugin.json'
+              if not manifest.is_file():
+                  problems.append(f'{name}: no .claude-plugin/plugin.json under {source}')
+                  continue
+
+              plugin = json.loads(manifest.read_text())
+              if plugin.get('name') != name:
+                  problems.append(
+                      f'{name}: plugin.json calls itself {plugin.get("name")!r}; '
+                      'the marketplace and the plugin must agree'
+                  )
+
+              pkg = d / 'package.json'
+              if pkg.is_file():
+                  pv = json.loads(pkg.read_text()).get('version')
+                  mv = plugin.get('version')
+                  if pv != mv:
+                      problems.append(f'{name}: package.json is {pv}, plugin.json is {mv}')
+
+              # A plugin with no skill has nothing to tell the agent.
+              if not list(d.glob('skills/*/SKILL.md')):
+                  problems.append(f'{name}: no skills/*/SKILL.md')
+
+          for p in problems:
+              print(f'::error::{p}')
+          if problems:
+              sys.exit(1)
+          print(f'{len(listed)} plugin(s) validated: {", ".join(names)}')
+          PY
+
+  docs:
+    name: Documented tools match the servers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      # Walks up to the repository root to find the plugin docs, so it reads the
+      # files this commit actually ships rather than a copy.
+      - name: Check plugin docs against the MCP servers
+        working-directory: backend
+        run: go test ./internal/handler/coremcp/ -run 'TestPluginDocs' -v

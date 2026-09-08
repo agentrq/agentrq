@@ -1,0 +1,16 @@
+{
+  "name": "agentrq-workspace",
+  "version": "1.0.2",
+  "description": "AgentRQ Workspace Plugin for Claude Code",
+  "keywords": [
+    "claude-plugin",
+    "agentrq",
+    "mcp",
+    "task manager",
+    "tasks",
+    "human-in-the-loop",
+    "orchestration"
+  ],
+  "author": "Mustafa Turan",
+  "license": "Apache-2.0"
+}

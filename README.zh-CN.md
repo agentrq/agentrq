@@ -325,11 +325,12 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 - Codex Gateway
 - DeepSeek Harness plugin
 
-Claude Code 扩展安装：
+Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent）：
 
 ```bash
-/plugin marketplace add https://github.com/agentrq/agentrq-claude-extension
+/plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
+/plugin install agentrq-workspace@agentrq
 ```
 
 Gemini CLI 扩展安装：

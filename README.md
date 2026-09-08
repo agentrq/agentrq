@@ -410,13 +410,19 @@ When you first run Claude with this server, it will provide a link to authentica
 AgentRQ provides official extensions for major AI agent CLI tools to simplify setup and integration with its supervisor MCP. The sub agents MCPs should use their own workspace specific MCP server URLs.
 
 ### 🍊 Claude Code
-The AgentRQ plugin for Claude Code is distributed via our official marketplace. It provides built-in skills and pre-configured MCP access.
+Two plugins for Claude Code are published from this repository's own marketplace, each with a skill and pre-configured MCP access:
+
+- [`agentrq`](plugins/claude/agentrq/README.md) — the **supervisor**, talking to the account-level MCP server so one agent can orchestrate work across every workspace you own.
+- [`agentrq-workspace`](plugins/claude/agentrq-workspace/README.md) — the **workspace agent**, connected to a single workspace's MCP server to work its queue.
 
 **Installation:**
 ```bash
-/plugin marketplace add https://github.com/agentrq/agentrq-claude-extension
+/plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
+/plugin install agentrq-workspace@agentrq
 ```
+
+> Previously these lived in a separate `agentrq-claude-extension` repository. The marketplace URL is now this repository; if you added the old one, re-add the marketplace at the URL above.
 
 ### ♊ Gemini CLI
 The Gemini CLI extension allows you to manage AgentRQ workspaces and tasks directly from your terminal using Google's Gemini models.

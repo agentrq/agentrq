@@ -1,0 +1,25 @@
+{
+  "name": "agentrq",
+  "description": "Human-in-the-loop task supervisor for AI agents",
+  "version": "1.0.1",
+  "userConfig": {
+    "agentrq_supervisor_mcp_url": {
+      "type": "string",
+      "title": "Supervisor MCP URL",
+      "description": "AgentRQ Supervisor MCP URL (e.g., https://mcp.agentrq.com/mcp)",
+      "required": true,
+      "default": "https://mcp.agentrq.com/mcp"
+    }
+  },
+  "mcpServers": {
+    "agentrq": {
+      "type": "http",
+      "url": "${user_config.agentrq_supervisor_mcp_url}"
+    }
+  },
+  "author": {
+    "name": "Mustafa Turan",
+    "email": "dev@agentrq.com",
+    "url": "https://github.com/mustafaturan"
+  }
+}
