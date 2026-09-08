@@ -127,6 +127,15 @@ type WorkspaceServer struct {
 	undeliveredVerdicts   map[string]string // requestID -> verdict the agent never received
 	toolCallIDsMu         sync.RWMutex
 	toolCallIDs           map[string]int64 // requestID -> ToolCall row ID (manual requests only, until resolved)
+	// Requests allowed without asking anyone, so a re-send is recognised as the
+	// same request rather than decided a second time.
+	//
+	// This cannot be folded into permissionResponses: that map means "the human
+	// was asked", holds the id of the message they were asked in, and is what
+	// sendVerdict rewrites to show the verdict. An auto-allowed request has no
+	// such message, so it needs a record of its own.
+	autoDecidedRequestsMu sync.RWMutex
+	autoDecidedRequests   map[string]struct{}
 	// The chat message standing for a plan or for a task's usage counters, so
 	// each revision rewrites that message instead of appending another one.
 	agentTelemetryMessagesMu sync.RWMutex
@@ -370,6 +379,7 @@ func NewWorkspaceServer(
 		permissionResponses:    make(map[string]int64),
 		undeliveredVerdicts:    make(map[string]string),
 		toolCallIDs:            make(map[string]int64),
+		autoDecidedRequests:    make(map[string]struct{}),
 		agentTelemetryMessages: make(map[string]int64),
 		agentModels:            make(map[string]AgentModelsSnapshot),
 		elicitations:           make(map[string]chan elicitationResponse),
@@ -1686,6 +1696,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 					_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
 				}()
+				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 				if ok {
 					ps.persistToolCall(ctx, taskID, p, "auto_allowed")
@@ -1701,6 +1712,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
 						_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
 					}()
+					ps.markAutoDecided(p.RequestID)
 					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
 					ps.persistToolCall(ctx, taskID, p, "auto_allowed")
 					return nil, nil
@@ -1846,6 +1858,10 @@ func (ps *WorkspaceServer) cleanupRequest(requestID string) {
 	delete(ps.undeliveredVerdicts, requestID)
 	ps.undeliveredVerdictsMu.Unlock()
 
+	ps.autoDecidedRequestsMu.Lock()
+	delete(ps.autoDecidedRequests, requestID)
+	ps.autoDecidedRequestsMu.Unlock()
+
 	ps.toolCallIDsMu.Lock()
 	delete(ps.toolCallIDs, requestID)
 	ps.toolCallIDsMu.Unlock()
@@ -1869,14 +1885,11 @@ const (
 	// when the request has already been cleaned up, and an approval that
 	// happened must not go uncounted because the delivery missed.
 	//
-	// This suppresses the manual count only, and does not make the automatic
-	// count exactly-once. An auto-allowed request never posts a message to the
-	// task, so permissionResponses has no entry for it and
-	// rebindPermissionRequest does not recognise a re-send: an agent that
-	// reconnects and asks again re-runs the auto-allow branch, reporting a
-	// second automatic approval and writing a second tool_call row for the one
-	// call. That is a separate gap from the one this type fixes, and it is in
-	// the automatic counter rather than the manual one.
+	// A re-send does not re-report this. An auto-allowed request has no message
+	// to point at, so it is recorded in autoDecidedRequests instead, and
+	// rebindPermissionRequest treats that as "already decided" — the agent is
+	// answered again, through verdictReplayed below, without the approval or
+	// its tool_calls row being written a second time.
 	verdictAutomatic
 	// A verdict already given, being re-delivered because the agent reconnected
 	// and asked again. It was counted when the human decided; counting it again
@@ -2101,6 +2114,28 @@ func (ps *WorkspaceServer) rememberUndeliveredVerdict(requestID, behavior string
 //
 // Reports whether this was such a re-send, in which case there is nothing
 // further to do.
+// markAutoDecided records that a request was allowed without anyone being asked.
+//
+// The map is created on first use rather than relied on: this runs on every
+// auto-allowed tool call, and the struct is also built by hand in tests, so a
+// construction path that forgot the map would panic on a hot path instead of
+// merely mis-counting.
+func (ps *WorkspaceServer) markAutoDecided(requestID string) {
+	ps.autoDecidedRequestsMu.Lock()
+	defer ps.autoDecidedRequestsMu.Unlock()
+	if ps.autoDecidedRequests == nil {
+		ps.autoDecidedRequests = make(map[string]struct{})
+	}
+	ps.autoDecidedRequests[requestID] = struct{}{}
+}
+
+func (ps *WorkspaceServer) wasAutoDecided(requestID string) bool {
+	ps.autoDecidedRequestsMu.RLock()
+	defer ps.autoDecidedRequestsMu.RUnlock()
+	_, ok := ps.autoDecidedRequests[requestID]
+	return ok
+}
+
 func (ps *WorkspaceServer) rebindPermissionRequest(
 	ctx context.Context,
 	sessionID string,
@@ -2110,10 +2145,15 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 		return false
 	}
 
+	// A request already decided, either way: the human was asked and answered,
+	// or a rule answered for them. Both mean this re-send is the same request
+	// arriving again, not a new one — and deciding it again would report a
+	// second approval and write a second tool_calls row for one tool call.
 	ps.permissionResponsesMu.RLock()
 	_, alreadyAsked := ps.permissionResponses[p.RequestID]
 	ps.permissionResponsesMu.RUnlock()
-	if !alreadyAsked {
+	autoDecided := ps.wasAutoDecided(p.RequestID)
+	if !alreadyAsked && !autoDecided {
 		return false
 	}
 
@@ -2131,12 +2171,22 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 	ps.undeliveredVerdictsMu.RLock()
 	behavior, waiting := ps.undeliveredVerdicts[p.RequestID]
 	ps.undeliveredVerdictsMu.RUnlock()
+
+	// An auto-decided request is always an allow, and re-sending it means the
+	// agent never saw that answer — so it is answered again rather than left
+	// holding the question. Recognising the re-send without answering it would
+	// trade a double count for a stalled agent.
+	if !waiting && autoDecided {
+		behavior, waiting = "allow", true
+	}
+
 	if waiting {
 		ps.requestTaskIDsMu.RLock()
 		taskID := ps.requestTaskIDs[p.RequestID]
 		ps.requestTaskIDsMu.RUnlock()
 		zlog.Info().Str("request_id", p.RequestID).Str("behavior", behavior).
 			Msg("delivering the verdict the agent missed while it was away")
+		// verdictReplayed: this decision was counted when it was first made.
 		_ = ps.sendVerdict(ctx, taskID, p.RequestID, behavior, verdictReplayed)
 	}
 
@@ -2215,6 +2265,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
 			}()
 			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
+			ps.markAutoDecided(p.RequestID)
 			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
 			if ok {
 				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
@@ -2232,6 +2283,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 					time.Sleep(100 * time.Millisecond)
 					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
 				}()
+				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
 				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
 				return

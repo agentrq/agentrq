@@ -49,6 +49,43 @@ func (r *approvalTelemetry) snapshot() []string {
 	return append([]string(nil), r.methods...)
 }
 
+// recordedToolCalls collects the tool_calls rows a server would have written.
+type recordedToolCalls struct {
+	mu   sync.Mutex
+	rows []model.ToolCall
+}
+
+func (r *recordedToolCalls) add(tc model.ToolCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rows = append(r.rows, tc)
+}
+
+func (r *recordedToolCalls) len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.rows)
+}
+
+// withToolCallRecording makes the server persist tool calls into `rows` instead
+// of a database, so a test can tell how many rows one call produced.
+func withToolCallRecording(ps *WorkspaceServer, rows *recordedToolCalls) {
+	var next int64
+	ps.idgen = stubIDGen{next: &next}
+	ps.recordToolCall = func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+		rows.add(tc)
+		return tc, nil
+	}
+}
+
+// stubIDGen hands out increasing ids without a real generator.
+type stubIDGen struct{ next *int64 }
+
+func (s stubIDGen) NextID() int64 {
+	*s.next++
+	return *s.next
+}
+
 // approvalServer builds a workspace server that answers permission requests and
 // reports what it published, with `autoAllowed` pre-approved.
 func approvalServer(t *testing.T, autoAllowed []string) (*WorkspaceServer, *approvalTelemetry) {
@@ -253,6 +290,108 @@ func TestStopRefusingOutstandingRequestsCountsAsManual(t *testing.T) {
 
 	if got := rec.count("permission_manual_deny"); got != 1 {
 		t.Errorf("expected 1 manual denial, got %d (all: %v)", got, rec.snapshot())
+	}
+}
+
+// An auto-allowed tool call is one approval and one tool call, however many
+// times the agent has to ask for it.
+//
+// An agent that reconnects re-sends the request it was waiting on. For a
+// request a human was asked about, rebindPermissionRequest recognises that and
+// re-delivers the verdict already given. An auto-allowed request never posts a
+// message to the task, so it had no such record and was not recognised: the
+// auto-allow branch simply ran again, reporting a second automatic approval and
+// writing a second tool_calls row for the one call.
+func TestResentAutoAllowedRequestIsCountedOnce(t *testing.T) {
+	ps, rec := approvalServer(t, []string{"Read"})
+	rows := &recordedToolCalls{}
+	withToolCallRecording(ps, rows)
+
+	ps.HandleCustomNotification(context.Background(), "sess-1", permissionNotification("req-8", "Read"))
+	waitForVerdictDelivered(t, ps, "req-8")
+
+	if got := rec.count("permission_auto_allow"); got != 1 {
+		t.Fatalf("expected 1 automatic approval to begin with, got %d (all: %v)", got, rec.snapshot())
+	}
+	if got := rows.len(); got != 1 {
+		t.Fatalf("expected 1 tool call row to begin with, got %d", got)
+	}
+
+	// The agent reconnects and asks for the very same request again.
+	ps.HandleCustomNotification(context.Background(), "sess-2", permissionNotification("req-8", "Read"))
+	waitForVerdictDelivered(t, ps, "req-8")
+
+	if got := rec.count("permission_auto_allow"); got != 1 {
+		t.Errorf("a re-sent request is the same approval, got %d automatic (all: %v)",
+			got, rec.snapshot())
+	}
+	if got := rec.count("permission_manual_allow"); got != 0 {
+		t.Errorf("and it is certainly not a manual one, got %d (all: %v)", got, rec.snapshot())
+	}
+	if got := rows.len(); got != 1 {
+		t.Errorf("a re-sent request is the same tool call, got %d rows", got)
+	}
+}
+
+// Recognising a re-send is only half the job: the agent has to be answered.
+//
+// It re-sent the request because it never saw the verdict, so a fix that merely
+// stops re-deciding would leave it holding a question forever — trading a
+// double count for a stalled agent, which is the worse bug.
+func TestResentAutoAllowedRequestIsAnsweredAgain(t *testing.T) {
+	ps, rec := approvalServer(t, []string{"Read"})
+
+	ps.HandleCustomNotification(context.Background(), "sess-1", permissionNotification("req-9", "Read"))
+	waitForVerdictDelivered(t, ps, "req-9")
+
+	// Delivery failed (this harness has no live agent), so the verdict is being
+	// held. Clear that record so a second delivery attempt is observable rather
+	// than indistinguishable from the first.
+	ps.undeliveredVerdictsMu.Lock()
+	delete(ps.undeliveredVerdicts, "req-9")
+	ps.undeliveredVerdictsMu.Unlock()
+
+	// The agent comes back and asks again.
+	ps.HandleCustomNotification(context.Background(), "sess-2", permissionNotification("req-9", "Read"))
+
+	// It is answered: the verdict reaches delivery a second time.
+	waitForVerdictDelivered(t, ps, "req-9")
+
+	ps.undeliveredVerdictsMu.RLock()
+	behavior := ps.undeliveredVerdicts["req-9"]
+	ps.undeliveredVerdictsMu.RUnlock()
+	if behavior != "allow" {
+		t.Errorf("the re-sent request should have been allowed again, got %q", behavior)
+	}
+
+	// And answering it again is still not another approval.
+	if got := rec.count("permission_auto_allow"); got != 1 {
+		t.Errorf("expected 1 automatic approval, got %d (all: %v)", got, rec.snapshot())
+	}
+	if got := rec.count("permission_manual_allow"); got != 0 {
+		t.Errorf("expected no manual approval, got %d (all: %v)", got, rec.snapshot())
+	}
+}
+
+// A request the human was asked about keeps its old behaviour: the auto-decided
+// signal must widen what rebind recognises, not replace it.
+func TestManualRequestStillRebindsWithoutTheAutoSignal(t *testing.T) {
+	ps, rec := approvalServer(t, nil)
+	ps.permissionRequests["req-10"] = "sess-1"
+	ps.requestTaskIDs["req-10"] = 42
+	ps.permissionResponses["req-10"] = 900
+
+	if ps.wasAutoDecided("req-10") {
+		t.Fatal("a request nobody auto-allowed must not be marked auto-decided")
+	}
+
+	ps.rememberUndeliveredVerdict("req-10", "allow")
+	if !ps.rebindPermissionRequest(context.Background(), "sess-2",
+		PermissionRequestParams{RequestID: "req-10", ToolName: "Read"}) {
+		t.Fatal("a request the human answered should still be recognised as a re-send")
+	}
+	if got := rec.count("permission_manual_allow"); got != 0 {
+		t.Errorf("a replay reports nothing, got %d (all: %v)", got, rec.snapshot())
 	}
 }
 
