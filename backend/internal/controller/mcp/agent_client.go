@@ -103,15 +103,18 @@ func (ps *WorkspaceServer) reportedAgent(sessionID string) *AgentClientInfo {
 // session order the server reports is at least stable between two calls — the
 // same reason pickAgentCommands iterates the live list rather than a map.
 //
-// Nothing is reported unless an agent is actually connected. Sessions linger
-// after their stream drops, so without this the workspace would keep naming the
-// gateway that left — and naming it beside an "agent offline" indicator, which
-// is worse than saying nothing.
+// A session that no longer holds a stream is passed over. Sessions linger after
+// their stream drops, so without this the workspace would keep naming a gateway
+// that left — beside an "agent offline" indicator when it was the only one, and
+// in place of a gateway that is still there when it was not.
 func (ps *WorkspaceServer) AgentClient() *AgentClientInfo {
-	if ps.mcpServer == nil || !ps.IsAgentConnected() {
+	if ps.mcpServer == nil {
 		return nil
 	}
 	for sess := range ps.mcpServer.Sessions() {
+		if !ps.isStreaming(sess.ID()) {
+			continue
+		}
 		// What the gateway said it is driving wins over what the gateway calls
 		// itself. A gateway that has not been upgraded reports nothing, and
 		// falls back to naming itself exactly as it did before.

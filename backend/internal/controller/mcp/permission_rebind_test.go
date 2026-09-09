@@ -191,11 +191,30 @@ func TestNotifySession_NoServer(t *testing.T) {
 // that delivering a verdict actually goes somewhere. The client introduces
 // itself under clientName, which is what decides whether it can be stopped.
 // Returns the session id.
+// streamFor marks a session as holding a live stream, which is what the HTTP
+// handler does for an SSE request — the in-memory harness never goes through
+// it. Returns the drop, for tests that need the stream to go away while the
+// session lingers, which is the state this all exists to handle.
+func streamFor(ps *WorkspaceServer, sessionID string) func() {
+	ps.agentConnections.Add(1)
+	ps.addStreamingSession(sessionID)
+	return func() {
+		ps.removeStreamingSession(sessionID)
+		ps.agentConnections.Add(-1)
+	}
+}
+
 func connectedServer(t *testing.T, ps *WorkspaceServer, clientName string) string {
 	t.Helper()
+	ps.mcpServer = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+	return connectSession(t, ps, clientName)
+}
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	ps.mcpServer = server
+// connectSession attaches one more client to the workspace's existing server,
+// so a test can have two gateways on one workspace — which is what tells a
+// per-session answer apart from a workspace-wide one.
+func connectSession(t *testing.T, ps *WorkspaceServer, clientName string) string {
+	t.Helper()
 
 	client := mcp.NewClient(&mcp.Implementation{Name: clientName, Version: "0"}, &mcp.ClientOptions{
 		KeepAlive: 0,
@@ -203,7 +222,7 @@ func connectedServer(t *testing.T, ps *WorkspaceServer, clientName string) strin
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	ctx := context.Background()
-	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	serverSession, err := ps.mcpServer.Connect(ctx, serverTransport, nil)
 	if err != nil {
 		t.Fatalf("connect server: %v", err)
 	}
@@ -249,7 +268,7 @@ func TestSendPermissionVerdict_DeliversToALiveSession(t *testing.T) {
 func TestSendCancelNotification_ReachesConnectedAgents(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 
 	if !ps.SendCancelNotification(context.Background(), 42).Stopped {
 		t.Fatal("expected the stop to reach the connected gateway")
@@ -261,7 +280,7 @@ func TestSendCancelNotification_ReachesConnectedAgents(t *testing.T) {
 func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 
 	var marked map[string]any
 	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
@@ -304,7 +323,7 @@ func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
 func TestSendCancelNotification_SurvivesAToolCallThatWillNotClose(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 
 	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 		return nil
@@ -433,9 +452,23 @@ func TestSupportsStop(t *testing.T) {
 	t.Run("the ACP gateway", func(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
-		connectedServer(t, ps, "acp-gateway")
+		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 		if !ps.SupportsStop() {
 			t.Fatal("expected true for the ACP gateway")
+		}
+	})
+
+	t.Run("the ACP gateway once its stream has gone", func(t *testing.T) {
+		// A session outlives the stream that carried it, so without checking the
+		// stream the dashboard offered a Stop button with nothing behind it.
+		replies := 0
+		ps := permissionServer(t, &replies)
+		drop := streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+
+		drop()
+
+		if ps.SupportsStop() {
+			t.Fatal("expected false once nothing is streaming")
 		}
 	})
 }

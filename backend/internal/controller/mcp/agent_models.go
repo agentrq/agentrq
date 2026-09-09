@@ -112,10 +112,20 @@ func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID stri
 
 // AgentModels reports what the connected agent can switch between, or nil when
 // nothing connected has said.
+//
+// Only sessions that still hold a stream are considered. The server's session
+// list is not enough on its own: an MCP session outlives the stream that
+// carried it, so after a gateway goes away its session is still listed and the
+// snapshot keyed to it still looks live — which is exactly what the filter
+// below exists to prevent, and what it cannot see by itself.
+//
+// Asking per session rather than "is anything connected" is what makes this
+// right when two gateways are attached: one of them leaving must take its own
+// models with it and leave the other's alone.
 func (ps *WorkspaceServer) AgentModels() *AgentModelsSnapshot {
 	ps.agentModelsMu.RLock()
 	defer ps.agentModelsMu.RUnlock()
-	return pickAgentModels(ps.agentModels, ps.liveSessionIDs())
+	return pickAgentModels(ps.agentModels, ps.streamingSessionIDs())
 }
 
 // liveSessionIDs lists the sessions currently connected to this workspace.

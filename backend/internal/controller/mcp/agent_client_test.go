@@ -12,15 +12,14 @@ import (
 // connectedIdentityServer is a workspace with a session attached and its
 // connection counted, which is what AgentClient requires before it says
 // anything at all.
-func connectedIdentityServer(t *testing.T, clientName string) (*WorkspaceServer, string) {
+func connectedIdentityServer(t *testing.T, clientName string) (*WorkspaceServer, string, func()) {
 	t.Helper()
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
 	ps.agentIdentities = make(map[string]AgentClientInfo)
 	sessionID := connectedServer(t, ps, clientName)
-	ps.agentConnections.Add(1) // what the HTTP handler does for a live stream
-	return ps, sessionID
+	return ps, sessionID, streamFor(ps, sessionID)
 }
 
 // What is attached to a workspace comes off the live session rather than a
@@ -32,8 +31,7 @@ func TestAgentClient(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		connectedServer(t, ps, "acp-gateway")
-		ps.agentConnections.Add(1) // what the HTTP handler does for a live stream
+		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 
 		got := ps.AgentClient()
 		if got == nil {
@@ -54,8 +52,7 @@ func TestAgentClient(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		connectedServer(t, ps, "")
-		ps.agentConnections.Add(1)
+		streamFor(ps, connectedServer(t, ps, ""))
 
 		if got := ps.AgentClient(); got != nil {
 			t.Errorf("AgentClient() = %+v, want nil", got)
@@ -69,13 +66,12 @@ func TestAgentClient(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		connectedServer(t, ps, "acp-gateway")
-		ps.agentConnections.Add(1)
+		drop := streamFor(ps, connectedServer(t, ps, "acp-gateway"))
 		if ps.AgentClient() == nil {
 			t.Fatal("expected the client to be named while its stream is up")
 		}
 
-		ps.agentConnections.Add(-1) // the stream drops; the session lingers
+		drop() // the stream goes; the session lingers
 
 		if got := ps.AgentClient(); got != nil {
 			t.Errorf("AgentClient() = %+v after the stream went, want nil", got)
@@ -195,7 +191,7 @@ func TestHandleAgentIdentity(t *testing.T) {
 
 func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 	t.Run("names the agent rather than the gateway in front of it", func(t *testing.T) {
-		ps, sessionID := connectedIdentityServer(t, "acp-gateway")
+		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
 		ps.HandleAgentIdentity(context.Background(), sessionID, AgentIdentityParams{
 			Name: "codex", Title: "Codex CLI", Version: "1.10.0",
 		})
@@ -212,7 +208,7 @@ func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 	t.Run("falls back to the client's own name when no agent was reported", func(t *testing.T) {
 		// A gateway too old to send the notification, and every client that is
 		// not a gateway at all. Both keep working exactly as before.
-		ps, _ := connectedIdentityServer(t, "claude-code")
+		ps, _, _ := connectedIdentityServer(t, "claude-code")
 
 		got := ps.AgentClient()
 		if got == nil || got.Name != "claude-code" {
@@ -222,10 +218,10 @@ func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 
 	t.Run("still says nothing once the stream has gone", func(t *testing.T) {
 		// The reported agent must not outlive its connection either.
-		ps, sessionID := connectedIdentityServer(t, "acp-gateway")
+		ps, sessionID, drop := connectedIdentityServer(t, "acp-gateway")
 		ps.HandleAgentIdentity(context.Background(), sessionID, AgentIdentityParams{Name: "codex"})
 
-		ps.agentConnections.Add(-1)
+		drop()
 
 		if got := ps.AgentClient(); got != nil {
 			t.Errorf("AgentClient() = %+v after the stream went, want nil", got)
@@ -254,4 +250,33 @@ func TestPruneAgentIdentities(t *testing.T) {
 			t.Errorf("identities = %+v, want a kept", identities)
 		}
 	})
+}
+
+// A client may hold more than one stream at a time, so the session is only off
+// the air when the last of them has gone.
+func TestStreamingSessionCounting(t *testing.T) {
+	ps := &WorkspaceServer{}
+
+	ps.addStreamingSession("sess-1")
+	ps.addStreamingSession("sess-1")
+	if !ps.isStreaming("sess-1") {
+		t.Fatal("expected the session to be streaming")
+	}
+
+	ps.removeStreamingSession("sess-1")
+	if !ps.isStreaming("sess-1") {
+		t.Error("one stream closing must not take the session off the air")
+	}
+
+	ps.removeStreamingSession("sess-1")
+	if ps.isStreaming("sess-1") {
+		t.Error("the last stream closing should")
+	}
+
+	// Removing what was never there is not an error; a handler may unwind a
+	// request it never counted.
+	ps.removeStreamingSession("never-seen")
+	if ps.isStreaming("never-seen") {
+		t.Error("a session nobody opened is not streaming")
+	}
 }

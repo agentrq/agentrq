@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The notification this file handles used to be rejected outright — the SDK
@@ -314,6 +316,7 @@ func TestAgentModelsWithAConnectedSession(t *testing.T) {
 	ps := permissionServer(t, &replies)
 	ps.agentModels = make(map[string]AgentModelsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, sessionID)
 
 	if got := ps.liveSessionIDs(); len(got) != 1 || got[0] != sessionID {
 		t.Fatalf("liveSessionIDs() = %v, want [%s]", got, sessionID)
@@ -372,5 +375,69 @@ func TestHandleAgentModelsPrunesDepartedSessions(t *testing.T) {
 	}
 	if _, ok := ps.agentModels[sessionID]; !ok {
 		t.Errorf("the live session's models should have been kept: %+v", ps.agentModels)
+	}
+}
+
+// The bug this guards: an MCP session outlives the stream that carried it, so
+// the session list still holds a gateway that has gone and the snapshot keyed
+// to it still looks live. A workspace would advertise the models of an agent
+// nobody can reach.
+func TestAgentModelsStopAtTheStream(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	sessionID := connectedServer(t, ps, "acp-gateway")
+	drop := streamFor(ps, sessionID)
+
+	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		CurrentModel: "gpt-5-codex",
+		Models:       []AgentModel{{ID: "gpt-5-codex"}},
+	})
+	if ps.AgentModels() == nil {
+		t.Fatal("expected the models while the stream is up")
+	}
+
+	drop() // the stream goes; the session lingers
+
+	if got := ps.AgentModels(); got != nil {
+		t.Errorf("AgentModels() = %+v after the stream went, want nil", got)
+	}
+	// The snapshot is still cached — it is the *reader* that has to be honest,
+	// since the agent may come back on a new stream.
+	if _, ok := ps.agentModels[sessionID]; !ok {
+		t.Error("the snapshot should still be held, only not served")
+	}
+}
+
+// Two gateways can be attached to one workspace, and one of them leaving must
+// take its own models with it and leave the other's alone. A workspace-wide
+// "is anything connected" cannot do that: it stays true while the departed
+// session is still listed, and the picker takes the first snapshot it finds.
+func TestAgentModelsWithTwoConnectedSessions(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	ps.mcpServer = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+
+	// Two sessions, each having reported its own models.
+	first := connectSession(t, ps, "gateway-a")
+	second := connectSession(t, ps, "gateway-b")
+	dropFirst := streamFor(ps, first)
+	streamFor(ps, second)
+	ps.HandleAgentModels(context.Background(), first, AgentModelsParams{
+		CurrentModel: "from-a", Models: []AgentModel{{ID: "from-a"}},
+	})
+	ps.HandleAgentModels(context.Background(), second, AgentModelsParams{
+		CurrentModel: "from-b", Models: []AgentModel{{ID: "from-b"}},
+	})
+
+	dropFirst() // one goes; the other is still working
+
+	got := ps.AgentModels()
+	if got == nil {
+		t.Fatal("AgentModels() = nil while a session is still streaming")
+	}
+	if got.CurrentModel != "from-b" {
+		t.Errorf("CurrentModel = %q, want the surviving session's", got.CurrentModel)
 	}
 }

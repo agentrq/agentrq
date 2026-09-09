@@ -29,6 +29,7 @@ func connectedCommandsServer(t *testing.T) (*WorkspaceServer, string, chan []byt
 	ps.bus = eventbus.New()
 	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, sessionID)
 
 	ch := ps.bus.Subscribe(ps.workspaceID, "")
 	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", ch) })
@@ -436,6 +437,7 @@ func TestAgentCommandsWithAConnectedSession(t *testing.T) {
 	ps.bus = eventbus.New()
 	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, sessionID)
 
 	// Nothing reported yet, so there is no menu. A gateway creates its ACP
 	// session lazily, once it has a task, so this is the ordinary state of a
@@ -515,6 +517,7 @@ func TestManagerAgentCommands(t *testing.T) {
 		ps.bus = eventbus.New()
 		ps.agentCommands = make(map[string]AgentCommandsSnapshot)
 		sessionID := connectedServer(t, ps, "acp-gateway")
+		streamFor(ps, sessionID)
 		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
 			Commands: []AgentCommand{{Name: "init"}},
 		})
@@ -527,4 +530,33 @@ func TestManagerAgentCommands(t *testing.T) {
 			t.Errorf("AgentCommands(7) = %+v", got)
 		}
 	})
+}
+
+// Same as the models beside them: the session outlives its stream, so without
+// this the workspace keeps offering commands nobody is behind — and a reply
+// opening with one would be delivered stripped of its envelope on the strength
+// of that menu.
+func TestAgentCommandsStopAtTheStream(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.bus = eventbus.New()
+	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
+	sessionID := connectedServer(t, ps, "acp-gateway")
+	drop := streamFor(ps, sessionID)
+
+	ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
+		Commands: []AgentCommand{{Name: "compact"}},
+	})
+	if ps.AgentCommands() == nil {
+		t.Fatal("expected the commands while the stream is up")
+	}
+
+	drop()
+
+	if got := ps.AgentCommands(); got != nil {
+		t.Errorf("AgentCommands() = %+v after the stream went, want nil", got)
+	}
+	if _, ok := ps.agentCommands[sessionID]; !ok {
+		t.Error("the snapshot should still be held, only not served")
+	}
 }

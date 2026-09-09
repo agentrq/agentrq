@@ -149,6 +149,8 @@ type WorkspaceServer struct {
 	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
 	agentIdentitiesMu sync.RWMutex
 	agentIdentities   map[string]AgentClientInfo // sessionID -> the agent a gateway says it drives
+	streamingMu       sync.RWMutex
+	streaming         map[string]int // sessionID -> how many streams it currently holds
 	elicitationsMu    sync.Mutex
 	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
 	metadataMu        sync.RWMutex
@@ -392,6 +394,7 @@ func NewWorkspaceServer(
 		agentModels:            make(map[string]AgentModelsSnapshot),
 		agentCommands:          make(map[string]AgentCommandsSnapshot),
 		agentIdentities:        make(map[string]AgentClientInfo),
+		streaming:              make(map[string]int),
 		elicitations:           make(map[string]chan elicitationResponse),
 		icon:                   icon,
 		name:                   name,
@@ -555,11 +558,16 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 		isSSE := r.Header.Get("Accept") == "text/event-stream"
 		if isSSE {
 			count := ps.agentConnections.Add(1)
+			// Which session is streaming, not just how many are — with two
+			// gateways attached, "something is connected" cannot say whose
+			// snapshot is still worth serving.
+			ps.addStreamingSession(sessID)
 			if count == 1 {
 				ps.publishAgentConnected(true)
 				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
+				ps.removeStreamingSession(sessID)
 				if ps.agentConnections.Add(-1) == 0 {
 					ps.publishAgentConnected(false)
 				}
@@ -671,6 +679,61 @@ func clientSupportsStop(sess *mcp.ServerSession) bool {
 	return stopCapableClients[strings.ToLower(strings.TrimSpace(p.ClientInfo.Name))]
 }
 
+// addStreamingSession records that a session has opened a stream.
+//
+// Counted rather than flagged: a client may hold more than one at a time, and
+// the session is only off the air when the last of them has gone.
+func (ps *WorkspaceServer) addStreamingSession(sessID string) {
+	ps.streamingMu.Lock()
+	if ps.streaming == nil {
+		ps.streaming = make(map[string]int)
+	}
+	ps.streaming[sessID]++
+	ps.streamingMu.Unlock()
+}
+
+func (ps *WorkspaceServer) removeStreamingSession(sessID string) {
+	ps.streamingMu.Lock()
+	if ps.streaming[sessID] <= 1 {
+		delete(ps.streaming, sessID)
+	} else {
+		ps.streaming[sessID]--
+	}
+	ps.streamingMu.Unlock()
+}
+
+// isStreaming reports whether a session still has a stream open.
+func (ps *WorkspaceServer) isStreaming(sessID string) bool {
+	ps.streamingMu.RLock()
+	defer ps.streamingMu.RUnlock()
+	return ps.streaming[sessID] > 0
+}
+
+// streamingSessionIDs lists the sessions that are actually reachable.
+//
+// This is what "connected" has to mean for anything the interface reports about
+// an agent. An MCP session outlives the stream that carried it, so the server's
+// own session list holds gateways that have gone — and with more than one
+// attached, a workspace-wide "something is connected" cannot tell which of them
+// a snapshot belongs to. Only the session that is still streaming can answer
+// for its own state.
+//
+// The server's session order is followed rather than the map's, because the
+// readers pick the first session with something to say and two identical calls
+// must not disagree — the reason pickAgentModels iterates this list at all.
+func (ps *WorkspaceServer) streamingSessionIDs() []string {
+	if ps.mcpServer == nil {
+		return nil
+	}
+	var ids []string
+	for sess := range ps.mcpServer.Sessions() {
+		if ps.isStreaming(sess.ID()) {
+			ids = append(ids, sess.ID())
+		}
+	}
+	return ids
+}
+
 // stopCapableSessions lists the connected sessions worth sending a stop to.
 func (ps *WorkspaceServer) stopCapableSessions() []string {
 	if ps.mcpServer == nil {
@@ -678,7 +741,7 @@ func (ps *WorkspaceServer) stopCapableSessions() []string {
 	}
 	var ids []string
 	for sess := range ps.mcpServer.Sessions() {
-		if clientSupportsStop(sess) {
+		if clientSupportsStop(sess) && ps.isStreaming(sess.ID()) {
 			ids = append(ids, sess.ID())
 		}
 	}
@@ -687,6 +750,15 @@ func (ps *WorkspaceServer) stopCapableSessions() []string {
 
 // SupportsStop reports whether anything currently connected can be asked to
 // stop, so the dashboard only offers a Stop button that would do something.
+//
+// "Currently connected" has to mean the stream, not the session: a session
+// outlives the stream that carried it, so a workspace whose gateway had gone
+// went on offering a Stop button with nothing behind it.
+//
+// Only the advertised capability is gated. SendCancelNotification still tries
+// every stop-capable session it can find, because attempting delivery to a
+// session that might yet be reachable costs nothing, while refusing to try is
+// how a stop goes missing.
 func (ps *WorkspaceServer) SupportsStop() bool {
 	return len(ps.stopCapableSessions()) > 0
 }

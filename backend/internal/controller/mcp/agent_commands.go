@@ -143,10 +143,16 @@ func (ps *WorkspaceServer) publishAgentCommands(reported AgentCommandsSnapshot) 
 
 // AgentCommands reports the slash commands the connected agent offers, or nil
 // when nothing connected has said.
+//
+// Only sessions that still hold a stream are considered, for the reason
+// AgentModels records: a session outlives its stream, so the session list alone
+// would keep a departed agent's commands on offer. Every one of them would fail
+// — and worse, a reply that opens with one is delivered stripped of the
+// envelope that gives it context, on the strength of a menu nobody is behind.
 func (ps *WorkspaceServer) AgentCommands() *AgentCommandsSnapshot {
 	ps.agentCommandsMu.RLock()
 	defer ps.agentCommandsMu.RUnlock()
-	return pickAgentCommands(ps.agentCommands, ps.liveSessionIDs())
+	return pickAgentCommands(ps.agentCommands, ps.streamingSessionIDs())
 }
 
 // pickAgentCommands chooses the snapshot to report from what sessions have said.
