@@ -4,9 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/mustafaturan/monoflake"
+
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
 // The notification this file handles used to be rejected outright — the SDK
@@ -16,7 +21,14 @@ import (
 // session that reported it.
 
 func newModelsServer() *WorkspaceServer {
-	return &WorkspaceServer{agentModels: make(map[string]AgentModelsSnapshot)}
+	// A bus, because recording a change now announces it: a server without one
+	// panics on the first report rather than failing an assertion, which is a
+	// confusing way to learn that publishing exists.
+	return &WorkspaceServer{
+		workspaceID: 100,
+		bus:         eventbus.New(),
+		agentModels: make(map[string]AgentModelsSnapshot),
+	}
 }
 
 // The exact frame acp-gateway puts on the wire (src/acpClient.ts), so a rename
@@ -314,6 +326,8 @@ func TestAgentModelsWithoutAnMCPServer(t *testing.T) {
 func TestAgentModelsWithAConnectedSession(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
+	// A bus, because recording a report now announces it.
+	ps.bus = eventbus.New()
 	ps.agentModels = make(map[string]AgentModelsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
@@ -440,4 +454,237 @@ func TestAgentModelsWithTwoConnectedSessions(t *testing.T) {
 	if got.CurrentModel != "from-b" {
 		t.Errorf("CurrentModel = %q, want the surviving session's", got.CurrentModel)
 	}
+}
+
+// connectedModelsServer is a workspace with a real session attached, which the
+// publish tests need: what goes out on the bus when a session withdraws is what
+// the workspace would now serve over REST, and that answer is filtered by the
+// live sessions.
+func connectedModelsServer(t *testing.T) (*WorkspaceServer, string, chan []byte) {
+	t.Helper()
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.bus = eventbus.New()
+	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	sessionID := connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, sessionID)
+
+	ch := ps.bus.Subscribe(ps.workspaceID, "")
+	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", ch) })
+	return ps, sessionID, ch
+}
+
+// The model changes from outside the app — an agent reports one when its
+// session comes up, long after any page load, and again every time it is
+// switched — so the human clients have to be told rather than left to
+// re-fetch. Before this the name on the Overview card was fixed at page load.
+func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
+	// waitForEvent reads one event, or fails: a silent timeout here would look
+	// like a passing test that asserts nothing.
+	waitForEvent := func(t *testing.T, ch chan []byte) map[string]any {
+		t.Helper()
+		select {
+		case raw := <-ch:
+			// The bus frames events for SSE, so what arrives is
+			// "data: {...}\n\n" rather than bare JSON.
+			var evt struct {
+				Type    string         `json:"type"`
+				Payload map[string]any `json:"payload"`
+			}
+			body := strings.TrimSpace(strings.TrimPrefix(string(raw), "data: "))
+			if err := json.Unmarshal([]byte(body), &evt); err != nil {
+				t.Fatalf("unmarshal event %q: %v", raw, err)
+			}
+			if evt.Type != "agent.models" {
+				t.Fatalf("event type = %q, want agent.models", evt.Type)
+			}
+			return evt.Payload
+		case <-time.After(time.Second):
+			t.Fatal("no event was published")
+			return nil
+		}
+	}
+
+	expectSilence := func(t *testing.T, ch chan []byte) {
+		t.Helper()
+		select {
+		case raw := <-ch:
+			t.Errorf("an unchanged report was announced: %s", raw)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	t.Run("announces the models with a base62 workspace id", func(t *testing.T) {
+		// Base62 because that is the only form the frontend ever holds; a raw
+		// int64 would match nothing and the picker would never move.
+		ps, sessionID, ch := connectedModelsServer(t)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID:     "model",
+			CurrentModel: "gemini-2.5-pro",
+			Models: []AgentModel{
+				{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Group: "Google"},
+				{ID: "gpt-5-codex", Name: "GPT-5 Codex"},
+			},
+		})
+
+		payload := waitForEvent(t, ch)
+		want := monoflake.ID(ps.workspaceID).String()
+		if got, ok := payload["workspaceId"].(string); !ok || got != want {
+			t.Errorf("workspaceId = %v, want the base62 form %q", payload["workspaceId"], want)
+		}
+		// camelCase, matching the REST view rather than the snake_case
+		// notification this came from: the client reads it into the same store
+		// slot the workspace payload fills.
+		if payload["configId"] != "model" {
+			t.Errorf("configId = %v, want %q", payload["configId"], "model")
+		}
+		if payload["currentModel"] != "gemini-2.5-pro" {
+			t.Errorf("currentModel = %v, want %q", payload["currentModel"], "gemini-2.5-pro")
+		}
+		models, ok := payload["models"].([]any)
+		if !ok || len(models) != 2 {
+			t.Fatalf("models = %v", payload["models"])
+		}
+		first, _ := models[0].(map[string]any)
+		if first["id"] != "gemini-2.5-pro" || first["name"] != "Gemini 2.5 Pro" || first["group"] != "Google" {
+			t.Errorf("models[0] = %v", first)
+		}
+	})
+
+	t.Run("stays quiet when the agent re-advertises the same list", func(t *testing.T) {
+		// An agent re-sends its models on every session config change, so a
+		// thinking-effort switch repeats the whole list unchanged. Broadcasting
+		// that to every open tab would be noise about a picker that did not move.
+		ps, sessionID, ch := connectedModelsServer(t)
+
+		same := AgentModelsParams{
+			ConfigID:     "model",
+			CurrentModel: "a",
+			Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+		}
+		ps.HandleAgentModels(context.Background(), sessionID, same)
+		waitForEvent(t, ch)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID:     "model",
+			CurrentModel: "a",
+			Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+		})
+
+		expectSilence(t, ch)
+	})
+
+	t.Run("announces a switch that changes only the current model", func(t *testing.T) {
+		// The event this whole path exists to carry. A gateway may send the
+		// top-level current_model without the per-model `current` flag, and then
+		// a switch leaves the list byte-identical — so comparing lists alone
+		// would call the one change that matters "unchanged".
+		ps, sessionID, ch := connectedModelsServer(t)
+
+		models := []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID: "model", CurrentModel: "a", Models: models,
+		})
+		waitForEvent(t, ch)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID: "model", CurrentModel: "b", Models: models,
+		})
+
+		payload := waitForEvent(t, ch)
+		if payload["currentModel"] != "b" {
+			t.Errorf("currentModel = %v, want the model just switched to", payload["currentModel"])
+		}
+	})
+
+	t.Run("announces a withdrawal as an empty list", func(t *testing.T) {
+		// This is what takes the picker away. Without it the interface would go
+		// on offering models the agent has stopped accepting.
+		ps, sessionID, ch := connectedModelsServer(t)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID: "model", Models: []AgentModel{{ID: "a"}},
+		})
+		waitForEvent(t, ch)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{Models: nil})
+
+		payload := waitForEvent(t, ch)
+		if models, ok := payload["models"].([]any); !ok || len(models) != 0 {
+			t.Errorf("models = %v, want an empty list", payload["models"])
+		}
+	})
+
+	t.Run("keeps the picker when one session withdraws but another still offers", func(t *testing.T) {
+		// Two gateways can be attached to one workspace. One of them dropping
+		// its models says nothing about the other's, and clearing the picker
+		// would take away a choice that still works.
+		ps, sessionID, ch := connectedModelsServer(t)
+
+		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+			ConfigID: "model", CurrentModel: "still-here", Models: []AgentModel{{ID: "still-here"}},
+		})
+		waitForEvent(t, ch)
+
+		ps.HandleAgentModels(context.Background(), "a-second-session", AgentModelsParams{Models: nil})
+
+		payload := waitForEvent(t, ch)
+		models, ok := payload["models"].([]any)
+		if !ok || len(models) != 1 {
+			t.Fatalf("models = %v, want the surviving session's list", payload["models"])
+		}
+		first, _ := models[0].(map[string]any)
+		if first["id"] != "still-here" {
+			t.Errorf("models[0] = %v, want the session that is still offering", first)
+		}
+		if payload["currentModel"] != "still-here" {
+			t.Errorf("currentModel = %v, want the surviving session's", payload["currentModel"])
+		}
+	})
+}
+
+func TestSameAgentModels(t *testing.T) {
+	base := AgentModelsSnapshot{
+		SessionID:    "acp-1",
+		ConfigID:     "model",
+		CurrentModel: "a",
+		Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+	}
+
+	t.Run("a reconnected session offering the same list is not a change", func(t *testing.T) {
+		// SessionID is not published, so a gateway that rebuilt its ACP session
+		// while offering an identical list has changed nothing a reader can see.
+		other := base
+		other.SessionID = "acp-2"
+		if !sameAgentModels(base, other) {
+			t.Error("a new agent session alone should not count as a change")
+		}
+	})
+
+	t.Run("the current model is part of the comparison", func(t *testing.T) {
+		other := base
+		other.CurrentModel = "b"
+		if sameAgentModels(base, other) {
+			t.Error("a switch with an unchanged list must count as a change")
+		}
+	})
+
+	t.Run("the config id is part of the comparison", func(t *testing.T) {
+		// A selection is written back to this option, so a picker holding a
+		// stale one would write to something the agent no longer advertises.
+		other := base
+		other.ConfigID = "model_id"
+		if sameAgentModels(base, other) {
+			t.Error("a different config option must count as a change")
+		}
+	})
+
+	t.Run("the list itself is part of the comparison", func(t *testing.T) {
+		other := base
+		other.Models = []AgentModel{{ID: "a", Name: "A"}}
+		if sameAgentModels(base, other) {
+			t.Error("a shorter list must count as a change")
+		}
+	})
 }

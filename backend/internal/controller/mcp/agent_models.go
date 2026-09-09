@@ -2,8 +2,12 @@ package mcp
 
 import (
 	"context"
+	"slices"
 
+	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
 // AgentModelsNotificationMethod is the channel notification a gateway sends to
@@ -99,6 +103,8 @@ func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID stri
 	}
 
 	ps.agentModelsMu.Lock()
+	previous, had := ps.agentModels[sessionID]
+	changed := !had || !sameAgentModels(previous, snapshot)
 	ps.agentModels[sessionID] = snapshot
 	pruneAgentModels(ps.agentModels, ps.liveSessionIDs())
 	ps.agentModelsMu.Unlock()
@@ -107,7 +113,89 @@ func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID stri
 		Str("session_id", sessionID).
 		Int("models", len(p.Models)).
 		Str("current_model", snapshot.CurrentModel).
+		Bool("changed", changed).
 		Msg("recorded the models the agent offers")
+
+	// An agent re-advertises its models on every session config change, so most
+	// reports say exactly what the last one said — a thinking-effort switch
+	// re-sends the whole model list unchanged. Telling every open tab about
+	// those would be a broadcast storm for a picker that did not move.
+	if !changed {
+		return
+	}
+	ps.publishAgentModels(snapshot)
+}
+
+// sameAgentModels reports whether two snapshots would publish the same thing.
+//
+// Compared on exactly the fields publishAgentModels sends, rather than on the
+// whole snapshot: SessionID is not published, and a gateway that reconnects its
+// ACP session while offering an identical list has not changed anything a
+// reader can see. Comparing it would put that reader through a needless update.
+//
+// CurrentModel is part of the comparison and not merely a function of the list.
+// A gateway may send the top-level field alone, without the per-model `current`
+// flag, and then a model switch changes nothing else — which is precisely the
+// event this whole path exists to carry.
+func sameAgentModels(a, b AgentModelsSnapshot) bool {
+	return a.ConfigID == b.ConfigID &&
+		a.CurrentModel == b.CurrentModel &&
+		slices.Equal(a.Models, b.Models)
+}
+
+// publishAgentModels tells the human clients what the workspace now offers.
+//
+// Without this the models reach a client only in the workspace payload it
+// fetched on load, and an agent reports them well after that — on connecting,
+// and again whenever its session config changes. So the name on the Overview
+// card was fixed at page load and a model switch never showed. This is the same
+// reason publishAgentCommands exists beside it.
+//
+// What goes out is the report just received, not the answer AgentModels would
+// give. The session that reported is connected by definition — it has this
+// instant spoken — whereas the session registry only learns of a transport when
+// it registers its stream, so asking it here answers a question about timing
+// rather than about the agent.
+//
+// A withdrawal is the one case that has to look wider: another session may
+// still be offering models, and taking the picker away because this one stopped
+// would remove something still live. So an empty report falls back to whatever
+// the workspace would serve, which is an empty list when the answer is nothing.
+func (ps *WorkspaceServer) publishAgentModels(reported AgentModelsSnapshot) {
+	published := reported
+	if len(published.Models) == 0 {
+		published = AgentModelsSnapshot{}
+		if snapshot := ps.AgentModels(); snapshot != nil {
+			published = *snapshot
+		}
+	}
+
+	// Never null, always a list: a client that reads the payload straight into
+	// its store would otherwise have to tell "no models" apart from "the field
+	// was absent", and the two mean the same thing here.
+	models := published.Models
+	if models == nil {
+		models = []AgentModel{}
+	}
+
+	// camelCase, unlike the notification this came from. The wire format the
+	// gateways send is snake_case and stays that way, but what goes to a browser
+	// is the REST surface's convention, and these fields are read straight into
+	// the same store slot the workspace payload fills.
+	//
+	// Base62 for the workspace ID, the way every other event on this bus carries
+	// one: the REST API only ever names a workspace that way (see view.Workspace),
+	// so a raw int64 here would match nothing the frontend holds and the picker
+	// would never move off whatever the last page load fetched.
+	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
+		Type: "agent.models",
+		Payload: map[string]any{
+			"configId":     published.ConfigID,
+			"currentModel": published.CurrentModel,
+			"models":       models,
+			"workspaceId":  monoflake.ID(ps.workspaceID).String(),
+		},
+	})
 }
 
 // AgentModels reports what the connected agent can switch between, or nil when

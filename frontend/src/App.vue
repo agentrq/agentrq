@@ -659,6 +659,15 @@ onEvent((event) => {
     workspaceStore.updateAgentCommands(workspaceId, commands)
   }
 
+  // The agent's models, which arrive when its session comes up and again on
+  // every switch. Same reasoning as the commands above: without this the model
+  // named on the Overview card is whatever the last page load fetched, and a
+  // switch never shows.
+  if (event.type === 'agent.models') {
+    const { configId, currentModel, models, workspaceId } = event.payload
+    workspaceStore.updateAgentModels(workspaceId, { configId, currentModel, models })
+  }
+
   // Handle workspace metadata updates
   if (event.type === 'workspace.updated') {
     workspaceStore.updateWorkspaceMetadata(event.payload)

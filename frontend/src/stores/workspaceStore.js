@@ -72,6 +72,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /**
+   * Record the models a workspace's agent is offering.
+   *
+   * Lives here for the same reason `agentCommands` does: it changes from
+   * outside the app — an agent reports its models when its session comes up,
+   * and again every time one is switched — and the name on the Overview card
+   * was otherwise fixed at whatever the last page load fetched. IDs are
+   * compared as strings for the reason `findIndex` gives.
+   *
+   * An empty list clears the field rather than storing an empty object, so
+   * `agentModels` keeps meaning "there is a choice here" — which is what the
+   * REST payload means by omitting it, and what every reader already assumes.
+   */
+  function updateAgentModels(workspaceId, models) {
+    const idx = findIndex(workspaceId);
+    if (idx !== -1) {
+      const list = Array.isArray(models?.models) ? models.models : [];
+      const agentModels = list.length > 0
+        ? { configId: models.configId, currentModel: models.currentModel, models: list }
+        : undefined;
+      workspaces.value[idx] = { ...workspaces.value[idx], agentModels };
+    }
+  }
+
   /** The workspace with this ID, or undefined. */
   function getWorkspace(workspaceId) {
     const idx = findIndex(workspaceId);
@@ -96,6 +120,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateWorkspaceMetadata,
     updateAgentStatus,
     updateAgentCommands,
+    updateAgentModels,
     getWorkspace,
     isAgentConnected
   };

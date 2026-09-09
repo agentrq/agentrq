@@ -172,6 +172,81 @@ describe('workspaceStore', () => {
     })
   })
 
+  describe('updateAgentModels', () => {
+    beforeEach(async () => {
+      fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })
+      await useWorkspaceStore().fetchWorkspaces()
+    })
+
+    const modelsOf = (store, id) => store.getWorkspace(id)?.agentModels
+    const twoModels = {
+      configId: 'model',
+      currentModel: 'gemini-2.5-pro',
+      models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }, { id: 'gpt-5-codex', name: 'GPT-5 Codex' }],
+    }
+
+    it('records the models against the named workspace only', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentModels('0ZzhYQG2qtl', twoModels)
+
+      expect(modelsOf(store, '0ZzhYQG2qtl')).toEqual(twoModels)
+      expect(modelsOf(store, '0iAx25vra8v')).toBeUndefined()
+    })
+
+    it('carries the new current model through a switch', () => {
+      // The whole point of the event: the agent switched, and every surface
+      // reading this store has to say so without a reload.
+      const store = useWorkspaceStore()
+      store.updateAgentModels('0ZzhYQG2qtl', twoModels)
+
+      store.updateAgentModels('0ZzhYQG2qtl', { ...twoModels, currentModel: 'gpt-5-codex' })
+
+      expect(modelsOf(store, '0ZzhYQG2qtl').currentModel).toBe('gpt-5-codex')
+    })
+
+    it('takes the choice away when the agent withdraws its models', () => {
+      // An empty list is how an agent says it has stopped offering a choice,
+      // and the field's absence is what every surface reads as "no choice".
+      const store = useWorkspaceStore()
+      store.updateAgentModels('0ZzhYQG2qtl', twoModels)
+
+      store.updateAgentModels('0ZzhYQG2qtl', { configId: 'model', currentModel: '', models: [] })
+
+      expect(modelsOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    it('takes the choice away when handed nothing at all', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentModels('0ZzhYQG2qtl', twoModels)
+
+      store.updateAgentModels('0ZzhYQG2qtl', undefined)
+
+      expect(modelsOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    // The same trap updateAgentStatus documents: the ID has to be compared as a
+    // string, because a route parameter and a payload field are not the same
+    // type.
+    it('matches an ID that arrives as a number rather than a string', () => {
+      const store = useWorkspaceStore()
+      store.workspaces = [ws(42, 'numeric')]
+
+      store.updateAgentModels('42', twoModels)
+
+      expect(modelsOf(store, 42)).toEqual(twoModels)
+    })
+
+    it('ignores an ID that names no workspace it holds', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentModels(1234567890123, twoModels)
+      store.updateAgentModels(undefined, twoModels)
+
+      expect(store.workspaces.some((w) => w.agentModels)).toBe(false)
+    })
+  })
+
   describe('updateWorkspaceMetadata', () => {
     beforeEach(async () => {
       fetchWorkspaces.mockResolvedValue({ workspaces: [ws('a', 'alpha'), ws('b', 'beta')] })

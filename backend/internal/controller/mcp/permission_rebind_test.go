@@ -9,6 +9,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,7 +25,12 @@ func permissionServer(t *testing.T, replies *int) *WorkspaceServer {
 	pubsubMock.EXPECT().Publish(gomock.Any(), gomock.Any()).AnyTimes()
 
 	return &WorkspaceServer{
-		workspaceID:         100,
+		workspaceID: 100,
+		// A real server is never built without a bus (see NewWorkspaceServer),
+		// and the handlers that announce a change publish unconditionally. A
+		// double without one panics on the first report instead of failing an
+		// assertion, which is a confusing way to learn that publishing exists.
+		bus:                 eventbus.New(),
 		pubsub:              pubsubMock,
 		permissionRequests:  make(map[string]string),
 		requestTools:        make(map[string]string),
