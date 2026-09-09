@@ -58,10 +58,32 @@
 
           <!-- Description Textarea -->
           <textarea v-model="bodyRef"
+                    ref="bodyTextareaRef"
                     @keydown="onDescriptionKeydown"
                     placeholder="Provide detailed context or instructions..." 
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
                     required></textarea>
+
+          <!-- The agent's slash commands. Below the description here rather than
+               above it: this box is the top of the form, so a menu above would
+               push the whole card down as you type. -->
+          <div v-if="slashMenu.open.value"
+               class="mx-4 mb-2 max-h-52 overflow-y-auto rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm custom-scrollbar">
+            <ul ref="slashListRef" role="listbox" aria-label="Agent commands">
+              <li v-for="(command, i) in slashMenu.matches.value" :key="command.name"
+                  role="option" :aria-selected="i === slashMenu.selected.value"
+                  @mouseenter="slashMenu.highlight(i)"
+                  @mousedown.prevent="acceptSlashCommand(command)"
+                  :class="i === slashMenu.selected.value ? 'bg-gray-105 dark:bg-zinc-700/60' : ''"
+                  class="flex items-baseline gap-2 px-3 py-1.5 cursor-pointer transition-colors">
+                <span class="text-[12px] font-bold text-gray-900 dark:text-zinc-100 shrink-0">/{{ command.name }}</span>
+                <span v-if="command.description"
+                      class="text-[11px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ command.description }}</span>
+                <span v-if="command.input?.hint || command.hint"
+                      class="ml-auto pl-3 text-[10px] font-medium text-gray-400 dark:text-zinc-500 shrink-0">{{ command.input?.hint || command.hint }}</span>
+              </li>
+            </ul>
+          </div>
 
           <!-- Attachments Preview -->
           <div v-if="newTaskAttachments.length > 0" class="flex flex-wrap gap-2 px-4 pb-2 border-t border-gray-50 dark:border-zinc-800/50 pt-2">
@@ -284,7 +306,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, createTask, updateScheduledTask, getTask, fetchEvents, fetchWorkflows } from '../api';
 import { useToasts } from '../composables/useToasts';
@@ -292,6 +314,7 @@ import { useCron } from '../composables/useCron';
 import { useSpeechToText } from '../composables/useSpeechToText';
 import { useAutoTitle } from '../composables/useAutoTitle';
 import { useTooltipStore } from '../stores/tooltipStore';
+import { useSlashCommands } from '../composables/useSlashCommands';
 
 const { getNextRunLabel, daysOptions } = useCron();
 const route = useRoute();
@@ -320,20 +343,56 @@ const bodyRef = computed({
   set: (v) => { newTask.value.body = v; },
 });
 
+// The agent's own slash commands, offered in the description the same way the
+// task chat offers them. A workspace whose agent advertises none gets no menu.
+const agentCommands = computed(() => workspace.value?.agentCommands?.commands ?? []);
+const slashMenu = useSlashCommands({ text: bodyRef, commands: agentCommands });
+const slashListRef = ref(null);
+const bodyTextareaRef = ref(null);
+
+/** Puts the chosen command in the description, for a click on the menu. */
+function acceptSlashCommand(command) {
+  const applied = slashMenu.accept(command);
+  if (applied !== null) setBody(applied);
+}
+
 /**
- * Cmd/Ctrl-Enter submits the form from the description.
+ * The menu's keys while it is open, then Cmd/Ctrl-Enter to create.
  *
- * Guarded exactly as the button is, so the shortcut and the button agree: a
- * shortcut that quietly does nothing on an incomplete form is worse than one
- * that is simply not offered, and worse still if it disagrees with what the
- * button would have done.
+ * Order matters: the menu is asked first, so Enter over a highlighted command
+ * chooses it rather than doing anything else.
  */
 function onDescriptionKeydown(event) {
-  if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
-  event.preventDefault();
+  const claimed = slashMenu.handleKeydown(event);
+  if (claimed) {
+    event.preventDefault();
+    if (claimed.text !== null) setBody(claimed.text);
+    else keepSelectionInView();
+    return;
+  }
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    submitFromKeyboard();
+  }
+}
+
+/** Cmd/Ctrl-Enter submits, but only what the button would accept. */
+function submitFromKeyboard() {
   if (sending.value || !newTask.value.title || !newTask.value.body) return;
   if (isEditMode.value) submitEditProtocol();
   else submitHumanTask();
+}
+
+function setBody(text) {
+  bodyRef.value = text;
+  nextTick(() => bodyTextareaRef.value?.focus());
+}
+
+/** Keeps the highlighted row visible when the list is longer than the menu. */
+function keepSelectionInView() {
+  nextTick(() => {
+    slashListRef.value?.children?.[slashMenu.selected.value]?.scrollIntoView({ block: 'nearest' });
+  });
 }
 
 // STT

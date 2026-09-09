@@ -9,6 +9,10 @@ Type `/` in a task and the agent's commands appear above the composer. Keep
 typing to narrow the list, then press Enter or Tab to choose one — or click it.
 Arrow keys move the highlight, Escape puts the menu away.
 
+The same menu is in the description when you create a task, so a task can *be* a
+command. Cmd ⌘ + Enter creates the task from there without reaching for the
+button.
+
 Nothing to install and nothing to configure. If the agent has commands, the
 menu is there; if it has none, nothing changes.
 
@@ -56,6 +60,16 @@ commands.
 Attachments still travel with the message either way. They are listed on their
 own lines after it, so they never come between the command and the start of the
 prompt.
+
+**A task whose body is a command is delivered the same way, with one
+difference.** A task notification also carries the line naming the task, and
+that line is the only place the agent learns the task's ID — which it needs to
+move the task on or reply to it. So the command goes first and the naming line
+follows it. The trade-off is worth knowing: everything after a command's name is
+that command's argument, so the naming line lands there too. Putting it first
+instead would stop the command being a command, and leaving it out would leave
+the agent unable to report back; of the three, a slightly noisy argument is the
+one that still works.
 
 ## If the menu does not appear
 

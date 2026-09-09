@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -487,6 +488,7 @@ func TestHandleAgentCommandsPrunesDepartedSessions(t *testing.T) {
 		"a-session-that-left": {Commands: []AgentCommand{{Name: "old"}}},
 	}
 	sessionID := connectedServer(t, ps, "acp-gateway")
+	streamFor(ps, sessionID)
 
 	ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
 		Commands: []AgentCommand{{Name: "new"}},
@@ -528,6 +530,94 @@ func TestManagerAgentCommands(t *testing.T) {
 		got := m2.AgentCommands(7)
 		if got == nil || len(got.Commands) != 1 || got.Commands[0].Name != "init" {
 			t.Errorf("AgentCommands(7) = %+v", got)
+		}
+	})
+}
+
+func TestLeadsWithCommand(t *testing.T) {
+	advertised := &AgentCommandsSnapshot{
+		Commands: []AgentCommand{{Name: "compact"}, {Name: "web", Hint: "query"}},
+	}
+
+	t.Run("recognises an advertised command, with or without an argument", func(t *testing.T) {
+		for _, text := range []string{"/compact", "/web agent protocol", "/compact\nmore"} {
+			if _, ok := advertised.LeadsWithCommand(text); !ok {
+				t.Errorf("%q should be a command", text)
+			}
+		}
+	})
+
+	t.Run("trims leading whitespace so the command still leads the prompt", func(t *testing.T) {
+		trimmed, ok := advertised.LeadsWithCommand("  \n/compact")
+		if !ok || trimmed != "/compact" {
+			t.Errorf("got %q, ok=%v", trimmed, ok)
+		}
+	})
+
+	t.Run("is not fooled by anything that merely starts with a slash", func(t *testing.T) {
+		// The guard: these are ordinary text, and treating them as commands
+		// would deliver them stripped of the context that explains them.
+		for _, text := range []string{"/Users/mt/thing", "/etc/hosts", "/compactify", "/Compact", "/", "/ compact", "please /compact"} {
+			if _, ok := advertised.LeadsWithCommand(text); ok {
+				t.Errorf("%q should not be a command", text)
+			}
+		}
+	})
+
+	t.Run("recognises nothing when the agent advertised nothing", func(t *testing.T) {
+		var missing *AgentCommandsSnapshot
+		if _, ok := missing.LeadsWithCommand("/compact"); ok {
+			t.Error("a nil snapshot advertises nothing")
+		}
+		if _, ok := (&AgentCommandsSnapshot{}).LeadsWithCommand("/compact"); ok {
+			t.Error("an empty snapshot advertises nothing")
+		}
+	})
+
+	t.Run("returns the trimmed text even when it is not a command", func(t *testing.T) {
+		// The caller uses it either way, so it must not come back empty.
+		trimmed, ok := advertised.LeadsWithCommand("  hello")
+		if ok || trimmed != "hello" {
+			t.Errorf("got %q, ok=%v", trimmed, ok)
+		}
+	})
+}
+
+// A task pushed by the poller and one pushed at creation have to behave the
+// same, or whether a command runs would depend on something as arbitrary as
+// whether an agent was attached when the task was written.
+func TestNextTaskContent(t *testing.T) {
+	const taskID = int64(1234)
+	naming := "Next assigned task:\nID: " + monoflake.ID(taskID).String() + "\nTitle: Fix the flake"
+
+	t.Run("names the task first for an ordinary body", func(t *testing.T) {
+		ps := newCommandsServer()
+		got := ps.nextTaskContent(taskID, "Fix the flake", "the retry test is flaky")
+		if got != naming+"\nDetails: the retry test is flaky" {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("puts an advertised command first, and the naming block after it", func(t *testing.T) {
+		ps, sessionID, _ := connectedCommandsServer(t)
+		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
+			Commands: []AgentCommand{{Name: "review"}},
+		})
+
+		got := ps.nextTaskContent(taskID, "Fix the flake", "/review the auth changes")
+		if !strings.HasPrefix(got, "/review the auth changes") {
+			t.Errorf("the command must lead: %q", got)
+		}
+		if !strings.Contains(got, monoflake.ID(taskID).String()) {
+			t.Errorf("the task ID is missing from %q", got)
+		}
+	})
+
+	t.Run("names the task first when nothing is advertised", func(t *testing.T) {
+		ps := newCommandsServer()
+		got := ps.nextTaskContent(taskID, "Fix the flake", "/review")
+		if got != naming+"\nDetails: /review" {
+			t.Errorf("got %q", got)
 		}
 	})
 }

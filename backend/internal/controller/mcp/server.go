@@ -973,7 +973,7 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 				// The ID is part of the push because a task body can instruct the
 				// agent to quote it back when publishing an event, and this path
 				// is how workflow-step tasks are delivered.
-				msg := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s", monoflake.ID(nextTask.ID).String(), nextTask.Title, nextTask.Body)
+				msg := ps.nextTaskContent(nextTask.ID, nextTask.Title, nextTask.Body)
 				if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 					msg += "\n" + atts
 				}
@@ -981,6 +981,27 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 			}
 		}
 	}()
+}
+
+// nextTaskContent composes the push that hands an agent its next task.
+//
+// The ID is part of it because a task body can instruct the agent to quote it
+// back when publishing an event, and this path is how workflow-step tasks are
+// delivered.
+//
+// A task whose body *is* a slash command has to lead with it, though: ACP runs
+// a command as ordinary prompt text and the agent matches it at the start of
+// what it is given, so anything in front stops it being a command. The naming
+// block therefore follows it — see taskChannelContent in the API handler, which
+// makes the same choice for the same reason, so a task delivered here and one
+// delivered there behave the same way rather than depending on whether an agent
+// happened to be attached when it was created.
+func (ps *WorkspaceServer) nextTaskContent(taskID int64, title, body string) string {
+	naming := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s", monoflake.ID(taskID).String(), title)
+	if trimmed, isCommand := ps.AgentCommands().LeadsWithCommand(body); isCommand {
+		return fmt.Sprintf("%s\n\n%s", trimmed, naming)
+	}
+	return fmt.Sprintf("%s\nDetails: %s", naming, body)
 }
 
 func (ps *WorkspaceServer) UpdateMetadata(name, description, icon string) {

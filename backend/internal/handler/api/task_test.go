@@ -225,3 +225,58 @@ func TestReplyChannelContent(t *testing.T) {
 		}
 	})
 }
+
+// A task body that *is* a slash command has the same problem a reply did: the
+// agent matches the command at the start of what it is given. It also has one a
+// reply does not — the naming line is the only place the agent learns the task
+// ID, so it cannot simply be dropped.
+func TestTaskChannelContent(t *testing.T) {
+	const taskID = int64(1234)
+	naming := "[Task " + monoflake.ID(taskID).String() + "] Fix the flake"
+
+	advertised := &mcpctrl.AgentCommandsSnapshot{
+		Commands: []mcpctrl.AgentCommand{{Name: "review"}, {Name: "compact"}},
+	}
+
+	t.Run("names the task first for an ordinary body", func(t *testing.T) {
+		got := taskChannelContent(taskID, "Fix the flake", "the retry test is flaky", advertised)
+		if got != naming+"\nthe retry test is flaky" {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("puts an advertised command first, and the naming line after it", func(t *testing.T) {
+		got := taskChannelContent(taskID, "Fix the flake", "/review", advertised)
+		if got != "/review\n\n"+naming {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("keeps the task ID reachable even then", func(t *testing.T) {
+		// Dropping it would leave the agent unable to move the task on or reply
+		// to it, which is worse than a noisy argument.
+		got := taskChannelContent(taskID, "Fix the flake", "/review the auth changes", advertised)
+		if !strings.Contains(got, monoflake.ID(taskID).String()) {
+			t.Errorf("the task ID is missing from %q", got)
+		}
+		if !strings.HasPrefix(got, "/review the auth changes") {
+			t.Errorf("the command must lead: %q", got)
+		}
+	})
+
+	t.Run("leaves a body that only looks like a command alone", func(t *testing.T) {
+		for _, body := range []string{"/Users/mt/thing is broken", "/reviewer notes", "/"} {
+			got := taskChannelContent(taskID, "Fix the flake", body, advertised)
+			if got != naming+"\n"+body {
+				t.Errorf("%q: got %q", body, got)
+			}
+		}
+	})
+
+	t.Run("names the task first when no agent has advertised anything", func(t *testing.T) {
+		got := taskChannelContent(taskID, "Fix the flake", "/review", nil)
+		if got != naming+"\n/review" {
+			t.Errorf("got %q", got)
+		}
+	})
+}

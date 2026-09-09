@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -153,6 +154,43 @@ func (ps *WorkspaceServer) AgentCommands() *AgentCommandsSnapshot {
 	ps.agentCommandsMu.RLock()
 	defer ps.agentCommandsMu.RUnlock()
 	return pickAgentCommands(ps.agentCommands, ps.streamingSessionIDs())
+}
+
+// LeadsWithCommand reports whether the text opens with a slash command this
+// agent advertised, and returns the text with any leading whitespace removed.
+//
+// It lives on the snapshot because every caller needs the same answer and the
+// list is the only thing that makes the question answerable. Matching the
+// advertised names is the guard: without it any line starting with a slash — a
+// path, a fraction, a date — would be treated as a command and delivered
+// stripped of the context that explains it.
+//
+// Leading whitespace is trimmed rather than disqualifying, since the point is
+// only that the command leads the prompt, and " /compact" plainly means the
+// same thing. The name must match exactly: the agent matches what it
+// advertised, so a near miss is not a command.
+func (s *AgentCommandsSnapshot) LeadsWithCommand(text string) (string, bool) {
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+	if s == nil || !strings.HasPrefix(trimmed, "/") {
+		return trimmed, false
+	}
+
+	// Everything up to the first whitespace, so "/web agent protocol" is the
+	// "web" command carrying an argument.
+	name := strings.TrimPrefix(trimmed, "/")
+	if i := strings.IndexAny(name, " \t\r\n"); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return trimmed, false
+	}
+
+	for _, c := range s.Commands {
+		if c.Name == name {
+			return trimmed, true
+		}
+	}
+	return trimmed, false
 }
 
 // pickAgentCommands chooses the snapshot to report from what sessions have said.

@@ -109,7 +109,8 @@ func (h *handler) createTask() fiber.Handler {
 
 			if shouldNotifyMCP {
 				srv := h.mcpManager.Get(rq.Task.WorkspaceID, rq.UserID)
-				content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(rs.Task.ID).String(), rs.Task.Title, rs.Task.Body)
+				content := taskChannelContent(rs.Task.ID, rs.Task.Title, rs.Task.Body,
+					h.mcpManager.AgentCommands(rq.Task.WorkspaceID))
 				if atts := formatAttachments(rs.Task.Attachments); atts != "" {
 					content += "\n" + atts
 				}
@@ -257,10 +258,10 @@ func replyChannelContent(
 	// Leading whitespace is trimmed rather than disqualifying: the point is for
 	// the command to lead the prompt, and " /compact" would defeat that while
 	// plainly meaning the same thing.
-	trimmed := strings.TrimLeft(text, " \t\r\n")
+	trimmed, isCommand := commands.LeadsWithCommand(text)
 
 	content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(taskID).String(), text)
-	if isAdvertisedCommand(trimmed, commands) {
+	if isCommand {
 		content = trimmed
 	}
 
@@ -273,29 +274,26 @@ func replyChannelContent(
 	return content
 }
 
-// isAdvertisedCommand reports whether the text opens with a slash command the
-// connected agent said it accepts.
-func isAdvertisedCommand(text string, commands *mcpctrl.AgentCommandsSnapshot) bool {
-	if commands == nil || !strings.HasPrefix(text, "/") {
-		return false
+// taskChannelContent composes what the agent is told about a new task.
+//
+// A task normally leads with the line naming it, because that ID is the only
+// way the agent can move the task on or reply to it afterwards.
+//
+// A task whose body *is* a slash command cannot lead with anything: ACP runs a
+// command as ordinary prompt text and the agent matches it at the start of what
+// it is given. So the command goes first and the naming line follows it.
+//
+// The trade-off is deliberate and worth knowing: everything after the command
+// name is that command's argument, so the naming line lands there too. Putting
+// it first instead would stop the command being a command at all, and dropping
+// it would leave the agent unable to report on the task it was given — of the
+// three, a slightly noisy argument is the one that still works.
+func taskChannelContent(taskID int64, title, body string, commands *mcpctrl.AgentCommandsSnapshot) string {
+	naming := fmt.Sprintf("[Task %s] %s", monoflake.ID(taskID).String(), title)
+	if trimmed, isCommand := commands.LeadsWithCommand(body); isCommand {
+		return fmt.Sprintf("%s\n\n%s", trimmed, naming)
 	}
-
-	// Everything up to the first whitespace, so "/web agent protocol" is the
-	// "web" command carrying an argument.
-	name := strings.TrimPrefix(text, "/")
-	if i := strings.IndexAny(name, " \t\r\n"); i >= 0 {
-		name = name[:i]
-	}
-	if name == "" {
-		return false
-	}
-
-	for _, c := range commands.Commands {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
+	return fmt.Sprintf("%s\n%s", naming, body)
 }
 
 func (h *handler) replyToTask() fiber.Handler {
