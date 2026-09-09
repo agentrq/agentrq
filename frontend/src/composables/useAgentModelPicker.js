@@ -25,6 +25,69 @@ import { currentModelName } from './useAgentSummary';
  */
 export const CONFIRMATION_TIMEOUT_MS = 30_000;
 
+/** Breathing room between the trigger and the menu, and from the viewport edge. */
+export const POPOVER_GAP = 8;
+export const POPOVER_MARGIN = 8;
+
+/**
+ * The tallest the menu may grow, and the least it may be squeezed to.
+ *
+ * The ceiling keeps a long list from becoming a full-height wall; the floor
+ * stops a trigger jammed against an edge from producing a menu too short to
+ * show anything, which is worse than one that overhangs slightly.
+ */
+export const MAX_POPOVER_HEIGHT = 420;
+export const MIN_POPOVER_HEIGHT = 180;
+
+/**
+ * Where to put the menu, in viewport coordinates.
+ *
+ * The menu is rendered into `<body>` and positioned fixed rather than laid out
+ * next to the button, because the workspace cards live inside a scrolling
+ * container: an absolutely positioned menu is clipped by any ancestor that
+ * scrolls, and one opening upward from a card near the top edge simply loses
+ * the part that overflows — the heading and the first models with it. Nothing
+ * about that is visible in a short list, which is why it survived a two-model
+ * agent.
+ *
+ * Above the trigger by preference, since that is where a menu on a card has
+ * room, flipping below when the list does not fit above. The height it may use
+ * comes back with the position: a fixed cap would go on scrolling a list that
+ * had a screenful of empty space beneath it, which is the same complaint as
+ * being clipped — the models are there and you cannot see them.
+ */
+export function popoverPosition(anchor, menu, viewport) {
+  // The menu may not have been measured yet — it is placed once it exists, and
+  // the first pass runs before there is anything to measure. The viewport is
+  // always known, so it is taken as given rather than defended against.
+  const menuWidth = menu?.width || 0;
+  const menuHeight = menu?.height || 0;
+  const { width: viewWidth, height: viewHeight } = viewport;
+
+  const roomAbove = anchor.top - POPOVER_GAP - POPOVER_MARGIN;
+  const roomBelow = viewHeight - anchor.bottom - POPOVER_GAP - POPOVER_MARGIN;
+
+  // Above while the whole list fits there; otherwise whichever side has more
+  // room. Flipping to a side that also overflows would trade a clipped top for
+  // a clipped bottom and gain nothing.
+  const above = menuHeight <= roomAbove || roomAbove >= roomBelow;
+  const available = Math.max(above ? roomAbove : roomBelow, MIN_POPOVER_HEIGHT);
+
+  const maxHeight = Math.min(MAX_POPOVER_HEIGHT, available);
+  const height = Math.min(menuHeight || maxHeight, maxHeight);
+
+  let top = above ? anchor.top - POPOVER_GAP - height : anchor.bottom + POPOVER_GAP;
+  // Clamped so a list too long for the screen is pinned rather than starting
+  // above the fold, where its first rows could not be reached at all.
+  top = Math.min(Math.max(top, POPOVER_MARGIN), Math.max(POPOVER_MARGIN, viewHeight - height - POPOVER_MARGIN));
+
+  // Right edges aligned, the way an absolutely positioned `right-0` menu sat.
+  const rightmost = Math.max(POPOVER_MARGIN, viewWidth - menuWidth - POPOVER_MARGIN);
+  const left = Math.min(Math.max(anchor.right - menuWidth, POPOVER_MARGIN), rightmost);
+
+  return { top, left, maxHeight, placement: above ? 'above' : 'below' };
+}
+
 /**
  * Whether a workspace can be offered a model picker at all.
  *

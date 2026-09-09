@@ -3,10 +3,15 @@ import { nextTick, ref } from 'vue';
 
 import {
   CONFIRMATION_TIMEOUT_MS,
+  MAX_POPOVER_HEIGHT,
+  MIN_POPOVER_HEIGHT,
+  POPOVER_GAP,
+  POPOVER_MARGIN,
   canChooseModel,
   displayedModelId,
   isConfirmed,
   modelGroups,
+  popoverPosition,
   useAgentModelPicker,
 } from '../src/composables/useAgentModelPicker';
 
@@ -312,5 +317,104 @@ describe('useAgentModelPicker', () => {
 
     expect(picker.available.value).toBe(false);
     expect(picker.groups.value).toEqual([]);
+  });
+});
+
+/**
+ * Where the menu goes.
+ *
+ * This exists because the menu used to be laid out inside the workspace cards,
+ * which scroll — and an absolutely positioned menu is clipped by a scrolling
+ * ancestor, so one opening upward from a card near the top edge lost everything
+ * that overflowed, heading first. A two-model agent is short enough to fit and
+ * shows none of it, which is exactly how it shipped.
+ */
+describe('popoverPosition', () => {
+  const viewport = { width: 1200, height: 800 };
+  /** A trigger low on the page, with plenty of room above it. */
+  const anchor = { top: 600, bottom: 620, right: 500 };
+
+  it('opens above the trigger when the list fits there', () => {
+    const { top, left, placement } = popoverPosition(anchor, { width: 240, height: 300 }, viewport);
+
+    expect(placement).toBe('above');
+    expect(top).toBe(600 - 300 - POPOVER_GAP);
+    // Right edges aligned, the way the absolutely positioned menu sat.
+    expect(left).toBe(500 - 240);
+  });
+
+  it('flips below when the list is too tall to fit above', () => {
+    // The reported bug's shape: a long list on a trigger near the top of the
+    // page. Above would put the first rows off-screen, so it goes below.
+    const nearTop = { top: 120, bottom: 140, right: 500 };
+
+    const { top, placement } = popoverPosition(nearTop, { width: 240, height: 400 }, viewport);
+
+    expect(placement).toBe('below');
+    expect(top).toBe(140 + POPOVER_GAP);
+  });
+
+  it('stays above when below has even less room', () => {
+    // Flipping to a spot that also overflows trades a clipped top for a clipped
+    // bottom and gains nothing.
+    const nearBottom = { top: 700, bottom: 780, right: 500 };
+
+    const { placement } = popoverPosition(nearBottom, { width: 240, height: 400 }, viewport);
+
+    expect(placement).toBe('above');
+  });
+
+  it('grows into the space that is actually there', () => {
+    // The complaint that started this: a list scrolling inside a short menu
+    // while a screenful of room sat unused below it reads exactly like being
+    // cut off — the models are there and you cannot see them.
+    const nearTop = { top: 120, bottom: 140, right: 500 };
+
+    const { maxHeight } = popoverPosition(nearTop, { width: 240, height: 400 }, viewport);
+
+    expect(maxHeight).toBeGreaterThanOrEqual(400);
+  });
+
+  it('never grows past the ceiling', () => {
+    // A tall window must not turn a long list into a full-height wall.
+    const tall = { width: 1200, height: 2000 };
+
+    const { maxHeight } = popoverPosition({ top: 1800, bottom: 1820, right: 500 }, { width: 240, height: 1500 }, tall);
+
+    expect(maxHeight).toBe(MAX_POPOVER_HEIGHT);
+  });
+
+  it('keeps a usable height when the trigger is jammed against an edge', () => {
+    // A menu squeezed to nothing is worse than one that overhangs a little.
+    const { maxHeight } = popoverPosition({ top: 10, bottom: 30, right: 500 }, { width: 240, height: 400 }, { width: 1200, height: 60 });
+
+    expect(maxHeight).toBe(MIN_POPOVER_HEIGHT);
+  });
+
+  it('never places the menu off the top of the viewport', () => {
+    // A list taller than the window is pinned and scrolls internally. Starting
+    // above the fold would make its first rows unreachable.
+    const { top } = popoverPosition({ top: 30, bottom: 50, right: 500 }, { width: 240, height: 2000 }, { width: 1200, height: 200 });
+
+    expect(top).toBeGreaterThanOrEqual(POPOVER_MARGIN);
+  });
+
+  it('keeps the menu on screen horizontally', () => {
+    // A trigger near the left edge would otherwise put the menu off-screen,
+    // since it is aligned by its right edge.
+    const nearLeft = popoverPosition({ top: 600, bottom: 620, right: 60 }, { width: 240, height: 100 }, viewport);
+    expect(nearLeft.left).toBe(POPOVER_MARGIN);
+
+    const nearRight = popoverPosition({ top: 600, bottom: 620, right: 1198 }, { width: 240, height: 100 }, viewport);
+    expect(nearRight.left).toBe(1200 - 240 - POPOVER_MARGIN);
+  });
+
+  it('copes with a menu it has not measured yet', () => {
+    // The first frame, before the element exists to be measured.
+    const { top, left, maxHeight } = popoverPosition(anchor, undefined, viewport);
+
+    expect(Number.isFinite(top)).toBe(true);
+    expect(Number.isFinite(left)).toBe(true);
+    expect(maxHeight).toBeGreaterThan(0);
   });
 });
