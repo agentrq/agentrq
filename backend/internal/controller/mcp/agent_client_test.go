@@ -27,21 +27,35 @@ func connectedIdentityServer(t *testing.T, clientName string) (*WorkspaceServer,
 // way for this to describe a client that has gone.
 
 func TestAgentClient(t *testing.T) {
-	t.Run("names the connected client", func(t *testing.T) {
+	t.Run("names a client that is itself the agent", func(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+		streamFor(ps, connectedServer(t, ps, "claude-code"))
 
 		got := ps.AgentClient()
 		if got == nil {
 			t.Fatal("AgentClient() = nil with a session attached")
 		}
-		if got.Name != "acp-gateway" {
-			t.Errorf("Name = %q, want acp-gateway", got.Name)
+		if got.Name != "claude-code" {
+			t.Errorf("Name = %q, want claude-code", got.Name)
 		}
 		if got.Version != "0" {
 			t.Errorf("Version = %q, want the version the client sent", got.Version)
+		}
+	})
+
+	t.Run("does not name a bridge that has not said what is behind it", func(t *testing.T) {
+		// "acp-gateway" says how an agent is plumbed in, not what it is, and it
+		// would sit in the one place the interface has to name the agent. Better
+		// nothing than the pipe.
+		replies := 0
+		ps := permissionServer(t, &replies)
+		ps.bus = eventbus.New()
+		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+
+		if got := ps.AgentClient(); got != nil {
+			t.Errorf("AgentClient() = %+v, want nil until the gateway names its agent", got)
 		}
 	})
 
@@ -66,7 +80,7 @@ func TestAgentClient(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		drop := streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+		drop := streamFor(ps, connectedServer(t, ps, "claude-code"))
 		if ps.AgentClient() == nil {
 			t.Fatal("expected the client to be named while its stream is up")
 		}
@@ -205,14 +219,24 @@ func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to the client's own name when no agent was reported", func(t *testing.T) {
-		// A gateway too old to send the notification, and every client that is
-		// not a gateway at all. Both keep working exactly as before.
+	t.Run("falls back to the client's own name when it is the agent", func(t *testing.T) {
+		// Claude Code attached directly is the agent, so its own name is the
+		// answer and nothing needs to report one.
 		ps, _, _ := connectedIdentityServer(t, "claude-code")
 
 		got := ps.AgentClient()
 		if got == nil || got.Name != "claude-code" {
 			t.Errorf("AgentClient() = %+v, want the client's own name", got)
+		}
+	})
+
+	t.Run("says nothing for a bridge too old to report its agent", func(t *testing.T) {
+		// Rather than naming the bridge. The interface shows a plain "agent
+		// live" for it, which is all anyone actually knows.
+		ps, _, _ := connectedIdentityServer(t, "acp-gateway")
+
+		if got := ps.AgentClient(); got != nil {
+			t.Errorf("AgentClient() = %+v, want nil", got)
 		}
 	})
 
@@ -278,5 +302,22 @@ func TestStreamingSessionCounting(t *testing.T) {
 	ps.removeStreamingSession("never-seen")
 	if ps.isStreaming("never-seen") {
 		t.Error("a session nobody opened is not streaming")
+	}
+}
+
+func TestIsBridge(t *testing.T) {
+	// Names arrive as the client chose to write them, the same reason
+	// clientSupportsStop folds case and trims.
+	for name, want := range map[string]bool{
+		"acp-gateway":   true,
+		"ACP-Gateway":   true,
+		" acp-gateway ": true,
+		"claude-code":   false,
+		"":              false,
+		"acp":           false,
+	} {
+		if got := isBridge(name); got != want {
+			t.Errorf("isBridge(%q) = %v, want %v", name, got, want)
+		}
 	}
 }

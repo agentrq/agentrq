@@ -115,17 +115,38 @@ func (ps *WorkspaceServer) AgentClient() *AgentClientInfo {
 		if !ps.isStreaming(sess.ID()) {
 			continue
 		}
-		// What the gateway said it is driving wins over what the gateway calls
-		// itself. A gateway that has not been upgraded reports nothing, and
-		// falls back to naming itself exactly as it did before.
+		// What a bridge says it is driving wins over what the bridge calls
+		// itself, because the question is which agent is attached.
 		if agent := ps.reportedAgent(sess.ID()); agent != nil {
 			return agent
 		}
-		if info := clientInfoFrom(sess.InitializeParams()); info != nil {
-			return info
+		info := clientInfoFrom(sess.InitializeParams())
+		if info == nil || isBridge(info.Name) {
+			continue
 		}
+		return info
 	}
 	return nil
+}
+
+// bridgeClients names the MCP clients that are a way through to an agent rather
+// than an agent themselves, keyed by the lowercased name from the handshake.
+//
+// Naming one of these answers the wrong question. "acp-gateway" tells a human
+// how their agent is plumbed in, not what it is, and it appears in the one
+// place the interface has to say which agent is working — so when a bridge has
+// not said what is behind it, the workspace says nothing rather than naming the
+// pipe. A client that is not a bridge is the agent, and is named.
+//
+// The same shape as stopCapableClients above, and for the same reason: the
+// handshake name is the only thing distinguishing these clients, and there is
+// exactly one of them today.
+var bridgeClients = map[string]bool{
+	"acp-gateway": true,
+}
+
+func isBridge(clientName string) bool {
+	return bridgeClients[strings.ToLower(strings.TrimSpace(clientName))]
 }
 
 // clientInfoFrom reads a client's identity out of the initialize handshake.
