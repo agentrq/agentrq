@@ -21,6 +21,7 @@ type (
 		AgentSupportsStop     bool                  `json:"agentSupportsStop"`
 		AgentModels           *AgentModels          `json:"agentModels,omitempty"`
 		AgentCommands         *AgentCommands        `json:"agentCommands,omitempty"`
+		AgentClient           *AgentClient          `json:"agentClient,omitempty"`
 		MCPURL                string                `json:"mcpUrl"`
 		MCPToken              string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
@@ -59,6 +60,14 @@ type (
 		Name        string `json:"name"`
 		Description string `json:"description,omitempty"`
 		Hint        string `json:"hint,omitempty"`
+	}
+
+	// AgentClient names what is attached to the workspace right now. Omitted
+	// when nothing is connected, so a client can read its presence the same way
+	// it reads agentConnected.
+	AgentClient struct {
+		Name    string `json:"name"`
+		Version string `json:"version,omitempty"`
 	}
 
 	SlackConfig struct {

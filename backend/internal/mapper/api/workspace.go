@@ -154,6 +154,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AgentSupportsStop:     p.AgentSupportsStop,
 		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
 		AgentCommands:         fromEntityAgentCommandsToView(p.AgentCommands),
+		AgentClient:           fromEntityAgentClientToView(p.AgentClient),
 		MCPURL:                mcpURL,
 		AutoAllowedTools:      p.AutoAllowedTools,
 		AllowAllCommands:      p.AllowAllCommands,
@@ -251,4 +252,16 @@ func fromEntityAgentCommandsToView(c *entity.AgentCommands) *view.AgentCommands 
 		}
 	}
 	return &view.AgentCommands{Commands: commands}
+}
+
+// fromEntityAgentClientToView names what is attached to the workspace.
+//
+// nil rather than an empty object when nothing is connected, so the field's
+// absence means the same thing as everywhere else on this view: there is
+// nothing to show.
+func fromEntityAgentClientToView(c *entity.AgentClient) *view.AgentClient {
+	if c == nil {
+		return nil
+	}
+	return &view.AgentClient{Name: c.Name, Version: c.Version}
 }

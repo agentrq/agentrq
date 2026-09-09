@@ -33,6 +33,7 @@ type (
 		AgentSupportsStop     bool
 		AgentModels           *AgentModels
 		AgentCommands         *AgentCommands
+		AgentClient           *AgentClient
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
 		SelfLearningLoopNote  string
@@ -73,6 +74,14 @@ type (
 		Name        string
 		Description string
 		Hint        string
+	}
+
+	// AgentClient is what the client attached to the workspace said it was.
+	// Live state read off the MCP session, so it is absent whenever nothing is
+	// connected.
+	AgentClient struct {
+		Name    string
+		Version string
 	}
 
 	SlackConfig struct {

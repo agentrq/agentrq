@@ -621,6 +621,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
+		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusCreated)
@@ -651,6 +652,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
+		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -680,6 +682,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			rs.Workspaces[i].AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspaces[i].ID))
+			rs.Workspaces[i].AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspaces[i].ID))
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
@@ -789,6 +792,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rq.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rq.Workspace.ID))
+		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rq.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -1084,4 +1088,13 @@ func agentCommandsEntity(s *mcpctrl.AgentCommandsSnapshot) *entity.AgentCommands
 		}
 	}
 	return &entity.AgentCommands{Commands: commands}
+}
+
+// agentClientEntity converts the live MCP client identity into the entity the
+// workspace carries.
+func agentClientEntity(c *mcpctrl.AgentClientInfo) *entity.AgentClient {
+	if c == nil {
+		return nil
+	}
+	return &entity.AgentClient{Name: c.Name, Version: c.Version}
 }

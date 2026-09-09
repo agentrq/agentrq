@@ -41,3 +41,18 @@ func TestFromEntityAgentCommandsToView(t *testing.T) {
 		}
 	})
 }
+
+func TestFromEntityAgentClientToView(t *testing.T) {
+	t.Run("nil stays nil, so the field is omitted", func(t *testing.T) {
+		if got := fromEntityAgentClientToView(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("carries the name and version across", func(t *testing.T) {
+		got := fromEntityAgentClientToView(&entity.AgentClient{Name: "acp-gateway", Version: "0.2.13"})
+		if got == nil || got.Name != "acp-gateway" || got.Version != "0.2.13" {
+			t.Errorf("got %+v", got)
+		}
+	})
+}

@@ -151,8 +151,24 @@
                      
                      <div class="min-w-0">
                        <h3 class="font-black text-sm text-gray-800 dark:text-zinc-200 truncate group-hover:text-black dark:group-hover:text-white transition-colors leading-none">{{ toKebabCase(p.name) }}</h3>
-                       <div class="flex items-center gap-1.5 mt-1">
-                         <span class="text-[8px] font-black uppercase tracking-widest transition-colors"
+                       <!-- The dot already says an agent is live, so when the
+                            workspace can say *what* is live the line spends its
+                            width on that instead of repeating the dot. Falls
+                            back to the plain state whenever nothing is known,
+                            which is every agent that reports nothing about
+                            itself. -->
+                       <div class="flex items-baseline gap-1.5 mt-1 min-w-0" :title="agentSummary(p)">
+                         <template v-if="p.agentConnected && agentDetails(p)">
+                           <span v-if="agentDetails(p).client"
+                                 class="text-[9px] font-black uppercase tracking-wider text-green-600 dark:text-green-500 truncate">
+                             {{ agentDetails(p).client }}
+                           </span>
+                           <template v-if="agentDetails(p).model">
+                             <span v-if="agentDetails(p).client" class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
+                             <span class="text-[9px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ agentDetails(p).model }}</span>
+                           </template>
+                         </template>
+                         <span v-else class="text-[8px] font-black uppercase tracking-widest transition-colors"
                                :class="p.agentConnected ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'">
                            {{ p.agentConnected ? 'Agent Live' : 'Agent Offline' }}
                          </span>
@@ -164,6 +180,7 @@
                      <svg class="w-4 h-4 text-gray-900 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                    </div>
                  </div>
+
             </div>
           </div>
         </section>
@@ -269,6 +286,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { usePlatformStore } from '../stores/platformStore';
+import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import {
   chooseDirectory,
   directoryPickerState,

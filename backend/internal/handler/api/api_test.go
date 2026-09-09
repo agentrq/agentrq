@@ -831,3 +831,18 @@ func TestAgentCommandsEntity(t *testing.T) {
 		}
 	})
 }
+
+func TestAgentClientEntity(t *testing.T) {
+	t.Run("nil stays nil, so nothing is advertised", func(t *testing.T) {
+		if got := agentClientEntity(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("carries the live identity into the API layer's own shape", func(t *testing.T) {
+		got := agentClientEntity(&mcpctrl.AgentClientInfo{Name: "claude-code", Version: "2.0.1"})
+		if got == nil || got.Name != "claude-code" || got.Version != "2.0.1" {
+			t.Errorf("got %+v", got)
+		}
+	})
+}
