@@ -138,11 +138,19 @@ export function useAgentModelPicker({ workspace, selectModel, now = () => Date.n
         pendingModelId.value = '';
         return;
       }
-      // A report naming a different model is the agent having its own answer,
-      // which settles the question as surely as agreement would.
+      // A report that names some other model settles the question — the switch
+      // is no longer outstanding, and what just arrived is the truth.
+      //
+      // What it does *not* establish is why. The backend republishes on a
+      // changed config option or a changed list as well as on a switch, so this
+      // fires both for an agent that declined and for an unrelated update that
+      // happened to land mid-flight. Claiming a refusal would be wrong in the
+      // second case, and a later confirming report would then contradict it.
+      // So this says only what is known: which model is running now.
       if (pendingModelId.value && agentModels.value?.currentModel) {
         pendingModelId.value = '';
-        error.value = 'The agent stayed on a different model';
+        const name = currentModelName(agentModels.value);
+        error.value = `The agent is running ${name}`;
       }
     },
   );
@@ -170,7 +178,16 @@ export function useAgentModelPicker({ workspace, selectModel, now = () => Date.n
    */
   async function choose(modelId) {
     error.value = '';
-    if (!modelId || modelId === agentModels.value?.currentModel) return;
+    if (!modelId) return;
+
+    // Choosing the model that is already running is how an outstanding switch
+    // is called off: there is nothing to ask for, but there is something to
+    // stop waiting for. Without this the picker went on showing the abandoned
+    // choice until the timeout, with no way to take it back.
+    if (modelId === agentModels.value?.currentModel) {
+      pendingModelId.value = '';
+      return;
+    }
 
     pendingModelId.value = modelId;
     requestedAt.value = now();

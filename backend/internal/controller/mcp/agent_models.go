@@ -254,9 +254,14 @@ func (ps *WorkspaceServer) publishAgentModels(reported AgentModelsSnapshot) {
 		Payload: map[string]any{
 			"configId":     published.ConfigID,
 			"currentModel": published.CurrentModel,
-			"canSet":       published.CanSet,
-			"models":       models,
-			"workspaceId":  monoflake.ID(ps.workspaceID).String(),
+			// Selectable(), not the raw field, so this agrees with the REST
+			// payload. A gateway willing to switch but naming no config option
+			// to switch through would otherwise light up a picker here that the
+			// workspace payload says does not exist — appearing on an event,
+			// failing on use, and vanishing on the next reload.
+			"canSet":      published.Selectable(),
+			"models":      models,
+			"workspaceId": monoflake.ID(ps.workspaceID).String(),
 		},
 	})
 }
@@ -315,34 +320,33 @@ func pickAgentModels(snapshots map[string]AgentModelsSnapshot, live []string) *A
 // alone cannot say where to send it: its SessionID is the gateway's own ACP
 // session with the agent, a different namespace from the transport session this
 // server would address — the trap HandleAgentModels documents at length.
+// A session that can actually be switched wins over one that merely has models
+// to show. Two gateways on one workspace is a case this file contemplates
+// throughout, and without the preference the answer is decided by session
+// order: an older gateway that reports its models and ignores being told to
+// change one would mask a newer one attached beside it, so the workspace would
+// report canSet false and refuse the switch while something perfectly capable
+// was connected.
+//
+// The fallback keeps a read-only gateway's models on display when that is all
+// there is, which is what every deployment looks like today.
 func pickAgentModelsSession(snapshots map[string]AgentModelsSnapshot, live []string) (string, *AgentModelsSnapshot) {
+	var fallbackID string
+	var fallback *AgentModelsSnapshot
+
 	for _, id := range live {
 		snapshot, ok := snapshots[id]
 		if !ok || len(snapshot.Models) == 0 {
 			continue
 		}
-		return id, &snapshot
+		if snapshot.Selectable() {
+			return id, &snapshot
+		}
+		if fallback == nil {
+			fallbackID, fallback = id, &snapshot
+		}
 	}
-	return "", nil
-}
-
-// SupportsModelSelect reports whether a model can actually be chosen right now,
-// so the interface only offers a picker that would do something.
-//
-// Three things have to hold, and the first two are what a reader would forget.
-// The session must still hold a stream — a session outlives the stream that
-// carried it, which is the trap #504 fixed for the Stop button, and a snapshot
-// keyed to a departed gateway still looks live. The gateway must have said it
-// can set a model: every gateway in the field reports models and none of the
-// older ones will act on being told to change one, so this cannot be assumed
-// from the models being there. And there must be a config option to write the
-// choice back to, which is what ConfigID names.
-func (ps *WorkspaceServer) SupportsModelSelect() bool {
-	ps.agentModelsMu.RLock()
-	defer ps.agentModelsMu.RUnlock()
-
-	_, snapshot := pickAgentModelsSession(ps.agentModels, ps.streamingSessionIDs())
-	return snapshot != nil && snapshot.Selectable()
+	return fallbackID, fallback
 }
 
 // SendSetModelNotification asks the connected agent to switch to a model.

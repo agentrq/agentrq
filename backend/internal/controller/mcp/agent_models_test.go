@@ -709,9 +709,6 @@ func TestSendSetModelNotification(t *testing.T) {
 		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
-		if ps.SupportsModelSelect() {
-			t.Error("SupportsModelSelect() = true with nothing reported")
-		}
 	})
 
 	t.Run("refuses a gateway that never said it can set one", func(t *testing.T) {
@@ -726,9 +723,6 @@ func TestSendSetModelNotification(t *testing.T) {
 
 		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
-		}
-		if ps.SupportsModelSelect() {
-			t.Error("SupportsModelSelect() = true for a gateway that never said it can")
 		}
 	})
 
@@ -761,9 +755,6 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps, sessionID, _ := connectedModelsServer(t)
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 
-		if !ps.SupportsModelSelect() {
-			t.Fatal("SupportsModelSelect() = false for a gateway that said it can")
-		}
 		if err := ps.SendSetModelNotification(context.Background(), "b"); err != nil {
 			t.Fatalf("SendSetModelNotification() = %v, want nil", err)
 		}
@@ -794,9 +785,6 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 		ps.removeStreamingSession(sessionID)
 
-		if ps.SupportsModelSelect() {
-			t.Error("SupportsModelSelect() = true for a session that has gone off the air")
-		}
 		if err := ps.SendSetModelNotification(context.Background(), "b"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
@@ -856,5 +844,96 @@ func TestHandleAgentModelsPublishesCanSetChange(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("a gateway that began offering selection was not announced")
+	}
+}
+
+// A gateway willing to switch but naming no config option to switch through.
+// Selectable() has always refused it; the live event used to say otherwise, so
+// a picker appeared, failed with a 409 on use, and vanished on the next reload.
+func TestPublishedCanSetFollowsTheSameRuleAsTheWorkspacePayload(t *testing.T) {
+	ps, sessionID, ch := connectedModelsServer(t)
+
+	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		CanSet: true,
+		Models: []AgentModel{{ID: "a"}},
+	})
+
+	select {
+	case raw := <-ch:
+		var evt struct {
+			Payload map[string]any `json:"payload"`
+		}
+		body := strings.TrimSpace(strings.TrimPrefix(string(raw), "data: "))
+		if err := json.Unmarshal([]byte(body), &evt); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		if evt.Payload["canSet"] != false {
+			t.Errorf("canSet = %v, want false — there is no config option to write to", evt.Payload["canSet"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the report was not announced")
+	}
+
+	// The two answers have to agree, which is the whole point of the rule.
+	if got := ps.AgentModels(); got == nil || got.Selectable() {
+		t.Errorf("Selectable() = %v, want false", got != nil && got.Selectable())
+	}
+}
+
+// Two gateways on one workspace, the capable one second in session order.
+// Taking the first with a model list would report the older one's inability and
+// refuse a switch that the newer one would have carried out.
+func TestPickAgentModelsPrefersASessionThatCanActuallySwitch(t *testing.T) {
+	readOnly := AgentModelsSnapshot{
+		ConfigID: "model",
+		Models:   []AgentModel{{ID: "old"}},
+	}
+	capable := AgentModelsSnapshot{
+		ConfigID: "model",
+		CanSet:   true,
+		Models:   []AgentModel{{ID: "new"}},
+	}
+	snapshots := map[string]AgentModelsSnapshot{"first": readOnly, "second": capable}
+
+	id, got := pickAgentModelsSession(snapshots, []string{"first", "second"})
+	if got == nil || !got.Selectable() {
+		t.Fatalf("picked %+v, want the session that can switch", got)
+	}
+	if id != "second" {
+		t.Errorf("session = %q, want the capable one so the notification reaches it", id)
+	}
+
+	t.Run("still shows a read-only gateway when that is all there is", func(t *testing.T) {
+		// Every deployment today. Preferring selectable must not mean showing
+		// nothing when nothing is selectable.
+		id, got := pickAgentModelsSession(map[string]AgentModelsSnapshot{"only": readOnly}, []string{"only"})
+		if got == nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
+			t.Fatalf("picked %+v, want the read-only gateway's list", got)
+		}
+		if id != "only" {
+			t.Errorf("session = %q, want %q", id, "only")
+		}
+	})
+}
+
+// The delivery path has to agree with the preference, or the notification is
+// addressed to a gateway that will ignore it while a capable one stands beside.
+func TestSendSetModelReachesTheCapableGatewayOfTwo(t *testing.T) {
+	ps, readOnlyID, _ := connectedModelsServer(t)
+	capableID := connectSession(t, ps, "acp-gateway")
+	streamFor(ps, capableID)
+
+	ps.HandleAgentModels(context.Background(), readOnlyID, AgentModelsParams{
+		ConfigID: "model", CurrentModel: "old", Models: []AgentModel{{ID: "old"}},
+	})
+	ps.HandleAgentModels(context.Background(), capableID, AgentModelsParams{
+		ConfigID: "model", CurrentModel: "new", CanSet: true,
+		Models: []AgentModel{{ID: "new"}, {ID: "newer"}},
+	})
+
+	// "newer" exists only on the capable gateway, so a refusal here would mean
+	// the read-only one was consulted.
+	if err := ps.SendSetModelNotification(context.Background(), "newer"); err != nil {
+		t.Errorf("SendSetModelNotification() = %v, want it to reach the capable gateway", err)
 	}
 }

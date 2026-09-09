@@ -223,8 +223,10 @@ describe('useAgentModelPicker', () => {
   });
 
   it('takes a report naming a different model as the agent’s answer', async () => {
-    // The agent declined, or a second gateway answered. Either way the request
-    // is over and what arrived is the truth.
+    // The agent declined, or a second gateway answered, or an unrelated update
+    // landed mid-flight. The request is over and what arrived is the truth — but
+    // which of those it was is not knowable here, so the message says only what
+    // is running rather than accusing the agent of refusing.
     const { picker, workspace } = harness();
 
     await picker.choose('b');
@@ -233,7 +235,43 @@ describe('useAgentModelPicker', () => {
 
     expect(picker.isPending.value).toBe(false);
     expect(picker.selectedId.value).toBe('a');
-    expect(picker.error.value).toBe('The agent stayed on a different model');
+    expect(picker.error.value).toBe('The agent is running Model A');
+  });
+
+  it('does not claim a refusal for an unrelated report that lands mid-switch', async () => {
+    // The backend republishes on a changed config option or list, not only on a
+    // switch. Calling that a refusal was wrong, and a later confirming report
+    // would then contradict the message the human had already been shown.
+    const { picker, workspace } = harness();
+
+    await picker.choose('b');
+    // Same current model, different config option — a real republish that says
+    // nothing about the switch.
+    workspace.value = connected({ ...twoModels, configId: 'model_id' });
+    await nextTick();
+    expect(picker.error.value).not.toMatch(/stayed|refus/i);
+
+    // And the switch it was really waiting for still lands correctly.
+    workspace.value = connected({ ...twoModels, currentModel: 'b' });
+    await nextTick();
+    expect(picker.selectedId.value).toBe('b');
+    expect(picker.isPending.value).toBe(false);
+  });
+
+  it('calls off an outstanding switch when the running model is picked again', async () => {
+    // The only way to take back a choice. Without it the picker showed the
+    // abandoned model for the full timeout, with nothing the human could do.
+    const { picker, selectModel } = harness();
+
+    await picker.choose('b');
+    expect(picker.isPending.value).toBe(true);
+
+    await picker.choose('a');
+
+    expect(picker.isPending.value).toBe(false);
+    expect(picker.selectedId.value).toBe('a');
+    // Nothing asked of the agent: it is already running this model.
+    expect(selectModel).toHaveBeenCalledTimes(1);
   });
 
   it('tracks whether a request is in flight', async () => {

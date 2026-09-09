@@ -163,7 +163,12 @@
                                  class="text-[9px] font-black uppercase tracking-wider text-green-600 dark:text-green-500 truncate">
                              {{ agentDetails(p).client }}
                            </span>
-                           <template v-if="agentDetails(p).model">
+                           <!-- Or a choice with nothing chosen yet: an agent
+                                may report models without naming a current one,
+                                which the backend explicitly tolerates. Guarding
+                                on the name alone hid the picker exactly where
+                                it was most needed. -->
+                           <template v-if="agentDetails(p).model || canChooseModel(p)">
                              <span v-if="agentDetails(p).client" class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
                              <!-- The model becomes a control where the agent
                                   will act on being told to switch, and stays
