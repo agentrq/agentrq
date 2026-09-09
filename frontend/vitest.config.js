@@ -42,6 +42,7 @@ export default defineConfig({
         'src/composables/useTaskGroups.js',
         'src/composables/useTaskStatusStyle.js',
         'src/composables/useAgentTelemetry.js',
+        'src/composables/useAgentModelPicker.js',
         'src/composables/useTaskEvents.js',
         'src/composables/useTrajectory.js',
         'src/composables/useWorkflowLabels.js',

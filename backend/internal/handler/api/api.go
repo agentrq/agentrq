@@ -647,6 +647,23 @@ func (h *handler) setAgentModel() fiber.Handler {
 			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "failed to select the model"})
 		}
 
+		// Counted on the asking, not on the agent's confirmation: what is worth
+		// knowing is how often people reach for this, and an agent that then
+		// refuses is a different question.
+		//
+		// A failure here is logged and no more. The agent has already been
+		// asked, so refusing the request now would report a switch as failed
+		// that in fact happened — and the count is not what the caller came
+		// for.
+		if err := h.crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
+			Action:      entity.ActionAgentModelSelect,
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+		}); err != nil {
+			zlog.Warn().Err(err).Int64("workspace_id", workspaceID).
+				Msg("model selection was made but not counted")
+		}
+
 		// Accepted, not OK, and carrying no model: the agent has been asked,
 		// and only its own next models notification says whether it switched.
 		// Answering with the chosen model here would invite a client to render

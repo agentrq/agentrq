@@ -165,7 +165,14 @@
                            </span>
                            <template v-if="agentDetails(p).model">
                              <span v-if="agentDetails(p).client" class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
-                             <span class="text-[9px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ agentDetails(p).model }}</span>
+                             <!-- The model becomes a control where the agent
+                                  will act on being told to switch, and stays
+                                  plain text everywhere else. The card navigates
+                                  on click, so the picker stops its own clicks
+                                  from reaching it — choosing a model must not
+                                  also leave the page. -->
+                             <AgentModelPicker v-if="canChooseModel(p)" :workspace="p" compact @click.stop />
+                             <span v-else class="text-[9px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ agentDetails(p).model }}</span>
                            </template>
                          </template>
                          <span v-else class="text-[8px] font-black uppercase tracking-widest transition-colors"
@@ -287,6 +294,8 @@ import { useFormat } from '../composables/useFormat';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { usePlatformStore } from '../stores/platformStore';
 import { agentDetails, agentSummary } from '../composables/useAgentSummary';
+import { canChooseModel } from '../composables/useAgentModelPicker';
+import AgentModelPicker from '../components/AgentModelPicker.vue';
 import {
   chooseDirectory,
   directoryPickerState,

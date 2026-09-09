@@ -309,4 +309,8 @@ const (
 	ActionIDUICopyLink
 	ActionIDUICopyMarkdown
 	ActionIDUITrajectoryView
+	// A model chosen from the interface, emitted by the backend when it asks
+	// the agent to switch. On the end like everything else here, for the reason
+	// recorded above.
+	ActionIDAgentModelSelect
 )

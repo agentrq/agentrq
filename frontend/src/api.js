@@ -236,6 +236,29 @@ export async function sendPermissionVerdict(workspaceId, taskId, requestId, beha
   return res;
 }
 
+/**
+ * Ask the workspace's connected agent to switch to a different model.
+ *
+ * Answers 202 rather than 200: the agent has been asked, and only its own next
+ * models notification — which arrives over the event stream — says whether it
+ * switched. Callers must not treat this resolving as the model having changed.
+ */
+export async function setAgentModel(workspaceId, modelId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/agent/model`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelId })
+  });
+  if (!res.ok) {
+    // The server says why it refused — most usefully that the connected agent
+    // cannot be told to switch, or that it never offered this model — and that
+    // reason is worth more than "failed".
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || 'Failed to change the model');
+  }
+  return res.json();
+}
+
 export async function stopTask(workspaceId, taskId) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/stop`, {
     method: 'POST'

@@ -389,6 +389,19 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, taskId }) => api.stopTask(workspaceId, taskId),
     }),
     tool({
+      name: 'setAgentModel',
+      description:
+        'Ask the workspace\'s connected agent to switch to a different model. Only offered where ' +
+        'the agent reported models and said it can change them; asking is not the same as it ' +
+        'having changed, which the workspace reports separately.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        modelId: str('The id of a model the agent listed as available.'),
+      },
+      required: ['workspaceId', 'modelId'],
+      run: ({ workspaceId, modelId }) => api.setAgentModel(workspaceId, modelId),
+    }),
+    tool({
       name: 'deleteTask',
       description: 'Permanently delete a task and its conversation. This cannot be undone.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },

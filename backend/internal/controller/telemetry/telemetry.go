@@ -179,6 +179,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUICopyMarkdown
 	case entity.ActionUITrajectoryView:
 		action = model.ActionIDUITrajectoryView
+	case entity.ActionAgentModelSelect:
+		action = model.ActionIDAgentModelSelect
 	default:
 		return
 	}

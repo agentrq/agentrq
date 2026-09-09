@@ -1017,7 +1017,12 @@ const (
 	ActionMCPPermissionManual        Action = 21
 	ActionMCPPermissionAuto          Action = 22
 	ActionTaskAllowAllCommandsToggle Action = 23
-	ActionEventPublished             Action = 30
+	// A model chosen from the interface. Recorded through the same controller
+	// as the browser reports below, but emitted by the backend right after it
+	// asks the agent to switch — so it stays out of ClientReportableAction,
+	// which exists to say what a browser may claim, and this is not claimed.
+	ActionAgentModelSelect Action = 24
+	ActionEventPublished   Action = 30
 	// Local-AI feature usage, reported by the browser rather than emitted by
 	// the backend: these models run in the user's own tab, so nothing
 	// server-side ever observes them. See ClientReportableAction, which is the
@@ -1105,6 +1110,8 @@ func (a Action) String() string {
 		return "mcp_permission_auto"
 	case ActionTaskAllowAllCommandsToggle:
 		return "task_allow_all_commands_toggle"
+	case ActionAgentModelSelect:
+		return "agent_model_select"
 	case ActionEventPublished:
 		return "event_published"
 	case ActionLocalAITitleGenerate:

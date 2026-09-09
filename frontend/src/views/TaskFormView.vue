@@ -257,6 +257,11 @@
                    </div>
                 </div>
 
+                <!-- Which model the agent will use, chosen before the task is
+                     written rather than after it has started. Absent unless the
+                     connected agent offers a choice and will act on it. -->
+                <AgentModelPicker :workspace="liveWorkspace" />
+
              </div>
 
              <!-- The shortcut, said out loud. Hidden on narrow screens, where
@@ -292,6 +297,8 @@ import { useCron } from '../composables/useCron';
 import { useSpeechToText } from '../composables/useSpeechToText';
 import { useAutoTitle } from '../composables/useAutoTitle';
 import { useTooltipStore } from '../stores/tooltipStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+import AgentModelPicker from '../components/AgentModelPicker.vue';
 
 const { getNextRunLabel, daysOptions } = useCron();
 const route = useRoute();
@@ -305,6 +312,17 @@ const isEditMode = computed(() => !!taskId);
 
 const workspace = ref(null);
 const sending = ref(false);
+
+// The model picker reads the *store's* copy of this workspace, not the one
+// fetched above. The agent's confirming report arrives on the event stream and
+// lands in the store, so a picker bound to this view's own snapshot would show
+// a switch as pending forever — the answer would never reach it.
+const workspaceStore = useWorkspaceStore();
+// Falls back to this view's own copy only until the store has one. That copy
+// cannot receive the confirming report, so it is a starting value rather than a
+// source: enough to draw the picker on a cold load, replaced the moment the
+// store knows about this workspace.
+const liveWorkspace = computed(() => workspaceStore.getWorkspace(workspaceId) || workspace.value);
 const fileInput = ref(null);
 
 const newTask = ref({ title: '', body: '', assignee: 'agent', cronSchedule: '', allowAllCommands: false });

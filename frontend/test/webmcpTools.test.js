@@ -14,6 +14,7 @@ const EVERY_FIELD = {
   eventId: 'e1',
   triggerId: 'tr1',
   workflowId: 'wf1',
+  modelId: 'gemini-2.5-pro',
   stepId: 'st1',
   requestId: 'req1',
   path: '/events',

@@ -186,6 +186,21 @@ keyboard or the mouse. The list comes from the agent and follows it live, so it
 changes as the agent's context does. An agent that advertises none gets no menu
 and nothing changes. See the [Slash Commands Guide](docs/SLASH_COMMANDS.md).
 
+### 🧠 Choosing the agent's model
+
+Where an agent offers a choice of model, you can make it from the interface —
+on a workspace card, and on the form where a task is written, so the model is
+settled before the work starts rather than after. Choosing shows the new model
+straight away but marks it as asked-for until the agent itself confirms; if it
+refuses, or never answers, the interface goes back to what is actually running
+and says so.
+
+The choice appears only where it would do something. An agent that reports no
+models — Claude Code connected directly, among others — shows none, and neither
+does an ACP gateway older than the release that learned to switch on request:
+it says which model it is on without claiming it can change it. Nothing to
+configure either way.
+
 To run it from source:
 
 ```bash
