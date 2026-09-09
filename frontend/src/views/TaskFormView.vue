@@ -57,7 +57,8 @@
           </div>
 
           <!-- Description Textarea -->
-          <textarea v-model="bodyRef" 
+          <textarea v-model="bodyRef"
+                    @keydown="onDescriptionKeydown"
                     placeholder="Provide detailed context or instructions..." 
                     class="w-full px-4 pt-3 pb-2 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[160px] custom-scrollbar"
                     required></textarea>
@@ -258,6 +259,12 @@
 
              </div>
 
+             <!-- The shortcut, said out loud. Hidden on narrow screens, where
+                  there is no keyboard to press it with and no room to say so. -->
+             <span class="hidden sm:inline text-[10px] font-medium text-gray-400 dark:text-zinc-500 mr-2 shrink-0">
+               {{ isEditMode ? 'Cmd ⌘ + Enter to save' : 'Cmd ⌘ + Enter to create' }}
+             </span>
+
              <!-- Submit Button -->
              <button type="submit"
                      :disabled="sending || !newTask.title || !newTask.body"
@@ -312,6 +319,22 @@ const bodyRef = computed({
   get: () => newTask.value.body,
   set: (v) => { newTask.value.body = v; },
 });
+
+/**
+ * Cmd/Ctrl-Enter submits the form from the description.
+ *
+ * Guarded exactly as the button is, so the shortcut and the button agree: a
+ * shortcut that quietly does nothing on an incomplete form is worse than one
+ * that is simply not offered, and worse still if it disagrees with what the
+ * button would have done.
+ */
+function onDescriptionKeydown(event) {
+  if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
+  event.preventDefault();
+  if (sending.value || !newTask.value.title || !newTask.value.body) return;
+  if (isEditMode.value) submitEditProtocol();
+  else submitHumanTask();
+}
 
 // STT
 const {
