@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
@@ -595,7 +597,62 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Get("/:id/memories/:name", h.getWorkspaceMemory())
 	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
 	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
+	r.Post("/:id/agent/model", h.setAgentModel())
 	return nil
+}
+
+// setAgentModel asks the workspace's connected agent to switch model.
+//
+// Under /workspaces rather than under a task: the models are a standing fact
+// about the agent attached to the workspace, and the session that offers them
+// serves every task in it. Hanging this off one task would imply a choice that
+// applied only there.
+//
+// It refuses with a reason worth reading, the way stopTask does. "Failed" is
+// useless to someone whose picker just did nothing; which of "nothing connected
+// can do this" and "that model is not on offer" it was, is the whole content of
+// the answer.
+func (h *handler) setAgentModel() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var rq view.SetAgentModelRequest
+		if err := c.BodyParser(&rq); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
+		}
+		if strings.TrimSpace(rq.ModelID) == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "modelId is required"})
+		}
+
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		userID := c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if ok, err := h.crud.CheckWorkspaceAccess(ctx, workspaceID, userID); err != nil || !ok {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		srv := h.mcpManager.Get(workspaceID, userID)
+		if srv == nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
+		}
+
+		switch err := srv.SendSetModelNotification(c.Context(), rq.ModelID); {
+		case errors.Is(err, mcpctrl.ErrModelSelectUnsupported):
+			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, mcpctrl.ErrModelNotOffered):
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, mcpctrl.ErrModelSetNotDelivered):
+			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		case err != nil:
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "failed to select the model"})
+		}
+
+		// Accepted, not OK, and carrying no model: the agent has been asked,
+		// and only its own next models notification says whether it switched.
+		// Answering with the chosen model here would invite a client to render
+		// it as settled — the one thing this flow must not claim.
+		return c.Status(http.StatusAccepted).JSON(fiber.Map{"requested": rq.ModelID})
+	}
 }
 
 func (h *handler) createWorkspace() fiber.Handler {
@@ -1068,6 +1125,10 @@ func agentModelsEntity(s *mcpctrl.AgentModelsSnapshot) *entity.AgentModels {
 		ConfigID:     s.ConfigID,
 		CurrentModel: s.CurrentModel,
 		Models:       models,
+		// The rule, not the raw field: a gateway willing to switch but
+		// advertising no config option to switch through cannot be obeyed, and
+		// a picker offered on that promise would do nothing.
+		CanSet: s.Selectable(),
 	}
 }
 

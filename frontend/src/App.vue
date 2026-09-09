@@ -664,8 +664,8 @@ onEvent((event) => {
   // named on the Overview card is whatever the last page load fetched, and a
   // switch never shows.
   if (event.type === 'agent.models') {
-    const { configId, currentModel, models, workspaceId } = event.payload
-    workspaceStore.updateAgentModels(workspaceId, { configId, currentModel, models })
+    const { configId, currentModel, canSet, models, workspaceId } = event.payload
+    workspaceStore.updateAgentModels(workspaceId, { configId, currentModel, canSet, models })
   }
 
   // Handle workspace metadata updates

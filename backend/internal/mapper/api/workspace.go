@@ -228,6 +228,7 @@ func fromEntityAgentModelsToView(m *entity.AgentModels) *view.AgentModels {
 		ConfigID:     m.ConfigID,
 		CurrentModel: m.CurrentModel,
 		Models:       models,
+		CanSet:       m.CanSet,
 	}
 }
 

@@ -182,6 +182,7 @@ describe('workspaceStore', () => {
     const twoModels = {
       configId: 'model',
       currentModel: 'gemini-2.5-pro',
+      canSet: true,
       models: [{ id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }, { id: 'gpt-5-codex', name: 'GPT-5 Codex' }],
     }
 
@@ -203,6 +204,28 @@ describe('workspaceStore', () => {
       store.updateAgentModels('0ZzhYQG2qtl', { ...twoModels, currentModel: 'gpt-5-codex' })
 
       expect(modelsOf(store, '0ZzhYQG2qtl').currentModel).toBe('gpt-5-codex')
+    })
+
+    it('keeps a read-only agent read-only', () => {
+      // An agent that reports what it is running but cannot be told to change
+      // it. The field has to survive as false rather than vanish, because its
+      // absence is what a picker would read as "no opinion".
+      const store = useWorkspaceStore()
+
+      store.updateAgentModels('0ZzhYQG2qtl', { ...twoModels, canSet: false })
+
+      expect(modelsOf(store, '0ZzhYQG2qtl').canSet).toBe(false)
+    })
+
+    it('treats a missing canSet as no', () => {
+      // Every gateway older than this feature sends no such field, and reading
+      // silence as consent would offer a picker that does nothing.
+      const store = useWorkspaceStore()
+      const { canSet, ...withoutCanSet } = twoModels
+
+      store.updateAgentModels('0ZzhYQG2qtl', withoutCanSet)
+
+      expect(modelsOf(store, '0ZzhYQG2qtl').canSet).toBe(false)
     })
 
     it('takes the choice away when the agent withdraws its models', () => {

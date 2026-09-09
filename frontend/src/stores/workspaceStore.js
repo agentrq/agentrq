@@ -90,7 +90,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (idx !== -1) {
       const list = Array.isArray(models?.models) ? models.models : [];
       const agentModels = list.length > 0
-        ? { configId: models.configId, currentModel: models.currentModel, models: list }
+        ? {
+            configId: models.configId,
+            currentModel: models.currentModel,
+            // Carried through explicitly, and defaulted to false rather than
+            // left undefined: this is what decides whether a picker is offered
+            // at all, and an event that dropped it would take the picker away
+            // from an agent that can still be told to switch.
+            canSet: models.canSet === true,
+            models: list,
+          }
         : undefined;
       workspaces.value[idx] = { ...workspaces.value[idx], agentModels };
     }

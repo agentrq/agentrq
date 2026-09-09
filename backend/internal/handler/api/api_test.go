@@ -846,3 +846,123 @@ func TestAgentClientEntity(t *testing.T) {
 		}
 	})
 }
+
+// Choosing a model is refused with a reason worth reading, and refused before
+// anything reaches a workspace server when the caller has no business there.
+// "Failed" tells someone whose picker just did nothing precisely nothing.
+
+func TestSetAgentModel_RefusesACallerWithoutAccess(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return false, nil
+		},
+	}
+	// Intentionally no MCPManager: an unauthorized request must be refused
+	// before anything reaches a workspace server.
+	h := &handler{crud: crudCtrl}
+
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentModel()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+		strings.NewReader(`{"modelId":"gemini-2.5-pro"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestSetAgentModel_RejectsARequestNamingNoModel(t *testing.T) {
+	// Checked before the access lookup would matter, and worth its own answer:
+	// an empty modelId is a client bug, and reporting it as "no agent" would
+	// send someone looking at their gateway.
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"an empty model id", `{"modelId":""}`},
+		{"a model id of only spaces", `{"modelId":"   "}`},
+		{"no model id at all", `{}`},
+		{"a body that is not JSON", `not json`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			h := &handler{crud: crudCtrl}
+
+			app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.setAgentModel()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+				strings.NewReader(tc.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestSetAgentModel_ReportsThatNothingIsConnected(t *testing.T) {
+	// No MCP server for the workspace at all. 404 rather than a 409, because
+	// the distinction is real: nothing is running to be asked, as against
+	// something running that will not act.
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	// A manager that builds no server for the workspace, which is what "nothing
+	// is connected" looks like from here.
+	h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
+		func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return nil },
+	)}
+
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentModel()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+		strings.NewReader(`{"modelId":"gemini-2.5-pro"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}

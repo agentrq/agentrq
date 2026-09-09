@@ -39,6 +39,10 @@ type (
 		ConfigID     string       `json:"configId"`
 		CurrentModel string       `json:"currentModel,omitempty"`
 		Models       []AgentModel `json:"models"`
+		// CanSet says whether choosing one of these would do anything. A
+		// client shows a picker only when it is true; false is an agent that
+		// reports what it is running but cannot be told to change it.
+		CanSet bool `json:"canSet"`
 	}
 
 	AgentModel struct {
@@ -281,6 +285,14 @@ type (
 	SendPermissionVerdictRequest struct {
 		RequestID string `json:"requestId"`
 		Behavior  string `json:"behavior"` // "allow" | "deny"
+	}
+
+	// SetAgentModelRequest asks the workspace's connected agent to switch
+	// model. Only the model is named: which session and which config option to
+	// write it to are the server's business, resolved from what the agent
+	// itself reported, and are deliberately not the browser's to choose.
+	SetAgentModelRequest struct {
+		ModelID string `json:"modelId"`
 	}
 
 	RespondToElicitationRequest struct {

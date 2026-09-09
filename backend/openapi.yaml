@@ -515,6 +515,67 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
 
+  /workspaces/{id}/agent/model:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Ask the connected agent to switch model
+      description: |
+        A request, not a state change. The agent is asked over its MCP channel
+        and answers with a fresh models notification once it has actually
+        switched, which is the only thing that knows whether it did — so a
+        `202` means asked, never settled.
+
+        Only the model is named. Which session to address and which config
+        option to write it to are resolved from what the agent itself reported,
+        and are deliberately not the caller's to choose.
+
+        Available only where `agentModels.canSet` is true on the workspace. An
+        agent that reports what it is running but cannot be told to change it —
+        every gateway older than this feature, and every client that never
+        reports models at all — refuses with a `409`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [modelId]
+              properties:
+                modelId:
+                  type: string
+                  description: One of the ids the agent advertised in `agentModels.models`.
+      responses:
+        '202':
+          description: The agent was asked to switch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requested: { type: string }
+        '400':
+          description: No model named, or a model the agent does not offer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: The connected agent does not support choosing a model, or could not be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
   # ── Tasks ───────────────────────────────────────────────────────────────────
   /tasks:
     get:
@@ -1742,6 +1803,13 @@ components:
             The agent session config option these were advertised under, which
             is what a selection would have to be written back to.
         currentModel: { type: string }
+        canSet:
+          type: boolean
+          description: |
+            Whether choosing one of these would do anything. False for an agent
+            that reports what it is running but cannot be told to change it,
+            which includes every gateway older than this feature — so a client
+            shows a picker only when this is true.
         models:
           type: array
           items: { $ref: '#/components/schemas/AgentModel' }

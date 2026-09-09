@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -687,4 +688,173 @@ func TestSameAgentModels(t *testing.T) {
 			t.Error("a shorter list must count as a change")
 		}
 	})
+}
+
+// Choosing a model is the second thing this server ever asks an agent to do,
+// after stopping. These pin the three ways it can refuse — because a picker
+// that silently does nothing is the failure this whole capability gate exists
+// to prevent — and that the request reaches exactly one session.
+func TestSendSetModelNotification(t *testing.T) {
+	selectable := AgentModelsParams{
+		SessionID:    "acp-session-1",
+		ConfigID:     "model",
+		CurrentModel: "a",
+		CanSet:       true,
+		Models:       []AgentModel{{ID: "a"}, {ID: "b"}},
+	}
+
+	t.Run("refuses when nothing has reported any models", func(t *testing.T) {
+		ps, _, _ := connectedModelsServer(t)
+
+		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
+		}
+		if ps.SupportsModelSelect() {
+			t.Error("SupportsModelSelect() = true with nothing reported")
+		}
+	})
+
+	t.Run("refuses a gateway that never said it can set one", func(t *testing.T) {
+		// Every gateway in the field reports models and none of the older ones
+		// will act on being told to change one. Reading silence as consent is
+		// what would offer a picker that does nothing on every deployment that
+		// exists today.
+		ps, sessionID, _ := connectedModelsServer(t)
+		params := selectable
+		params.CanSet = false
+		ps.HandleAgentModels(context.Background(), sessionID, params)
+
+		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
+		}
+		if ps.SupportsModelSelect() {
+			t.Error("SupportsModelSelect() = true for a gateway that never said it can")
+		}
+	})
+
+	t.Run("refuses a willing gateway that named no config option", func(t *testing.T) {
+		// A selection is a write to that option. Willingness without somewhere
+		// to write is a promise that cannot be kept.
+		ps, sessionID, _ := connectedModelsServer(t)
+		params := selectable
+		params.ConfigID = ""
+		ps.HandleAgentModels(context.Background(), sessionID, params)
+
+		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
+		}
+	})
+
+	t.Run("refuses a model the agent never offered", func(t *testing.T) {
+		// A tab that loaded before the agent narrowed its list would otherwise
+		// write an ID the agent no longer accepts, and the failure would reach
+		// the human as silence rather than as a message.
+		ps, sessionID, _ := connectedModelsServer(t)
+		ps.HandleAgentModels(context.Background(), sessionID, selectable)
+
+		if err := ps.SendSetModelNotification(context.Background(), "not-offered"); !errors.Is(err, ErrModelNotOffered) {
+			t.Errorf("err = %v, want ErrModelNotOffered", err)
+		}
+	})
+
+	t.Run("sends to the session that offered the choice", func(t *testing.T) {
+		ps, sessionID, _ := connectedModelsServer(t)
+		ps.HandleAgentModels(context.Background(), sessionID, selectable)
+
+		if !ps.SupportsModelSelect() {
+			t.Fatal("SupportsModelSelect() = false for a gateway that said it can")
+		}
+		if err := ps.SendSetModelNotification(context.Background(), "b"); err != nil {
+			t.Fatalf("SendSetModelNotification() = %v, want nil", err)
+		}
+	})
+
+	t.Run("does not record the switch it only asked for", func(t *testing.T) {
+		// The agent answers with a models notification once it has actually
+		// switched, and that report is the only thing that knows whether it
+		// did. Recording it here would make the interface claim a switch the
+		// agent may have refused.
+		ps, sessionID, _ := connectedModelsServer(t)
+		ps.HandleAgentModels(context.Background(), sessionID, selectable)
+
+		if err := ps.SendSetModelNotification(context.Background(), "b"); err != nil {
+			t.Fatalf("SendSetModelNotification() = %v", err)
+		}
+
+		if got := ps.AgentModels().CurrentModel; got != "a" {
+			t.Errorf("CurrentModel = %q, want the agent's last report %q", got, "a")
+		}
+	})
+
+	t.Run("stops offering the choice once the session drops its stream", func(t *testing.T) {
+		// The trap #504 fixed for the Stop button: a session outlives the
+		// stream that carried it, so a snapshot keyed to a departed gateway
+		// still looks live to anything reading the session list alone.
+		ps, sessionID, _ := connectedModelsServer(t)
+		ps.HandleAgentModels(context.Background(), sessionID, selectable)
+		ps.removeStreamingSession(sessionID)
+
+		if ps.SupportsModelSelect() {
+			t.Error("SupportsModelSelect() = true for a session that has gone off the air")
+		}
+		if err := ps.SendSetModelNotification(context.Background(), "b"); !errors.Is(err, ErrModelSelectUnsupported) {
+			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
+		}
+	})
+}
+
+func TestAgentModelsSelectable(t *testing.T) {
+	cases := []struct {
+		name     string
+		snapshot AgentModelsSnapshot
+		want     bool
+	}{
+		{"willing and with somewhere to write", AgentModelsSnapshot{CanSet: true, ConfigID: "model"}, true},
+		{"willing but naming no config option", AgentModelsSnapshot{CanSet: true}, false},
+		{"a config option but never said it can set", AgentModelsSnapshot{ConfigID: "model"}, false},
+		{"an older gateway, saying neither", AgentModelsSnapshot{}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.snapshot.Selectable(); got != tc.want {
+				t.Errorf("Selectable() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// can_set is what turns the picker on, so a gateway starting to advertise it
+// has to reach the open tabs — even when the list it comes with is unchanged.
+func TestHandleAgentModelsPublishesCanSetChange(t *testing.T) {
+	ps, sessionID, ch := connectedModelsServer(t)
+
+	models := []AgentModel{{ID: "a"}}
+	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		ConfigID: "model", CurrentModel: "a", Models: models,
+	})
+	select {
+	case <-ch:
+	case <-time.After(time.Second):
+		t.Fatal("the first report was not announced")
+	}
+
+	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		ConfigID: "model", CurrentModel: "a", Models: models, CanSet: true,
+	})
+
+	select {
+	case raw := <-ch:
+		var evt struct {
+			Payload map[string]any `json:"payload"`
+		}
+		body := strings.TrimSpace(strings.TrimPrefix(string(raw), "data: "))
+		if err := json.Unmarshal([]byte(body), &evt); err != nil {
+			t.Fatalf("unmarshal event: %v", err)
+		}
+		if evt.Payload["canSet"] != true {
+			t.Errorf("canSet = %v, want true", evt.Payload["canSet"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a gateway that began offering selection was not announced")
+	}
 }

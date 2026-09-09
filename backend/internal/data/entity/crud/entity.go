@@ -52,6 +52,10 @@ type (
 		ConfigID     string
 		CurrentModel string
 		Models       []AgentModel
+		// CanSet reports whether the connected agent will act on one of these
+		// being chosen. False for every gateway too old to say so, which is
+		// what keeps a picker from being offered where it would do nothing.
+		CanSet bool
 	}
 
 	AgentModel struct {
