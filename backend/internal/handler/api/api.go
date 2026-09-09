@@ -1096,5 +1096,5 @@ func agentClientEntity(c *mcpctrl.AgentClientInfo) *entity.AgentClient {
 	if c == nil {
 		return nil
 	}
-	return &entity.AgentClient{Name: c.Name, Version: c.Version}
+	return &entity.AgentClient{Name: c.Name, Title: c.Title, Version: c.Version}
 }

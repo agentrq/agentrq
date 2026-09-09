@@ -81,6 +81,7 @@ type (
 	// connected.
 	AgentClient struct {
 		Name    string
+		Title   string
 		Version string
 	}
 

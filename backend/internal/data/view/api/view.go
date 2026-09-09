@@ -67,6 +67,7 @@ type (
 	// it reads agentConnected.
 	AgentClient struct {
 		Name    string `json:"name"`
+		Title   string `json:"title,omitempty"`
 		Version string `json:"version,omitempty"`
 	}
 
