@@ -3,6 +3,10 @@ package api
 import (
 	"strings"
 	"testing"
+
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/mustafaturan/monoflake"
 )
 
 // isASCII reports whether every byte is one a header value may legally carry.
@@ -118,4 +122,106 @@ func TestRFC5987Encode_LeavesOnlyAttrCharsAlone(t *testing.T) {
 	if got, want := rfc5987Encode("a b"), "a%20b"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
+}
+
+// A slash command only reaches an ACP agent if it leads the prompt text, so the
+// envelope that gives an ordinary reply its context is precisely what stops a
+// command being one. These pin which replies lose it.
+func TestReplyChannelContent(t *testing.T) {
+	const taskID = int64(1234)
+	envelope := "[Reply to task " + monoflake.ID(taskID).String() + "] "
+
+	advertised := &mcpctrl.AgentCommandsSnapshot{
+		Commands: []mcpctrl.AgentCommand{
+			{Name: "compact", Description: "Shorten the context"},
+			{Name: "web", Hint: "query"},
+		},
+	}
+
+	t.Run("delivers an advertised command bare", func(t *testing.T) {
+		if got := replyChannelContent(taskID, "/compact", nil, advertised); got != "/compact" {
+			t.Errorf("got %q, want the command alone", got)
+		}
+	})
+
+	t.Run("keeps the command's argument with it", func(t *testing.T) {
+		const text = "/web agent client protocol"
+		if got := replyChannelContent(taskID, text, nil, advertised); got != text {
+			t.Errorf("got %q, want %q", got, text)
+		}
+	})
+
+	t.Run("trims leading whitespace so the command still leads the prompt", func(t *testing.T) {
+		if got := replyChannelContent(taskID, "  /compact", nil, advertised); got != "/compact" {
+			t.Errorf("got %q, want the command at the start", got)
+		}
+	})
+
+	t.Run("keeps the envelope for a path that only looks like a command", func(t *testing.T) {
+		// The guard that matters: these are ordinary sentences, and delivering
+		// them stripped of their task context would be a silent loss.
+		for _, text := range []string{
+			"/Users/mt/thing is broken",
+			"/etc/hosts looks wrong",
+			"/compactify the logs",
+			"/",
+			"/ compact",
+		} {
+			want := envelope + text
+			if got := replyChannelContent(taskID, text, nil, advertised); got != want {
+				t.Errorf("%q: got %q, want the envelope kept", text, got)
+			}
+		}
+	})
+
+	t.Run("keeps the envelope for ordinary text", func(t *testing.T) {
+		const text = "please compact the context"
+		want := envelope + text
+		if got := replyChannelContent(taskID, text, nil, advertised); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("keeps the envelope when no agent has advertised anything", func(t *testing.T) {
+		// Anything that is not an ACP agent reports nothing, so nothing about
+		// its behaviour changes.
+		want := envelope + "/compact"
+		if got := replyChannelContent(taskID, "/compact", nil, nil); got != want {
+			t.Errorf("got %q, want the envelope kept", got)
+		}
+		empty := &mcpctrl.AgentCommandsSnapshot{}
+		if got := replyChannelContent(taskID, "/compact", nil, empty); got != want {
+			t.Errorf("with an empty list: got %q, want the envelope kept", got)
+		}
+	})
+
+	t.Run("matches the advertised name exactly", func(t *testing.T) {
+		// The agent matches what it advertised; a near miss is not a command.
+		for _, text := range []string{"/Compact", "/COMPACT", "/compac"} {
+			want := envelope + text
+			if got := replyChannelContent(taskID, text, nil, advertised); got != want {
+				t.Errorf("%q: got %q, want the envelope kept", text, got)
+			}
+		}
+	})
+
+	t.Run("lists attachments after the message in both branches", func(t *testing.T) {
+		atts := []entity.Attachment{{ID: "att-1", Filename: "log.txt", MimeType: "text/plain"}}
+		listed := formatAttachments(atts)
+		if listed == "" {
+			t.Fatal("expected the attachment to be listed")
+		}
+
+		// After a bare command, the listing is on its own line, so it never
+		// comes between the command and the start of the prompt.
+		got := replyChannelContent(taskID, "/compact", atts, advertised)
+		if got != "/compact\n"+listed {
+			t.Errorf("command branch: got %q", got)
+		}
+
+		got = replyChannelContent(taskID, "look at this", atts, advertised)
+		if got != envelope+"look at this\n"+listed {
+			t.Errorf("envelope branch: got %q", got)
+		}
+	})
 }

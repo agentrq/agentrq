@@ -10,6 +10,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -230,6 +231,73 @@ func (h *handler) respondToTask() fiber.Handler {
 	}
 }
 
+// replyChannelContent composes what the agent is told when a human replies.
+//
+// Ordinary text is wrapped in an envelope naming the task, which is what gives
+// an agent reading a stream of notifications the context to answer in.
+//
+// A slash command is not wrapped. ACP runs a command as ordinary prompt text
+// and the agent matches the command at the *start* of what it is given (see the
+// spec's "Running commands"), so `[Reply to task 0iOq7fDWLPl] /compact` is not a
+// command at all — it is a sentence mentioning one. Nothing is lost by dropping
+// the envelope: the gateway takes the task from the notification's `chat_id`
+// metadata, never from the prose.
+//
+// The text has to name a command the agent actually advertised. That is the
+// whole guard: without it `/Users/mt/thing is broken` or `/etc/hosts looks
+// wrong` would be delivered stripped of their context on the strength of a
+// leading slash. An agent that advertises nothing — anything that is not an ACP
+// agent — therefore behaves exactly as it did before.
+func replyChannelContent(
+	taskID int64,
+	text string,
+	attachments []entity.Attachment,
+	commands *mcpctrl.AgentCommandsSnapshot,
+) string {
+	// Leading whitespace is trimmed rather than disqualifying: the point is for
+	// the command to lead the prompt, and " /compact" would defeat that while
+	// plainly meaning the same thing.
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+
+	content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(taskID).String(), text)
+	if isAdvertisedCommand(trimmed, commands) {
+		content = trimmed
+	}
+
+	// Attachments are listed after the message either way. They are their own
+	// lines, so they never come between the command and the start of the
+	// prompt.
+	if atts := formatAttachments(attachments); atts != "" {
+		content += "\n" + atts
+	}
+	return content
+}
+
+// isAdvertisedCommand reports whether the text opens with a slash command the
+// connected agent said it accepts.
+func isAdvertisedCommand(text string, commands *mcpctrl.AgentCommandsSnapshot) bool {
+	if commands == nil || !strings.HasPrefix(text, "/") {
+		return false
+	}
+
+	// Everything up to the first whitespace, so "/web agent protocol" is the
+	// "web" command carrying an argument.
+	name := strings.TrimPrefix(text, "/")
+	if i := strings.IndexAny(name, " \t\r\n"); i >= 0 {
+		name = name[:i]
+	}
+	if name == "" {
+		return false
+	}
+
+	for _, c := range commands.Commands {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *handler) replyToTask() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
@@ -252,10 +320,7 @@ func (h *handler) replyToTask() fiber.Handler {
 
 		// Notify LLM of the human's reply via MCP channel
 		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
-		content := fmt.Sprintf("[Reply to task %s] %s", monoflake.ID(rq.TaskID).String(), rq.Text)
-		if atts := formatAttachments(rq.Attachments); atts != "" {
-			content += "\n" + atts
-		}
+		content := replyChannelContent(rq.TaskID, rq.Text, rq.Attachments, h.mcpManager.AgentCommands(rq.WorkspaceID))
 		srv.SendChannelNotification(ctx, rq.TaskID, content)
 
 		// Push reply.received SSE event to human subscribers
