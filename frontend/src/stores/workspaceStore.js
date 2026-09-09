@@ -55,6 +55,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /**
+   * Record the slash commands a workspace's agent is offering.
+   *
+   * Lives here for the same reason `agentConnected` does: it changes from
+   * outside the app — an agent advertises its commands once its session is up,
+   * long after any page load — and the composer is not the only surface that
+   * will want them. IDs are compared as strings for the reason `findIndex`
+   * gives.
+   */
+  function updateAgentCommands(workspaceId, commands) {
+    const idx = findIndex(workspaceId);
+    if (idx !== -1) {
+      const agentCommands = Array.isArray(commands) && commands.length > 0 ? { commands } : undefined;
+      workspaces.value[idx] = { ...workspaces.value[idx], agentCommands };
+    }
+  }
+
   /** The workspace with this ID, or undefined. */
   function getWorkspace(workspaceId) {
     const idx = findIndex(workspaceId);
@@ -78,6 +95,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     fetchWorkspaces,
     updateWorkspaceMetadata,
     updateAgentStatus,
+    updateAgentCommands,
     getWorkspace,
     isAgentConnected
   };

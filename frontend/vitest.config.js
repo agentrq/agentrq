@@ -62,6 +62,7 @@ export default defineConfig({
         'src/composables/useMemories.js',
         'src/composables/useUiTelemetry.js',
         'src/composables/useWebMCP.js',
+        'src/composables/useSlashCommands.js',
         'src/composables/useWorkspaceSettings.js',
         'src/composables/useStatsRange.js',
         'src/composables/useWorkspaceSwitcher.js',

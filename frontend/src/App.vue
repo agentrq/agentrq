@@ -651,6 +651,14 @@ onEvent((event) => {
     workspaceStore.updateAgentStatus(workspaceId, connected)
   }
 
+  // The agent's slash commands, which arrive once its session is up rather
+  // than with the page. Same reasoning as the status above: reacting to the
+  // event is what keeps every surface current.
+  if (event.type === 'agent.commands') {
+    const { commands, workspaceId } = event.payload
+    workspaceStore.updateAgentCommands(workspaceId, commands)
+  }
+
   // Handle workspace metadata updates
   if (event.type === 'workspace.updated') {
     workspaceStore.updateWorkspaceMetadata(event.payload)

@@ -562,6 +562,29 @@
         </div>
       </div>
 
+      <!-- The agent's slash commands. Sits above the composer so it never covers
+           what is being typed, and is keyboard-first: the pointer is a
+           convenience, the arrow keys are the interface. -->
+      <div v-if="slashMenu.open.value"
+           class="mb-2 max-h-52 overflow-y-auto rounded-sm border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-sm custom-scrollbar">
+        <ul ref="slashListRef" role="listbox" aria-label="Agent commands">
+          <li v-for="(command, i) in slashMenu.matches.value" :key="command.name"
+              role="option" :aria-selected="i === slashMenu.selected.value"
+              @mouseenter="slashMenu.highlight(i)"
+              @mousedown.prevent="acceptSlashCommand(command)"
+              :class="i === slashMenu.selected.value ? 'bg-gray-105 dark:bg-zinc-700/60' : ''"
+              class="flex items-baseline gap-2 px-3 py-1.5 cursor-pointer transition-colors">
+            <span class="text-[12px] font-bold text-gray-900 dark:text-zinc-100 shrink-0">/{{ command.name }}</span>
+            <span v-if="command.description"
+                  class="text-[11px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ command.description }}</span>
+            <!-- The argument it expects, kept to the right so the name and what
+                 the command does read as one line. -->
+            <span v-if="command.input?.hint || command.hint"
+                  class="ml-auto pl-3 text-[10px] font-medium text-gray-400 dark:text-zinc-500 shrink-0">{{ command.input?.hint || command.hint }}</span>
+          </li>
+        </ul>
+      </div>
+
       <form @submit.prevent="submitReply">
         <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
@@ -573,6 +596,7 @@
             @input="adjustTextareaHeight"
             @keydown.meta.enter="submitReply"
             @keydown.ctrl.enter="submitReply"
+            @keydown="onComposerKeydown"
             rows="1"
             :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
             :placeholder="offline ? 'Offline — reconnect to reply' : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
@@ -756,6 +780,7 @@ import { usePendingSend } from '../composables/usePendingSend';
 import { scrollToBottom as scrollContainerToBottom, shouldScrollOnViewChange } from '../composables/useChatScroll';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useSlashCommands } from '../composables/useSlashCommands';
 import { renderMarkdown } from '../utils/markdown';
 import {
   contextGauge,
@@ -804,6 +829,42 @@ const task = ref(null);
 const user = ref(null);
 const descExpanded = ref(false);
 const replyText = ref('');
+
+// The agent's own slash commands, offered as you type `/`. An agent that
+// advertises none — anything that is not an ACP agent — gets no menu at all.
+const agentCommands = computed(() => workspace.value?.agentCommands?.commands ?? []);
+const slashMenu = useSlashCommands({ text: replyText, commands: agentCommands });
+const slashListRef = ref(null);
+
+/** Puts the chosen command in the composer, for a click on the menu. */
+function acceptSlashCommand(command) {
+  const applied = slashMenu.accept(command);
+  if (applied !== null) setReplyText(applied);
+}
+
+/** The menu's keys while it is open; everything else stays the composer's. */
+function onComposerKeydown(event) {
+  const claimed = slashMenu.handleKeydown(event);
+  if (!claimed) return;
+  event.preventDefault();
+  if (claimed.text !== null) setReplyText(claimed.text);
+  else keepSelectionInView();
+}
+
+function setReplyText(text) {
+  replyText.value = text;
+  nextTick(() => {
+    adjustTextareaHeight();
+    textareaRef.value?.focus();
+  });
+}
+
+/** Keeps the highlighted row visible when the list is longer than the menu. */
+function keepSelectionInView() {
+  nextTick(() => {
+    slashListRef.value?.children?.[slashMenu.selected.value]?.scrollIntoView({ block: 'nearest' });
+  });
+}
 const replyAttachments = ref([]);
 // A held message is addressed to the task it was written in, so switching tasks
 // cannot redirect it. See usePendingSend.

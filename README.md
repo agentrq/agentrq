@@ -177,6 +177,15 @@ your permissions and nothing more, and they are withdrawn when you sign out.
 Nothing to install or configure; a browser without WebMCP simply sees no tools.
 See the [WebMCP Guide](docs/WEBMCP.md).
 
+### ⌨️ Agent slash commands
+
+Agents connected through the ACP gateway advertise commands of their own —
+`/init`, `/compact`, `/review`, whatever they ship with. Type `/` in a task and
+they appear above the reply box, filtered as you type and chosen with the
+keyboard or the mouse. The list comes from the agent and follows it live, so it
+changes as the agent's context does. An agent that advertises none gets no menu
+and nothing changes. See the [Slash Commands Guide](docs/SLASH_COMMANDS.md).
+
 To run it from source:
 
 ```bash

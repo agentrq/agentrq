@@ -113,6 +113,65 @@ describe('workspaceStore', () => {
     })
   })
 
+  describe('updateAgentCommands', () => {
+    beforeEach(async () => {
+      fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })
+      await useWorkspaceStore().fetchWorkspaces()
+    })
+
+    const commandsOf = (store, id) => store.getWorkspace(id)?.agentCommands
+
+    it('records the commands against the named workspace only', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentCommands('0ZzhYQG2qtl', [{ name: 'compact' }])
+
+      expect(commandsOf(store, '0ZzhYQG2qtl')).toEqual({ commands: [{ name: 'compact' }] })
+      expect(commandsOf(store, '0iAx25vra8v')).toBeUndefined()
+    })
+
+    it('takes the menu away when the agent withdraws its commands', () => {
+      // An empty list is how an agent says it has stopped accepting them, and
+      // the field's absence is what every surface reads as "no menu".
+      const store = useWorkspaceStore()
+      store.updateAgentCommands('0ZzhYQG2qtl', [{ name: 'compact' }])
+
+      store.updateAgentCommands('0ZzhYQG2qtl', [])
+
+      expect(commandsOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    it('takes the menu away when handed nothing at all', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentCommands('0ZzhYQG2qtl', [{ name: 'compact' }])
+
+      store.updateAgentCommands('0ZzhYQG2qtl', undefined)
+
+      expect(commandsOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    // The same trap updateAgentStatus documents: the ID has to be compared as a
+    // string, because a route parameter and a payload field are not the same
+    // type.
+    it('matches an ID that arrives as a number rather than a string', () => {
+      const store = useWorkspaceStore()
+      store.workspaces = [ws(42, 'numeric')]
+
+      store.updateAgentCommands('42', [{ name: 'init' }])
+
+      expect(commandsOf(store, 42)).toEqual({ commands: [{ name: 'init' }] })
+    })
+
+    it('ignores an ID that names no workspace it holds', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentCommands(1234567890123, [{ name: 'init' }])
+      store.updateAgentCommands(undefined, [{ name: 'init' }])
+
+      expect(store.workspaces.some((w) => w.agentCommands)).toBe(false)
+    })
+  })
+
   describe('updateWorkspaceMetadata', () => {
     beforeEach(async () => {
       fetchWorkspaces.mockResolvedValue({ workspaces: [ws('a', 'alpha'), ws('b', 'beta')] })
