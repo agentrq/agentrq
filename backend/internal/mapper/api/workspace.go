@@ -263,5 +263,5 @@ func fromEntityAgentClientToView(c *entity.AgentClient) *view.AgentClient {
 	if c == nil {
 		return nil
 	}
-	return &view.AgentClient{Name: c.Name, Version: c.Version}
+	return &view.AgentClient{Name: c.Name, Title: c.Title, Version: c.Version}
 }

@@ -34,6 +34,7 @@ var customNotificationMethods = []string{
 	mcpctrl.AgentTelemetryNotificationMethod,
 	mcpctrl.AgentModelsNotificationMethod,
 	mcpctrl.AgentCommandsNotificationMethod,
+	mcpctrl.AgentIdentityNotificationMethod,
 }
 
 // customNotificationMethod reports which of those a request body declares.

@@ -147,6 +147,8 @@ type WorkspaceServer struct {
 	agentModels       map[string]AgentModelsSnapshot // sessionID -> models last reported
 	agentCommandsMu   sync.RWMutex
 	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
+	agentIdentitiesMu sync.RWMutex
+	agentIdentities   map[string]AgentClientInfo // sessionID -> the agent a gateway says it drives
 	elicitationsMu    sync.Mutex
 	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
 	metadataMu        sync.RWMutex
@@ -389,6 +391,7 @@ func NewWorkspaceServer(
 		agentTelemetryMessages: make(map[string]int64),
 		agentModels:            make(map[string]AgentModelsSnapshot),
 		agentCommands:          make(map[string]AgentCommandsSnapshot),
+		agentIdentities:        make(map[string]AgentClientInfo),
 		elicitations:           make(map[string]chan elicitationResponse),
 		icon:                   icon,
 		name:                   name,
@@ -2233,6 +2236,18 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			return
 		}
 		ps.HandleAgentModels(ctx, sessionID, models.Params)
+		return
+	}
+
+	if msg.Method == AgentIdentityNotificationMethod {
+		var identity struct {
+			Params AgentIdentityParams `json:"params"`
+		}
+		if err := json.Unmarshal(data, &identity); err != nil {
+			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent identity notification")
+			return
+		}
+		ps.HandleAgentIdentity(ctx, sessionID, identity.Params)
 		return
 	}
 
