@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,34 @@ var customNotificationMethods = []string{
 	"notifications/claude/channel/permission_request",
 	mcpctrl.AgentTelemetryNotificationMethod,
 	mcpctrl.AgentModelsNotificationMethod,
+}
+
+// customNotificationMethod reports which of those a request body declares.
+//
+// The decision comes from the parsed `method` field, never from the raw bytes.
+// Matching the whole body as a substring meant any request that merely
+// *mentioned* one of these names — in a tool argument, in a reply's prose, in a
+// task body — was intercepted, answered with an empty 200 and never executed,
+// with no error on either side. Explaining this subsystem to a human is an
+// ordinary thing for an agent here to do, and it silently cost them the
+// message.
+//
+// A body that is not a single JSON-RPC object — malformed, or a batch array —
+// declares no method and so is not one of these. It falls through to the SDK,
+// which handled it before this interception existed and knows how to report
+// what is wrong with it. Answering it here with an empty 200 would turn a bad
+// request into a lost one.
+func customNotificationMethod(body []byte) (string, bool) {
+	var msg struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return "", false
+	}
+	if slices.Contains(customNotificationMethods, msg.Method) {
+		return msg.Method, true
+	}
+	return "", false
 }
 
 type Params struct {
@@ -371,14 +400,12 @@ func (h *handler) streamableHandler() http.Handler {
 			// Custom handling for the channel notifications the SDK does not
 			// know about, because mcp-go (SDK) rejects them as unsupported
 			// methods before any middleware sees them.
-			for _, method := range customNotificationMethods {
-				if strings.Contains(string(body), method) {
-					zlog.Debug().Str("session_id", sessionID).Str("method", method).Msg("Handling custom channel notification")
-					srv.HandleCustomNotification(ctx, sessionID, body)
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusOK)
-					return
-				}
+			if method, ok := customNotificationMethod(body); ok {
+				zlog.Debug().Str("session_id", sessionID).Str("method", method).Msg("Handling custom channel notification")
+				srv.HandleCustomNotification(ctx, sessionID, body)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				return
 			}
 		}
 		srv.Handler().ServeHTTP(w, r.WithContext(ctx))
