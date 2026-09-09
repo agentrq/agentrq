@@ -620,6 +620,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
+		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusCreated)
@@ -649,6 +650,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
+		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -677,6 +679,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspaces[i].ID))
+			rs.Workspaces[i].AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspaces[i].ID))
 			h.enrichWorkspaceSlack(ctx, &rs.Workspaces[i])
 		}
 
@@ -785,6 +788,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rq.Workspace.ID))
+		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rq.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
 
 		c.Status(http.StatusOK)
@@ -1061,4 +1065,23 @@ func agentModelsEntity(s *mcpctrl.AgentModelsSnapshot) *entity.AgentModels {
 		CurrentModel: s.CurrentModel,
 		Models:       models,
 	}
+}
+
+// agentCommandsEntity converts a live MCP snapshot into the entity the
+// workspace carries, so the API layer keeps its own shape rather than exposing
+// the MCP controller's type through the view.
+func agentCommandsEntity(s *mcpctrl.AgentCommandsSnapshot) *entity.AgentCommands {
+	if s == nil {
+		return nil
+	}
+
+	commands := make([]entity.AgentCommand, len(s.Commands))
+	for i, c := range s.Commands {
+		commands[i] = entity.AgentCommand{
+			Name:        c.Name,
+			Description: c.Description,
+			Hint:        c.Hint,
+		}
+	}
+	return &entity.AgentCommands{Commands: commands}
 }

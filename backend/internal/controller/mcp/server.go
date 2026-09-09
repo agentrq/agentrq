@@ -145,6 +145,8 @@ type WorkspaceServer struct {
 	// sessions so a disconnected agent stops advertising its models.
 	agentModelsMu     sync.RWMutex
 	agentModels       map[string]AgentModelsSnapshot // sessionID -> models last reported
+	agentCommandsMu   sync.RWMutex
+	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
 	elicitationsMu    sync.Mutex
 	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
 	metadataMu        sync.RWMutex
@@ -386,6 +388,7 @@ func NewWorkspaceServer(
 		autoDecidedRequests:    make(map[string]struct{}),
 		agentTelemetryMessages: make(map[string]int64),
 		agentModels:            make(map[string]AgentModelsSnapshot),
+		agentCommands:          make(map[string]AgentCommandsSnapshot),
 		elicitations:           make(map[string]chan elicitationResponse),
 		icon:                   icon,
 		name:                   name,
@@ -2230,6 +2233,18 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			return
 		}
 		ps.HandleAgentModels(ctx, sessionID, models.Params)
+		return
+	}
+
+	if msg.Method == AgentCommandsNotificationMethod {
+		var commands struct {
+			Params AgentCommandsParams `json:"params"`
+		}
+		if err := json.Unmarshal(data, &commands); err != nil {
+			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent commands notification")
+			return
+		}
+		ps.HandleAgentCommands(ctx, sessionID, commands.Params)
 		return
 	}
 

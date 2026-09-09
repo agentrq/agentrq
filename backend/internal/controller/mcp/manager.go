@@ -103,6 +103,19 @@ func (m *Manager) AgentModels(workspaceID int64) *AgentModelsSnapshot {
 	return srv.AgentModels()
 }
 
+// AgentCommands reports the slash commands the workspace's connected agent
+// offers, or nil when there is no server running for it or nothing has reported
+// any.
+func (m *Manager) AgentCommands(workspaceID int64) *AgentCommandsSnapshot {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok || srv == nil {
+		return nil
+	}
+	return srv.AgentCommands()
+}
+
 // SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
 func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
 	m.mu.RLock()

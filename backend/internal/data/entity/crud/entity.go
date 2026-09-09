@@ -32,6 +32,7 @@ type (
 		AgentConnected        bool
 		AgentSupportsStop     bool
 		AgentModels           *AgentModels
+		AgentCommands         *AgentCommands
 		AutoAllowedTools      []string
 		AllowAllCommands      bool
 		SelfLearningLoopNote  string
@@ -58,6 +59,20 @@ type (
 		Description string
 		Current     bool
 		Group       string
+	}
+
+	// AgentCommands is the set of slash commands the workspace's connected
+	// agent offers. Live state read off the MCP session rather than a stored
+	// column, so it is absent whenever no agent is connected or none has
+	// reported any.
+	AgentCommands struct {
+		Commands []AgentCommand
+	}
+
+	AgentCommand struct {
+		Name        string
+		Description string
+		Hint        string
 	}
 
 	SlackConfig struct {

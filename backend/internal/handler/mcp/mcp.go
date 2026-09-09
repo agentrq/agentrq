@@ -33,6 +33,7 @@ var customNotificationMethods = []string{
 	"notifications/claude/channel/permission_request",
 	mcpctrl.AgentTelemetryNotificationMethod,
 	mcpctrl.AgentModelsNotificationMethod,
+	mcpctrl.AgentCommandsNotificationMethod,
 }
 
 // customNotificationMethod reports which of those a request body declares.

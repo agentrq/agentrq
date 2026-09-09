@@ -153,6 +153,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AgentConnected:        p.AgentConnected,
 		AgentSupportsStop:     p.AgentSupportsStop,
 		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
+		AgentCommands:         fromEntityAgentCommandsToView(p.AgentCommands),
 		MCPURL:                mcpURL,
 		AutoAllowedTools:      p.AutoAllowedTools,
 		AllowAllCommands:      p.AllowAllCommands,
@@ -227,4 +228,27 @@ func fromEntityAgentModelsToView(m *entity.AgentModels) *view.AgentModels {
 		CurrentModel: m.CurrentModel,
 		Models:       models,
 	}
+}
+
+// fromEntityAgentCommandsToView renders the slash commands the connected agent
+// offers.
+//
+// nil rather than an empty object when nothing is connected or nothing was
+// reported, for the same reason as the models above: the field is omitted from
+// the response entirely, so a client can read its presence as "there is a menu
+// to show here".
+func fromEntityAgentCommandsToView(c *entity.AgentCommands) *view.AgentCommands {
+	if c == nil {
+		return nil
+	}
+
+	commands := make([]view.AgentCommand, len(c.Commands))
+	for i, one := range c.Commands {
+		commands[i] = view.AgentCommand{
+			Name:        one.Name,
+			Description: one.Description,
+			Hint:        one.Hint,
+		}
+	}
+	return &view.AgentCommands{Commands: commands}
 }

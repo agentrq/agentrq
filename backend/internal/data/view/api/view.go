@@ -20,6 +20,7 @@ type (
 		AgentConnected        bool                  `json:"agentConnected"`
 		AgentSupportsStop     bool                  `json:"agentSupportsStop"`
 		AgentModels           *AgentModels          `json:"agentModels,omitempty"`
+		AgentCommands         *AgentCommands        `json:"agentCommands,omitempty"`
 		MCPURL                string                `json:"mcpUrl"`
 		MCPToken              string                `json:"mcpToken,omitempty"`
 		AutoAllowedTools      []string              `json:"autoAllowedTools,omitempty"`
@@ -45,6 +46,19 @@ type (
 		Description string `json:"description,omitempty"`
 		Current     bool   `json:"current,omitempty"`
 		Group       string `json:"group,omitempty"`
+	}
+
+	// AgentCommands is the set of slash commands the connected agent offers.
+	// Omitted entirely when no agent is connected or none has reported any, so
+	// a client can treat its presence as "there is a menu to show".
+	AgentCommands struct {
+		Commands []AgentCommand `json:"commands"`
+	}
+
+	AgentCommand struct {
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+		Hint        string `json:"hint,omitempty"`
 	}
 
 	SlackConfig struct {

@@ -803,3 +803,31 @@ func TestSignInIssuesBothCookies(t *testing.T) {
 		t.Errorf("refresh cookie is not scoped to the route that reads it: %q", joined)
 	}
 }
+
+func TestAgentCommandsEntity(t *testing.T) {
+	t.Run("nil stays nil, so nothing is advertised", func(t *testing.T) {
+		if got := agentCommandsEntity(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("carries the snapshot across into the API layer's own shape", func(t *testing.T) {
+		got := agentCommandsEntity(&mcpctrl.AgentCommandsSnapshot{
+			SessionID: "acp-session",
+			Commands: []mcpctrl.AgentCommand{
+				{Name: "review", Description: "Review the diff", Hint: "what to review"},
+				{Name: "init"},
+			},
+		})
+
+		if got == nil || len(got.Commands) != 2 {
+			t.Fatalf("got %+v", got)
+		}
+		if got.Commands[0].Name != "review" || got.Commands[0].Description != "Review the diff" || got.Commands[0].Hint != "what to review" {
+			t.Errorf("commands[0] = %+v", got.Commands[0])
+		}
+		if got.Commands[1].Description != "" || got.Commands[1].Hint != "" {
+			t.Errorf("optional fields should stay empty: %+v", got.Commands[1])
+		}
+	})
+}
