@@ -115,7 +115,7 @@
       :show="contextMenu.show"
       :x="contextMenu.x"
       :y="contextMenu.y"
-      :items="[{ key: 'move', label: 'Move Task' }]"
+      :items="contextMenuItems"
       @close="closeContextMenu"
       @select="onContextMenuSelect"
     />
@@ -129,6 +129,7 @@ import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssi
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { menuItemsFor } from '../composables/useTaskContextMenu';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
@@ -414,6 +415,9 @@ function openTask(t) {
 
 // ---- Context menu / move task ----
 const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
+
+// The same list TaskFeed reads. See useTaskContextMenu for why it is shared.
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task));
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');

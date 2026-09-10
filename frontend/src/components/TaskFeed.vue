@@ -29,7 +29,7 @@
       :show="contextMenu.show"
       :x="contextMenu.x"
       :y="contextMenu.y"
-      :items="[{ key: 'move', label: 'Move Task' }]"
+      :items="contextMenuItems"
       @close="closeContextMenu"
       @select="onContextMenuSelect"
     />
@@ -137,6 +137,7 @@ import cronParser from 'cron-parser';
 import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, moveTask, fetchTasks, fetchTaskCounts } from '../api';
 import { useCron } from '../composables/useCron';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
+import { menuItemsFor } from '../composables/useTaskContextMenu';
 import DeleteModal from './DeleteModal.vue';
 import MoveTaskModal from './MoveTaskModal.vue';
 import ContextMenu from './ContextMenu.vue';
@@ -192,6 +193,11 @@ const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');
 
 const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
+
+// One list, shared with the board. It used to be written inline here and again
+// in KanbanBoardView, which meant an item added to one and not the other made
+// right-click do different things on two views of the same task.
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task));
 
 const ongoingTasks = ref([]);
 const notStartedTasks = ref([]);

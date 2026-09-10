@@ -5,7 +5,7 @@ const props = defineProps({
   show: Boolean,
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
-  items: { type: Array, default: () => [] } // [{ key, label }]
+  items: { type: Array, default: () => [] } // [{ key, label }] or { key, divider: true }
 });
 
 const emit = defineEmits(['close', 'select']);
@@ -39,10 +39,16 @@ onUnmounted(() => {
          :style="{ top: y + 'px', left: x + 'px' }"
          @click.stop
          @contextmenu.prevent.stop>
-      <button v-for="item in items" :key="item.key" @click="onSelect(item)"
-              class="w-full text-left px-3 py-2 text-[11px] font-semibold text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-colors">
-        {{ item.label }}
-      </button>
+      <template v-for="item in items" :key="item.key">
+        <!-- Extension entries sit below this, so the app's own items never move
+             when something is installed and it stays visible where a row came
+             from. -->
+        <div v-if="item.divider" class="my-1 border-t border-gray-100 dark:border-zinc-800"></div>
+        <button v-else @click="onSelect(item)"
+                class="w-full text-left px-3 py-2 text-[11px] font-semibold text-gray-700 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-colors">
+          {{ item.label }}
+        </button>
+      </template>
     </div>
   </Teleport>
 </template>
