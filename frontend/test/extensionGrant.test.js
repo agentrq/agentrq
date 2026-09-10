@@ -36,6 +36,28 @@ describe('describeAsk', () => {
     expect(describeAsk(manifest({ supervisor: ['listAllTasks'] })).level).toBe('supervisor');
   });
 
+  // The field is the author describing their own extension. Nothing enforces it
+  // — extensions are trusted code and can open any socket — so it must never
+  // read as a restriction, and it is kept out of the permission lists for that
+  // reason alone.
+  it('reads the declared hosts as a claim by the author, not a permission', () => {
+    const ask = describeAsk({ ...manifest({ workspace: ['getTask'] }), net: ['hooks.slack.com'] });
+
+    expect(ask.net).toEqual(['hooks.slack.com']);
+    expect(ask.networkClaim).toBe('Its author says it contacts hooks.slack.com.');
+    // Not in either permission list, and not something a grant can narrow.
+    expect(ask.workspace).toEqual(['getTask']);
+    expect(toGrant(ask, { scope: SCOPE.workspace, workspaceId: 'ws1' })).not.toHaveProperty('net');
+  });
+
+  it('says nothing about the network when the manifest claimed nothing', () => {
+    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+
+    expect(ask.net).toEqual([]);
+    // An empty sentence rather than "contacts nothing", which would be a promise.
+    expect(ask.networkClaim).toBe('');
+  });
+
   it('always carries the sentence about the machine', () => {
     // The emptiest screen must not describe the least-restrained code: with no
     // permission list at all, this sentence is the whole of what is said.

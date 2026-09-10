@@ -60,10 +60,23 @@ export function permits(grant, { surface, tool, workspaceId }) {
       : deny('This extension was not granted access to all workspaces.')
   }
 
-  if (grant.scope === SCOPE.supervisor) return { ok: true }
+  return permitsWorkspace(grant, workspaceId)
+}
+
+/**
+ * Whether a grant reaches one workspace.
+ *
+ * Split out from `permits` because it is asked in a second place: the schedule
+ * reconciler acts on the *host's* credential rather than the extension's — it
+ * has to call tools no extension declares — so the tool allowlist does not
+ * apply to it, and this is the half that still does. An extension granted one
+ * workspace must not be able to declare standing work in another.
+ */
+export function permitsWorkspace(grant, workspaceId) {
+  if (grant?.scope === SCOPE.supervisor) return { ok: true }
 
   if (!workspaceId) return deny('This call names no workspace.')
-  return grant.workspaces?.includes(workspaceId)
+  return grant?.workspaces?.includes(workspaceId)
     ? { ok: true }
     : deny('This extension was not granted access to that workspace.')
 }

@@ -1,0 +1,9 @@
+{
+  "name": "@agentrq-examples/digest",
+  "version": "1.0.0",
+  "description": "Example AgentRQ extension: a scheduled daily summary across every workspace.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "index.js",
+  "private": true
+}

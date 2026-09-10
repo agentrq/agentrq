@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 
+import { permitsWorkspace, SCOPE } from '../../src/main/extensions/broker.js'
 import {
   KINDS,
   createSchedules,
@@ -107,7 +108,19 @@ function fakeSupervisor(over = {}) {
   return { supervisor, calls, state, toolsCalled: () => calls.map((call) => call.tool) }
 }
 
-function build({ supervisor, records = {} } = {}) {
+/**
+ * The reconciler calls as the *host*, not as the extension — so `call` either
+ * answers or throws, the way a real MCP call does, and the fakes above keep
+ * their `{ ok, reason }` shape only because it is the convenient way to write
+ * "this one fails".
+ */
+const asCall = (fake) => async (tool, args) => {
+  const answer = await fake.supervisor(tool, args)
+  if (!answer.ok) throw new Error(answer.reason)
+  return answer.result
+}
+
+function build({ supervisor, records = {}, allows } = {}) {
   const fake = supervisor ?? fakeSupervisor()
   let written = JSON.parse(JSON.stringify(records))
   const store = {
@@ -117,11 +130,7 @@ function build({ supervisor, records = {} } = {}) {
     }),
   }
   const logger = { warn: vi.fn() }
-  const schedules = createSchedules({
-    clientFor: () => ({ supervisor: fake.supervisor }),
-    store,
-    logger,
-  })
+  const schedules = createSchedules({ call: asCall(fake), allows, store, logger })
   return { schedules, store, logger, fake, saved: () => written }
 }
 
@@ -430,6 +439,56 @@ describe('reconcile', () => {
     expect(saved().standup.nightly).toMatchObject({ kind: KINDS.trigger })
   })
 
+  // The bound that replaces the tool allowlist. The reconciler calls as the
+  // host — it needs `deleteTask`, which no extension would ever declare — so
+  // the grant is checked here on the workspace a schedule names.
+  it('refuses a schedule in a workspace the grant does not reach', async () => {
+    const grant = { scope: SCOPE.workspace, workspaces: ['ws1'] }
+    const { schedules, fake, saved } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })
+
+    const result = await schedules.reconcile('standup', [taskEntry({ workspaceId: 'ws2' })])
+
+    expect(result.ok).toBe(false)
+    expect(result.problems[0].reason).toContain('not granted access to that workspace')
+    // Refused before the call, not after it.
+    expect(fake.calls).toEqual([])
+    expect(saved().standup).toEqual({})
+  })
+
+  it('allows any workspace once the grant is the whole account', async () => {
+    const grant = { scope: SCOPE.supervisor, workspaces: [] }
+    const { schedules } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })
+
+    expect((await schedules.reconcile('digest', [taskEntry({ workspaceId: 'ws9' })])).created).toEqual(['nightly'])
+  })
+
+  it('refuses to remove standing work in a workspace the grant no longer reaches', async () => {
+    // Narrowed after the fact: the record stays, and the reason says why.
+    let grant = { scope: SCOPE.supervisor, workspaces: [] }
+    const { schedules, saved } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })
+    await schedules.reconcile('digest', [taskEntry()])
+    grant = { scope: SCOPE.workspace, workspaces: ['ws2'] }
+
+    const result = await schedules.reconcile('digest', [])
+
+    expect(result.removed).toEqual([])
+    expect(saved().digest.nightly).toBeDefined()
+  })
+
+  it('has something to say about a failure that carried no message', async () => {
+    const store = { read: async () => ({}), write: async () => {} }
+    const schedules = createSchedules({
+      call: async () => {
+        throw new Error('')
+      },
+      store,
+    })
+
+    const result = await schedules.reconcile('standup', [taskEntry()])
+
+    expect(result.problems[0].reason).toBe('The call failed.')
+  })
+
   it('reports what could not be created, and keeps going', async () => {
     const fake = fakeSupervisor({
       createTask: async () => ({ ok: false, reason: 'This extension may not call "createTask".' }),
@@ -691,7 +750,7 @@ describe('reconcile', () => {
   it('starts from nothing when the record file cannot be read', async () => {
     const store = { read: vi.fn(async () => { throw new Error('ENOENT') }), write: vi.fn(async () => {}) }
     const fake = fakeSupervisor()
-    const schedules = createSchedules({ clientFor: () => ({ supervisor: fake.supervisor }), store })
+    const schedules = createSchedules({ call: asCall(fake), store })
 
     const result = await schedules.reconcile('standup', [taskEntry()])
 
@@ -701,7 +760,7 @@ describe('reconcile', () => {
   it('starts from nothing when the record file holds nothing', async () => {
     const store = { read: vi.fn(async () => null), write: vi.fn(async () => {}) }
     const fake = fakeSupervisor()
-    const schedules = createSchedules({ clientFor: () => ({ supervisor: fake.supervisor }), store })
+    const schedules = createSchedules({ call: asCall(fake), store })
 
     expect((await schedules.reconcile('standup', [])).ok).toBe(true)
   })
@@ -719,7 +778,7 @@ describe('reconcile', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const fake = fakeSupervisor()
     const schedules = createSchedules({
-      clientFor: () => ({ supervisor: fake.supervisor }),
+      call: asCall(fake),
       store: { read: async () => ({}), write: async () => {} },
     })
 

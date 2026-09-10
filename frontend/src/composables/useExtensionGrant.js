@@ -38,17 +38,28 @@ export const SCOPE_ORDER = [SCOPE.workspace, SCOPE.selected, SCOPE.supervisor];
  * `level` decides how much of the screen appears; the two tool lists are shown
  * verbatim, because a summary of what an extension may do is a paraphrase of a
  * permission and this is not the place to paraphrase.
+ *
+ * `net` is the odd one out and is kept separate from the permissions on purpose.
+ * Nothing enforces it — an extension is trusted code and can open any socket it
+ * likes — so it is the author telling you what their extension is for, not a
+ * boundary anybody is holding. Rendering it in the permission list would make a
+ * description read as a restriction, which is the one way this screen could
+ * mislead somebody into a decision they would not otherwise make.
  */
 export function describeAsk(manifest) {
   const workspace = manifest?.mcp?.workspace ?? [];
   const supervisor = manifest?.mcp?.supervisor ?? [];
+  const net = manifest?.net ?? [];
 
   return {
     workspace,
     supervisor,
+    net,
     level: supervisor.length > 0 ? 'supervisor' : workspace.length > 0 ? 'workspace' : 'none',
     // The one thing that is always true, whatever the level.
     machineAccess: 'This extension runs with full access to your computer.',
+    // Worded as a claim by its author, because that is exactly what it is.
+    networkClaim: net.length > 0 ? `Its author says it contacts ${net.join(', ')}.` : '',
   };
 }
 

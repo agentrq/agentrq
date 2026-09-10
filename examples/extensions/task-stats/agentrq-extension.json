@@ -1,0 +1,14 @@
+{
+  "name": "task-stats",
+  "displayName": "Task Stats",
+  "version": "1.0.0",
+  "description": "Adds a right-click item to any task showing its age, word count and how many messages it has.",
+  "license": "MIT",
+  "engines": { "agentrq": ">=0.5" },
+  "provides": { "ui": ["task-menu"] },
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "task-stats-1.0.0.tgz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

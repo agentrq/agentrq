@@ -1,0 +1,396 @@
+# Extensions
+
+Extensions add pages, actions, keyboard shortcuts and scheduled work to AgentRQ.
+They are ordinary Node modules, published as GitHub repositories, and installed
+from the **desktop app**.
+
+> **Desktop only, and deliberately.** An extension is code somebody else wrote,
+> running with the privileges of the process it is in. On a self-hosted AgentRQ
+> server that would mean running a stranger's code on your infrastructure, next
+> to your database and your other users. On the desktop it runs on the machine
+> of the person who chose to install it — which is the same trust decision they
+> already make installing anything else. The server never loads extension code.
+
+---
+
+## What an extension is
+
+Three files, at minimum:
+
+```
+my-extension/
+  agentrq-extension.json   the manifest — what it is, and what it asks for
+  index.js                 the module — `name`, `inject`, `apply`
+  package.json             ordinary npm metadata
+```
+
+`index.js` exports the same shape a Cordis plugin does, which is where the
+pattern comes from:
+
+```js
+export const name = 'my-extension'
+export const inject = ['ui', 'shortcuts']
+
+export function apply(ctx, config) {
+  ctx.ui.add({ id: 'today', surface: 'page', label: 'Today', view: () => page(ctx) })
+}
+```
+
+`apply` is called once, with a context carrying exactly the registries listed in
+`inject`. Everything it registers is remembered against the extension's name, so
+unloading is complete by construction rather than by an author remembering to
+tidy up.
+
+### The three examples are the tutorial
+
+They live in [`examples/extensions/`](../examples/extensions/) and go from
+smallest to largest:
+
+| | Asks for | Shows |
+|---|---|---|
+| [`task-stats`](../examples/extensions/task-stats/) | nothing at all | The smallest possible extension: a task menu item, no permissions, no network |
+| [`standup`](../examples/extensions/standup/) | two workspace tools | A page, a keyboard shortcut, a config field, brokered MCP calls |
+| [`digest`](../examples/extensions/digest/) | the supervisor | Three surfaces, a secret, a declared host, and standing work on a schedule |
+
+Read them in that order. Each one is commented as an explanation rather than as
+a demo.
+
+---
+
+## The manifest
+
+`agentrq-extension.json`, at the root of the repository.
+
+```json
+{
+  "name": "standup",
+  "displayName": "Standup",
+  "version": "1.0.0",
+  "description": "What moved in this workspace today.",
+  "license": "MIT",
+  "engines": { "agentrq": ">=0.5" },
+  "mcp": { "workspace": ["listTasks", "getTask"] },
+  "net": ["api.example.com"],
+  "config": [{ "key": "since", "type": "number", "label": "Hours to look back" }],
+  "provides": { "ui": ["page"], "shortcuts": ["s"] },
+  "shortcuts": [{ "key": "s", "action": "open", "title": "Standup: today" }],
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "standup-1.0.0.tgz",
+    "sha256": "…64 hex characters…"
+  }
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | yes | Lowercase words joined by single hyphens. It is an **address**, not a label: it appears in routes, registry keys and the install directory |
+| `version` | yes | `1.2.0`, or `1.2` |
+| `license` | yes | An SPDX identifier, spelled exactly. `UNLICENSED` is accepted and means what it says |
+| `engines.agentrq` | yes | `1.4.0`, `^1.4`, `~1.4` or `>=1.4`. Anything else is refused rather than guessed at |
+| `artifact` | yes | The release, the asset file name, and its SHA-256 |
+| `displayName` | no | Defaults to `name` |
+| `description` | no | One line, shown in the catalogue |
+| `mcp.workspace` | no | Workspace-server tools this extension may call |
+| `mcp.supervisor` | no | Supervisor tools this extension may call |
+| `net` | no | Hosts the author says it contacts — **see below** |
+| `config` | no | Settings the user fills in: `string`, `number`, `boolean` or `secret` |
+| `provides` | no | What it contributes, for the catalogue card |
+| `shortcuts` | no | Keys it wants, under the `x` prefix |
+
+A repository with a bad manifest is **listed as broken with its reason** rather
+than dropped, because an author needs to see why and a silently missing
+extension looks like a broken catalogue to whoever followed a link to it.
+
+### Why the licence is required
+
+An extension runs with full access to the machine. The terms it is offered under
+are part of the decision to install it, not metadata about it. Free text was not
+accepted because `MIT`, `mit` and `MIT License` would be three incomparable
+licences; the list is fixed and case-sensitive, and a missing identifier is a
+one-line addition to `desktop/src/main/extensions/manifest.js`.
+
+### `net` is a description, not a restriction
+
+Nothing enforces it. An extension is trusted Node code and can open any socket
+it likes, and this field changes nothing about that.
+
+It is there because it is still worth knowing — an extension that says it talks
+to `hooks.slack.com` has told you something true about what it is for. The
+install screen presents it as a claim by the author, kept out of the permission
+list, because a list of hosts under a permission heading reads as a boundary
+somebody is holding, and here nobody is.
+
+---
+
+## The capability model
+
+There are exactly two things AgentRQ enforces, and it is worth being precise
+about what they are and are not.
+
+**They are not a sandbox.** That was considered and deliberately not built: the
+value of this design is the ordinary Node ecosystem, and a sandbox costs exactly
+that. The install screen says so in those words on every install, including —
+especially — the ones with no permission list at all.
+
+**What is enforced is everything AgentRQ owns:**
+
+1. **Which registries an extension can reach**, and which names it may claim
+   inside them.
+2. **Which MCP tools it may call, and against which workspaces.**
+
+That is a real boundary around your AgentRQ data. It is not a boundary around
+your machine.
+
+### The credential never reaches the extension
+
+An extension is an MCP *client*, and it never holds a token. It asks:
+
+```js
+const answer = await ctx.mcp.workspace('listTasks', { workspaceId, limit: 50 })
+if (!answer.ok) return somethingSensible(answer.reason)
+```
+
+The host attaches the workspace token or the supervisor session on the way out,
+after checking the tool against the manifest and the workspace against the
+grant. A refusal comes back as `{ ok: false, reason }` — **a value, not a
+throw** — so a refused extension shows a sentence rather than becoming an
+unhandled rejection somewhere in the host.
+
+This matters because a workspace token and a supervisor session outlive any
+single extension and reach every workspace on the account. An extension that is
+compromised, or merely careless with what it logs, cannot leak a key it was
+never given.
+
+### The grant ladder
+
+At install, the user picks one rung. What is offered depends on what the
+manifest asked for:
+
+| Rung | Offered when | Means |
+|---|---|---|
+| This workspace only | any `mcp.workspace` tools | The workspace they were in |
+| Selected workspaces | any `mcp.workspace` tools | The ones they tick |
+| All workspaces | any `mcp.supervisor` tools | The account, including workspaces created later |
+
+An extension that asks for nothing shows **no permission list at all** — only
+the confirmation and the sentence about machine access.
+
+There is deliberately no "supervisor, but only this workspace". `listAllTasks`
+spans the platform and `createTask(workspaceId)` reaches anywhere, so the
+supervisor surface *is* every workspace; that combination would be the same
+grant wearing a narrower label, and the ladder makes it unrepresentable rather
+than merely discouraged.
+
+---
+
+## What an extension can contribute
+
+Three registries, reached through `inject`.
+
+### `ui` — pages, actions and menu items
+
+```js
+ctx.ui.add({ id, surface, label, order, view, run, when })
+```
+
+| `surface` | Where it appears | Invoked with |
+|---|---|---|
+| `page` | The sidebar, at `/extensions/:name/:id` | `view(context)` returns a view spec |
+| `workspace-action` | The top of a workspace | `run(context)` |
+| `task-menu` | A task's right-click menu | `run(task)`, filtered by `when(task)` |
+
+`order` defaults to 100, and ties break on owner then id — so what the user sees
+never depends on which extension happened to load first.
+
+**Give a task-menu item a `when`.** Without one, ten installed extensions mean
+ten permanent rows on every task, and a menu that long is one nobody reads. An
+entry that says nothing about when it applies is assumed to always apply, which
+is right for AgentRQ's own items and rare for anybody else's.
+
+### `shortcuts` — keys under the `x` prefix
+
+```js
+ctx.shortcuts.add({ id: 'open', key: 's', label: 'Standup: today', run })
+```
+
+Pressing <kbd>x</kbd> then <kbd>s</kbd> runs it.
+
+The single bare letters are AgentRQ's — `k n w m t ?` are taken and more will
+be. A blocklist would be a tiny namespace that freezes the application and still
+lets extensions collide with each other; one reserved prefix fixes all three, and
+`g`-then-key in Gmail and GitHub means people already know the scheme.
+
+Conflicts are reported **at install**, naming the extension already holding the
+key. A conflict discovered when somebody presses a key is a key that silently
+does nothing, and no amount of looking at the screen explains it.
+
+The application's own system-wide key grab (Cmd+Shift+N, registered in the main
+process so it fires whether or not the window has focus) is not available to
+extensions. That is a different order of capability from a key that works while
+the app is in front of you.
+
+### `schedules` — work that runs when the app does not
+
+```js
+ctx.schedules.add({
+  id: 'daily',
+  value: { kind: 'task', workspaceId, title: 'Daily digest', body, cron: '0 9 * * *' },
+})
+```
+
+This is what makes desktop-only a design rather than a compromise. Your
+extension is not running at three in the morning — it does not need to be. It
+*declares* a cron task or an event trigger, and the host reconciles that against
+what is already on the server: creating what is missing, revising what has
+drifted, and removing what you stopped declaring.
+
+Two kinds:
+
+```js
+{ kind: 'task',    workspaceId, title, body, assignee, cron }
+{ kind: 'trigger', workspaceId, title, body, assignee, event, emitEvent, cron }
+```
+
+Cron granularity is **hourly at most** — the minute field must be a single fixed
+number. `0 9 * * *` is fine; `*/5 * * * *` is refused.
+
+Reconciliation means reinstalling leaves no duplicates and uninstalling leaves
+nothing behind. The host makes these calls with its own credential rather than
+through your grant, because otherwise every extension that wanted a nightly task
+would have to ask for the ability to delete any task on the account. What bounds
+it instead: it only ever touches what it created, and a schedule naming a
+workspace your grant does not reach is refused.
+
+---
+
+## Drawing a page
+
+Extensions **describe**; AgentRQ renders. A page is a JSON spec in a closed
+vocabulary, drawn with the application's own components. There is no
+third-party markup in the renderer and no iframe — which is what keeps extension
+UI looking like the rest of the product instead of approximating it, and keeps a
+privileged origin free of anybody else's code.
+
+```js
+{
+  title: 'Standup',
+  nodes: [
+    { type: 'text', tone: 'muted', value: '3 tasks moved today.' },
+    { type: 'group', label: 'Waiting on somebody', children: [
+      { type: 'row', label: 'Ship the release', value: 'Asked on Tuesday' },
+    ] },
+  ],
+}
+```
+
+| Node | Fields |
+|---|---|
+| `text` | `value`, `tone` |
+| `heading` | `value` |
+| `rows` | `items` |
+| `row` | `label`, `value`, `href` |
+| `badge` | `value`, `tone` |
+| `button` | `label`, `action`, `tone` |
+| `link` | `label`, `href` |
+| `empty` | `value` |
+| `group` | `label`, `children` |
+
+`tone` is one of `default`, `muted`, `positive`, `warning`, `critical`.
+
+Limits: 200 nodes, 5 levels deep, 2000 characters per string. Longer strings are
+truncated; the other two are refused.
+
+**A node type nobody recognises is rejected, not skipped.** Skipping would draw a
+page quietly missing whatever you thought you had written — worse for you than
+being told, and worse for the user than seeing nothing.
+
+Everything you send is treated as untrusted text. Not because extensions are
+assumed hostile — they run as trusted code and could do far worse than inject
+markup — but because text arriving from an extension often did not originate
+there: an issue title, a commit message, a webhook payload. Only `http` and
+`https` hrefs stay clickable, for the same reason a `file:` URL in a message body
+is not followable.
+
+---
+
+## Configuration and secrets
+
+```json
+"config": [
+  { "key": "since", "type": "number", "label": "Hours to look back" },
+  { "key": "apiKey", "type": "secret", "label": "API key" }
+]
+```
+
+Values arrive as `ctx.config` and as the second argument to `apply`.
+
+A `secret` is stored encrypted through the OS keychain, never shown back to the
+user or to the catalogue, and — importantly — **refused rather than written in
+the clear** if the machine has no secure storage available. Storing it anyway
+would be the worst of both worlds: the user believes it is protected, and it is
+sitting in a JSON file.
+
+Your extension receives the decrypted value. Do the only correct thing with it:
+send it, keep no copy, and never log it — not the value, not a prefix of it, and
+not a URL it is embedded in. `digest` shows the shape, including the failure
+paths that deliberately say the status code and nothing else.
+
+---
+
+## Publishing one
+
+1. Add the **`agentrq-extension`** topic to the GitHub repository. That is the
+   whole of discovery — the desktop app searches for it.
+2. Put `agentrq-extension.json` at the root.
+3. Cut a release with the built asset attached, and put its SHA-256 in
+   `artifact.sha256`.
+
+The digest is what makes an install honest: a git tag can be moved under one that
+is already in place, and a hash cannot.
+
+### Installing without publishing
+
+The desktop app installs from three sources:
+
+- **A release**, verified against the digest.
+- **A git URL**, cloned at a commit — for a private repository you do not want
+  to make public.
+- **A local folder**, optionally *linked*: recorded rather than copied, so
+  editing the folder edits the installed extension. This is the only way
+  developing one is tolerable, and it is how the examples in this repository are
+  installed.
+
+---
+
+## Testing yours
+
+The examples' tests are in `desktop/test/examples/` and are worth copying as a
+pattern:
+
+- **Pure functions for anything that shapes output.** `statsFor(task)`,
+  `buildPage(tasks)` and `summarise(workspaces, tasks)` take data and return a
+  description, so they test without a server anywhere near them.
+- **Run every view you can produce through `normaliseView`.** The renderer
+  refuses a node type it does not know, and a page it will not draw is otherwise
+  a bug nobody finds until somebody installs your extension.
+- **Test the refusals.** `{ ok: false, reason }` is a normal answer, not an edge
+  case: it is what a user who declined a permission, or narrowed a grant later,
+  will actually see.
+
+---
+
+## Where things live
+
+| | |
+|---|---|
+| Manifest parsing and compatibility | `desktop/src/main/extensions/manifest.js` |
+| Discovery through the GitHub topic | `desktop/src/main/extensions/discovery.js` |
+| Installing, updating, uninstalling | `desktop/src/main/extensions/install.js` |
+| Loading, and unloading completely | `desktop/src/main/extensions/host.js` |
+| The registries | `desktop/src/main/extensions/registry.js` |
+| The MCP boundary | `desktop/src/main/extensions/broker.js` |
+| Config and secrets | `desktop/src/main/extensions/config.js` |
+| Schedule reconciliation | `desktop/src/main/extensions/schedules.js` |
+| The grant screen's rules | `frontend/src/composables/useExtensionGrant.js` |
+| The view vocabulary | `frontend/src/composables/useExtensionView.js` |

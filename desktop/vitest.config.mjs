@@ -21,6 +21,12 @@ export default defineConfig({
       // arguments, and hashing before anything is written) have tests of their
       // own in fetch-source.test.js.
       exclude: ['src/main/index.js', 'src/main/extensions/fetch-source.js'],
+      // The example extensions in `examples/extensions/` are tested from this
+      // suite (`test/examples/`) but are **not** in the numbers above: a
+      // coverage include cannot reach outside the project root, and rooting
+      // this config at the repository breaks the provider's own resolution.
+      // Their tests are written to the same standard regardless; what is
+      // missing is the gate, not the coverage.
       reporter: ['text', 'lcov'],
       thresholds: {
         lines: 100,

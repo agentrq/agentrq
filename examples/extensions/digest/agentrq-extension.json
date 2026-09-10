@@ -1,0 +1,24 @@
+{
+  "name": "digest",
+  "displayName": "Daily Digest",
+  "version": "1.0.0",
+  "description": "Summarises every workspace once a day, posts it back as a task, and can mirror it to a Slack webhook.",
+  "license": "Apache-2.0",
+  "engines": { "agentrq": ">=0.5" },
+  "mcp": {
+    "supervisor": ["listWorkspaces", "listAllTasks", "createTask"]
+  },
+  "net": ["hooks.slack.com"],
+  "config": [
+    { "key": "workspaceId", "type": "string", "label": "Workspace to post the digest in" },
+    { "key": "cron", "type": "string", "label": "When to post it (cron, hourly at most)" },
+    { "key": "webhookPath", "type": "string", "label": "Slack webhook path (optional)" },
+    { "key": "webhookToken", "type": "secret", "label": "Slack webhook token" }
+  ],
+  "provides": { "ui": ["page", "workspace-action", "task-menu"], "schedules": ["daily"] },
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "digest-1.0.0.tgz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

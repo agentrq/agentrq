@@ -186,6 +186,43 @@ describe('parseManifest', () => {
     })
   })
 
+  describe('net', () => {
+    // The field is a declaration by the author, not a restriction: nothing
+    // enforces it, and these tests are about the manifest being readable, not
+    // about anything being contained.
+    it('accepts hostnames, including a leading wildcard', () => {
+      const { manifest } = parseManifest({ ...valid(), net: ['hooks.slack.com', '*.example.com'] })
+      expect(manifest.net).toEqual(['hooks.slack.com', '*.example.com'])
+    })
+
+    it('is absent by default rather than required', () => {
+      expect(parseManifest(valid()).manifest.net).toEqual([])
+    })
+
+    it('folds case, so one host is not two', () => {
+      expect(parseManifest({ ...valid(), net: ['Hooks.Slack.com'] }).manifest.net).toEqual(['hooks.slack.com'])
+    })
+
+    it('refuses a whole URL, and says what to do about it', () => {
+      const { ok, reason } = parseManifest({ ...valid(), net: ['https://hooks.slack.com/services'] })
+      expect(ok).toBe(false)
+      expect(reason).toContain('no scheme or path')
+    })
+
+    it('refuses anything that is not a list of hostnames', () => {
+      expect(parseManifest({ ...valid(), net: 'hooks.slack.com' }).reason).toContain('list of hostnames')
+      expect(parseManifest({ ...valid(), net: ['localhost'] }).ok).toBe(false)
+      expect(parseManifest({ ...valid(), net: [''] }).ok).toBe(false)
+      expect(parseManifest({ ...valid(), net: ['api.example.com:443'] }).ok).toBe(false)
+      expect(parseManifest({ ...valid(), net: ['-bad.example.com'] }).ok).toBe(false)
+    })
+
+    it('refuses the same host twice', () => {
+      const { reason } = parseManifest({ ...valid(), net: ['a.example.com', 'A.example.com'] })
+      expect(reason).toContain('twice')
+    })
+  })
+
   describe('config', () => {
     it('is optional and defaults its labels to the key', () => {
       const { manifest } = parseManifest({ ...valid(), config: [{ key: 'teamId' }] })

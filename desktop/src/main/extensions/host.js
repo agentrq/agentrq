@@ -70,7 +70,7 @@ export function validateModule(module, expectedName) {
  * make `inject` decorative, and the declaration is what lets the install screen
  * say what an extension touches before it is ever run.
  */
-export function buildContext({ name, registries, inject, config, logger }) {
+export function buildContext({ name, registries, inject, config, logger, mcp }) {
   const missing = inject.filter((key) => !(key in registries))
   if (missing.length > 0) {
     return fail(`This extension asks for something that does not exist: ${missing.join(', ')}.`)
@@ -79,6 +79,21 @@ export function buildContext({ name, registries, inject, config, logger }) {
   const ctx = {
     name,
     config,
+    /**
+     * How an extension reaches AgentRQ, and the only way it can.
+     *
+     * Always present, never conditional on `inject`. It is not a registry — it
+     * is a request channel closed over this extension's name — and an extension
+     * that was granted nothing gets a refusal with a reason rather than a
+     * `TypeError` on `undefined.workspace`. The first is a sentence an author
+     * can act on; the second is a stack trace pointing into the host.
+     *
+     * It carries no credential of any kind. That is the whole arrangement: the
+     * host attaches the token on the way out, so an extension that is
+     * compromised, or merely careless with what it logs, cannot leak a key it
+     * was never given.
+     */
+    mcp,
     logger: {
       info: (...args) => logger.info?.(`[${name}]`, ...args),
       warn: (...args) => logger.warn?.(`[${name}]`, ...args),
@@ -107,13 +122,33 @@ export function buildContext({ name, registries, inject, config, logger }) {
 }
 
 /**
+ * A client for an extension that was never granted anything.
+ *
+ * The broker answers this way itself once a grant is missing; having the same
+ * answer available before a broker is even wired in means the failure mode of a
+ * half-assembled host is a sentence rather than a crash.
+ */
+const NO_ACCESS = { ok: false, reason: 'This extension has not been granted any access.' }
+const refuseEverything = () => ({
+  workspace: async () => NO_ACCESS,
+  supervisor: async () => NO_ACCESS,
+})
+
+/**
  * @param {object} deps
  * @param {(installation: object) => Promise<object>} deps.load  Imports the module.
  * @param {(name: string) => Promise<object>} deps.readConfig
+ * @param {(name: string) => object} [deps.clientFor]  The broker's client, by extension name.
  * @param {(name: string) => Promise<void>} [deps.onDisabled]
  * @param {{info: Function, warn: Function}} [deps.logger]
  */
-export function createHost({ load, readConfig, onDisabled = async () => {}, logger = console }) {
+export function createHost({
+  load,
+  readConfig,
+  clientFor = refuseEverything,
+  onDisabled = async () => {},
+  logger = console,
+}) {
   const registries = createRegistries()
   /** @type {Map<string, object>} what is loaded right now. */
   const loaded = new Map()
@@ -188,6 +223,7 @@ export function createHost({ load, readConfig, onDisabled = async () => {}, logg
         inject: shape.inject,
         config,
         logger,
+        mcp: clientFor(name),
       })
       if (!context.ok) return this.recordFailure(name, new Error(context.reason))
 

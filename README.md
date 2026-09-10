@@ -164,6 +164,28 @@ certificates are in place — the install command above is the way around both.
 Connecting to a server and troubleshooting are covered in the
 [Desktop Guide](docs/DESKTOP.md).
 
+## Extending the desktop app
+
+Extensions add pages, actions, keyboard shortcuts and scheduled work. They are
+ordinary Node modules, discovered from GitHub repositories carrying the
+`agentrq-extension` topic, and installed from the desktop app.
+
+**Extensions are desktop-only, and deliberately so.** An extension is code
+somebody else wrote, running with the privileges of the process it is in. On a
+self-hosted server that would mean a stranger's code next to your database and
+your other users; on the desktop it runs on the machine of the person who chose
+to install it. The server never loads extension code.
+
+What AgentRQ does enforce is everything it owns: which surfaces an extension can
+contribute to, and which MCP tools it may call against which workspaces — the
+extension never holds a credential, it asks, and the app attaches the token on
+the way out. That is a real boundary around your AgentRQ data. It is not a
+sandbox around your machine, and the install screen says so on every install.
+
+Three worked examples live in [`examples/extensions/`](examples/extensions/),
+from one that asks for no permissions at all to one that runs a daily digest
+across every workspace. See the [Extensions Guide](docs/EXTENSIONS.md).
+
 ## Driving AgentRQ from a browser agent
 
 If your browser supports [WebMCP](https://github.com/webmachinelearning/webmcp),

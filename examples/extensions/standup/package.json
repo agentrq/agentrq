@@ -1,0 +1,9 @@
+{
+  "name": "@agentrq-examples/standup",
+  "version": "1.0.0",
+  "description": "Example AgentRQ extension: a page showing what moved in a workspace today.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "private": true
+}

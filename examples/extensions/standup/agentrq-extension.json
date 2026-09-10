@@ -1,0 +1,19 @@
+{
+  "name": "standup",
+  "displayName": "Standup",
+  "version": "1.0.0",
+  "description": "A page showing what moved in a workspace today, and the thread of anything still blocked.",
+  "license": "MIT",
+  "engines": { "agentrq": ">=0.5" },
+  "mcp": { "workspace": ["listTasks", "getTask"] },
+  "config": [
+    { "key": "since", "type": "number", "label": "Hours to look back" }
+  ],
+  "provides": { "ui": ["page"], "shortcuts": ["s"] },
+  "shortcuts": [{ "key": "s", "action": "open", "title": "Standup: today" }],
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "standup-1.0.0.tgz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

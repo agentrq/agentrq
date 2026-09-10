@@ -1,0 +1,9 @@
+{
+  "name": "@agentrq-examples/task-stats",
+  "version": "1.0.0",
+  "description": "Example AgentRQ extension: task age, word count and message count on a task's right-click menu.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "private": true
+}

@@ -41,6 +41,7 @@ const KNOWN_KEYS = new Set([
   'license',
   'engines',
   'mcp',
+  'net',
   'config',
   'provides',
   'shortcuts',
@@ -219,6 +220,46 @@ function validateArtifact(value) {
   return { ok: true, artifact: { release, asset, sha256 } }
 }
 
+/**
+ * Hosts the author says the extension will contact.
+ *
+ * **This is a declaration, not a restriction, and nothing anywhere enforces it.**
+ * An extension is trusted Node code — it can open any socket it likes, and this
+ * field changes nothing about that. Saying otherwise on an install screen would
+ * be worse than saying nothing, because a list of hosts under a heading that
+ * reads like permissions is read as a boundary.
+ *
+ * It is here because it is still worth knowing. An extension that says it talks
+ * to `hooks.slack.com` has told the user something true and useful about what it
+ * is for, and one that says nothing and clearly does reach the network is a
+ * mismatch a reviewer can see. The install screen presents it as part of the
+ * author's description of their own extension, alongside the sentence about full
+ * machine access — never as a list of things it is limited to.
+ *
+ * Hostnames only: no scheme, no path, no port. A wildcard is allowed at the
+ * front (`*.example.com`) because an API spread over subdomains is ordinary, and
+ * listing forty of them would tell a reader less than one line does.
+ */
+const HOST_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+
+function validateNet(value) {
+  if (value === undefined) return { ok: true, net: [] }
+  if (!Array.isArray(value)) return fail('"net" must be a list of hostnames.')
+
+  const net = []
+  for (const entry of value) {
+    const host = str(entry).toLowerCase()
+    if (!HOST_RE.test(host)) {
+      // Named, because the mistake is nearly always a URL pasted whole and the
+      // fix is to delete everything but the host.
+      return fail(`"net" contains "${str(entry)}", which is not a hostname. Use "api.example.com", with no scheme or path.`)
+    }
+    if (net.includes(host)) return fail(`"net" lists "${host}" twice.`)
+    net.push(host)
+  }
+  return { ok: true, net }
+}
+
 /** Config fields an extension asks the user to fill in. */
 function validateConfig(value) {
   if (value === undefined) return { ok: true, config: [] }
@@ -300,6 +341,9 @@ export function parseManifest(source) {
   const supervisor = validateToolList(mcp.supervisor, 'supervisor')
   if (!supervisor.ok) return supervisor
 
+  const net = validateNet(raw.net)
+  if (!net.ok) return net
+
   const config = validateConfig(raw.config)
   if (!config.ok) return config
 
@@ -316,6 +360,7 @@ export function parseManifest(source) {
       license: license.license,
       engines: { agentrq },
       mcp: { workspace: workspace.tools, supervisor: supervisor.tools },
+      net: net.net,
       config: config.config,
       provides: raw.provides && typeof raw.provides === 'object' ? raw.provides : {},
       shortcuts: Array.isArray(raw.shortcuts) ? raw.shortcuts : [],

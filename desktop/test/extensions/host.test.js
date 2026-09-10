@@ -28,6 +28,41 @@ function build({ module = moduleWith(() => {}), config = {}, ...over } = {}) {
   return { host, onDisabled, logger }
 }
 
+/**
+ * The default client, for a host assembled without a broker.
+ *
+ * It matters because the alternative — leaving `ctx.mcp` undefined — turns an
+ * extension's first call into a `TypeError` inside the host rather than a
+ * sentence its author can read.
+ */
+describe('an extension given no broker at all', () => {
+  it('is refused with a reason rather than crashing on undefined', async () => {
+    let seen
+    const { host } = build({ module: moduleWith((ctx) => { seen = ctx.mcp }) })
+
+    await host.start(installation())
+
+    expect(await seen.workspace('getTask', {})).toEqual({
+      ok: false,
+      reason: 'This extension has not been granted any access.',
+    })
+    expect(await seen.supervisor('listAllTasks', {})).toMatchObject({ ok: false })
+  })
+
+  it('hands over the broker\'s client when there is one', async () => {
+    const client = { workspace: vi.fn(), supervisor: vi.fn() }
+    let seen
+    const { host } = build({
+      module: moduleWith((ctx) => { seen = ctx.mcp }),
+      clientFor: vi.fn(() => client),
+    })
+
+    await host.start(installation())
+
+    expect(seen).toBe(client)
+  })
+})
+
 describe('validateModule', () => {
   it('accepts a module with an apply and reads what it injects', () => {
     const { ok, inject } = validateModule(moduleWith(() => {}), 'linear')
