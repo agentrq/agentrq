@@ -539,7 +539,7 @@ type (
 		UserID       int64        `json:"userId"`
 		ResourceType ResourceType `json:"resourceType"`
 		ResourceID   int64        `json:"resourceId"`
-		Actor        Actor        `json:"actor"`  // 1: Human, 2: Agent
+		Actor        Actor        `json:"actor"`  // 1: Human, 2: Agent, 3: Extension
 		Origin       Origin       `json:"origin"` // 1: API, 2: MCP, 3: Scheduler, 4: Slack
 	}
 
@@ -927,6 +927,14 @@ type EventPublishedPayload struct {
 const (
 	ActorHuman Actor = 1
 	ActorAgent Actor = 2
+	// ActorExtension is work done by a desktop extension acting on the user's
+	// behalf. It is neither of the other two: counting it as human overstates
+	// what a person did, and counting it as agent puts it in the same bucket as
+	// the thing the workspace exists to measure.
+	//
+	// Appended, never inserted — the value is stored on every telemetry row, so
+	// renumbering would silently reinterpret history.
+	ActorExtension Actor = 3
 )
 
 const (
