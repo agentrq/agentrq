@@ -1,4 +1,5 @@
 import { parseManifest } from './manifest.js'
+import { checkShortcuts } from './shortcuts.js'
 import { describeSource, pinFor, verifyDigest } from './source.js'
 
 /**
@@ -111,6 +112,9 @@ export function createInstaller({
   dirFor,
   store,
   now = () => Date.now(),
+  // What every other extension already holds. A getter rather than a value so
+  // it reflects what is installed at the moment of the check.
+  claimedKeys = () => [],
 }) {
   let state = null
 
@@ -155,6 +159,13 @@ export function createInstaller({
 
       const parsed = parseManifest(manifestSource)
       if (!parsed.ok) return { ok: false, reason: parsed.reason, temp }
+
+      // Checked here, before anything is written, so a keyboard conflict is a
+      // sentence in front of somebody who can still decide not to install —
+      // rather than a key that silently does nothing afterwards, with both
+      // extensions looking correct in isolation.
+      const keys = checkShortcuts(parsed.manifest, claimedKeys())
+      if (!keys.ok) return { ok: false, reason: keys.problems.join(' '), temp }
 
       return { ok: true, temp, dir: fetched.dir, manifest: parsed.manifest, commit: fetched.commit }
     } catch (error) {

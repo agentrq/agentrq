@@ -267,6 +267,40 @@ describe('install', () => {
     expect((await installer.install({ kind: 'local', path: '/x' }, { linked: true })).ok).toBe(false)
   })
 
+  it('refuses a shortcut another extension already holds, before writing anything', async () => {
+    // A conflict found at runtime is a key that silently does nothing, and
+    // nothing on screen explains it. Found here, it is a sentence.
+    const withShortcut = JSON.stringify({
+      ...JSON.parse(manifestFor('thing')),
+      shortcuts: [{ key: 'l', action: 'create' }],
+    })
+    const { installer, moved } = build({
+      manifest: withShortcut,
+      claimedKeys: () => [{ key: 'l', owner: 'standup' }],
+    })
+
+    const { ok, reason } = await installer.install(releaseSource())
+
+    expect(ok).toBe(false)
+    expect(reason).toBe('"x l" is already used by standup.')
+    expect(moved).toEqual([])
+  })
+
+  it('lets an extension keep its own shortcut through an update', async () => {
+    // Otherwise every update after the first conflicts with the version it is
+    // replacing, which makes updating impossible.
+    const withShortcut = JSON.stringify({
+      ...JSON.parse(manifestFor('thing')),
+      shortcuts: [{ key: 'l', action: 'create' }],
+    })
+    const { installer } = build({
+      manifest: withShortcut,
+      claimedKeys: () => [{ key: 'l', owner: 'thing' }],
+    })
+
+    expect((await installer.install(releaseSource())).ok).toBe(true)
+  })
+
   it('replaces an earlier installation of the same name rather than doubling it', async () => {
     const { installer, saved } = build()
 

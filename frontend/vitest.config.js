@@ -45,6 +45,7 @@ export default defineConfig({
         'src/composables/useAgentModelPicker.js',
         'src/composables/useExtensionCatalogue.js',
         'src/composables/useExtensionGrant.js',
+        'src/composables/useExtensionShortcuts.js',
         'src/composables/useExtensionView.js',
         'src/composables/useTaskContextMenu.js',
         'src/composables/useTaskEvents.js',
