@@ -34,6 +34,9 @@ describe('routes', () => {
       '/workspaces/:id/tasks/:taskId/edit',
       '/events',
       '/events/:id',
+      // Desktop-only in practice, but it lives in the one route table like
+      // everything else — the desktop build mounts exactly this list.
+      '/extensions',
       '/workflows',
       '/workflows/:id',
       '/login',

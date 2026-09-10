@@ -45,6 +45,11 @@ export const routes = [
   { path: '/events', component: () => import('./views/EventsView.vue') },
   { path: '/events/:id', component: () => import('./views/EventDetailView.vue') },
 
+  // Desktop-only in practice — the view renders nothing without the bridge, and
+  // the sidebar entry is hidden in the browser. The route lives here all the
+  // same, because this is the only route table and the desktop build mounts it.
+  { path: '/extensions', component: () => import('./desktop/ExtensionsView.vue') },
+
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
   { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },
 

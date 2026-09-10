@@ -133,6 +133,22 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
   },
 
+  extensions: {
+    /**
+     * What is already known — the cached catalogue, and what is installed.
+     *
+     * Never searches. GitHub answers ten searches a minute unauthenticated, and
+     * spending that on somebody opening a screen would leave nothing for the
+     * person who actually asked.
+     *
+     * @returns {Promise<{index: object, installed: string[]}>}
+     */
+    state: () => ipcRenderer.invoke('agentrq:extensions:state'),
+
+    /** Go and look again. A deliberate act, from a button. */
+    refresh: () => ipcRenderer.invoke('agentrq:extensions:refresh'),
+  },
+
   updates: {
     /** @returns {Promise<{status: string, detail: string, version: string, enabled: boolean}>} */
     get: () => ipcRenderer.invoke('agentrq:update:get'),

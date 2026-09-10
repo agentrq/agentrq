@@ -46,6 +46,8 @@ import { createEventStreamClient } from './sse.js'
 import { LinkTarget, classifyLink, linkWindowBounds } from './links.js'
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js'
 import { UpdateStatus, createUpdater } from './updater.js'
+import { createDiscovery } from './extensions/discovery.js'
+import { decorate } from './extensions/catalogue.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -130,6 +132,7 @@ let currentTheme = 'system'
 /** Set when a deep link arrives before the window is ready to receive it. */
 let pendingRoute = null
 let updater = null
+let discovery = null
 /**
  * The signed-in profile in use, and the Electron session that carries its
  * cookies. Everything that talks to the server goes through this session rather
@@ -820,6 +823,18 @@ function registerIpc(getWindow) {
 
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
+  ipcMain.handle('agentrq:extensions:state', async () => {
+    const index = (await discovery?.list()) ?? { entries: [] }
+    // Compatibility is decided here, where the running version and the tool
+    // lists are — the renderer never has to learn what a semver range is.
+    return { index: decorate(index, { appVersion: app.getVersion() }), installed: [] }
+  })
+
+  ipcMain.handle('agentrq:extensions:refresh', async () => {
+    const result = (await discovery?.refresh()) ?? { ok: false, reason: 'Extensions are unavailable.' }
+    return { ...result, index: decorate(result.index ?? { entries: [] }, { appVersion: app.getVersion() }) }
+  })
+
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
   ipcMain.handle(
     'agentrq:update:install-via-script',
@@ -862,6 +877,45 @@ function registerIpc(getWindow) {
   })
 }
 
+/**
+ * The extension catalogue.
+ *
+ * Every request goes out from here rather than from the renderer, which is on
+ * the privileged `app://` scheme and only ever sees same-origin traffic — a call
+ * to api.github.com from there is the cross-origin request that architecture
+ * exists to prevent, and the CSP would refuse it in any case.
+ */
+function installExtensions() {
+  const cachePath = join(app.getPath('userData'), 'extensions-catalogue.json')
+
+  discovery = createDiscovery({
+    fetchJson: async (url, token) => {
+      const response = await fetch(url, { headers: githubHeaders(token) })
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
+      return response.json()
+    },
+    fetchText: async (url, token) => {
+      const response = await fetch(url, { headers: githubHeaders(token) })
+      // A repository with the topic and no manifest is an ordinary state, not a
+      // failure: it is listed as broken with that as its reason.
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error(`GitHub responded ${response.status}`)
+      return response.text()
+    },
+    readFile: () => readFile(cachePath, 'utf8'),
+    writeFile: (contents) => writeFile(cachePath, contents, 'utf8'),
+  })
+}
+
+function githubHeaders(token) {
+  return {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'AgentRQ',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 function installUpdater() {
   updater = createUpdater({
     autoUpdater: electronUpdater.autoUpdater,
@@ -880,6 +934,8 @@ function installUpdater() {
   })
   updater.start()
 }
+
+
 
 function installTray() {
   // An empty image is a deliberate placeholder: a tray icon is an art asset,
@@ -963,6 +1019,7 @@ if (!app.requestSingleInstanceLock()) {
     installTray()
     installGlobalShortcut()
     installUpdater()
+    installExtensions()
 
     const launchLink = deepLinkFromArgv(process.argv)
     if (launchLink) openDeepLink(launchLink)
