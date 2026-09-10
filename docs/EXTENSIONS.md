@@ -133,9 +133,16 @@ what a summary actually needs, and `getTask` takes an id you already have.
 is reaching every workspace, which is why it sits at the top of the grant ladder.
 
 `standup` was first written asking for `listTasks` on the workspace server and
-would never have installed. A Go test now checks every example manifest against
-the servers' actual registrations, so the examples cannot teach a tool that does
-not exist.
+would never have installed. Two tests now guard this from both sides: a Go test
+checks every example manifest against the servers' actual registrations, and
+`desktop/src/main/extensions/servers.js` — the lists the install screen judges
+against — is checked against the same Go source, so a tool added on one side
+fails the build on the other.
+
+Those lists describe **the desktop app's idea of the servers**, not the one it is
+connected to. A self-hosted backend older than the app may not have a tool listed
+there; an extension needing it installs and is then refused at call time, by the
+server, with the server's own message.
 
 ### Why the licence is required
 

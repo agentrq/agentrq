@@ -58,6 +58,7 @@ import { createConfigStore } from './extensions/config.js'
 import { createRuntime } from './extensions/runtime.js'
 import { claimedShortcuts } from './extensions/shortcuts.js'
 import { entriesFor, invokeEntry } from './extensions/surfaces.js'
+import { serverTools } from './extensions/servers.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -1066,7 +1067,11 @@ function buildExtensionRuntime() {
     schedules,
     configStore,
     readManifest,
-    servers: () => ({ appVersion: app.getVersion() }),
+    // The tool lists as well as the version. Passing only the version left
+    // `checkCompatibility` judging every extension against an empty surface, so
+    // anything wanting MCP at all was refused with "the workspace server does
+    // not offer …" — for tools the server has had all along.
+    servers: () => serverTools(app.getVersion()),
   })
 
   return {

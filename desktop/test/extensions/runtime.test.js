@@ -190,8 +190,16 @@ describe('inspect', () => {
     expect(await runtime.inspect('/tmp/x')).toEqual({ ok: false, reason: 'This is not valid JSON.' })
   })
 
-  // Assembled without a tool list, which is what a host that has not yet
-  // connected to a server looks like.
+  /**
+   * Assembled without a tool list.
+   *
+   * This is correct as a statement about the function and it is also exactly
+   * what the real app did: `index.js` passed only `appVersion`, so every
+   * extension wanting any tool at all was refused with "the workspace server
+   * does not offer …" for tools the server has had all along. A unit test can
+   * only answer the question it was asked, and this one was never asked what
+   * the app passes — `servers.test.js` is.
+   */
   it('judges nothing compatible when it was told nothing about the servers', async () => {
     const runtime = createRuntime({
       installer: { list: async () => [] },

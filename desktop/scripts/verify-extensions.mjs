@@ -37,6 +37,7 @@ import { createSchedules } from '../src/main/extensions/schedules.js'
 import { createConfigStore } from '../src/main/extensions/config.js'
 import { createRuntime } from '../src/main/extensions/runtime.js'
 import { readManifest } from '../src/main/extensions/fetch-source.js'
+import { serverTools } from '../src/main/extensions/servers.js'
 import { entriesFor, invokeEntry } from '../src/main/extensions/surfaces.js'
 // The renderer's own modules, imported here rather than from inside the page: a
 // production bundle exposes no source paths, and these are plain functions with
@@ -48,7 +49,8 @@ import { normaliseView } from '../../frontend/src/composables/useExtensionView.j
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const RENDERER_ROOT = join(__dirname, '../dist/renderer')
 const PRELOAD = join(__dirname, '../dist/preload/index.cjs')
-const EXAMPLE = join(__dirname, '../../examples/extensions/task-stats')
+const EXAMPLES = join(__dirname, '../../examples/extensions')
+const EXAMPLE = join(EXAMPLES, 'task-stats')
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -196,7 +198,9 @@ function buildRuntime() {
     schedules,
     configStore,
     readManifest,
-    servers: () => ({ appVersion: app.getVersion() }),
+    // The real lists, as index.js passes them. Passing only the version is what
+    // refused every extension that wanted any tool at all.
+    servers: () => serverTools(app.getVersion()),
   })
 
   return { runtime, host }
@@ -239,6 +243,23 @@ app.whenReady().then(async () => {
 
   const results = []
   const record = (name, pass, detail) => results.push({ name, pass, detail })
+
+  // The bug this missed the first time: an example asking for MCP tools was
+  // judged against an empty surface and refused every one of them. task-stats
+  // asks for nothing, so it installed and this script said everything was fine.
+  const { runtime: second } = buildRuntime()
+  const wantsTools = await second.inspect(join(EXAMPLES, 'standup'))
+  record(
+    'an extension that wants workspace tools is judged against the real ones',
+    wantsTools.ok === true && wantsTools.compatible === true,
+    JSON.stringify(wantsTools.reasons ?? wantsTools.reason ?? ''),
+  )
+  const wantsAccount = await second.inspect(join(EXAMPLES, 'digest'))
+  record(
+    'and so is one that wants the account',
+    wantsAccount.ok === true && wantsAccount.compatible === true,
+    JSON.stringify(wantsAccount.reasons ?? wantsAccount.reason ?? ''),
+  )
 
   record('the folder reads as an extension', inspected.ok === true, String(inspected.reason ?? ''))
   record('and it can run on this version', inspected.compatible === true, JSON.stringify(inspected.reasons ?? []))
