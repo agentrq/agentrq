@@ -311,7 +311,10 @@ export function describeFailure(error) {
   const message = String(error?.message ?? error ?? 'Unknown error')
 
   if (/rate limit|\b403\b/i.test(message)) {
-    return 'GitHub rate limit reached. Add a personal access token in settings, or try again shortly.'
+    // No token setting exists — `installExtensions` never passes one — so the
+    // advice to add one sent people looking for a control that is not there.
+    // Say the one thing that is true and actionable instead.
+    return 'GitHub is rate limiting this app. Try again in a few minutes.'
   }
   if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN|network|fetch failed/i.test(message)) {
     return 'Could not reach GitHub.'

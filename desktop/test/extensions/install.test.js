@@ -394,6 +394,24 @@ describe('update', () => {
     expect(needsGrant).toBeUndefined()
   })
 
+  it('refuses an update that renames the extension', async () => {
+    // The name is the address: the install directory, the registry keys and the
+    // route. Accepting a rename would write the new code into the old
+    // directory, leave the old record pointing at it, and add a second record
+    // whose directory was never written — after which an uninstall of either
+    // removes the wrong one.
+    const { installer, moved, saved, setManifest } = build()
+    await installer.install(releaseSource())
+
+    setManifest(manifestFor('other-thing'))
+    const result = await installer.update('thing', releaseSource())
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('"other-thing"')
+    expect(moved).toHaveLength(1)
+    expect(saved().installations.map((i) => i.name)).toEqual(['thing'])
+  })
+
   it('refuses to update something that is not installed', async () => {
     const { installer } = build()
     expect((await installer.update('ghost', releaseSource())).reason).toBe('ghost is not installed.')

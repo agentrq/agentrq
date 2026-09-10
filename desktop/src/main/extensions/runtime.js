@@ -18,6 +18,15 @@ import { checkShortcuts, requestedKeys } from './shortcuts.js'
  * there is wiring — a dialog, a path, a session — and what belongs here is every
  * decision about what happens when.
  *
+ * ## A grant is checked against the manifest on every load
+ *
+ * `broker.js` says the tool check is against "the manifest's `mcp` allowlist",
+ * and it is really against the grant — which was *built* from a manifest and
+ * then outlives it. A linked installation is a folder somebody can edit, and a
+ * grant is persisted across restarts, so the two drift. `clampToManifest`
+ * intersects them on every load, in the one direction that is safe to do
+ * without asking: narrower, never wider.
+ *
  * ## Install is two steps, because a grant is a question
  *
  * `inspect` reads a folder and answers what is there and what it would ask for.
@@ -37,6 +46,45 @@ import { checkShortcuts, requestedKeys } from './shortcuts.js'
  */
 
 const fail = (reason) => ({ ok: false, reason })
+
+/**
+ * Narrows a grant to what the installed manifest actually asks for.
+ *
+ * A grant is written once, at install, from the manifest the user was shown —
+ * and then it outlives that manifest. It is persisted across restarts, and a
+ * **linked** installation is a folder on disk that can be edited at any moment,
+ * including its `agentrq-extension.json`. So the list the broker enforces and
+ * the list the install screen displayed can drift apart, in the direction that
+ * matters: an extension keeps a tool it no longer declares, and nothing on any
+ * screen says so.
+ *
+ * Nothing here widens anything — a manifest asking for more than was granted
+ * gets no more than was granted, because only a person can do that, at an
+ * install screen. This is the other direction, and it is cheap: an intersection
+ * on every load, so the enforced grant is never broader than what is currently
+ * written down and shown.
+ *
+ * The workspace list is left alone. Which workspaces an extension may reach is
+ * the user's answer to a question, not something the manifest has an opinion
+ * about.
+ */
+export function clampToManifest(grant, manifest) {
+  if (!grant) return null
+
+  const declared = {
+    workspace: manifest?.mcp?.workspace ?? [],
+    supervisor: manifest?.mcp?.supervisor ?? [],
+  }
+  const keep = (granted = [], asked) => granted.filter((tool) => asked.includes(tool))
+
+  return {
+    ...grant,
+    tools: {
+      workspace: keep(grant.tools?.workspace, declared.workspace),
+      supervisor: keep(grant.tools?.supervisor, declared.supervisor),
+    },
+  }
+}
 
 /**
  * What `inspect` reports about a folder.
@@ -110,7 +158,7 @@ export function createRuntime({
    * see a permission error for a permission the user had granted.
    */
   async function start(installation) {
-    const grant = installation.grant ?? grants.get(installation.name)
+    const grant = clampToManifest(installation.grant ?? grants.get(installation.name), installation.manifest)
     if (grant) {
       grants.set(installation.name, grant)
       broker.setGrant(installation.name, grant)

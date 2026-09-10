@@ -455,6 +455,42 @@ describe('reconcile', () => {
     expect(saved().standup).toEqual({})
   })
 
+  // The event half of the same bound, which the workspace check on the call
+  // could not reach: a trigger resolves its events *before* the call that names
+  // a workspace, and `createEvent` is account-level. Refused only there, an
+  // extension outside its grant would still have left a named event standing on
+  // the account, recorded nowhere and tidied away by nobody.
+  it('creates no account-level event for a trigger the grant does not reach', async () => {
+    const grant = { scope: SCOPE.workspace, workspaces: ['ws1'] }
+    const { schedules, fake, saved } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })
+
+    const result = await schedules.reconcile('standup', [triggerEntry({ workspaceId: 'ws2' })])
+
+    expect(result.ok).toBe(false)
+    expect(result.problems[0].reason).toContain('not granted access to that workspace')
+    expect(fake.toolsCalled()).toEqual([])
+    expect(saved().standup).toEqual({})
+  })
+
+  it('creates no account-level event when a revision moves outside the grant', async () => {
+    // The same hole on the second pass: an entry that already exists and is
+    // then repointed at a workspace outside the grant must be refused before
+    // `ensureEvent` runs, not after.
+    let grant = { scope: SCOPE.supervisor, workspaces: [] }
+    const { schedules, fake, saved } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })
+    await schedules.reconcile('standup', [triggerEntry()])
+    grant = { scope: SCOPE.workspace, workspaces: ['ws1'] }
+    const before = fake.toolsCalled().length
+
+    const result = await schedules.reconcile('standup', [triggerEntry({ workspaceId: 'ws2', event: 'released' })])
+
+    expect(result.ok).toBe(false)
+    expect(result.problems[0].reason).toContain('not granted access to that workspace')
+    expect(fake.toolsCalled().slice(before)).toEqual([])
+    // The record it already had is untouched, so the next pass can try again.
+    expect(saved().standup['on-deploy']).toMatchObject({ workspaceId: 'ws1' })
+  })
+
   it('allows any workspace once the grant is the whole account', async () => {
     const grant = { scope: SCOPE.supervisor, workspaces: [] }
     const { schedules } = build({ allows: (_name, workspaceId) => permitsWorkspace(grant, workspaceId) })

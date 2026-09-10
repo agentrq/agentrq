@@ -71,7 +71,13 @@ export function validateModule(module, expectedName) {
  * say what an extension touches before it is ever run.
  */
 export function buildContext({ name, registries, inject, config, logger, mcp }) {
-  const missing = inject.filter((key) => !(key in registries))
+  // `hasOwn` rather than `in`: every object inherits `toString`, `constructor`
+  // and `__proto__`, so `in` answers yes for all three. An extension declaring
+  // one of those would pass this check and then find `registry.add` undefined
+  // inside its own `apply` — a TypeError from the host instead of the sentence
+  // this function exists to give it — and `__proto__` would reassign the
+  // context's prototype on the way past.
+  const missing = inject.filter((key) => !Object.hasOwn(registries, key))
   if (missing.length > 0) {
     return fail(`This extension asks for something that does not exist: ${missing.join(', ')}.`)
   }

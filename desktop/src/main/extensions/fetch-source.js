@@ -106,6 +106,13 @@ export function createFetchSource({ spawn, fetchImpl = fetch }) {
     // and it can only do that if nothing has been written yet.
     const sha256 = createHash('sha256').update(bytes).digest('hex')
 
+    // Compared here as well as there, because `tar` is what turns a stranger's
+    // bytes into files on disk: an archive that is not the one the manifest
+    // named must never reach it, however carefully the installer refuses
+    // afterwards. The digest travels back with nothing written, so the
+    // installer still owns the refusal and its wording.
+    if (sha256 !== String(source.sha256 ?? '').toLowerCase()) return { dir, sha256 }
+
     const archive = join(into, source.asset)
     await writeFile(archive, bytes)
     // `tar` rather than a dependency: it is present on macOS and Linux, and

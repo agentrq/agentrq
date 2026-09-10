@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 
-import { createRuntime, describeCandidate } from '../../src/main/extensions/runtime.js'
+import { clampToManifest, createRuntime, describeCandidate } from '../../src/main/extensions/runtime.js'
 
 /**
  * The sequence, and everything that goes wrong when it is out of order.
@@ -114,6 +114,64 @@ function build(over = {}) {
 
   return { runtime, installer, host, broker, schedules, configStore, logger, order, held }
 }
+
+/**
+ * A grant is written once, at install, and then outlives the manifest it was
+ * built from — it is persisted across restarts, and a linked installation is a
+ * folder somebody can edit at any moment.
+ *
+ * `broker.js` says its tool check is "against the manifest's `mcp` allowlist".
+ * It is really against the grant, so without this the two drift: an extension
+ * keeps calling a tool it no longer declares, and no screen says so.
+ */
+describe('clampToManifest', () => {
+  const grant = (over = {}) => ({
+    scope: 'selected',
+    workspaces: ['ws1'],
+    tools: { workspace: ['listTasks', 'getTask'], supervisor: ['listAllTasks'] },
+    ...over,
+  })
+
+  it('drops a tool the manifest no longer asks for', () => {
+    const narrowed = clampToManifest(grant(), { mcp: { workspace: ['getTask'], supervisor: [] } })
+
+    expect(narrowed.tools).toEqual({ workspace: ['getTask'], supervisor: [] })
+  })
+
+  // Only a person can widen a grant, at an install screen. A manifest edited to
+  // ask for more must not be able to help itself.
+  it('never widens one, however much the manifest asks for', () => {
+    const widened = clampToManifest(
+      grant({ tools: { workspace: ['getTask'], supervisor: [] } }),
+      { mcp: { workspace: ['getTask', 'createTask'], supervisor: ['listAllTasks'] } },
+    )
+
+    expect(widened.tools).toEqual({ workspace: ['getTask'], supervisor: [] })
+  })
+
+  it('leaves the workspaces alone, because that answer came from a person', () => {
+    const clamped = clampToManifest(grant(), { mcp: { workspace: ['getTask'] } })
+
+    expect(clamped.workspaces).toEqual(['ws1'])
+    expect(clamped.scope).toBe('selected')
+  })
+
+  it('empties the grant of an extension that now asks for nothing', () => {
+    expect(clampToManifest(grant(), {}).tools).toEqual({ workspace: [], supervisor: [] })
+    expect(clampToManifest(grant(), undefined).tools).toEqual({ workspace: [], supervisor: [] })
+  })
+
+  it('has nothing to say about no grant at all', () => {
+    expect(clampToManifest(null, { mcp: { workspace: ['getTask'] } })).toBeNull()
+  })
+
+  it('copes with a grant that recorded no tools', () => {
+    expect(clampToManifest({ scope: 'workspace' }, { mcp: { workspace: ['getTask'] } }).tools).toEqual({
+      workspace: [],
+      supervisor: [],
+    })
+  })
+})
 
 describe('describeCandidate', () => {
   it('reads a folder into everything the grant screen needs', () => {
@@ -413,13 +471,21 @@ describe('setEnabled', () => {
 
   it('loads it again, with the grant it already had, when switched on', async () => {
     const { runtime, broker } = build()
-    runtime.rememberGrant('standup', { scope: 'workspace', workspaces: ['ws1'] })
+    runtime.rememberGrant('standup', {
+      scope: 'workspace',
+      workspaces: ['ws1'],
+      tools: { workspace: ['listTasks'], supervisor: [] },
+    })
     broker.setGrant.mockClear()
 
     const result = await runtime.setEnabled('standup', true)
 
     expect(result.ok).toBe(true)
-    expect(broker.setGrant).toHaveBeenCalledWith('standup', { scope: 'workspace', workspaces: ['ws1'] })
+    expect(broker.setGrant).toHaveBeenCalledWith('standup', {
+      scope: 'workspace',
+      workspaces: ['ws1'],
+      tools: { workspace: ['listTasks'], supervisor: [] },
+    })
   })
 
   it('reports one that is not installed', async () => {

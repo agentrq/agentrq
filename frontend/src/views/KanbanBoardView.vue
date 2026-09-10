@@ -429,6 +429,16 @@ const extensionItems = ref([]);
 const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task, extensionItems.value));
 
 const extensions = useExtensionSurfaces();
+
+// Said out loud. `invoke` records a refusal and draws no panel, so without this
+// a menu item that failed — a grant the user narrowed, an extension that threw
+// — is indistinguishable from a click that did nothing at all.
+watch(
+  () => extensions.error.value,
+  (reason) => {
+    if (reason) notifyError(reason);
+  },
+);
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');

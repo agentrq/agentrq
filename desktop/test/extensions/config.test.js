@@ -216,6 +216,40 @@ describe('createConfigStore', () => {
     expect(store.saved.secrets.linear).toBeUndefined()
   })
 
+  /**
+   * `forget` runs during an uninstall, *after* the extension has been stopped,
+   * its standing work removed and its grant revoked. Throwing there threw out
+   * of the whole uninstall and left it listed as installed with no way back
+   * short of a restart — so a write that fails is reported and swallowed, the
+   * way every other persistence path in this feature treats one.
+   */
+  it('does not take an uninstall down with it when the write fails', async () => {
+    const logger = { warn: vi.fn() }
+    const store = {
+      read: async () => ({ config: { linear: { teamId: 'ENG' } }, secrets: {} }),
+      write: async () => {
+        throw new Error('EROFS: read-only file system')
+      },
+    }
+    const config = createConfigStore({ store, vault: fakeVault(), logger })
+
+    expect(await config.forget('linear')).toEqual({ ok: true, persisted: false })
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('could not write'), 'EROFS: read-only file system')
+  })
+
+  it('says something about a write that failed without a message', async () => {
+    const logger = { warn: vi.fn() }
+    const config = createConfigStore({
+      store: { read: async () => ({}), write: async () => { throw 'EROFS' } }, // eslint-disable-line no-throw-literal
+      vault: fakeVault(),
+      logger,
+    })
+
+    await config.forget('linear')
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'EROFS')
+  })
+
   it('starts empty when there is nothing saved yet', async () => {
     const store = { read: vi.fn(async () => { throw new Error('ENOENT') }), write: vi.fn() }
     const { config } = build(fakeVault(), store)

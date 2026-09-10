@@ -259,7 +259,14 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     }
 
     candidate.value = found;
-    const asks = (found.manifest?.mcp?.workspace ?? []).length + (found.manifest?.mcp?.supervisor ?? []).length;
+    const asks =
+      (found.manifest?.mcp?.workspace ?? []).length +
+      (found.manifest?.mcp?.supervisor ?? []).length +
+      // Settings count as something to ask about. They are entered on that same
+      // screen and on no other, so an extension declaring a config field but no
+      // permission would otherwise install straight past the only place its
+      // values could ever be given — and then run with every setting blank.
+      (found.manifest?.config ?? []).length;
     if (asks === 0) {
       await install({ grant: null, config: null });
       return;

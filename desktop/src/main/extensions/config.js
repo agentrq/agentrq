@@ -89,7 +89,7 @@ export function describeSecrets(fields = [], stored = {}) {
  * @param {object} deps.store   { read(), write(state) } for the non-secret half.
  * @param {object} deps.vault   { encrypt(text), decrypt(blob), available() }
  */
-export function createConfigStore({ store, vault }) {
+export function createConfigStore({ store, vault, logger = console }) {
   let state = null
 
   async function load() {
@@ -176,12 +176,26 @@ export function createConfigStore({ store, vault }) {
       return { ...(state.config[name] ?? {}), ...secrets }
     },
 
-    /** Forget everything about an extension, on uninstall. */
+    /**
+     * Forget everything about an extension, on uninstall.
+     *
+     * A write that fails is reported and swallowed, the way every other
+     * persistence path in this feature treats one. Throwing here threw out of
+     * the uninstall — which runs *after* the extension has been stopped, its
+     * standing work removed and its grant revoked — and left it listed as
+     * installed with no way back short of a restart. The settings surviving is
+     * the smaller problem, and the next uninstall clears them.
+     */
     async forget(name) {
       await load()
       delete state.config[name]
       delete state.secrets[name]
-      await store.write(state)
+      try {
+        await store.write(state)
+      } catch (error) {
+        logger.warn?.('could not write the extension settings:', error?.message ?? error)
+        return { ok: true, persisted: false }
+      }
       return { ok: true }
     },
   }

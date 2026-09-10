@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { createHash } from 'node:crypto'
+import { access, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { createFetchSource } from '../../src/main/extensions/fetch-source.js'
 
@@ -69,6 +73,44 @@ describe('createFetchSource · git', () => {
 })
 
 describe('createFetchSource · release', () => {
+  it('does not unpack an asset whose digest is not the one the manifest named', async () => {
+    // `tar` is what turns a stranger's bytes into files on disk. Refusing after
+    // it has run is refusing after the interesting part already happened, so
+    // the digest is compared before anything is written and the installer is
+    // handed the mismatch to report.
+    const spawn = fakeSpawn()
+    const bytes = new TextEncoder().encode('not the release you asked for')
+    const fetchImpl = vi.fn(async () => ({ ok: true, arrayBuffer: async () => bytes }))
+    const into = await mkdtemp(join(tmpdir(), 'agentrq-fetch-test-'))
+
+    const result = await createFetchSource({ spawn, fetchImpl })(
+      { kind: 'release', repo: 'a/b', release: 'v1', asset: 'x.tgz', sha256: 'a'.repeat(64) },
+      into,
+    )
+
+    expect(result.sha256).not.toBe('a'.repeat(64))
+    expect(spawn).not.toHaveBeenCalled()
+    await expect(access(join(into, 'x.tgz'))).rejects.toThrow()
+    await rm(into, { recursive: true, force: true })
+  })
+
+  it('unpacks an asset that matches the digest', async () => {
+    const spawn = fakeSpawn()
+    const bytes = new TextEncoder().encode('the real thing')
+    const sha256 = createHash('sha256').update(Buffer.from(bytes)).digest('hex')
+    const fetchImpl = vi.fn(async () => ({ ok: true, arrayBuffer: async () => bytes }))
+    const into = await mkdtemp(join(tmpdir(), 'agentrq-fetch-test-'))
+
+    const result = await createFetchSource({ spawn, fetchImpl })(
+      { kind: 'release', repo: 'a/b', release: 'v1', asset: 'x.tgz', sha256 },
+      into,
+    )
+
+    expect(result.sha256).toBe(sha256)
+    expect(spawn.mock.calls[0][0]).toBe('tar')
+    await rm(into, { recursive: true, force: true })
+  })
+
   it('refuses a download the server would not give', async () => {
     const fetchImpl = vi.fn(async () => ({ ok: false, status: 404 }))
 

@@ -128,6 +128,23 @@ describe('buildContext', () => {
     expect(reason).toContain('telepathy')
   })
 
+  // Every object inherits these, so `key in registries` answers yes to all
+  // three. Passing that check would hand the extension `Function.prototype` as
+  // a registry — a TypeError inside its own `apply` instead of this sentence —
+  // and `__proto__` would reassign the context's prototype on the way past.
+  it.each(['toString', 'constructor', '__proto__'])('refuses %s as a registry', (key) => {
+    const { ok, reason } = buildContext({
+      name: 'linear',
+      registries: registries(),
+      inject: [key],
+      config: {},
+      logger: console,
+    })
+
+    expect(ok).toBe(false)
+    expect(reason).toContain(key)
+  })
+
   it('throws on a rejected registration rather than returning a result', () => {
     // apply() is a procedure, and an author will not check a return value they
     // did not know to expect.

@@ -276,6 +276,20 @@ export function createInstaller({
         return { ok: false, reason: staged.reason }
       }
 
+      // A rename is not an update. The name is the address — it is the install
+      // directory, the registry keys and the route — so installing under it
+      // would write the new code into the *old* directory, leave the old
+      // record still pointing at it, and add a second record whose `dir` is a
+      // directory that was never written. Both then load the same tree, and an
+      // uninstall of either removes the wrong one.
+      if (staged.manifest.name !== name) {
+        await discard(staged.temp)
+        return {
+          ok: false,
+          reason: `This update calls itself "${staged.manifest.name}", but "${name}" is what is installed. A rename is an uninstall and a fresh install, not an update.`,
+        }
+      }
+
       const scopes = scopesWidened(existing.manifest?.mcp, staged.manifest.mcp)
       if (scopes.widened) {
         // Staged but not installed: the caller shows the grant screen and calls

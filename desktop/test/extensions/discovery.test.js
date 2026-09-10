@@ -446,10 +446,14 @@ describe('createDiscovery', () => {
 })
 
 describe('describeFailure', () => {
-  it('names the rate limit and what to do about it', () => {
-    // The one failure a person can actually act on.
-    expect(describeFailure(new Error('API rate limit exceeded'))).toContain('personal access token')
-    expect(describeFailure(new Error('HTTP 403'))).toContain('rate limit')
+  it('names the rate limit, and only advice somebody can act on', () => {
+    for (const error of [new Error('API rate limit exceeded'), new Error('HTTP 403')]) {
+      expect(describeFailure(error)).toContain('rate limit')
+    }
+    // It used to say "add a personal access token in settings". There is no
+    // such setting — nothing ever passes a token — so it sent people looking
+    // for a control that does not exist.
+    expect(describeFailure(new Error('API rate limit exceeded'))).not.toContain('token')
   })
 
   it('reports an unreachable network plainly', () => {

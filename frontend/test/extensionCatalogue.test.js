@@ -442,8 +442,32 @@ describe('useExtensionCatalogue', () => {
       expect(catalogue.notice.value).toBe('Standup installed.');
     });
 
-    it('treats a manifest with no mcp block as asking for nothing', async () => {
-      const bridge = fakeBridge({ chooseFolder: vi.fn(async () => found({ manifest: manifest({ mcp: undefined }) })) });
+    // The install screen is the only place settings can be entered, so skipping
+    // it because no permission was asked for leaves an extension that needs a
+    // token running with a blank one and nowhere to fix it.
+    it('still asks when the only thing wanted is a setting', async () => {
+      const bridge = fakeBridge({
+        chooseFolder: vi.fn(async () =>
+          found({
+            manifest: manifest({
+              mcp: { workspace: [], supervisor: [] },
+              config: [{ key: 'token', type: 'secret', label: 'API token' }],
+            }),
+          }),
+        ),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.chooseFolder();
+
+      expect(catalogue.step.value).toBe(INSTALL_STEP.asking);
+      expect(bridge.installLocal).not.toHaveBeenCalled();
+    });
+
+    it('treats a manifest with no mcp block and no settings as asking for nothing', async () => {
+      const bridge = fakeBridge({
+        chooseFolder: vi.fn(async () => found({ manifest: manifest({ mcp: undefined, config: undefined }) })),
+      });
       const catalogue = useExtensionCatalogue({ bridge });
 
       await catalogue.chooseFolder();
