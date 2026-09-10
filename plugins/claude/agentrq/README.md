@@ -38,9 +38,32 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `updateTaskAssignee` | Update a task's assignee |
 | `updateTaskAllowAll` | Toggle allow_all_commands for a task |
 | `updateScheduledTask` | Update a scheduled/cron task |
+| `deleteTask` | Delete a task, with its messages and attachments |
 | `getAttachment` | Get attachment data as base64 and metadata |
 | `listMemories` | List a workspace's memories: name, size and when each was last changed |
 | `getMemory` | Get one of a workspace's memories in full, by name |
+| `listEvents` | List the events defined for this account |
+| `createEvent` | Define a named signal workspaces can publish |
+| `getEvent` | Get an event by ID |
+| `updateEvent` | Revise an event's payload guidelines |
+| `deleteEvent` | Delete an event; its triggers stop firing |
+| `createEventTrigger` | React to an event by creating a task in a workspace |
+| `listEventTriggers` | List everything that happens when an event fires |
+| `getEventTrigger` | Get an event trigger by ID |
+| `updateEventTrigger` | Rewrite an event trigger; every field is written as given |
+| `deleteEventTrigger` | Delete an event trigger, leaving its event in place |
+| `listEventTasks` | List the tasks an event has spawned |
+| `listWorkflows` | List the workflows defined for this account |
+| `createWorkflow` | Create an empty workflow around a start event |
+| `getWorkflow` | Get a workflow by ID |
+| `updateWorkflow` | Revise a workflow; only the fields sent are changed |
+| `deleteWorkflow` | Delete a workflow and its steps |
+| `createWorkflowStep` | Add a step: an event, the task it creates, and the event it emits |
+| `listWorkflowSteps` | List a workflow's steps |
+| `deleteWorkflowStep` | Remove one step, leaving the rest of the graph |
+| `listWorkflowTasks` | List the tasks a workflow has spawned |
+| `getWorkflowText` | Read a workflow's graph as the indented document text mode edits |
+| `replaceWorkflowFromText` | Replace a workflow's entire graph with a document |
 
 The tables here are checked against the server in CI — see
 `backend/internal/handler/coremcp/plugin_docs_test.go`. A tool added to the server

@@ -78,6 +78,7 @@ The coremcp exposes a broad, cross-workspace tool surface:
 | `updateTaskAssignee(workspaceId, taskId, assignee)` | Reassign a task between human and agent |
 | `updateTaskAllowAll(workspaceId, taskId, allowAll)` | Toggle unrestricted permission mode for a task |
 | `updateScheduledTask(workspaceId, taskId, ...)` | Modify a cron task template |
+| `deleteTask(workspaceId, taskId)` | Delete a task with its messages and attachments — the only way to retire a schedule rather than leave it behind |
 | `getAttachment(workspaceId, attachmentId)` | Retrieve a file attachment as base64 |
 | `listEvents()` | List the events defined for the user's account |
 | `createEvent(name, payloadGuidelines?)` | Define a named signal workspaces can publish |
@@ -90,6 +91,17 @@ The coremcp exposes a broad, cross-workspace tool surface:
 | `updateEventTrigger(triggerId, workspaceId, title, ...)` | Rewrite a trigger; every field is written as given |
 | `deleteEventTrigger(triggerId)` | Delete a trigger, leaving its event in place |
 | `listEventTasks(eventId)` | List the tasks an event has spawned |
+| `listWorkflows()` | List the workflows defined for the user's account |
+| `createWorkflow(name, description?, startEventId?)` | Create an empty workflow around a start event |
+| `getWorkflow(workflowId)` | Fetch a single workflow |
+| `updateWorkflow(workflowId, name?, description?, startEventId?, layout?)` | Revise a workflow; omitted fields are left alone |
+| `deleteWorkflow(workflowId)` | Delete a workflow and its steps; the events it named survive |
+| `createWorkflowStep(workflowId, eventId, workspaceId, title, body?, assignee?, allowAllCommands?, emitEventId?)` | Add one node to the graph |
+| `listWorkflowSteps(workflowId)` | List a workflow's steps |
+| `deleteWorkflowStep(workflowId, stepId)` | Remove one step, leaving the rest of the graph |
+| `listWorkflowTasks(workflowId)` | List the tasks a workflow has spawned |
+| `getWorkflowText(workflowId)` | Read the whole graph as the indented document text mode edits |
+| `replaceWorkflowFromText(workflowId, text)` | Replace the entire graph from a document, resolving every name before writing |
 
 The event tools are what let a supervisor wire workspaces to each other rather
 than relaying every hand-off itself: it defines an event, attaches a trigger
@@ -98,6 +110,15 @@ per workspace that should react, and reads back the tasks the event spawned.
 the spawned task completes. Publishing remains agent-side (`publishEvent` on
 the per-workspace server) — the supervisor builds the wiring, the workers fire
 it.
+
+The workflow tools are the same wiring named and drawn as one graph. They exist
+on MCP rather than REST alone because *reconciliation* needs them: a desktop
+extension declares the standing work it wants, and the host creates what is
+missing, revises what has drifted and removes what the extension dropped. All
+three are needed, and the third is the one that makes an uninstall clean — the
+tools mirror the REST surface one-to-one for exactly that reason.
+`replaceWorkflowFromText` is the declarative half of the pair: two documents
+compare where a graph would have to be diffed node by node.
 
 ### Per-Workspace / Agent Worker MCP Servers
 

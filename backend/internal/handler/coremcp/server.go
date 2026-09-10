@@ -221,6 +221,18 @@ type UpdateScheduledTaskParams struct {
 	IsOneTime    bool   `json:"isOneTime,omitempty"`
 }
 
+// DeleteTaskParams removes a task outright, attachments and messages with it.
+//
+// The supervisor could already create a scheduled task and revise it, but not
+// retire one — which is only a gap until something has to *reconcile*. An
+// extension that declares a nightly task, and is then uninstalled, has to be
+// able to leave nothing behind; without this it could only abandon the schedule
+// and hope somebody noticed.
+type DeleteTaskParams struct {
+	WorkspaceID string `json:"workspaceId"`
+	TaskID      string `json:"taskId"`
+}
+
 type GetAttachmentParams struct {
 	WorkspaceID  string `json:"workspaceId"`
 	AttachmentID string `json:"attachmentId"`
@@ -254,12 +266,14 @@ func (s *WorkspaceServer) registerTools() {
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAssignee", Description: "Update a task's assignee"}, s.handleUpdateTaskAssignee)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateTaskAllowAll", Description: "Toggle allow_all_commands for a task"}, s.handleUpdateTaskAllowAll)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "updateScheduledTask", Description: "Update a scheduled/cron task"}, s.handleUpdateScheduledTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "deleteTask", Description: "Delete a task, with its messages and attachments. This cannot be undone; to stop a scheduled task without losing its history, set its status to rejected instead"}, s.handleDeleteTask)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getAttachment", Description: "Get attachment data as base64 and metadata"}, s.handleGetAttachment)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that."}, s.handleListMemories)
 	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off."}, s.handleGetMemory)
 
 	// Events and their triggers — see events.go.
 	s.registerEventTools()
+	s.registerWorkflowTools()
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -610,6 +624,17 @@ func (s *WorkspaceServer) handleUpdateScheduledTask(ctx context.Context, req *mc
 
 	b := apiMapper.FromUpdateScheduledTaskResponseEntityToHTTPResponse(res)
 	return textResponse(string(b)), nil, nil
+}
+
+func (s *WorkspaceServer) handleDeleteTask(ctx context.Context, req *mcp.CallToolRequest, args DeleteTaskParams) (*mcp.CallToolResult, any, error) {
+	if _, err := s.crud.DeleteTask(ctx, entity.DeleteTaskRequest{
+		UserID:      getUserID(ctx),
+		WorkspaceID: parseID(args.WorkspaceID),
+		TaskID:      parseID(args.TaskID),
+	}); err != nil {
+		return errorResponse(err), nil, nil
+	}
+	return textResponse("task deleted"), nil, nil
 }
 
 func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.CallToolRequest, args GetAttachmentParams) (*mcp.CallToolResult, any, error) {

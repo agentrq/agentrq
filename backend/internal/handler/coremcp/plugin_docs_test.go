@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -42,7 +43,13 @@ func repoRoot(t *testing.T) string {
 
 var (
 	// `mcp.AddTool(s.server, &mcp.Tool{Name: "x"` — the supervisor server.
-	coreToolRe = regexp.MustCompile(`mcp\.AddTool\(s\.server, &mcp\.Tool\{Name:\s*"([^"]+)"`)
+	//
+	// The whitespace after the brace is not cosmetic. The registrations in
+	// `server.go` are written on one line and the ones in `events.go` over
+	// several, and a pattern that insisted on `{Name:` matched only the first
+	// kind — so a whole file of tools was invisible to this test while looking
+	// exactly like the tools it did check.
+	coreToolRe = regexp.MustCompile(`mcp\.AddTool\(s\.server, &mcp\.Tool\{\s*Name:\s*"([^"]+)"`)
 	// `mcp.AddTool(mcpSrv, &mcp.Tool{\n\tName: "x"` — the per-workspace server.
 	workspaceToolRe = regexp.MustCompile(`mcp\.AddTool\(mcpSrv, &mcp\.Tool\{\s*Name:\s*"([^"]+)"`)
 	// A leading table cell holding a backticked identifier.
@@ -65,18 +72,53 @@ func namesIn(t *testing.T, path string, re *regexp.Regexp) []string {
 	return names
 }
 
+// namesUnder reads every non-test source file in a package rather than one
+// named file.
+//
+// This started as a single path, and the events tools proved that wrong: they
+// were registered in `events.go`, the test only ever read `server.go`, and so
+// ten tools sat outside the parity check entirely — documenting them would have
+// *failed* the build, which is the exact opposite of the pressure this test
+// exists to apply. A directory has no such blind spot: a new file of tools is
+// covered the moment it is added.
+func namesUnder(t *testing.T, dir string, re *regexp.Regexp) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("cannot read %s: %v", dir, err)
+	}
+	var names []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", name, err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(body), -1) {
+			names = append(names, m[1])
+		}
+	}
+	if len(names) == 0 {
+		t.Fatalf("found no tool names under %s — has the registration format changed?", dir)
+	}
+	return names
+}
+
 func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 	root := repoRoot(t)
 
 	tests := []struct {
 		plugin string
-		server string
+		pkg    string
 		re     *regexp.Regexp
 		docs   []string
 	}{
 		{
 			plugin: "agentrq",
-			server: "backend/internal/handler/coremcp/server.go",
+			pkg:    "backend/internal/handler/coremcp",
 			re:     coreToolRe,
 			docs: []string{
 				"plugins/claude/agentrq/README.md",
@@ -85,7 +127,7 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 		},
 		{
 			plugin: "agentrq-workspace",
-			server: "backend/internal/controller/mcp/server.go",
+			pkg:    "backend/internal/controller/mcp",
 			re:     workspaceToolRe,
 			docs: []string{
 				"plugins/claude/agentrq-workspace/README.md",
@@ -95,7 +137,7 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		registered := namesIn(t, filepath.Join(root, tt.server), tt.re)
+		registered := namesUnder(t, filepath.Join(root, tt.pkg), tt.re)
 
 		for _, doc := range tt.docs {
 			t.Run(tt.plugin+"/"+filepath.Base(filepath.Dir(doc))+"/"+filepath.Base(doc), func(t *testing.T) {
@@ -103,12 +145,12 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 
 				for _, name := range registered {
 					if !slices.Contains(documented, name) {
-						t.Errorf("%s registers %q, but %s has no row for it", tt.server, name, doc)
+						t.Errorf("%s registers %q, but %s has no row for it", tt.pkg, name, doc)
 					}
 				}
 				for _, name := range documented {
 					if !slices.Contains(registered, name) {
-						t.Errorf("%s documents %q, which %s does not register", doc, name, tt.server)
+						t.Errorf("%s documents %q, which %s does not register", doc, name, tt.pkg)
 					}
 				}
 			})

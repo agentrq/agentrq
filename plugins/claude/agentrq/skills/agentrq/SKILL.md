@@ -38,6 +38,51 @@ You are a **supervisor agent** orchestrating work across multiple specialized wo
 | `updateTaskOrder` | Update a task's sort order |
 | `updateTaskAllowAll` | Toggle `allow_all_commands` for a task |
 | `updateScheduledTask` | Update a scheduled/cron task's title, body, or cron expression |
+| `deleteTask` | Delete a task outright, with its messages and attachments. Irreversible — to stop a scheduled task without losing its history, set its status to `rejected` instead |
+
+### Events and Triggers
+An event is a named signal a workspace publishes; a trigger is a standing instruction to create a task somewhere when it fires. Together they are how one workspace's finished work starts another's.
+
+| Tool | Description |
+|------|-------------|
+| `listEvents` | List the events defined for this account |
+| `createEvent` | Define a named signal (`^[a-z][a-z0-9_]{0,128}$`) and what a publisher should put in its payload |
+| `getEvent` | Get an event by ID |
+| `updateEvent` | Revise an event's payload guidelines. Its name is fixed once created |
+| `deleteEvent` | Delete an event. Its triggers stop firing |
+| `createEventTrigger` | When this event fires, create a task in this workspace. `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` are substituted in the body only; `emitEventId` chains a second event to the task's completion |
+| `listEventTriggers` | List the triggers attached to an event |
+| `getEventTrigger` | Get an event trigger by ID |
+| `updateEventTrigger` | Rewrite a trigger. Every field is written as given, so send the ones to keep as well |
+| `deleteEventTrigger` | Delete a trigger, leaving its event in place |
+| `listEventTasks` | List the tasks an event has spawned, to see whether a wired-up system is running |
+
+### Workflows
+A workflow is the graph those pieces add up to: a start event, and steps that react to it and to each other.
+
+| Tool | Description |
+|------|-------------|
+| `listWorkflows` | List the workflows defined for this account |
+| `createWorkflow` | Create an empty workflow around a start event |
+| `getWorkflow` | Get a workflow by ID |
+| `updateWorkflow` | Revise name, description, start event or canvas layout. Only the fields sent are changed |
+| `deleteWorkflow` | Delete a workflow and its steps. The events it named are left alone |
+| `createWorkflowStep` | Add a step: the event it reacts to, the workspace and task it creates, and the event it emits on completion |
+| `listWorkflowSteps` | List a workflow's steps |
+| `deleteWorkflowStep` | Remove one step, leaving the rest of the graph in place |
+| `listWorkflowTasks` | List the tasks a workflow has spawned |
+| `getWorkflowText` | Read the whole graph as an indented document. Steps naming a deleted event or workspace are left out so it always parses |
+| `replaceWorkflowFromText` | Replace the entire graph with a document. Names are resolved before anything is written, so an unknown one leaves the workflow untouched |
+
+Text mode is two spaces per level, and every list line is `- agent:<workspace>` or `- event:<name>`, alternating:
+
+```
+workflow: new_feature
+event: code_changed
+- agent:doc
+  - event:doc_updated
+- agent:blog
+```
 
 ### Attachments
 | Tool | Description |
