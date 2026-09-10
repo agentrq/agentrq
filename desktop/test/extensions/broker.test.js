@@ -43,6 +43,36 @@ describe('permits', () => {
     expect(reason).toBe('This extension may not call "deleteTask" on the workspace server.')
   })
 
+  /**
+   * The two are different situations for whoever reads them, and saying the
+   * first when the second is true sends them looking at the wrong thing.
+   *
+   * An empty list came from the install screen offering "this workspace only"
+   * on a screen belonging to no workspace: the grant was written with nothing
+   * in it, and every call was then refused as though a particular workspace had
+   * been left out.
+   */
+  it('treats a grant that never recorded a list as an empty one', () => {
+    // A record written by an older version has no `workspaces` at all.
+    const legacy = permits({ scope: SCOPE.workspace, tools: { workspace: ['getTask'], supervisor: [] } }, {
+      surface: 'workspace',
+      tool: 'getTask',
+      workspaceId: 'ws1',
+    })
+
+    expect(legacy.reason).toContain('not granted access to any workspace')
+  })
+
+  it('tells an empty grant apart from a workspace left out of one', () => {
+    const nothing = permits(grant({ workspaces: [] }), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws1' })
+    const elsewhere = permits(grant(), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws2' })
+
+    expect(nothing.reason).toContain('not granted access to any workspace')
+    // And says what to do about it, because the user cannot widen a grant.
+    expect(nothing.reason).toContain('install it again')
+    expect(elsewhere.reason).toBe('This extension was not granted access to that workspace.')
+  })
+
   it('refuses a workspace outside the grant', () => {
     // A tool being allowed does not make it allowed everywhere.
     const denied = permits(grant(), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws2' })

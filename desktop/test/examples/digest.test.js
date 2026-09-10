@@ -77,8 +77,15 @@ describe('the manifest', () => {
 describe('the grant ladder at its top rung', () => {
   const ask = () => describeAsk(parseManifest(manifest).manifest)
 
-  it('offers all three rungs, because the extension can use the widest', () => {
-    expect(availableScopes(ask())).toEqual([SCOPE.workspace, SCOPE.selected, SCOPE.supervisor])
+  it('offers all three rungs when there is a workspace in context', () => {
+    expect(availableScopes(ask(), { workspaceId: 'ws1' })).toEqual([SCOPE.workspace, SCOPE.selected, SCOPE.supervisor])
+  })
+
+  // The screen extensions are installed from belongs to no workspace, so
+  // "this workspace only" has no referent there and is not offered — it used to
+  // be, and produced a grant with an empty list that refused everything.
+  it('drops the rung whose name means nothing on the install screen', () => {
+    expect(availableScopes(ask())).toEqual([SCOPE.selected, SCOPE.supervisor])
   })
 
   // "Supervisor, but only this workspace" is the same grant with a misleading
@@ -91,10 +98,12 @@ describe('the grant ladder at its top rung', () => {
     expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'listAllTasks', 'createTask'])
   })
 
-  it('is a coherent choice at every rung it offers', () => {
-    for (const scope of availableScopes(ask())) {
-      const choice = { scope, workspaces: ['ws1'], workspaceId: 'ws1' }
-      expect(validateGrant(ask(), choice).ok, scope).toBe(true)
+  it('is a coherent choice at every rung it offers, wherever it is offered from', () => {
+    for (const workspaceId of ['ws1', '']) {
+      for (const scope of availableScopes(ask(), { workspaceId })) {
+        const choice = { scope, workspaces: ['ws1'], workspaceId }
+        expect(validateGrant(ask(), choice).ok, `${scope} from ${workspaceId || 'the sidebar'}`).toBe(true)
+      }
     }
   })
 

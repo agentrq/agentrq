@@ -76,8 +76,17 @@ export function permitsWorkspace(grant, workspaceId) {
   if (grant?.scope === SCOPE.supervisor) return { ok: true }
 
   if (!workspaceId) return deny('This call names no workspace.')
-  return grant?.workspaces?.includes(workspaceId)
-    ? { ok: true }
+
+  const granted = grant?.workspaces ?? []
+  if (granted.includes(workspaceId)) return { ok: true }
+
+  // Told apart, because they are different situations for the person reading
+  // it. "Not that one" means they picked workspaces and this is not among
+  // them; an empty list means the grant reaches nothing at all, which is
+  // somebody's mistake rather than their intent — and saying "not granted
+  // access to that workspace" there sends them looking at the wrong thing.
+  return granted.length === 0
+    ? deny('This extension was not granted access to any workspace. Uninstall it and install it again, choosing the workspaces it may reach.')
     : deny('This extension was not granted access to that workspace.')
 }
 

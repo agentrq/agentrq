@@ -207,13 +207,19 @@ never given.
 ### The grant ladder
 
 At install, the user picks one rung. What is offered depends on what the
-manifest asked for:
+manifest asked for **and on where they are installing from**:
 
 | Rung | Offered when | Means |
 |---|---|---|
-| This workspace only | any `mcp.workspace` tools | The workspace they were in |
+| This workspace only | any `mcp.workspace` tools, *and a workspace is in context* | The workspace they were in |
 | Selected workspaces | any `mcp.workspace` tools | The ones they tick |
 | All workspaces | any `mcp.supervisor` tools | The account, including workspaces created later |
+
+Extensions are installed from the sidebar's Extensions screen, which belongs to
+no workspace — so "this workspace only" is not offered there. It shipped offered,
+meaning nothing, and a grant made from it carried an empty workspace list: not a
+narrow grant but an inert one, refusing every call with *"not granted access to
+that workspace"* for a workspace the user believed they had just allowed.
 
 An extension that asks for nothing shows **no permission list at all** — only
 the confirmation and the sentence about machine access.

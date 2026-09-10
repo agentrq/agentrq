@@ -72,21 +72,48 @@ describe('availableScopes', () => {
     expect(availableScopes(describeAsk(manifest()))).toEqual([]);
   });
 
+  // Everything below is asked from inside a workspace unless it says otherwise.
+  // The screen extensions are actually installed from is not, which is what the
+  // last block in this describe is about.
+  const inWorkspace = { workspaceId: 'ws1' };
+
   it('does not offer the account to an extension that cannot use it', () => {
     // Offering a grant nothing would use invites somebody to hand over the
     // account for no reason at all.
-    expect(availableScopes(describeAsk(manifest({ workspace: ['getTask'] })))).toEqual([
+    expect(availableScopes(describeAsk(manifest({ workspace: ['getTask'] })), inWorkspace)).toEqual([
       SCOPE.workspace,
       SCOPE.selected,
     ]);
   });
 
   it('offers the whole ladder to an extension that asked for the supervisor', () => {
-    expect(availableScopes(describeAsk(manifest({ supervisor: ['listAllTasks'] })))).toEqual([
+    expect(availableScopes(describeAsk(manifest({ supervisor: ['listAllTasks'] })), inWorkspace)).toEqual([
       SCOPE.workspace,
       SCOPE.selected,
       SCOPE.supervisor,
     ]);
+  });
+});
+
+/**
+ * The screen extensions are actually installed from.
+ *
+ * It lives in the sidebar and belongs to no workspace, so "this workspace" had
+ * no referent — and choosing it produced a grant with an empty workspace list.
+ * Not a narrow grant: an inert one, refusing every call with "not granted
+ * access to that workspace" for a workspace the user believed they had allowed.
+ */
+describe('availableScopes, with no workspace in context', () => {
+  it('does not offer a rung whose name means nothing there', () => {
+    const workspaceAsk = describeAsk(manifest({ workspace: ['getTask'] }));
+    const accountAsk = describeAsk(manifest({ supervisor: ['listAllTasks'] }));
+
+    expect(availableScopes(workspaceAsk)).toEqual([SCOPE.selected]);
+    expect(availableScopes(accountAsk)).toEqual([SCOPE.selected, SCOPE.supervisor]);
+  });
+
+  it('still offers nothing to an extension that asked for nothing', () => {
+    expect(availableScopes(describeAsk(manifest()))).toEqual([]);
   });
 });
 
@@ -124,6 +151,25 @@ describe('validateGrant', () => {
 
   it('has nothing to validate when nothing was asked for', () => {
     expect(validateGrant(describeAsk(manifest()), {}).ok).toBe(true);
+  });
+});
+
+describe('validateGrant, with no workspace in context', () => {
+  // The case that used to pass, and the reason the bug was invisible: an empty
+  // grant looks exactly like a granted one until something is refused by it.
+  it('refuses "this workspace" when there is no this workspace', () => {
+    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+
+    const { ok, reason } = validateGrant(ask, { scope: SCOPE.workspace, workspaces: [], workspaceId: '' });
+
+    expect(ok).toBe(false);
+    expect(reason).toContain('which workspaces');
+  });
+
+  it('accepts naming them instead', () => {
+    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+
+    expect(validateGrant(ask, { scope: SCOPE.selected, workspaces: ['ws1'], workspaceId: '' }).ok).toBe(true);
   });
 });
 

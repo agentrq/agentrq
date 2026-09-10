@@ -64,15 +64,31 @@ export function describeAsk(manifest) {
 }
 
 /**
- * Which rungs an extension can be given.
+ * Which rungs an extension can be given, here.
  *
  * An extension asking for no supervisor tools is not offered the supervisor
  * rung: offering a grant nothing would use invites somebody to hand over the
  * account for no reason at all.
+ *
+ * **"This workspace" needs there to be one.** Extensions are installed from a
+ * screen in the sidebar, which belongs to no workspace — so that rung shipped
+ * meaning nothing, and choosing it produced a grant with an empty workspace
+ * list. Not a narrow grant: an inert one. Every call the extension made was
+ * refused with "not granted access to that workspace", for a workspace the user
+ * believed they had just allowed.
+ *
+ * So the rung appears only where the phrase has a referent. From a global
+ * screen the choice is between naming workspaces and handing over the account,
+ * which is the real decision anyway.
  */
-export function availableScopes(ask) {
-  if (ask.level === 'supervisor') return [...SCOPE_ORDER];
-  if (ask.level === 'workspace') return [SCOPE.workspace, SCOPE.selected];
+export function availableScopes(ask, { workspaceId = '' } = {}) {
+  const withinWorkspace = Boolean(workspaceId);
+  if (ask.level === 'supervisor') {
+    return withinWorkspace ? [...SCOPE_ORDER] : [SCOPE.selected, SCOPE.supervisor];
+  }
+  if (ask.level === 'workspace') {
+    return withinWorkspace ? [SCOPE.workspace, SCOPE.selected] : [SCOPE.selected];
+  }
   return [];
 }
 
@@ -96,7 +112,14 @@ export function validateGrant(ask, choice) {
     return { ok: false, reason: 'This extension did not ask for access to all workspaces.' };
   }
 
-  if (!availableScopes(ask).includes(scope)) {
+  // Its own case, because it is the one that used to pass. A "this workspace"
+  // grant with no workspace is not narrow, it is empty — and an empty grant
+  // refuses everything while looking exactly like a granted one.
+  if (scope === SCOPE.workspace && !choice.workspaceId) {
+    return { ok: false, reason: 'Choose which workspaces this extension may reach.' };
+  }
+
+  if (!availableScopes(ask, choice).includes(scope)) {
     return { ok: false, reason: 'Choose what this extension may reach.' };
   }
 
@@ -146,7 +169,7 @@ export function scopeLabel(scope, { workspaceName = 'this workspace' } = {}) {
  */
 export function useExtensionGrant({ manifest, workspaceId = '', workspaces = [] } = {}) {
   const ask = computed(() => describeAsk(manifest));
-  const scopes = computed(() => availableScopes(ask.value));
+  const scopes = computed(() => availableScopes(ask.value, { workspaceId }));
 
   // Starts on the narrowest rung it can. A default that pre-selects the widest
   // grant is a default that gets accepted.
