@@ -6,6 +6,7 @@ import {
   Tray,
   clipboard,
   dialog,
+  safeStorage,
   globalShortcut,
   ipcMain,
   nativeImage,
@@ -20,7 +21,7 @@ import { readFile, writeFile, access } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
 import { createAttachmentStore } from './attachment-store.js'
@@ -48,6 +49,14 @@ import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from './files.js
 import { UpdateStatus, createUpdater } from './updater.js'
 import { createDiscovery } from './extensions/discovery.js'
 import { decorate } from './extensions/catalogue.js'
+import { createInstaller } from './extensions/install.js'
+import { createFetchSource, makeTempDir, readManifest } from './extensions/fetch-source.js'
+import { createHost } from './extensions/host.js'
+import { createBroker, permitsWorkspace } from './extensions/broker.js'
+import { createSchedules } from './extensions/schedules.js'
+import { createConfigStore } from './extensions/config.js'
+import { createRuntime } from './extensions/runtime.js'
+import { claimedShortcuts } from './extensions/shortcuts.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -133,6 +142,7 @@ let currentTheme = 'system'
 let pendingRoute = null
 let updater = null
 let discovery = null
+let extensions = null
 /**
  * The signed-in profile in use, and the Electron session that carries its
  * cookies. Everything that talks to the server goes through this session rather
@@ -827,8 +837,51 @@ function registerIpc(getWindow) {
     const index = (await discovery?.list()) ?? { entries: [] }
     // Compatibility is decided here, where the running version and the tool
     // lists are — the renderer never has to learn what a semver range is.
-    return { index: decorate(index, { appVersion: app.getVersion() }), installed: [] }
+    return {
+      index: decorate(index, { appVersion: app.getVersion() }),
+      installed: (await extensions?.state()) ?? [],
+    }
   })
+
+  /**
+   * Pick a folder, and say what is in it — without installing anything.
+   *
+   * The dialog is here because only the main process has one, and the answer
+   * carries the manifest and the permissions so the screen that follows can be
+   * a real question rather than a confirmation after the fact.
+   */
+  ipcMain.handle('agentrq:extensions:choose-folder', async () => {
+    if (!extensions) return { ok: false, reason: 'Extensions are unavailable.' }
+
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    const picked = await dialog.showOpenDialog(win, {
+      title: 'Choose an extension folder',
+      properties: ['openDirectory'],
+      message: 'Pick the folder containing agentrq-extension.json',
+    })
+    // Cancelling is not a failure and must not surface as one.
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, cancelled: true }
+
+    return extensions.inspect(picked.filePaths[0])
+  })
+
+  ipcMain.handle('agentrq:extensions:install-local', async (_event, { path, grant, config } = {}) => {
+    if (!extensions) return { ok: false, reason: 'Extensions are unavailable.' }
+    if (!path) return { ok: false, reason: 'No folder was chosen.' }
+    return extensions.installLocal(path, { grant, config })
+  })
+
+  ipcMain.handle('agentrq:extensions:uninstall', async (_event, name) =>
+    (await extensions?.remove(name)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:set-enabled', async (_event, { name, enabled } = {}) =>
+    (await extensions?.setEnabled(name, enabled)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:configure', async (_event, { name, values } = {}) =>
+    (await extensions?.configure(name, values ?? {})) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
 
   ipcMain.handle('agentrq:extensions:refresh', async () => {
     const result = (await discovery?.refresh()) ?? { ok: false, reason: 'Extensions are unavailable.' }
@@ -906,6 +959,116 @@ function installExtensions() {
     readFile: () => readFile(cachePath, 'utf8'),
     writeFile: (contents) => writeFile(cachePath, contents, 'utf8'),
   })
+
+  extensions = buildExtensionRuntime()
+}
+
+/**
+ * A JSON file under userData, read once and written whole.
+ *
+ * Three of these — installations, settings, schedule records — and none of them
+ * is hot enough to deserve anything cleverer. A missing file reads as nothing,
+ * which is the same starting point as a fresh install.
+ */
+function jsonStore(filename) {
+  const path = join(app.getPath('userData'), filename)
+  return {
+    read: async () => JSON.parse(await readFile(path, 'utf8')),
+    write: (value) => writeFile(path, JSON.stringify(value, null, 2), 'utf8'),
+  }
+}
+
+/**
+ * Everything an installed extension runs on, assembled.
+ *
+ * Wiring only. Every decision — what order things happen in, what a refusal
+ * means, when a grant applies — is in `extensions/runtime.js`, where it can be
+ * tested; this file imports Electron at module scope and is excluded from
+ * coverage, so anything that ends up here is code nobody can check.
+ */
+function buildExtensionRuntime() {
+  // Read back rather than held: the check runs against whatever is installed at
+  // the moment somebody installs something else, not a list captured at startup.
+  let installedNow = []
+
+  const installer = createInstaller({
+    fetchSource: createFetchSource({ spawn }),
+    readManifest,
+    move: (from, to) => fsPromises.rename(from, to),
+    remove: (target) => fsPromises.rm(target, { recursive: true, force: true }),
+    makeTempDir,
+    dirFor: (name) => join(app.getPath('userData'), 'extensions', name),
+    store: jsonStore('extensions-installed.json'),
+    claimedKeys: () => claimedShortcuts(installedNow),
+  })
+
+  const configStore = createConfigStore({
+    store: jsonStore('extensions-config.json'),
+    vault: {
+      // The real question, asked of the OS rather than assumed: a Linux box with
+      // no keyring answers no, and a secret is then refused rather than written
+      // to a JSON file the user believes is protected.
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (text) => safeStorage.encryptString(text).toString('base64'),
+      decrypt: (blob) => safeStorage.decryptString(Buffer.from(blob, 'base64')),
+    },
+  })
+
+  const broker = createBroker({
+    // Not wired to a transport yet. An extension that asks gets a refusal with a
+    // reason it can show, which is the honest failure — the alternative is a
+    // call that hangs or an exception from inside somebody else's `apply`.
+    callWorkspace: async () => {
+      throw new Error('AgentRQ cannot reach the workspace server from the desktop app yet.')
+    },
+    callSupervisor: async () => {
+      throw new Error('AgentRQ cannot reach the supervisor from the desktop app yet.')
+    },
+  })
+
+  const host = createHost({
+    // `file://` because an absolute Windows path is not a valid import specifier.
+    load: (installation) => import(pathToFileURL(join(installation.dir, 'index.js')).href),
+    readConfig: (name) => configStore.resolve(name),
+    clientFor: (name) => broker.clientFor(name),
+    onDisabled: async (name) => {
+      await installer.setEnabled(name, false)
+    },
+  })
+
+  const schedules = createSchedules({
+    // As the host, with the app's own credential. See the reasoning at the top
+    // of schedules.js: going through the broker would make every extension that
+    // wants a nightly task ask for the power to delete any task on the account.
+    call: async () => {
+      throw new Error('AgentRQ cannot reach the supervisor from the desktop app yet.')
+    },
+    allows: (name, workspaceId) => permitsWorkspace(broker.grantFor(name), workspaceId),
+    store: jsonStore('extensions-schedules.json'),
+  })
+
+  const runtime = createRuntime({
+    installer,
+    host,
+    broker,
+    schedules,
+    configStore,
+    readManifest,
+    servers: () => ({ appVersion: app.getVersion() }),
+  })
+
+  return {
+    ...runtime,
+    /** Keeps the shortcut check looking at what is actually installed. */
+    async state() {
+      installedNow = await installer.list()
+      return runtime.state()
+    },
+    async startAll() {
+      installedNow = await installer.list()
+      return runtime.startAll()
+    },
+  }
 }
 
 function githubHeaders(token) {
@@ -1020,6 +1183,10 @@ if (!app.requestSingleInstanceLock()) {
     installGlobalShortcut()
     installUpdater()
     installExtensions()
+    // Loaded after the window exists, and awaited by nobody: an extension that
+    // is slow to import must not hold up the app starting, and one that throws
+    // is reported against itself rather than taken as a failure to launch.
+    extensions?.startAll()
 
     const launchLink = deepLinkFromArgv(process.argv)
     if (launchLink) openDeepLink(launchLink)
@@ -1036,6 +1203,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     eventStream?.stop()
     updater?.stop()
+    // Unloads them; deliberately does not take their standing work down. The
+    // whole point of a schedule is that it outlives the app being open.
+    extensions?.stopAll()
     globalShortcut.unregisterAll()
     // A quit that does not close the window first — Cmd+Q, or the tray's Quit —
     // would otherwise lose whatever the debounced save had not yet written.

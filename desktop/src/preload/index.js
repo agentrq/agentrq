@@ -147,6 +147,31 @@ contextBridge.exposeInMainWorld('agentrq', {
 
     /** Go and look again. A deliberate act, from a button. */
     refresh: () => ipcRenderer.invoke('agentrq:extensions:refresh'),
+
+    /**
+     * Pick a folder and read what is in it. Installs nothing.
+     *
+     * Two steps, because a grant is a question: this answers what the extension
+     * is and what it would be allowed to reach, and the screen that follows asks
+     * before anything is written. A single call would have to install first and
+     * ask afterwards, which is not a permission.
+     *
+     * @returns {Promise<{ok: boolean, cancelled?: boolean, reason?: string, path?: string, manifest?: object, compatible?: boolean, reasons?: string[], shortcutProblems?: string[]}>}
+     */
+    chooseFolder: () => ipcRenderer.invoke('agentrq:extensions:choose-folder'),
+
+    /** Install what `chooseFolder` found, with what the user agreed to. */
+    installLocal: (path, { grant = null, config = null } = {}) =>
+      ipcRenderer.invoke('agentrq:extensions:install-local', { path, grant, config }),
+
+    /** Remove it, its settings, its grant and anything it scheduled. */
+    uninstall: (name) => ipcRenderer.invoke('agentrq:extensions:uninstall', name),
+
+    /** Stop it without removing it — including whatever it had scheduled. */
+    setEnabled: (name, enabled) => ipcRenderer.invoke('agentrq:extensions:set-enabled', { name, enabled }),
+
+    /** Save its settings and reload it, so it sees them. */
+    configure: (name, values) => ipcRenderer.invoke('agentrq:extensions:configure', { name, values }),
   },
 
   updates: {

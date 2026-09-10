@@ -351,15 +351,38 @@ is already in place, and a hash cannot.
 
 ### Installing without publishing
 
-The desktop app installs from three sources:
+**Extensions → Install from folder**, then pick the folder holding
+`agentrq-extension.json`. The folder is **linked**, not copied: editing it edits
+the installed extension, which is the only way developing one is tolerable. The
+row says `linked folder` because it can change underneath the app, unlike
+anything else that gets installed.
 
-- **A release**, verified against the digest.
-- **A git URL**, cloned at a commit — for a private repository you do not want
-  to make public.
-- **A local folder**, optionally *linked*: recorded rather than copied, so
-  editing the folder edits the installed extension. This is the only way
-  developing one is tolerable, and it is how the examples in this repository are
-  installed.
+If the extension asks for MCP tools you are asked what it may reach before
+anything is written, and any `config` fields are on the same screen. An extension
+that asks for nothing installs without that step — a permission screen with
+nothing on it is how people learn to click past the one that matters.
+
+Try it with the examples:
+
+```
+Extensions → Install from folder → examples/extensions/task-stats
+```
+
+The installer also supports **a release**, verified against the digest, and **a
+git URL** cloned at a commit for a private repository — those are how a published
+extension arrives.
+
+### Managing what is installed
+
+Each installed row says what it actually contributed (`1 view, 1 shortcut`) or
+why it did not. **Disabled** and **not running** are different states and the row
+distinguishes them: an enabled extension that threw on load is not running, and
+the row says how many times it failed.
+
+**Disable** stops it and takes its standing work down with it — a disabled
+extension must not still be creating tasks at three in the morning.
+**Uninstall** does that and then forgets its settings, its grant and its files. A
+linked folder is unlinked, never deleted; it is your working copy.
 
 ---
 
