@@ -245,6 +245,20 @@
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Extensions</span>
           </router-link>
+
+          <!-- What extensions contributed, under the screen that manages them.
+               Indented rather than mixed in with our own items, so it stays
+               visible which rows came from where. -->
+          <router-link v-for="page in extensionPages" :key="page.to" :to="page.to"
+              @mouseenter="showTooltip($event, `${page.label} — ${page.owner}`)" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center px-2' : 'pl-7 pr-2',
+                $route.path === page.to ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <span class="w-1.5 h-1.5 rounded-full bg-current shrink-0 opacity-50"></span>
+            <span v-if="!isCollapsed || isMobileMenuOpen" class="truncate">{{ page.label }}</span>
+          </router-link>
         </div>
 
         <!-- Sidebar Footer -->
@@ -395,6 +409,10 @@
     <CommandPalette :show="overlay === 'palette'" :shortcut-label="findTaskLabel" @close="closeOverlay()" />
     <WorkspaceSwitcher :show="overlay === 'switcher'" :current-workspace-id="currentWorkspaceId ?? ''" @close="closeOverlay()" />
     <ShortcutsHelp :show="overlay === 'help'" :mac="isMacKeyboard" @close="closeOverlay()" />
+
+    <!-- What a shortcut drew. It is here rather than in a view because `x` then
+         a key works wherever you are, so what it opens has to as well. -->
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel" @close="extensionSurfaces.dismiss" />
   </div>
 </template>
 
@@ -438,6 +456,9 @@ import {
   useShortcuts,
   usesCommandKey,
 } from './composables/useKeyboardShortcuts'
+import { useExtensionPages } from './composables/useExtensionPages'
+import { useExtensionShortcuts } from './composables/useExtensionShortcuts'
+import ExtensionViewPanel from './components/ExtensionViewPanel.vue'
 
 const appVersion = __APP_VERSION__
 const { needRefresh, updateServiceWorker } = useRegisterSW()
@@ -630,6 +651,45 @@ function recordShortcutUse() {
   recordUiAction(TELEMETRY_UI_SHORTCUT_USE, route)
 }
 
+/**
+ * What extensions contribute, and the keys they claimed.
+ *
+ * Loaded once and refreshed when the Extensions screen says something changed —
+ * a sidebar is redrawn on every navigation, and a bridge call per render would
+ * be a call per keystroke in the address bar.
+ */
+const { pages: extensionPages, load: loadExtensionPages, surfaces: extensionSurfaces } = useExtensionPages()
+const extensionPanel = extensionSurfaces.panel
+
+const extensionKeys = ref([])
+
+/**
+ * `x` then a letter, which is the whole extension keyboard scheme.
+ *
+ * Registered here rather than beside our own shortcuts because it is a
+ * *sequence*: `useShortcuts` dispatches single keys, and the prefix has to hold
+ * state between two of them. `handle` answers whether it consumed the key, so
+ * the application's own bare letters keep working when it did not.
+ */
+const extensionShortcuts = useExtensionShortcuts({
+  entries: () => extensionKeys.value,
+  onInvoke: (binding) => {
+    recordShortcutUse()
+    extensionSurfaces.invoke({ owner: binding.owner, id: binding.id, surface: 'shortcut' }, {})
+  },
+})
+
+function onExtensionKey(event) {
+  extensionShortcuts.handle(event)
+}
+
+/** Read what is installed now: the sidebar's pages, and the keys they hold. */
+async function refreshExtensions() {
+  if (!extensionSurfaces.available) return
+  await loadExtensionPages()
+  extensionKeys.value = await extensionSurfaces.entriesFor('shortcut', {})
+}
+
 // Escape closes an overlay wherever focus happens to be. The palette handles it
 // on its own input too — this is for the help sheet, which has nothing focused.
 
@@ -730,14 +790,25 @@ watch(isConnected, (now, before) => {
   if (now && before === false) workspaceStore.fetchWorkspaces()
 })
 
+// The Extensions screen is the only place an install or an uninstall happens,
+// so leaving it is exactly when what they contribute can have changed.
+watch(
+  () => route.path.startsWith('/extensions'),
+  (onScreen, wasOnScreen) => {
+    if (wasOnScreen && !onScreen) refreshExtensions()
+  }
+)
+
 onMounted(() => {
   themeStore.init()
   loadUser()
   loadProfiles()
   workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
+  refreshExtensions()
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('keydown', closeOverlaysOnEscape)
+  window.addEventListener('keydown', onExtensionKey)
 })
 
 const showTooltip = (event, text) => {
@@ -819,6 +890,7 @@ const handleClickOutside = (e) => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
+  window.removeEventListener('keydown', onExtensionKey)
   if (sweepTimer) clearInterval(sweepTimer)
 })
 

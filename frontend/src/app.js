@@ -49,6 +49,9 @@ export const routes = [
   // the sidebar entry is hidden in the browser. The route lives here all the
   // same, because this is the only route table and the desktop build mounts it.
   { path: '/extensions', component: () => import('./desktop/ExtensionsView.vue') },
+  // A page an extension contributed. Addressed by owner and id, which is what
+  // the `ui` registry's owner scope already guarantees is unique.
+  { path: '/extensions/:name/:pageId', component: () => import('./desktop/ExtensionPageView.vue') },
 
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
   { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },

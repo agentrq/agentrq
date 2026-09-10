@@ -1,5 +1,6 @@
 import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'
+import { entriesFor, invokeEntry, registryFor } from './surfaces.js'
 
 /**
  * The order things have to happen in, and the one place that knows it.
@@ -188,6 +189,26 @@ export function createRuntime({
   }
 
   return {
+    /**
+     * What is contributed to one surface, as messages rather than entries.
+     *
+     * Here rather than in `index.js` for the reason at the top of this file: a
+     * predicate runs on this side because it cannot run on the other, and that
+     * is a decision, not wiring. It lived in the wrapper `index.js` builds until
+     * a verification script asked for it and found nothing there.
+     */
+    entries(surface, context = {}) {
+      return entriesFor(host.resolve(registryFor(surface), context), surface, context, {
+        onError: (owner, error) =>
+          logger.warn?.(`[${owner}] failed while deciding a ${surface}:`, error?.message ?? error),
+      })
+    },
+
+    /** Run one of them, and answer with what it drew. */
+    invoke(target = {}, context = {}) {
+      return invokeEntry(host.resolve(registryFor(target.surface), context), target, context)
+    },
+
     /** What is installed, with what each one contributed. */
     async state() {
       const installations = await installer.list()

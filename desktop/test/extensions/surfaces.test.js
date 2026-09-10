@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 
-import { applies, entriesFor, invokeEntry, serialise } from '../../src/main/extensions/surfaces.js'
+import { applies, entriesFor, invokeEntry, registryFor, serialise } from '../../src/main/extensions/surfaces.js'
 
 /**
  * A registry entry holds functions and a message cannot. These tests are about
@@ -186,5 +186,68 @@ describe('invokeEntry', () => {
       ok: true,
       view: null,
     })
+  })
+})
+
+
+/**
+ * A shortcut lives in its own registry, because a key sequence has to be unique
+ * across every extension while a page only has to be unique within one. The
+ * renderer asks for surfaces and should not have to know which registry that
+ * means, so the mapping is here.
+ */
+describe('registryFor', () => {
+  it('sends the three drawn surfaces to the ui registry', () => {
+    for (const surface of ['page', 'workspace-action', 'task-menu']) {
+      expect(registryFor(surface)).toBe('ui')
+    }
+  })
+
+  it('sends shortcuts to their own', () => {
+    expect(registryFor('shortcut')).toBe('shortcuts')
+  })
+
+  it('falls back to ui for anything it has not heard of', () => {
+    expect(registryFor('')).toBe('ui')
+    expect(registryFor(undefined)).toBe('ui')
+  })
+})
+
+describe('a registry whose entries are all one surface', () => {
+  const shortcut = (over = {}) => ({
+    owner: 'standup',
+    id: 'open',
+    key: 's',
+    label: 'Standup',
+    order: 20,
+    run: () => ({ title: 'Standup', nodes: [] }),
+    ...over,
+  })
+
+  // Asking authors to write `surface: 'shortcut'` beside the key they are
+  // binding would be a field with exactly one legal value.
+  it('does not need each entry to declare the surface', () => {
+    const rows = entriesFor([shortcut()], 'shortcut', {})
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0].key).toBe('s')
+  })
+
+  it('runs one without matching on a surface it does not carry', async () => {
+    const result = await invokeEntry([shortcut()], { owner: 'standup', id: 'open', surface: 'shortcut' }, {})
+
+    expect(result.ok).toBe(true)
+    expect(result.view.title).toBe('Standup')
+  })
+
+  it('still tells two ui surfaces apart', async () => {
+    const entries = [
+      { owner: 'digest', id: 'x', surface: 'page', run: () => ({ title: 'page', nodes: [] }) },
+      { owner: 'digest', id: 'x', surface: 'workspace-action', run: () => ({ title: 'action', nodes: [] }) },
+    ]
+
+    const result = await invokeEntry(entries, { owner: 'digest', id: 'x', surface: 'workspace-action' }, {})
+
+    expect(result.view.title).toBe('action')
   })
 })

@@ -43,6 +43,12 @@ import { entriesFor, invokeEntry } from '../src/main/extensions/surfaces.js'
 // production bundle exposes no source paths, and these are plain functions with
 // no Vue in them. What the page is for is the bridge hop, which is the part no
 // unit test can reach.
+//
+// Only modules with no relative imports of their own. The frontend writes those
+// without a file extension, which Vite resolves and Node does not — so
+// `useExtensionPages` cannot be pulled in here, and what it does is covered by
+// its own test instead. What this script uniquely proves is the main process
+// half: that the surfaces are offered at all.
 import { menuItemsFor, parseSelection } from '../../frontend/src/composables/useTaskContextMenu.js'
 import { normaliseView } from '../../frontend/src/composables/useExtensionView.js'
 
@@ -312,6 +318,29 @@ app.whenReady().then(async () => {
     JSON.stringify(values) === JSON.stringify(['Age=2 hours', 'Words in the description=3', 'Status=ongoing']),
     JSON.stringify(values),
   )
+
+  // The other two surfaces, which shipped registered and unreachable: the host
+  // held a page and a header action and nothing in the renderer ever asked.
+  const standup = join(EXAMPLES, 'standup')
+  const withPages = buildRuntime()
+  const installedStandup = await withPages.runtime.installLocal(standup)
+  record('standup installs', installedStandup.ok === true, String(installedStandup.reason ?? ''))
+
+  const pages = withPages.runtime.entries('page', {})
+  record('it contributes a page', pages.length === 1 && pages[0].owner === 'standup', JSON.stringify(pages))
+  record(
+    'addressed by owner and id, which is what the route carries',
+    pages[0]?.owner === 'standup' && pages[0]?.id === 'today',
+    JSON.stringify(pages[0] ?? null),
+  )
+
+  const keys = withPages.runtime.entries('shortcut', {})
+  record('and a shortcut, read from its own registry', keys.length === 1 && keys[0].key === 's', JSON.stringify(keys))
+
+  const digest = buildRuntime()
+  await digest.runtime.installLocal(join(EXAMPLES, 'digest'), { config: { workspaceId: 'ws1' } })
+  const headerActions = digest.runtime.entries('workspace-action', { workspaceId: 'ws1' })
+  record('a header action is offered for a workspace', headerActions.length === 1, JSON.stringify(headerActions))
 
   // The regression check, in two halves. The first states the constraint that
   // caused the bug; the second is the fix, and it is only meaningful because

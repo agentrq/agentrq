@@ -645,6 +645,83 @@ describe('state', () => {
   })
 })
 
+/**
+ * These lived in the wrapper `index.js` builds around the runtime, where
+ * nothing could reach them — `index.js` imports Electron at module scope and is
+ * excluded from coverage. A verification script asked the runtime for `entries`
+ * and found nothing there, which is what moved them here.
+ */
+describe('entries and invoke', () => {
+  const withEntries = (entries) =>
+    build({
+      host: {
+        resolve: vi.fn(() => entries),
+        registries: { ui: { listFor: () => [] }, shortcuts: { list: () => [], listFor: () => [] }, schedules: { listFor: () => [] } },
+        list: () => [],
+        start: async () => ({ ok: true, registered: 1 }),
+        stop: () => ({ ok: true }),
+        stopAll: () => {},
+      },
+    })
+
+  it('reads a drawn surface out of the ui registry', () => {
+    const { runtime, host } = withEntries([
+      { owner: 'standup', id: 'today', surface: 'page', label: 'Standup', order: 20 },
+    ])
+
+    const rows = runtime.entries('page', {})
+
+    expect(host.resolve).toHaveBeenCalledWith('ui', {})
+    expect(rows).toEqual([{ owner: 'standup', id: 'today', surface: 'page', label: 'Standup', order: 20 }])
+  })
+
+  // A key sequence has to be unique across every extension, so it lives in its
+  // own registry — and the renderer asks for surfaces, not registries.
+  it('reads a shortcut out of the shortcuts registry', () => {
+    const { runtime, host } = withEntries([{ owner: 'standup', id: 'open', key: 's', label: 'Standup', order: 20 }])
+
+    const rows = runtime.entries('shortcut', {})
+
+    expect(host.resolve).toHaveBeenCalledWith('shortcuts', {})
+    expect(rows[0].key).toBe('s')
+  })
+
+  it('runs one and answers with what it drew', async () => {
+    const { runtime } = withEntries([
+      { owner: 'standup', id: 'today', surface: 'page', run: () => ({ title: 'Standup', nodes: [] }) },
+    ])
+
+    const result = await runtime.invoke({ owner: 'standup', id: 'today', surface: 'page' }, {})
+
+    expect(result).toMatchObject({ ok: true, view: { title: 'Standup' } })
+  })
+
+  it('says so plainly when the entry has gone', async () => {
+    const { runtime } = withEntries([])
+
+    expect(await runtime.invoke()).toEqual({ ok: false, reason: 'That extension is no longer available.' })
+  })
+
+  it('reports a predicate that threw against the extension that owns it', () => {
+    const { runtime, logger } = withEntries([
+      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw new Error('boom') } },
+    ])
+
+    expect(runtime.entries('task-menu', {})).toEqual([])
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('digest'), 'boom')
+  })
+
+  it('has something to say about a predicate that threw nothing readable', () => {
+    const { runtime, logger } = withEntries([
+      { owner: 'digest', id: 'x', surface: 'task-menu', when: () => { throw 'boom' } }, // eslint-disable-line no-throw-literal
+    ])
+
+    runtime.entries('task-menu', {})
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'boom')
+  })
+})
+
 describe('stopAll', () => {
   it('unloads everything without touching the server', async () => {
     const { runtime, host, schedules } = build()

@@ -268,6 +268,13 @@ ctx.ui.add({ id, surface, label, order, view, run, when })
 `run` and `view` are the same thing under two names — an action produces a
 panel, a page produces a page — and either is accepted on any surface.
 
+**Where each one appears.** A `page` gets a row in the sidebar under Extensions
+and a route of its own at `/extensions/:name/:id`. A `workspace-action` becomes a
+button in the workspace header, after AgentRQ's own and behind a divider, so
+installing something never shuffles a control somebody's hand already knows. A
+`task-menu` item appears on right-click, also behind a divider, filtered by its
+`when`.
+
 **Your functions never leave the main process.** The renderer receives a
 *description* of an entry and asks this side to run it, which is what keeps
 third-party code away from a privileged origin that has a bridge to files, the
@@ -293,7 +300,9 @@ is right for AgentRQ's own items and rare for anybody else's.
 ctx.shortcuts.add({ id: 'open', key: 's', label: 'Standup: today', run })
 ```
 
-Pressing <kbd>x</kbd> then <kbd>s</kbd> runs it.
+Pressing <kbd>x</kbd> then <kbd>s</kbd> runs it, wherever you are in the app —
+so what it opens is a panel rather than a page, since a page would mean
+navigating away from whatever you were looking at.
 
 The single bare letters are AgentRQ's — `k n w m t ?` are taken and more will
 be. A blocklist would be a tiny namespace that freezes the application and still

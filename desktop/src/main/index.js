@@ -57,7 +57,6 @@ import { createSchedules } from './extensions/schedules.js'
 import { createConfigStore } from './extensions/config.js'
 import { createRuntime } from './extensions/runtime.js'
 import { claimedShortcuts } from './extensions/shortcuts.js'
-import { entriesFor, invokeEntry } from './extensions/surfaces.js'
 import { serverTools } from './extensions/servers.js'
 import { createMcpClient } from './extensions/mcp-client.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
@@ -1182,24 +1181,6 @@ function buildExtensionRuntime() {
 
   return {
     ...runtime,
-
-    /**
-     * What is contributed to one surface, as messages rather than entries.
-     *
-     * The predicate runs here because it cannot run there: `when(task)` is a
-     * function in this process, and the renderer sends the task rather than
-     * receiving a function it could not call.
-     */
-    entries(surface, context) {
-      return entriesFor(host.resolve('ui', context), surface, context, {
-        onError: (owner, error) => console.warn(`[${owner}] failed while deciding a ${surface}:`, error?.message),
-      })
-    },
-
-    /** Run one of them, and answer with what it drew. */
-    invoke(target, context) {
-      return invokeEntry(host.resolve('ui', context), target, context)
-    },
 
     /** Keeps the shortcut check looking at what is actually installed. */
     async state() {

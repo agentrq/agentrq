@@ -54,12 +54,13 @@ Extensions → Install from folder → examples/extensions/standup
 Linked means recorded rather than copied, so editing the folder edits the
 installed extension.
 
-`task-stats` works fully — right-click any task and it is there under a divider,
-and clicking it opens a panel. It asks for nothing and reads only the task it is
-handed. `standup` and `digest` install, load and register their surfaces, but
-their MCP calls come back refused: the desktop app has no MCP transport of its
-own yet, so `ctx.mcp` answers with a reason rather than a result. Their pages
-render that reason, which is at least the failure they were written to handle.
+`task-stats` and `standup` both work fully. Right-click any task for
+`task-stats`; `standup` adds a **Standup** row to the sidebar, a
+<kbd>x</kbd> <kbd>s</kbd> shortcut, and its own task menu item. `digest` installs, loads and registers all three of its surfaces, but its calls
+come back refused: it needs the **supervisor**, whose endpoint wants an OAuth
+authorisation the desktop app does not hold yet. Its pages render that reason,
+which is the failure it was written to handle. The workspace surface — which is
+what `standup` uses — works.
 
 ## Their tests
 

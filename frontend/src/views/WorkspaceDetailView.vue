@@ -101,6 +101,19 @@
             <button v-if="!workspace?.archivedAt" @click="router.push(`/workspaces/${workspaceId}/settings`)" class="h-8 w-8 text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center" title="Workspace Settings">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
             </button>
+            <!-- What extensions offer for this workspace. After our own items
+                 and behind a divider, so installing something never shuffles
+                 the button somebody's hand already knows. -->
+            <template v-if="extensionActions.length > 0">
+              <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
+              <button v-for="action in extensionActions" :key="`${action.owner}:${action.id}`"
+                      @click="runExtensionAction(action)"
+                      class="h-8 px-2.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center"
+                      :title="`${action.label} — ${action.owner}`">
+                {{ action.label }}
+              </button>
+            </template>
+
             <div class="w-px h-4 bg-gray-200 dark:bg-zinc-800"></div>
             <button v-if="!workspace?.archivedAt" @click="router.push(`/workspaces/${workspaceId}/tasks/new`)" 
                     class="group flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 px-3 h-8 rounded-sm text-[10px] font-bold shadow-sm transition-all hover:bg-gray-800 dark:hover:bg-zinc-100 uppercase tracking-widest"
@@ -182,6 +195,8 @@
     </div>
       </div>
     </template>
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel"
+                      @action="onExtensionAction" @close="extensionSurfaces.dismiss" />
   </div>
 
   <!-- Modals -->
@@ -199,6 +214,8 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
+import { useExtensionPages } from '../composables/useExtensionPages';
+import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
 import LoadingState from '../components/LoadingState.vue';
 
@@ -265,6 +282,54 @@ const pendingInputCount = computed(() => tasks.value.filter(t => t.createdBy ===
 // Derived, not stored. A ref set at load time is exactly what made this header
 // dot lie until the page was reloaded.
 const isAgentConnected = computed(() => workspace.value?.agentConnected === true);
+
+/**
+ * What extensions offer for this workspace.
+ *
+ * Asked per workspace, because a `when` on a header action gets to decide about
+ * *this* one — and re-asked when the workspace changes, since the same
+ * component serves every one of them.
+ */
+const { actions: extensionActions, load: loadExtensionActions, surfaces: extensionSurfaces } = useExtensionPages();
+const extensionPanel = extensionSurfaces.panel;
+
+function runExtensionAction(action) {
+  extensionSurfaces.invoke(
+    { owner: action.owner, id: action.id, surface: 'workspace-action' },
+    { workspaceId: workspaceId.value },
+  );
+}
+
+/**
+ * A button inside the panel, handed back to whatever drew it.
+ *
+ * The panel carries the owner and id of the entry that produced it, so the
+ * action goes to the same one. It is never interpreted here — it is a string
+ * the extension chose, passed back verbatim as `normaliseNode` documents.
+ */
+function onExtensionAction(action) {
+  const panel = extensionPanel.value;
+  if (!panel) return;
+  extensionSurfaces.invoke(
+    { owner: panel.owner, id: panel.id, surface: 'workspace-action' },
+    { workspaceId: workspaceId.value, action },
+  );
+}
+
+watch(
+  workspaceId,
+  (id) => {
+    if (id) loadExtensionActions({ workspaceId: id });
+  },
+  { immediate: true },
+);
+
+// A refusal the extension could not draw around — a narrowed grant, a `run`
+// that threw. Silence here is indistinguishable from a button that does
+// nothing, which is the failure this whole surface is most likely to have.
+watch(extensionSurfaces.error, (reason) => {
+  if (reason) notifyError(reason);
+});
 
 onMounted(() => {
   load();

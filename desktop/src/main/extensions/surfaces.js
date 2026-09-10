@@ -29,6 +29,25 @@
 
 const fail = (reason) => ({ ok: false, reason })
 
+/**
+ * Which registry a surface's entries live in.
+ *
+ * `shortcut` is the odd one: a key sequence is registered in its own registry
+ * because it has to be unique across every extension, while a page only has to
+ * be unique within one. The renderer asks for surfaces rather than registries —
+ * it should not have to know which is which — so the mapping is here.
+ */
+export const REGISTRY_FOR = Object.freeze({
+  page: 'ui',
+  'workspace-action': 'ui',
+  'task-menu': 'ui',
+  shortcut: 'shortcuts',
+})
+
+export function registryFor(surface) {
+  return REGISTRY_FOR[surface] ?? 'ui'
+}
+
 /** The fields that survive the crossing. Anything callable is deliberately not here. */
 export function serialise(entry) {
   return {
@@ -66,8 +85,13 @@ export function applies(entry, context, onError = () => {}) {
  * @param {string} surface    'page' | 'workspace-action' | 'task-menu'
  */
 export function entriesFor(entries, surface, context, { onError = () => {} } = {}) {
+  // Everything in the shortcuts registry is a shortcut, so there is nothing for
+  // an entry to declare — asking authors to write `surface: 'shortcut'` next to
+  // the key they are binding would be a field with one legal value.
+  const belongs = (entry) => registryFor(surface) !== 'ui' || (entry.surface ?? '') === surface
+
   return entries
-    .filter((entry) => (entry.surface ?? '') === surface)
+    .filter(belongs)
     .filter((entry) => applies(entry, context, onError))
     .map(serialise)
 }
@@ -80,8 +104,12 @@ export function entriesFor(entries, surface, context, { onError = () => {} } = {
  * author remember which surface takes which.
  */
 export async function invokeEntry(entries, { owner, id, surface }, context) {
+  const bySurface = registryFor(surface) === 'ui'
   const entry = entries.find(
-    (candidate) => candidate.owner === owner && candidate.id === id && (candidate.surface ?? '') === (surface ?? ''),
+    (candidate) =>
+      candidate.owner === owner &&
+      candidate.id === id &&
+      (!bySurface || (candidate.surface ?? '') === (surface ?? '')),
   )
   // Ordinary rather than exceptional: an extension can be uninstalled between
   // a menu opening and something on it being clicked.
