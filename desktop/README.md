@@ -84,6 +84,7 @@ npm run spike:eventsource                    # is EventSource allowed on app://?
 AGENTRQ_SERVER_URL=http://localhost:3999 \
 AGENTRQ_ROOT_TOKEN=... npx electron scripts/verify-e2e.mjs
 npm run build && npx electron scripts/verify-markdown-links.mjs  # needs no backend
+npm run verify:extensions                                        # needs no backend
 AGENTRQ_SERVER_URL=http://localhost:3997 AGENTRQ_QA_DB=… \
 AGENTRQ_QA_WORKSPACE=… npx electron scripts/verify-ui-telemetry.mjs
 ```
@@ -94,6 +95,20 @@ refused, root-token login succeeds, the cookie is replayed, and the SSE stream
 connects. `verify:connection` starts from nothing stored and drives the
 first-run screen: a bad URL is refused with a reason and nothing is saved; a
 good one is probed, stored, and reachable through the proxy.
+
+`verify:extensions` exists because the feature shipped without it. Every piece
+had unit tests, an integration test drove the host and the composables together,
+and an extension's menu item still never appeared — because `menuItemsFor(task)`
+was called with one argument in both views that show tasks, and nothing in the
+renderer asked the main process what had been registered. Both halves were
+correct and the path between them did not exist.
+
+So it runs the path: a real window with the real preload, the real host loading
+the real `task-stats` example off disk, and the page asking the bridge for what
+extensions offer and then invoking one. It checks that entries cross with
+nothing callable on them, that the menu reads *Move Task*, a divider and then the
+extension's row, and that what comes back is a view the renderer will draw.
+Needs no backend.
 
 `verify:markdown-links` needs no backend: it boots the app, drops a rendered
 link into the running window and clicks it, then checks that the click crossed

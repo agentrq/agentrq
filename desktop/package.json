@@ -2,7 +2,7 @@
   "name": "agentrq-desktop",
   "private": true,
   "version": "0.5.21",
-  "description": "AgentRQ desktop app — AI-powered task queue for autonomous agents",
+  "description": "AgentRQ desktop app \u2014 AI-powered task queue for autonomous agents",
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
@@ -13,6 +13,7 @@
     "test:coverage": "vitest run --coverage",
     "spike:eventsource": "npm run build && electron scripts/spike-eventsource.mjs",
     "verify:e2e": "npm run build && electron scripts/verify-e2e.mjs",
+    "verify:extensions": "npm run build && electron scripts/verify-extensions.mjs",
     "verify:connection": "npm run build && electron scripts/verify-connection.mjs",
     "verify:markdown-links": "npm run build && electron scripts/verify-markdown-links.mjs",
     "verify:webmcp": "npm run build && electron scripts/verify-webmcp.mjs",
