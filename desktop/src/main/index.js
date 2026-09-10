@@ -1139,8 +1139,14 @@ function buildExtensionRuntime() {
     load: (installation) => import(pathToFileURL(join(installation.dir, 'index.js')).href),
     readConfig: (name) => configStore.resolve(name),
     clientFor: (name) => broker.clientFor(name),
-    onDisabled: async (name) => {
+    onDisabled: async (name, reason) => {
       await installer.setEnabled(name, false)
+      // Told, not just recorded. Nothing about this involves a navigation — an
+      // extension is disabled after three failures, whenever they happen — so
+      // the sidebar row and the key it holds would otherwise stay until the
+      // user next left the Extensions screen, which may be never in a session.
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+      win?.webContents.send('agentrq:extensions:changed', { name, reason })
     },
   })
 

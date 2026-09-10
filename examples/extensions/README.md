@@ -54,9 +54,15 @@ Extensions → Install from folder → examples/extensions/standup
 Linked means recorded rather than copied, so editing the folder edits the
 installed extension.
 
-`task-stats` and `standup` both work fully. Right-click any task for
-`task-stats`; `standup` adds a **Standup** row to the sidebar, a
-<kbd>x</kbd> <kbd>s</kbd> shortcut, and its own task menu item. `digest` installs, loads and registers all three of its surfaces, but its calls
+`task-stats` and `standup` both work. Right-click any task for `task-stats`;
+`standup` adds a **Standup** row to the sidebar, a <kbd>x</kbd> <kbd>s</kbd>
+shortcut, and its own task menu item.
+
+The sidebar row is the one to read closely. A page has no workspace in its
+route, and AgentRQ will not guess one among several — so with more than one
+workspace on the account it says *"Open a workspace to see where it stands."*
+rather than making a call that would come back refused. The shortcut and the
+task menu item always have a workspace, and show the real thing. `digest` installs, loads and registers all three of its surfaces, but its calls
 come back refused: it needs the **supervisor**, whose endpoint wants an OAuth
 authorisation the desktop app does not hold yet. Its pages render that reason,
 which is the failure it was written to handle. The workspace surface — which is

@@ -223,6 +223,23 @@ describe('buildThread', () => {
 })
 
 describe('collect', () => {
+  /**
+   * A page in the sidebar has no workspace in its route, and AgentRQ will not
+   * guess one among several. Every tool this calls needs one, so sending
+   * nothing anyway comes back as "This call names no workspace" — which reads
+   * like a fault rather than a missing input.
+   */
+  it('says what to do rather than calling anything, when given no workspace', async () => {
+    const fake = fakeWorkspace()
+
+    const page = await collect(ctxWith(fake), {})
+
+    expect(fake.calls).toEqual([])
+    expect(page.nodes[0]).toMatchObject({ type: 'empty' })
+    expect(page.nodes[0].value).toContain('Open a workspace')
+    expect(normaliseView(page).ok).toBe(true)
+  })
+
   it('asks the workspace where it stands, then what it remembers', async () => {
     const fake = fakeWorkspace()
 

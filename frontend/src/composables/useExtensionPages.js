@@ -17,6 +17,22 @@ import { useExtensionSurfaces } from './useExtensionSurfaces';
  * keystroke in the address bar. So this is loaded once and refreshed when
  * something is installed or removed — the two moments the answer changes.
  *
+ * ## A page may get no workspace, and has to cope
+ *
+ * A sidebar page belongs to the application, not to a workspace — there is no
+ * id in `/extensions/:name/:pageId` and nothing sensible to put there. But most
+ * of what an extension can usefully read *is* per-workspace, so a page that
+ * never learns one can only ever say "This call names no workspace."
+ *
+ * So one is passed when it is unambiguous, and only then: the workspace the
+ * route names, or the account's single workspace when there is exactly one.
+ * Never a guess among many — that is the same rule `newTaskRoute` follows for
+ * the same reason, and picking somebody's workspace for them is worse than
+ * admitting there is no answer.
+ *
+ * An extension therefore has to handle `workspaceId` being empty. `standup`
+ * does, and says so on the page rather than showing a refusal.
+ *
  * ## Addressed by owner and id
  *
  * `/extensions/:name/:pageId`. The name is the extension's, which the manifest
@@ -38,6 +54,18 @@ export function routeFor(entry) {
  */
 export function findEntry(entries, { name, pageId }) {
   return entries.find((entry) => entry.owner === name && entry.id === pageId) ?? null;
+}
+
+/**
+ * The workspace a page should be run against, or '' when there is no answer.
+ *
+ * @param {string} routeWorkspaceId  What the route names, if anything.
+ * @param {Array} workspaces         Everything on the account.
+ */
+export function workspaceInContext(routeWorkspaceId, workspaces = []) {
+  if (routeWorkspaceId) return routeWorkspaceId;
+  // Exactly one is not a guess. Two is.
+  return workspaces.length === 1 ? String(workspaces[0]?.id ?? '') : '';
 }
 
 export function useExtensionPages({ surfaces = useExtensionSurfaces() } = {}) {

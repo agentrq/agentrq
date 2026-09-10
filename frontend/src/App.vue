@@ -412,7 +412,8 @@
 
     <!-- What a shortcut drew. It is here rather than in a view because `x` then
          a key works wherever you are, so what it opens has to as well. -->
-    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel" @close="extensionSurfaces.dismiss" />
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel"
+                        @action="onExtensionPanelAction" @close="extensionSurfaces.dismiss" />
   </div>
 </template>
 
@@ -663,6 +664,9 @@ const extensionPanel = extensionSurfaces.panel
 
 const extensionKeys = ref([])
 
+/** Undoes the main process subscription, so a remount does not stack two. */
+let stopExtensionWatch = null
+
 /**
  * `x` then a letter, which is the whole extension keyboard scheme.
  *
@@ -671,17 +675,73 @@ const extensionKeys = ref([])
  * state between two of them. `handle` answers whether it consumed the key, so
  * the application's own bare letters keep working when it did not.
  */
+/**
+ * The workspace a shortcut fired in.
+ *
+ * `x` then a key works wherever you are, and wherever you are is usually a
+ * workspace. An extension drawing something about it has no other way to learn
+ * which one — the broker refuses a call that names none — so the context that
+ * goes out carries it rather than being empty.
+ */
+const extensionContext = () => ({ workspaceId: currentWorkspaceId.value ?? '' })
+
+/** Whether the key just handled actually ran something, rather than arming. */
+let extensionKeyDispatched = false
+
 const extensionShortcuts = useExtensionShortcuts({
   entries: () => extensionKeys.value,
   onInvoke: (binding) => {
+    extensionKeyDispatched = true
     recordShortcutUse()
-    extensionSurfaces.invoke({ owner: binding.owner, id: binding.id, surface: 'shortcut' }, {})
+    extensionSurfaces.invoke({ owner: binding.owner, id: binding.id, surface: 'shortcut' }, extensionContext())
   },
 })
 
+/**
+ * The second key of a sequence belongs to the extension and to nothing else.
+ *
+ * `x` then `n` is a sequence an extension may legitimately claim — a second key
+ * being a namespace of its own is the whole point of the prefix — but `n` is
+ * also *our* "new task", and both listeners are offered the same keydown.
+ * Without suppressing it the sequence would open the extension's panel and
+ * navigate away from it in the same breath.
+ *
+ * Suppressed only for the key that actually dispatched. Arming on `x`, or
+ * abandoning with Escape, has to leave the rest of the application alone —
+ * Escape still has an overlay to close.
+ *
+ * Capture, because `useShortcuts` registered its window listener first and a
+ * bubble-phase handler would no longer be able to stop it.
+ */
 function onExtensionKey(event) {
-  extensionShortcuts.handle(event)
+  extensionKeyDispatched = false
+  if (!extensionShortcuts.handle(event) || !extensionKeyDispatched) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
 }
+
+/**
+ * A button inside the panel a shortcut drew, handed back to whatever drew it.
+ *
+ * The panel carries the owner and id of the entry that produced it, so the
+ * action goes to the same one. It is never interpreted here — it is a string
+ * the extension chose, passed back verbatim as `normaliseNode` documents.
+ */
+function onExtensionPanelAction(action) {
+  const panel = extensionPanel.value
+  if (!panel) return
+  extensionSurfaces.invoke(
+    { owner: panel.owner, id: panel.id, surface: 'shortcut' },
+    { ...extensionContext(), action },
+  )
+}
+
+// A shortcut that was refused — a narrowed grant, a `run` that threw — draws no
+// panel, and a key that does nothing is indistinguishable from one nobody bound.
+// The workspace header says the same thing about its own buttons.
+watch(extensionSurfaces.error, (reason) => {
+  if (reason) notifyError(reason)
+})
 
 /** Read what is installed now: the sidebar's pages, and the keys they hold. */
 async function refreshExtensions() {
@@ -806,9 +866,16 @@ onMounted(() => {
   workspaceStore.fetchWorkspaces()
   connect() // Connect to global event stream
   refreshExtensions()
+  // The host disables an extension after three failures, with no navigation
+  // involved — so its row and its key would otherwise stay on screen until the
+  // user next left the Extensions screen, which may be never in a session.
+  stopExtensionWatch = window.agentrq?.extensions?.onChanged?.((detail) => {
+    refreshExtensions()
+    if (detail?.name) notifyError(`${detail.name} was disabled: ${detail.reason ?? 'it kept failing.'}`)
+  })
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('keydown', closeOverlaysOnEscape)
-  window.addEventListener('keydown', onExtensionKey)
+  window.addEventListener('keydown', onExtensionKey, true)
 })
 
 const showTooltip = (event, text) => {
@@ -890,7 +957,8 @@ const handleClickOutside = (e) => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
-  window.removeEventListener('keydown', onExtensionKey)
+  window.removeEventListener('keydown', onExtensionKey, true)
+  stopExtensionWatch?.()
   if (sweepTimer) clearInterval(sweepTimer)
 })
 

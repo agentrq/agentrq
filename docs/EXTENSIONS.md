@@ -269,7 +269,13 @@ ctx.ui.add({ id, surface, label, order, view, run, when })
 panel, a page produces a page — and either is accepted on any surface.
 
 **Where each one appears.** A `page` gets a row in the sidebar under Extensions
-and a route of its own at `/extensions/:name/:id`. A `workspace-action` becomes a
+and a route of its own at `/extensions/:name/:id`. **It may be opened with no
+workspace**: a sidebar page belongs to the application, and AgentRQ passes one
+only when it is unambiguous — the account's single workspace when there is
+exactly one, never a guess among several. Every workspace tool needs one, so
+write the page to say so when `context.workspaceId` is empty rather than making
+a call that comes back "This call names no workspace." `standup` does exactly
+that. A `workspace-action` and a `task-menu` item always have one. A `workspace-action` becomes a
 button in the workspace header, after AgentRQ's own and behind a divider, so
 installing something never shuffles a control somebody's hand already knows. A
 `task-menu` item appears on right-click, also behind a divider, filtered by its

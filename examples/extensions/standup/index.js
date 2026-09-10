@@ -28,6 +28,14 @@
  * per-task detail belongs on the task, where the person asking has one in front
  * of them.
  *
+ * ## A page may be opened with no workspace at all
+ *
+ * The sidebar row has no workspace in its route, and AgentRQ will not guess one
+ * among several. So `collect` is written to be handed nothing and say so —
+ * every tool it calls needs a workspace, and sending one anyway comes back as
+ * "This call names no workspace", which reads like a fault rather than a
+ * missing input. The shortcut and the task menu always have one.
+ *
  * ## Everything it reaches goes through the broker
  *
  * `ctx.mcp.workspace(tool, args)` is a request, not a call. The extension never
@@ -212,6 +220,19 @@ const refusal = (reason) => ({ title: 'Standup', nodes: [{ type: 'text', tone: '
  * The page: where the workspace stands, and what it remembers.
  */
 export async function collect(ctx, { workspaceId } = {}) {
+  // A page in the sidebar belongs to the application, not to a workspace, so
+  // there may be none — and everything below needs one. Said in words rather
+  // than sent anyway, which would come back as "This call names no workspace."
+  // and read like a fault rather than a missing input.
+  if (!workspaceId) {
+    return {
+      title: 'Standup',
+      nodes: [
+        { type: 'empty', value: 'Open a workspace to see where it stands. From there, press x then s.' },
+      ],
+    }
+  }
+
   const workspace = await ctx.mcp.workspace('getWorkspace', { workspaceId })
   if (!workspace.ok) {
     // The reason the host gave, shown as it came. An author debugging a refused

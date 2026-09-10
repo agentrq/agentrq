@@ -28,7 +28,7 @@
 
       <!-- An extension that was uninstalled, or a link somebody kept. Said in
            words rather than left as an empty page that looks like a failure. -->
-      <div v-else-if="!error && !busy"
+      <div v-else-if="settled && !error && !busy"
            class="border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm px-6 py-10 text-center">
         <p class="text-[11px] text-gray-500 dark:text-zinc-400">
           Nothing here. <strong class="font-semibold text-gray-700 dark:text-zinc-300">{{ name }}</strong>
@@ -59,9 +59,21 @@ import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import ExtensionNode from '../components/ExtensionNode.vue';
-import { findEntry, useExtensionPages } from '../composables/useExtensionPages';
+import { findEntry, useExtensionPages, workspaceInContext } from '../composables/useExtensionPages';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const route = useRoute();
+const workspaceStore = useWorkspaceStore();
+
+/**
+ * The workspace this page runs against, which may be none.
+ *
+ * There is no workspace in `/extensions/:name/:pageId`, so this is the
+ * account's single workspace when there is exactly one and nothing otherwise —
+ * never a guess among many. An extension that needs one has to say so itself;
+ * see `standup`, which does.
+ */
+const workspaceId = computed(() => workspaceInContext('', workspaceStore.workspaces ?? []));
 const name = computed(() => String(route.params.name ?? ''));
 const pageId = computed(() => String(route.params.pageId ?? ''));
 
@@ -71,16 +83,43 @@ const view = surfaces.panel;
 const error = surfaces.error;
 const busy = surfaces.busy;
 
+/**
+ * Which open is the current one.
+ *
+ * Two extension pages share this component, so navigating from one to the other
+ * starts a second `open` while the first is still waiting on the bridge. Without
+ * a token whichever answered last would win, and the page somebody left could
+ * end up drawn under the title of the one they went to.
+ */
+let opening = 0;
+
+/**
+ * Whether the first answer has come back.
+ *
+ * `busy` is only raised once the entry is known and its `run` is under way, so
+ * for the length of the first bridge call there is no view, no error and no
+ * busy — which is exactly the shape of "this was uninstalled". Without this the
+ * empty state flashes on every open, telling everybody their extension is gone.
+ */
+const settled = ref(false);
+
 async function open() {
+  const token = (opening += 1);
   await load();
+  if (token !== opening) return;
   entry.value = findEntry(pages.value, { name: name.value, pageId: pageId.value });
   if (!entry.value) {
     // Not an error: an extension can be uninstalled between somebody following
     // a link and the page opening. The empty state below says so.
     surfaces.dismiss();
+    settled.value = true;
     return;
   }
-  await surfaces.invoke({ owner: entry.value.owner, id: entry.value.id, surface: 'page' }, {});
+  await surfaces.invoke(
+    { owner: entry.value.owner, id: entry.value.id, surface: 'page' },
+    { workspaceId: workspaceId.value },
+  );
+  settled.value = true;
 }
 
 /**
@@ -91,7 +130,10 @@ async function open() {
  */
 function onAction(action) {
   if (!entry.value) return;
-  surfaces.invoke({ owner: entry.value.owner, id: entry.value.id, surface: 'page' }, { action });
+  surfaces.invoke(
+    { owner: entry.value.owner, id: entry.value.id, surface: 'page' },
+    { workspaceId: workspaceId.value, action },
+  );
 }
 
 // Immediate, and re-run when the route changes: two extension pages share this

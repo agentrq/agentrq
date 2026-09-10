@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { findEntry, routeFor, useExtensionPages } from '../src/composables/useExtensionPages';
+import {
+  findEntry,
+  routeFor,
+  useExtensionPages,
+  workspaceInContext,
+} from '../src/composables/useExtensionPages';
 
 /**
  * The two surfaces that shipped registered and unreachable.
@@ -50,6 +55,34 @@ describe('findEntry', () => {
   it('answers with nothing rather than undefined', () => {
     expect(findEntry(entries, { name: 'gone', pageId: 'x' })).toBeNull();
     expect(findEntry([], { name: 'standup', pageId: 'today' })).toBeNull();
+  });
+});
+
+/**
+ * A sidebar page has no workspace in its route, and most of what an extension
+ * can usefully read is per-workspace. One is passed when it is unambiguous and
+ * never guessed — the same rule `newTaskRoute` follows, because picking
+ * somebody's workspace for them is worse than admitting there is no answer.
+ */
+describe('workspaceInContext', () => {
+  const ws = (id) => ({ id });
+
+  it('prefers what the route names', () => {
+    expect(workspaceInContext('ws1', [ws('ws2'), ws('ws3')])).toBe('ws1');
+  });
+
+  it('takes the only workspace there is, which is not a guess', () => {
+    expect(workspaceInContext('', [ws('ws1')])).toBe('ws1');
+  });
+
+  it('refuses to choose between several', () => {
+    expect(workspaceInContext('', [ws('ws1'), ws('ws2')])).toBe('');
+  });
+
+  it('has no answer when there is nothing to answer with', () => {
+    expect(workspaceInContext('', [])).toBe('');
+    expect(workspaceInContext('')).toBe('');
+    expect(workspaceInContext('', [{}])).toBe('');
   });
 });
 
