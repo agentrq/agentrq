@@ -48,12 +48,29 @@ function byOrderThenName(a, b) {
  * @param {object} options
  * @param {string} options.name    What it holds, for the messages.
  * @param {'global'|'owner'} [options.scope]
+ * @param {string} [options.uniqueBy]  The field that has to be unique, when it
+ *   is not the id. A shortcut is claimed by its *key*: two extensions binding
+ *   `x s` collide however they name their entries, and two entries an extension
+ *   happens to call `open` do not.
  */
-export function createRegistry({ name, scope = SCOPES.global }) {
+export function createRegistry({ name, scope = SCOPES.global, uniqueBy = 'id' }) {
   /** @type {Map<string, object>} keyed by whatever `scope` makes unique. */
   const entries = new Map()
 
-  const keyFor = (owner, id) => (scope === SCOPES.owner ? `${owner}:${id}` : id)
+  /**
+   * What has to be unique, normalised.
+   *
+   * A key is folded, so `S` and `s` are one claim rather than two — the
+   * dispatcher lowercases what it reads from the keyboard, and a registry that
+   * did not would hand out a second claim on a key already spoken for. An id is
+   * left as written, because it is an address rather than a keystroke.
+   */
+  const claimOf = (value) => {
+    const text = String(value ?? '').trim()
+    return uniqueBy === 'id' ? text : text.toLowerCase()
+  }
+
+  const keyFor = (owner, claim) => (scope === SCOPES.owner ? `${owner}:${claim}` : claim)
 
   return {
     name,
@@ -71,12 +88,15 @@ export function createRegistry({ name, scope = SCOPES.global }) {
       if (!owner) return fail(`Cannot register a ${name} without an extension.`)
       if (!id) return fail(`A ${name} needs an id.`)
 
-      const key = keyFor(owner, id)
+      const claim = claimOf(uniqueBy === 'id' ? id : entry?.[uniqueBy])
+      if (!claim) return fail(`A ${name} needs a ${uniqueBy}.`)
+
+      const key = keyFor(owner, claim)
       const existing = entries.get(key)
       if (existing) {
         return existing.owner === owner
-          ? fail(`${owner} registers the ${name} "${id}" twice.`)
-          : fail(`${owner} cannot register the ${name} "${id}": ${existing.owner} already has it.`)
+          ? fail(`${owner} registers the ${name} "${claim}" twice.`)
+          : fail(`${owner} cannot register the ${name} "${claim}": ${existing.owner} already has it.`)
       }
 
       entries.set(key, {
@@ -135,7 +155,7 @@ export function createRegistry({ name, scope = SCOPES.global }) {
 
     /** Whether a name is already taken, and by whom. */
     claimedBy(owner, id) {
-      return entries.get(keyFor(owner, id))?.owner ?? ''
+      return entries.get(keyFor(owner, claimOf(id)))?.owner ?? ''
     },
   }
 }
@@ -152,8 +172,11 @@ export function createRegistries() {
     // Addressed as /extensions/:name/:pageId, so a page only has to be unique
     // within the extension that owns it.
     ui: createRegistry({ name: 'view', scope: SCOPES.owner }),
-    // A key sequence has one meaning, whoever asked for it.
-    shortcuts: createRegistry({ name: 'shortcut', scope: SCOPES.global }),
+    // A key sequence has one meaning, whoever asked for it — so the *key* is
+    // what is claimed here, not the id. Keying it by id let two extensions bind
+    // the same letter, and made two extensions that both called their entry
+    // "open" collide over nothing.
+    shortcuts: createRegistry({ name: 'shortcut', scope: SCOPES.global, uniqueBy: 'key' }),
     // A schedule is reconciled by id against what already exists on the server.
     schedules: createRegistry({ name: 'schedule', scope: SCOPES.owner }),
   }

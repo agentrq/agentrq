@@ -540,3 +540,53 @@ describe('recordFailure', () => {
     expect((await installer.recordFailure('thing', 1)).disabled).toBe(true)
   })
 })
+
+
+/**
+ * "Local" and "linked" are not the same thing, and conflating them deletes
+ * somebody's working copy or leaks a directory forever.
+ *
+ * A linked folder is *recorded*, so uninstalling only forgets it. A local
+ * folder installed unlinked is *copied* into the install directory, and that
+ * copy has to go. The check used to be `source.kind === 'local'`, which is true
+ * for both.
+ */
+describe('uninstalling a folder', () => {
+  // The manifest the fake stage produces is called `thing`, so that is the
+  // name every installation here ends up under.
+  it('leaves a linked folder alone, because it is the user own copy', async () => {
+    const { installer, removed } = build()
+    await installer.install({ kind: 'local', path: '/home/me/thing' }, { linked: true })
+    removed.length = 0
+
+    expect((await installer.uninstall('thing')).ok).toBe(true)
+    expect(removed).toEqual([])
+  })
+
+  it('removes the copy made from an unlinked one', async () => {
+    const { installer, removed } = build()
+    await installer.install({ kind: 'local', path: '/home/me/thing' })
+    removed.length = 0
+
+    await installer.uninstall('thing')
+
+    expect(removed).toContain('/ext/thing')
+  })
+
+  // A record written before `linked` was stored says only that it was local,
+  // and the safe reading of that is the one that cannot delete a user's folder.
+  it('errs towards keeping a folder when an older record does not say', async () => {
+    const { installer, removed } = build({
+      store: {
+        read: async () => ({
+          installations: [{ name: 'thing', source: { kind: 'local', path: '/home/me/thing' } }],
+        }),
+        write: async () => {},
+      },
+    })
+
+    await installer.uninstall('thing')
+
+    expect(removed).toEqual([])
+  })
+})

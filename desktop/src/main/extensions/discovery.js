@@ -195,18 +195,33 @@ export function createDiscovery({
   // legitimate value, and a sentinel that collides with one is a bug waiting for
   // whoever writes the test that happens to start its clock there.
   let index = { entries: [], fetchedAt: null, truncated: false }
-  let loaded = false
+  /**
+   * The one read of the cache, shared.
+   *
+   * A `loaded` flag set before the `await` is not the same thing: a second
+   * caller arriving while the first is still reading would see the flag, skip
+   * the read and be handed the empty starting index — so opening the screen
+   * while anything else asks would show a catalogue that is on disk as empty.
+   */
+  let reading = null
 
   async function load() {
-    if (loaded) return index
-    loaded = true
-    try {
-      const parsed = JSON.parse(await readFile())
-      if (Array.isArray(parsed?.entries)) index = { truncated: false, fetchedAt: null, ...parsed }
-    } catch {
-      // No cache yet, or one we cannot read. Either way the catalogue is empty
-      // until a refresh, which is a state the UI already has to render.
+    if (!reading) {
+      reading = (async () => {
+        try {
+          const parsed = JSON.parse(await readFile())
+          if (Array.isArray(parsed?.entries)) index = { truncated: false, fetchedAt: null, ...parsed }
+        } catch {
+          // No cache yet, or one we cannot read. Either way the catalogue is
+          // empty until a refresh, which is a state the UI already has to
+          // render.
+        }
+      })()
     }
+    await reading
+    // Read after the wait rather than resolved with: `refresh` replaces this,
+    // and a promise resolved with the old object would hand every later caller
+    // the catalogue from before the refresh.
     return index
   }
 

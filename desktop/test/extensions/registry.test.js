@@ -173,3 +173,60 @@ describe('createRegistries', () => {
     expect(registries.ui.scope).toBe(SCOPES.owner)
   })
 })
+
+
+/**
+ * A shortcut is claimed by the key it binds, not by the name its author gave
+ * the entry.
+ *
+ * Keyed on `id`, two extensions both calling theirs `open` — which the shipped
+ * `standup` example does — collided over a name nobody presses, while two
+ * genuinely fighting over `x s` did not collide at all. The registry's own
+ * comment said it stopped exactly that.
+ */
+describe('a registry that is unique by something other than the id', () => {
+  const shortcuts = () => createRegistry({ name: 'shortcut', scope: SCOPES.global, uniqueBy: 'key' })
+
+  it('lets two extensions name their entries the same thing', () => {
+    const registry = shortcuts()
+
+    expect(registry.add('standup', { id: 'open', key: 's' }).ok).toBe(true)
+    expect(registry.add('linear', { id: 'open', key: 'l' }).ok).toBe(true)
+  })
+
+  it('refuses two extensions the same key, naming who has it', () => {
+    const registry = shortcuts()
+    registry.add('standup', { id: 'open', key: 's' })
+
+    const clash = registry.add('linear', { id: 'search', key: 's' })
+
+    expect(clash.ok).toBe(false)
+    expect(clash.reason).toContain('standup')
+  })
+
+  it('folds case, so S and s are one claim', () => {
+    // The dispatcher lowercases what it reads from the keyboard, so a registry
+    // that did not would hand out a second claim on a key already spoken for.
+    const registry = shortcuts()
+    registry.add('standup', { id: 'open', key: 'S' })
+
+    expect(registry.add('linear', { id: 'search', key: 's' }).ok).toBe(false)
+    expect(registry.claimedBy('linear', 's')).toBe('standup')
+  })
+
+  it('refuses an entry with nothing to claim', () => {
+    const registry = shortcuts()
+
+    const { ok, reason } = registry.add('standup', { id: 'open' })
+
+    expect(ok).toBe(false)
+    expect(reason).toContain('needs a key')
+  })
+
+  it('still tells one extension it asked twice', () => {
+    const registry = shortcuts()
+    registry.add('standup', { id: 'open', key: 's' })
+
+    expect(registry.add('standup', { id: 'other', key: 's' }).reason).toContain('twice')
+  })
+})

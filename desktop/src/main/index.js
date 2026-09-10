@@ -840,8 +840,11 @@ function registerIpc(getWindow) {
     const index = (await discovery?.list()) ?? { entries: [] }
     // Compatibility is decided here, where the running version and the tool
     // lists are — the renderer never has to learn what a semver range is.
+    // `serverTools` and not the version alone: judging against an empty tool
+    // list marks every extension that wants MCP as unavailable, for tools the
+    // server has had all along.
     return {
-      index: decorate(index, { appVersion: app.getVersion() }),
+      index: decorate(index, serverTools(app.getVersion())),
       installed: (await extensions?.state()) ?? [],
     }
   })
@@ -899,7 +902,7 @@ function registerIpc(getWindow) {
 
   ipcMain.handle('agentrq:extensions:refresh', async () => {
     const result = (await discovery?.refresh()) ?? { ok: false, reason: 'Extensions are unavailable.' }
-    return { ...result, index: decorate(result.index ?? { entries: [] }, { appVersion: app.getVersion() }) }
+    return { ...result, index: decorate(result.index ?? { entries: [] }, serverTools(app.getVersion())) }
   })
 
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
@@ -1151,6 +1154,18 @@ function buildExtensionRuntime() {
     store: jsonStore('extensions-schedules.json'),
   })
 
+  /**
+   * Where grants are kept between runs.
+   *
+   * A grant is the user's answer at the install screen, and it is held nowhere
+   * else — nothing on the server records that an extension may reach a
+   * workspace. Held only in memory it would survive exactly as long as the
+   * process: after a restart every extension would be refused with "has not
+   * been granted any access", for a permission the user did give, and the
+   * schedule reconciler could no longer take down what it had created.
+   */
+  const grantStore = jsonStore('extensions-grants.json')
+
   const runtime = createRuntime({
     installer,
     host,
@@ -1191,10 +1206,43 @@ function buildExtensionRuntime() {
       installedNow = await installer.list()
       return runtime.state()
     },
+
     async startAll() {
       installedNow = await installer.list()
+      // Read back before anything loads: `start` applies the grant *before*
+      // calling `apply`, so a grant restored afterwards would refuse exactly
+      // the calls an extension makes while loading.
+      try {
+        const saved = await grantStore.read()
+        for (const [name, grant] of Object.entries(saved ?? {})) runtime.rememberGrant(name, grant)
+      } catch {
+        // No file yet, or one that will not parse. Either way nothing has been
+        // granted, which is the state a fresh install is already in.
+      }
       return runtime.startAll()
     },
+
+    async installLocal(path, options) {
+      const result = await runtime.installLocal(path, options)
+      await persistGrants()
+      return result
+    },
+
+    async remove(name) {
+      const result = await runtime.remove(name)
+      await persistGrants()
+      return result
+    },
+  }
+
+  /** Written after anything that changes one; a failure costs the next launch, not this one. */
+  async function persistGrants() {
+    try {
+      await grantStore.write(runtime.grants())
+    } catch {
+      // The extension is installed and granted for this run either way. Throwing
+      // here would turn a completed install into a reported failure.
+    }
   }
 }
 
@@ -1313,7 +1361,10 @@ if (!app.requestSingleInstanceLock()) {
     // Loaded after the window exists, and awaited by nobody: an extension that
     // is slow to import must not hold up the app starting, and one that throws
     // is reported against itself rather than taken as a failure to launch.
-    extensions?.startAll()
+    // `.catch` because nobody awaits this: an unhandled rejection here is a
+    // process-level warning with no owner, and on a strict runtime it is a
+    // crash at launch caused by an extension.
+    extensions?.startAll().catch((error) => console.warn('[extensions] did not start:', error?.message ?? error))
 
     const launchLink = deepLinkFromArgv(process.argv)
     if (launchLink) openDeepLink(launchLink)

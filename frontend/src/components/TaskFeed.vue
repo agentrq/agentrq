@@ -34,7 +34,8 @@
       @select="onContextMenuSelect"
     />
 
-    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" @close="extensions.dismiss" />
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value"
+                       @action="onExtensionAction" @close="extensions.dismiss" />
 
     <!-- Action Bar moved to parent for better layout consistency -->
 
@@ -629,13 +630,39 @@ async function onDeleteConfirm() {
   }
 }
 
+/** Which right-click the rows on screen belong to. */
+let contextMenuRequest = 0;
+
 async function openContextMenu(event, task) {
   contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+  // Cleared first. The rows still held were decided for the *previous* task, so
+  // leaving them up means a row whose `when(task)` said no about this one is on
+  // screen and clickable until the bridge answers.
+  extensionItems.value = [];
+
+  const request = (contextMenuRequest += 1);
   // The built-in items are already on screen; the extension rows arrive when
   // the main process has run each one's `when(task)`. A bridge that is slow or
   // broken costs nothing here, because `entriesFor` answers with an empty list
   // rather than throwing — right-click must keep working regardless.
-  extensionItems.value = await extensions.entriesFor('task-menu', task);
+  const entries = await extensions.entriesFor('task-menu', task);
+  // A second right-click while this was in flight owns the menu now, and a slow
+  // answer for the task before it must not land on top of the new one.
+  if (request === contextMenuRequest) extensionItems.value = entries;
+}
+
+/**
+ * A button inside an extension's panel, handed back to whoever drew it.
+ *
+ * The action is never interpreted here — the entry that produced the view is
+ * asked again with the action alongside the task, which is what makes a button
+ * in the vocabulary mean anything at all.
+ */
+function onExtensionAction(action) {
+  const panel = extensions.panel.value;
+  const task = contextMenu.value.task;
+  if (!panel || !task) return;
+  extensions.invoke({ owner: panel.owner, id: panel.id, surface: 'task-menu' }, { ...task, action });
 }
 
 function closeContextMenu() {

@@ -164,7 +164,10 @@ export function createRuntime({
           loaded: loaded.has(installation.name),
           failures: installation.failures ?? 0,
           source: installation.sourceLabel ?? '',
-          linked: installation.source?.kind === 'local',
+          // What was recorded, not what the source kind implies: a folder can
+          // be linked or copied, and only the linked one changes underneath the
+          // app.
+          linked: installation.linked ?? installation.source?.kind === 'local',
           grant: broker.grantFor(installation.name),
           contributes: Object.fromEntries(contributions),
         }

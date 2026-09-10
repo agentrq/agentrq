@@ -489,6 +489,53 @@ describe('reconcile', () => {
     expect(result.problems[0].reason).toBe('The call failed.')
   })
 
+  /**
+   * The records file is the only thing that knows what was created, but it is
+   * not worth taking the app down for.
+   *
+   * `reconcile` is called from `startAll`, which runs unawaited at launch — an
+   * exception here was an unhandled rejection and every extension after the
+   * failing one never loaded.
+   */
+  it('warns rather than throwing when the records cannot be written', async () => {
+    const fake = fakeSupervisor()
+    const logger = { warn: vi.fn() }
+    const schedules = createSchedules({
+      call: asCall(fake),
+      store: {
+        read: async () => ({}),
+        write: async () => {
+          throw new Error('EROFS: read-only file system')
+        },
+      },
+      logger,
+    })
+
+    const result = await schedules.reconcile('standup', [taskEntry()])
+
+    expect(result.created).toEqual(['nightly'])
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('could not write'), 'EROFS: read-only file system')
+  })
+
+  it('says something about a write that failed without a message', async () => {
+    const fake = fakeSupervisor()
+    const logger = { warn: vi.fn() }
+    const schedules = createSchedules({
+      call: asCall(fake),
+      store: {
+        read: async () => ({}),
+        write: async () => {
+          throw 'EROFS' // eslint-disable-line no-throw-literal
+        },
+      },
+      logger,
+    })
+
+    await schedules.reconcile('standup', [taskEntry()])
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'EROFS')
+  })
+
   it('reports what could not be created, and keeps going', async () => {
     const fake = fakeSupervisor({
       createTask: async () => ({ ok: false, reason: 'This extension may not call "createTask".' }),

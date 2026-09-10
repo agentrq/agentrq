@@ -51,7 +51,7 @@ export function reasonFrom(error) {
 }
 
 /** What an installation records. Desktop-local; nothing about this is on a server. */
-function record(manifest, source, pin, { enabled = true } = {}) {
+function record(manifest, source, pin, { enabled = true, linked = false } = {}) {
   return {
     name: manifest.name,
     version: manifest.version,
@@ -60,9 +60,26 @@ function record(manifest, source, pin, { enabled = true } = {}) {
     pin,
     manifest,
     enabled,
+    // Recorded rather than inferred from the source kind. A local folder can be
+    // *linked* — the user's own working copy, which an uninstall must not
+    // delete — or copied into place, which an uninstall must delete or the
+    // directory outlives every trace of the extension that owned it.
+    linked,
     failures: 0,
     installedAt: null,
   }
+}
+
+/**
+ * Whether an installation's directory belongs to the user rather than to us.
+ *
+ * Falls back to the source kind for records written before `linked` was kept,
+ * and errs towards *not* deleting: every local install made until now was a
+ * linked folder, and removing somebody's working copy is unrecoverable in a way
+ * that a leftover directory is not.
+ */
+function isLinked(installation) {
+  return installation?.linked ?? installation?.source?.kind === 'local'
 }
 
 /**
@@ -117,15 +134,22 @@ export function createInstaller({
   claimedKeys = () => [],
 }) {
   let state = null
+  /** Shared, so two callers arriving together cannot each read and overwrite. */
+  let reading = null
 
   async function load() {
     if (state) return state
-    try {
-      const raw = await store.read()
-      state = { installations: Array.isArray(raw?.installations) ? raw.installations : [] }
-    } catch {
-      state = { installations: [] }
+    if (!reading) {
+      reading = (async () => {
+        try {
+          const raw = await store.read()
+          state = { installations: Array.isArray(raw?.installations) ? raw.installations : [] }
+        } catch {
+          state = { installations: [] }
+        }
+      })()
     }
+    await reading
     return state
   }
 
@@ -208,7 +232,7 @@ export function createInstaller({
         const parsed = parseManifest(manifestSource)
         if (!parsed.ok) return { ok: false, reason: parsed.reason }
 
-        return commit(parsed.manifest, source, pinFor(source), source.path)
+        return commit(parsed.manifest, source, pinFor(source), source.path, { linked: true })
       }
 
       const staged = await stage(source)
@@ -228,7 +252,11 @@ export function createInstaller({
         return { ok: false, reason: `Could not install into ${target}: ${reasonFrom(error)}` }
       }
 
-      return commit(staged.manifest, source, pinFor(source, staged), target)
+      // The staging directory goes whether or not this worked. `move` takes the
+      // unpacked tree out of it and leaves the rest — for a release, the
+      // downloaded archive — sitting in the system temp directory for good.
+      await discard(staged.temp)
+      return commit(staged.manifest, source, pinFor(source, staged), target, { linked: false })
     },
 
     /**
@@ -266,7 +294,11 @@ export function createInstaller({
         return { ok: false, reason: `Could not update ${name}: ${reasonFrom(error)}` }
       }
 
-      return commit(staged.manifest, source, pinFor(source, staged), target, { enabled: existing.enabled })
+      await discard(staged.temp)
+      return commit(staged.manifest, source, pinFor(source, staged), target, {
+        enabled: existing.enabled,
+        linked: false,
+      })
     },
 
     /** Stop loading it, without removing anything. */
@@ -295,7 +327,7 @@ export function createInstaller({
       const installation = find(name)
       if (!installation) return { ok: false, reason: `${name} is not installed.` }
 
-      if (installation.source?.kind !== 'local') {
+      if (!isLinked(installation)) {
         try {
           await remove(dirFor(name))
         } catch (error) {

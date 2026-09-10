@@ -2,7 +2,7 @@
   "name": "task-stats",
   "displayName": "Task Stats",
   "version": "1.0.0",
-  "description": "Adds a right-click item to any task showing its age, word count and how many messages it has.",
+  "description": "Adds a right-click item to any task showing its age, the length of its description and how long it has been in its current state.",
   "license": "MIT",
   "engines": { "agentrq": ">=0.5" },
   "provides": { "ui": ["task-menu"] },
