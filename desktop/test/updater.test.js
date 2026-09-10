@@ -8,6 +8,8 @@ import {
   describeUpdateError,
   remedyForUpdateError,
   INSTALL_COMMAND,
+  INSTALL_SCRIPT_COMMAND,
+  canInstallViaScript,
   shouldAnnounce,
   updaterDisabledReason,
 } from '../src/main/updater.js'
@@ -143,7 +145,9 @@ describe('createUpdater', () => {
 
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     expect(setTimer).toHaveBeenCalledWith(expect.any(Function), UPDATE_CHECK_INTERVAL_MS)
-    expect(UPDATE_CHECK_INTERVAL_MS).toBe(6 * 60 * 60 * 1000)
+    // Fifteen minutes: a release should reach a running app the same session
+    // it ships, not six hours later.
+    expect(UPDATE_CHECK_INTERVAL_MS).toBe(15 * 60 * 1000)
   })
 
   it('keeps checking when the timer fires', () => {
@@ -356,5 +360,126 @@ describe('createUpdater', () => {
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledOnce()
     // Leaving a six-hour interval armed would keep the test process alive.
     updater.stop()
+  })
+})
+
+describe('canInstallViaScript', () => {
+  it('is available where install.sh runs', () => {
+    expect(canInstallViaScript('darwin')).toBe(true)
+    expect(canInstallViaScript('linux')).toBe(true)
+  })
+
+  it('is not available on Windows', () => {
+    // install.sh refuses Windows by design — the NSIS installer and
+    // electron-updater already handle it — so a button here would only fail.
+    expect(canInstallViaScript('win32')).toBe(false)
+  })
+})
+
+describe('installViaScript', () => {
+  /** An updater with a spawn we can inspect. */
+  function withSpawn({ platform = 'darwin', spawn = vi.fn(() => ({ unref: vi.fn() })) } = {}) {
+    const updater = createUpdater({
+      autoUpdater: fakeAutoUpdater(),
+      isPackaged: true,
+      onStatus: () => {},
+      spawn,
+      platform,
+      setTimer: vi.fn(),
+      clearTimer: vi.fn(),
+    })
+    return { updater, spawn }
+  }
+
+  it('runs the installer detached, so it survives the app it closes', () => {
+    // The installer's first act is to quit this app and wait for the process
+    // to go. A child sharing our lifetime would be killed by the very thing it
+    // just did, halfway through replacing the application bundle.
+    const unref = vi.fn()
+    const spawn = vi.fn(() => ({ unref }))
+    const { updater } = withSpawn({ spawn })
+
+    expect(updater.installViaScript()).toEqual({ ok: true })
+
+    const [command, args, options] = spawn.mock.calls[0]
+    expect(command).toBe('/bin/sh')
+    expect(args).toEqual(['-c', INSTALL_SCRIPT_COMMAND])
+    expect(options.detached).toBe(true)
+    expect(options.stdio).toBe('ignore')
+    expect(unref).toHaveBeenCalledOnce()
+  })
+
+  it('quits the running app and reopens it', () => {
+    // install.sh refuses to replace a bundle that is running, and does not
+    // relaunch on its own — it prints "Launch it with: open -a AgentRQ".
+    expect(INSTALL_SCRIPT_COMMAND).toContain('--quit')
+    expect(INSTALL_SCRIPT_COMMAND).toContain('open -a AgentRQ')
+    // Chained with && so a failed install does not reopen a broken bundle.
+    expect(INSTALL_SCRIPT_COMMAND).toContain('&& open -a AgentRQ')
+  })
+
+  it('refuses on a platform the installer does not support', () => {
+    const { updater, spawn } = withSpawn({ platform: 'win32' })
+
+    expect(updater.installViaScript().ok).toBe(false)
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('refuses when no spawn was provided', () => {
+    const updater = createUpdater({
+      autoUpdater: fakeAutoUpdater(),
+      isPackaged: true,
+      onStatus: () => {},
+      platform: 'darwin',
+      setTimer: vi.fn(),
+      clearTimer: vi.fn(),
+    })
+
+    expect(updater.installViaScript().ok).toBe(false)
+  })
+
+  it('reports a spawn that fails rather than throwing', () => {
+    const spawn = vi.fn(() => {
+      throw new Error('EPERM')
+    })
+    const { updater } = withSpawn({ spawn })
+
+    const result = updater.installViaScript()
+
+    expect(result.ok).toBe(false)
+    expect(updater.state.status).toBe(UpdateStatus.Error)
+    // The command is still offered, so the user has a way through by hand.
+    expect(updater.state.remedy).toBe(INSTALL_COMMAND)
+  })
+
+  it('tells the banner whether this route exists', () => {
+    expect(withSpawn({ platform: 'darwin' }).updater.state.canInstallViaScript).toBe(true)
+    expect(withSpawn({ platform: 'win32' }).updater.state.canInstallViaScript).toBe(false)
+  })
+})
+
+describe('what the renderer is told', () => {
+  it('carries canInstallViaScript on every published status', () => {
+    // The banner decides on this, and it only ever sees what publish sends —
+    // reading it from `state` instead would leave the renderer blind.
+    const onStatus = vi.fn()
+    const auto = fakeAutoUpdater()
+    const updater = createUpdater({
+      autoUpdater: auto,
+      isPackaged: true,
+      onStatus,
+      spawn: vi.fn(() => ({ unref: vi.fn() })),
+      platform: 'darwin',
+      setTimer: vi.fn(),
+      clearTimer: vi.fn(),
+    })
+    updater.start()
+
+    auto.emit('update-available', { version: '1.2.0' })
+
+    const published = onStatus.mock.calls.at(-1)[0]
+    expect(published.canInstallViaScript).toBe(true)
+    expect(published.status).toBe(UpdateStatus.Available)
+    expect(published.version).toBe('1.2.0')
   })
 })

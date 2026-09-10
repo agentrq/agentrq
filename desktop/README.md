@@ -313,8 +313,15 @@ macOS build, and no amount of runtime code fixes that.
 ## Auto-update
 
 Updates come from this repository's GitHub Releases, published by the workflow
-in phase 7. The app checks at launch and every six hours, downloads in the
+in phase 7. The app checks at launch and every fifteen minutes, downloads in the
 background, and installs on quit if the user never acts on the prompt.
+
+The banner is **raised but never lowered** by a status change. It used to be
+recomputed on every one, so the next background check took it away with nobody
+having dismissed it — invisible at six hours, four times an hour at fifteen
+minutes. Only the user takes it down now, and a dismissal is remembered against
+the version it was for, so the same update does not ask again while a newer one
+still can.
 
 The prompt itself is **App.vue's existing "a new version is available" banner** —
 the one the browser build shows when a service worker is waiting. The desktop
@@ -326,9 +333,24 @@ neither, and the design system's ban on native modals is satisfied without
 inventing anything.
 
 Transient states go through the toast system instead: checking, up to date, and
-failures. A background check that finds nothing stays **silent** — six-hourly
+failures. A background check that finds nothing stays **silent** — quarter-hourly
 "you are up to date" toasts would be pure noise — while the same answer to a
 question asked from the menu is reported, because someone is waiting for it.
+
+**The installer route.** An unsigned macOS build can never install what it
+downloads: Squirrel.Mac validates the signature before swapping the bundle and
+refuses, so `quitAndInstall` is a dead end there. For those builds the banner
+offers the one-command installer instead — the same `install.sh` the docs tell
+people to run by hand — passing `--quit` so it closes the app it is replacing,
+and appending `open -a AgentRQ` because the installer deliberately stops short
+of relaunching.
+
+It is spawned **detached**, and that is the detail that matters: the installer's
+first act is to quit this app and wait for the process to disappear, so a child
+sharing our lifetime would be killed by the very thing it just did, halfway
+through replacing the application. Windows is excluded because `install.sh`
+refuses it by design — the NSIS installer and electron-updater already work
+there.
 
 **Updates are hard-disabled when the app is unpackaged**, so `make dev` never
 reaches the update path. Asking from the menu in a development build says so

@@ -142,6 +142,15 @@ contextBridge.exposeInMainWorld('agentrq', {
     installNow: () => ipcRenderer.invoke('agentrq:update:install'),
 
     /**
+     * Update by running the one-command installer instead.
+     *
+     * For the builds that cannot replace themselves — an unsigned macOS app,
+     * where Squirrel.Mac refuses to swap the bundle. The installer quits this
+     * app, installs, and reopens it, so nothing after this resolves.
+     */
+    installViaScript: () => ipcRenderer.invoke('agentrq:update:install-via-script'),
+
+    /**
      * Called on every change of update state. Only the state crosses the
      * bridge — never the IPC event object.
      *

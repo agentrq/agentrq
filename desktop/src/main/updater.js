@@ -16,8 +16,15 @@
  * is testable in plain Node with no Electron and no network.
  */
 
-/** Six hours: frequent enough to matter, rare enough to be invisible. */
-export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+/**
+ * Fifteen minutes.
+ *
+ * Short enough that a release reaches a running app the same session it ships,
+ * which is the point: an app left open for days used to sit six hours behind a
+ * fix. The check costs one request against GitHub's release metadata and, when
+ * nothing has changed, says nothing at all — see shouldAnnounce.
+ */
+export const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000
 
 export const UpdateStatus = {
   Idle: 'idle',
@@ -54,6 +61,33 @@ const UNSIGNED = /code signature|not signed|SQRLUpdater|codesign/i
  * Published from the agentrq-static repository (`src/install.sh`).
  */
 export const INSTALL_COMMAND = 'curl -fsSL https://agentrq.com/install.sh | sh'
+
+/**
+ * The same installer, run for the user instead of shown to them, with the two
+ * arguments a running app needs.
+ *
+ * `--quit` because the installer refuses to replace a bundle that is currently
+ * running: it closes the app itself and waits for the process to go. And the
+ * relaunch is appended here because the installer deliberately does not do it
+ * — it prints "Launch it with: open -a AgentRQ" and stops, which is right for
+ * someone at a terminal and wrong for someone who just pressed a button.
+ *
+ * Chained with `&&`, so a failed install leaves the old app in place rather
+ * than reopening whatever is left of it.
+ */
+export const INSTALL_SCRIPT_COMMAND =
+  'curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit && open -a AgentRQ'
+
+/**
+ * Whether the one-command installer can run here at all.
+ *
+ * macOS and Linux only: install.sh refuses Windows by design, where the NSIS
+ * installer and electron-updater already handle this properly. Offering a
+ * button that the script would refuse is worse than not offering one.
+ */
+export function canInstallViaScript(platform) {
+  return platform === 'darwin' || platform === 'linux'
+}
 
 /**
  * Turn an updater failure into something worth showing a person.
@@ -114,6 +148,8 @@ export function shouldAnnounce(status, { manual }) {
  * @param {typeof setInterval} [deps.setTimer]
  * @param {typeof clearInterval} [deps.clearTimer]
  * @param {{ warn: Function }} [deps.logger]
+ * @param {(cmd: string, args: string[], opts: object) => {unref?: Function}} [deps.spawn]
+ * @param {string} [deps.platform]
  */
 export function createUpdater({
   autoUpdater,
@@ -122,6 +158,8 @@ export function createUpdater({
   setTimer = setInterval,
   clearTimer = clearInterval,
   logger = console,
+  spawn = null,
+  platform = process.platform,
 }) {
   const disabledReason = updaterDisabledReason({ isPackaged })
 
@@ -143,6 +181,10 @@ export function createUpdater({
       version,
       manual,
       announce: shouldAnnounce(next, { manual }),
+      // Carried on every status, not only read from `state`: this is what the
+      // banner uses to decide whether an 'available' update is worth offering,
+      // and it only ever sees what is published here.
+      canInstallViaScript: canInstallViaScript(platform) && Boolean(spawn),
     })
   }
 
@@ -216,13 +258,64 @@ export function createUpdater({
       return true
     },
 
+    /**
+     * Update by running the one-command installer, for the builds that cannot
+     * replace themselves.
+     *
+     * An unsigned macOS build is the case this exists for: Squirrel.Mac checks
+     * the signature before swapping the bundle and refuses, so quitAndInstall
+     * above can never succeed and the only route left is the installer that
+     * replaces the bundle wholesale.
+     *
+     * **Detached, deliberately.** The installer's first act is to quit this
+     * app and wait for the process to disappear — so a child sharing our
+     * lifetime would be killed by the very thing it just did, halfway through
+     * replacing the application. `detached` with `unref()` puts it in its own
+     * process group and lets the parent exit without it, which is what makes
+     * this safe rather than a way to destroy an installation.
+     *
+     * stdio is discarded for the same reason: there is nothing left to read it
+     * once the app has gone.
+     */
+    installViaScript() {
+      if (!canInstallViaScript(platform)) {
+        return { ok: false, reason: 'The installer does not support this platform' }
+      }
+      if (!spawn) {
+        return { ok: false, reason: 'Updates cannot be installed from here' }
+      }
+
+      try {
+        const child = spawn('/bin/sh', ['-c', INSTALL_SCRIPT_COMMAND], {
+          detached: true,
+          stdio: 'ignore',
+        })
+        child?.unref?.()
+        return { ok: true }
+      } catch (error) {
+        const reason = describeUpdateError(error)
+        logger.warn?.('installer failed to start:', error)
+        publish(UpdateStatus.Error, reason, INSTALL_COMMAND)
+        return { ok: false, reason }
+      }
+    },
+
     stop() {
       if (timer !== null) clearTimer(timer)
       timer = null
     },
 
     get state() {
-      return { status, detail, remedy, version, enabled: !disabledReason }
+      return {
+        status,
+        detail,
+        remedy,
+        version,
+        enabled: !disabledReason,
+        // What the banner needs to choose a button: whether the app can
+        // replace itself, or has to shell out to the installer to do it.
+        canInstallViaScript: canInstallViaScript(platform) && Boolean(spawn),
+      }
     },
   }
 }

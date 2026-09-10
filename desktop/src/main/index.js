@@ -15,6 +15,7 @@ import {
   session,
   shell,
 } from 'electron'
+import { spawn } from 'node:child_process'
 import { readFile, writeFile, access } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -820,6 +821,10 @@ function registerIpc(getWindow) {
   ipcMain.handle('agentrq:update:get', () => updateState)
   ipcMain.handle('agentrq:update:check', () => updater?.checkNow() ?? { ok: false, reason: 'Updater unavailable' })
   ipcMain.handle('agentrq:update:install', () => updater?.installNow() ?? false)
+  ipcMain.handle(
+    'agentrq:update:install-via-script',
+    () => updater?.installViaScript() ?? { ok: false, reason: 'Updater unavailable' },
+  )
 
   ipcMain.handle('agentrq:theme:set', (_event, theme) => {
     currentTheme = theme
@@ -860,6 +865,10 @@ function registerIpc(getWindow) {
 function installUpdater() {
   updater = createUpdater({
     autoUpdater: electronUpdater.autoUpdater,
+    // The installer has to outlive the app it is replacing, so it is spawned
+    // detached — see installViaScript. Injected rather than imported so the
+    // whole path stays testable without spawning anything.
+    spawn,
     // The real guard: unpackaged means no release to compare against, and no
     // business replacing a development checkout with a downloaded build.
     isPackaged: app.isPackaged,

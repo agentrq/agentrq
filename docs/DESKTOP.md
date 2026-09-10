@@ -161,10 +161,17 @@ system.
 
 ## Auto-update
 
-The app checks for updates when it starts and every six hours after that, and
-downloads them quietly in the background. When one is ready you get the same
-banner the web app shows for a new version, with an **Update now** button.
+The app checks for updates when it starts and every fifteen minutes after that,
+and downloads them quietly in the background. When one is ready you get the same
+banner the web app shows for a new version, with an **Update now** button. The
+banner stays until you act on it or close it with the ✕ — a later check will not
+take it away, and dismissing it keeps it away until a newer version appears.
 Ignore it and the update installs the next time you quit.
+
+On a build that cannot replace itself — an unsigned macOS app, which Squirrel
+refuses to update — **Update now** runs the one-command installer for you
+instead: it closes the app, installs the new version, and reopens it. Nothing to
+copy into a terminal.
 
 **Check for Updates…** in the application menu asks immediately and tells you
 what it found. A background check that finds nothing stays silent.
