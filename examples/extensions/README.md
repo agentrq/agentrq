@@ -39,7 +39,8 @@ Extensions → Install from folder → examples/extensions/standup
 Linked means recorded rather than copied, so editing the folder edits the
 installed extension.
 
-`task-stats` works fully — it asks for nothing and reads only the task it is
+`task-stats` works fully — right-click any task and it is there under a divider,
+and clicking it opens a panel. It asks for nothing and reads only the task it is
 handed. `standup` and `digest` install, load and register their surfaces, but
 their MCP calls come back refused: the desktop app has no MCP transport of its
 own yet, so `ctx.mcp` answers with a reason rather than a result. Their pages

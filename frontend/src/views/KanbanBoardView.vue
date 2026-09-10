@@ -110,6 +110,8 @@
       @confirm="onMoveConfirm"
     />
 
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" @close="extensions.dismiss" />
+
     <!-- Task Context Menu -->
     <ContextMenu
       :show="contextMenu.show"
@@ -129,7 +131,9 @@ import { fetchTasks, updateTaskStatus, updateTaskOrder, moveTask, updateTaskAssi
 import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
-import { menuItemsFor } from '../composables/useTaskContextMenu';
+import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
+import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
+import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import LoadingState from '../components/LoadingState.vue';
 import MoveTaskModal from '../components/MoveTaskModal.vue';
 import ContextMenu from '../components/ContextMenu.vue';
@@ -417,13 +421,24 @@ function openTask(t) {
 const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
 
 // The same list TaskFeed reads. See useTaskContextMenu for why it is shared.
-const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task));
+// Fetched when the menu opens rather than held: one bridge call on a gesture
+// somebody just made, and an extension enabled a moment ago is on the next
+// right-click instead of after a reload.
+const extensionItems = ref([]);
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task, extensionItems.value));
+
+const extensions = useExtensionSurfaces();
 const showMoveModal = ref(false);
 const taskToMoveId = ref(null);
 const taskToMoveTitle = ref('');
 
-function openContextMenu(event, task) {
+async function openContextMenu(event, task) {
   contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+  // The built-in items are already on screen; the extension rows arrive when
+  // the main process has run each one's `when(task)`. A bridge that is slow or
+  // broken costs nothing here, because `entriesFor` answers with an empty list
+  // rather than throwing — right-click must keep working regardless.
+  extensionItems.value = await extensions.entriesFor('task-menu', task);
 }
 
 function closeContextMenu() {
@@ -433,6 +448,15 @@ function closeContextMenu() {
 function onContextMenuSelect(key) {
   const task = contextMenu.value.task;
   if (!task) return;
+
+  // Namespaced on the way in, so a built-in and an extension entry can never be
+  // confused however an author names theirs.
+  const parsed = parseSelection(key);
+  if (parsed.kind === 'extension') {
+    extensions.invoke({ owner: parsed.owner, id: parsed.id, surface: 'task-menu' }, task);
+    return;
+  }
+
   if (key === 'move') {
     taskToMoveId.value = task.id;
     taskToMoveTitle.value = task.title;

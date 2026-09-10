@@ -7,6 +7,7 @@ import { createBroker, permitsWorkspace } from '../../src/main/extensions/broker
 import { createHost } from '../../src/main/extensions/host.js'
 import { createInstaller } from '../../src/main/extensions/install.js'
 import { createSchedules } from '../../src/main/extensions/schedules.js'
+import { entriesFor, invokeEntry } from '../../src/main/extensions/surfaces.js'
 import { checkCompatibility, parseManifest } from '../../src/main/extensions/manifest.js'
 import { describeAsk, toGrant, validateGrant, SCOPE } from '../../../frontend/src/composables/useExtensionGrant.js'
 import { menuItemsFor, parseSelection } from '../../../frontend/src/composables/useTaskContextMenu.js'
@@ -165,6 +166,47 @@ describe('task-stats — the extension that asks for nothing', () => {
     expect(items[2].label).toBe('Task Stats')
     // Namespaced on the way in, so two extensions may both call theirs "stats".
     expect(parseSelection(items[2].key)).toEqual({ kind: 'extension', owner: 'task-stats', id: 'stats' })
+  })
+
+  // The whole path, with only the IPC hop as a function call: the host loads the
+  // real module, the main process serialises what it registered, the renderer's
+  // own composables build the menu and validate what comes back. This is the
+  // check that was missing when the feature shipped with its menu item
+  // registered in the main process and read by nobody.
+  it('reaches a task menu and back again, end to end', async () => {
+    const rig = harness()
+    await rig.install('task-stats')
+    const task = {
+      title: 'Ship it',
+      body: 'three words here',
+      status: 'ongoing',
+      createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+      messages: [{ text: 'one two' }],
+    }
+
+    // Main process: what crosses the bridge, with every function stripped.
+    const rows = entriesFor(rig.host.resolve('ui', task), 'task-menu', task)
+    expect(rows).toEqual([
+      { owner: 'task-stats', id: 'stats', surface: 'task-menu', label: 'Task Stats', order: 10 },
+    ])
+
+    // Renderer: the menu a person sees, and the key they click.
+    const items = menuItemsFor(task, rows)
+    expect(items.map((item) => item.label ?? '(divider)')).toEqual(['Move Task', '(divider)', 'Task Stats'])
+    const parsed = parseSelection(items[2].key)
+
+    // Main process again: run it. Renderer: validate and draw.
+    const result = await invokeEntry(rig.host.resolve('ui', task), { ...parsed, surface: 'task-menu' }, task)
+    const drawn = normaliseView(result.view)
+
+    expect(drawn.ok, drawn.reason).toBe(true)
+    expect(drawn.view.title).toContain('Ship it')
+    expect(drawn.view.nodes[0].items.map((row) => `${row.label}=${row.value}`)).toEqual([
+      'Age=2 hours',
+      'Messages=1',
+      'Words=5',
+      'Status=ongoing',
+    ])
   })
 
   it('draws a panel the renderer accepts, without touching a server', async () => {

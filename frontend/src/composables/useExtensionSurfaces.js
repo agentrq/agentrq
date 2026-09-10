@@ -1,0 +1,99 @@
+import { ref } from 'vue';
+
+import { normaliseView } from './useExtensionView';
+
+/**
+ * The renderer's half of an extension's contributions.
+ *
+ * Extensions register in the main process; this asks what they registered and
+ * runs one when somebody picks it. Nothing about an extension is held here — no
+ * function, no module, no state — because the renderer is on a privileged
+ * `app://` origin with a bridge to files, the clipboard and the shell, and
+ * third-party code beside that bridge would have the whole machine through an
+ * API built for this application's own UI.
+ *
+ * ## Fetched when the menu opens, not held in a store
+ *
+ * A right-click asks. That costs one bridge call on a gesture a person just
+ * made, and it means an extension enabled a moment ago is on the next menu
+ * rather than after a reload — which is the behaviour somebody who just
+ * installed something expects to see.
+ *
+ * ## Everything an extension draws goes through the renderer's own validator
+ *
+ * `normaliseView` is what decides an extension's page is drawable. It is applied
+ * here rather than in each component, so there is one place a spec can be
+ * refused and one place its reason comes from.
+ */
+
+export function useExtensionSurfaces({ bridge = globalThis.window?.agentrq?.extensions } = {}) {
+  // `entries` specifically, not the bridge itself: an older desktop build has an
+  // extensions bridge with only the catalogue on it, and treating that as
+  // present would call a method that is not there.
+  const available = Boolean(bridge?.entries);
+
+  /** What is on screen right now: a drawn view, or the reason there is not one. */
+  const panel = ref(null);
+  const error = ref('');
+  const busy = ref(false);
+
+  /**
+   * What extensions offer for this surface and this context.
+   *
+   * Answers with an empty list rather than throwing, on every failure path. A
+   * broken bridge must not be able to stop a task's own context menu opening —
+   * the built-in items are the ones somebody actually came for.
+   */
+  async function entriesFor(surface, context = {}) {
+    if (!available) return [];
+    try {
+      return (await bridge.entries(surface, context)) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Run one contribution and hold what it drew.
+   *
+   * Three outcomes, and they are deliberately distinct: a view to draw, an
+   * extension that did something and drew nothing, and a failure with a reason.
+   * Collapsing the middle one into either of the others would make a completed
+   * action look broken.
+   */
+  async function invoke(target, context = {}) {
+    if (!available) return;
+    busy.value = true;
+    error.value = '';
+    panel.value = null;
+
+    try {
+      const result = await bridge.invoke(target, context);
+      if (!result?.ok) {
+        error.value = result?.reason || 'That did not work.';
+        return;
+      }
+      if (!result.view) return;
+
+      const drawn = normaliseView(result.view);
+      if (!drawn.ok) {
+        // Named, because this is the extension author's mistake and the reason
+        // is written for them: "heading" misspelled, or a node type invented.
+        error.value = `${target.owner}: ${drawn.reason}`;
+        return;
+      }
+      panel.value = { ...drawn.view, owner: target.owner, id: target.id };
+    } catch (err) {
+      error.value = err?.message || 'That did not work.';
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  function dismiss() {
+    panel.value = null;
+    error.value = '';
+  }
+
+  return { available, panel, error, busy, entriesFor, invoke, dismiss };
+}

@@ -57,6 +57,7 @@ import { createSchedules } from './extensions/schedules.js'
 import { createConfigStore } from './extensions/config.js'
 import { createRuntime } from './extensions/runtime.js'
 import { claimedShortcuts } from './extensions/shortcuts.js'
+import { entriesFor, invokeEntry } from './extensions/surfaces.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -879,6 +880,17 @@ function registerIpc(getWindow) {
     (await extensions?.setEnabled(name, enabled)) ?? { ok: false, reason: 'Extensions are unavailable.' },
   )
 
+  ipcMain.handle('agentrq:extensions:entries', (_event, { surface, context } = {}) =>
+    extensions?.entries(surface ?? '', context ?? {}) ?? [],
+  )
+
+  ipcMain.handle('agentrq:extensions:invoke', async (_event, { target, context } = {}) =>
+    (await extensions?.invoke(target ?? {}, context ?? {})) ?? {
+      ok: false,
+      reason: 'Extensions are unavailable.',
+    },
+  )
+
   ipcMain.handle('agentrq:extensions:configure', async (_event, { name, values } = {}) =>
     (await extensions?.configure(name, values ?? {})) ?? { ok: false, reason: 'Extensions are unavailable.' },
   )
@@ -1059,6 +1071,25 @@ function buildExtensionRuntime() {
 
   return {
     ...runtime,
+
+    /**
+     * What is contributed to one surface, as messages rather than entries.
+     *
+     * The predicate runs here because it cannot run there: `when(task)` is a
+     * function in this process, and the renderer sends the task rather than
+     * receiving a function it could not call.
+     */
+    entries(surface, context) {
+      return entriesFor(host.resolve('ui', context), surface, context, {
+        onError: (owner, error) => console.warn(`[${owner}] failed while deciding a ${surface}:`, error?.message),
+      })
+    },
+
+    /** Run one of them, and answer with what it drew. */
+    invoke(target, context) {
+      return invokeEntry(host.resolve('ui', context), target, context)
+    },
+
     /** Keeps the shortcut check looking at what is actually installed. */
     async state() {
       installedNow = await installer.list()

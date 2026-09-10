@@ -34,6 +34,8 @@
       @select="onContextMenuSelect"
     />
 
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" @close="extensions.dismiss" />
+
     <!-- Action Bar moved to parent for better layout consistency -->
 
     <!-- Single List Area -->
@@ -137,7 +139,9 @@ import cronParser from 'cron-parser';
 import { deleteTask, respondToTask, updateTaskOrder, updateTaskStatus, sendPermissionVerdict, updateTaskAssignee, moveTask, fetchTasks, fetchTaskCounts } from '../api';
 import { useCron } from '../composables/useCron';
 import { taskDotClass } from '../composables/useTaskStatusStyle';
-import { menuItemsFor } from '../composables/useTaskContextMenu';
+import { menuItemsFor, parseSelection } from '../composables/useTaskContextMenu';
+import { useExtensionSurfaces } from '../composables/useExtensionSurfaces';
+import ExtensionViewPanel from './ExtensionViewPanel.vue';
 import DeleteModal from './DeleteModal.vue';
 import MoveTaskModal from './MoveTaskModal.vue';
 import ContextMenu from './ContextMenu.vue';
@@ -197,7 +201,13 @@ const contextMenu = ref({ show: false, x: 0, y: 0, task: null });
 // One list, shared with the board. It used to be written inline here and again
 // in KanbanBoardView, which meant an item added to one and not the other made
 // right-click do different things on two views of the same task.
-const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task));
+// Fetched when the menu opens rather than held: one bridge call on a gesture
+// somebody just made, and an extension enabled a moment ago is on the next
+// right-click instead of after a reload.
+const extensionItems = ref([]);
+const contextMenuItems = computed(() => menuItemsFor(contextMenu.value.task, extensionItems.value));
+
+const extensions = useExtensionSurfaces();
 
 const ongoingTasks = ref([]);
 const notStartedTasks = ref([]);
@@ -619,8 +629,13 @@ async function onDeleteConfirm() {
   }
 }
 
-function openContextMenu(event, task) {
+async function openContextMenu(event, task) {
   contextMenu.value = { show: true, x: event.clientX, y: event.clientY, task };
+  // The built-in items are already on screen; the extension rows arrive when
+  // the main process has run each one's `when(task)`. A bridge that is slow or
+  // broken costs nothing here, because `entriesFor` answers with an empty list
+  // rather than throwing — right-click must keep working regardless.
+  extensionItems.value = await extensions.entriesFor('task-menu', task);
 }
 
 function closeContextMenu() {
@@ -630,6 +645,15 @@ function closeContextMenu() {
 function onContextMenuSelect(key) {
   const task = contextMenu.value.task;
   if (!task) return;
+
+  // Namespaced on the way in, so a built-in and an extension entry can never be
+  // confused however an author names theirs.
+  const parsed = parseSelection(key);
+  if (parsed.kind === 'extension') {
+    extensions.invoke({ owner: parsed.owner, id: parsed.id, surface: 'task-menu' }, task);
+    return;
+  }
+
   if (key === 'move') {
     triggerMove(task);
   }

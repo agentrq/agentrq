@@ -200,6 +200,20 @@ ctx.ui.add({ id, surface, label, order, view, run, when })
 | `workspace-action` | The top of a workspace | `run(context)` |
 | `task-menu` | A task's right-click menu | `run(task)`, filtered by `when(task)` |
 
+`run` and `view` are the same thing under two names — an action produces a
+panel, a page produces a page — and either is accepted on any surface.
+
+**Your functions never leave the main process.** The renderer receives a
+*description* of an entry and asks this side to run it, which is what keeps
+third-party code away from a privileged origin that has a bridge to files, the
+clipboard and the shell. `when(task)` is evaluated there too: the renderer sends
+the task and receives the rows that apply to it.
+
+A `run` that throws becomes a refusal with your extension's name on it, shown
+where the panel would have been. A `run` that returns nothing draws no panel and
+reports no error — that is the shape for an action that did something other than
+display.
+
 `order` defaults to 100, and ties break on owner then id — so what the user sees
 never depends on which extension happened to load first.
 

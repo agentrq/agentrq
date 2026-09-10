@@ -172,6 +172,26 @@ contextBridge.exposeInMainWorld('agentrq', {
 
     /** Save its settings and reload it, so it sees them. */
     configure: (name, values) => ipcRenderer.invoke('agentrq:extensions:configure', { name, values }),
+
+    /**
+     * What extensions contribute to one surface, for this context.
+     *
+     * The context goes *out* rather than the entries coming *in*: an entry's
+     * `when(task)` is a function in the main process, and a function cannot
+     * cross the bridge. Sending the task is what lets a menu row decide whether
+     * it belongs on this particular task instead of every one of them.
+     *
+     * @param {'page'|'workspace-action'|'task-menu'} surface
+     * @returns {Promise<Array<{owner: string, id: string, label: string, order: number}>>}
+     */
+    entries: (surface, context = {}) => ipcRenderer.invoke('agentrq:extensions:entries', { surface, context }),
+
+    /**
+     * Run one, and get back what it wants drawn.
+     *
+     * @returns {Promise<{ok: boolean, view?: object|null, reason?: string}>}
+     */
+    invoke: (target, context = {}) => ipcRenderer.invoke('agentrq:extensions:invoke', { target, context }),
   },
 
   updates: {
