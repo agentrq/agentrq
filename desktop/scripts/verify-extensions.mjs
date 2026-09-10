@@ -23,6 +23,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from '../src/main/protocol.js'
 import { createHost } from '../src/main/extensions/host.js'
+import { createInstaller } from '../src/main/extensions/install.js'
+import { createBroker } from '../src/main/extensions/broker.js'
+import { createSchedules } from '../src/main/extensions/schedules.js'
+import { createConfigStore } from '../src/main/extensions/config.js'
+import { createRuntime } from '../src/main/extensions/runtime.js'
+import { readManifest } from '../src/main/extensions/fetch-source.js'
 import { entriesFor, invokeEntry } from '../src/main/extensions/surfaces.js'
 // The renderer's own modules, imported here rather than from inside the page: a
 // production bundle exposes no source paths, and these are plain functions with
@@ -102,13 +108,71 @@ setTimeout(() => {
   app.exit(3)
 }, 60000)
 
-app.whenReady().then(async () => {
-  // The real host, loading the real example off disk the way an install does.
-  const host = createHost({
-    load: () => import(pathToFileURL(join(EXAMPLE, 'index.js')).href),
-    readConfig: async () => ({}),
+/**
+ * The real runtime, with its three JSON files held in memory.
+ *
+ * Nothing is written to the app's own userData: a verification run must not be
+ * able to install something into whoever ran it.
+ */
+function buildRuntime() {
+  const memory = () => {
+    let value = null
+    return { read: async () => value, write: async (next) => { value = next } }
+  }
+
+  const installer = createInstaller({
+    fetchSource: async () => ({ ok: false, reason: 'this run only installs from a folder' }),
+    readManifest,
+    move: async () => {},
+    remove: async () => {},
+    makeTempDir: async () => '/tmp/unused',
+    dirFor: (name) => join(EXAMPLE, '..', name),
+    store: memory(),
   })
-  const started = await host.start({ name: 'task-stats', version: '1.0.0', enabled: true })
+
+  const broker = createBroker({
+    callWorkspace: async () => { throw new Error('no server in this run') },
+    callSupervisor: async () => { throw new Error('no server in this run') },
+  })
+
+  const configStore = createConfigStore({
+    store: memory(),
+    vault: { available: () => false, encrypt: (t) => t, decrypt: (t) => t },
+  })
+
+  const host = createHost({
+    // Byte for byte what src/main/index.js does.
+    load: (installation) => import(pathToFileURL(join(installation.dir, 'index.js')).href),
+    readConfig: (name) => configStore.resolve(name),
+    clientFor: (name) => broker.clientFor(name),
+  })
+
+  const schedules = createSchedules({
+    call: async () => { throw new Error('no server in this run') },
+    store: memory(),
+  })
+
+  const runtime = createRuntime({
+    installer,
+    host,
+    broker,
+    schedules,
+    configStore,
+    readManifest,
+    servers: () => ({ appVersion: app.getVersion() }),
+  })
+
+  return { runtime, host }
+}
+
+app.whenReady().then(async () => {
+  // The whole install, exactly as the button does it: read the folder, judge
+  // it, write the record, load the module. This is the half the unit tests
+  // reach and the earlier version of this script skipped.
+  const { runtime, host } = buildRuntime()
+  const inspected = await runtime.inspect(EXAMPLE)
+  const installed = await runtime.installLocal(EXAMPLE)
+  const started = { ok: installed.ok && !installed.loadFailure, reason: installed.reason ?? installed.loadFailure }
 
   registerExtensionHandlers(host)
   ipcMain.handle('agentrq:connection:get', () => ({ configured: true, serverUrl: 'http://localhost:3999', locked: true }))
@@ -139,7 +203,15 @@ app.whenReady().then(async () => {
   const results = []
   const record = (name, pass, detail) => results.push({ name, pass, detail })
 
-  record('the example loads', started.ok === true, JSON.stringify(started))
+  record('the folder reads as an extension', inspected.ok === true, String(inspected.reason ?? ''))
+  record('and it can run on this version', inspected.compatible === true, JSON.stringify(inspected.reasons ?? []))
+  record('installing it from the folder works', installed.ok === true, String(installed.reason ?? ''))
+  record('and the module loads', started.ok === true, String(started.reason ?? ''))
+  record(
+    'the row would say what it contributed',
+    JSON.stringify((await runtime.state())[0]?.contributes) === JSON.stringify({ ui: 1, shortcuts: 0, schedules: 0 }),
+    JSON.stringify((await runtime.state())[0] ?? null),
+  )
 
   const bridge = await win.webContents.executeJavaScript(
     "typeof window.agentrq?.extensions?.entries === 'function' && typeof window.agentrq?.extensions?.invoke === 'function'",
