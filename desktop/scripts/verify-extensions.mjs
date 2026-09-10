@@ -13,6 +13,14 @@
  * off disk, and the real IPC handlers. The only stubs are the connection screens
  * that would otherwise take the window, and there is no backend.
  *
+ * It then found a second bug that unit tests could not: a task on the board is a
+ * **Vue reactive proxy**, and `contextBridge` converts arguments as they enter
+ * the preload's world, refusing a Proxy — `An object could not be cloned.` The
+ * call rejected, the rejection was caught and turned into an empty list, and an
+ * installed, running extension contributed a row that never appeared. Every fake
+ * in every unit test passed a plain object, so nothing else could have caught
+ * it. The last two checks below are that bug, and they must stay.
+ *
  *   npm run build && npx electron scripts/verify-extensions.mjs
  */
 import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
@@ -98,6 +106,35 @@ const script = `(async () => {
 
   const rows = await bridge.entries('task-menu', task);
   return { task, rows };
+})()`
+
+/**
+ * The same request, made with a Vue reactive proxy instead of a plain object.
+ *
+ * This is what the board actually hands over, and it is the exact shape that
+ * used to fail. Kept as a check rather than a comment because the failure was
+ * silent: an empty list, no error anywhere, and an extension that looked
+ * installed and did nothing.
+ */
+const proxyScript = `(async () => {
+  // A bare Proxy rather than Vue's \`reactive\`, because a production bundle
+  // exposes no importable 'vue' — and it is the Proxy itself that is refused,
+  // which is what \`reactive\` returns.
+  const task = new Proxy({ id: 't1', title: 'Ship it', status: 'ongoing', messages: [] }, {});
+  const ask = async (value) => {
+    try {
+      return { ok: true, count: (await window.agentrq.extensions.entries('task-menu', value)).length };
+    } catch (error) {
+      return { ok: false, error: String(error) };
+    }
+  };
+
+  return {
+    // Raw, the way the board used to hand it over.
+    raw: await ask(task),
+    // Flattened, the way useExtensionSurfaces does before it calls the bridge.
+    flattened: await ask(JSON.parse(JSON.stringify(task))),
+  };
 })()`
 
 /** The second half of the round trip, once the page has told us what to run. */
@@ -253,6 +290,21 @@ app.whenReady().then(async () => {
     'and it says what it worked out',
     JSON.stringify(values) === JSON.stringify(['Age=2 hours', 'Messages=1', 'Words=5', 'Status=ongoing']),
     JSON.stringify(values),
+  )
+
+  // The regression check, in two halves. The first states the constraint that
+  // caused the bug; the second is the fix, and it is only meaningful because
+  // the first fails.
+  const proxy = await win.webContents.executeJavaScript(proxyScript)
+  record(
+    'a raw reactive task is still refused by the bridge',
+    proxy.raw.ok === false && String(proxy.raw.error).includes('could not be cloned'),
+    JSON.stringify(proxy.raw),
+  )
+  record(
+    'and flattening it the way the renderer does gets it across',
+    proxy.flattened.ok === true && proxy.flattened.count === 1,
+    JSON.stringify(proxy.flattened),
   )
 
   for (const { name, pass, detail } of results) {

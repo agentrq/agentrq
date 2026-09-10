@@ -181,6 +181,11 @@ contextBridge.exposeInMainWorld('agentrq', {
      * cross the bridge. Sending the task is what lets a menu row decide whether
      * it belongs on this particular task instead of every one of them.
      *
+     * **`context` must already be a plain object.** `contextBridge` converts
+     * arguments as they enter this world and refuses a Proxy outright, so a Vue
+     * reactive task rejects here before any code in this file runs — which is
+     * why the flattening lives in the caller and cannot be moved down.
+     *
      * @param {'page'|'workspace-action'|'task-menu'} surface
      * @returns {Promise<Array<{owner: string, id: string, label: string, order: number}>>}
      */

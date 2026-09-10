@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { useExtensionSurfaces } from '../src/composables/useExtensionSurfaces';
+import { plain, useExtensionSurfaces } from '../src/composables/useExtensionSurfaces';
 
 /**
  * The renderer's half. Two things are load-bearing here and both are about
@@ -21,7 +21,81 @@ afterEach(() => {
   delete window.agentrq;
 });
 
+/**
+ * The bug this file shipped with, and why the fix cannot live anywhere else.
+ *
+ * A task on the board is a Vue reactive proxy. `contextBridge` converts
+ * arguments on the way into the preload's world and refuses a Proxy outright,
+ * so the call rejected before any preload or main-process code ran — and the
+ * rejection was turned into an empty list. An installed, running extension
+ * contributed a menu row that never appeared, silently.
+ *
+ * Every fake in this file passes a plain object, which is exactly why nothing
+ * here caught it; `npm run verify:extensions` is what does now.
+ */
+describe('plain', () => {
+  it('flattens a proxy into something the bridge will accept', () => {
+    const task = new Proxy({ id: 't1', title: 'Ship it', messages: [{ text: 'one' }] }, {});
+
+    // Why this is needed at all.
+    expect(() => structuredClone(task)).toThrow();
+    expect(() => structuredClone(plain(task))).not.toThrow();
+    expect(plain(task)).toEqual({ id: 't1', title: 'Ship it', messages: [{ text: 'one' }] });
+  });
+
+  it('drops what could never cross anyway', () => {
+    expect(plain({ id: 't1', onClick: () => {}, missing: undefined })).toEqual({ id: 't1' });
+  });
+
+  it('gives up on a circular structure rather than throwing', () => {
+    const circular = { id: 't1' };
+    circular.self = circular;
+    expect(plain(circular)).toEqual({});
+  });
+
+  it('is an object for nothing at all', () => {
+    expect(plain(undefined)).toEqual({});
+    expect(plain(null)).toEqual({});
+  });
+});
+
 describe('entriesFor', () => {
+  it('sends a plain copy, not the reactive task it was handed', async () => {
+    const bridge = fakeBridge();
+    const surfaces = useExtensionSurfaces({ bridge });
+
+    await surfaces.entriesFor('task-menu', new Proxy({ id: 't1', title: 'Ship it' }, {}));
+    await surfaces.invoke({ owner: 'task-stats', id: 'stats' }, new Proxy({ id: 't1' }, {}));
+
+    expect(() => structuredClone(bridge.entries.mock.calls[0][1])).not.toThrow();
+    expect(() => structuredClone(bridge.invoke.mock.calls[0][1])).not.toThrow();
+  });
+
+  // Silence is what hid the original failure for three rounds of "it doesn't
+  // work" — an empty list and nothing anywhere saying why.
+  it('says something when the bridge refuses, rather than only returning nothing', async () => {
+    const logger = { warn: vi.fn() };
+    const surfaces = useExtensionSurfaces({
+      bridge: fakeBridge({ entries: vi.fn(async () => { throw new Error('An object could not be cloned.'); }) }),
+      logger,
+    });
+
+    expect(await surfaces.entriesFor('task-menu', {})).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('task-menu'), 'An object could not be cloned.');
+  });
+
+  it('has something to say about a failure that carried no message', async () => {
+    const logger = { warn: vi.fn() };
+    const surfaces = useExtensionSurfaces({
+      bridge: fakeBridge({ entries: vi.fn(async () => { throw 'gone'; }) }), // eslint-disable-line no-throw-literal
+      logger,
+    });
+
+    await surfaces.entriesFor('task-menu', {});
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.any(String), 'gone');
+  });
+
   it('asks the main process about this surface and this task', async () => {
     const bridge = fakeBridge();
     const surfaces = useExtensionSurfaces({ bridge });

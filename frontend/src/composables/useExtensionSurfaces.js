@@ -19,6 +19,23 @@ import { normaliseView } from './useExtensionView';
  * rather than after a reload — which is the behaviour somebody who just
  * installed something expects to see.
  *
+ * ## Anything sent across is flattened first, and it has to happen here
+ *
+ * This file shipped with a bug that no unit test could have caught. A task on
+ * the board is a **Vue reactive proxy**, and `contextBridge` converts arguments
+ * as they enter the preload's world — refusing a Proxy outright with `An object
+ * could not be cloned.` The call rejected, the rejection was turned into an
+ * empty list, and an installed, running extension contributed a menu row that
+ * silently never appeared.
+ *
+ * The flattening cannot be moved into the preload or the main process: the
+ * refusal happens on the way *in*, before either of them runs. The renderer is
+ * the last place that can still fix it, which is why it is here.
+ *
+ * The other half of that lesson is the logging. The empty list is still
+ * returned — a broken bridge must not stop a task's own menu opening — but it is
+ * no longer returned in silence.
+ *
  * ## Everything an extension draws goes through the renderer's own validator
  *
  * `normaliseView` is what decides an extension's page is drawable. It is applied
@@ -26,7 +43,27 @@ import { normaliseView } from './useExtensionView';
  * refused and one place its reason comes from.
  */
 
-export function useExtensionSurfaces({ bridge = globalThis.window?.agentrq?.extensions } = {}) {
+/**
+ * A structured-cloneable copy of whatever the caller handed over.
+ *
+ * JSON rather than Vue's `toRaw`, because `toRaw` only unwraps what Vue
+ * wrapped: an object holding a function, a `Map`, or a proxy from anywhere else
+ * is still refused. This drops whatever cannot cross instead of failing at the
+ * boundary, and what an extension is given is ordinary data by design.
+ */
+export function plain(value) {
+  try {
+    return JSON.parse(JSON.stringify(value ?? {}));
+  } catch {
+    // A circular structure, which no task has and no extension should be sent.
+    return {};
+  }
+}
+
+export function useExtensionSurfaces({
+  bridge = globalThis.window?.agentrq?.extensions,
+  logger = globalThis.console,
+} = {}) {
   // `entries` specifically, not the bridge itself: an older desktop build has an
   // extensions bridge with only the catalogue on it, and treating that as
   // present would call a method that is not there.
@@ -47,8 +84,11 @@ export function useExtensionSurfaces({ bridge = globalThis.window?.agentrq?.exte
   async function entriesFor(surface, context = {}) {
     if (!available) return [];
     try {
-      return (await bridge.entries(surface, context)) ?? [];
-    } catch {
+      return (await bridge.entries(surface, plain(context))) ?? [];
+    } catch (err) {
+      // Reported, then swallowed. Silence here is what hid the reactive-proxy
+      // failure: an installed extension contributed nothing and nothing said so.
+      logger?.warn?.(`[extensions] could not read ${surface} entries:`, err?.message ?? err);
       return [];
     }
   }
@@ -68,7 +108,7 @@ export function useExtensionSurfaces({ bridge = globalThis.window?.agentrq?.exte
     panel.value = null;
 
     try {
-      const result = await bridge.invoke(target, context);
+      const result = await bridge.invoke(target, plain(context));
       if (!result?.ok) {
         error.value = result?.reason || 'That did not work.';
         return;
