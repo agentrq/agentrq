@@ -288,7 +288,7 @@ app.whenReady().then(async () => {
   const values = (drawn.view?.nodes?.[0]?.items ?? []).map((r) => `${r.label}=${r.value}`)
   record(
     'and it says what it worked out',
-    JSON.stringify(values) === JSON.stringify(['Age=2 hours', 'Messages=1', 'Words=5', 'Status=ongoing']),
+    JSON.stringify(values) === JSON.stringify(['Age=2 hours', 'Words in the description=3', 'Status=ongoing']),
     JSON.stringify(values),
   )
 

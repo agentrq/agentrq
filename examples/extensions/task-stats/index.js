@@ -11,6 +11,22 @@
  * That screen is easy to get wrong in the direction that matters: an empty
  * permission list reads as safety, and the emptiest screen must not be the one
  * describing the least-restrained code.
+ *
+ * ## What asking for nothing costs, and why that is the lesson
+ *
+ * This counted messages, and always said one. The board's task list is a
+ * *summary*: the server sends the last message per task and nothing else, so
+ * `task.messages` has one element however long the thread is. Counting it was
+ * not a small bug — it was an extension reporting a number it had no way to
+ * know.
+ *
+ * The count is gone rather than fixed, because fixing it here is impossible:
+ * the real number needs `getTask`, which needs a permission this extension
+ * deliberately does not ask for. An extension that wants the thread has to say
+ * so at install; see `standup`, which does, and can therefore count.
+ *
+ * So the rule this example is really for: **describe what you were handed, not
+ * what you assume is behind it.**
  */
 
 export const name = 'task-stats'
@@ -47,6 +63,16 @@ export function wordCount(text) {
     .filter(Boolean).length
 }
 
+/** How long the task has been sitting in whatever state it is in. */
+export function describeStatus(task) {
+  const status = String(task?.status ?? '')
+  if (!status) return 'unknown'
+  // The assignee matters more than the status word on a board where both agents
+  // and people work: "ongoing" means something different for each.
+  const assignee = task?.assignee === 'human' ? 'a person' : task?.assignee === 'agent' ? 'an agent' : ''
+  return assignee ? `${status}, with ${assignee}` : status
+}
+
 /**
  * What the panel says about one task.
  *
@@ -54,23 +80,22 @@ export function wordCount(text) {
  * and what makes this extension work with no server involved at all.
  */
 export function statsFor(task, now = Date.now()) {
-  const messages = task?.messages ?? []
-  const words = wordCount(task?.body) + messages.reduce((total, message) => total + wordCount(message?.text), 0)
-
   return {
     title: `Stats for "${task?.title ?? 'this task'}"`,
     nodes: [
       { type: 'rows', items: [
         { type: 'row', label: 'Age', value: describeAge(task?.createdAt, now) },
-        { type: 'row', label: 'Messages', value: String(messages.length) },
-        { type: 'row', label: 'Words', value: String(words) },
-        { type: 'row', label: 'Status', value: String(task?.status ?? 'unknown') },
+        { type: 'row', label: 'Words in the description', value: String(wordCount(task?.body)) },
+        { type: 'row', label: 'Status', value: describeStatus(task) },
       ] },
-      // Said rather than left blank: a panel of zeroes on a task nobody has
-      // replied to looks broken, and one sentence is the difference.
-      messages.length === 0
-        ? { type: 'text', tone: 'muted', value: 'Nobody has replied to this task yet.' }
-        : { type: 'text', tone: 'muted', value: 'Counted from the task body and every message in the thread.' },
+      // Says where the numbers came from, which is the whole point: an
+      // extension that asks for nothing can describe the task it was handed and
+      // must not imply it knows anything more.
+      {
+        type: 'text',
+        tone: 'muted',
+        value: 'Worked out from the task itself. This extension asks for no permissions, so it cannot read the conversation.',
+      },
     ],
   }
 }

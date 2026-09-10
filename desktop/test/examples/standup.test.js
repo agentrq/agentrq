@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest'
 
 import {
-  DEFAULT_HOURS,
+  DEFAULT_MEMORY,
+  STATES,
   apply,
   buildPage,
+  buildThread,
   collect,
-  hoursFrom,
-  movedSince,
-  toneFor,
+  memoryName,
+  readConversation,
+  readWorkspace,
+  thread,
 } from '../../../examples/extensions/standup/index.js'
 import { parseManifest } from '../../src/main/extensions/manifest.js'
 import { checkShortcuts } from '../../src/main/extensions/shortcuts.js'
@@ -15,25 +18,59 @@ import { normaliseView } from '../../../frontend/src/composables/useExtensionVie
 import manifest from '../../../examples/extensions/standup/agentrq-extension.json'
 
 /**
- * The workspace case: two tools, one config field, a page and a shortcut.
+ * The workspace case, and the mistake it was built on.
  *
- * The test that earns its place here is the last one — every view this extension
- * produces is run through the renderer's own validator. An extension that
- * describes a page the renderer refuses to draw is a bug nobody finds until
- * somebody installs it, and the vocabulary is closed precisely so that this can
- * be checked ahead of time.
+ * This example first asked for `listTasks`, which the workspace MCP server does
+ * not have and deliberately never will — an agent connected to a workspace can
+ * act on the task it was given, not enumerate the board. The first test below is
+ * the one that would have caught it: every tool the manifest names is checked
+ * against the server's real list.
  */
 
-const NOW = Date.parse('2026-03-10T12:00:00Z')
-const ago = (hours) => new Date(NOW - hours * 3600_000).toISOString()
+/** Exactly what `backend/internal/controller/mcp/server.go` registers. */
+const WORKSPACE_TOOLS = [
+  'createTask',
+  'updateTaskStatus',
+  'reply',
+  'downloadAttachment',
+  'getWorkspace',
+  'getTask',
+  'publishEvent',
+  'loadMemory',
+  'saveMemory',
+  'deleteMemory',
+  'elicit',
+]
 
-/** A workspace server that answers the way the broker hands answers back. */
+/** The shape `getWorkspace` answers with — prose, not JSON. */
+const workspaceText = (over = {}) =>
+  [
+    `Workspace: ${over.name ?? 'Backend'}`,
+    `Description: ${over.description ?? 'the API'}`,
+    '',
+    'Task Statistics:',
+    `- Not Started: ${over.notstarted ?? 3}`,
+    `- Ongoing: ${over.ongoing ?? 1}`,
+    `- Completed: ${over.completed ?? 12}`,
+    `- Rejected: ${over.rejected ?? 0}`,
+    `- Blocked: ${over.blocked ?? 2}`,
+  ].join('\n')
+
+/** The shape `getTask` answers with when asked for the conversation. */
+const taskText = ({ total = 9, last = 'Asked on Tuesday' } = {}) =>
+  `Task details:\nID: t1\nTitle: Stuck\nStatus: blocked\nDetails: body\n\nConversation:\n${JSON.stringify({
+    messages: [{ id: 'm1', sender: 'human', text: last }],
+    total,
+    cursor: 1,
+  })}`
+
 function fakeWorkspace(over = {}) {
   const calls = []
-  const wrap = (payload) => ({ ok: true, result: { content: [{ text: JSON.stringify(payload) }] } })
+  const wrap = (text) => ({ ok: true, result: { content: [{ text }] } })
   const answers = {
-    listTasks: () => wrap({ tasks: [] }),
-    getTask: () => wrap({ task: { messages: [] } }),
+    getWorkspace: () => wrap(workspaceText()),
+    loadMemory: () => wrap('# memory\n\nnotes'),
+    getTask: () => wrap(taskText()),
     ...over,
   }
   return {
@@ -45,13 +82,29 @@ function fakeWorkspace(over = {}) {
   }
 }
 
-describe('the manifest', () => {
-  it('is one, and asks only for the workspace', () => {
-    const { ok, manifest: parsed } = parseManifest(manifest)
+const ctxWith = (fake, config = {}) => ({ config, mcp: { workspace: fake.workspace } })
 
-    expect(ok).toBe(true)
-    expect(parsed.mcp.workspace).toEqual(['listTasks', 'getTask'])
+describe('the manifest', () => {
+  it('is one', () => {
+    expect(parseManifest(manifest).ok).toBe(true)
+  })
+
+  // The test that would have caught the original bug. A manifest can name any
+  // tool it likes; only a real list says whether it exists.
+  it('asks only for tools the workspace server actually has', () => {
+    const { manifest: parsed } = parseManifest(manifest)
+
+    for (const tool of parsed.mcp.workspace) {
+      expect(WORKSPACE_TOOLS, `"${tool}" is not on the workspace server`).toContain(tool)
+    }
     expect(parsed.mcp.supervisor).toEqual([])
+  })
+
+  it('does not ask for listTasks, which does not exist there', () => {
+    // Stated on its own, because this is the specific thing that was wrong and
+    // the specific thing that must not come back.
+    expect(parseManifest(manifest).manifest.mcp.workspace).not.toContain('listTasks')
+    expect(WORKSPACE_TOOLS).not.toContain('listTasks')
   })
 
   it('claims a key an extension is allowed to have', () => {
@@ -60,198 +113,244 @@ describe('the manifest', () => {
   })
 })
 
-describe('hoursFrom', () => {
-  it('falls back rather than looking at nothing', () => {
-    expect(hoursFrom(undefined)).toBe(DEFAULT_HOURS)
-    expect(hoursFrom({ since: '' })).toBe(DEFAULT_HOURS)
-    expect(hoursFrom({ since: 'soon' })).toBe(DEFAULT_HOURS)
-  })
-
-  // A negative window silently lists nothing while looking like it worked.
-  it('refuses a window that would list nothing', () => {
-    expect(hoursFrom({ since: -3 })).toBe(DEFAULT_HOURS)
-    expect(hoursFrom({ since: 0 })).toBe(DEFAULT_HOURS)
-  })
-
-  it('takes a number a person typed, up to a fortnight', () => {
-    expect(hoursFrom({ since: '8' })).toBe(8)
-    expect(hoursFrom({ since: 10_000 })).toBe(24 * 14)
+describe('memoryName', () => {
+  it('reads the index unless told otherwise', () => {
+    expect(memoryName(undefined)).toBe(DEFAULT_MEMORY)
+    expect(memoryName({ memory: '  ' })).toBe(DEFAULT_MEMORY)
+    expect(memoryName({ memory: 'deploys.md' })).toBe('deploys.md')
   })
 })
 
-describe('movedSince', () => {
-  const cutoff = NOW - 24 * 3600_000
+describe('readWorkspace', () => {
+  it('reads the name, the description and every count', () => {
+    const read = readWorkspace(workspaceText())
 
-  it('prefers when a task last changed over when it was made', () => {
-    expect(movedSince({ createdAt: ago(100), updatedAt: ago(2) }, cutoff)).toBe(true)
-    expect(movedSince({ createdAt: ago(2) }, cutoff)).toBe(true)
+    expect(read.name).toBe('Backend')
+    expect(read.description).toBe('the API')
+    expect(read.counts).toEqual({ blocked: 2, ongoing: 1, notstarted: 3, completed: 12, rejected: 0 })
   })
 
-  it('leaves out what has not moved', () => {
-    expect(movedSince({ updatedAt: ago(48) }, cutoff)).toBe(false)
-    expect(movedSince({}, cutoff)).toBe(false)
+  // A workspace with no description is ordinary, and a parser that needs one
+  // would break on it.
+  it('holds up when a field is missing or the text is not what it expected', () => {
+    expect(readWorkspace('Workspace: Backend').description).toBe('')
+    expect(readWorkspace('').name).toBe('')
+    expect(readWorkspace(undefined).counts.ongoing).toBe(0)
+    expect(readWorkspace('nothing like the real answer').counts).toEqual({
+      blocked: 0, ongoing: 0, notstarted: 0, completed: 0, rejected: 0,
+    })
+  })
+
+  it('knows every state the server reports', () => {
+    expect(STATES).toEqual(['blocked', 'ongoing', 'notstarted', 'completed', 'rejected'])
   })
 })
 
-describe('toneFor', () => {
-  it('reads a status as what it means rather than as a colour', () => {
-    expect(toneFor('blocked')).toBe('critical')
-    expect(toneFor('completed')).toBe('positive')
-    expect(toneFor('ongoing')).toBe('warning')
-    expect(toneFor('notstarted')).toBe('default')
+describe('readConversation', () => {
+  // The bug `task-stats` had, in the place it can actually be got right:
+  // `total` is the thread's length, and the returned array is a page of it.
+  it('reads the thread length from total, not from what was returned', () => {
+    const read = readConversation(taskText({ total: 9 }))
+
+    expect(read.total).toBe(9)
+    expect(read.last).toBe('Asked on Tuesday')
+  })
+
+  it('falls back to what it was given when there is no total', () => {
+    const text = `Conversation:\n${JSON.stringify({ messages: [{ text: 'one' }, { text: 'two' }] })}`
+    expect(readConversation(text).total).toBe(2)
+  })
+
+  it('says nothing rather than guessing when there is no conversation', () => {
+    expect(readConversation('Task details:\nID: t1')).toEqual({ total: 0, last: '' })
+    expect(readConversation('Conversation:\nnot json')).toEqual({ total: 0, last: '' })
+    expect(readConversation(undefined)).toEqual({ total: 0, last: '' })
+    expect(readConversation('Conversation:\n{}')).toEqual({ total: 0, last: '' })
   })
 })
 
 describe('buildPage', () => {
-  const tasks = [
-    { title: 'Ship it', status: 'completed' },
-    { title: 'Waiting on legal', status: 'blocked', lastMessage: 'Asked on Tuesday' },
-  ]
+  const workspace = () => readWorkspace(workspaceText())
 
-  it('puts what is stuck first, and in its own group', () => {
-    const page = buildPage(tasks, { hours: 24, workspaceName: 'Backend' })
+  it('leads with what is blocked, and leaves out what is empty', () => {
+    const page = buildPage(workspace(), { name: 'memory.md', text: 'notes' })
+    const work = page.nodes.find((node) => node.label === 'Work')
 
-    expect(page.nodes[1].label).toBe('Waiting on somebody')
-    expect(page.nodes[1].children[0].value).toBe('Asked on Tuesday')
-    expect(page.nodes[2].label).toBe('Everything else')
+    expect(work.children[0]).toMatchObject({ label: 'Blocked', value: '2', tone: 'critical' })
+    // Five rows of zero is not a report.
+    expect(work.children.map((row) => row.label)).not.toContain('Rejected')
   })
 
-  it('counts in words a person reads', () => {
-    expect(buildPage([tasks[0]], { hours: 24 }).nodes[0].value).toContain('1 task moved')
-    expect(buildPage(tasks, { hours: 24 }).nodes[0].value).toContain('2 tasks moved')
+  it('says nothing has happened rather than showing an empty page', () => {
+    const empty = readWorkspace(workspaceText({ notstarted: 0, ongoing: 0, completed: 0, rejected: 0, blocked: 0 }))
+
+    expect(buildPage(empty, { name: 'memory.md', text: '' }).nodes[1]).toMatchObject({ type: 'empty' })
   })
 
-  it('says nothing happened rather than showing an empty page', () => {
-    // An empty page with a heading looks like something that failed to load.
-    const page = buildPage([], { hours: 24 })
-    expect(page.nodes.at(-1)).toMatchObject({ type: 'empty' })
+  it('shows the memory under its own name, and says when there is none', () => {
+    const withMemory = buildPage(workspace(), { name: 'deploys.md', text: 'how we ship' })
+    const without = buildPage(workspace(), { name: 'memory.md', text: '' })
+
+    expect(withMemory.nodes.at(-1)).toMatchObject({ label: 'deploys.md' })
+    expect(withMemory.nodes.at(-1).children[0].value).toBe('how we ship')
+    expect(without.nodes.at(-1).children[0]).toMatchObject({ type: 'empty' })
   })
 
-  it('leaves out the blocked group entirely when nothing is', () => {
-    const page = buildPage([tasks[0]], { hours: 24 })
-    expect(page.nodes.map((node) => node.label)).not.toContain('Waiting on somebody')
+  it('falls back to the workspace name when it has no description', () => {
+    const bare = readWorkspace(workspaceText({ description: '' }))
+    expect(buildPage(bare, { name: 'memory.md', text: '' }).nodes[0].value).toContain('Backend')
+  })
+})
+
+describe('buildThread', () => {
+  it('reports the real length of the thread and its last message', () => {
+    const view = buildThread({ title: 'Stuck', status: 'blocked' }, { total: 9, last: 'Asked on Tuesday' })
+
+    expect(view.nodes[0].items[0]).toMatchObject({ label: 'Messages', value: '9' })
+    expect(view.nodes[1].children[0].value).toBe('Asked on Tuesday')
+  })
+
+  it('says so when nobody has replied', () => {
+    const view = buildThread({ title: 'New', status: 'notstarted' }, { total: 0, last: '' })
+    expect(view.nodes[1]).toMatchObject({ type: 'empty' })
+  })
+
+  it('holds up when handed almost nothing', () => {
+    const view = buildThread(undefined, { total: 0, last: '' })
+    expect(view.title).toContain('This task')
+    expect(view.nodes[0].items[1].value).toBe('unknown')
   })
 })
 
 describe('collect', () => {
-  const ctx = (fake, config = {}) => ({ config, mcp: { workspace: fake.workspace } })
+  it('asks the workspace where it stands, then what it remembers', async () => {
+    const fake = fakeWorkspace()
 
-  it('asks the workspace for its tasks and builds the page', async () => {
-    const fake = fakeWorkspace({
-      listTasks: () => ({
-        ok: true,
-        result: JSON.stringify({ tasks: [{ id: 't1', title: 'Ship it', status: 'completed', updatedAt: ago(1) }] }),
-      }),
-    })
+    const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', workspaceName: 'Backend', now: NOW })
-
-    expect(fake.calls[0]).toMatchObject({ tool: 'listTasks', args: { workspaceId: 'ws1' } })
-    expect(page.nodes[0].value).toContain('Backend')
+    expect(fake.calls.map((call) => call.tool)).toEqual(['getWorkspace', 'loadMemory'])
+    expect(fake.calls.every((call) => call.args.workspaceId === 'ws1')).toBe(true)
+    expect(page.nodes.find((node) => node.label === 'Work')).toBeDefined()
   })
 
-  it('reads the last message on anything blocked, and only on those', async () => {
+  it('reads the memory the user chose', async () => {
+    const fake = fakeWorkspace()
+
+    await collect(ctxWith(fake, { memory: 'deploys.md' }), { workspaceId: 'ws1' })
+
+    expect(fake.calls[1].args.name).toBe('deploys.md')
+  })
+
+  // A memory that was never written answers with a sentence rather than an
+  // error, and showing that sentence as content would be repeating the server
+  // at the user.
+  it('treats a memory that was never written as empty', async () => {
     const fake = fakeWorkspace({
-      listTasks: () => ({
-        ok: true,
-        result: JSON.stringify({
-          tasks: [
-            { id: 't1', title: 'Stuck', status: 'blocked', updatedAt: ago(1) },
-            { id: 't2', title: 'Fine', status: 'ongoing', updatedAt: ago(1) },
-          ],
-        }),
-      }),
-      getTask: () => ({ ok: true, result: JSON.stringify({ task: { messages: [{ text: 'Asked on Tuesday' }] } }) }),
+      loadMemory: () => ({ ok: true, result: 'No memory saved under "memory.md" yet. Use saveMemory to write one.' }),
     })
 
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', now: NOW })
+    const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 
-    // One extra call, for the one task that needed it.
-    expect(fake.calls.filter((call) => call.tool === 'getTask')).toHaveLength(1)
-    expect(page.nodes[1].children[0].value).toBe('Asked on Tuesday')
+    expect(page.nodes.at(-1).children[0]).toMatchObject({ type: 'empty' })
+  })
+
+  it('carries on without the memory when that one call is refused', async () => {
+    const fake = fakeWorkspace({ loadMemory: () => ({ ok: false, reason: 'refused' }) })
+
+    const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
+
+    // The counts are still worth showing; only the memory is missing.
+    expect(page.nodes.find((node) => node.label === 'Work')).toBeDefined()
   })
 
   // A refusal is a value, not a throw. The page says what the host said.
   it('shows the refusal it was given rather than an empty page', async () => {
     const fake = fakeWorkspace({
-      listTasks: () => ({ ok: false, reason: 'This extension may not call "listTasks" on the workspace server.' }),
+      getWorkspace: () => ({ ok: false, reason: 'This extension was not granted access to that workspace.' }),
     })
 
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', now: NOW })
+    const page = await collect(ctxWith(fake), { workspaceId: 'ws2' })
 
     expect(page.nodes[0].tone).toBe('critical')
-    expect(page.nodes[0].value).toContain('may not call')
-  })
-
-  it('carries on when one task detail is refused', async () => {
-    const fake = fakeWorkspace({
-      listTasks: () => ({
-        ok: true,
-        result: JSON.stringify({ tasks: [{ id: 't1', title: 'Stuck', status: 'blocked', updatedAt: ago(1) }] }),
-      }),
-      getTask: () => ({ ok: false, reason: 'refused' }),
-    })
-
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', now: NOW })
-
-    expect(page.nodes[1].children[0].value).toBe('No reply yet')
+    expect(page.nodes[0].value).toContain('not granted')
   })
 
   it('holds up when an answer cannot be read at all', async () => {
-    const fake = fakeWorkspace({ listTasks: () => ({ ok: true, result: 'not json' }) })
+    const fake = fakeWorkspace({ getWorkspace: () => ({ ok: true, result: { content: [{}] } }) })
 
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', now: NOW })
+    const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 
-    expect(page.nodes.at(-1)).toMatchObject({ type: 'empty' })
+    expect(page.nodes[1]).toMatchObject({ type: 'empty' })
+  })
+})
+
+describe('thread', () => {
+  it('asks for the task and counts what came back', async () => {
+    const fake = fakeWorkspace()
+
+    const view = await thread(ctxWith(fake), { id: 't1', workspaceId: 'ws1', title: 'Stuck', status: 'blocked' })
+
+    expect(fake.calls[0]).toMatchObject({
+      tool: 'getTask',
+      args: { workspaceId: 'ws1', taskId: 't1', includeConversation: true, limit: 1 },
+    })
+    expect(view.nodes[0].items[0].value).toBe('9')
   })
 
-  it('says so when a blocked task has no messages at all', async () => {
-    const fake = fakeWorkspace({
-      listTasks: () => ({
-        ok: true,
-        result: JSON.stringify({ tasks: [{ id: 't1', title: 'Stuck', status: 'blocked', updatedAt: ago(1) }] }),
-      }),
-      getTask: () => ({ ok: true, result: JSON.stringify({}) }),
-    })
+  it('shows a refusal in the same shape as the page does', async () => {
+    const fake = fakeWorkspace({ getTask: () => ({ ok: false, reason: 'refused' }) })
 
-    const page = await collect(ctx(fake), { workspaceId: 'ws1', now: NOW })
+    const view = await thread(ctxWith(fake), { id: 't1' })
 
-    expect(page.nodes[1].children[0].value).toBe('No reply yet')
-  })
-
-  it('uses the configured window', async () => {
-    const fake = fakeWorkspace({
-      listTasks: () => ({
-        ok: true,
-        result: JSON.stringify({
-          tasks: [
-            { id: 't1', title: 'Recent', status: 'ongoing', updatedAt: ago(2) },
-            { id: 't2', title: 'Yesterday', status: 'ongoing', updatedAt: ago(20) },
-          ],
-        }),
-      }),
-    })
-
-    const page = await collect(ctx(fake, { since: 4 }), { workspaceId: 'ws1', now: NOW })
-
-    expect(page.nodes[0].value).toContain('1 task moved')
-    expect(page.nodes[0].value).toContain('last 4 hours')
+    expect(view.nodes[0]).toMatchObject({ tone: 'critical', value: 'refused' })
   })
 })
 
 describe('apply', () => {
-  it('registers a page and the shortcut that opens it', () => {
+  it('registers a page, a task menu item and the shortcut', () => {
     const ui = []
     const shortcuts = []
     apply({
       config: {},
-      mcp: { workspace: async () => ({ ok: true, result: '{"tasks":[]}' }) },
+      mcp: { workspace: async () => ({ ok: true, result: '' }) },
       ui: { add: (entry) => ui.push(entry) },
       shortcuts: { add: (entry) => shortcuts.push(entry) },
     })
 
-    expect(ui[0]).toMatchObject({ id: 'today', surface: 'page', label: 'Standup' })
+    expect(ui.map((entry) => entry.surface)).toEqual(['page', 'task-menu'])
     expect(shortcuts[0]).toMatchObject({ id: 'open', key: 's' })
+  })
+
+  it('wires the page and the shortcut to the same thing', async () => {
+    const ui = []
+    const shortcuts = []
+    const fake = fakeWorkspace()
+    apply({
+      config: {},
+      mcp: { workspace: fake.workspace },
+      ui: { add: (entry) => ui.push(entry) },
+      shortcuts: { add: (entry) => shortcuts.push(entry) },
+    })
+
+    const fromPage = await ui[0].view({ workspaceId: 'ws1' })
+    const fromKey = await shortcuts[0].run({ workspaceId: 'ws1' })
+
+    expect(fromPage).toEqual(fromKey)
+  })
+
+  it('wires the task menu item to the thread', async () => {
+    const ui = []
+    const fake = fakeWorkspace()
+    apply({
+      config: {},
+      mcp: { workspace: fake.workspace },
+      ui: { add: (entry) => ui.push(entry) },
+      shortcuts: { add: () => {} },
+    })
+
+    const view = await ui[1].run({ id: 't1', workspaceId: 'ws1', title: 'Stuck' })
+
+    expect(view.nodes[0].items[0]).toMatchObject({ label: 'Messages', value: '9' })
   })
 })
 
@@ -262,20 +361,18 @@ describe('apply', () => {
  */
 describe('every view it can produce', () => {
   it('is one the renderer will actually draw', () => {
-    const pages = [
-      buildPage([], { hours: 24 }),
-      buildPage([{ title: 'Ship it', status: 'completed' }], { hours: 24 }),
-      buildPage(
-        [
-          { title: 'Stuck', status: 'blocked', lastMessage: 'Asked on Tuesday' },
-          { title: 'Fine', status: 'ongoing' },
-        ],
-        { hours: 24, workspaceName: 'Backend' },
-      ),
+    const busy = readWorkspace(workspaceText())
+    const quiet = readWorkspace(workspaceText({ notstarted: 0, ongoing: 0, completed: 0, rejected: 0, blocked: 0 }))
+
+    const views = [
+      buildPage(busy, { name: 'memory.md', text: 'notes' }),
+      buildPage(quiet, { name: 'memory.md', text: '' }),
+      buildThread({ title: 'Stuck', status: 'blocked' }, { total: 9, last: 'Asked on Tuesday' }),
+      buildThread({ title: 'New', status: 'notstarted' }, { total: 0, last: '' }),
     ]
 
-    for (const page of pages) {
-      const result = normaliseView(page)
+    for (const view of views) {
+      const result = normaliseView(view)
       expect(result.ok, result.reason).toBe(true)
     }
   })

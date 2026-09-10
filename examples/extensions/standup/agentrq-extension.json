@@ -2,15 +2,15 @@
   "name": "standup",
   "displayName": "Standup",
   "version": "1.0.0",
-  "description": "A page showing what moved in a workspace today, and the thread of anything still blocked.",
+  "description": "Where this workspace stands: how much work is in each state, what it remembers, and how long any one task's thread has run.",
   "license": "MIT",
   "engines": { "agentrq": ">=0.5" },
-  "mcp": { "workspace": ["listTasks", "getTask"] },
+  "mcp": { "workspace": ["getWorkspace", "loadMemory", "getTask"] },
   "config": [
-    { "key": "since", "type": "number", "label": "Hours to look back" }
+    { "key": "memory", "type": "string", "label": "Memory to show (default: memory.md)" }
   ],
-  "provides": { "ui": ["page"], "shortcuts": ["s"] },
-  "shortcuts": [{ "key": "s", "action": "open", "title": "Standup: today" }],
+  "provides": { "ui": ["page", "task-menu"], "shortcuts": ["s"] },
+  "shortcuts": [{ "key": "s", "action": "open", "title": "Standup: where this workspace stands" }],
   "artifact": {
     "release": "v1.0.0",
     "asset": "standup-1.0.0.tgz",

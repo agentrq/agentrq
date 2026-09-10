@@ -49,8 +49,13 @@ smallest to largest:
 | | Asks for | Shows |
 |---|---|---|
 | [`task-stats`](../examples/extensions/task-stats/) | nothing at all | The smallest possible extension: a task menu item, no permissions, no network |
-| [`standup`](../examples/extensions/standup/) | two workspace tools | A page, a keyboard shortcut, a config field, brokered MCP calls |
+| [`standup`](../examples/extensions/standup/) | three workspace tools | A page, a task menu item, a keyboard shortcut, a config field, brokered MCP calls |
 | [`digest`](../examples/extensions/digest/) | the supervisor | Three surfaces, a secret, a declared host, and standing work on a schedule |
+
+Read the first two together: `task-stats` describes the task it was handed and
+says out loud that it cannot see the conversation; `standup` asks for `getTask`
+at install and can therefore count one. That difference is what the permission
+model is *for*, and it is the difference between the two screens a user sees.
 
 Read them in that order. Each one is commented as an explanation rather than as
 a demo.
@@ -101,6 +106,36 @@ a demo.
 A repository with a bad manifest is **listed as broken with its reason** rather
 than dropped, because an author needs to see why and a silently missing
 extension looks like a broken catalogue to whoever followed a link to it.
+
+### Name only tools that exist
+
+A manifest can name anything; the servers decide what is real, and
+`checkCompatibility` refuses an install with *"the workspace server does not
+offer listTasks"* — on somebody's machine, at install time, which is late.
+
+The two surfaces are **not** the same, and the difference is deliberate rather
+than an oversight to route around.
+
+**The per-workspace server** — what an agent working a queue can do:
+
+```
+createTask  updateTaskStatus  reply  downloadAttachment  getWorkspace
+getTask  publishEvent  loadMemory  saveMemory  deleteMemory  elicit
+```
+
+There is **no task listing here on purpose**. An agent connected to a workspace
+acts on the task it was given and reads what the workspace remembers; it does
+not enumerate the board. `getWorkspace` answers with counts per status, which is
+what a summary actually needs, and `getTask` takes an id you already have.
+
+**The supervisor server** is account-wide and does list things — `listWorkspaces`,
+`listTasks`, `listAllTasks`, the event and workflow tools, and so on. Reaching it
+is reaching every workspace, which is why it sits at the top of the grant ladder.
+
+`standup` was first written asking for `listTasks` on the workspace server and
+would never have installed. A Go test now checks every example manifest against
+the servers' actual registrations, so the examples cannot teach a tool that does
+not exist.
 
 ### Why the licence is required
 
@@ -327,6 +362,20 @@ there: an issue title, a commit message, a webhook payload. Only `http` and
 is not followable.
 
 ---
+
+## What the task you are handed actually contains
+
+A `task-menu` entry is called with the task from the board, and **that task is a
+summary**. The list endpoint sends the last message per task and nothing else, so
+`task.messages` has one element however long the thread is. Counting it reports
+one, always — which is what `task-stats` did before it was fixed.
+
+The rule: **describe what you were handed, not what you assume is behind it.** If
+you need the thread, ask for `getTask` in your manifest and call it with
+`includeConversation: true`, then read `total` from the answer rather than the
+length of `messages`, which is a page of at most five by default. `standup` does
+exactly this, and the two examples side by side are the clearest statement of
+what a permission buys.
 
 ## Configuration and secrets
 

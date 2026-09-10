@@ -17,13 +17,28 @@ were fixed in the design rather than worked around here:
   every extension wanting a nightly task had to ask for the ability to delete
   any task on the account. The host does it with its own credential now, bounded
   by what it created and by the workspace the grant reaches.
+- A task on the board is a Vue reactive proxy, and `contextBridge` refuses a
+  Proxy — so an extension's menu row was registered correctly and never
+  appeared, with the rejection swallowed into an empty list. Fixed at the
+  boundary, and `npm run verify:extensions` now drives it in a real window.
+
+Two more turned up once these were actually used:
+
+- `standup` asked for `listTasks` on the workspace server, which has never had
+  one and never will. A Go test now checks every example manifest against the
+  servers' real registrations.
+- `task-stats` counted messages and always said one, because the board's task
+  list carries only the last message per task. The count is gone rather than
+  patched: the real number needs a permission that example deliberately does not
+  ask for, and `standup` — which does ask — counts it properly. The pair is now
+  the clearest statement in the repo of what a permission buys.
 
 ## The three
 
 | | Asks for | What it shows |
 |---|---|---|
 | [`task-stats`](task-stats/) | **nothing** | The smallest extension there is: one task menu item, no permissions, no network, no server calls. Its install screen shows no permission list at all — which is the path easiest to get wrong, because an absent list reads as safety |
-| [`standup`](standup/) | `listTasks`, `getTask` | A sidebar page, <kbd>x</kbd> <kbd>s</kbd> to open it, one config field, and brokered workspace calls that answer with a refusal rather than throwing |
+| [`standup`](standup/) | `getWorkspace`, `loadMemory`, `getTask` | A sidebar page, a task menu item, <kbd>x</kbd> <kbd>s</kbd> to open it, one config field, and brokered workspace calls that answer with a refusal rather than throwing |
 | [`digest`](digest/) | the **supervisor** | The full case: a page, a header action, a conditional task menu item, a secret in the keychain, a declared host, and standing work reconciled onto the server so it runs while the app is closed |
 
 ## Running them

@@ -32,11 +32,51 @@ const EXAMPLES = join(dirname(fileURLToPath(import.meta.url)), '../../../example
 
 const read = (name) => readFile(join(EXAMPLES, name, 'agentrq-extension.json'), 'utf8')
 
-/** The tool lists a current backend offers, for the compatibility check. */
+/**
+ * What the two servers actually register.
+ *
+ * These were invented from memory the first time, and `listTasks` was in the
+ * workspace list because it *sounds* like it should be — so the `standup`
+ * example asked for a tool that has never existed there, and this test agreed
+ * with it. A stub that matches the mistake is worse than no stub.
+ *
+ * They are copied from the Go source now, and a Go test
+ * (`example_extensions_test.go`) checks every example manifest against the
+ * registrations directly, so the two cannot drift apart quietly again. The
+ * workspace server has no task listing on purpose: an agent connected to a
+ * workspace acts on the task it was given rather than enumerating the board.
+ */
 const SERVERS = {
   appVersion: '0.5.21',
-  workspaceTools: ['createTask', 'updateTaskStatus', 'reply', 'getWorkspace', 'getTask', 'listTasks', 'publishEvent'],
-  supervisorTools: ['listWorkspaces', 'listAllTasks', 'createTask', 'createEventTrigger', 'listEvents'],
+  workspaceTools: [
+    'createTask',
+    'updateTaskStatus',
+    'reply',
+    'downloadAttachment',
+    'getWorkspace',
+    'getTask',
+    'publishEvent',
+    'loadMemory',
+    'saveMemory',
+    'deleteMemory',
+    'elicit',
+  ],
+  supervisorTools: [
+    'listWorkspaces',
+    'createWorkspace',
+    'getWorkspace',
+    'listAllTasks',
+    'listTasks',
+    'createTask',
+    'getTask',
+    'deleteTask',
+    'listEvents',
+    'createEvent',
+    'createEventTrigger',
+    'listEventTriggers',
+    'deleteEventTrigger',
+    'deleteEvent',
+  ],
 }
 
 /**
@@ -50,11 +90,14 @@ function harness({ workspaceAnswers = {}, supervisorAnswers = {} } = {}) {
   const wrap = (payload) => ({ content: [{ text: JSON.stringify(payload) }] })
   const calls = []
 
+  // The workspace server answers in prose, not JSON — it is written for agents
+  // to read. Wrapping it in the supervisor's envelope would be a stub that
+  // teaches the wrong shape.
   const callWorkspace = vi.fn(async ({ workspaceId, tool, args }) => {
     calls.push({ surface: 'workspace', tool, workspaceId, args })
     const answer = workspaceAnswers[tool]
     if (!answer) throw new Error(`the stub workspace server has no ${tool}`)
-    return wrap(answer(args))
+    return { content: [{ text: answer(args) }] }
   })
 
   const callSupervisor = vi.fn(async ({ tool, args }) => {
@@ -181,7 +224,9 @@ describe('task-stats — the extension that asks for nothing', () => {
       body: 'three words here',
       status: 'ongoing',
       createdAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
-      messages: [{ text: 'one two' }],
+      // Deliberately carrying the one-message summary the board actually has:
+      // the extension must ignore it rather than report a count from it.
+      messages: [{ text: 'the last one' }],
     }
 
     // Main process: what crosses the bridge, with every function stripped.
@@ -203,8 +248,7 @@ describe('task-stats — the extension that asks for nothing', () => {
     expect(drawn.view.title).toContain('Ship it')
     expect(drawn.view.nodes[0].items.map((row) => `${row.label}=${row.value}`)).toEqual([
       'Age=2 hours',
-      'Messages=1',
-      'Words=5',
+      'Words in the description=3',
       'Status=ongoing',
     ])
   })
@@ -223,13 +267,14 @@ describe('task-stats — the extension that asks for nothing', () => {
 
 describe('standup — the workspace case', () => {
   const answers = {
-    listTasks: () => ({
-      tasks: [
-        { id: 't1', title: 'Ship it', status: 'completed', updatedAt: new Date().toISOString() },
-        { id: 't2', title: 'Stuck', status: 'blocked', updatedAt: new Date().toISOString() },
-      ],
-    }),
-    getTask: () => ({ task: { messages: [{ text: 'Asked on Tuesday' }] } }),
+    getWorkspace: () => 'Workspace: Backend\nDescription: the API\n\nTask Statistics:\n- Not Started: 3\n- Ongoing: 1\n- Completed: 12\n- Rejected: 0\n- Blocked: 2',
+    loadMemory: () => '# memory\n\nnotes',
+    getTask: () =>
+      `Task details:\nID: t1\nTitle: Stuck\n\nConversation:\n${JSON.stringify({
+        messages: [{ text: 'Asked on Tuesday' }],
+        total: 9,
+        cursor: 1,
+      })}`,
   }
 
   it('reaches the workspace it was granted, and draws what it found', async () => {
@@ -237,12 +282,25 @@ describe('standup — the workspace case', () => {
     await rig.install('standup', { scope: SCOPE.workspace, workspaceId: 'ws1' })
 
     const page = rig.host.resolve('ui', {}).find((entry) => entry.surface === 'page')
-    const view = normaliseView(await page.view({ workspaceId: 'ws1', workspaceName: 'Backend' }))
+    const view = normaliseView(await page.view({ workspaceId: 'ws1' }))
 
     expect(view.ok, view.reason).toBe(true)
-    expect(rig.calls.map((call) => call.tool)).toEqual(['listTasks', 'getTask'])
+    expect(rig.calls.map((call) => call.tool)).toEqual(['getWorkspace', 'loadMemory'])
     // The credential never reaches the extension: the host attached it.
     expect(rig.calls.every((call) => call.workspaceId === 'ws1')).toBe(true)
+  })
+
+  // The count `task-stats` cannot know, in the example that asked for the
+  // permission needed to know it.
+  it('counts a thread properly, because it asked for getTask', async () => {
+    const rig = harness({ workspaceAnswers: answers })
+    await rig.install('standup', { scope: SCOPE.workspace, workspaceId: 'ws1' })
+
+    const item = rig.host.resolve('ui', {}).find((entry) => entry.surface === 'task-menu')
+    const view = await item.run({ id: 't1', workspaceId: 'ws1', title: 'Stuck', status: 'blocked' })
+
+    expect(view.nodes[0].items[0]).toMatchObject({ label: 'Messages', value: '9' })
+    expect(normaliseView(view).ok).toBe(true)
   })
 
   // The seam this exists for: the manifest allowlist and the grant are checked
@@ -252,7 +310,7 @@ describe('standup — the workspace case', () => {
     await rig.install('standup', { scope: SCOPE.workspace, workspaceId: 'ws1' })
 
     const page = rig.host.resolve('ui', {}).find((entry) => entry.surface === 'page')
-    const view = await page.view({ workspaceId: 'ws2', workspaceName: 'Frontend' })
+    const view = await page.view({ workspaceId: 'ws2' })
 
     expect(view.nodes[0].value).toContain('not granted access to that workspace')
     expect(rig.calls).toEqual([])
@@ -392,7 +450,7 @@ describe('digest — the full case', () => {
 describe('all three at once', () => {
   it('coexist without either colliding or reordering each other', async () => {
     const rig = harness({
-      workspaceAnswers: { listTasks: () => ({ tasks: [] }) },
+      workspaceAnswers: { getWorkspace: () => 'Workspace: Backend', loadMemory: () => '' },
       supervisorAnswers: { listWorkspaces: () => ({ workspaces: [] }), listAllTasks: () => ({ tasks: [] }) },
     })
 
@@ -400,9 +458,12 @@ describe('all three at once', () => {
     await rig.install('task-stats')
     await rig.install('standup', { scope: SCOPE.workspace })
 
-    // Ordered by their declared `order`, not by which loaded first.
+    // Ordered by their declared `order`, then by owner and id — never by which
+    // extension happened to load first, which is the reverse of this install
+    // sequence.
     expect(rig.host.resolve('ui', {}).map((entry) => `${entry.owner}:${entry.id}`)).toEqual([
       'task-stats:stats',
+      'standup:thread',
       'standup:today',
       'digest:context',
       'digest:digest',
@@ -413,13 +474,18 @@ describe('all three at once', () => {
       { title: 'Ship it', status: 'ongoing' },
       rig.host.resolve('ui', {}).filter((entry) => entry.surface === 'task-menu'),
     )
-    // Digest's item is conditional and this task is not completed, so only one
-    // extension row appears — which is the point of `when`.
-    expect(menu.map((item) => item.label)).toEqual(['Move Task', undefined, 'Task Stats'])
+    // Digest's item is conditional and this task is not completed, so it is
+    // absent while the two unconditional ones are there — the point of `when`.
+    expect(menu.map((item) => item.label)).toEqual([
+      'Move Task',
+      undefined,
+      'Task Stats',
+      'Standup: this thread',
+    ])
   })
 
   it('refuses a second extension asking for a key that is taken', async () => {
-    const rig = harness({ workspaceAnswers: { listTasks: () => ({ tasks: [] }) } })
+    const rig = harness({ workspaceAnswers: { getWorkspace: () => 'Workspace: Backend' } })
     await rig.install('standup', { scope: SCOPE.workspace })
 
     // The registry names the extension already holding it, because "duplicate

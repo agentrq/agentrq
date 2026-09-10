@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 
-import { apply, describeAge, statsFor, wordCount } from '../../../examples/extensions/task-stats/index.js'
+import { apply, describeAge, describeStatus, statsFor, wordCount } from '../../../examples/extensions/task-stats/index.js'
 import { parseManifest } from '../../src/main/extensions/manifest.js'
 import manifest from '../../../examples/extensions/task-stats/agentrq-extension.json'
 
@@ -67,30 +67,70 @@ describe('wordCount', () => {
   })
 })
 
+describe('describeStatus', () => {
+  it('says who has it as well as what state it is in', () => {
+    // On a board where both agents and people work, "ongoing" means something
+    // different for each.
+    expect(describeStatus({ status: 'ongoing', assignee: 'agent' })).toBe('ongoing, with an agent')
+    expect(describeStatus({ status: 'blocked', assignee: 'human' })).toBe('blocked, with a person')
+  })
+
+  it('leaves out what it was not told', () => {
+    expect(describeStatus({ status: 'ongoing' })).toBe('ongoing')
+    expect(describeStatus({})).toBe('unknown')
+    expect(describeStatus(undefined)).toBe('unknown')
+  })
+})
+
 describe('statsFor', () => {
   const task = {
-    title: 'Ship the release',
+    title: 'Ship it',
     body: 'three words here',
     status: 'ongoing',
+    assignee: 'agent',
     createdAt: ago(2 * 3600_000),
-    messages: [{ text: 'one two' }, { text: 'three' }],
   }
 
   it('describes the task without asking anything of the server', () => {
     const view = statsFor(task, NOW)
 
-    expect(view.title).toContain('Ship the release')
+    expect(view.title).toContain('Ship it')
     const rows = view.nodes[0].items
     expect(rows.find((row) => row.label === 'Age').value).toBe('2 hours')
-    expect(rows.find((row) => row.label === 'Messages').value).toBe('2')
-    // Body plus both messages.
-    expect(rows.find((row) => row.label === 'Words').value).toBe('6')
+    expect(rows.find((row) => row.label === 'Words in the description').value).toBe('3')
+    expect(rows.find((row) => row.label === 'Status').value).toBe('ongoing, with an agent')
   })
 
-  it('says something about a task nobody has replied to', () => {
-    // A panel of zeroes looks broken; one sentence is the difference.
-    const view = statsFor({ ...task, messages: [] }, NOW)
-    expect(view.nodes.at(-1).value).toContain('Nobody has replied')
+  /**
+   * The bug this example shipped with, and why the count is gone rather than
+   * fixed.
+   *
+   * It reported a message count, and always said one. The board's task list is
+   * a summary — the server sends the last message per task and nothing else —
+   * so `task.messages` has one element however long the thread is. The real
+   * number needs `getTask`, which needs a permission this example deliberately
+   * does not ask for. `standup` asks, and counts.
+   */
+  it('does not report a message count it has no way to know', () => {
+    const withSummary = statsFor({ ...task, messages: [{ text: 'the last one' }] }, NOW)
+    const withNone = statsFor(task, NOW)
+
+    for (const view of [withSummary, withNone]) {
+      expect(view.nodes[0].items.map((row) => row.label)).not.toContain('Messages')
+    }
+    // The two are identical: what the list happens to carry changes nothing.
+    expect(withSummary).toEqual(withNone)
+  })
+
+  it('says where its numbers came from, and what it cannot see', () => {
+    const view = statsFor(task, NOW)
+
+    expect(view.nodes.at(-1).value).toContain('asks for no permissions')
+    expect(view.nodes.at(-1).value).toContain('cannot read the conversation')
+  })
+
+  it('counts only the description, not anything attached to it', () => {
+    expect(statsFor({ ...task, body: '' }, NOW).nodes[0].items[1].value).toBe('0')
   })
 
   it('holds up when handed almost nothing', () => {
