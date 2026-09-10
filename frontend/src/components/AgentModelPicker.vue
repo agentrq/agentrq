@@ -9,12 +9,22 @@
             :disabled="picker.sending.value"
             :class="compact
               ? 'text-[9px] font-medium text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-100 max-w-[140px]'
-              : 'h-7 px-2 gap-1 rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
+              : 'w-7 h-7 sm:w-auto sm:px-2 gap-1 justify-center rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
             class="flex items-center transition-all disabled:opacity-40 truncate">
-      <span class="truncate">{{ picker.selectedName.value || 'Model' }}</span>
+      <!-- On a narrow screen this is the whole button, which is what the
+           schedule, event and YOLO controls beside it already do: a row of
+           fixed squares, not one of them widened by whatever the model happens
+           to be called. The name returns at `sm`. -->
+      <svg v-if="!compact" class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 5h10a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10 10h4v4h-4z" />
+      </svg>
+      <span :class="compact ? 'truncate' : 'hidden sm:inline truncate'">{{ picker.selectedName.value || 'Model' }}</span>
       <!-- Pending is said, not implied. The agent has been asked and has not
            answered, and a picker that simply showed the new value would be
-           claiming something nothing has confirmed. -->
+           claiming something nothing has confirmed.
+           Kept visible at every width: it is the one thing on this button that
+           is not decoration. -->
       <span v-if="picker.isPending.value" class="ml-1 shrink-0 opacity-60">…</span>
     </button>
 

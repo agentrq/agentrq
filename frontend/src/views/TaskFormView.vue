@@ -259,8 +259,12 @@
 
                 <!-- Which model the agent will use, chosen before the task is
                      written rather than after it has started. Absent unless the
-                     connected agent offers a choice and will act on it. -->
-                <AgentModelPicker :workspace="liveWorkspace" />
+                     connected agent offers a choice and will act on it — and
+                     absent for a task assigned to a person, where no agent will
+                     run it and the choice would decide nothing. Guarded exactly
+                     as the YOLO toggle beside it is, so the two agree about
+                     what an agent task means. -->
+                <AgentModelPicker v-if="newTask.assignee === 'agent'" :workspace="liveWorkspace" />
 
              </div>
 
