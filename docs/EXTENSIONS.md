@@ -123,6 +123,12 @@ createTask  updateTaskStatus  reply  downloadAttachment  getWorkspace
 getTask  publishEvent  loadMemory  saveMemory  deleteMemory  elicit
 ```
 
+It answers in **prose, not JSON** — it is written for agents to read.
+`getWorkspace` returns the name, the description and a count per status;
+`getTask` with `includeConversation` returns the task followed by a
+`Conversation:` block of JSON. `standup` parses both, and those few lines are
+worth reading before you write your own.
+
 There is **no task listing here on purpose**. An agent connected to a workspace
 acts on the task it was given and reads what the workspace remembers; it does
 not enumerate the board. `getWorkspace` answers with counts per status, which is
@@ -198,6 +204,17 @@ after checking the tool against the manifest and the workspace against the
 grant. A refusal comes back as `{ ok: false, reason }` — **a value, not a
 throw** — so a refused extension shows a sentence rather than becoming an
 unhandled rejection somewhere in the host.
+
+`workspaceId` says which workspace you mean. On the **workspace** surface that is
+all it is: the per-workspace server has one endpoint per workspace, so the host
+turns it into a URL and keeps it out of the arguments — those tools take no such
+parameter and the server refuses one outright. On the **supervisor** surface it
+stays, because there it genuinely is an argument.
+
+**The supervisor is not reachable from the desktop app yet.** Its endpoint wants
+a token whose audience is `coremcp`, and only the OAuth2 flow mints one. An
+extension asking for account-wide tools installs, loads, registers its surfaces
+and is then told so in as many words. Workspace tools work.
 
 This matters because a workspace token and a supervisor session outlive any
 single extension and reach every workspace on the account. An extension that is
@@ -389,6 +406,12 @@ you need the thread, ask for `getTask` in your manifest and call it with
 length of `messages`, which is a page of at most five by default. `standup` does
 exactly this, and the two examples side by side are the clearest statement of
 what a permission buys.
+
+That window also **starts at the oldest message**, so a page at `cursor: 0` is
+the *first* of the thread and not the last. `standup` reads `total` from one call
+and then asks for `cursor: total - 1` when there is more than one message —
+which is two round trips, and the alternative is quietly showing the wrong
+message under a heading that says otherwise.
 
 ## Configuration and secrets
 

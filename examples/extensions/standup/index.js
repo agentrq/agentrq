@@ -115,6 +115,10 @@ export function readWorkspace(text) {
  * paginated and defaults to five. Counting the returned array is how you end up
  * reporting five for every long task, which is the same class of mistake as
  * `task-stats` reporting one.
+ *
+ * The window itself starts at the *oldest* message, so `messages.at(-1)` is the
+ * newest of whatever came back and not the newest in the thread. Which one that
+ * is depends entirely on the cursor the caller asked for.
  */
 export function readConversation(text) {
   const body = String(text ?? '')
@@ -236,18 +240,34 @@ export async function collect(ctx, { workspaceId } = {}) {
  * can.
  */
 export async function thread(ctx, task) {
-  const result = await ctx.mcp.workspace('getTask', {
-    workspaceId: task?.workspaceId,
-    taskId: task?.id,
-    includeConversation: true,
-    // One message is all the page shows, and `total` carries the real count
-    // whatever this is — so asking for more would be fetching to throw away.
-    limit: 1,
-    cursor: 0,
-  })
-  if (!result.ok) return refusal(result.reason)
+  // `workspaceId` addresses the call; the host turns it into an endpoint and
+  // keeps it out of the arguments, because the per-workspace server's tools take
+  // no such parameter and refuse one.
+  const ask = (over) =>
+    ctx.mcp.workspace('getTask', {
+      workspaceId: task?.workspaceId,
+      taskId: task?.id,
+      includeConversation: true,
+      ...over,
+    })
 
-  return buildThread(task, readConversation(textOf(result.result)))
+  // The first call is for `total`, which is the thread's real length whatever
+  // window came back with it.
+  const first = await ask({ limit: 1, cursor: 0 })
+  if (!first.ok) return refusal(first.reason)
+
+  const conversation = readConversation(textOf(first.result))
+
+  // Pagination starts at the oldest, so a window at cursor 0 is the *first*
+  // message however small it is — showing that under a heading saying "last"
+  // was wrong in a way nobody would catch without a thread to read. The end of
+  // it needs a second call, and only when there is more than one message.
+  if (conversation.total > 1) {
+    const last = await ask({ limit: 1, cursor: conversation.total - 1 })
+    if (last.ok) conversation.last = readConversation(textOf(last.result)).last
+  }
+
+  return buildThread(task, conversation)
 }
 
 export function apply(ctx) {

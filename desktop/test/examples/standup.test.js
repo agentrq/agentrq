@@ -285,6 +285,25 @@ describe('collect', () => {
 })
 
 describe('thread', () => {
+  /** A server that paginates from the oldest, the way the real one does. */
+  const paginated = (messages) =>
+    fakeWorkspace({
+      getTask: ({ cursor = 0, limit = 5 }) => ({
+        ok: true,
+        result: {
+          content: [
+            {
+              text: `Task details:\nID: t1\n\nConversation:\n${JSON.stringify({
+                messages: messages.slice(cursor, cursor + limit).map((text) => ({ text })),
+                total: messages.length,
+                cursor: cursor + limit,
+              })}`,
+            },
+          ],
+        },
+      }),
+    })
+
   it('asks for the task and counts what came back', async () => {
     const fake = fakeWorkspace()
 
@@ -295,6 +314,51 @@ describe('thread', () => {
       args: { workspaceId: 'ws1', taskId: 't1', includeConversation: true, limit: 1 },
     })
     expect(view.nodes[0].items[0].value).toBe('9')
+  })
+
+  /**
+   * Found against a real server: a window at cursor 0 is the *first* message,
+   * so what appeared under "Last message" was the oldest one. Nobody would
+   * catch that without a thread long enough to tell them apart.
+   */
+  it('reads the end of the thread, not the start of it', async () => {
+    const fake = paginated(['first reply', 'second reply', 'third reply'])
+
+    const view = await thread(ctxWith(fake), { id: 't1', workspaceId: 'ws1', title: 'Stuck' })
+
+    expect(view.nodes[0].items[0].value).toBe('3')
+    expect(view.nodes[1].children[0].value).toBe('third reply')
+    // Two calls, and the second asks for the last one by name.
+    expect(fake.calls.map((call) => call.args.cursor)).toEqual([0, 2])
+  })
+
+  it('asks once when there is nothing to page past', async () => {
+    const one = paginated(['only reply'])
+    const none = paginated([])
+
+    expect((await thread(ctxWith(one), { id: 't1' })).nodes[1].children[0].value).toBe('only reply')
+    expect(one.calls).toHaveLength(1)
+
+    expect((await thread(ctxWith(none), { id: 't1' })).nodes[1]).toMatchObject({ type: 'empty' })
+    expect(none.calls).toHaveLength(1)
+  })
+
+  it('keeps the count when the second call is refused', async () => {
+    let calls = 0
+    const fake = fakeWorkspace({
+      getTask: (args) => {
+        calls += 1
+        return calls === 1
+          ? { ok: true, result: { content: [{ text: taskText({ total: 9, last: 'from the first page' }) }] } }
+          : { ok: false, reason: 'refused' }
+      },
+    })
+
+    const view = await thread(ctxWith(fake), { id: 't1' })
+
+    // Better than losing the whole panel over the one part that failed.
+    expect(view.nodes[0].items[0].value).toBe('9')
+    expect(view.nodes[1].children[0].value).toBe('from the first page')
   })
 
   it('shows a refusal in the same shape as the page does', async () => {

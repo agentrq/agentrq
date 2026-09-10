@@ -117,6 +117,43 @@ describe('permits', () => {
 })
 
 describe('createBroker', () => {
+  /**
+   * Found against a real server, which is the only place it could be.
+   *
+   * The per-workspace endpoint already names the workspace, so its tools take
+   * no `workspaceId` — and the go-sdk validates strictly, refusing the whole
+   * call with `unexpected additional properties ["workspaceId"]`. An extension
+   * author would have had no way to explain that: they were doing the only
+   * thing this broker's shape allowed.
+   */
+  it('keeps the workspace out of the arguments the workspace server sees', async () => {
+    const callWorkspace = vi.fn(async () => ({}))
+    const { broker } = build({ callWorkspace })
+    broker.setGrant('linear', grant())
+
+    await broker.clientFor('linear').workspace('getTask', { workspaceId: 'ws1', taskId: 't1', includeConversation: true })
+
+    expect(callWorkspace.mock.calls[0][0].args).toEqual({ taskId: 't1', includeConversation: true })
+    // And is still what decided the call was allowed, and where it goes.
+    expect(callWorkspace.mock.calls[0][0].workspaceId).toBe('ws1')
+  })
+
+  // One endpoint for the whole account, so there it is a real argument:
+  // `listTasks(workspaceId)` means exactly what it says.
+  it('keeps it for the supervisor, where it is an argument', async () => {
+    const callSupervisor = vi.fn(async () => ({}))
+    const { broker } = build({ callSupervisor })
+    broker.setGrant('digest', {
+      scope: SCOPE.supervisor,
+      workspaces: [],
+      tools: { workspace: [], supervisor: ['listTasks'] },
+    })
+
+    await broker.clientFor('digest').supervisor('listTasks', { workspaceId: 'ws1', limit: 5 })
+
+    expect(callSupervisor).toHaveBeenCalledWith({ tool: 'listTasks', args: { workspaceId: 'ws1', limit: 5 } })
+  })
+
   it('makes the call and hands back the result', async () => {
     const callWorkspace = vi.fn(async () => ({ id: 't1' }))
     const { broker } = build({ callWorkspace })
@@ -125,10 +162,13 @@ describe('createBroker', () => {
     const result = await broker.clientFor('linear').workspace('getTask', { workspaceId: 'ws1', taskId: 't1' })
 
     expect(result).toEqual({ ok: true, result: { id: 't1' } })
+    // The workspace goes to the *caller*, which turns it into an endpoint, and
+    // not to the tool — the per-workspace server has no such parameter and
+    // refuses one. See the note at the top of broker.js.
     expect(callWorkspace).toHaveBeenCalledWith({
       workspaceId: 'ws1',
       tool: 'getTask',
-      args: { workspaceId: 'ws1', taskId: 't1' },
+      args: { taskId: 't1' },
     })
   })
 

@@ -21,6 +21,20 @@
  * **May it touch this workspace?** Against the grant, which is a different
  * thing: an extension allowed `getTask` is not thereby allowed it everywhere.
  *
+ * ## `workspaceId` is addressing, not an argument
+ *
+ * An extension names the workspace it means, and on the **workspace** surface
+ * that is all it is: the per-workspace server has one endpoint per workspace,
+ * so the workspace is in the URL and the tools take no such parameter. Passing
+ * it through was refused by the server outright —
+ * `unexpected additional properties ["workspaceId"]` — which is a schema error
+ * an extension author would have no way to explain, because they were doing the
+ * only thing the broker's shape allowed.
+ *
+ * So it is read for the decision and the routing, then removed. On the
+ * **supervisor** surface it stays, because there it genuinely is an argument:
+ * one endpoint, and `listTasks(workspaceId)` means what it says.
+ *
  * ## Supervisor access is not a third checkbox
  *
  * `listAllTasks` spans the platform and `createTask(workspaceId)` reaches
@@ -37,6 +51,12 @@ export const SCOPE = {
 }
 
 const deny = (reason) => ({ ok: false, reason })
+
+/** Everything but the addressing, for a server that already knows where it is. */
+function withoutWorkspaceId(args) {
+  const { workspaceId, ...rest } = args
+  return rest
+}
 
 /**
  * Whether a grant permits one call.
@@ -136,6 +156,11 @@ export function createBroker({ callWorkspace, callSupervisor, record = () => {},
         if (!grant) return deny('This extension has not been granted any access.')
 
         const workspaceId = args.workspaceId ?? ''
+        // Kept for the supervisor, where it is a real parameter; removed for the
+        // workspace server, whose endpoint already names the workspace and whose
+        // tools reject it. See the note at the top of this file.
+        const toolArgs = surface === 'supervisor' ? args : withoutWorkspaceId(args)
+
         const allowed = permits(grant, { surface, tool, workspaceId })
         if (!allowed.ok) {
           // Recorded as well as refused: a refusal is the interesting half of an
@@ -150,8 +175,8 @@ export function createBroker({ callWorkspace, callSupervisor, record = () => {},
         try {
           const result =
             surface === 'supervisor'
-              ? await callSupervisor({ tool, args })
-              : await callWorkspace({ workspaceId, tool, args })
+              ? await callSupervisor({ tool, args: toolArgs })
+              : await callWorkspace({ workspaceId, tool, args: toolArgs })
           return { ok: true, result }
         } catch (error) {
           // The server's own message, not one invented here: an extension author

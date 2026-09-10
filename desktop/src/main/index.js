@@ -59,6 +59,7 @@ import { createRuntime } from './extensions/runtime.js'
 import { claimedShortcuts } from './extensions/shortcuts.js'
 import { entriesFor, invokeEntry } from './extensions/surfaces.js'
 import { serverTools } from './extensions/servers.js'
+import { createMcpClient } from './extensions/mcp-client.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -999,6 +1000,15 @@ function jsonStore(filename) {
  * tested; this file imports Electron at module scope and is excluded from
  * coverage, so anything that ends up here is code nobody can check.
  */
+/**
+ * Whether the app holds a supervisor credential.
+ *
+ * A constant today, and a variable on purpose: it is the one thing that has to
+ * change when the OAuth flow lands, and a flag with a name is easier to find
+ * than a thrown string.
+ */
+const supervisorAuthorized = false
+
 function buildExtensionRuntime() {
   // Read back rather than held: the check runs against whatever is installed at
   // the moment somebody installs something else, not a list captured at startup.
@@ -1027,16 +1037,99 @@ function buildExtensionRuntime() {
     },
   })
 
+  /**
+   * One MCP client per workspace, plus one for the supervisor.
+   *
+   * Per workspace because each has its own endpoint, its own token and its own
+   * session — and because a session is worth keeping: the handshake is two round
+   * trips, and an extension that reads the same workspace on every page view
+   * would otherwise pay them every time.
+   *
+   * The workspace token comes from the REST API, which the app is already
+   * authenticated to. It is fetched per session rather than cached, so a
+   * regenerated token does not leave extensions failing until a restart.
+   */
+  const workspaceClients = new Map()
+
+  /**
+   * A bearer token for one workspace's MCP endpoint.
+   *
+   * From `/token`, which mints one, rather than from the workspace object — the
+   * workspace a `GET` returns carries `mcpUrl` but no token, on purpose. It was
+   * read from the object first and every call failed with "did not give up an
+   * MCP token", which is the sort of thing only a real server tells you.
+   *
+   * Minted per session rather than cached, so a token that is rotated or
+   * expires does not leave extensions failing until the app restarts.
+   */
+  async function workspaceToken(workspaceId) {
+    const response = await profileFetch(`${serverUrl}/api/v1/workspaces/${workspaceId}/token`)
+    if (!response.ok) {
+      // 404 here is the ordinary answer for a workspace this account does not
+      // own, so the status is worth passing on rather than paraphrasing.
+      throw new Error(`AgentRQ could not get a token for that workspace (${response.status}).`)
+    }
+    const token = (await response.json())?.token ?? ''
+    if (!token) throw new Error('That workspace did not give up an MCP token for this account.')
+    return token
+  }
+
+  function clientForWorkspace(workspaceId) {
+    if (!workspaceClients.has(workspaceId)) {
+      workspaceClients.set(
+        workspaceId,
+        createMcpClient({
+          endpoint: () => (serverUrl ? `${serverUrl}/mcp/${workspaceId}` : ''),
+          headers: async () => ({ authorization: `Bearer ${await workspaceToken(workspaceId)}` }),
+          // Electron's session-aware fetch: the profile's cookie jar goes with
+          // it, which is what the REST call above needs.
+          fetchImpl: profileFetch,
+        }),
+      )
+    }
+    return workspaceClients.get(workspaceId)
+  }
+
+  /**
+   * The supervisor, which is not reachable yet — and precisely why.
+   *
+   * Its endpoint wants a token whose audience is `coremcp`, and the only thing
+   * that mints one is the OAuth2 flow: register a client, run
+   * `/oauth2/authorize`, exchange the code at `/oauth2/token`. The session
+   * cookie this app already holds identifies the user *during* that flow and is
+   * refused by `tools/call` itself — checked against a real server rather than
+   * assumed, which is how this turned out to be more than a header.
+   *
+   * So the client is built and left without a credential, and the failure says
+   * what is missing instead of "cannot reach the supervisor yet". An extension
+   * author reading it can tell that their manifest is fine and the app is not.
+   */
+  const supervisorClient = createMcpClient({
+    endpoint: () => (serverUrl ? `${serverUrl}/mcp` : ''),
+    fetchImpl: profileFetch,
+  })
+
+  const SUPERVISOR_UNAVAILABLE =
+    'AgentRQ cannot reach the supervisor from the desktop app yet: that server needs an OAuth authorisation this app does not hold. Workspace tools work; account-wide ones do not.'
+
+  const callSupervisor = async ({ tool, args }) => {
+    if (!supervisorAuthorized) throw new Error(SUPERVISOR_UNAVAILABLE)
+
+    const answer = await supervisorClient.callTool(tool, args)
+    // Thrown rather than returned, because the broker turns a throw into a
+    // refusal carrying this message — and the server's own words are what an
+    // extension author needs.
+    if (!answer.ok) throw new Error(answer.reason)
+    return answer.result
+  }
+
   const broker = createBroker({
-    // Not wired to a transport yet. An extension that asks gets a refusal with a
-    // reason it can show, which is the honest failure — the alternative is a
-    // call that hangs or an exception from inside somebody else's `apply`.
-    callWorkspace: async () => {
-      throw new Error('AgentRQ cannot reach the workspace server from the desktop app yet.')
+    callWorkspace: async ({ workspaceId, tool, args }) => {
+      const answer = await clientForWorkspace(workspaceId).callTool(tool, args)
+      if (!answer.ok) throw new Error(answer.reason)
+      return answer.result
     },
-    callSupervisor: async () => {
-      throw new Error('AgentRQ cannot reach the supervisor from the desktop app yet.')
-    },
+    callSupervisor,
   })
 
   const host = createHost({
@@ -1053,9 +1146,7 @@ function buildExtensionRuntime() {
     // As the host, with the app's own credential. See the reasoning at the top
     // of schedules.js: going through the broker would make every extension that
     // wants a nightly task ask for the power to delete any task on the account.
-    call: async () => {
-      throw new Error('AgentRQ cannot reach the supervisor from the desktop app yet.')
-    },
+    call: (tool, args) => callSupervisor({ tool, args }),
     allows: (name, workspaceId) => permitsWorkspace(broker.grantFor(name), workspaceId),
     store: jsonStore('extensions-schedules.json'),
   })
