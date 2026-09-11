@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { THEMES, loadMermaid, renderDiagram, resetMermaid, sanitiseSvg } from '../src/composables/useDiagram';
+import { THEMES, loadMermaid, renderDiagram, resetMermaid, sanitiseCss, sanitiseSvg } from '../src/composables/useDiagram';
 
 /**
  * Drawing a diagram from its source.
@@ -61,6 +61,65 @@ describe('sanitiseSvg', () => {
   it('has nothing to say about nothing', () => {
     expect(sanitiseSvg('')).toBe('');
     expect(sanitiseSvg(undefined)).toBe('');
+  });
+});
+
+/**
+ * Mermaid puts its entire theme — four kilobytes of it — in a `<style>` element
+ * inside the SVG. Stripping that element was the first thing this did, and the
+ * result was a diagram of solid black boxes with invisible labels: the
+ * structure right and nothing readable.
+ */
+describe('the stylesheet a diagram carries', () => {
+  const withStyle = (css) => `<svg id="d"><style>${css}</style><g><rect width="60"/><text>A</text></g></svg>`;
+
+  it('is kept, because a diagram without it cannot be read', () => {
+    const clean = sanitiseSvg(withStyle('#d .node rect{fill:#ECECFF;stroke:#9370DB;}'));
+
+    expect(clean).toContain('<style');
+    expect(clean).toContain('fill:#ECECFF');
+    expect(clean).toContain('<text>A</text>');
+  });
+
+  // Mermaid points its arrowheads at markers in the same document, so this
+  // exact form has to survive or every edge loses its head.
+  it('keeps a same-document reference', () => {
+    expect(sanitiseSvg(withStyle('.edge{marker-end:url(#arrowhead);}'))).toContain('url(#arrowhead)');
+  });
+
+  it('drops a stylesheet pulled in from somewhere else', () => {
+    const clean = sanitiseSvg(withStyle('@import url(http://elsewhere/x.css); .a{fill:red;}'));
+
+    expect(clean).not.toContain('@import');
+    expect(clean).not.toContain('elsewhere');
+    // And keeps the rules either side of it.
+    expect(clean).toContain('fill:red');
+  });
+
+  it('drops a request made through a url', () => {
+    const clean = sanitiseSvg(withStyle('.a{background:url("http://elsewhere/x.png");}'));
+
+    expect(clean).not.toContain('elsewhere');
+  });
+});
+
+describe('sanitiseCss', () => {
+  it('leaves an ordinary stylesheet alone', () => {
+    const css = '#d{font-size:16px;fill:#333;}#d .node{stroke-width:1px;}';
+
+    expect(sanitiseCss(css)).toBe(css);
+  });
+
+  it('takes out every form of reaching outside the document', () => {
+    expect(sanitiseCss('@IMPORT "x.css";a{fill:red}')).not.toContain('@IMPORT');
+    expect(sanitiseCss("a{b:url('http://x/y')}")).toBe('a{b:none}');
+    expect(sanitiseCss('a{b:url( http://x/y )}')).toBe('a{b:none}');
+    expect(sanitiseCss('a{b:URL(//x/y)}')).toBe('a{b:none}');
+  });
+
+  it('has nothing to say about nothing', () => {
+    expect(sanitiseCss('')).toBe('');
+    expect(sanitiseCss(undefined)).toBe('');
   });
 });
 

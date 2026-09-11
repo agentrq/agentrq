@@ -113,17 +113,56 @@ export async function renderDiagram(source, { theme = 'light', importer } = {}) 
 }
 
 /**
+ * A diagram's own stylesheet, with the two things CSS can reach out with gone.
+ *
+ * Mermaid puts its entire theme — four kilobytes of it — in a `<style>` element
+ * inside the SVG: every fill, stroke and label colour. Stripping that element
+ * was the first thing this did, and the result was a diagram of solid black
+ * boxes with invisible text. The structure was right and nothing could be read.
+ *
+ * So the element stays and its content is filtered instead. Two things in CSS
+ * can make a request or pull in rules from elsewhere:
+ *
+ * **`@import`** loads another stylesheet, by URL.
+ *
+ * **`url(...)`** fetches whatever it names — except `url(#id)`, which points at
+ * an element in the same document. Mermaid needs exactly that form for its
+ * arrowheads, so the internal ones are kept and everything else is dropped.
+ *
+ * A filter rather than a refusal: a diagram whose theme failed to parse should
+ * lose its colours, not its existence.
+ */
+export function sanitiseCss(css) {
+  return String(css ?? '')
+    // Everything up to the semicolon or the end of the rule.
+    .replace(/@import[^;}]*[;}]?/gi, '')
+    // Any url() that is not a same-document reference.
+    .replace(/url\(\s*(['"]?)(?!#)[^)]*\1\s*\)/gi, 'none');
+}
+
+/**
  * What actually reaches the DOM.
  *
  * DOMPurify in SVG mode, not the default: the default profile drops `<svg>`
  * wholesale. `USE_PROFILES` keeps the SVG vocabulary and still removes scripts,
  * event handlers and `foreignObject` — which is the element that would let
  * arbitrary HTML back in through a diagram label.
+ *
+ * `<style>` is allowed, because a diagram without its stylesheet is unreadable
+ * — see `sanitiseCss` for what is taken out of it. DOMPurify parses stylesheets
+ * itself; the filter runs first so the rule is ours and has a test on it rather
+ * than being a property of whichever version of a dependency is installed.
  */
 export function sanitiseSvg(svg) {
-  return DOMPurify.sanitize(String(svg ?? ''), {
+  const filtered = String(svg ?? '').replace(
+    /(<style[^>]*>)([\s\S]*?)(<\/style>)/gi,
+    (_match, open, css, close) => `${open}${sanitiseCss(css)}${close}`,
+  );
+
+  return DOMPurify.sanitize(filtered, {
     USE_PROFILES: { svg: true, svgFilters: true },
-    FORBID_TAGS: ['foreignObject', 'script', 'style'],
+    // `style` is deliberately not here; `foreignObject` is what carries HTML.
+    FORBID_TAGS: ['foreignObject', 'script'],
     FORBID_ATTR: ['onload', 'onerror', 'onclick'],
   });
 }

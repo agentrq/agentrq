@@ -364,7 +364,10 @@ app.whenReady().then(async () => {
           // agent's message or an issue title actually looks like on a bad day.
           const source = 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;\\n  A-->C;';
           const { svg } = await mermaid.render('verify-diagram', source);
-          return { ok: true, svg: svg.slice(0, 4000) };
+          // Through the real sanitiser, in the page, because DOMPurify needs a
+          // DOM — so this is the SVG a person actually gets.
+          const { sanitiseSvg } = await import('/src/composables/useDiagram.js').catch(() => ({}));
+          return { ok: true, svg: (sanitiseSvg ? sanitiseSvg(svg) : svg).slice(0, 4000), sanitised: Boolean(sanitiseSvg) };
         } catch (error) {
           return { ok: false, reason: String(error) };
         }
@@ -372,6 +375,15 @@ app.whenReady().then(async () => {
     : { ok: false, reason: 'no mermaid chunk in the build' }
 
   record('mermaid draws a diagram in a real browser', diagram.ok === true, String(diagram.reason ?? ''))
+  // The bug that made a diagram unreadable: mermaid puts its whole theme in a
+  // <style> element, and the sanitiser was dropping it — solid black boxes with
+  // invisible labels. Checked against real output, because a fixture only
+  // proves what somebody already thought to write down.
+  record(
+    'carrying the stylesheet that makes it readable',
+    /<style/.test(diagram.svg ?? '') && /fill:/.test(diagram.svg ?? ''),
+    (diagram.svg ?? '').slice(0, 160),
+  )
   record(
     'and it is an svg with a flowchart in it',
     /<svg/.test(diagram.svg ?? '') && /flowchart/.test(diagram.svg ?? ''),
