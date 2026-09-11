@@ -83,12 +83,19 @@ export function describeAsk(manifest) {
  */
 export function availableScopes(ask, { workspaceId = '' } = {}) {
   const withinWorkspace = Boolean(workspaceId);
-  if (ask.level === 'supervisor') {
-    return withinWorkspace ? [...SCOPE_ORDER] : [SCOPE.selected, SCOPE.supervisor];
-  }
-  if (ask.level === 'workspace') {
-    return withinWorkspace ? [SCOPE.workspace, SCOPE.selected] : [SCOPE.selected];
-  }
+
+  // A workspace rung only means something to an extension that has workspace
+  // tools to use there. `digest` declares nothing but supervisor tools, and
+  // "selected workspaces" for it was a choice that granted it nothing at all —
+  // it installed, loaded, and every call came back "may not call
+  // listWorkspaces on the supervisor server". A rung that can only produce an
+  // empty grant is not a narrower option, it is a trap.
+  const workspaceRungs = ask.workspace.length > 0
+    ? (withinWorkspace ? [SCOPE.workspace, SCOPE.selected] : [SCOPE.selected])
+    : [];
+
+  if (ask.level === 'supervisor') return [...workspaceRungs, SCOPE.supervisor];
+  if (ask.level === 'workspace') return workspaceRungs;
   return [];
 }
 
@@ -117,6 +124,12 @@ export function validateGrant(ask, choice) {
   // refuses everything while looking exactly like a granted one.
   if (scope === SCOPE.workspace && !choice.workspaceId) {
     return { ok: false, reason: 'Choose which workspaces this extension may reach.' };
+  }
+
+  // The same failure one level up: a workspace rung chosen for an extension
+  // whose tools are all account-wide grants it nothing it can use.
+  if (scope !== SCOPE.supervisor && ask.workspace.length === 0 && ask.level === 'supervisor') {
+    return { ok: false, reason: 'This extension only works across all workspaces. Choose that, or do not install it.' };
   }
 
   if (!availableScopes(ask, choice).includes(scope)) {
