@@ -59,6 +59,7 @@ import { createRuntime } from './extensions/runtime.js'
 import { claimedShortcuts } from './extensions/shortcuts.js'
 import { serverTools } from './extensions/servers.js'
 import { createMcpClient } from './extensions/mcp-client.js'
+import { createSupervisorAuth } from './extensions/supervisor-auth.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -338,6 +339,64 @@ function routeLink(url, parentWin) {
     default:
       break
   }
+}
+
+/**
+ * Shows the supervisor authorisation page, and resolves with where it landed.
+ *
+ * Watched for a navigation to the redirect URI rather than pointed at anything
+ * that renders: the code is in the URL, there is nothing to display, and a
+ * window left open on a page nobody needs is how people close the wrong one.
+ *
+ * Resolves with `null` if it was closed instead — which is a person declining,
+ * and the commonest answer to a permission dialog.
+ *
+ * The window runs on the active profile's partition and gets no preload: it
+ * shows a page that authenticates somebody, so it has no business holding a
+ * bridge to files or the shell.
+ */
+function openAuthorizationWindow(url, redirectUri) {
+  return new Promise((resolve) => {
+    const parent = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())
+    const win = new BrowserWindow({
+      parent,
+      width: 520,
+      height: 720,
+      title: 'Authorise AgentRQ',
+      autoHideMenuBar: true,
+      webPreferences: {
+        partition: currentPartition(),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    })
+
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+      if (!win.isDestroyed()) win.close()
+    }
+
+    // `agentrq://` is a scheme this app registers, so the navigation is
+    // cancelled rather than followed — there is nothing at the other end and
+    // following it would hand the code to the deep-link handler.
+    const onNavigate = (event, next) => {
+      if (!String(next).startsWith(redirectUri)) return
+      event.preventDefault()
+      finish(next)
+    }
+
+    win.webContents.on('will-navigate', onNavigate)
+    win.webContents.on('will-redirect', onNavigate)
+    // Whatever happens, closing the window ends the flow — including somebody
+    // giving up on it, which is a decision rather than a failure.
+    win.on('closed', () => finish(null))
+
+    win.loadURL(url)
+  })
 }
 
 async function startOAuth(win, pathname, search) {
@@ -884,6 +943,18 @@ function registerIpc(getWindow) {
     (await extensions?.setEnabled(name, enabled)) ?? { ok: false, reason: 'Extensions are unavailable.' },
   )
 
+  ipcMain.handle('agentrq:extensions:supervisor', () => ({
+    authorized: extensions?.supervisor.authorized() ?? false,
+  }))
+
+  ipcMain.handle('agentrq:extensions:authorize', async () =>
+    (await extensions?.supervisor.authorize()) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
+  ipcMain.handle('agentrq:extensions:deauthorize', async () =>
+    (await extensions?.supervisor.forget()) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
   ipcMain.handle('agentrq:extensions:entries', (_event, { surface, context } = {}) =>
     extensions?.entries(surface ?? '', context ?? {}) ?? [],
   )
@@ -1002,15 +1073,6 @@ function jsonStore(filename) {
  * tested; this file imports Electron at module scope and is excluded from
  * coverage, so anything that ends up here is code nobody can check.
  */
-/**
- * Whether the app holds a supervisor credential.
- *
- * A constant today, and a variable on purpose: it is the one thing that has to
- * change when the OAuth flow lands, and a flag with a name is easier to find
- * than a thrown string.
- */
-const supervisorAuthorized = false
-
 function buildExtensionRuntime() {
   // Read back rather than held: the check runs against whatever is installed at
   // the moment somebody installs something else, not a list captured at startup.
@@ -1093,31 +1155,85 @@ function buildExtensionRuntime() {
   }
 
   /**
-   * The supervisor, which is not reachable yet — and precisely why.
+   * The supervisor, and the authorisation it needs.
    *
-   * Its endpoint wants a token whose audience is `coremcp`, and the only thing
-   * that mints one is the OAuth2 flow: register a client, run
-   * `/oauth2/authorize`, exchange the code at `/oauth2/token`. The session
-   * cookie this app already holds identifies the user *during* that flow and is
-   * refused by `tools/call` itself — checked against a real server rather than
-   * assumed, which is how this turned out to be more than a header.
+   * Its endpoint wants a token whose audience is `coremcp`, which only the
+   * OAuth2 flow mints — the session cookie this app holds identifies the user
+   * *during* that flow and is refused by `tools/call` itself. So the app runs
+   * the flow, using the dynamic client registration the backend already
+   * supports, and the person is asked.
    *
-   * So the client is built and left without a credential, and the failure says
-   * what is missing instead of "cannot reach the supervisor yet". An extension
-   * author reading it can tell that their manifest is fine and the app is not.
+   * Asked, not assumed. Acquiring a credential that reaches every workspace on
+   * the account because somebody installed something would be taking a decision
+   * that was not this app's to take — so nothing here happens until an
+   * extension that was granted the account actually needs it, and then the
+   * question is put on screen.
    */
+  const supervisorAuth = createSupervisorAuth({
+    serverUrl: () => serverUrl,
+    fetchImpl: profileFetch,
+    openWindow: (url, redirectUri) => openAuthorizationWindow(url, redirectUri),
+  })
+
+  /**
+   * The supervisor token, kept the way a credential is kept.
+   *
+   * Through `safeStorage`, not a plain JSON file: it reaches every workspace on
+   * the account, which is the widest thing this app ever holds. Where there is
+   * no secure storage it is simply not persisted — the person authorises again
+   * next launch, which is a worse experience and the right trade.
+   */
+  const authStore = jsonStore('extensions-supervisor-auth.json')
+
+  async function saveSupervisorAuth() {
+    const held = supervisorAuth.saved()
+    if (!held.token || !safeStorage.isEncryptionAvailable()) return
+    try {
+      await authStore.write({ sealed: safeStorage.encryptString(JSON.stringify(held)).toString('base64') })
+    } catch (error) {
+      console.warn('could not store the supervisor authorisation:', error?.message ?? error)
+    }
+  }
+
+  async function restoreSupervisorAuth() {
+    if (!safeStorage.isEncryptionAvailable()) return
+    try {
+      const { sealed } = (await authStore.read()) ?? {}
+      if (sealed) supervisorAuth.restore(JSON.parse(safeStorage.decryptString(Buffer.from(sealed, 'base64'))))
+    } catch {
+      // A file that will not decrypt is one from another machine or another
+      // user. Nothing to do but ask again.
+    }
+  }
+
   const supervisorClient = createMcpClient({
     endpoint: () => (serverUrl ? `${serverUrl}/mcp` : ''),
+    headers: async () => ({ authorization: `Bearer ${supervisorAuth.token()}` }),
     fetchImpl: profileFetch,
   })
 
-  const SUPERVISOR_UNAVAILABLE =
-    'AgentRQ cannot reach the supervisor from the desktop app yet: that server needs an OAuth authorisation this app does not hold. Workspace tools work; account-wide ones do not.'
-
   const callSupervisor = async ({ tool, args }) => {
-    if (!supervisorAuthorized) throw new Error(SUPERVISOR_UNAVAILABLE)
+    if (!supervisorAuth.authorized()) {
+      // Named rather than apologised for: the person can do something about
+      // this, and the sentence says what.
+      throw new Error(
+        'AgentRQ is not authorised to use account-wide tools yet. Open Extensions and choose Authorise.',
+      )
+    }
 
-    const answer = await supervisorClient.callTool(tool, args)
+    let answer = await supervisorClient.callTool(tool, args)
+
+    // An expired access token is ordinary — they are short-lived on purpose —
+    // and asking somebody to authorise again every time one lapses is how
+    // people learn to click through the screen that matters.
+    if (!answer.ok && /credentials|401|403/i.test(answer.reason ?? '')) {
+      const refreshed = await supervisorAuth.refresh()
+      if (refreshed.ok) {
+        supervisorClient.reset()
+        answer = await supervisorClient.callTool(tool, args)
+      }
+    }
+
     // Thrown rather than returned, because the broker turns a throw into a
     // refusal carrying this message — and the server's own words are what an
     // extension author needs.
@@ -1188,6 +1304,26 @@ function buildExtensionRuntime() {
   return {
     ...runtime,
 
+    /** Whether account-wide tools can be used, and how to make them usable. */
+    supervisor: {
+      authorized: () => supervisorAuth.authorized(),
+      async authorize() {
+        const result = await supervisorAuth.authorize()
+        if (result.ok) await saveSupervisorAuth()
+        return result
+      },
+      async forget() {
+        supervisorAuth.forget()
+        try {
+          await authStore.write({})
+        } catch {
+          // Forgetting it in memory is what stops it being used; the file is
+          // unreadable without the key either way.
+        }
+        return { ok: true }
+      },
+    },
+
     /** Keeps the shortcut check looking at what is actually installed. */
     async state() {
       installedNow = await installer.list()
@@ -1196,6 +1332,7 @@ function buildExtensionRuntime() {
 
     async startAll() {
       installedNow = await installer.list()
+      await restoreSupervisorAuth()
       // Read back before anything loads: `start` applies the grant *before*
       // calling `apply`, so a grant restored afterwards would refuse exactly
       // the calls an extension makes while loading.

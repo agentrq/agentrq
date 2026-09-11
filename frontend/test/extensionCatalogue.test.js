@@ -301,6 +301,9 @@ describe('useExtensionCatalogue', () => {
     refresh: vi.fn(async () => ({ ok: true, index: { entries: [entry(), entry({ fullName: 'b/x' })] } })),
     chooseFolder: vi.fn(async () => found()),
     installLocal: vi.fn(async () => ({ ok: true, installation: { name: 'standup' } })),
+    supervisor: vi.fn(async () => ({ authorized: false })),
+    authorize: vi.fn(async () => ({ ok: true })),
+    deauthorize: vi.fn(async () => ({ ok: true })),
     uninstall: vi.fn(async () => ({ ok: true })),
     setEnabled: vi.fn(async () => ({ ok: true })),
     configure: vi.fn(async () => ({ ok: true })),
@@ -618,6 +621,80 @@ describe('useExtensionCatalogue', () => {
       await catalogue.uninstall('standup');
       await catalogue.setEnabled('standup', false);
 
+      expect(catalogue.error.value).toBe('');
+    });
+  });
+
+  /**
+   * The supervisor reaches every workspace on the account, so acquiring a
+   * credential for it is a decision a person makes — not something that
+   * follows from installing an extension.
+   */
+  describe('account-wide authorisation', () => {
+    const installedWith = (grant) => ({
+      state: vi.fn(async () => ({ index: { entries: [] }, installed: [{ name: 'digest', enabled: true, loaded: true, grant }] })),
+    });
+
+    it('asks only when something installed actually wants it', async () => {
+      const wanting = useExtensionCatalogue({ bridge: fakeBridge(installedWith({ scope: 'supervisor', workspaces: [] })) });
+      await wanting.load();
+      expect(wanting.needsAuthorization.value).toBe(true);
+
+      const not = useExtensionCatalogue({ bridge: fakeBridge(installedWith({ scope: 'workspace', workspaces: ['ws1'] })) });
+      await not.load();
+      expect(not.needsAuthorization.value).toBe(false);
+    });
+
+    it('stops asking once it has been given', async () => {
+      const bridge = fakeBridge({
+        ...installedWith({ scope: 'supervisor', workspaces: [] }),
+        supervisor: vi.fn(async () => ({ authorized: true })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.load();
+
+      expect(catalogue.authorized.value).toBe(true);
+      expect(catalogue.needsAuthorization.value).toBe(false);
+    });
+
+    it('opens the authorisation when asked, and says what happened', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.authorize();
+
+      expect(bridge.authorize).toHaveBeenCalled();
+      expect(catalogue.notice.value).toContain('account-wide');
+    });
+
+    it('reports a refusal in the words the flow gave', async () => {
+      const bridge = fakeBridge({ authorize: vi.fn(async () => ({ ok: false, reason: 'You declined to authorise AgentRQ.' })) });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.authorize();
+
+      expect(catalogue.error.value).toBe('You declined to authorise AgentRQ.');
+    });
+
+    it('gives it back on request', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.deauthorize();
+
+      expect(bridge.deauthorize).toHaveBeenCalled();
+    });
+
+    it('copes with a build whose bridge has no supervisor question', async () => {
+      // An older desktop build: the catalogue still loads rather than throwing.
+      const bridge = fakeBridge();
+      delete bridge.supervisor;
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.load();
+
+      expect(catalogue.authorized.value).toBe(false);
       expect(catalogue.error.value).toBe('');
     });
   });

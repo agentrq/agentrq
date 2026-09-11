@@ -211,10 +211,17 @@ turns it into a URL and keeps it out of the arguments — those tools take no su
 parameter and the server refuses one outright. On the **supervisor** surface it
 stays, because there it genuinely is an argument.
 
-**The supervisor is not reachable from the desktop app yet.** Its endpoint wants
-a token whose audience is `coremcp`, and only the OAuth2 flow mints one. An
-extension asking for account-wide tools installs, loads, registers its surfaces
-and is then told so in as many words. Workspace tools work.
+**The supervisor needs your authorisation.** Its endpoint wants a token whose
+audience is `coremcp`, and only the OAuth2 flow mints one — the session cookie
+the app already holds is not enough. So the first time an account-wide
+extension is installed, the Extensions screen offers an **Authorise** button,
+and a window opens on your own server's sign-in page.
+
+Asked, never assumed. A credential that reaches every workspace is not
+something an app should acquire because you installed something; the prompt
+appears only once an installed extension has actually been granted the account.
+The token is stored through the OS keychain and can be given back at any time,
+after which the next account-wide call asks again.
 
 This matters because a workspace token and a supervisor session outlive any
 single extension and reach every workspace on the account. An extension that is
