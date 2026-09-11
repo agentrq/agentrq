@@ -279,10 +279,27 @@ app.whenReady().then(async () => {
     JSON.stringify((await runtime.state())[0] ?? null),
   )
 
-  const bridge = await win.webContents.executeJavaScript(
-    "typeof window.agentrq?.extensions?.entries === 'function' && typeof window.agentrq?.extensions?.invoke === 'function'",
+  /**
+   * Every method the renderer calls, checked by name.
+   *
+   * Two were missing at different times — `onChanged` and the three
+   * authorisation methods — because an edit to the preload silently did not
+   * apply and nothing looked. The renderer then called `undefined()` and the
+   * button did nothing at all, which is the quietest failure this bridge has.
+   *
+   * So the list is written out and compared, rather than two of them being
+   * spot-checked.
+   */
+  const EXPECTED_BRIDGE = [
+    'state', 'refresh', 'chooseFolder', 'installLocal', 'uninstall', 'setEnabled',
+    'configure', 'supervisor', 'authorize', 'deauthorize', 'onChanged', 'entries', 'invoke',
+  ]
+
+  const exposed = await win.webContents.executeJavaScript(
+    `Object.entries(window.agentrq?.extensions ?? {}).filter(([, v]) => typeof v === 'function').map(([k]) => k)`,
   )
-  record('the bridge exposes entries and invoke', bridge === true, String(bridge))
+  const missing = EXPECTED_BRIDGE.filter((name) => !exposed.includes(name))
+  record('the bridge exposes every method the renderer calls', missing.length === 0, `missing: ${missing.join(', ')}`)
 
   // The hop nothing else can check: the page asks, the main process answers.
   const { task, rows, error } = await win.webContents.executeJavaScript(script)
