@@ -363,11 +363,33 @@ app.whenReady().then(async () => {
           // A label carrying markup, which is what a diagram built from an
           // agent's message or an issue title actually looks like on a bad day.
           const source = 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;\\n  A-->C;';
+          // Rendered twice, with a theme change between: initialize replaces
+          // the configuration rather than merging, and a partial call used to
+          // put htmlLabels back on — which turned every label into a
+          // foreignObject the sanitiser then removed, leaving a diagram with
+          // nothing written on it.
+          await mermaid.render('verify-warmup', 'graph TD;\\n  X-->Y;');
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'dark' });
           const { svg } = await mermaid.render('verify-diagram', source);
           // Through the real sanitiser, in the page, because DOMPurify needs a
           // DOM — so this is the SVG a person actually gets.
           const { sanitiseSvg } = await import('/src/composables/useDiagram.js').catch(() => ({}));
-          return { ok: true, svg: (sanitiseSvg ? sanitiseSvg(svg) : svg).slice(0, 4000), sanitised: Boolean(sanitiseSvg) };
+          const shown = sanitiseSvg ? sanitiseSvg(svg) : svg;
+          // Measured here, on the whole thing. The stylesheet alone is longer
+          // than any slice worth sending back, so counting on a truncated copy
+          // reports zero of everything and looks like a broken diagram.
+          return {
+            ok: true,
+            sanitised: Boolean(sanitiseSvg),
+            svg: shown.slice(0, 1200),
+            counts: {
+              text: (shown.match(/<text/g) ?? []).length,
+              foreignObject: (shown.match(/foreignObject/g) ?? []).length,
+              style: (shown.match(/<style/g) ?? []).length,
+              fill: (shown.match(/fill:/g) ?? []).length,
+            },
+            labels: [...shown.matchAll(/<text[^>]*>([\\s\\S]*?)<\\/text>/g)].map((m) => m[1].replace(/<[^>]*>/g, '')).slice(0, 6),
+          };
         } catch (error) {
           return { ok: false, reason: String(error) };
         }
@@ -380,9 +402,19 @@ app.whenReady().then(async () => {
   // invisible labels. Checked against real output, because a fixture only
   // proves what somebody already thought to write down.
   record(
+    'with its labels written as text, not as embedded HTML',
+    (diagram.counts?.text ?? 0) > 0 && (diagram.counts?.foreignObject ?? 0) === 0,
+    JSON.stringify(diagram.counts),
+  )
+  record(
+    'and the labels say what the diagram said',
+    (diagram.labels ?? []).some((label) => label.includes('B')),
+    JSON.stringify(diagram.labels),
+  )
+  record(
     'carrying the stylesheet that makes it readable',
-    /<style/.test(diagram.svg ?? '') && /fill:/.test(diagram.svg ?? ''),
-    (diagram.svg ?? '').slice(0, 160),
+    (diagram.counts?.style ?? 0) > 0 && (diagram.counts?.fill ?? 0) > 0,
+    JSON.stringify(diagram.counts),
   )
   record(
     'and it is an svg with a flowchart in it',

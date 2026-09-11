@@ -42,6 +42,34 @@ let nextId = 0;
 export const THEMES = Object.freeze({ light: 'default', dark: 'dark' });
 
 /**
+ * The whole configuration, every time.
+ *
+ * `mermaid.initialize` **replaces** the configuration rather than merging into
+ * it. Calling it with just a theme — which is what setting the theme per
+ * diagram looked like it needed — silently put `htmlLabels` back to its default
+ * of true, and then every label was rendered as a `foreignObject`: the element
+ * that carries arbitrary HTML, and the one the sanitiser strips. The visible
+ * result was a diagram with no labels at all.
+ *
+ * The sanitiser held, which is the point of having two guards. But the
+ * configuration this depends on had quietly reset, so it is built whole and
+ * passed whole, and there is no partial call anywhere.
+ */
+export function configFor(theme) {
+  return {
+    startOnLoad: false,
+    // Neither of these is the caller's to change: strict keeps mermaid escaping
+    // its own labels, and HTML labels are what a label would otherwise be able
+    // to smuggle markup through.
+    securityLevel: 'strict',
+    htmlLabels: false,
+    flowchart: { htmlLabels: false },
+    fontFamily: 'inherit',
+    theme: THEMES[theme] ?? THEMES.light,
+  };
+}
+
+/**
  * The one mermaid instance, configured before it can be asked to draw.
  *
  * @param {Function} [importer]  Injected so a test does not load mermaid.
@@ -51,16 +79,7 @@ export function loadMermaid(importer = () => import('mermaid')) {
     mermaidPromise = importer()
       .then((module) => {
         const mermaid = module.default ?? module;
-        mermaid.initialize({
-          startOnLoad: false,
-          // The two that matter, and neither is the caller's to change: strict
-          // keeps mermaid escaping its own labels, and HTML labels are what a
-          // label would otherwise be able to smuggle markup through.
-          securityLevel: 'strict',
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-          fontFamily: 'inherit',
-        });
+        mermaid.initialize(configFor('light'));
         return mermaid;
       })
       .catch((error) => {
@@ -102,7 +121,8 @@ export async function renderDiagram(source, { theme = 'light', importer } = {}) 
   }
 
   try {
-    mermaid.initialize({ theme: THEMES[theme] ?? THEMES.light });
+    // The whole configuration, not just the theme — see `configFor`.
+    mermaid.initialize(configFor(theme));
     const { svg } = await mermaid.render(`agentrq-diagram-${nextId++}`, text);
     return { ok: true, svg: sanitiseSvg(svg) };
   } catch (error) {

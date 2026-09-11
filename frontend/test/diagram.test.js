@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { THEMES, loadMermaid, renderDiagram, resetMermaid, sanitiseCss, sanitiseSvg } from '../src/composables/useDiagram';
+import {
+  THEMES,
+  configFor,
+  loadMermaid,
+  renderDiagram,
+  resetMermaid,
+  sanitiseCss,
+  sanitiseSvg,
+} from '../src/composables/useDiagram';
 
 /**
  * Drawing a diagram from its source.
@@ -103,6 +111,46 @@ describe('the stylesheet a diagram carries', () => {
   });
 });
 
+describe('configFor', () => {
+  // Every call carries the whole thing, because a partial one resets the rest.
+  it('always carries the guards, whatever theme is asked for', () => {
+    for (const theme of ['light', 'dark', 'neon', undefined]) {
+      expect(configFor(theme)).toMatchObject({
+        securityLevel: 'strict',
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
+        startOnLoad: false,
+      });
+    }
+  });
+
+  it('names the theme mermaid knows, not the one we call it', () => {
+    expect(configFor('dark').theme).toBe(THEMES.dark);
+    expect(configFor('light').theme).toBe(THEMES.light);
+    expect(configFor('neon').theme).toBe(THEMES.light);
+  });
+});
+
+describe('the label a node carries', () => {
+  // With HTML labels off, mermaid writes a <text>. If the configuration ever
+  // resets, it writes a <foreignObject> instead — which the sanitiser removes,
+  // and the diagram arrives with nothing written on it.
+  it('survives sanitising as text', () => {
+    const svg = '<svg><g class="node"><rect width="60"/><text><tspan>A</tspan></text></g></svg>';
+
+    const clean = sanitiseSvg(svg);
+
+    expect(clean).toContain('<text');
+    expect(clean).toContain('A');
+  });
+
+  it('is removed when it arrives as embedded HTML, which is the point', () => {
+    const svg = '<svg><g class="node"><foreignObject><div>A</div></foreignObject></g></svg>';
+
+    expect(sanitiseSvg(svg)).not.toContain('foreignObject');
+  });
+});
+
 describe('sanitiseCss', () => {
   it('leaves an ordinary stylesheet alone', () => {
     const css = '#d{font-size:16px;fill:#333;}#d .node{stroke-width:1px;}';
@@ -137,8 +185,8 @@ describe('renderDiagram', () => {
   /**
    * Mermaid reads `%%{init: ...}%%` out of the source, and one of the things it
    * can set is `securityLevel` — so a diagram could otherwise turn off
-   * mermaid's own escaping from inside the text being drawn. Set here, once,
-   * and refused by the extension too: the two guards fail differently.
+   * mermaid's own escaping from inside the text being drawn. Set here, and
+   * refused by the extension too: the two guards fail differently.
    */
   it('configures mermaid strictly, whatever the source asks for', async () => {
     const mermaid = fakeMermaid();
@@ -151,12 +199,34 @@ describe('renderDiagram', () => {
     expect(config.startOnLoad).toBe(false);
   });
 
+  /**
+   * The bug this test exists for, and it was not cosmetic.
+   *
+   * `mermaid.initialize` **replaces** the configuration rather than merging
+   * into it, so setting the theme with a partial call put `htmlLabels` back to
+   * its default of true. Every label then became a `foreignObject` — the
+   * element that carries arbitrary HTML — and the sanitiser stripped them,
+   * leaving a diagram with no labels at all. The guard held; the configuration
+   * it was backing up had quietly reset.
+   */
+  it('sends the whole configuration every time, not just the theme', async () => {
+    const mermaid = fakeMermaid();
+
+    await renderDiagram('graph TD;', { theme: 'dark', importer: importing(mermaid) });
+
+    for (const [config] of mermaid.initialize.mock.calls) {
+      expect(config.securityLevel, JSON.stringify(config)).toBe('strict');
+      expect(config.htmlLabels, JSON.stringify(config)).toBe(false);
+    }
+    expect(mermaid.initialize).toHaveBeenLastCalledWith(configFor('dark'));
+  });
+
   it('draws in the theme it was given', async () => {
     const mermaid = fakeMermaid();
 
     await renderDiagram('graph TD;', { theme: 'dark', importer: importing(mermaid) });
 
-    expect(mermaid.initialize).toHaveBeenLastCalledWith({ theme: THEMES.dark });
+    expect(mermaid.initialize.mock.calls.at(-1)[0].theme).toBe(THEMES.dark);
   });
 
   it('falls back to the light theme for one it does not know', async () => {
@@ -164,7 +234,7 @@ describe('renderDiagram', () => {
 
     await renderDiagram('graph TD;', { theme: 'neon', importer: importing(mermaid) });
 
-    expect(mermaid.initialize).toHaveBeenLastCalledWith({ theme: THEMES.light });
+    expect(mermaid.initialize.mock.calls.at(-1)[0].theme).toBe(THEMES.light);
   });
 
   it('gives each diagram its own id, because mermaid measures by element', async () => {
