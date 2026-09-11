@@ -109,7 +109,7 @@ export function statusOf(installation) {
   return contributes.length > 0 ? contributes.join(', ') : 'Running, contributing nothing';
 }
 
-const LABELS = { ui: 'view', shortcuts: 'shortcut', schedules: 'schedule' };
+const LABELS = { ui: 'view', shortcuts: 'shortcut', schedules: 'schedule', renderers: 'renderer' };
 
 /**
  * The rows for the screen, grouped and ordered.

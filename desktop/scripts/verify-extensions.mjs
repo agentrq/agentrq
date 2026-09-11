@@ -248,6 +248,7 @@ app.whenReady().then(async () => {
   await new Promise((r) => setTimeout(r, 1500))
 
   const results = []
+  const skipped = []
   const record = (name, pass, detail) => results.push({ name, pass, detail })
 
   // The bug this missed the first time: an example asking for MCP tools was
@@ -388,7 +389,74 @@ app.whenReady().then(async () => {
   // needs a DOM and mermaid needs a browser that can measure text. That is the
   // whole reason this check is here rather than in a unit test.
 
-  // The regression check, in two halves.
+  /**
+   * The renderer path, end to end, in the page.
+   *
+   * This is the seam that shipped broken: `MarkdownBody` consulted a list of
+   * claimed languages that was initialised empty and never filled, so every
+   * message said "nothing to do" and no fence reached an extension. Every unit
+   * test passed because each supplied the list directly — none asked where it
+   * came from, which was the only question that mattered.
+   */
+  const pipeline = await win.webContents.executeJavaScript(`(async () => {
+    try {
+      const [{ mayHaveBlocks, splitFences }, { normaliseView }, renderers] = await Promise.all([
+        import('/src/utils/markdownBlocks.js'),
+        import('/src/composables/useExtensionView.js'),
+        import('/src/composables/useExtensionRenderers.js'),
+      ]);
+
+      // The bridge the real composable talks to, answering as the main process does.
+      window.agentrq = { extensions: {
+        entries: async () => [{ owner: 'mermaid', id: 'mermaid', language: 'mermaid', order: 100 }],
+        invoke: async (target, context) => ({
+          ok: true,
+          view: { nodes: [{ type: 'diagram', format: 'mermaid', source: context.source }] },
+        }),
+      } };
+
+      const body = renderers.useExtensionRenderers({ workspaceId: 'ws1' });
+      await body.load();
+
+      const text = '\`\`\`mermaid\\ngraph TD;\\n    A-->B;\\n\`\`\`';
+      const claimed = body.languages.value;
+      if (!mayHaveBlocks(text, claimed)) return { ok: false, step: 'nothing claimed', claimed };
+
+      const [block] = splitFences(text, claimed);
+      if (block?.type !== 'block') return { ok: false, step: 'fence not split', claimed };
+
+      const answer = await body.render('mermaid', block.source, { workspaceId: 'ws1' });
+      if (!answer.ok) return { ok: false, step: 'extension refused', reason: answer.reason, claimed };
+
+      const view = normaliseView(answer.view);
+      return { ok: view.ok, step: 'drawn', node: view.view?.nodes?.[0], claimed };
+    } catch (error) {
+      return { ok: false, step: 'threw', reason: String(error), unavailable: true };
+    }
+  })()`)
+
+  if (pipeline.unavailable) {
+    // A production bundle exposes no source paths, so this one check only runs
+    // against a dev build. Skipped rather than failed: a check that is red for
+    // everybody every time is one people learn to ignore, which is worse than
+    // one that says plainly when it did not run.
+    //
+    //   npm run dev   # in another terminal, then re-run this
+    skipped.push('the renderer path (needs a dev build: npm run dev)')
+  } else {
+    record(
+      'a message asks which languages are claimed',
+      JSON.stringify(pipeline.claimed) === '["mermaid"]',
+      JSON.stringify(pipeline.claimed),
+    )
+    record('and the fence reaches the extension and comes back drawable', pipeline.ok === true, `${pipeline.step}: ${pipeline.reason ?? ''}`)
+    record(
+      'as a diagram carrying the source that was written',
+      pipeline.node?.type === 'diagram' && pipeline.node?.source === 'graph TD;\n    A-->B;',
+      JSON.stringify(pipeline.node),
+    )
+  }
+
   // The regression check, in two halves. The first states the constraint that
   // caused the bug; the second is the fix, and it is only meaningful because
   // the first fails.
@@ -407,6 +475,8 @@ app.whenReady().then(async () => {
   for (const { name, pass, detail } of results) {
     console.log(`${pass ? '✓' : '✗'} ${name}${pass ? '' : ` — ${detail}`}`)
   }
+
+  for (const name of skipped) console.log(`- ${name} — skipped`)
 
   const failed = results.filter((r) => !r.pass).length
   console.log(failed === 0 ? '\nAll checks passed.' : `\n${failed} check(s) failed.`)
