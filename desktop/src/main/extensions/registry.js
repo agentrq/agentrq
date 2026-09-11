@@ -179,5 +179,9 @@ export function createRegistries() {
     shortcuts: createRegistry({ name: 'shortcut', scope: SCOPES.global, uniqueBy: 'key' }),
     // A schedule is reconciled by id against what already exists on the server.
     schedules: createRegistry({ name: 'schedule', scope: SCOPES.owner }),
+    // A fenced-code language has one renderer, whoever asked first — two
+    // extensions both drawing ```mermaid would be resolved by load order,
+    // which is no answer at all.
+    renderers: createRegistry({ name: 'renderer', scope: SCOPES.global, uniqueBy: 'language' }),
   }
 }

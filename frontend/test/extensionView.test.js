@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  MAX_SOURCE,
   MAX_DEPTH,
   MAX_NODES,
   MAX_TEXT,
@@ -40,6 +41,7 @@ describe('normaliseView', () => {
     const nodes = Object.keys(NODE_TYPES).map((type) => {
       if (type === 'group') return { type, label: 'g', children: [{ type: 'text', value: 'x' }] };
       if (type === 'rows') return { type, items: [{ type: 'row', label: 'a', value: 'b' }] };
+      if (type === 'diagram') return { type, format: 'mermaid', source: 'graph TD;\n  A-->B;' };
       return { type, value: 'x', label: 'x' };
     });
 
@@ -156,5 +158,66 @@ describe('normaliseView', () => {
   it('drops a title that is not a string', () => {
     expect(normaliseView({ title: 7, nodes: [] }).view.title).toBe('7');
     expect(normaliseView({ nodes: [] }).view.title).toBe('');
+  });
+});
+
+
+/**
+ * A diagram is a *language*, not markup.
+ *
+ * The extension sends source and AgentRQ draws it, exactly as it already draws
+ * untrusted markdown. Accepting SVG instead would put third-party markup on a
+ * privileged origin, which is the one thing this vocabulary exists to prevent —
+ * so the node carries no markup at all and there is nothing to sanitise.
+ */
+describe('a diagram node', () => {
+  const diagram = (over = {}) => ({ type: 'diagram', format: 'mermaid', source: 'graph TD;\n  A-->B;', ...over });
+
+  it('keeps the source exactly as it was written', () => {
+    const { ok, view: drawn } = normaliseView([diagram()]);
+
+    expect(ok).toBe(true);
+    // Byte for byte: a diagram is whitespace-sensitive, and a "tidied" one is
+    // a different diagram or none at all.
+    expect(drawn.nodes[0].source).toBe('graph TD;\n  A-->B;');
+    expect(drawn.nodes[0].format).toBe('mermaid');
+  });
+
+  it('names the formats it knows when given one it does not', () => {
+    const { ok, reason } = normaliseView([diagram({ format: 'mermaidjs' })]);
+
+    expect(ok).toBe(false);
+    expect(reason).toContain('mermaidjs');
+    expect(reason).toContain('mermaid');
+  });
+
+  it('says "(none)" rather than an empty pair of quotes', () => {
+    expect(normaliseView([diagram({ format: undefined })]).reason).toContain('(none)');
+  });
+
+  it('refuses one with nothing to draw', () => {
+    expect(normaliseView([diagram({ source: '' })]).reason).toContain('needs source');
+    expect(normaliseView([diagram({ source: '   \n  ' })]).reason).toContain('needs source');
+    expect(normaliseView([diagram({ source: undefined })]).reason).toContain('needs source');
+  });
+
+  // Refused rather than clamped: half a diagram is not a shorter diagram, it is
+  // a syntax error — and the parser runs in the window somebody is reading in.
+  it('refuses one longer than it will draw, rather than truncating it', () => {
+    const { ok, reason } = normaliseView([diagram({ source: 'A-->B;'.repeat(MAX_SOURCE) })]);
+
+    expect(ok).toBe(false);
+    expect(reason).toContain(String(MAX_SOURCE));
+  });
+
+  it('carries a label through, clamped like any other text', () => {
+    expect(normaliseView([diagram({ label: 'How it flows' })]).view.nodes[0].label).toBe('How it flows');
+    expect(normaliseView([diagram()]).view.nodes[0].label).toBe('');
+  });
+
+  it('nests inside a group like anything else', () => {
+    const grouped = { type: 'group', label: 'Diagrams', children: [diagram()] };
+
+    expect(normaliseView([grouped]).ok).toBe(true);
   });
 });

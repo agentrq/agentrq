@@ -251,3 +251,74 @@ describe('invoke', () => {
     expect(surfaces.error.value).toBe('');
   });
 });
+
+
+/**
+ * `invoke` holds what it drew — one panel, one error, because it is for a
+ * person clicking something. A renderer is asked for every claimed block in a
+ * message while it is being drawn, and those all need their own answer: putting
+ * them through `panel` would have each block overwriting the last and an
+ * unrelated dialog opening in the middle of a conversation.
+ */
+describe('invokeQuietly', () => {
+  it('hands the answer straight back, touching nothing shared', async () => {
+    const bridge = fakeBridge();
+    const surfaces = useExtensionSurfaces({ bridge });
+
+    const answer = await surfaces.invokeQuietly({ owner: 'mermaid', id: 'mermaid', surface: 'code-block' }, {
+      language: 'mermaid',
+      source: 'graph TD;',
+    });
+
+    expect(answer).toEqual({ ok: true, view: view() });
+    expect(surfaces.panel.value).toBeNull();
+    expect(surfaces.error.value).toBe('');
+    expect(surfaces.busy.value).toBe(false);
+  });
+
+  it('flattens the context, the way everything crossing the bridge must', async () => {
+    const bridge = fakeBridge();
+    const surfaces = useExtensionSurfaces({ bridge });
+
+    await surfaces.invokeQuietly({ owner: 'mermaid', id: 'mermaid' }, new Proxy({ source: 'graph TD;' }, {}));
+
+    expect(() => structuredClone(bridge.invoke.mock.calls[0][1])).not.toThrow();
+  });
+
+  // Local to the block on every path: a message must not lose its text because
+  // one diagram would not render.
+  it('reports a refusal rather than raising it', async () => {
+    const refusing = useExtensionSurfaces({
+      bridge: fakeBridge({ invoke: vi.fn(async () => ({ ok: false, reason: 'too long' })) }),
+    });
+    expect(await refusing.invokeQuietly({}, {})).toEqual({ ok: false, reason: 'too long' });
+    expect(refusing.error.value).toBe('');
+
+    const empty = useExtensionSurfaces({ bridge: fakeBridge({ invoke: vi.fn(async () => undefined) }) });
+    expect(await empty.invokeQuietly({}, {})).toEqual({ ok: false, reason: '' });
+
+    const throwing = useExtensionSurfaces({
+      bridge: fakeBridge({ invoke: vi.fn(async () => { throw new Error('EPIPE'); }) }),
+    });
+    expect(await throwing.invokeQuietly({}, {})).toEqual({ ok: false, reason: 'EPIPE' });
+  });
+
+  it('has something to say about a throw with no message', async () => {
+    const empty = useExtensionSurfaces({
+      bridge: fakeBridge({ invoke: vi.fn(async () => { throw new Error(''); }) }),
+    });
+    expect(await empty.invokeQuietly({}, {})).toEqual({ ok: false, reason: '' });
+
+    // Not everything thrown is an Error, and nothing here may raise.
+    const odd = useExtensionSurfaces({
+      bridge: fakeBridge({ invoke: vi.fn(async () => { throw 'gone' }) }), // eslint-disable-line no-throw-literal
+    });
+    expect(await odd.invokeQuietly({}, {})).toEqual({ ok: false, reason: '' });
+  });
+
+  it('answers with nothing at all when there is no bridge', async () => {
+    const surfaces = useExtensionSurfaces({ bridge: undefined });
+
+    expect(await surfaces.invokeQuietly({}, {})).toEqual({ ok: false, reason: '' });
+  });
+});

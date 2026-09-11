@@ -24,7 +24,7 @@
  *   npm run build && npx electron scripts/verify-extensions.mjs
  */
 import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
-import { readFile, access } from 'node:fs/promises'
+import { readFile, access, readdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -273,7 +273,8 @@ app.whenReady().then(async () => {
   record('and the module loads', started.ok === true, String(started.reason ?? ''))
   record(
     'the row would say what it contributed',
-    JSON.stringify((await runtime.state())[0]?.contributes) === JSON.stringify({ ui: 1, shortcuts: 0, schedules: 0 }),
+    JSON.stringify((await runtime.state())[0]?.contributes) ===
+      JSON.stringify({ ui: 1, shortcuts: 0, schedules: 0, renderers: 0 }),
     JSON.stringify((await runtime.state())[0] ?? null),
   )
 
@@ -342,6 +343,52 @@ app.whenReady().then(async () => {
   const headerActions = digest.runtime.entries('workspace-action', { workspaceId: 'ws1' })
   record('a header action is offered for a workspace', headerActions.length === 1, JSON.stringify(headerActions))
 
+  // A mermaid diagram, drawn end to end in a real browser.
+  //
+  // jsdom cannot do this: mermaid measures text with `getBBox`, which it does
+  // not implement — so the unit tests inject a fake mermaid and prove the
+  // wiring, and this proves the dependency. It is also the only place the
+  // sanitiser is exercised against real mermaid output rather than a fixture.
+  const mermaidChunk = (await readdir(join(RENDERER_ROOT, 'assets')))
+    .find((file) => /^mermaid\.core-.*\.js$/.test(file))
+
+  const diagram = mermaidChunk
+    ? await win.webContents.executeJavaScript(`(async () => {
+        try {
+          // The built chunk, not a source path: a production bundle has none,
+          // and this is about the dependency rather than our module graph.
+          const mermaid = (await import('/assets/${mermaidChunk}')).default;
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
+          // A label carrying markup, which is what a diagram built from an
+          // agent's message or an issue title actually looks like on a bad day.
+          const source = 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;\\n  A-->C;';
+          const { svg } = await mermaid.render('verify-diagram', source);
+          return { ok: true, svg: svg.slice(0, 4000) };
+        } catch (error) {
+          return { ok: false, reason: String(error) };
+        }
+      })()`)
+    : { ok: false, reason: 'no mermaid chunk in the build' }
+
+  record('mermaid draws a diagram in a real browser', diagram.ok === true, String(diagram.reason ?? ''))
+  record(
+    'and it is an svg with a flowchart in it',
+    /<svg/.test(diagram.svg ?? '') && /flowchart/.test(diagram.svg ?? ''),
+    (diagram.svg ?? '').slice(0, 120),
+  )
+  // Strict mode escapes its own labels, so even before the sanitiser the
+  // markup in that node is text rather than an element.
+  record(
+    'with a label full of markup rendered as text, not as an element',
+    diagram.ok && !/<img[^>]*onerror/i.test(diagram.svg ?? ''),
+    (diagram.svg ?? '').slice(0, 300),
+  )
+
+  // The drawing and the sanitising both happen in the page, because DOMPurify
+  // needs a DOM and mermaid needs a browser that can measure text. That is the
+  // whole reason this check is here rather than in a unit test.
+
+  // The regression check, in two halves.
   // The regression check, in two halves. The first states the constraint that
   // caused the bug; the second is the fix, and it is only meaningful because
   // the first fails.

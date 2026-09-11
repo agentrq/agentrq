@@ -130,10 +130,30 @@ export function useExtensionSurfaces({
     }
   }
 
+  /**
+   * Run one contribution and hand the answer straight back.
+   *
+   * Distinct from `invoke` because that one *holds* what it drew: it is for a
+   * person clicking something, so there is one panel and one error at a time.
+   * A renderer is asked for many blocks while a message is being drawn, and
+   * they all need their own answer — putting those through `panel` would mean
+   * each block overwriting the last and an unrelated dialog opening.
+   */
+  async function invokeQuietly(target, context = {}) {
+    if (!available) return { ok: false, reason: '' };
+    try {
+      const result = await bridge.invoke(target, plain(context));
+      if (!result?.ok) return { ok: false, reason: result?.reason ?? '' };
+      return { ok: true, view: result.view };
+    } catch (err) {
+      return { ok: false, reason: err?.message ?? '' };
+    }
+  }
+
   function dismiss() {
     panel.value = null;
     error.value = '';
   }
 
-  return { available, panel, error, busy, entriesFor, invoke, dismiss };
+  return { available, panel, error, busy, entriesFor, invoke, invokeQuietly, dismiss };
 }
