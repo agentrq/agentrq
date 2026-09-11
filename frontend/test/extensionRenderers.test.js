@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { useExtensionRenderers } from '../src/composables/useExtensionRenderers';
+import { resetRenderers, useExtensionRenderers } from '../src/composables/useExtensionRenderers';
 
 /**
  * The fourth surface, and the first that changes something AgentRQ was already
@@ -18,6 +18,10 @@ const fakeSurfaces = (over = {}) => ({
   entriesFor: vi.fn(async () => [entry()]),
   invokeQuietly: vi.fn(async () => ({ ok: true, view: { nodes: [{ type: 'diagram', format: 'mermaid', source: 'graph TD;' }] } })),
   ...over,
+});
+
+beforeEach(() => {
+  resetRenderers();
 });
 
 describe('useExtensionRenderers', () => {
@@ -104,5 +108,41 @@ describe('useExtensionRenderers', () => {
 
   it('finds its own surfaces when it is given none', () => {
     expect(useExtensionRenderers().available).toBe(false);
+  });
+
+  /**
+   * Shared across the application, not per component.
+   *
+   * Every message body reads this list, a conversation is many bodies, and each
+   * is re-rendered as one is typed near — a list per body would be a bridge
+   * call per message and then per keystroke.
+   */
+  it('is one list for the whole app, read once', async () => {
+    const surfaces = fakeSurfaces();
+    const first = useExtensionRenderers({ surfaces });
+    const second = useExtensionRenderers({ surfaces });
+
+    await first.load();
+
+    expect(second.languages.value).toEqual(['mermaid']);
+  });
+
+  it('does not let a slow read overwrite a newer one', async () => {
+    let resolveSlow;
+    const surfaces = fakeSurfaces({
+      entriesFor: vi
+        .fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+        .mockImplementationOnce(async () => [entry({ language: 'vega' })]),
+    });
+    const renderers = useExtensionRenderers({ surfaces });
+
+    const slow = renderers.load();
+    await renderers.load();
+    resolveSlow([entry({ language: 'mermaid' })]);
+    await slow;
+
+    // The second answer stands, not whichever finished last.
+    expect(renderers.languages.value).toEqual(['vega']);
   });
 });

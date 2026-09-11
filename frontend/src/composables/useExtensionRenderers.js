@@ -10,12 +10,16 @@ import { useExtensionSurfaces } from './useExtensionSurfaces';
  * — `mermaid`, `vega`, whatever — and is asked to turn one fence's source into
  * a view spec.
  *
- * ## Claimed once, asked per block
+ * ## Claimed once for the whole app, asked per block
  *
- * The list of languages is read once and refreshed when extensions change,
- * because it is consulted for every message body and a bridge call per message
- * would be a call per keystroke in the reply box. The *rendering* is per block,
- * because that is a different question with a different answer each time.
+ * The list of languages is **shared**, not per component. Every message body
+ * consults it, a conversation is many bodies, and each one is re-rendered as it
+ * is typed near — a list per `MarkdownBody` would be a bridge call per message
+ * and then per keystroke. So it is read once, held here, and refreshed when
+ * extensions change.
+ *
+ * The *rendering* is per block, because that is a different question with a
+ * different answer each time.
  *
  * ## A language belongs to one extension
  *
@@ -32,15 +36,34 @@ import { useExtensionSurfaces } from './useExtensionSurfaces';
  * means: not a setting AgentRQ keeps, but a question the extension answers.
  */
 
+/**
+ * What is claimed, for the whole application.
+ *
+ * Module state rather than per-caller, because every message body reads it and
+ * they must not each ask. Exported for the tests, which need to start from
+ * nothing.
+ */
+const shared = ref([]);
+
+/** Which read is current, so a slow answer cannot overwrite a newer one. */
+let reading = 0;
+
+export function resetRenderers() {
+  shared.value = [];
+  reading = 0;
+}
+
 export function useExtensionRenderers({ surfaces = useExtensionSurfaces(), workspaceId = '' } = {}) {
-  const entries = ref([]);
+  const entries = shared;
 
   const languages = computed(() => entries.value.map((entry) => entry.language).filter(Boolean));
 
   /** Read what is claimed now. Cheap, and inert without a bridge. */
   async function load(context = {}) {
     if (!surfaces.available) return;
-    entries.value = await surfaces.entriesFor('code-block', { workspaceId, ...context });
+    const token = (reading += 1);
+    const found = await surfaces.entriesFor('code-block', { workspaceId, ...context });
+    if (token === reading) entries.value = found;
   }
 
   /**

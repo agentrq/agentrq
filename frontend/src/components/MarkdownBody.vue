@@ -43,7 +43,7 @@
  * the main process there would be a bridge call per keystroke in the message
  * box, so the asking is a watcher keyed on the text.
  */
-import { ref, shallowRef, watch } from 'vue';
+import { onMounted, ref, shallowRef, watch } from 'vue';
 
 import ExtensionNode from './ExtensionNode.vue';
 import { renderMarkdown } from '../utils/markdown';
@@ -53,9 +53,16 @@ import { useExtensionRenderers } from '../composables/useExtensionRenderers';
 
 const props = defineProps({
   text: { type: String, default: '' },
+  /** Which workspace this message is in, so a renderer can decide about it. */
+  workspaceId: { type: String, default: '' },
 });
 
-const renderers = useExtensionRenderers();
+const renderers = useExtensionRenderers({ workspaceId: props.workspaceId });
+
+// The claimed languages are shared across every body, so this is one bridge
+// call for the app rather than one per message — and without it the list is
+// empty and no fence is ever handed to anybody, which is how this shipped.
+onMounted(() => renderers.load());
 
 /** The body, cut into runs of markdown and the fences somebody claimed. */
 const segments = shallowRef([{ type: 'markdown', text: props.text }]);
@@ -86,7 +93,7 @@ async function build() {
   for (const segment of parts) {
     if (segment.type !== 'block') continue;
 
-    const answer = await renderers.render(segment.language, segment.source);
+    const answer = await renderers.render(segment.language, segment.source, { workspaceId: props.workspaceId });
     if (token !== pass) return;
     if (!answer?.ok) continue;
 
