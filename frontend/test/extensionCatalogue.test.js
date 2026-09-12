@@ -334,6 +334,21 @@ describe('useExtensionCatalogue', () => {
     expect(catalogue.sections.value[0].rows).toHaveLength(1);
   });
 
+  // The line the screen actually shows. `summarise` is tested on its own above,
+  // but a lazy `computed` nothing ever reads is a getter that never runs — so
+  // this is what proves the screen's own summary is wired to the loaded index
+  // rather than to nothing.
+  it('summarises what it loaded', async () => {
+    const bridge = fakeBridge()
+    const catalogue = useExtensionCatalogue({ bridge })
+
+    expect(catalogue.summary.value).toBe('No extensions found yet.')
+
+    await catalogue.load()
+
+    expect(catalogue.summary.value).toBe('1 extension')
+  })
+
   it('searches only when asked', async () => {
     const bridge = fakeBridge();
     const catalogue = useExtensionCatalogue({ bridge });

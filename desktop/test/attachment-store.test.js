@@ -256,6 +256,24 @@ describe('evict', () => {
     expect(await small.read(A)).toBeNull()
   })
 
+  // Eviction is housekeeping, and housekeeping that throws takes the write it
+  // was tidying up after with it. A file that will not delete — held open,
+  // already gone, a permission the app does not have — costs a slightly worse
+  // budget until the next sweep, which is not worth failing a write over.
+  it('survives a file that will not delete', async () => {
+    // Stored under a budget that fits, so nothing is swept on the way in and
+    // the explicit sweep below has something to do.
+    const fs = makeFs()
+    await store(fs, 1000).write(A, '1234567890', png)
+    await store(fs, 1000).write(B, '1234567890', png)
+
+    fs.rm = async () => {
+      throw new Error('EBUSY')
+    }
+
+    await expect(store(fs, 5).evict()).resolves.toBeGreaterThan(0)
+  })
+
   it('has nothing to drop while the budget fits, or before anything is stored', async () => {
     const fs = makeFs()
     await store(fs).write(A, 'BYTES', png)

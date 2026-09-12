@@ -343,6 +343,27 @@ describe('install', () => {
     expect(await installer.list()).toEqual([])
   })
 
+  // Two callers arriving together must not each read the record and then each
+  // write their own idea of it back — the second would overwrite the first.
+  // The read is shared, so both wait on one.
+  it('reads the record once when two callers arrive together', async () => {
+    let release
+    const held = new Promise((resolve) => {
+      release = resolve
+    })
+    const read = vi.fn(async () => {
+      await held
+      return { installations: [] }
+    })
+    const { installer } = build({ store: { read, write: vi.fn(async () => {}) } })
+
+    const both = Promise.all([installer.list(), installer.list()])
+    release()
+
+    expect(await both).toEqual([[], []])
+    expect(read).toHaveBeenCalledOnce()
+  })
+
   it('ignores a record of the wrong shape', async () => {
     const { installer } = build({
       store: { read: vi.fn(async () => ({ installations: 'lots' })), write: vi.fn(async () => {}) },

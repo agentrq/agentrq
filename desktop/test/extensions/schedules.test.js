@@ -662,6 +662,19 @@ describe('reconcile', () => {
     expect(saved().standup.nightly).toMatchObject({ kind: KINDS.task })
   })
 
+  // The same for the event lookup: an answer that is already the structure is
+  // used as it is, and the event it names is found rather than created again.
+  it('resolves an event from a listing that arrived already parsed', async () => {
+    const fake = fakeSupervisor({
+      listEvents: async () => ({ ok: true, result: { events: [{ id: 'ev1', name: 'standup_done' }] } }),
+    })
+    const { schedules } = build({ supervisor: fake })
+
+    await schedules.reconcile('standup', [triggerEntry({ event: 'standup_done' })])
+
+    expect(fake.toolsCalled()).not.toContain('createEvent')
+  })
+
   // The trigger's own event was found, and only the chained one was refused —
   // the two lookups fail in different places and the second is the easier one
   // to leave untested.
@@ -928,6 +941,19 @@ describe('removeOwner', () => {
 
   it('reads an answer that names no triggers at all as an unused event', async () => {
     const fake = fakeSupervisor({ listEventTriggers: async () => ({ ok: true, result: '{}' }) })
+    const { schedules } = build({ supervisor: fake })
+    await schedules.reconcile('standup', [triggerEntry()])
+
+    await schedules.removeOwner('standup')
+
+    expect(fake.toolsCalled()).toContain('deleteEvent')
+  })
+
+  // Not every answer arrives as text to be parsed. A server that hands back
+  // the structure itself is already saying what the JSON would have said, and
+  // re-parsing an object is not a step this should need.
+  it('reads a trigger list that arrived already parsed', async () => {
+    const fake = fakeSupervisor({ listEventTriggers: async () => ({ ok: true, result: { eventTriggers: [] } }) })
     const { schedules } = build({ supervisor: fake })
     await schedules.reconcile('standup', [triggerEntry()])
 

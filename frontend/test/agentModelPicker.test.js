@@ -227,6 +227,21 @@ describe('useAgentModelPicker', () => {
     expect(picker.error.value).toBe('');
   });
 
+  // A report that names no current model at all — an agent that has just come
+  // up, or one whose gateway sent the list before it knew what was running.
+  // It neither confirms the switch nor answers it, so the only honest thing is
+  // to leave the request outstanding and say nothing.
+  it('keeps waiting when a report names no current model', async () => {
+    const { picker, workspace } = harness()
+
+    await picker.choose('b')
+    workspace.value = connected({ ...twoModels, currentModel: undefined, models: [...twoModels.models] })
+    await nextTick()
+
+    expect(picker.isPending.value).toBe(true)
+    expect(picker.error.value).toBe('')
+  })
+
   it('takes a report naming a different model as the agent’s answer', async () => {
     // The agent declined, or a second gateway answered, or an unrelated update
     // landed mid-flight. The request is over and what arrived is the truth — but
