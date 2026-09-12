@@ -33,8 +33,9 @@ import DOMPurify from 'dompurify';
  * for it until a message actually contains a diagram somebody claimed.
  */
 
-/** Set once, the first time a diagram is drawn. */
+/** Set once each, the first time a diagram of that kind is drawn. */
 let mermaidPromise = null;
+let katexPromise = null;
 
 /** Distinct per diagram: mermaid uses it as an element id while measuring. */
 let nextId = 0;
@@ -96,21 +97,33 @@ export function loadMermaid(importer = () => import('mermaid')) {
 export function resetMermaid() {
   mermaidPromise = null;
   nextId = 0;
+  katexPromise = null;
 }
 
 /**
- * Draws one diagram, or says why it could not be drawn.
+ * KaTeX, loaded with its stylesheet.
  *
- * Never throws. A diagram is one part of a message somebody is reading, and an
- * exception here would take the whole message with it — a malformed diagram
- * should cost its own block and nothing else.
- *
- * @returns {Promise<{ok: true, svg: string} | {ok: false, reason: string}>}
+ * The CSS is not optional decoration: without it the output is unstyled,
+ * overlapping glyphs rather than an equation. It comes along on the dynamic
+ * import so it stays out of the main bundle and can never be forgotten
+ * separately from the code it styles.
  */
-export async function renderDiagram(source, { theme = 'light', importer } = {}) {
-  const text = String(source ?? '').trim();
-  if (!text) return { ok: false, reason: 'This diagram is empty.' };
+export function loadKatex(
+  importer = () => Promise.all([import('katex'), import('katex/dist/katex.css')]).then(([mod]) => mod),
+) {
+  if (!katexPromise) {
+    katexPromise = importer()
+      .then((module) => module.default ?? module)
+      .catch((error) => {
+        katexPromise = null;
+        throw error;
+      });
+  }
+  return katexPromise;
+}
 
+/** Draws a mermaid diagram. */
+async function drawMermaid(text, { theme, importer }) {
   let mermaid;
   try {
     mermaid = await loadMermaid(importer);
@@ -124,12 +137,135 @@ export async function renderDiagram(source, { theme = 'light', importer } = {}) 
     // The whole configuration, not just the theme — see `configFor`.
     mermaid.initialize(configFor(theme));
     const { svg } = await mermaid.render(`agentrq-diagram-${nextId++}`, text);
-    return { ok: true, svg: sanitiseSvg(svg) };
+    return { ok: true, html: sanitiseSvg(svg) };
   } catch (error) {
     // Mermaid's own message, because it names the line and is written for
     // whoever wrote the diagram.
     return { ok: false, reason: firstLine(error?.message) || 'This diagram could not be drawn.' };
   }
+}
+
+/**
+ * Draws a TeX expression.
+ *
+ * Two settings here are load-bearing rather than taste:
+ *
+ * **`macros` is a fresh object every render.** KaTeX writes `\gdef`
+ * definitions into whatever object it is given, so one shared between renders
+ * lets a single expression redefine `\alpha` — or anything else — for every
+ * equation drawn afterwards, in every message on the page. A module-level
+ * `macros` object is the natural thing to write and exactly wrong.
+ *
+ * **`trust: false`** is what refuses `\href` and `\includegraphics`, so no
+ * `<a href>` and no `<img>` are produced at all. The URL text still appears
+ * inside the MathML `<annotation>`, which is the echoed source and is inert —
+ * that is not a leak to be patched out.
+ */
+async function drawMath(text, { importer }) {
+  let katex;
+  try {
+    katex = await loadKatex(importer);
+  } catch {
+    return { ok: false, reason: 'The maths renderer could not be loaded.' };
+  }
+
+  try {
+    const html = katex.renderToString(text, {
+      displayMode: true,
+      throwOnError: true,
+      macros: {},
+      trust: false,
+      // Questionable input is drawn rather than warned about on the console of
+      // somebody who did not write it.
+      strict: false,
+    });
+    return { ok: true, html: sanitiseMath(html) };
+  } catch (error) {
+    // KaTeX names the position in the expression, which is written for whoever
+    // wrote it.
+    return { ok: false, reason: firstLine(error?.message) || 'This expression could not be drawn.' };
+  }
+}
+
+/**
+ * Every format this can draw, and the only place that decides.
+ *
+ * A registry rather than an allowlist plus a hardwired renderer agreeing with
+ * it by hand: adding a format is one entry here, and there is no second place
+ * to fall out of step with.
+ *
+ * The host draws, and only the host — an extension sends source, never markup,
+ * because markup from an extension on a privileged origin is the one thing the
+ * view vocabulary exists to prevent. So this list is a real limit. What it is
+ * not is a *validation* rule: a format nobody draws degrades to showing its
+ * source, rather than destroying the view it arrived in.
+ */
+const DRAWERS = Object.freeze({
+  mermaid: drawMermaid,
+  math: drawMath,
+});
+
+/** The drawer for a format, or null when nothing here draws it. */
+export function drawerFor(format) {
+  return DRAWERS[String(format ?? '').toLowerCase()] ?? null;
+}
+
+/** The formats that will actually draw, for anything that needs to say so. */
+export function knownFormats() {
+  return Object.keys(DRAWERS);
+}
+
+/**
+ * Draws one diagram, or says why it could not be drawn.
+ *
+ * Never throws. A diagram is one part of a message somebody is reading, and an
+ * exception here would take the whole message with it — a malformed diagram
+ * should cost its own block and nothing else. An unknown format is the same
+ * kind of answer: a reason and the source, not a missing block.
+ *
+ * @returns {Promise<{ok: true, html: string} | {ok: false, reason: string}>}
+ */
+export async function renderDiagram(format, source, { theme = 'light', importer } = {}) {
+  const text = String(source ?? '').trim();
+  if (!text) return { ok: false, reason: 'This diagram is empty.' };
+
+  const draw = drawerFor(format);
+  if (!draw) {
+    // Named, so the author sees which word was wrong, and the block still shows
+    // the source underneath — which is what the reader wanted from it anyway.
+    return { ok: false, reason: `Nothing here draws \`${format}\`. This app can draw: ${knownFormats().join(', ')}.` };
+  }
+
+  return draw(text, { theme, importer });
+}
+
+/**
+ * What reaches the DOM from KaTeX.
+ *
+ * A separate pass from `sanitiseSvg`, because KaTeX emits HTML and MathML
+ * rather than SVG — that profile alone would strip it to nothing.
+ *
+ * **All three profiles, measured rather than assumed.** `html` and `mathMl` are
+ * the obvious two and they are not enough: KaTeX draws radicals and stretchy
+ * delimiters as inline `<svg><path>`, so `\sqrt{x}` came back without its
+ * sign — the expression still rendered, silently missing a symbol, which is the
+ * worst way for this to be wrong. The inline `style` attributes stay too:
+ * KaTeX positions every glyph with them, and removing them leaves an equation
+ * in a heap.
+ *
+ * Turning `svg` on costs nothing here, checked against hostile input: scripts,
+ * `<img>`, `<a>`, inline handlers and `foreignObject` are all still removed.
+ * `foreignObject` is named explicitly for the same reason it is in
+ * `sanitiseSvg` — it is the element that carries arbitrary HTML into SVG.
+ */
+export function sanitiseMath(html) {
+  return DOMPurify.sanitize(String(html ?? ''), {
+    USE_PROFILES: { html: true, mathMl: true, svg: true },
+    // `trust: false` already refuses the markup that would produce these; this
+    // is the second guard, and the two fail differently.
+    FORBID_TAGS: ['script', 'style', 'a', 'img', 'iframe', 'object', 'embed', 'foreignObject'],
+    FORBID_ATTR: ['onload', 'onerror', 'onclick'],
+  });
 }
 
 /**

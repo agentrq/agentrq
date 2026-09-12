@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+import katex from 'katex';
+
 import {
   THEMES,
   configFor,
   loadMermaid,
   renderDiagram,
+  drawerFor,
+  knownFormats,
+  loadKatex,
   resetMermaid,
+  sanitiseMath,
   sanitiseCss,
   sanitiseSvg,
 } from '../src/composables/useDiagram';
@@ -175,10 +181,10 @@ describe('renderDiagram', () => {
   it('draws one, and sanitises what came back', async () => {
     const mermaid = fakeMermaid();
 
-    const result = await renderDiagram('graph TD;\n  A-->B;', { importer: importing(mermaid) });
+    const result = await renderDiagram('mermaid', 'graph TD;\n  A-->B;', { importer: importing(mermaid) });
 
     expect(result.ok).toBe(true);
-    expect(result.svg).toContain('<svg');
+    expect(result.html).toContain('<svg');
     expect(mermaid.render).toHaveBeenCalledWith(expect.stringContaining('agentrq-diagram-'), 'graph TD;\n  A-->B;');
   });
 
@@ -191,7 +197,7 @@ describe('renderDiagram', () => {
   it('configures mermaid strictly, whatever the source asks for', async () => {
     const mermaid = fakeMermaid();
 
-    await renderDiagram('graph TD;', { importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'graph TD;', { importer: importing(mermaid) });
 
     const config = mermaid.initialize.mock.calls[0][0];
     expect(config.securityLevel).toBe('strict');
@@ -212,7 +218,7 @@ describe('renderDiagram', () => {
   it('sends the whole configuration every time, not just the theme', async () => {
     const mermaid = fakeMermaid();
 
-    await renderDiagram('graph TD;', { theme: 'dark', importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'graph TD;', { theme: 'dark', importer: importing(mermaid) });
 
     for (const [config] of mermaid.initialize.mock.calls) {
       expect(config.securityLevel, JSON.stringify(config)).toBe('strict');
@@ -224,7 +230,7 @@ describe('renderDiagram', () => {
   it('draws in the theme it was given', async () => {
     const mermaid = fakeMermaid();
 
-    await renderDiagram('graph TD;', { theme: 'dark', importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'graph TD;', { theme: 'dark', importer: importing(mermaid) });
 
     expect(mermaid.initialize.mock.calls.at(-1)[0].theme).toBe(THEMES.dark);
   });
@@ -232,7 +238,7 @@ describe('renderDiagram', () => {
   it('falls back to the light theme for one it does not know', async () => {
     const mermaid = fakeMermaid();
 
-    await renderDiagram('graph TD;', { theme: 'neon', importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'graph TD;', { theme: 'neon', importer: importing(mermaid) });
 
     expect(mermaid.initialize.mock.calls.at(-1)[0].theme).toBe(THEMES.light);
   });
@@ -240,8 +246,8 @@ describe('renderDiagram', () => {
   it('gives each diagram its own id, because mermaid measures by element', async () => {
     const mermaid = fakeMermaid();
 
-    await renderDiagram('a', { importer: importing(mermaid) });
-    await renderDiagram('b', { importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'a', { importer: importing(mermaid) });
+    await renderDiagram('mermaid', 'b', { importer: importing(mermaid) });
 
     const [first, second] = mermaid.render.mock.calls.map((call) => call[0]);
     expect(first).not.toBe(second);
@@ -256,7 +262,7 @@ describe('renderDiagram', () => {
       }),
     });
 
-    const result = await renderDiagram('graph TD;\n  ??', { importer: importing(mermaid) });
+    const result = await renderDiagram('mermaid', 'graph TD;\n  ??', { importer: importing(mermaid) });
 
     expect(result.ok).toBe(false);
     // The first line names the fault; the rest is the diagram echoed back.
@@ -265,22 +271,22 @@ describe('renderDiagram', () => {
 
   it('has something to say about a failure with no message', async () => {
     const empty = fakeMermaid({ render: vi.fn(async () => { throw new Error(''); }) });
-    expect((await renderDiagram('x', { importer: importing(empty) })).reason).toBe('This diagram could not be drawn.');
+    expect((await renderDiagram('mermaid', 'x', { importer: importing(empty) })).reason).toBe('This diagram could not be drawn.');
 
     resetMermaid();
     // Mermaid throws objects that are not Errors for some parse failures.
     const odd = fakeMermaid({ render: vi.fn(async () => { throw { detail: 'nope' } }) }); // eslint-disable-line no-throw-literal
-    expect((await renderDiagram('x', { importer: importing(odd) })).reason).toBe('This diagram could not be drawn.');
+    expect((await renderDiagram('mermaid', 'x', { importer: importing(odd) })).reason).toBe('This diagram could not be drawn.');
   });
 
   it('says so when there is nothing to draw', async () => {
-    expect((await renderDiagram('')).reason).toBe('This diagram is empty.');
-    expect((await renderDiagram('   \n  ')).reason).toBe('This diagram is empty.');
+    expect((await renderDiagram('mermaid', '')).reason).toBe('This diagram is empty.');
+    expect((await renderDiagram('mermaid', '   \n  ')).reason).toBe('This diagram is empty.');
     expect((await renderDiagram(undefined)).reason).toBe('This diagram is empty.');
   });
 
   it('says so plainly when the renderer itself will not load', async () => {
-    const result = await renderDiagram('graph TD;', {
+    const result = await renderDiagram('mermaid', 'graph TD;', {
       importer: () => Promise.reject(new Error('chunk failed')),
     });
 
@@ -297,8 +303,8 @@ describe('renderDiagram', () => {
       return attempt === 1 ? Promise.reject(new Error('chunk failed')) : Promise.resolve({ default: mermaid });
     };
 
-    expect((await renderDiagram('a', { importer })).ok).toBe(false);
-    expect((await renderDiagram('a', { importer })).ok).toBe(true);
+    expect((await renderDiagram('mermaid', 'a', { importer })).ok).toBe(false);
+    expect((await renderDiagram('mermaid', 'a', { importer })).ok).toBe(true);
   });
 });
 
@@ -336,4 +342,197 @@ describe('loadMermaid', () => {
     expect(typeof mermaid.render).toBe('function');
     expect(typeof mermaid.initialize).toBe('function');
   }, 30000);
+
+  /**
+   * The same for KaTeX, and this one carries a second claim: the default
+   * importer pulls `katex/dist/katex.css` alongside the code.
+   *
+   * That stylesheet is not decoration. Without it KaTeX's output is unstyled
+   * overlapping glyphs rather than an equation — it positions everything with
+   * classes the stylesheet defines. Loading it on the same dynamic import is
+   * what stops it being forgotten separately from the code it styles, and this
+   * test is what says that import path still resolves.
+   */
+  it('loads the real KaTeX, and its stylesheet with it', async () => {
+    const katexModule = await loadKatex();
+
+    expect(typeof katexModule.renderToString).toBe('function');
+    expect(katexModule.renderToString('x^2', { macros: {} })).toContain('katex');
+  }, 30000);
+});
+
+/**
+ * A format is a lookup, not an allowlist.
+ *
+ * The host still only *draws* what it has a drawer for — an extension cannot
+ * ship drawing code, because that would put third-party markup on a privileged
+ * origin, which is the one thing the view vocabulary exists to prevent. What
+ * changed is the cost of naming a format nobody draws: it used to destroy the
+ * whole view silently, and now it shows its source with a note.
+ */
+describe('the drawer registry', () => {
+  it('finds a drawer for what it draws, whatever the case', () => {
+    expect(drawerFor('mermaid')).toBeTypeOf('function');
+    expect(drawerFor('math')).toBeTypeOf('function');
+    expect(drawerFor('MERMAID')).toBe(drawerFor('mermaid'));
+  });
+
+  it('finds none for what it does not', () => {
+    expect(drawerFor('vega-lite')).toBeNull();
+    expect(drawerFor('')).toBeNull();
+    expect(drawerFor(undefined)).toBeNull();
+  });
+
+  it('says what it can draw, which is the one place that decides', () => {
+    expect(knownFormats()).toEqual(['mermaid', 'math']);
+  });
+});
+
+describe('renderDiagram, for a format nothing draws', () => {
+  // The whole point: a block that explains itself instead of a view that
+  // vanishes. The source comes with it, which is what the reader wanted.
+  it('names the format rather than failing silently', async () => {
+    const result = await renderDiagram('vega-lite', '{ "mark": "bar" }');
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('vega-lite');
+    expect(result.reason).toContain('mermaid, math');
+  });
+
+  it('still refuses an empty source before anything else', async () => {
+    expect((await renderDiagram('vega-lite', '   ')).reason).toBe('This diagram is empty.');
+  });
+
+  // Never throws: a diagram is one part of a message somebody is reading, and
+  // an exception here would take the whole message with it.
+  it('never throws, whatever it is handed', async () => {
+    for (const [format, source] of [[undefined, undefined], [null, null], [{}, []], ['', ''], ['math', undefined]]) {
+      await expect(renderDiagram(format, source)).resolves.toHaveProperty('ok');
+    }
+  });
+});
+
+describe('sanitiseMath', () => {
+  // KaTeX draws radicals and stretchy delimiters as inline <svg><path>. The
+  // obvious profile — html and mathMl — strips both, and the expression then
+  // renders silently missing a symbol, which is the worst way to be wrong.
+  it('keeps the parts an equation is actually made of', () => {
+    const drawn = sanitiseMath(katex.renderToString('\\frac{a}{b} = \\sqrt{x^2}', { displayMode: true, macros: {} }));
+
+    expect(drawn).toContain('<svg');
+    expect(drawn).toContain('<path');
+    expect(drawn).toMatch(/<math/i);
+    // KaTeX positions every glyph with an inline style; without them an
+    // equation is a heap of characters.
+    expect(drawn).toContain('style="');
+  });
+
+  it('removes everything that could act, even with SVG allowed', () => {
+    const hostile =
+      '<span onclick="x()">a</span><script>alert(1)</script><img src=x onerror=y>' +
+      '<a href="javascript:1">l</a><foreignObject><b>html</b></foreignObject>';
+
+    const clean = sanitiseMath(hostile);
+
+    expect(clean).not.toMatch(/<script/i);
+    expect(clean).not.toMatch(/<img/i);
+    expect(clean).not.toMatch(/<a[\s>]/i);
+    expect(clean).not.toMatch(/onclick|onerror/i);
+    expect(clean).not.toMatch(/foreignobject/i);
+  });
+
+  it('has nothing to say about nothing', () => {
+    expect(sanitiseMath('')).toBe('');
+    expect(sanitiseMath(undefined)).toBe('');
+  });
+});
+
+describe('renderDiagram, drawing maths', () => {
+  const importing_ = () => () => Promise.resolve({ default: katex });
+
+  it('draws an expression', async () => {
+    const result = await renderDiagram('math', 'E = mc^2', { importer: importing_() });
+
+    expect(result.ok).toBe(true);
+    expect(result.html).toMatch(/<math|katex/i);
+  });
+
+  /**
+   * The trap, and the reason `macros` is built fresh inside the drawer.
+   *
+   * KaTeX writes `\gdef` definitions into whatever object it is handed, so a
+   * module-level `macros` — the natural thing to write — lets one expression
+   * redefine `\alpha` for every equation drawn afterwards, in every message on
+   * the page. This is that, driven through the real renderer.
+   */
+  it('does not let one expression redefine a symbol for the next', async () => {
+    await renderDiagram('math', '\\gdef\\alpha{\\text{PWNED}} \\alpha', { importer: importing_() });
+
+    const after = await renderDiagram('math', '\\alpha', { importer: importing_() });
+
+    expect(after.ok).toBe(true);
+    expect(after.html).not.toContain('PWNED');
+  });
+
+  // `trust: false` refuses \href and \includegraphics outright, so neither is
+  // ever produced. The URL text survives inside the echoed source, inert.
+  it('produces no link and no image, whatever the expression asks for', async () => {
+    const result = await renderDiagram('math', '\\href{https://evil.example}{click}', { importer: importing_() });
+
+    if (result.ok) {
+      expect(result.html).not.toMatch(/<a[\s>]/i);
+      expect(result.html).not.toMatch(/<img/i);
+    } else {
+      expect(result.reason).toBeTruthy();
+    }
+  });
+
+  it('reports an expression that will not parse, in KaTeX own words', async () => {
+    const result = await renderDiagram('math', '\\frac{', { importer: importing_() });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBeTruthy();
+    expect(result.reason).not.toContain('\n');
+  });
+
+  it('says so plainly when the renderer itself will not load', async () => {
+    const failing = () => Promise.reject(new Error('chunk failed'));
+
+    expect((await renderDiagram('math', 'x', { importer: failing })).reason).toBe(
+      'The maths renderer could not be loaded.',
+    );
+  });
+
+  // Some builds hand back the namespace itself rather than a default export,
+  // and an equation should not depend on which.
+  it('takes the module however the bundler hands it over', async () => {
+    const namespace = { renderToString: katex.renderToString };
+
+    const result = await renderDiagram('math', 'x^2', { importer: () => Promise.resolve(namespace) });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('has something to say about a failure with no message', async () => {
+    const mute = { renderToString: () => { throw new Error(''); } };
+
+    expect((await renderDiagram('math', 'x', { importer: () => Promise.resolve({ default: mute }) })).reason).toBe(
+      'This expression could not be drawn.',
+    );
+  });
+
+  // Loaded once and remembered, the way mermaid is — and a failed load is
+  // forgotten so a flaky connection is retried rather than remembered forever.
+  it('loads KaTeX once, and retries after a failure', async () => {
+    const importer = vi.fn(() => Promise.resolve({ default: katex }));
+    await renderDiagram('math', 'x', { importer });
+    await renderDiagram('math', 'y', { importer });
+    expect(importer).toHaveBeenCalledOnce();
+
+    resetMermaid();
+    const failing = vi.fn(() => Promise.reject(new Error('offline')));
+    await renderDiagram('math', 'x', { importer: failing });
+    await renderDiagram('math', 'x', { importer: failing });
+    expect(failing).toHaveBeenCalledTimes(2);
+  });
 });

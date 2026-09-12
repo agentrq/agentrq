@@ -25,7 +25,7 @@
       <pre class="mt-2 m-0 text-[12px] leading-relaxed overflow-x-auto custom-scrollbar text-gray-600 dark:text-zinc-400"><code>{{ source }}</code></pre>
     </div>
 
-    <div v-else-if="svg" class="px-3 py-2.5 overflow-x-auto custom-scrollbar agentrq-diagram" v-html="svg"></div>
+    <div v-else-if="drawn" class="px-3 py-2.5 overflow-x-auto custom-scrollbar agentrq-diagram" v-html="drawn"></div>
 
     <p v-else class="px-3 py-2.5 text-[11px] text-gray-400 dark:text-zinc-500">Drawing…</p>
 
@@ -62,7 +62,8 @@ const props = defineProps({
 const themeStore = useThemeStore();
 const { isDark } = storeToRefs(themeStore);
 
-const svg = ref('');
+/** What the drawer produced: mermaid's SVG, or KaTeX's HTML and MathML. */
+const drawn = ref('');
 const error = ref('');
 const showSource = ref(false);
 
@@ -71,17 +72,19 @@ let drawing = 0;
 
 async function draw() {
   const token = (drawing += 1);
-  svg.value = '';
+  drawn.value = '';
   error.value = '';
 
-  const result = await renderDiagram(props.source, { theme: isDark.value ? 'dark' : 'light' });
+  const result = await renderDiagram(props.format, props.source, { theme: isDark.value ? 'dark' : 'light' });
   if (token !== drawing) return;
 
-  if (result.ok) svg.value = result.svg;
+  if (result.ok) drawn.value = result.html;
   else error.value = result.reason;
 }
 
-watch(() => [props.source, isDark.value], draw, { immediate: true });
+// The format is watched too: it decides which drawer runs, so a node that
+// changes format has to be redrawn rather than keeping the old picture.
+watch(() => [props.format, props.source, isDark.value], draw, { immediate: true });
 </script>
 
 <style>
