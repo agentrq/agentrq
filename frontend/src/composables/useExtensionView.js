@@ -34,7 +34,24 @@ export const NODE_TYPES = Object.freeze({
   link: ['label', 'href'],
   empty: ['value'],
   group: ['label', 'children'],
+  // A diagram is a *language*, not markup: the extension sends the source and
+  // AgentRQ draws it, exactly as it already draws untrusted markdown. Letting
+  // an extension hand back SVG instead would put third-party markup on a
+  // privileged origin, which is the one thing this vocabulary exists to avoid.
+  diagram: ['format', 'source', 'label'],
 });
+
+/** Diagram languages AgentRQ knows how to draw. */
+export const DIAGRAM_FORMATS = Object.freeze(['mermaid']);
+
+/**
+ * How much diagram source is worth drawing.
+ *
+ * Far larger than `MAX_TEXT`, because a diagram is a program and a real one is
+ * long — and still bounded, because the renderer that parses it runs in the
+ * window somebody is reading in.
+ */
+export const MAX_SOURCE = 20000;
 
 /** Tones map to our own palette; an unknown one falls back rather than leaking a colour. */
 export const TONES = Object.freeze(['default', 'muted', 'positive', 'warning', 'critical']);
@@ -106,6 +123,25 @@ function normaliseNode(node, depth, budget) {
     }
     if (type === 'group') out.label = text(node.label);
     out[type === 'group' ? 'children' : 'items'] = normalised;
+    return { ok: true, node: out };
+  }
+
+  if (type === 'diagram') {
+    const format = String(node.format ?? '');
+    if (!DIAGRAM_FORMATS.includes(format)) {
+      // Named, and the alternatives listed, the same way an unknown node type
+      // is: an author who wrote "mermaidjs" is one word from working.
+      return fail(`"${format || '(none)'}" is not a diagram this can draw. Use one of: ${DIAGRAM_FORMATS.join(', ')}.`);
+    }
+    const source = typeof node.source === 'string' ? node.source : '';
+    if (!source.trim()) return fail('A diagram needs source to draw.');
+    if (source.length > MAX_SOURCE) return fail(`This diagram is longer than ${MAX_SOURCE} characters.`);
+
+    // Not clamped like text: half a diagram is not a shorter diagram, it is a
+    // syntax error. Too long is refused above instead.
+    out.format = format;
+    out.source = source;
+    out.label = text(node.label);
     return { ok: true, node: out };
   }
 

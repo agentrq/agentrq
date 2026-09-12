@@ -105,16 +105,29 @@ func New(p Params) (Handler, error) {
 	return h, nil
 }
 
+// getTokenVal picks the credential a request is presenting.
+//
+// The Authorization header comes before the `at` cookie, and the order is the
+// whole point: a client that sets the header is naming the credential it means
+// to use, while the cookie merely rides along with anything a signed-in browser
+// session sends. Reading the cookie first meant a request carrying a perfectly
+// good coremcp Bearer token was judged on its session cookie instead — and
+// since a session cookie is minted with the "actor:human" audience and never
+// "coremcp", it fails the audience check below and the call is refused. That is
+// what the desktop app hit: its fetch is session-aware, so the cookie shadowed
+// the token it had just been granted.
+//
+// The cookie is still read last, for a signed-in browser that sends no header.
 func getTokenVal(r *http.Request) string {
 	if token := r.URL.Query().Get("token"); token != "" {
 		return token
 	}
-	if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
-		return cookie.Value
-	}
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
 		return strings.TrimPrefix(authHeader, "Bearer ")
+	}
+	if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
+		return cookie.Value
 	}
 	return ""
 }

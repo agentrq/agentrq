@@ -161,7 +161,30 @@ describe('createRegistries', () => {
   it('offers the surfaces an extension can contribute to', () => {
     const registries = createRegistries()
 
-    expect(Object.keys(registries).sort()).toEqual(['schedules', 'shortcuts', 'ui'])
+    expect(Object.keys(registries).sort()).toEqual(['renderers', 'schedules', 'shortcuts', 'ui'])
+  })
+
+  /**
+   * A fenced-code language has one renderer, whoever asked first. Two
+   * extensions both drawing ```mermaid would be resolved by whichever loaded
+   * first, which is no answer at all — so the second is refused at install with
+   * the first extension named.
+   */
+  it('gives a fenced-code language to exactly one extension', () => {
+    const { renderers } = createRegistries()
+
+    expect(renderers.add('mermaid-agentrq', { id: 'mermaid', language: 'mermaid' }).ok).toBe(true)
+
+    const clash = renderers.add('other', { id: 'diagrams', language: 'mermaid' })
+    expect(clash.ok).toBe(false)
+    expect(clash.reason).toContain('mermaid-agentrq')
+  })
+
+  it('lets two extensions claim different languages', () => {
+    const { renderers } = createRegistries()
+
+    expect(renderers.add('mermaid-agentrq', { id: 'mermaid', language: 'mermaid' }).ok).toBe(true)
+    expect(renderers.add('vega', { id: 'vega', language: 'vega-lite' }).ok).toBe(true)
   })
 
   it('scopes each one the way that surface is addressed', () => {

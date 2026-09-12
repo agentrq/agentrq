@@ -86,8 +86,11 @@ describe('availableScopes', () => {
     ]);
   });
 
-  it('offers the whole ladder to an extension that asked for the supervisor', () => {
-    expect(availableScopes(describeAsk(manifest({ supervisor: ['listAllTasks'] })), inWorkspace)).toEqual([
+  it('offers the whole ladder to one that can use every rung of it', () => {
+    // Both kinds of tool, so every rung grants it something it asked for.
+    const both = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
+
+    expect(availableScopes(both, inWorkspace)).toEqual([
       SCOPE.workspace,
       SCOPE.selected,
       SCOPE.supervisor,
@@ -106,14 +109,47 @@ describe('availableScopes', () => {
 describe('availableScopes, with no workspace in context', () => {
   it('does not offer a rung whose name means nothing there', () => {
     const workspaceAsk = describeAsk(manifest({ workspace: ['getTask'] }));
-    const accountAsk = describeAsk(manifest({ supervisor: ['listAllTasks'] }));
+    const both = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
 
     expect(availableScopes(workspaceAsk)).toEqual([SCOPE.selected]);
-    expect(availableScopes(accountAsk)).toEqual([SCOPE.selected, SCOPE.supervisor]);
+    expect(availableScopes(both)).toEqual([SCOPE.selected, SCOPE.supervisor]);
   });
 
   it('still offers nothing to an extension that asked for nothing', () => {
     expect(availableScopes(describeAsk(manifest()))).toEqual([]);
+  });
+});
+
+/**
+ * A rung that can only produce an empty grant is not a narrower option, it is
+ * a trap.
+ *
+ * `digest` declares nothing but supervisor tools. Offering it "selected
+ * workspaces" produced a grant with no supervisor tools at all — so it
+ * installed, loaded, registered three surfaces, and every call came back
+ * "may not call listWorkspaces on the supervisor server". The screen looked
+ * like a choice between a narrow grant and a wide one; one of them granted
+ * nothing.
+ */
+describe('an extension whose tools are all account-wide', () => {
+  const accountOnly = () => describeAsk(manifest({ supervisor: ['listWorkspaces', 'listAllTasks'] }));
+
+  it('is offered the account and nothing else', () => {
+    expect(availableScopes(accountOnly(), { workspaceId: 'ws1' })).toEqual([SCOPE.supervisor]);
+    expect(availableScopes(accountOnly())).toEqual([SCOPE.supervisor]);
+  });
+
+  it('refuses a workspace rung, saying what the real choice is', () => {
+    const { ok, reason } = validateGrant(accountOnly(), { scope: SCOPE.selected, workspaces: ['ws1'] });
+
+    expect(ok).toBe(false);
+    expect(reason).toContain('only works across all workspaces');
+  });
+
+  it('grants every tool it asked for at the rung it can use', () => {
+    const grant = toGrant(accountOnly(), { scope: SCOPE.supervisor, workspaces: [], workspaceId: '' });
+
+    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'listAllTasks']);
   });
 });
 

@@ -42,6 +42,8 @@ export const REGISTRY_FOR = Object.freeze({
   'workspace-action': 'ui',
   'task-menu': 'ui',
   shortcut: 'shortcuts',
+  // A renderer claims a fenced-code language and is asked to draw one block.
+  'code-block': 'renderers',
 })
 
 export function registryFor(surface) {
@@ -58,6 +60,9 @@ export function serialise(entry) {
     order: entry.order,
     // Only shortcuts have one, and the help sheet needs it.
     ...(entry.key ? { key: entry.key } : {}),
+    // Only renderers have one, and the message body needs it to know which
+    // fences are worth asking about at all.
+    ...(entry.language ? { language: entry.language } : {}),
   }
 }
 

@@ -52,6 +52,10 @@
     {{ node.value }}
   </p>
 
+  <!-- diagram: the source is drawn by AgentRQ, never markup from an extension -->
+  <DiagramBlock v-else-if="node.type === 'diagram'"
+                :format="node.format" :source="node.source" :label="node.label" />
+
   <!-- group -->
   <section v-else-if="node.type === 'group'" class="flex flex-col gap-1.5">
     <h3 v-if="node.label" class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
@@ -76,6 +80,8 @@
  * told, and worse for the reader than seeing nothing.
  */
 import { computed } from 'vue';
+
+import DiagramBlock from './DiagramBlock.vue';
 
 const props = defineProps({ node: { type: Object, required: true } });
 defineEmits(['action']);

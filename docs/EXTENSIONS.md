@@ -211,10 +211,17 @@ turns it into a URL and keeps it out of the arguments — those tools take no su
 parameter and the server refuses one outright. On the **supervisor** surface it
 stays, because there it genuinely is an argument.
 
-**The supervisor is not reachable from the desktop app yet.** Its endpoint wants
-a token whose audience is `coremcp`, and only the OAuth2 flow mints one. An
-extension asking for account-wide tools installs, loads, registers its surfaces
-and is then told so in as many words. Workspace tools work.
+**The supervisor needs your authorisation.** Its endpoint wants a token whose
+audience is `coremcp`, and only the OAuth2 flow mints one — the session cookie
+the app already holds is not enough. So the first time an account-wide
+extension is installed, the Extensions screen offers an **Authorise** button,
+and a window opens on your own server's sign-in page.
+
+Asked, never assumed. A credential that reaches every workspace is not
+something an app should acquire because you installed something; the prompt
+appears only once an installed extension has actually been granted the account.
+The token is stored through the OS keychain and can be given back at any time,
+after which the next account-wide call asks again.
 
 This matters because a workspace token and a supervisor session outlive any
 single extension and reach every workspace on the account. An extension that is
@@ -324,6 +331,36 @@ process so it fires whether or not the window has focus) is not available to
 extensions. That is a different order of capability from a key that works while
 the app is in front of you.
 
+### `renderers` — drawing a fenced code block
+
+```js
+ctx.renderers.add({
+  id: 'mermaid',
+  language: 'mermaid',
+  when: (context) => appliesTo(context.workspaceId),
+  run: (context) => ({ nodes: [{ type: 'diagram', format: 'mermaid', source: context.source }] }),
+})
+```
+
+When a task body or a message contains a ```` ```mermaid ```` fence, whoever
+claimed that language is asked what to do with it, and answers with a view spec
+like any other surface. AgentRQ draws the answer and puts a **Text** / **Diagram**
+toggle beside it, so the source is always one click away.
+
+**A language belongs to one extension.** Two renderers both claiming `mermaid`
+would be resolved by whichever loaded first, which is no answer at all — so the
+second claim is refused at install, naming the first.
+
+**Answering nothing is a legitimate answer**, and it leaves the fence as the
+code block it was. That is the right response to a diagram that is too large, or
+malformed, or asking for something the renderer will not do: the text is what
+somebody needs in order to fix it, and replacing a readable block with a
+complaint about it helps nobody.
+
+`when(context)` is given the workspace the message is in, so *"draw diagrams in
+this workspace and not that one"* is the extension's own answer rather than a
+setting AgentRQ keeps on its behalf.
+
 ### `schedules` — work that runs when the app does not
 
 ```js
@@ -389,11 +426,20 @@ privileged origin free of anybody else's code.
 | `link` | `label`, `href` |
 | `empty` | `value` |
 | `group` | `label`, `children` |
+| `diagram` | `format`, `source`, `label` |
 
 `tone` is one of `default`, `muted`, `positive`, `warning`, `critical`.
 
 Limits: 200 nodes, 5 levels deep, 2000 characters per string. Longer strings are
 truncated; the other two are refused.
+
+**A `diagram` carries source, not markup.** `format` is `mermaid`; `source` is
+the diagram's text, which AgentRQ draws. It is the one node whose content is not
+clamped — half a diagram is a syntax error rather than a shorter diagram — so a
+source longer than 20,000 characters is refused instead. There is deliberately
+no node that carries HTML or SVG: an extension that could hand back markup would
+be putting it on a privileged origin, which is what this whole vocabulary
+exists to prevent.
 
 **A node type nobody recognises is rejected, not skipped.** Skipping would draw a
 page quietly missing whatever you thought you had written — worse for you than

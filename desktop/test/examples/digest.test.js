@@ -77,15 +77,24 @@ describe('the manifest', () => {
 describe('the grant ladder at its top rung', () => {
   const ask = () => describeAsk(parseManifest(manifest).manifest)
 
-  it('offers all three rungs when there is a workspace in context', () => {
-    expect(availableScopes(ask(), { workspaceId: 'ws1' })).toEqual([SCOPE.workspace, SCOPE.selected, SCOPE.supervisor])
+  /**
+   * It declares nothing but supervisor tools, so a workspace rung has no tools
+   * to give it — and one was offered, which produced a grant with no supervisor
+   * tools at all. The extension installed, loaded, registered three surfaces,
+   * and every call came back "may not call listWorkspaces on the supervisor
+   * server". A rung that can only grant nothing is a trap rather than a
+   * narrower option.
+   */
+  it('is offered the account and nothing else, wherever it is installed from', () => {
+    expect(availableScopes(ask(), { workspaceId: 'ws1' })).toEqual([SCOPE.supervisor])
+    expect(availableScopes(ask())).toEqual([SCOPE.supervisor])
   })
 
-  // The screen extensions are installed from belongs to no workspace, so
-  // "this workspace only" has no referent there and is not offered — it used to
-  // be, and produced a grant with an empty list that refused everything.
-  it('drops the rung whose name means nothing on the install screen', () => {
-    expect(availableScopes(ask())).toEqual([SCOPE.selected, SCOPE.supervisor])
+  it('refuses a workspace rung, saying what the real choice is', () => {
+    const { ok, reason } = validateGrant(ask(), { scope: SCOPE.selected, workspaces: ['ws1'], workspaceId: 'ws1' })
+
+    expect(ok).toBe(false)
+    expect(reason).toContain('only works across all workspaces')
   })
 
   // "Supervisor, but only this workspace" is the same grant with a misleading

@@ -29,6 +29,9 @@ import { computed, ref } from 'vue';
  */
 export const GROUPS = ['installed', 'available', 'unavailable'];
 
+/** The grant that reaches the whole account, which is the one needing OAuth. */
+const SCOPE_SUPERVISOR = 'supervisor';
+
 /**
  * Which group a row belongs in.
  *
@@ -109,7 +112,7 @@ export function statusOf(installation) {
   return contributes.length > 0 ? contributes.join(', ') : 'Running, contributing nothing';
 }
 
-const LABELS = { ui: 'view', shortcuts: 'shortcut', schedules: 'schedule' };
+const LABELS = { ui: 'view', shortcuts: 'shortcut', schedules: 'schedule', renderers: 'renderer' };
 
 /**
  * The rows for the screen, grouped and ordered.
@@ -183,6 +186,14 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
   const installed = ref([]);
   const loading = ref(false);
   const error = ref('');
+  /** Whether account-wide tools can be used at all yet. */
+  const authorized = ref(false);
+
+  /** Whether any installed extension actually wants them. */
+  const needsAuthorization = computed(() =>
+    !authorized.value && installed.value.some((entry) => entry.grant?.scope === SCOPE_SUPERVISOR),
+  );
+
   /** What `chooseFolder` found, while the grant question is on screen. */
   const candidate = ref(null);
   const step = ref(INSTALL_STEP.idle);
@@ -201,6 +212,7 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
       const state = await bridge.state();
       index.value = state?.index ?? index.value;
       installed.value = state?.installed ?? [];
+      authorized.value = (await bridge.supervisor?.())?.authorized ?? false;
     } catch (err) {
       error.value = err?.message || 'Could not read the extension catalogue.';
     } finally {
@@ -343,9 +355,25 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
   const setEnabled = (name, enabled) =>
     act(bridge?.setEnabled(name, enabled), `${name} ${enabled ? 'enabled' : 'disabled'}.`);
 
+  /**
+   * Ask the user to authorise account-wide access.
+   *
+   * A window opens on the server's own authorisation page — this is a question
+   * put to a person, and nothing about it happens quietly.
+   */
+  const authorize = () =>
+    act(bridge?.authorize(), 'AgentRQ can now use account-wide tools.');
+
+  const deauthorize = () =>
+    act(bridge?.deauthorize(), 'Account-wide access given back.');
+
   return {
     index,
     installed,
+    authorized,
+    needsAuthorization,
+    authorize,
+    deauthorize,
     sections,
     summary,
     loading,

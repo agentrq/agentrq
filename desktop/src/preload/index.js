@@ -174,6 +174,36 @@ contextBridge.exposeInMainWorld('agentrq', {
     configure: (name, values) => ipcRenderer.invoke('agentrq:extensions:configure', { name, values }),
 
     /**
+     * Whether account-wide tools can be used.
+     *
+     * The supervisor needs an OAuth authorisation the app does not hold until
+     * somebody gives it — so this is a question the Extensions screen asks, and
+     * `authorize` is the button that answers it.
+     */
+    supervisor: () => ipcRenderer.invoke('agentrq:extensions:supervisor'),
+
+    /** Ask the user to authorise account-wide access. Opens a window. */
+    authorize: () => ipcRenderer.invoke('agentrq:extensions:authorize'),
+
+    /** Give it back. The next account-wide call asks again. */
+    deauthorize: () => ipcRenderer.invoke('agentrq:extensions:deauthorize'),
+
+    /**
+     * Told when what extensions contribute has changed underneath the app.
+     *
+     * The host disables an extension after three failures, and nothing about
+     * that involves a navigation — so a sidebar row and the key it holds would
+     * otherwise stay until the user happened to leave the Extensions screen.
+     *
+     * @returns {() => void} stop listening
+     */
+    onChanged: (callback) => {
+      const listener = (_event, detail) => callback(detail)
+      ipcRenderer.on('agentrq:extensions:changed', listener)
+      return () => ipcRenderer.off('agentrq:extensions:changed', listener)
+    },
+
+    /**
      * What extensions contribute to one surface, for this context.
      *
      * The context goes *out* rather than the entries coming *in*: an entry's

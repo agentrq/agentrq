@@ -24,7 +24,7 @@
  *   npm run build && npx electron scripts/verify-extensions.mjs
  */
 import { app, BrowserWindow, ipcMain, net, protocol } from 'electron'
-import { readFile, access } from 'node:fs/promises'
+import { readFile, access, readdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -248,6 +248,7 @@ app.whenReady().then(async () => {
   await new Promise((r) => setTimeout(r, 1500))
 
   const results = []
+  const skipped = []
   const record = (name, pass, detail) => results.push({ name, pass, detail })
 
   // The bug this missed the first time: an example asking for MCP tools was
@@ -273,14 +274,32 @@ app.whenReady().then(async () => {
   record('and the module loads', started.ok === true, String(started.reason ?? ''))
   record(
     'the row would say what it contributed',
-    JSON.stringify((await runtime.state())[0]?.contributes) === JSON.stringify({ ui: 1, shortcuts: 0, schedules: 0 }),
+    JSON.stringify((await runtime.state())[0]?.contributes) ===
+      JSON.stringify({ ui: 1, shortcuts: 0, schedules: 0, renderers: 0 }),
     JSON.stringify((await runtime.state())[0] ?? null),
   )
 
-  const bridge = await win.webContents.executeJavaScript(
-    "typeof window.agentrq?.extensions?.entries === 'function' && typeof window.agentrq?.extensions?.invoke === 'function'",
+  /**
+   * Every method the renderer calls, checked by name.
+   *
+   * Two were missing at different times — `onChanged` and the three
+   * authorisation methods — because an edit to the preload silently did not
+   * apply and nothing looked. The renderer then called `undefined()` and the
+   * button did nothing at all, which is the quietest failure this bridge has.
+   *
+   * So the list is written out and compared, rather than two of them being
+   * spot-checked.
+   */
+  const EXPECTED_BRIDGE = [
+    'state', 'refresh', 'chooseFolder', 'installLocal', 'uninstall', 'setEnabled',
+    'configure', 'supervisor', 'authorize', 'deauthorize', 'onChanged', 'entries', 'invoke',
+  ]
+
+  const exposed = await win.webContents.executeJavaScript(
+    `Object.entries(window.agentrq?.extensions ?? {}).filter(([, v]) => typeof v === 'function').map(([k]) => k)`,
   )
-  record('the bridge exposes entries and invoke', bridge === true, String(bridge))
+  const missing = EXPECTED_BRIDGE.filter((name) => !exposed.includes(name))
+  record('the bridge exposes every method the renderer calls', missing.length === 0, `missing: ${missing.join(', ')}`)
 
   // The hop nothing else can check: the page asks, the main process answers.
   const { task, rows, error } = await win.webContents.executeJavaScript(script)
@@ -342,6 +361,163 @@ app.whenReady().then(async () => {
   const headerActions = digest.runtime.entries('workspace-action', { workspaceId: 'ws1' })
   record('a header action is offered for a workspace', headerActions.length === 1, JSON.stringify(headerActions))
 
+  // A mermaid diagram, drawn end to end in a real browser.
+  //
+  // jsdom cannot do this: mermaid measures text with `getBBox`, which it does
+  // not implement — so the unit tests inject a fake mermaid and prove the
+  // wiring, and this proves the dependency. It is also the only place the
+  // sanitiser is exercised against real mermaid output rather than a fixture.
+  const mermaidChunk = (await readdir(join(RENDERER_ROOT, 'assets')))
+    .find((file) => /^mermaid\.core-.*\.js$/.test(file))
+
+  const diagram = mermaidChunk
+    ? await win.webContents.executeJavaScript(`(async () => {
+        try {
+          // The built chunk, not a source path: a production bundle has none,
+          // and this is about the dependency rather than our module graph.
+          const mermaid = (await import('/assets/${mermaidChunk}')).default;
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
+          // A label carrying markup, which is what a diagram built from an
+          // agent's message or an issue title actually looks like on a bad day.
+          const source = 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;\\n  A-->C;';
+          // Rendered twice, with a theme change between: initialize replaces
+          // the configuration rather than merging, and a partial call used to
+          // put htmlLabels back on — which turned every label into a
+          // foreignObject the sanitiser then removed, leaving a diagram with
+          // nothing written on it.
+          await mermaid.render('verify-warmup', 'graph TD;\\n  X-->Y;');
+          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'dark' });
+          const { svg } = await mermaid.render('verify-diagram', source);
+          // Through the real sanitiser, in the page, because DOMPurify needs a
+          // DOM — so this is the SVG a person actually gets.
+          const { sanitiseSvg } = await import('/src/composables/useDiagram.js').catch(() => ({}));
+          const shown = sanitiseSvg ? sanitiseSvg(svg) : svg;
+          // Measured here, on the whole thing. The stylesheet alone is longer
+          // than any slice worth sending back, so counting on a truncated copy
+          // reports zero of everything and looks like a broken diagram.
+          return {
+            ok: true,
+            sanitised: Boolean(sanitiseSvg),
+            svg: shown.slice(0, 1200),
+            counts: {
+              text: (shown.match(/<text/g) ?? []).length,
+              foreignObject: (shown.match(/foreignObject/g) ?? []).length,
+              style: (shown.match(/<style/g) ?? []).length,
+              fill: (shown.match(/fill:/g) ?? []).length,
+            },
+            labels: [...shown.matchAll(/<text[^>]*>([\\s\\S]*?)<\\/text>/g)].map((m) => m[1].replace(/<[^>]*>/g, '')).slice(0, 6),
+          };
+        } catch (error) {
+          return { ok: false, reason: String(error) };
+        }
+      })()`)
+    : { ok: false, reason: 'no mermaid chunk in the build' }
+
+  record('mermaid draws a diagram in a real browser', diagram.ok === true, String(diagram.reason ?? ''))
+  // The bug that made a diagram unreadable: mermaid puts its whole theme in a
+  // <style> element, and the sanitiser was dropping it — solid black boxes with
+  // invisible labels. Checked against real output, because a fixture only
+  // proves what somebody already thought to write down.
+  record(
+    'with its labels written as text, not as embedded HTML',
+    (diagram.counts?.text ?? 0) > 0 && (diagram.counts?.foreignObject ?? 0) === 0,
+    JSON.stringify(diagram.counts),
+  )
+  record(
+    'and the labels say what the diagram said',
+    (diagram.labels ?? []).some((label) => label.includes('B')),
+    JSON.stringify(diagram.labels),
+  )
+  record(
+    'carrying the stylesheet that makes it readable',
+    (diagram.counts?.style ?? 0) > 0 && (diagram.counts?.fill ?? 0) > 0,
+    JSON.stringify(diagram.counts),
+  )
+  record(
+    'and it is an svg with a flowchart in it',
+    /<svg/.test(diagram.svg ?? '') && /flowchart/.test(diagram.svg ?? ''),
+    (diagram.svg ?? '').slice(0, 120),
+  )
+  // Strict mode escapes its own labels, so even before the sanitiser the
+  // markup in that node is text rather than an element.
+  record(
+    'with a label full of markup rendered as text, not as an element',
+    diagram.ok && !/<img[^>]*onerror/i.test(diagram.svg ?? ''),
+    (diagram.svg ?? '').slice(0, 300),
+  )
+
+  // The drawing and the sanitising both happen in the page, because DOMPurify
+  // needs a DOM and mermaid needs a browser that can measure text. That is the
+  // whole reason this check is here rather than in a unit test.
+
+  /**
+   * The renderer path, end to end, in the page.
+   *
+   * This is the seam that shipped broken: `MarkdownBody` consulted a list of
+   * claimed languages that was initialised empty and never filled, so every
+   * message said "nothing to do" and no fence reached an extension. Every unit
+   * test passed because each supplied the list directly — none asked where it
+   * came from, which was the only question that mattered.
+   */
+  const pipeline = await win.webContents.executeJavaScript(`(async () => {
+    try {
+      const [{ mayHaveBlocks, splitFences }, { normaliseView }, renderers] = await Promise.all([
+        import('/src/utils/markdownBlocks.js'),
+        import('/src/composables/useExtensionView.js'),
+        import('/src/composables/useExtensionRenderers.js'),
+      ]);
+
+      // The bridge the real composable talks to, answering as the main process does.
+      window.agentrq = { extensions: {
+        entries: async () => [{ owner: 'mermaid', id: 'mermaid', language: 'mermaid', order: 100 }],
+        invoke: async (target, context) => ({
+          ok: true,
+          view: { nodes: [{ type: 'diagram', format: 'mermaid', source: context.source }] },
+        }),
+      } };
+
+      const body = renderers.useExtensionRenderers({ workspaceId: 'ws1' });
+      await body.load();
+
+      const text = '\`\`\`mermaid\\ngraph TD;\\n    A-->B;\\n\`\`\`';
+      const claimed = body.languages.value;
+      if (!mayHaveBlocks(text, claimed)) return { ok: false, step: 'nothing claimed', claimed };
+
+      const [block] = splitFences(text, claimed);
+      if (block?.type !== 'block') return { ok: false, step: 'fence not split', claimed };
+
+      const answer = await body.render('mermaid', block.source, { workspaceId: 'ws1' });
+      if (!answer.ok) return { ok: false, step: 'extension refused', reason: answer.reason, claimed };
+
+      const view = normaliseView(answer.view);
+      return { ok: view.ok, step: 'drawn', node: view.view?.nodes?.[0], claimed };
+    } catch (error) {
+      return { ok: false, step: 'threw', reason: String(error), unavailable: true };
+    }
+  })()`)
+
+  if (pipeline.unavailable) {
+    // A production bundle exposes no source paths, so this one check only runs
+    // against a dev build. Skipped rather than failed: a check that is red for
+    // everybody every time is one people learn to ignore, which is worse than
+    // one that says plainly when it did not run.
+    //
+    //   npm run dev   # in another terminal, then re-run this
+    skipped.push('the renderer path (needs a dev build: npm run dev)')
+  } else {
+    record(
+      'a message asks which languages are claimed',
+      JSON.stringify(pipeline.claimed) === '["mermaid"]',
+      JSON.stringify(pipeline.claimed),
+    )
+    record('and the fence reaches the extension and comes back drawable', pipeline.ok === true, `${pipeline.step}: ${pipeline.reason ?? ''}`)
+    record(
+      'as a diagram carrying the source that was written',
+      pipeline.node?.type === 'diagram' && pipeline.node?.source === 'graph TD;\n    A-->B;',
+      JSON.stringify(pipeline.node),
+    )
+  }
+
   // The regression check, in two halves. The first states the constraint that
   // caused the bug; the second is the fix, and it is only meaningful because
   // the first fails.
@@ -360,6 +536,8 @@ app.whenReady().then(async () => {
   for (const { name, pass, detail } of results) {
     console.log(`${pass ? '✓' : '✗'} ${name}${pass ? '' : ` — ${detail}`}`)
   }
+
+  for (const name of skipped) console.log(`- ${name} — skipped`)
 
   const failed = results.filter((r) => !r.pass).length
   console.log(failed === 0 ? '\nAll checks passed.' : `\n${failed} check(s) failed.`)

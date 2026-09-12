@@ -36,6 +36,13 @@ describe('serialise', () => {
     expect(serialise({ owner: 'standup', id: 'open', key: 's', order: 1 }).key).toBe('s')
     expect(serialise(entry())).not.toHaveProperty('key')
   })
+
+  // A message body reads these to know which fences are worth asking about at
+  // all, so the language has to survive the crossing.
+  it('carries a claimed language, which only renderers have', () => {
+    expect(serialise({ owner: 'mermaid', id: 'mermaid', language: 'mermaid', order: 1 }).language).toBe('mermaid')
+    expect(serialise(entry())).not.toHaveProperty('language')
+  })
 })
 
 describe('applies', () => {

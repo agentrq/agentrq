@@ -62,11 +62,11 @@ The sidebar row is the one to read closely. A page has no workspace in its
 route, and AgentRQ will not guess one among several — so with more than one
 workspace on the account it says *"Open a workspace to see where it stands."*
 rather than making a call that would come back refused. The shortcut and the
-task menu item always have a workspace, and show the real thing. `digest` installs, loads and registers all three of its surfaces, but its calls
-come back refused: it needs the **supervisor**, whose endpoint wants an OAuth
-authorisation the desktop app does not hold yet. Its pages render that reason,
-which is the failure it was written to handle. The workspace surface — which is
-what `standup` uses — works.
+task menu item always have a workspace, and show the real thing. `digest` needs the **supervisor**, which reaches every workspace on the account.
+The first time it is installed, the Extensions screen offers an **Authorise**
+button and a window opens on your own server's sign-in page; after that its
+pages and its schedule work. Until then its calls come back refused with a
+sentence saying exactly that, which is the failure it was written to handle.
 
 ## Their tests
 

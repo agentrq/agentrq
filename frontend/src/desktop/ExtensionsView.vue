@@ -33,6 +33,30 @@
         {{ notice }}
       </div>
 
+      <!-- Only when something installed actually wants it. An app asking for a
+           credential that reaches every workspace, unprompted and before
+           anything needs it, is asking for more than it can justify. -->
+      <div v-if="needsAuthorization"
+           class="mb-6 px-3 py-2.5 rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 flex items-start justify-between gap-4">
+        <p class="text-[11px] text-amber-800 dark:text-amber-300 leading-snug">
+          An extension here was granted <strong class="font-semibold">all workspaces</strong>, and AgentRQ needs
+          your authorisation before it can use account-wide tools on its behalf. A window will open on this
+          server's own sign-in page.
+        </p>
+        <button type="button" @click="authorize()" :disabled="busy"
+                class="shrink-0 px-4 py-2 rounded-sm bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase tracking-widest hover:opacity-80 disabled:opacity-40 transition-all">
+          Authorise
+        </button>
+      </div>
+
+      <p v-else-if="authorized" class="mb-6 text-[11px] text-gray-400 dark:text-zinc-500">
+        AgentRQ is authorised to use account-wide tools.
+        <button type="button" @click="deauthorize()" :disabled="busy"
+                class="font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white disabled:opacity-40 transition-colors">
+          Give it back
+        </button>
+      </p>
+
       <div v-if="sections.length === 0 && !loading"
            class="border border-dashed border-gray-200 dark:border-zinc-800 rounded-sm px-6 py-10 text-center">
         <p class="text-[11px] text-gray-500 dark:text-zinc-400">
@@ -158,6 +182,10 @@ const GROUP_LABELS = {
 const workspaceStore = useWorkspaceStore();
 
 const {
+  authorized,
+  needsAuthorization,
+  authorize,
+  deauthorize,
   sections,
   summary,
   loading,
