@@ -187,6 +187,17 @@ contextBridge.exposeInMainWorld('agentrq', {
     configure: (name, values) => ipcRenderer.invoke('agentrq:extensions:configure', { name, values }),
 
     /**
+     * Change what it may answer when an agent asks permission to run something.
+     *
+     * `none`, `deny` or `decide`, never above what its manifest asked for. This
+     * is the switch that makes consent to be asked revocable without an
+     * uninstall — an extension refusing every tool call has to be stoppable by
+     * somebody who does not yet know it is the cause.
+     */
+    setHookConsent: (name, level) =>
+      ipcRenderer.invoke('agentrq:extensions:set-hook-consent', { name, level }),
+
+    /**
      * Whether account-wide tools can be used.
      *
      * The supervisor needs an OAuth authorisation the app does not hold until

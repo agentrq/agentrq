@@ -1,7 +1,7 @@
 # Example extensions
 
-Three working extensions, smallest to largest. They exist to be read — every
-file is commented as an explanation rather than as a demo — and they are what
+Four working extensions. They exist to be read — every file is commented as an
+explanation rather than as a demo — and they are what
 [`docs/EXTENSIONS.md`](../../docs/EXTENSIONS.md) teaches from.
 
 They were also written **before the catalogue opened**, on purpose. The manifest,
@@ -33,13 +33,14 @@ Two more turned up once these were actually used:
   ask for, and `standup` — which does ask — counts it properly. The pair is now
   the clearest statement in the repo of what a permission buys.
 
-## The three
+## The four
 
 | | Asks for | What it shows |
 |---|---|---|
 | [`task-stats`](task-stats/) | **nothing** | The smallest extension there is: one task menu item, no permissions, no network, no server calls. Its install screen shows no permission list at all — which is the path easiest to get wrong, because an absent list reads as safety |
 | [`standup`](standup/) | `getWorkspace`, `loadMemory`, `getTask` | A sidebar page, a task menu item, <kbd>x</kbd> <kbd>s</kbd> to open it, one config field, and brokered workspace calls that answer with a refusal rather than throwing |
 | [`digest`](digest/) | the **supervisor** | The full case: a page, a header action, a conditional task menu item, a secret in the keychain, a declared host, and standing work reconciled onto the server so it runs while the app is closed |
+| [`guardrail`](guardrail/) | to be **asked** | The odd one out. It contributes nothing the app draws — it reviews the permission prompt an agent raises and refuses the commands that cannot be undone. Its manifest asks only to *refuse*, so the install screen never offers the rung where it could approve one |
 
 ## Running them
 
@@ -53,6 +54,11 @@ Extensions → Install from folder → examples/extensions/standup
 
 Linked means recorded rather than copied, so editing the folder edits the
 installed extension.
+
+`guardrail` is the one to install if you want to see the review path: give it
+**may refuse** at install, then ask an agent to run `rm -rf` something and watch
+the prompt get answered before it reaches you, with *"by guardrail"* on the
+card. Its switch is on its row afterwards, which is where you turn it off again.
 
 `task-stats` and `standup` both work. Right-click any task for `task-stats`;
 `standup` adds a **Standup** row to the sidebar, a <kbd>x</kbd> <kbd>s</kbd>

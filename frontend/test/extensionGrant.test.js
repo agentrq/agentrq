@@ -4,8 +4,11 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  CONSENT,
   SCOPE,
   availableScopes,
+  consentLabel,
+  consentsFor,
   describeAsk,
   scopeLabel,
   toGrant,
@@ -326,5 +329,111 @@ describe('useExtensionGrant', () => {
 
     expect(grant.ask.value.level).toBe('none');
     expect(grant.workspaces).toEqual([]);
+  });
+});
+
+/**
+ * The third conversation: an extension asking to be *asked*.
+ *
+ * Not a tool it may call and not a workspace it may reach — the app stopping to
+ * put a question to the extension that is otherwise put to the user, and taking
+ * its answer as theirs. Everything below follows from that being a different
+ * kind of ask rather than a bigger one.
+ */
+const reviewer = (level) => ({ name: 'guardrail', hooks: { toolCall: level } });
+
+describe('consentsFor', () => {
+  it('offers nothing for an extension that reviews nothing', () => {
+    expect(consentsFor(manifest())).toEqual([]);
+    expect(consentsFor({ name: 'x', hooks: {} })).toEqual([]);
+    expect(consentsFor(undefined)).toEqual([]);
+  });
+
+  // The rung above what the manifest asked for is never offered: an extension
+  // that only means to block things cannot be handed the power to approve one
+  // because somebody clicked the wrong radio button.
+  it('stops at the rung the manifest asked for', () => {
+    expect(consentsFor(reviewer('deny'))).toEqual([CONSENT.none, CONSENT.deny]);
+    expect(consentsFor(reviewer('decide'))).toEqual([CONSENT.none, CONSENT.deny, CONSENT.decide]);
+  });
+
+  it('ignores a level nobody recognises', () => {
+    expect(consentsFor(reviewer('always'))).toEqual([]);
+  });
+});
+
+describe('consentLabel', () => {
+  it('says what each rung does to you, in the second person', () => {
+    expect(consentLabel(CONSENT.deny)).toContain('never approve');
+    expect(consentLabel(CONSENT.decide)).toContain('without asking you');
+    expect(consentLabel(CONSENT.none)).toContain('comes to you');
+  });
+});
+
+describe('an extension that asks only to review tool calls', () => {
+  // The case the old shape could not express: nothing on the MCP ladder, and
+  // the single most consequential ask there is.
+  it('is described as reviewing, while reaching nothing', () => {
+    const ask = describeAsk(reviewer('decide'));
+
+    expect(ask.level).toBe('none');
+    expect(ask.reviewsToolCalls).toBe(true);
+    expect(ask.consents).toEqual([CONSENT.none, CONSENT.deny, CONSENT.decide]);
+  });
+
+  /**
+   * `grant: null` for "level is none" would have thrown away the one answer the
+   * screen collected, and the extension would install consented to nothing with
+   * nothing on any screen saying so.
+   */
+  it('still has a grant to record', () => {
+    const grant = useExtensionGrant({ manifest: reviewer('deny'), workspaceId: 'ws1' });
+
+    expect(grant.hasAsk.value).toBe(true);
+    expect(grant.scopes.value).toEqual([]);
+    expect(grant.valid.value).toBe(true);
+  });
+
+  it('has nothing to record when it asks for nothing at all', () => {
+    expect(useExtensionGrant({ manifest: manifest(), workspaceId: 'ws1' }).hasAsk.value).toBe(false);
+  });
+
+  /**
+   * Not the same rule as the scope ladder, which starts on the narrowest
+   * *useful* rung. Consent to answer for somebody is the question this section
+   * exists to ask, so it starts on the rung that does nothing.
+   */
+  it('starts consented to nothing', () => {
+    const grant = useExtensionGrant({ manifest: reviewer('decide'), workspaceId: 'ws1' });
+
+    expect(grant.consent.value).toBe(CONSENT.none);
+    expect(grant.grant.value.hooks).toEqual({ toolCall: CONSENT.none });
+  });
+
+  it('follows the chosen rung into the grant', () => {
+    const grant = useExtensionGrant({ manifest: reviewer('decide'), workspaceId: 'ws1' });
+
+    grant.consent.value = CONSENT.decide;
+
+    expect(grant.consents.value).toEqual([CONSENT.none, CONSENT.deny, CONSENT.decide]);
+    expect(grant.grant.value.hooks).toEqual({ toolCall: CONSENT.decide });
+  });
+
+  // Clamped here as well as in the main process: this is what stops a screen
+  // built from a stale manifest offering a rung, and that is a different
+  // question from whether one would be enforced.
+  it('will not record a rung the manifest never asked for', () => {
+    const grant = useExtensionGrant({ manifest: reviewer('deny'), workspaceId: 'ws1' });
+
+    grant.consent.value = CONSENT.decide;
+
+    expect(grant.grant.value.hooks).toEqual({ toolCall: CONSENT.none });
+  });
+
+  it('records no consent for an extension that never asked to review', () => {
+    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+
+    expect(toGrant(ask, { scope: SCOPE.selected, workspaces: ['ws1'], consent: CONSENT.decide }).hooks)
+      .toEqual({ toolCall: CONSENT.none });
   });
 });

@@ -363,6 +363,7 @@ describe('useExtensionCatalogue', () => {
     deauthorize: vi.fn(async () => ({ ok: true })),
     uninstall: vi.fn(async () => ({ ok: true })),
     setEnabled: vi.fn(async () => ({ ok: true })),
+    setHookConsent: vi.fn(async () => ({ ok: true })),
     configure: vi.fn(async () => ({ ok: true })),
     ...over,
   });
@@ -404,6 +405,18 @@ describe('useExtensionCatalogue', () => {
 
       expect(catalogue.step.value).toBe('asking');
       expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The ask that points the other way, and the one that most needs a screen:
+     * an extension wanting to answer permission prompts for you may want
+     * nothing else at all, and there is no second place that question could be
+     * put.
+     */
+    it('counts wanting to review tool calls as something to ask about', () => {
+      expect(asksFor({ name: 'guardrail', hooks: { toolCall: 'deny' } })).toBe(1);
+      expect(asksFor({ name: 'guardrail', hooks: {} })).toBe(0);
+      expect(asksFor({ name: 'guardrail' })).toBe(0);
     });
 
     // Cancelling is a decision, and it must install nothing.
@@ -954,6 +967,27 @@ describe('useExtensionCatalogue', () => {
 
       await catalogue.setEnabled('standup', true);
       expect(catalogue.notice.value).toBe('standup enabled.');
+    });
+
+    /**
+     * The off switch for an extension that answers permission prompts for you.
+     * It has to be reachable from the row: an extension refusing every tool
+     * call looks exactly like a broken agent, and "uninstall it to find out"
+     * is not a diagnosis anybody should have to make.
+     */
+    it('changes what an extension may answer, and says what that now means', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.setHookConsent('guardrail', 'deny');
+      expect(bridge.setHookConsent).toHaveBeenCalledWith('guardrail', 'deny');
+      expect(catalogue.notice.value).toBe('guardrail may now refuse tool calls.');
+
+      await catalogue.setHookConsent('guardrail', 'decide');
+      expect(catalogue.notice.value).toBe('guardrail may now approve or refuse tool calls.');
+
+      await catalogue.setHookConsent('guardrail', 'none');
+      expect(catalogue.notice.value).toBe('guardrail will no longer answer permission prompts.');
     });
 
     it('reports a refusal, and a throw, in the same place', async () => {

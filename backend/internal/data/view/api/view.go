@@ -288,6 +288,16 @@ type (
 	SendPermissionVerdictRequest struct {
 		RequestID string `json:"requestId"`
 		Behavior  string `json:"behavior"` // "allow" | "deny"
+		// DecidedBy names the installed desktop extension that reached this
+		// verdict on the user's behalf, and is empty when the user answered it
+		// themselves — which is every verdict from a browser.
+		//
+		// It is not a credential and does not widen anything: the caller is
+		// already authenticated and already allowed to answer this request. What
+		// it changes is what the answer is *recorded as*, and that is why it is
+		// here rather than inferred — nothing else in the request distinguishes
+		// a person clicking Allow from an extension deciding for them.
+		DecidedBy string `json:"decidedBy,omitempty"`
 	}
 
 	// SetAgentModelRequest asks the workspace's connected agent to switch

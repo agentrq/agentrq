@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -1779,7 +1780,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 				zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request")
 				go func() {
 					time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-					_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
+					_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
 				}()
 				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
@@ -1795,7 +1796,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 					zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Msg("auto-allowing permission request (task level)")
 					go func() {
 						time.Sleep(100 * time.Millisecond) // Give session time to stabilize if needed
-						_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
+						_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
 					}()
 					ps.markAutoDecided(p.RequestID)
 					ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentityFromRequest(req))
@@ -1980,7 +1981,41 @@ const (
 	// and asked again. It was counted when the human decided; counting it again
 	// would report one decision as two.
 	verdictReplayed
+	// An installed desktop extension the user gave consent to answered this,
+	// and no person saw it. Told apart from both of its neighbours on purpose:
+	// it is not a manual approval, because nobody stopped to decide anything,
+	// and it is not the automatic kind either — an auto-allow rule is a
+	// standing instruction the user wrote themselves, whereas this is somebody
+	// else's code exercising a judgement on their behalf. Counting it as either
+	// would make one of those two numbers mean something it does not.
+	verdictFromExtension
 )
+
+// extensionNameRe is the shape of an extension name, which is the only thing
+// `decidedBy` may be.
+//
+// It is checked rather than trusted because the field arrives in an HTTP body:
+// the desktop app fills it in from a manifest whose name is already this shape,
+// but the route is open to any client the user is signed in on, and whatever
+// lands here is written into message metadata and drawn in the task feed as the
+// thing that decided something. A name is an identifier, so it is held to the
+// same spelling as everywhere else rather than being escaped on the way out.
+var extensionNameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// ErrBadDecider is returned when a verdict claims to come from something that
+// could not be an extension.
+var ErrBadDecider = errors.New("decidedBy must be an extension name")
+
+// ErrExtensionCannotRemember is returned when a verdict from an extension asks
+// for a standing rule.
+//
+// "allow_always" does two things: it answers this request, and it writes an
+// auto-allow rule that answers every future one without asking. The first is
+// what an extension was given consent for; the second is the user's own
+// standing instruction, and an extension quietly authoring those would build
+// itself a permission that outlives the review it was granted — and outlives
+// the extension, since the rules stay behind when it is uninstalled.
+var ErrExtensionCannotRemember = errors.New("an extension may answer a request, not write a standing rule")
 
 // SendPermissionVerdict hands a human decision to the agent that asked for it.
 //
@@ -1994,10 +2029,34 @@ const (
 // manual decision. The paths that answer on nobody's behalf call sendVerdict
 // directly and say so.
 func (ps *WorkspaceServer) SendPermissionVerdict(ctx context.Context, taskID int64, requestID string, behavior string) error {
-	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromHuman)
+	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromHuman, "")
 }
 
-func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, requestID string, behavior string, origin verdictOrigin) error {
+// SendPermissionVerdictFrom hands over a verdict an installed extension reached
+// on the user's behalf, rather than one they gave themselves.
+//
+// The deciding extension is carried through to the message metadata, so the
+// task feed can say who answered. That is the whole point of this existing as a
+// separate entry point: delivered through the human path, an extension's verdict
+// would be indistinguishable from a click — the feed would say "Allowed" and
+// leave the user to assume it was them.
+//
+// An empty name is the human path, not a nameless extension: a caller with
+// nothing to declare is the browser, and it says so by saying nothing.
+func (ps *WorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, taskID int64, requestID, behavior, decidedBy string) error {
+	if decidedBy == "" {
+		return ps.SendPermissionVerdict(ctx, taskID, requestID, behavior)
+	}
+	if !extensionNameRe.MatchString(decidedBy) || len(decidedBy) > 64 {
+		return ErrBadDecider
+	}
+	if behavior == "allow_always" {
+		return ErrExtensionCannotRemember
+	}
+	return ps.sendVerdict(ctx, taskID, requestID, behavior, verdictFromExtension, decidedBy)
+}
+
+func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, requestID string, behavior string, origin verdictOrigin, decidedBy string) error {
 	ps.permissionRequestsMu.RLock()
 	sessID, ok := ps.permissionRequests[requestID]
 	ps.permissionRequestsMu.RUnlock()
@@ -2097,6 +2156,18 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 		}
 	}
 
+	// Counted under its own name for the reason given at verdictFromExtension:
+	// this is neither a person deciding nor a rule they wrote, and folding it
+	// into either would quietly inflate a number somebody reads as one of those.
+	if origin == verdictFromExtension {
+		switch effectiveBehavior {
+		case "allow":
+			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_extension_allow", clientIdentity{})
+		case "deny":
+			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_extension_deny", clientIdentity{})
+		}
+	}
+
 	if ps.updateToolCallStatus != nil {
 		ps.toolCallIDsMu.RLock()
 		tcID, hasTC := ps.toolCallIDs[requestID]
@@ -2135,7 +2206,17 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 		ps.permissionResponsesMu.RUnlock()
 
 		if hasMsg {
-			_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": behavior})
+			// Merged into what is there, so the card keeps the tool and its
+			// arguments and gains the answer. `decidedBy` is only written when
+			// something other than the user decided — an absent field is the
+			// honest way to say "you did this", and a `decidedBy: "you"` would
+			// be a value every existing message lacks and every reader would
+			// have to special-case anyway.
+			update := map[string]any{"status": behavior}
+			if decidedBy != "" {
+				update["decidedBy"] = decidedBy
+			}
+			_ = ps.updateMessageMetadata(ctx, taskID, msgID, update)
 		}
 	}
 
@@ -2272,7 +2353,7 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 		zlog.Info().Str("request_id", p.RequestID).Str("behavior", behavior).
 			Msg("delivering the verdict the agent missed while it was away")
 		// verdictReplayed: this decision was counted when it was first made.
-		_ = ps.sendVerdict(ctx, taskID, p.RequestID, behavior, verdictReplayed)
+		_ = ps.sendVerdict(ctx, taskID, p.RequestID, behavior, verdictReplayed, "")
 	}
 
 	return true
@@ -2371,7 +2452,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
 			go func() {
 				time.Sleep(100 * time.Millisecond)
-				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic)
+				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
 			}()
 			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
 			ps.markAutoDecided(p.RequestID)
@@ -2390,7 +2471,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
 				go func() {
 					time.Sleep(100 * time.Millisecond)
-					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic)
+					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
 				}()
 				ps.markAutoDecided(p.RequestID)
 				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})

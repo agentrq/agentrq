@@ -204,7 +204,14 @@ export function asksFor(manifest) {
   return (
     (manifest?.mcp?.workspace ?? []).length +
     (manifest?.mcp?.supervisor ?? []).length +
-    (manifest?.config ?? []).length
+    (manifest?.config ?? []).length +
+    // Wanting to answer permission prompts on your behalf is the one ask that
+    // points the other way — the app asking the extension something rather than
+    // the extension reaching for something — and it is easily the most
+    // consequential of them. An extension that asks for nothing else would
+    // otherwise install with no screen at all, and there is no second place the
+    // question could be put.
+    (manifest?.hooks?.toolCall ? 1 : 0)
   );
 }
 
@@ -433,6 +440,21 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
   }
 
   const uninstall = (name) => act(bridge?.uninstall(name), `${name} removed.`);
+  /**
+   * Change what an installed extension may answer on your behalf.
+   *
+   * The off switch for a feature whose misbehaviour is indistinguishable from
+   * the app going wrong: an extension refusing every tool call looks exactly
+   * like a broken agent. Needing to uninstall something to find out whether it
+   * was the cause is not a diagnosis anybody should have to make.
+   */
+  const setHookConsent = (name, level) =>
+    act(
+      bridge?.setHookConsent(name, level),
+      level === 'none'
+        ? `${name} will no longer answer permission prompts.`
+        : `${name} may now ${level === 'decide' ? 'approve or refuse' : 'refuse'} tool calls.`,
+    );
   const setEnabled = (name, enabled) =>
     act(bridge?.setEnabled(name, enabled), `${name} ${enabled ? 'enabled' : 'disabled'}.`);
 
@@ -470,6 +492,7 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     cancelInstall,
     uninstall,
     setEnabled,
+    setHookConsent,
     available: Boolean(bridge),
   };
 }

@@ -63,6 +63,7 @@ import { claimedShortcuts } from './extensions/shortcuts.js'
 import { serverTools } from './extensions/servers.js'
 import { createMcpClient } from './extensions/mcp-client.js'
 import { createSupervisorAuth } from './extensions/supervisor-auth.js'
+import { createToolCallReview } from './extensions/tool-calls.js'
 // Externalised by the build, so this resolves from node_modules at runtime.
 // Importing it is inert; the dev guard is about never *using* it against a
 // development checkout.
@@ -504,6 +505,15 @@ function focusMainWindow() {
 }
 
 function handleStreamEvent(event) {
+  // Before the notification, and not gated on there being one: an agent asking
+  // permission is exactly the event a reviewer exists for, and whether it also
+  // deserves a toast is a separate question with an earlier return in it.
+  //
+  // Deliberately not awaited. This is an event handler on a stream that must
+  // keep reading, and a reviewer is somebody else's code — the one thing that
+  // must not happen is the next event waiting behind it.
+  extensions?.reviewToolCalls(event)
+
   const notification = mapEventToNotification(event, {
     mutedWorkspaces,
     workspaceName: (id) => workspaceNames.get(id) ?? '',
@@ -1000,6 +1010,18 @@ function registerIpc(getWindow) {
     },
   )
 
+  /**
+   * Turn one extension's tool-call review up or down, or off.
+   *
+   * Its own channel rather than part of `configure`: config is the extension's
+   * own settings, and this is the user's answer about what the extension may do
+   * to them. An off switch for something that answers on your behalf has to be
+   * reachable without reinstalling, and without reading the extension's docs.
+   */
+  ipcMain.handle('agentrq:extensions:set-hook-consent', async (_event, { name, level } = {}) =>
+    (await extensions?.setHookConsent(name, level)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
   ipcMain.handle('agentrq:extensions:configure', async (_event, { name, values } = {}) =>
     (await extensions?.configure(name, values ?? {})) ?? { ok: false, reason: 'Extensions are unavailable.' },
   )
@@ -1337,8 +1359,76 @@ function buildExtensionRuntime() {
     servers: () => serverTools(app.getVersion()),
   })
 
+  /**
+   * Sends one reviewer's verdict as the signed-in user.
+   *
+   * The extension never makes this call and never sees a credential — the same
+   * arrangement as the broker, and for the same reason. It says allow or deny;
+   * the app is what has a session.
+   *
+   * `decidedBy` is what keeps the answer honest. Without it the verdict is
+   * indistinguishable from the user's own click: the feed would say "Allowed",
+   * and the approval counters would record a person having stopped to think
+   * about something no person saw.
+   */
+  async function sendReviewVerdict(request, verdict) {
+    if (!serverUrl) return { ok: false, reason: 'Not connected to a server.' }
+
+    try {
+      const res = await profileFetch(
+        `${serverUrl}/api/v1/workspaces/${request.workspaceId}/tasks/${request.taskId}/permission`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId: request.requestId,
+            behavior: verdict.behavior,
+            decidedBy: verdict.by,
+          }),
+        },
+      )
+      // 410 is the ordinary outcome of racing the user to the same request and
+      // losing, which is not a failure of anything. Reported as a reason rather
+      // than a thrown error so the log line reads as the event it is.
+      if (!res.ok) return { ok: false, reason: res.status === 410 ? 'already answered' : `server said ${res.status}` }
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, reason: error?.message ?? 'The call failed.' }
+    }
+  }
+
+  const toolCallReview = createToolCallReview({
+    reviewers: () => runtime.reviewers(),
+    grantFor: (name) => broker.grantFor(name),
+    allows: permitsWorkspace,
+    sendVerdict: sendReviewVerdict,
+    // Counted against the extension exactly as a failing load is: a reviewer
+    // that throws on every request is as broken as one that throws on start,
+    // and three of them switches it off with the user told why.
+    //
+    // Caught, because the third failure disables the extension — which writes
+    // to disk and posts to the window — and a rejection there would be an
+    // unhandled one raised from inside a stream handler.
+    onFailure: (name, error) => {
+      host.recordFailure(name, error).catch(() => {})
+    },
+  })
+
   return {
     ...runtime,
+
+    /** Ask whoever may be asked about anything pending in this event. */
+    reviewToolCalls: (event) =>
+      toolCallReview.handle(event).catch((error) => {
+        console.warn('[extensions] tool-call review failed:', error?.message ?? error)
+      }),
+
+    /** Changed from the row, so consent given once is not consent forever. */
+    async setHookConsent(name, level) {
+      const result = await runtime.setHookConsent(name, level)
+      if (result.ok) await persistGrants()
+      return result
+    },
 
     /** Whether account-wide tools can be used, and how to make them usable. */
     supervisor: {
@@ -1384,6 +1474,20 @@ function buildExtensionRuntime() {
 
     async installLocal(path, options) {
       const result = await runtime.installLocal(path, options)
+      await persistGrants()
+      return result
+    },
+
+    /**
+     * The same, for the other way in.
+     *
+     * This was missing, and the symptom was narrow enough to survive: a grant
+     * given to a catalogue install lived until the process ended and was gone on
+     * the next launch, leaving the extension refused for a permission the user
+     * had given. Local installs wrote theirs, so it looked like it worked.
+     */
+    async installFromCatalogue(entry, options) {
+      const result = await runtime.installFromCatalogue(entry, options)
       await persistGrants()
       return result
     },
