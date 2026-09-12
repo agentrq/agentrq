@@ -122,7 +122,7 @@ func (ps *WorkspaceServer) checkAutoAllow(toolName, inputPreview string) bool {
 }
 
 // isShellCommandAllowed checks if a command (potentially with shell operators) matches the pattern.
-// Every subcommand (split on &&, ||, ;, |) must match the pattern.
+// Every subcommand (split on &&, ||, ;, |, &) must match the pattern.
 func isShellCommandAllowed(pattern, command string) bool {
 	subcommands := splitShellOperators(command)
 	for _, sub := range subcommands {
@@ -133,15 +133,36 @@ func isShellCommandAllowed(pattern, command string) bool {
 	return true
 }
 
-// splitShellOperators splits a command string on shell operators (&&, ||, ;, |).
+// shellOperators matches every token that can separate two commands, plus the
+// redirect forms that merely contain an ampersand.
+var shellOperators = regexp.MustCompile(`[0-9]*>&[0-9-]*|&>>?|&&|\|\||;|\||&`)
+
+// isShellSeparator reports whether a token matched by shellOperators ends a
+// command, as opposed to being a redirect that happens to contain an ampersand.
+func isShellSeparator(token string) bool {
+	switch token {
+	case "&&", "||", ";", "|", "&":
+		return true
+	}
+	return false
+}
+
+// splitShellOperators splits a command string into the commands it actually
+// runs, cutting on &&, ||, ;, | and &, and leaving redirects intact.
 func splitShellOperators(command string) []string {
-	parts := regexp.MustCompile(`&&|\|\||;|\|`).Split(command, -1)
 	var subcommands []string
-	for _, p := range parts {
-		trimmed := strings.TrimSpace(p)
-		if trimmed != "" {
+	start := 0
+	for _, loc := range shellOperators.FindAllStringIndex(command, -1) {
+		if !isShellSeparator(command[loc[0]:loc[1]]) {
+			continue
+		}
+		if trimmed := strings.TrimSpace(command[start:loc[0]]); trimmed != "" {
 			subcommands = append(subcommands, trimmed)
 		}
+		start = loc[1]
+	}
+	if trimmed := strings.TrimSpace(command[start:]); trimmed != "" {
+		subcommands = append(subcommands, trimmed)
 	}
 	return subcommands
 }

