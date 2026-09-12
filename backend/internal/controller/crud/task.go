@@ -185,6 +185,25 @@ func (c *controller) ListTasks(ctx context.Context, req entity.ListTasksRequest)
 	return &entity.ListTasksResponse{Tasks: tasks}, nil
 }
 
+func (c *controller) otherTaskOngoing(ctx context.Context, workspaceID, taskID, userID int64) (bool, error) {
+	// Limit 2, not 1: the task being transitioned may itself already be ongoing
+	// and occupy the first row, which would hide any other ongoing task.
+	tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{
+		WorkspaceID: workspaceID,
+		Status:      []string{"ongoing"},
+		Limit:       2,
+	}, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, t := range tasks {
+		if t.ID != taskID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	if c.limiter != nil && !c.limiter.AllowMessage(uid) {
@@ -206,14 +225,12 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	switch req.Action {
 	case "allow", "allow_all":
 		// Enforce single ongoing task per workspace
-		uid := monoflake.IDFromBase62(req.UserID).Int64()
-		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
-		if err == nil {
-			for _, t := range tasks {
-				if t.Status == "ongoing" && t.ID != req.TaskID {
-					return nil, fmt.Errorf("another task is already ongoing in this workspace")
-				}
-			}
+		ongoing, err := c.otherTaskOngoing(ctx, req.WorkspaceID, req.TaskID, uid)
+		if err != nil {
+			return nil, err
+		}
+		if ongoing {
+			return nil, fmt.Errorf("another task is already ongoing in this workspace")
 		}
 		m.Status = "ongoing"
 		createMsg = true
@@ -322,14 +339,12 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 
 	if req.Status == "ongoing" {
 		// Enforce single ongoing task per workspace
-		uid := monoflake.IDFromBase62(req.UserID).Int64()
-		tasks, err := c.repository.ListTasks(ctx, entity.ListTasksRequest{WorkspaceID: req.WorkspaceID}, uid)
-		if err == nil {
-			for _, t := range tasks {
-				if t.Status == "ongoing" && t.ID != req.TaskID {
-					return nil, fmt.Errorf("another task is already ongoing in this workspace")
-				}
-			}
+		ongoing, err := c.otherTaskOngoing(ctx, req.WorkspaceID, req.TaskID, uid)
+		if err != nil {
+			return nil, err
+		}
+		if ongoing {
+			return nil, fmt.Errorf("another task is already ongoing in this workspace")
 		}
 	}
 

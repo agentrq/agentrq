@@ -395,6 +395,25 @@ func TestListTasks_Empty(t *testing.T) {
 	}
 }
 
+func expectOngoingQuery(t *testing.T, e *testEnv, workspaceID int64, ret []model.Task, retErr error) {
+	t.Helper()
+	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).DoAndReturn(
+		func(_ context.Context, req entity.ListTasksRequest, _ int64) ([]model.Task, error) {
+			if len(req.Status) != 1 || req.Status[0] != "ongoing" {
+				t.Errorf("expected the guard to query status=[ongoing], got %v", req.Status)
+			}
+			if req.WorkspaceID != workspaceID {
+				t.Errorf("expected workspace %d, got %d", workspaceID, req.WorkspaceID)
+			}
+			// The task being transitioned may itself already be ongoing and take
+			// the first row, so a limit of 1 could hide a second ongoing task.
+			if req.Limit < 2 {
+				t.Errorf("expected a limit of at least 2, got %d", req.Limit)
+			}
+			return ret, retErr
+		})
+}
+
 // ── RespondToTask ─────────────────────────────────────────────────────────────
 
 func TestRespondToTask_Allow(t *testing.T) {
@@ -405,7 +424,9 @@ func TestRespondToTask_Allow(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
+	// The only ongoing row is this task itself, which the guard must exclude by
+	// ID rather than treat as a conflict.
+	expectOngoingQuery(t, e, 1, []model.Task{{ID: 10, WorkspaceID: 1, Status: "ongoing"}}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100)) // attachment ID (always server-generated)
 	e.idgen.EXPECT().NextID().Return(int64(101)) // message ID
 	e.storage.EXPECT().Save(gomock.Any(), "data1").Return(nil)
@@ -433,7 +454,8 @@ func TestRespondToTask_AllowAll(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
+	// Same self-exclusion check on the allow_all branch.
+	expectOngoingQuery(t, e, 1, []model.Task{{ID: 10, WorkspaceID: 1, Status: "ongoing"}}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
@@ -447,6 +469,43 @@ func TestRespondToTask_AllowAll(t *testing.T) {
 	}
 	if resp.Task.Status != "ongoing" {
 		t.Errorf("expected status ongoing")
+	}
+}
+
+func TestRespondToTask_AllowOngoingConflict(t *testing.T) {
+	e := newTestController(t)
+
+	// Approving a task while another is ongoing must be refused, and must not
+	// write anything: no CreateMessage and no UpdateTask are expected.
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
+	other := model.Task{ID: 11, WorkspaceID: 1, Status: "ongoing"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOngoingQuery(t, e, 1, []model.Task{other}, nil)
+
+	_, err := e.controller.RespondToTask(context.Background(), entity.RespondToTaskRequest{
+		WorkspaceID: 1, TaskID: 10, Action: "allow", UserID: testUserIDStr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "another task is already ongoing") {
+		t.Fatalf("expected ongoing conflict error, got %v", err)
+	}
+}
+
+func TestRespondToTask_AllowAllOngoingLookupFailsClosed(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOngoingQuery(t, e, 1, nil, fmt.Errorf("db unavailable"))
+
+	_, err := e.controller.RespondToTask(context.Background(), entity.RespondToTaskRequest{
+		WorkspaceID: 1, TaskID: 10, Action: "allow_all", UserID: testUserIDStr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "db unavailable") {
+		t.Fatalf("expected the lookup error to surface, got %v", err)
 	}
 }
 
@@ -520,7 +579,7 @@ func TestUpdateTaskStatus_OngoingConflict(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
-	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{ongoing}, nil)
+	expectOngoingQuery(t, e, 1, []model.Task{ongoing}, nil)
 
 	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
 		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
@@ -564,6 +623,70 @@ func TestUpdateTaskStatus_InvalidStatus(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid task status") {
 		t.Fatalf("expected invalid status error, got %v", err)
+	}
+}
+
+func TestUpdateTaskStatus_OngoingAllowsSelf(t *testing.T) {
+	e := newTestController(t)
+
+	// The only ongoing task is this one, so re-asserting "ongoing" is not a
+	// conflict with itself.
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
+	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOngoingQuery(t, e, 1, []model.Task{task}, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
+
+	resp, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Task.Status != "ongoing" {
+		t.Errorf("expected status ongoing, got %s", resp.Task.Status)
+	}
+}
+
+func TestUpdateTaskStatus_OngoingConflictBehindSelf(t *testing.T) {
+	e := newTestController(t)
+
+	// The task under transition is already ongoing and comes back first; the
+	// conflicting task is behind it. Asking for a single row would have missed
+	// it entirely.
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
+	other := model.Task{ID: 11, WorkspaceID: 1, Status: "ongoing"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOngoingQuery(t, e, 1, []model.Task{task, other}, nil)
+
+	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "another task is already ongoing") {
+		t.Fatalf("expected ongoing conflict error, got %v", err)
+	}
+}
+
+func TestUpdateTaskStatus_OngoingLookupFailsClosed(t *testing.T) {
+	e := newTestController(t)
+
+	// A guard that cannot verify must not let the task through: no UpdateTask
+	// is expected here, and gomock fails the test if one happens.
+	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
+
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	expectOngoingQuery(t, e, 1, nil, fmt.Errorf("db unavailable"))
+
+	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
+		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
+	})
+	if err == nil || !strings.Contains(err.Error(), "db unavailable") {
+		t.Fatalf("expected the lookup error to surface, got %v", err)
 	}
 }
 
