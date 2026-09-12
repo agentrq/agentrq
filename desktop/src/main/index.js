@@ -935,6 +935,22 @@ function registerIpc(getWindow) {
     return extensions.installLocal(path, { grant, config })
   })
 
+  ipcMain.handle('agentrq:extensions:install-catalogue', async (_event, { fullName, grant, config } = {}) => {
+    if (!extensions) return { ok: false, reason: 'Extensions are unavailable.' }
+    if (!fullName) return { ok: false, reason: 'No extension was chosen.' }
+
+    // Looked up here rather than taken from the renderer: the entry decides
+    // which release is downloaded and which digest it is checked against, and
+    // that is not a decision to accept from the page.
+    const index = (await discovery?.list()) ?? { entries: [] }
+    const entry = decorate(index, serverTools(app.getVersion())).entries.find(
+      (candidate) => candidate.fullName === fullName,
+    )
+    if (!entry) return { ok: false, reason: 'That extension is no longer in the catalogue.' }
+
+    return extensions.installFromCatalogue(entry, { grant, config })
+  })
+
   ipcMain.handle('agentrq:extensions:uninstall', async (_event, name) =>
     (await extensions?.remove(name)) ?? { ok: false, reason: 'Extensions are unavailable.' },
   )

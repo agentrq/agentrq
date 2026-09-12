@@ -407,6 +407,126 @@ describe('installLocal', () => {
   })
 })
 
+describe('installFromCatalogue', () => {
+  /** A catalogue entry, as the main process hands one over. */
+  const entry = (over = {}) => ({
+    fullName: 'owner/standup',
+    ok: true,
+    compatible: true,
+    reasons: [],
+    manifest: manifest(),
+    ...over,
+  })
+
+  it('installs the release the manifest names, and not as a linked folder', async () => {
+    const { runtime, installer, order } = build()
+    const grant = { scope: 'workspace', workspaces: ['ws1'], tools: { workspace: ['listTasks'], supervisor: [] } }
+
+    const result = await runtime.installFromCatalogue(entry(), { grant })
+
+    expect(result.ok).toBe(true)
+    // Not linked: a downloaded release is a copy this app owns, so removing the
+    // extension removes it. Only a folder is the author's own working copy.
+    expect(installer.install).toHaveBeenCalledWith({
+      kind: 'release',
+      name: 'standup',
+      repo: 'owner/standup',
+      release: 'v1.0.0',
+      asset: 'standup.tgz',
+      sha256: 'a'.repeat(64),
+    })
+    expect(order).toEqual(['install', 'setGrant', 'start', 'reconcile'])
+  })
+
+  it('refuses an entry with no release to install', async () => {
+    const { runtime, installer } = build()
+    const noRelease = entry({ manifest: manifest({ artifact: undefined }) })
+
+    expect((await runtime.installFromCatalogue(noRelease)).reason).toContain('no release to install')
+    expect(installer.install).not.toHaveBeenCalled()
+  })
+
+  it('refuses a manifest that never parsed, in the words it failed with', async () => {
+    const { runtime, installer } = build()
+
+    const result = await runtime.installFromCatalogue(entry({ ok: false, reason: '"license" is required.' }))
+
+    expect(result.reason).toBe('"license" is required.')
+    expect(installer.install).not.toHaveBeenCalled()
+  })
+
+  it('still says something when a broken entry carries no reason', async () => {
+    const { runtime } = build()
+
+    expect((await runtime.installFromCatalogue(entry({ ok: false }))).reason).toBe(
+      'That manifest could not be read.',
+    )
+  })
+
+  it('refuses one that cannot run here, before downloading anything', async () => {
+    const { runtime, installer } = build()
+    const wrong = entry({ compatible: false, reasons: ['Needs AgentRQ >=9.'] })
+
+    expect((await runtime.installFromCatalogue(wrong)).reason).toBe('Needs AgentRQ >=9.')
+    expect(installer.install).not.toHaveBeenCalled()
+  })
+
+  it('refuses an entry that names no extension', async () => {
+    const { runtime } = build()
+    const nameless = entry({ manifest: { ...manifest(), name: '' } })
+
+    expect((await runtime.installFromCatalogue(nameless)).reason).toBe(
+      'That catalogue entry names no extension.',
+    )
+  })
+
+  // The name is an address, so a reinstall replaces what is there rather than
+  // installing beside it — and the old one must not still be registered when the
+  // new one claims the same names.
+  it('stops what is already running under that name first', async () => {
+    const { runtime, host, order } = build()
+    await runtime.installLocal('/tmp/standup')
+    order.length = 0
+
+    await runtime.installFromCatalogue(entry())
+
+    expect(host.stop).toHaveBeenCalledWith('standup')
+    expect(order.indexOf('stop')).toBeLessThan(order.indexOf('install'))
+  })
+
+  it('carries a refused download through as it was given', async () => {
+    const { runtime } = build({
+      installer: { install: vi.fn(async () => ({ ok: false, reason: 'That checksum did not match.' })) },
+    })
+
+    expect((await runtime.installFromCatalogue(entry())).reason).toBe('That checksum did not match.')
+  })
+
+  // The manifest inside the downloaded package decides, not the catalogue's copy
+  // of it — the digest proves they are the same bytes, and the one unpacked is
+  // the one whose settings are saved.
+  it('saves settings against the manifest that was actually unpacked', async () => {
+    const { runtime, configStore } = build()
+
+    await runtime.installFromCatalogue(entry(), { config: { since: 8 } })
+
+    expect(configStore.save).toHaveBeenCalledWith('standup', manifest().config, { since: 8 })
+  })
+
+  it('falls back to the catalogue manifest when the install reports none', async () => {
+    const { runtime, configStore } = build({
+      installer: {
+        install: vi.fn(async () => ({ ok: true, installation: { name: 'standup', enabled: true, failures: 0 } })),
+      },
+    })
+
+    const result = await runtime.installFromCatalogue(entry(), { config: { since: 8 } })
+
+    expect(result.ok).toBe(true)
+    expect(configStore.save).toHaveBeenCalledWith('standup', manifest().config, { since: 8 })
+  })
+})
+
 describe('remove', () => {
   // The whole reason this function exists in one place.
   it('takes the standing work down while the grant still exists', async () => {

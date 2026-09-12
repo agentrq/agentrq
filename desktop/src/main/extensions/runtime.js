@@ -1,5 +1,6 @@
 import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'
+import { releaseSource } from './source.js'
 import { entriesFor, invokeEntry, registryFor } from './surfaces.js'
 
 /**
@@ -158,6 +159,38 @@ export function createRuntime({
    * afterwards would refuse exactly those calls, and the extension author would
    * see a permission error for a permission the user had granted.
    */
+  /**
+   * The half of an install that is the same whichever source it came from:
+   * store the settings, record the grant, and start it.
+   *
+   * Shared rather than written twice, because the order matters — settings are
+   * written before the extension runs, and a refused write undoes the install
+   * rather than leaving one configured with half its values.
+   */
+  async function settle(installed, manifest, { grant = null, config = null } = {}) {
+    const name = manifest.name
+
+    if (config) {
+      // Always an array: `parseManifest` normalises it, and this manifest came
+      // from there.
+      const saved = await configStore.save(name, manifest.config, config)
+      // Refused rather than written in the clear — a machine with no secure
+      // storage does not get a plaintext credential — and refusing the whole
+      // install is right, because an extension configured with half its
+      // settings is one that fails somewhere less obvious.
+      if (!saved.ok) {
+        await installer.uninstall(name)
+        return saved
+      }
+    }
+
+    if (grant) grants.set(name, grant)
+    const started = await start({ ...installed.installation, grant: grants.get(name) ?? null })
+    if (!started.ok) return { ok: true, installation: installed.installation, loadFailure: started.reason }
+
+    return { ok: true, installation: installed.installation, ...started }
+  }
+
   async function start(installation) {
     const grant = clampToManifest(installation.grant ?? grants.get(installation.name), installation.manifest)
     if (grant) {
@@ -291,25 +324,47 @@ export function createRuntime({
       const installed = await installer.install({ kind: 'local', path }, { linked: true })
       if (!installed.ok) return installed
 
-      if (config) {
-        // Always an array: `parseManifest` normalises it, and this manifest came
-        // from there.
-        const saved = await configStore.save(name, inspected.manifest.config, config)
-        // Refused rather than written in the clear — a machine with no secure
-        // storage does not get a plaintext credential — and refusing the whole
-        // install is right, because an extension configured with half its
-        // settings is one that fails somewhere less obvious.
-        if (!saved.ok) {
-          await installer.uninstall(name)
-          return saved
-        }
-      }
+      return settle(installed, inspected.manifest, { grant, config })
+    },
 
-      if (grant) grants.set(name, grant)
-      const started = await start({ ...installed.installation, grant: grants.get(name) ?? null })
-      if (!started.ok) return { ok: true, installation: installed.installation, loadFailure: started.reason }
+    /**
+     * Install a catalogue entry from the release its manifest names.
+     *
+     * The counterpart to `installLocal`, and deliberately **not** linked: a
+     * downloaded release is a copy this app owns, so removing the extension
+     * removes it. A folder is the author's own working copy and is only
+     * recorded.
+     *
+     * The entry is passed in rather than looked up here because the caller
+     * resolves it from its own index — nothing a renderer sends is trusted to
+     * describe what gets downloaded, and the digest in the manifest is what
+     * decides whether the bytes are the ones that were promised.
+     */
+    async installFromCatalogue(entry, { grant = null, config = null } = {}) {
+      const built = releaseSource(entry)
+      if (!built.ok) return built
 
-      return { ok: true, installation: installed.installation, ...started }
+      if (!entry?.ok) return fail(entry?.reason ?? 'That manifest could not be read.')
+      // `reasons` is never empty when `compatible` is false — `decorate` sets the
+      // two together from `checkCompatibility`, which pushes one before it can
+      // say no — so there is nothing to fall back to.
+      if (entry.compatible === false) return fail(entry.reasons.join(' '))
+
+      const name = entry.manifest?.name
+      if (!name) return fail('That catalogue entry names no extension.')
+
+      // The name is an address, so a reinstall replaces what is there rather
+      // than installing beside it. Stopping first means the old one is not still
+      // registered when the new one claims the same names.
+      if (host.list().some((installed) => installed.name === name)) host.stop(name)
+
+      const installed = await installer.install(built.source)
+      if (!installed.ok) return installed
+
+      // The manifest inside the downloaded package, not the catalogue's copy of
+      // it: the digest proves they are the same bytes, and the one that was
+      // actually unpacked is the one whose settings get saved.
+      return settle(installed, installed.installation.manifest ?? entry.manifest, { grant, config })
     },
 
     /**

@@ -18,6 +18,16 @@ import {
  * itself" — every row that cannot be used says why, and nothing is hidden.
  */
 
+/**
+ * A published release, which is what makes an entry installable at all: the
+ * asset is fetched by name and pinned by digest.
+ */
+const RELEASE = {
+  release: 'v1.0.0',
+  asset: 'thing-1.0.0.tgz',
+  sha256: 'a'.repeat(64),
+};
+
 const entry = (over = {}) => ({
   fullName: 'owner/thing',
   owner: 'owner',
@@ -25,7 +35,7 @@ const entry = (over = {}) => ({
   ok: true,
   compatible: true,
   reasons: [],
-  manifest: { name: 'thing', displayName: 'Thing', license: 'MIT' },
+  manifest: { name: 'thing', displayName: 'Thing', license: 'MIT', artifact: { ...RELEASE } },
   ...over,
 });
 
@@ -55,6 +65,48 @@ describe('groupFor', () => {
 describe('blockedReason', () => {
   it('is empty for something that works', () => {
     expect(blockedReason(entry())).toBe('');
+  });
+
+  // The catalogue is uncurated, and an author who has not cut a release yet
+  // looks exactly like one who has — until you press a button that was never
+  // going to work. Saying so is the answer somebody actually needs.
+  it('says when there is no release to install', () => {
+    const noRelease = entry({ manifest: { name: 'thing', displayName: 'Thing', license: 'MIT' } });
+
+    expect(blockedReason(noRelease)).toBe(
+      'This extension has not published a release yet, so there is nothing to install.',
+    );
+    expect(groupFor(noRelease)).toBe('unavailable');
+  });
+
+  it('says when the release names no usable checksum', () => {
+    // A tag is mutable: an author can move v1.2.0 to different code after you
+    // installed it, so without a digest "install v1.2.0" promises nothing.
+    const placeholder = entry({
+      manifest: { name: 'thing', license: 'MIT', artifact: { ...RELEASE, sha256: '0'.repeat(64) } },
+    });
+    const nonsense = entry({
+      manifest: { name: 'thing', license: 'MIT', artifact: { ...RELEASE, sha256: 'not-a-digest' } },
+    });
+    const absent = entry({
+      manifest: { name: 'thing', license: 'MIT', artifact: { release: 'v1', asset: 'a.tgz' } },
+    });
+
+    for (const row of [placeholder, nonsense, absent]) {
+      expect(blockedReason(row)).toBe(
+        'This extension names a release but no checksum for it, so it cannot be verified.',
+      );
+      expect(groupFor(row)).toBe('unavailable');
+    }
+  });
+
+  // Half a release is not a release: an asset with no tag cannot be fetched.
+  it('says when the release is only half named', () => {
+    const noAsset = entry({
+      manifest: { name: 'thing', license: 'MIT', artifact: { release: 'v1', sha256: 'a'.repeat(64) } },
+    });
+
+    expect(blockedReason(noAsset)).toContain('has not published a release');
   });
 
   it('reports a manifest that could not be read', () => {
@@ -301,6 +353,7 @@ describe('useExtensionCatalogue', () => {
     refresh: vi.fn(async () => ({ ok: true, index: { entries: [entry(), entry({ fullName: 'b/x' })] } })),
     chooseFolder: vi.fn(async () => found()),
     installLocal: vi.fn(async () => ({ ok: true, installation: { name: 'standup' } })),
+    installFromCatalogue: vi.fn(async () => ({ ok: true, installation: { name: 'thing' } })),
     supervisor: vi.fn(async () => ({ authorized: false })),
     authorize: vi.fn(async () => ({ ok: true })),
     deauthorize: vi.fn(async () => ({ ok: true })),
@@ -308,6 +361,122 @@ describe('useExtensionCatalogue', () => {
     setEnabled: vi.fn(async () => ({ ok: true })),
     configure: vi.fn(async () => ({ ok: true })),
     ...over,
+  });
+
+  describe('installing from the catalogue', () => {
+    const rowFor = async (catalogue) => {
+      await catalogue.load();
+      return catalogue.sections.value.flatMap((section) => section.rows).find((row) => !row.installed);
+    };
+
+    // Only the repository name crosses the bridge. The main process resolves it
+    // against its own index, so the release that gets downloaded is decided by
+    // what the app discovered rather than by what this screen is holding.
+    it('sends the name, not the entry', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+      const row = await rowFor(catalogue);
+
+      await catalogue.beginInstall(row);
+
+      expect(bridge.installFromCatalogue).toHaveBeenCalledWith('owner/thing', { grant: null, config: null });
+      expect(catalogue.notice.value).toBe('Thing installed.');
+    });
+
+    // An extension that asks for nothing goes straight to installing.
+    // Interposing a permission screen with nothing on it would train people to
+    // click past the screen that does have something on it.
+    it('stops to ask when the extension asks for something', async () => {
+      const asking = entry({
+        manifest: {
+          name: 'thing',
+          displayName: 'Thing',
+          license: 'MIT',
+          artifact: { ...RELEASE },
+          mcp: { workspace: ['createTask'] },
+        },
+      });
+      const bridge = fakeBridge({ state: vi.fn(async () => ({ index: { entries: [asking] }, installed: [] })) });
+      const catalogue = useExtensionCatalogue({ bridge });
+      const row = await rowFor(catalogue);
+
+      await catalogue.beginInstall(row);
+
+      expect(catalogue.step.value).toBe('asking');
+      expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
+
+      await catalogue.install({ grant: { workspace: ['createTask'] }, config: null });
+
+      expect(bridge.installFromCatalogue).toHaveBeenCalledWith('owner/thing', {
+        grant: { workspace: ['createTask'] },
+        config: null,
+      });
+    });
+
+    // Settings are entered on that same screen and on no other.
+    it('stops to ask for settings alone, with no permission asked for', async () => {
+      const configured = entry({
+        manifest: {
+          name: 'thing',
+          displayName: 'Thing',
+          license: 'MIT',
+          artifact: { ...RELEASE },
+          config: [{ key: 'token', type: 'string', label: 'Token' }],
+        },
+      });
+      const bridge = fakeBridge({ state: vi.fn(async () => ({ index: { entries: [configured] }, installed: [] })) });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.beginInstall(await rowFor(catalogue));
+
+      expect(catalogue.step.value).toBe('asking');
+    });
+
+    it('carries a refusal through as the sentence it was given', async () => {
+      const bridge = fakeBridge({
+        installFromCatalogue: vi.fn(async () => ({ ok: false, reason: 'That checksum did not match.' })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.beginInstall(await rowFor(catalogue));
+
+      expect(catalogue.error.value).toBe('That checksum did not match.');
+    });
+
+    // Installed but not running is a real outcome and not an error.
+    it('says so when it installed but did not start', async () => {
+      const bridge = fakeBridge({
+        installFromCatalogue: vi.fn(async () => ({ ok: true, loadFailure: 'Cannot find module "x"' })),
+      });
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.beginInstall(await rowFor(catalogue));
+
+      expect(catalogue.notice.value).toBe('Thing installed, but did not start: Cannot find module "x"');
+    });
+
+    // The button is not offered on a blocked row. This is the guard for the day
+    // somebody offers one anyway.
+    it('refuses a row that says why it cannot be used', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.beginInstall({ blocked: 'No release.', manifest: {}, fullName: 'a/b' });
+
+      expect(catalogue.error.value).toBe('No release.');
+      expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
+    });
+
+    it('has nothing to do without a bridge, a row, or with one already installed', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await useExtensionCatalogue({ bridge: undefined }).beginInstall({ fullName: 'a/b', manifest: {} });
+      await catalogue.beginInstall(undefined);
+      await catalogue.beginInstall({ installed: true, fullName: 'a/b', manifest: {} });
+
+      expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
+    });
   });
 
   it('stays inert with no bridge, so the web build is absent rather than broken', async () => {

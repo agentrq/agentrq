@@ -130,6 +130,13 @@
                 </span>
               </template>
               <template v-else>
+                <!-- Offered only where there is a release to fetch. A blocked
+                     row says why instead, which is the answer somebody actually
+                     needs — a button that fails on press is worse than none. -->
+                <button v-if="!row.blocked" type="button" @click="beginInstall(row)" :disabled="busy"
+                        class="text-[10px] font-bold uppercase tracking-wider text-black dark:text-white hover:opacity-70 disabled:opacity-40 transition-opacity">
+                  Install
+                </button>
                 <a :href="row.url" target="_blank" rel="noopener noreferrer"
                    class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 hover:text-black dark:hover:text-white transition-colors">
                   View on GitHub
@@ -196,6 +203,7 @@ const {
   load,
   refresh,
   chooseFolder,
+  beginInstall,
   install,
   cancelInstall,
   uninstall,

@@ -164,6 +164,16 @@ contextBridge.exposeInMainWorld('agentrq', {
     installLocal: (path, { grant = null, config = null } = {}) =>
       ipcRenderer.invoke('agentrq:extensions:install-local', { path, grant, config }),
 
+    /**
+     * Install a catalogue entry, named rather than described.
+     *
+     * Only the repository name crosses the bridge: the main process resolves it
+     * against its own index, so what gets downloaded is decided by what this app
+     * discovered, never by what the page says it discovered.
+     */
+    installFromCatalogue: (fullName, { grant = null, config = null } = {}) =>
+      ipcRenderer.invoke('agentrq:extensions:install-catalogue', { fullName, grant, config }),
+
     /** Remove it, its settings, its grant and anything it scheduled. */
     uninstall: (name) => ipcRenderer.invoke('agentrq:extensions:uninstall', name),
 

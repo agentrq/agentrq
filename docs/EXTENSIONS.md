@@ -509,6 +509,36 @@ paths that deliberately say the status code and nothing else.
 The digest is what makes an install honest: a git tag can be moved under one that
 is already in place, and a hash cannot.
 
+### Step 3 is not optional, and the catalogue says so
+
+An extension is installed from the release asset its manifest names, fetched by
+name and checked against that digest. Until all three of `release`, `asset` and a
+real `sha256` are there, **there is nothing to install** — so the catalogue lists
+the extension under **Unavailable**, with the reason written on the row, and
+offers no Install button:
+
+| What the manifest says | What the row says |
+|---|---|
+| no `artifact` block, or no `release` / `asset` | This extension has not published a release yet, so there is nothing to install. |
+| an `artifact` whose `sha256` is absent, malformed, or all zeroes | This extension names a release but no checksum for it, so it cannot be verified. |
+
+A placeholder digest of zeroes is the common case, because it is what a manifest
+carries while the first release is still being prepared. It reads as *ready* to
+its author and as *not installable* to everybody else, which is exactly why the
+row says which it is rather than leaving somebody hunting for a button.
+
+Hash the asset you actually upload, and put that digest on the default branch —
+the catalogue reads `agentrq-extension.json` from the branch, not from inside the
+package, so the two are allowed to differ and only the branch copy decides:
+
+```bash
+npm pack                                   # or however the asset is built
+shasum -a 256 your-extension-1.0.0.tgz     # this goes in artifact.sha256
+```
+
+The asset must unpack to a **single top-level directory** — what `npm pack`
+produces — because the installer strips one level when it extracts.
+
 ### Installing without publishing
 
 **Extensions → Install from folder**, then pick the folder holding
@@ -528,9 +558,19 @@ Try it with the examples:
 Extensions → Install from folder → examples/extensions/task-stats
 ```
 
-The installer also supports **a release**, verified against the digest, and **a
-git URL** cloned at a commit for a private repository — those are how a published
-extension arrives.
+### Installing from the catalogue
+
+Anything listed under **Available** has a release to fetch, and its row carries
+an **Install** button. It asks the same permission-and-settings question the
+folder install asks, and for the same reason — an extension that asks for
+nothing installs without that step.
+
+A release install is **copied**, not linked: the app owns what it downloaded, so
+uninstalling removes it. Only a folder is left alone, because a folder is the
+author's own working copy.
+
+The installer also supports **a git URL** cloned at a commit, for a private
+repository.
 
 ### Managing what is installed
 

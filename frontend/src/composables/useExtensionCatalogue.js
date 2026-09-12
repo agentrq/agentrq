@@ -42,7 +42,9 @@ const SCOPE_SUPERVISOR = 'supervisor';
 export function groupFor(entry, { installed = false } = {}) {
   if (installed) return 'installed';
   if (!entry.ok || !entry.compatible) return 'unavailable';
-  return 'available';
+  // Available means installable. An entry with no release to fetch belongs with
+  // the rest of what cannot be used, next to the sentence saying why.
+  return releaseProblem(entry) ? 'unavailable' : 'available';
 }
 
 /**
@@ -55,6 +57,36 @@ export function groupFor(entry, { installed = false } = {}) {
 export function blockedReason(entry) {
   if (!entry.ok) return entry.reason ?? 'This manifest could not be read.';
   if (!entry.compatible) return (entry.reasons ?? []).join(' ');
+  return releaseProblem(entry);
+}
+
+/** A digest of nothing: what a manifest carries before there is a release. */
+const PLACEHOLDER_DIGEST = /^0+$/;
+const SHA256 = /^[0-9a-f]{64}$/i;
+
+/**
+ * Why this entry has nothing to install, or '' when it has.
+ *
+ * An extension is installed from the release asset its manifest names, pinned
+ * by digest — the tag is mutable, so without the digest "install v1.2.0" is a
+ * promise nobody is keeping. An entry that names no asset, or names one with a
+ * placeholder digest, therefore cannot be installed at all.
+ *
+ * Said rather than discovered by pressing the button. The catalogue is
+ * uncurated, and an entry whose author has not cut a release yet looks exactly
+ * like one who has until you try — which leaves somebody hunting for a control
+ * that was never going to work.
+ */
+export function releaseProblem(entry) {
+  const artifact = entry?.manifest?.artifact;
+  if (!artifact?.release || !artifact?.asset) {
+    return 'This extension has not published a release yet, so there is nothing to install.';
+  }
+
+  const digest = String(artifact.sha256 ?? '');
+  if (!SHA256.test(digest) || PLACEHOLDER_DIGEST.test(digest)) {
+    return 'This extension names a release but no checksum for it, so it cannot be verified.';
+  }
   return '';
 }
 
@@ -155,6 +187,22 @@ export function toRows(index, { installed = [] } = {}) {
  */
 function byStarsThenName(a, b) {
   return (b.stars ?? 0) - (a.stars ?? 0) || String(a.fullName).localeCompare(String(b.fullName));
+}
+
+/**
+ * How much this extension has to ask a person before it can be installed.
+ *
+ * Settings count alongside permissions. They are entered on that same screen and
+ * on no other, so an extension declaring a config field but no permission would
+ * otherwise install straight past the only place its values could ever be given
+ * — and then run with every setting blank.
+ */
+export function asksFor(manifest) {
+  return (
+    (manifest?.mcp?.workspace ?? []).length +
+    (manifest?.mcp?.supervisor ?? []).length +
+    (manifest?.config ?? []).length
+  );
 }
 
 /** The install flow's states. A grant is a question, so there is a step for it. */
@@ -270,16 +318,36 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
       return;
     }
 
-    candidate.value = found;
-    const asks =
-      (found.manifest?.mcp?.workspace ?? []).length +
-      (found.manifest?.mcp?.supervisor ?? []).length +
-      // Settings count as something to ask about. They are entered on that same
-      // screen and on no other, so an extension declaring a config field but no
-      // permission would otherwise install straight past the only place its
-      // values could ever be given — and then run with every setting blank.
-      (found.manifest?.config ?? []).length;
-    if (asks === 0) {
+    candidate.value = { ...found, kind: 'folder' };
+    if (asksFor(found.manifest) === 0) {
+      await install({ grant: null, config: null });
+      return;
+    }
+    step.value = INSTALL_STEP.asking;
+  }
+
+  /**
+   * Install a catalogue row, asking about permissions if it asks for any.
+   *
+   * Only the repository name is sent. The main process resolves it against its
+   * own index, so the release that gets downloaded and the digest it is checked
+   * against are decided by what this app discovered, not by what this screen is
+   * holding.
+   */
+  async function beginInstall(row) {
+    if (!bridge || !row || row.installed) return;
+    error.value = '';
+    notice.value = '';
+
+    // Should not be reachable — a blocked row offers no button — but a row that
+    // says why it cannot be used must not install anyway if one is ever added.
+    if (row.blocked) {
+      error.value = row.blocked;
+      return;
+    }
+
+    candidate.value = { ...row, kind: 'catalogue' };
+    if (asksFor(row.manifest) === 0) {
       await install({ grant: null, config: null });
       return;
     }
@@ -293,7 +361,10 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     error.value = '';
 
     try {
-      const result = await bridge.installLocal(candidate.value.path, { grant, config });
+      const result =
+        candidate.value.kind === 'catalogue'
+          ? await bridge.installFromCatalogue(candidate.value.fullName, { grant, config })
+          : await bridge.installLocal(candidate.value.path, { grant, config });
       if (!result?.ok) {
         error.value = result?.reason || 'That extension could not be installed.';
         return;
@@ -384,6 +455,7 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
     load,
     refresh,
     chooseFolder,
+    beginInstall,
     install,
     cancelInstall,
     uninstall,
