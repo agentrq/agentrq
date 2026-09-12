@@ -73,7 +73,7 @@ export function validateModule(module, expectedName) {
  * make `inject` decorative, and the declaration is what lets the install screen
  * say what an extension touches before it is ever run.
  */
-export function buildContext({ name, registries, inject, config, logger, mcp }) {
+export function buildContext({ name, registries, inject, config, logger, mcp, storage }) {
   // `hasOwn` rather than `in`: every object inherits `toString`, `constructor`
   // and `__proto__`, so `in` answers yes for all three. An extension declaring
   // one of those would pass this check and then find `registry.add` undefined
@@ -103,6 +103,19 @@ export function buildContext({ name, registries, inject, config, logger, mcp }) 
      * was never given.
      */
     mcp,
+    /**
+     * Where this extension keeps settings of its own shape.
+     *
+     * Always present, like `mcp`, and for the same reason: an extension
+     * reaching for it should find a thing that answers rather than
+     * `undefined.get`. It is not a registry — nothing is contributed to it —
+     * and it is closed over this extension's name, so one extension cannot read
+     * another's.
+     *
+     * Distinct from `config`, which is the *manifest's* declared fields
+     * rendered by AgentRQ. This is the half AgentRQ has no opinion about.
+     */
+    storage,
     logger: {
       info: (...args) => logger.info?.(`[${name}]`, ...args),
       warn: (...args) => logger.warn?.(`[${name}]`, ...args),
@@ -144,10 +157,36 @@ const refuseEverything = () => ({
 })
 
 /**
+ * Storage for a host that was assembled without any.
+ *
+ * In-memory and per-call-site rather than a throwing stub: an extension writing
+ * settings in a test, or in a half-wired host, should behave normally and lose
+ * them at exit rather than fail in a way its author has to read this file to
+ * understand.
+ */
+const nowhere = () => {
+  const held = new Map()
+  const at = () => ({
+    get: async (key) => held.get(key),
+    all: async () => Object.fromEntries(held),
+    keys: async () => [...held.keys()],
+    set: async (key, value) => { held.set(key, value); return { ok: true } },
+    delete: async (key) => { held.delete(key); return { ok: true } },
+  })
+  return { ...at(), workspace: at, secret: {
+    set: async () => ({ ok: true }),
+    has: async () => false,
+    get: async () => '',
+    clear: async () => ({ ok: true }),
+  } }
+}
+
+/**
  * @param {object} deps
  * @param {(installation: object) => Promise<object>} deps.load  Imports the module.
  * @param {(name: string) => Promise<object>} deps.readConfig
  * @param {(name: string) => object} [deps.clientFor]  The broker's client, by extension name.
+ * @param {(name: string) => object} [deps.storageFor]  The extension's own settings store.
  * @param {(name: string) => Promise<void>} [deps.onDisabled]
  * @param {{info: Function, warn: Function}} [deps.logger]
  */
@@ -155,6 +194,7 @@ export function createHost({
   load,
   readConfig,
   clientFor = refuseEverything,
+  storageFor = nowhere,
   onDisabled = async () => {},
   logger = console,
 }) {
@@ -233,6 +273,7 @@ export function createHost({
         config,
         logger,
         mcp: clientFor(name),
+        storage: storageFor(name),
       })
       if (!context.ok) return this.recordFailure(name, new Error(context.reason))
 

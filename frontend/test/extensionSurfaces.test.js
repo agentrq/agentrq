@@ -263,6 +263,135 @@ describe('invoke', () => {
  * them through `panel` would have each block overwriting the last and an
  * unrelated dialog opening in the middle of a conversation.
  */
+/**
+ * Inputs, and the one thing that makes them work: a draft that survives the
+ * redraw.
+ *
+ * An extension answers a submit with a fresh view. If what somebody was typing
+ * lived in the input, the very redraw showing the result of saving it would
+ * wipe it — so the values are held out here, seeded from the view, and sent
+ * back with the action.
+ */
+describe('values and submitting them', () => {
+  const form = () => ({
+    title: 'Rules',
+    nodes: [
+      { type: 'field', key: 'rules', label: 'Refuse when', value: 'rm -rf' },
+      { type: 'toggle', key: 'strict', label: 'Strict', value: true },
+      { type: 'form', action: 'save', children: [] },
+    ],
+  });
+
+  it('seeds what every input holds from the view that drew it', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+
+    expect(surfaces.values).toEqual({ rules: 'rm -rf', strict: true });
+  });
+
+  it('takes what is typed without crossing the bridge', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+    bridge.invoke.mockClear();
+
+    surfaces.setValue({ key: 'rules', value: 'rm -rf /' });
+
+    expect(surfaces.values.rules).toBe('rm -rf /');
+    expect(bridge.invoke).not.toHaveBeenCalled();
+  });
+
+  it('ignores a change that names no key', async () => {
+    const surfaces = useExtensionSurfaces({ bridge: fakeBridge() });
+
+    surfaces.setValue({ value: 'x' });
+    surfaces.setValue();
+
+    expect(surfaces.values).toEqual({});
+  });
+
+  /**
+   * A submit is an invoke of the entry that drew the form, with the action and
+   * the values added — not a separate channel with its own lookup and its own
+   * failure modes.
+   */
+  it('sends the action and the values back to whatever drew the form', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, { workspaceId: 'ws1' });
+    surfaces.setValue({ key: 'rules', value: 'rm -rf /' });
+
+    await surfaces.submit('save');
+
+    expect(bridge.invoke).toHaveBeenLastCalledWith(
+      { owner: 'guardrail', id: 'settings' },
+      { workspaceId: 'ws1', action: 'save', values: { rules: 'rm -rf /', strict: true } },
+    );
+  });
+
+  /** A button with no action submits an empty one rather than "undefined". */
+  it('submits an empty action rather than the word undefined', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+
+    await surfaces.submit();
+
+    expect(bridge.invoke).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ action: '' }));
+  });
+
+  it('does nothing when nothing has been drawn yet', async () => {
+    const bridge = fakeBridge();
+    const surfaces = useExtensionSurfaces({ bridge });
+
+    await surfaces.submit('save');
+
+    expect(bridge.invoke).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Replaced wholesale rather than merged: the extension has just decided what
+   * every field holds now, and a key it stopped drawing should stop being sent
+   * back to it.
+   */
+  it('forgets a field the redrawn view no longer has', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+
+    bridge.invoke.mockResolvedValue({
+      ok: true,
+      view: { title: 'Rules', nodes: [{ type: 'field', key: 'rules', value: 'saved' }] },
+    });
+    await surfaces.submit('save');
+
+    expect(surfaces.values).toEqual({ rules: 'saved' });
+  });
+
+  it('forgets what drew a form once the panel is dismissed', async () => {
+    const bridge = fakeBridge({ invoke: vi.fn(async () => ({ ok: true, view: form() })) });
+    const surfaces = useExtensionSurfaces({ bridge });
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+    surfaces.dismiss();
+    bridge.invoke.mockClear();
+
+    await surfaces.submit('save');
+
+    expect(bridge.invoke).not.toHaveBeenCalled();
+  });
+
+  it('has no values to send with no bridge at all', async () => {
+    const surfaces = useExtensionSurfaces({ bridge: undefined });
+
+    await surfaces.invoke({ owner: 'guardrail', id: 'settings' }, {});
+    await surfaces.submit('save');
+
+    expect(surfaces.values).toEqual({});
+  });
+});
+
 describe('invokeQuietly', () => {
   it('hands the answer straight back, touching nothing shared', async () => {
     const bridge = fakeBridge();

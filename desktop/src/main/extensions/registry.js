@@ -186,5 +186,12 @@ export function createRegistries() {
     // extensions both drawing ```mermaid would be resolved by load order,
     // which is no answer at all.
     renderers: createRegistry({ name: 'renderer', scope: SCOPES.global, uniqueBy: 'language' }),
+    // Reviewers of tool-call permission requests. Owner-scoped, and the only
+    // registry where **every** entry is consulted rather than one being picked:
+    // a reviewer is not competing for a name, it is one more opinion, and the
+    // rule that a single refusal settles the question is what makes having
+    // several of them safe. Order still matters for what gets asked first, and
+    // for whose name the feed shows when one of them refuses.
+    hooks: createRegistry({ name: 'reviewer', scope: SCOPES.owner }),
   }
 }

@@ -299,6 +299,13 @@
                              :class="m.metadata.status === 'allow' || m.metadata.status === 'allow_always' ? 'text-gray-500 dark:text-zinc-400' : 'text-red-600 dark:text-red-500'">
                          {{ m.metadata.status === 'deny' ? 'Denied' : m.metadata.status === 'cancelled' ? 'Stopped' : m.metadata.status === 'allow_always' ? 'Always' : 'Allowed' }}
                        </span>
+                       <!-- Who, when it was not you. Next to the verdict rather
+                            than inside the collapsed details, because it changes
+                            what the verdict means and the details are shut. -->
+                       <span v-if="permMeta(m).decidedBy" class="text-[9px] font-semibold shrink-0 text-gray-500 dark:text-zinc-400 truncate max-w-[9rem]"
+                             :title="`Decided by the ${permMeta(m).decidedBy} extension`">
+                         by {{ permMeta(m).decidedBy }}
+                       </span>
                        <svg class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
                      </div>
                      <div v-if="m._detailsExpanded" class="px-3 pb-3 pt-1 border-t border-dashed min-w-0"
@@ -908,6 +915,12 @@ function permMeta(m) {
     requestId: md.requestId ?? md.request_id,
     toolName,
     inputPreview,
+    // Empty for every verdict a person gave, which is how "you did this" is
+    // said: an absent field, exactly as every message written before extensions
+    // existed has it. Present only when something answered in your place, and
+    // then the card has to say so — a decision you are invited to remember
+    // making, and did not, is the one outcome this must never produce.
+    decidedBy: md.decidedBy ?? '',
   };
 }
 

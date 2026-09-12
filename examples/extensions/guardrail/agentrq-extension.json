@@ -1,0 +1,15 @@
+{
+  "name": "guardrail",
+  "displayName": "Guardrail",
+  "version": "1.0.0",
+  "description": "Refuses a handful of irreversible shell commands — recursive deletes, force pushes, dropping a database — before you are asked about them. It can only refuse, never approve.",
+  "license": "MIT",
+  "engines": { "agentrq": ">=0.6" },
+  "hooks": { "toolCall": "deny" },
+  "provides": { "ui": ["workspace-settings-tab"] },
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "guardrail-1.0.0.tgz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

@@ -17,7 +17,9 @@
       </div>
 
       <div class="px-5 py-4 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-        <ExtensionNode v-for="(node, i) in view.nodes" :key="i" :node="node" @action="$emit('action', $event)" />
+        <ExtensionNode v-for="(node, i) in view.nodes" :key="i" :node="node" :values="values"
+                       @action="$emit('action', $event)" @input="$emit('input', $event)"
+                       @submit="$emit('submit', $event)" />
       </div>
 
       <div class="px-5 py-3 border-t border-gray-100 dark:border-zinc-800 flex justify-end">
@@ -47,6 +49,10 @@
  */
 import ExtensionNode from './ExtensionNode.vue';
 
-defineProps({ view: { type: Object, required: true } });
-defineEmits(['close', 'action']);
+defineProps({
+  view: { type: Object, required: true },
+  /** What the inputs in this view are holding — owned above, never per node. */
+  values: { type: Object, default: () => ({}) },
+});
+defineEmits(['close', 'action', 'input', 'submit']);
 </script>

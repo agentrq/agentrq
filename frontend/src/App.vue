@@ -417,8 +417,9 @@
 
     <!-- What a shortcut drew. It is here rather than in a view because `x` then
          a key works wherever you are, so what it opens has to as well. -->
-    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel"
-                        @action="onExtensionPanelAction" @close="extensionSurfaces.dismiss" />
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel" :values="extensionSurfaces.values"
+                        @action="onExtensionPanelAction" @input="extensionSurfaces.setValue"
+                        @submit="extensionSurfaces.submit" @close="extensionSurfaces.dismiss" />
   </div>
 </template>
 

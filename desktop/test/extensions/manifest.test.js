@@ -298,6 +298,49 @@ describe('parseManifest', () => {
     })
   })
 
+  describe('hooks', () => {
+    // Everything else in a manifest says what the extension reaches for. This
+    // says what it may be *asked*, and the answer stands in for the user's — so
+    // the two levels are kept apart rather than collapsed into one "may review".
+    it('accepts the two levels a tool-call reviewer can ask for', () => {
+      expect(parseManifest({ ...valid(), hooks: { toolCall: 'deny' } }).manifest.hooks).toEqual({
+        toolCall: 'deny',
+      })
+      expect(parseManifest({ ...valid(), hooks: { toolCall: 'decide' } }).manifest.hooks).toEqual({
+        toolCall: 'decide',
+      })
+    })
+
+    it('asks to be asked nothing, by default', () => {
+      expect(parseManifest(valid()).manifest.hooks).toEqual({})
+      expect(parseManifest({ ...valid(), hooks: {} }).manifest.hooks).toEqual({})
+      expect(parseManifest({ ...valid(), hooks: { toolCall: '' } }).manifest.hooks).toEqual({})
+    })
+
+    /**
+     * A level nobody recognises must not be read as the narrow one and quietly
+     * installed: the author asked for something, and being told which two words
+     * are available is the only useful answer.
+     */
+    it('refuses a level it does not recognise, naming the two that exist', () => {
+      const { ok, reason } = parseManifest({ ...valid(), hooks: { toolCall: 'always' } })
+      expect(ok).toBe(false)
+      expect(reason).toContain('"deny"')
+      expect(reason).toContain('"decide"')
+    })
+
+    it('refuses a hook that does not exist', () => {
+      expect(parseManifest({ ...valid(), hooks: { onReply: 'deny' } }).reason).toContain('Unknown hook: "onReply"')
+      expect(parseManifest({ ...valid(), hooks: { a: 1, b: 2 } }).reason).toContain('Unknown hooks:')
+    })
+
+    it('refuses anything that is not an object of hooks', () => {
+      expect(parseManifest({ ...valid(), hooks: 'toolCall' }).reason).toContain('must be an object')
+      expect(parseManifest({ ...valid(), hooks: ['toolCall'] }).reason).toContain('must be an object')
+      expect(parseManifest({ ...valid(), hooks: null }).reason).toContain('must be an object')
+    })
+  })
+
   describe('net', () => {
     // The field is a declaration by the author, not a restriction: nothing
     // enforces it, and these tests are about the manifest being readable, not

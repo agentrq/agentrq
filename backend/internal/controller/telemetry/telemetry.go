@@ -212,6 +212,10 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 			action = model.ActionIDMCPPermissionAuto
 		case "permission_manual_deny":
 			action = model.ActionIDMCPPermissionDeny
+		case "permission_extension_allow":
+			action = model.ActionIDMCPPermissionExtensionAllow
+		case "permission_extension_deny":
+			action = model.ActionIDMCPPermissionExtensionDeny
 		default:
 			return
 		}

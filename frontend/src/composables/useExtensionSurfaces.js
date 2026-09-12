@@ -1,7 +1,7 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
 // This notice may not be modified or removed.
 
-import { ref } from 'vue';
+import { reactive, ref } from 'vue';
 
 import { normaliseView } from './useExtensionView';
 
@@ -76,6 +76,24 @@ export function useExtensionSurfaces({
   const panel = ref(null);
   const error = ref('');
   const busy = ref(false);
+  /**
+   * What the person is currently typing into the view on screen.
+   *
+   * Held here rather than in the inputs, because a view is redrawn every time
+   * the extension answers a submit — and a draft living in the input would be
+   * wiped by the very redraw that is showing the result of saving it. Seeded
+   * from the view's own values each time one is drawn, so an extension decides
+   * what a field starts out holding and a redraw can deliberately change it.
+   */
+  const values = reactive({});
+  /**
+   * What produced the view on screen, so a submit can go back to the same place.
+   *
+   * A submit is an `invoke` of the entry that drew the form, with the values
+   * added — not a separate channel. That is what keeps a form from needing its
+   * own registration, its own lookup and its own failure modes.
+   */
+  let drawnBy = null;
 
   /**
    * What extensions offer for this surface and this context.
@@ -126,6 +144,12 @@ export function useExtensionSurfaces({
         return;
       }
       panel.value = { ...drawn.view, owner: target.owner, id: target.id };
+      drawnBy = { target, context };
+      // Replaced wholesale rather than merged: the extension has just decided
+      // what every field holds now, and a key it stopped drawing should stop
+      // being sent back to it.
+      for (const key of Object.keys(values)) delete values[key];
+      Object.assign(values, drawn.view.values);
     } catch (err) {
       error.value = err?.message || 'That did not work.';
     } finally {
@@ -153,10 +177,41 @@ export function useExtensionSurfaces({
     }
   }
 
+  /** One input changed. Nothing crosses the bridge until a submit. */
+  function setValue({ key, value } = {}) {
+    if (!key) return;
+    values[key] = value;
+  }
+
+  /**
+   * Send what was typed back to whatever drew the form.
+   *
+   * The action and the values ride in the context, so an extension's `view`
+   * handler sees them exactly where it sees the workspace it was opened for —
+   * one entry point, one shape, rather than a second handler for submissions.
+   */
+  async function submit(action) {
+    if (!drawnBy) return;
+    await invoke(drawnBy.target, { ...drawnBy.context, action: String(action ?? ''), values: { ...values } });
+  }
+
   function dismiss() {
     panel.value = null;
     error.value = '';
+    drawnBy = null;
   }
 
-  return { available, panel, error, busy, entriesFor, invoke, invokeQuietly, dismiss };
+  return {
+    available,
+    panel,
+    error,
+    busy,
+    values,
+    entriesFor,
+    invoke,
+    invokeQuietly,
+    setValue,
+    submit,
+    dismiss,
+  };
 }

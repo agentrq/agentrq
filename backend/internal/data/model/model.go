@@ -316,4 +316,11 @@ const (
 	// the agent to switch. On the end like everything else here, for the reason
 	// recorded above.
 	ActionIDAgentModelSelect
+	// A permission request answered by an installed desktop extension the user
+	// consented to, rather than by the user. Their own pair rather than folded
+	// into the manual or automatic counts: nobody stopped to decide these, and
+	// they are not a standing rule the user wrote either, so counting them as
+	// either would make one of those numbers mean something it does not.
+	ActionIDMCPPermissionExtensionAllow
+	ActionIDMCPPermissionExtensionDeny
 )

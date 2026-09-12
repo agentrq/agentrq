@@ -1,0 +1,9 @@
+{
+  "name": "@agentrq-examples/guardrail",
+  "version": "1.0.0",
+  "description": "Example AgentRQ extension: refuses irreversible shell commands before you are asked about them.",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "private": true
+}

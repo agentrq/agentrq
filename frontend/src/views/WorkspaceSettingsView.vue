@@ -24,6 +24,24 @@
               </div>
               {{ tab.label }}
             </button>
+            <!-- Extensions, after a divider and always below the built-in tabs,
+                 so nothing the application owns moves when something is
+                 installed and it stays visible where a row came from. -->
+            <template v-if="extensionTabs.tabs.value.length > 0">
+              <div class="my-4 border-t border-gray-100 dark:border-zinc-800"></div>
+              <button v-for="tab in extensionTabs.tabs.value" :key="tab.id" type="button"
+                      @click="activeTab = tab.id"
+                      :class="[activeTab === tab.id ? 'bg-gray-900 text-white dark:bg-white dark:text-zinc-900 shadow-lg shadow-black/5' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800']"
+                      class="flex items-center gap-3 px-4 py-2.5 rounded-sm text-[10px] font-bold uppercase tracking-widest transition-all text-left">
+                <div class="w-4 h-4 flex items-center justify-center shrink-0">
+                  <svg class="w-full h-full" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                  </svg>
+                </div>
+                <span class="min-w-0 truncate">{{ tab.label }}</span>
+              </button>
+            </template>
+
             <div class="my-4 border-t border-gray-100 dark:border-zinc-800"></div>
             <button @click="activeTab = 'danger'"
                     :class="[activeTab === 'danger' ? 'bg-red-600 text-white shadow-lg shadow-red-500/20' : 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10']"
@@ -766,6 +784,40 @@
                   </div>
                 </div>
 
+                <!-- An extension's own tab.
+                     Never a component from the extension and never its markup:
+                     it returns the same node vocabulary everything else does,
+                     drawn with this application's controls. It cannot look like
+                     somebody else's software sitting inside this one, which is
+                     the only version of "an extension cannot break the design"
+                     that is a fact rather than a request. -->
+                <div v-if="isExtensionTab(activeTab)" class="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <!-- Named, always. Once an extension can draw inputs, a tab
+                       can look like AgentRQ asking you for something. -->
+                  <div class="flex items-baseline justify-between gap-3 pb-4 border-b border-gray-100 dark:border-zinc-800">
+                    <h2 class="text-sm font-black text-gray-900 dark:text-white truncate">
+                      {{ extensionTabs.panel.value?.title || activeExtensionTab?.label }}
+                    </h2>
+                    <span class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">
+                      {{ activeExtensionTab?.owner }} extension
+                    </span>
+                  </div>
+
+                  <p v-if="extensionTabs.error.value" class="text-[11px] text-amber-700 dark:text-amber-400">
+                    {{ extensionTabs.error.value }}
+                  </p>
+
+                  <div v-if="extensionTabs.panel.value" class="flex flex-col gap-3">
+                    <ExtensionNode v-for="(node, i) in extensionTabs.panel.value.nodes" :key="i" :node="node"
+                                   :values="extensionTabs.values"
+                                   @input="extensionTabs.setValue" @submit="extensionTabs.submit"
+                                   @action="extensionTabs.submit" />
+                  </div>
+                  <p v-else-if="!extensionTabs.error.value" class="text-[11px] text-gray-400 dark:text-zinc-500">
+                    Loading…
+                  </p>
+                </div>
+
               </div>
 
               <!-- Action Bar Footer -->
@@ -841,6 +893,12 @@ import {
   setRetentionDays,
 } from '../composables/useCacheRetention';
 import { shouldShowSettingsActionBar, buildClaudePermissionsConfig } from '../composables/useWorkspaceSettings';
+import {
+  entryForTab,
+  isExtensionTab,
+  useExtensionSettingsTabs,
+} from '../composables/useExtensionSettingsTabs';
+import ExtensionNode from '../components/ExtensionNode.vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 const { toKebabCase, liveKebabCase } = useFormat();
@@ -940,7 +998,24 @@ async function toggleMemory(name) {
 // settings are not about memories, and this is a request per workspace.
 watch(activeTab, (tab) => {
   if (tab === 'memories' && memories.value.length === 0 && !memoriesError.value) loadMemories();
+  // Drawn when the tab is opened, and again every time it is reopened. An
+  // extension's settings are its own state and can change underneath this
+  // screen — another window, its own background work — so a cached panel would
+  // be showing something that stopped being true.
+  if (isExtensionTab(tab)) extensionTabs.open(entryForTab(extensionTabs.entries.value, tab));
+  else extensionTabs.dismiss();
 });
+
+/**
+ * The tabs extensions contribute here, for this workspace.
+ *
+ * Desktop only: with no bridge the list is empty and the divider never appears,
+ * so the browser build is unchanged rather than showing an empty section.
+ */
+const extensionTabs = useExtensionSettingsTabs();
+const activeExtensionTab = computed(() =>
+  extensionTabs.tabs.value.find((tab) => tab.id === activeTab.value) ?? null,
+);
 const fileInput = ref(null);
 const iconError = ref('');
 const showArchiveConfirm = ref(false);
@@ -1507,6 +1582,8 @@ async function clearLocalData({ quiet = false } = {}) {
 
 onMounted(() => {
   load();
+  // After `load`, which is what resolves the workspace this screen is for.
+  extensionTabs.load(workspaceId.value);
   localCacheOn.value = isCacheEnabled(workspaceId.value);
   retentionDays.value = getRetentionDays(workspaceId.value);
   refreshLocalUsage();

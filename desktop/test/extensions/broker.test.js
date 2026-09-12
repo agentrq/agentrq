@@ -296,6 +296,9 @@ describe('createBroker', () => {
       scope: SCOPE.workspace,
       workspaces: [],
       tools: { workspace: [], supervisor: [] },
+      // The narrowest thing here is being asked nothing at all: a grant that
+      // says nothing about reviewing tool calls has not consented to it.
+      hooks: { toolCall: 'none' },
     })
   })
 

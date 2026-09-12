@@ -36,6 +36,50 @@ export const SCOPE = {
 export const SCOPE_ORDER = [SCOPE.workspace, SCOPE.selected, SCOPE.supervisor];
 
 /**
+ * The rungs for consent to answer a tool-call permission prompt on your behalf.
+ *
+ * Duplicated from `desktop/src/main/extensions/tool-calls.js` rather than
+ * shared, because the two halves are in different processes and cannot import
+ * from each other — the same arrangement the diagram-format pattern already
+ * uses. The main process is the one that enforces it; this copy exists so the
+ * screen can ask the question.
+ *
+ * They escalate, and `none` is a real answer rather than the absence of one.
+ */
+export const CONSENT = {
+  none: 'none',
+  deny: 'deny',
+  decide: 'decide',
+};
+
+export const CONSENT_ORDER = [CONSENT.none, CONSENT.deny, CONSENT.decide];
+
+/**
+ * Which rungs this extension's manifest allows the screen to offer.
+ *
+ * Never above what it asked for. An extension that only means to block things
+ * cannot be handed the power to approve one because somebody clicked the wrong
+ * radio button — and the manifest is where that ceiling is set, by its author,
+ * in public, rather than here.
+ */
+export function consentsFor(manifest) {
+  const declared = manifest?.hooks?.toolCall;
+  if (declared === CONSENT.decide) return [CONSENT.none, CONSENT.deny, CONSENT.decide];
+  if (declared === CONSENT.deny) return [CONSENT.none, CONSENT.deny];
+  return [];
+}
+
+/**
+ * What each rung means, in the second person, because it is about what happens
+ * to the person reading it.
+ */
+export function consentLabel(level) {
+  if (level === CONSENT.deny) return 'It may refuse a tool call, but never approve one';
+  if (level === CONSENT.decide) return 'It may approve or refuse a tool call without asking you';
+  return 'It is not asked — every prompt still comes to you';
+}
+
+/**
  * What a manifest is asking for.
  *
  * `level` decides how much of the screen appears; the two tool lists are shown
@@ -53,11 +97,23 @@ export function describeAsk(manifest) {
   const workspace = manifest?.mcp?.workspace ?? [];
   const supervisor = manifest?.mcp?.supervisor ?? [];
   const net = manifest?.net ?? [];
+  const consents = consentsFor(manifest);
 
   return {
     workspace,
     supervisor,
     net,
+    consents,
+    /**
+     * Whether this extension wants to answer permission prompts for you.
+     *
+     * Kept apart from `level` on purpose. `level` measures what the extension
+     * reaches *into*, and this is the one ask pointing the other way — the app
+     * stopping to ask the extension something, with the answer standing in for
+     * yours. An extension can want this and nothing else, which is why it
+     * cannot be a rung on the same ladder.
+     */
+    reviewsToolCalls: consents.length > 0,
     level: supervisor.length > 0 ? 'supervisor' : workspace.length > 0 ? 'workspace' : 'none',
     // The one thing that is always true, whatever the level.
     machineAccess: 'This extension runs with full access to your computer.',
@@ -93,13 +149,22 @@ export function availableScopes(ask, { workspaceId = '' } = {}) {
   // it installed, loaded, and every call came back "may not call
   // listWorkspaces on the supervisor server". A rung that can only produce an
   // empty grant is not a narrower option, it is a trap.
-  const workspaceRungs = ask.workspace.length > 0
+  //
+  // A reviewer needs them too, even when it asks for no tools at all. Being
+  // asked about a tool call is seeing that workspace's tool and its arguments,
+  // which is reading from it by another name — and the main process enforces
+  // exactly that, refusing to consult a reviewer whose grant does not reach the
+  // workspace the request came from. An extension that asks only to review and
+  // is never asked which workspaces it may review in installs with an empty
+  // list and is silently never consulted, which is the same trap one rung up.
+  const needsWorkspaces = ask.workspace.length > 0 || ask.reviewsToolCalls;
+  const workspaceRungs = needsWorkspaces
     ? (withinWorkspace ? [SCOPE.workspace, SCOPE.selected] : [SCOPE.selected])
     : [];
 
   if (ask.level === 'supervisor') return [...workspaceRungs, SCOPE.supervisor];
   if (ask.level === 'workspace') return workspaceRungs;
-  return [];
+  return ask.reviewsToolCalls ? workspaceRungs : [];
 }
 
 /**
@@ -113,7 +178,11 @@ export function availableScopes(ask, { workspaceId = '' } = {}) {
  */
 export function validateGrant(ask, choice) {
   const scope = choice?.scope;
-  if (ask.level === 'none') return { ok: true };
+  // An extension that reaches for nothing *and* is never asked anything has no
+  // grant to get wrong. A reviewer does: the workspaces it may be asked about
+  // are the whole of its grant, and an empty list there is an extension that is
+  // never consulted while its row says it may refuse things.
+  if (ask.level === 'none' && !ask.reviewsToolCalls) return { ok: true };
 
   // Checked before the general case, because it has a far better answer.
   // "Choose what this extension may reach" is true but unhelpful when the
@@ -153,7 +222,11 @@ export function validateGrant(ask, choice) {
  * not every id. Storing a list there would imply it was consulted.
  */
 export function toGrant(ask, choice) {
-  const scope = ask.level === 'none' ? SCOPE.workspace : choice.scope;
+  // The chosen rung is honoured for a reviewer as well, even though it asks for
+  // no tools: its grant is what decides which workspaces it may be asked about,
+  // so falling back to "this workspace" from a screen that has none produced an
+  // empty list — a consent the user gave and nothing ever acted on.
+  const scope = ask.level === 'none' && !ask.reviewsToolCalls ? SCOPE.workspace : choice.scope;
   const workspaces =
     scope === SCOPE.supervisor
       ? []
@@ -168,6 +241,15 @@ export function toGrant(ask, choice) {
     // Recorded because it is a materially broader promise than the same list
     // frozen at install, and the screen has to be able to say which was given.
     includesFutureWorkspaces: scope === SCOPE.supervisor,
+    /**
+     * Consent to answer a tool-call prompt on the user's behalf.
+     *
+     * Clamped to what the manifest asked for here as well as in the main
+     * process. Not belt and braces: this is what stops a screen built from a
+     * stale manifest *offering* a rung, and the main process is what stops one
+     * being enforced. The two answer different questions and both are needed.
+     */
+    hooks: { toolCall: ask.consents.includes(choice.consent) ? choice.consent : CONSENT.none },
   };
 }
 
@@ -192,7 +274,24 @@ export function useExtensionGrant({ manifest, workspaceId = '', workspaces = [] 
   const scope = ref(scopes.value[0] ?? SCOPE.workspace);
   const selected = ref([]);
 
-  const choice = computed(() => ({ scope: scope.value, workspaces: selected.value, workspaceId }));
+  /**
+   * Starts at `none`, and that is not the same rule as the scope above.
+   *
+   * A scope starts on the narrowest rung that is *useful*, because an extension
+   * has to be able to reach something to work at all. This starts on the rung
+   * that does nothing, because an extension answering prompts for you is not
+   * something to arrive pre-selected — it is the question this section exists to
+   * ask. An extension installed at `none` is inert rather than broken, and the
+   * switch is on its row afterwards.
+   */
+  const consent = ref(CONSENT.none);
+
+  const choice = computed(() => ({
+    scope: scope.value,
+    workspaces: selected.value,
+    consent: consent.value,
+    workspaceId,
+  }));
   const validity = computed(() => validateGrant(ask.value, choice.value));
 
   return {
@@ -200,7 +299,18 @@ export function useExtensionGrant({ manifest, workspaceId = '', workspaces = [] 
     scopes,
     scope,
     selected,
+    consent,
+    consents: computed(() => ask.value.consents),
     workspaces,
+    /**
+     * Whether there is a grant to record at all.
+     *
+     * Not the same as "asks for a tool". An extension can ask for no MCP tools
+     * and still ask to review tool calls, and sending `null` for that — which is
+     * what "level is none" used to mean — would throw away the one consent the
+     * screen had just collected.
+     */
+    hasAsk: computed(() => ask.value.level !== 'none' || ask.value.reviewsToolCalls),
     valid: computed(() => validity.value.ok),
     problem: computed(() => (validity.value.ok ? '' : validity.value.reason)),
     label: computed(() => scopeLabel(scope.value)),

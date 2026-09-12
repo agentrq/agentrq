@@ -74,7 +74,12 @@ function build(over = {}) {
   })
 
   const host = {
-    registries: { ui: { listFor: () => [] }, shortcuts: { ...shortcuts, listFor: () => [] }, schedules: { listFor: () => [] } },
+    registries: {
+      ui: { listFor: () => [] },
+      shortcuts: { ...shortcuts, listFor: () => [] },
+      schedules: { listFor: () => [] },
+      hooks: { listFor: () => [], list: () => over.reviewers ?? [] },
+    },
     list: () => loaded.map((name) => ({ name, version: '1.0.0', failures: 0 })),
     start: vi.fn(track('start', async (entry) => {
       loaded.push(entry.name)
@@ -141,6 +146,37 @@ describe('clampToManifest', () => {
     workspaces: ['ws1'],
     tools: { workspace: ['listTasks', 'getTask'], supervisor: ['listAllTasks'] },
     ...over,
+  })
+
+  /**
+   * The drift that matters most here. A linked installation is a folder on
+   * disk: an extension installed as one that may only refuse can have its own
+   * manifest widened to "decide" between two launches, with nobody re-reading
+   * anything. Narrowed on every load, in the one direction that is safe without
+   * asking.
+   */
+  it('will not let a widened manifest widen the consent to review tool calls', () => {
+    const narrowed = clampToManifest(
+      grant({ hooks: { toolCall: 'decide' } }),
+      { mcp: {}, hooks: { toolCall: 'deny' } },
+    )
+
+    expect(narrowed.hooks).toEqual({ toolCall: 'deny' })
+  })
+
+  it('takes the consent away when the hook is gone from the manifest', () => {
+    expect(clampToManifest(grant({ hooks: { toolCall: 'decide' } }), { mcp: {} }).hooks).toEqual({
+      toolCall: 'none',
+    })
+  })
+
+  it('never raises a consent to meet a manifest asking for more', () => {
+    const held = clampToManifest(grant({ hooks: { toolCall: 'deny' } }), {
+      mcp: {},
+      hooks: { toolCall: 'decide' },
+    })
+
+    expect(held.hooks).toEqual({ toolCall: 'deny' })
   })
 
   it('drops a tool the manifest no longer asks for', () => {
@@ -736,6 +772,9 @@ describe('setEnabled', () => {
       scope: 'workspace',
       workspaces: ['ws1'],
       tools: { workspace: ['listTasks'], supervisor: [] },
+      // Clamped on every load like the tool lists, and to the same place: a
+      // manifest that asks to review nothing leaves no consent to review with.
+      hooks: { toolCall: 'none' },
     })
   })
 
@@ -841,6 +880,97 @@ describe('startAll', () => {
   })
 })
 
+describe('setHookConsent', () => {
+  const reviewing = (level) => installation({ manifest: manifest({ hooks: { toolCall: level } }) })
+
+  /**
+   * The one permission that has to be changeable without an uninstall. An
+   * extension refusing every tool call looks exactly like a broken agent, and
+   * "uninstall it to find out" is not a diagnosis anybody should have to make.
+   */
+  it('turns review on for an extension that asked to review', async () => {
+    const { runtime, broker } = build({ installations: [reviewing('decide')] })
+
+    const result = await runtime.setHookConsent('standup', 'decide')
+
+    expect(result).toEqual({ ok: true, level: 'decide' })
+    expect(broker.setGrant).toHaveBeenCalledWith(
+      'standup',
+      expect.objectContaining({ hooks: { toolCall: 'decide' } }),
+    )
+  })
+
+  it('turns it off again', async () => {
+    const { runtime, broker } = build({ installations: [reviewing('decide')] })
+    await runtime.setHookConsent('standup', 'decide')
+
+    expect(await runtime.setHookConsent('standup', 'none')).toEqual({ ok: true, level: 'none' })
+    expect(broker.setGrant).toHaveBeenLastCalledWith(
+      'standup',
+      expect.objectContaining({ hooks: { toolCall: 'none' } }),
+    )
+  })
+
+  /** Whatever else it was granted survives being handed a consent. */
+  it('leaves the rest of the grant alone', async () => {
+    const { runtime } = build({ installations: [reviewing('deny')] })
+    runtime.rememberGrant('standup', {
+      scope: 'selected',
+      workspaces: ['ws1'],
+      tools: { workspace: ['listTasks'], supervisor: [] },
+    })
+
+    await runtime.setHookConsent('standup', 'deny')
+
+    expect(runtime.grants().standup).toMatchObject({
+      scope: 'selected',
+      workspaces: ['ws1'],
+      tools: { workspace: ['listTasks'], supervisor: [] },
+      hooks: { toolCall: 'deny' },
+    })
+  })
+
+  /**
+   * A screen built from a stale manifest could offer a rung the extension no
+   * longer asks for — so the ceiling is checked here rather than trusted.
+   */
+  it('will not give an extension more than its manifest asks for', async () => {
+    const { runtime } = build({ installations: [reviewing('deny')] })
+
+    expect(await runtime.setHookConsent('standup', 'decide')).toEqual({ ok: true, level: 'deny' })
+  })
+
+  it('refuses one that reviews nothing', async () => {
+    const { runtime } = build({ installations: [installation()] })
+
+    expect((await runtime.setHookConsent('standup', 'deny')).reason).toContain('does not review tool calls')
+  })
+
+  it('refuses a level that is not one of the three', async () => {
+    const { runtime } = build({ installations: [reviewing('decide')] })
+
+    expect((await runtime.setHookConsent('standup', 'always')).reason).toContain('not something')
+  })
+
+  it('refuses one that is not installed', async () => {
+    const { runtime } = build({ installations: [] })
+
+    expect((await runtime.setHookConsent('linear', 'deny')).reason).toContain('not installed')
+  })
+
+  /**
+   * The list is read each time rather than captured: an extension enabled,
+   * disabled or reloaded between two requests has to change who gets asked
+   * about the second one.
+   */
+  it('hands out whatever reviewers are registered right now', () => {
+    const entry = { owner: 'standup', id: 'shell', review: () => 'deny' }
+    const { runtime } = build({ reviewers: [entry] })
+
+    expect(runtime.reviewers()).toEqual([entry])
+  })
+})
+
 describe('state', () => {
   it('describes what is installed, and what each one contributed', async () => {
     const { runtime, host } = build({ installations: [installation()] })
@@ -856,8 +986,21 @@ describe('state', () => {
       enabled: true,
       loaded: true,
       linked: true,
-      contributes: { ui: 1, shortcuts: 1, schedules: 0 },
+      contributes: { ui: 1, shortcuts: 1, schedules: 0, hooks: 0 },
+      // Nothing to offer: this extension asks to review nothing, which is what
+      // nearly every extension asks, and the row shows no switch.
+      consents: [],
     })
+  })
+
+  it('says what a reviewer may be given, so the row can offer the switch', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: manifest({ hooks: { toolCall: 'deny' } }) })],
+    })
+
+    const [row] = await runtime.state()
+
+    expect(row.consents).toEqual(['none', 'deny'])
   })
 
   // Enabled and running are not the same thing, and a row that conflated them

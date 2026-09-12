@@ -66,6 +66,62 @@ describe('an extension given no broker at all', () => {
   })
 })
 
+/**
+ * The default storage, for a host assembled without one.
+ *
+ * In-memory rather than throwing, for the same reason `ctx.mcp` refuses rather
+ * than being undefined: an extension writing a setting in a test, or in a
+ * half-wired host, should behave normally and lose it at exit rather than fail
+ * in a way its author has to read the host's source to understand.
+ */
+describe('an extension given no storage at all', () => {
+  it('keeps what it writes for as long as the process lives', async () => {
+    let seen
+    const { host } = build({ module: moduleWith((ctx) => { seen = ctx.storage }) })
+
+    await host.start(installation())
+
+    expect(await seen.set('rules', ['a'])).toEqual({ ok: true })
+    expect(await seen.get('rules')).toEqual(['a'])
+    expect(await seen.keys()).toEqual(['rules'])
+    expect(await seen.all()).toEqual({ rules: ['a'] })
+    expect(await seen.delete('rules')).toEqual({ ok: true })
+    expect(await seen.get('rules')).toBeUndefined()
+  })
+
+  it('offers a workspace scope and a secret store that answer rather than throw', async () => {
+    let seen
+    const { host } = build({ module: moduleWith((ctx) => { seen = ctx.storage }) })
+
+    await host.start(installation())
+
+    expect(await seen.workspace('ws1').set('rules', 1)).toEqual({ ok: true })
+    expect(await seen.workspace('ws1').get('rules')).toBe(1)
+    expect(await seen.workspace('ws1').keys()).toEqual(['rules'])
+    expect(await seen.workspace('ws1').all()).toEqual({ rules: 1 })
+    expect(await seen.workspace('ws1').delete('rules')).toEqual({ ok: true })
+
+    expect(await seen.secret.set('apiKey', 'x')).toEqual({ ok: true })
+    // Nothing was really stored, and it says so rather than pretending.
+    expect(await seen.secret.has('apiKey')).toBe(false)
+    expect(await seen.secret.get('apiKey')).toBe('')
+    expect(await seen.secret.clear('apiKey')).toEqual({ ok: true })
+  })
+
+  it('hands over the real store when there is one', async () => {
+    const store = { get: vi.fn(), set: vi.fn() }
+    let seen
+    const { host } = build({
+      module: moduleWith((ctx) => { seen = ctx.storage }),
+      storageFor: vi.fn(() => store),
+    })
+
+    await host.start(installation())
+
+    expect(seen).toBe(store)
+  })
+})
+
 describe('validateModule', () => {
   it('accepts a module with an apply and reads what it injects', () => {
     const { ok, inject } = validateModule(moduleWith(() => {}), 'linear')

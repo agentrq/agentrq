@@ -447,6 +447,61 @@ func TestStopTask_RejectsATaskIDThatIsNotOne(t *testing.T) {
 	}
 }
 
+// A verdict claiming to come from something that could not be an extension is a
+// bad request, not a server error.
+//
+// `decidedBy` is written into the permission message's metadata and drawn in the
+// task feed as the thing that made a decision. The caller is already
+// authenticated and already allowed to answer this request, so nothing here is
+// about privilege — it is that an identifier rendered in the feed has to be an
+// identifier. Answering 500 would also have the desktop app retrying something
+// that can never succeed.
+func TestSendPermissionVerdict_RefusesADeciderThatIsNotAnExtension(t *testing.T) {
+	cases := map[string]string{
+		"a name with markup in it":          `{"requestId":"req-1","behavior":"allow","decidedBy":"<b>you</b>"}`,
+		"a standing rule from an extension": `{"requestId":"req-1","behavior":"allow_always","decidedBy":"guardrail"}`,
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			h := &handler{
+				crud: crudCtrl,
+				mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
+					// Refused before anything about the request is looked up, so
+					// a server with nothing in it is the honest double here.
+					return &mcpctrl.WorkspaceServer{}
+				}),
+			}
+
+			app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.sendPermissionVerdict()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(2).String()+"/permission",
+				bytes.NewBufferString(body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
 // Nothing connected can be stopped, so the request is refused rather than
 // answered with a success the human would read as "the task stopped".
 func TestStopTask_RefusesWhenTheAgentCannotBeStopped(t *testing.T) {

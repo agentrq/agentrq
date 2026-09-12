@@ -4,12 +4,15 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  INPUT_TYPES,
+  MAX_OPTIONS,
   MAX_SOURCE,
   MAX_DEPTH,
   MAX_NODES,
   MAX_TEXT,
   NODE_TYPES,
   TONES,
+  initialValues,
   normaliseView,
   safeHref,
 } from '../src/composables/useExtensionView';
@@ -45,6 +48,9 @@ describe('normaliseView', () => {
       if (type === 'group') return { type, label: 'g', children: [{ type: 'text', value: 'x' }] };
       if (type === 'rows') return { type, items: [{ type: 'row', label: 'a', value: 'b' }] };
       if (type === 'diagram') return { type, format: 'mermaid', source: 'graph TD;\n  A-->B;' };
+      if (type === 'form') return { type, action: 'save', children: [{ type: 'text', value: 'x' }] };
+      if (type === 'select') return { type, key: 'k', label: 'x', options: ['a'] };
+      if (type === 'field' || type === 'toggle') return { type, key: 'k', label: 'x', value: 'x' };
       return { type, value: 'x', label: 'x' };
     });
 
@@ -246,5 +252,160 @@ describe('a diagram node', () => {
     const grouped = { type: 'group', label: 'Diagrams', children: [diagram()] };
 
     expect(normaliseView([grouped]).ok).toBe(true);
+  });
+});
+
+
+/**
+ * The four nodes that take something back.
+ *
+ * Everything else in the vocabulary describes what to show; these describe what
+ * to ask for, and they are what lets an extension own a settings screen without
+ * owning any of its styling. The rules below are all about that: an extension
+ * picks the key, the label and the starting value, and has no say at all in how
+ * any of it looks.
+ */
+describe('input nodes', () => {
+  const field = (over = {}) => ({ type: 'field', key: 'rules', label: 'Rules', ...over });
+
+  it('keeps the key, the label and the value an extension chose', () => {
+    const { ok, view: out } = normaliseView([field({ value: 'rm -rf', placeholder: 'one per line' })]);
+
+    expect(ok).toBe(true);
+    expect(out.nodes[0]).toEqual({
+      type: 'field',
+      key: 'rules',
+      label: 'Rules',
+      input: 'text',
+      value: 'rm -rf',
+      placeholder: 'one per line',
+    });
+  });
+
+  it('offers every input type it says it does', () => {
+    for (const input of INPUT_TYPES) {
+      expect(normaliseView([field({ input })]).view.nodes[0].input).toBe(input);
+    }
+  });
+
+  /**
+   * A text box where somebody meant a number box is a small wrong thing; a
+   * blank panel because an author typo'd one is a large one.
+   */
+  it('falls back to text on an input type it does not know', () => {
+    expect(normaliseView([field({ input: 'colour' })]).view.nodes[0].input).toBe('text');
+  });
+
+  /**
+   * A secret this application has stored is never shown in settings either.
+   * Drawing one into an input would put a credential on screen, in a
+   * screenshot, and in whatever the renderer's memory ends up in.
+   */
+  it('never echoes a secret back into the box', () => {
+    const drawn = normaliseView([field({ input: 'secret', value: 'sk-123' })]).view;
+
+    expect(drawn.nodes[0].value).toBe('');
+  });
+
+  it('refuses a key that is not one, in every input that takes one', () => {
+    for (const type of ['field', 'select', 'toggle']) {
+      const { ok, reason } = normaliseView([{ type, key: 'has space', options: ['a'] }]);
+      expect(ok, type).toBe(false);
+      expect(reason, type).toContain('not a settings key');
+    }
+    expect(normaliseView([{ type: 'field' }]).reason).toContain('"(none)"');
+  });
+
+  it('reads a toggle as a plain yes or no', () => {
+    expect(normaliseView([{ type: 'toggle', key: 'strict', value: 1 }]).view.nodes[0].value).toBe(true);
+    expect(normaliseView([{ type: 'toggle', key: 'strict' }]).view.nodes[0].value).toBe(false);
+  });
+
+  it('takes a select option as a value and a label, or as one word for both', () => {
+    const { view: out } = normaliseView([
+      { type: 'select', key: 'mode', options: ['off', { value: 'on', label: 'Switched on' }, { value: 'x' }] },
+    ]);
+
+    expect(out.nodes[0].options).toEqual([
+      { value: 'off', label: 'off' },
+      { value: 'on', label: 'Switched on' },
+      { value: 'x', label: 'x' },
+    ]);
+  });
+
+  it('refuses a select with nothing to choose from', () => {
+    expect(normaliseView([{ type: 'select', key: 'mode' }]).reason).toContain('needs a list of options');
+    expect(normaliseView([{ type: 'select', key: 'mode', options: [] }]).ok).toBe(false);
+  });
+
+  it('refuses a select that should have been a search', () => {
+    const options = Array.from({ length: MAX_OPTIONS + 1 }, (_, i) => `o${i}`);
+
+    expect(normaliseView([{ type: 'select', key: 'mode', options }]).reason).toContain('more than');
+  });
+
+  it('holds a form together and names what it submits to', () => {
+    const { view: out } = normaliseView([
+      { type: 'form', action: 'save', submit: 'Save rules', children: [field()] },
+    ]);
+
+    expect(out.nodes[0].action).toBe('save');
+    expect(out.nodes[0].submit).toBe('Save rules');
+    expect(out.nodes[0].children).toHaveLength(1);
+  });
+
+  it('gives a form a submit label when its author did not', () => {
+    expect(normaliseView([{ type: 'form', action: 'save', children: [] }]).view.nodes[0].submit).toBe('Save');
+  });
+
+  /**
+   * A form with nothing to submit to is a screen where typing does nothing,
+   * which is the most confusing thing this vocabulary could produce.
+   */
+  it('refuses a form with no action', () => {
+    expect(normaliseView([{ type: 'form', children: [] }]).reason).toContain('needs an "action"');
+  });
+
+  it('refuses a form with no list of elements', () => {
+    expect(normaliseView([{ type: 'form', action: 'save' }]).reason).toContain('needs a list');
+  });
+
+  it('counts a form\'s children against the same budget and depth', () => {
+    const deep = { type: 'form', action: 'a', children: [{ type: 'form', action: 'b', children: [{ type: 'iframe' }] }] };
+
+    expect(normaliseView([deep]).ok).toBe(false);
+  });
+});
+
+describe('initialValues', () => {
+  it('collects what every input starts out holding', () => {
+    const { view: out } = normaliseView([
+      { type: 'form', action: 'save', children: [
+        { type: 'field', key: 'rules', value: 'rm -rf' },
+        { type: 'group', label: 'More', children: [{ type: 'toggle', key: 'strict', value: true }] },
+        { type: 'rows', items: [{ type: 'select', key: 'mode', options: ['on'], value: 'on' }] },
+      ] },
+    ]);
+
+    expect(out.values).toEqual({ rules: 'rm -rf', strict: true, mode: 'on' });
+  });
+
+  it('has nothing to collect from a view with no inputs', () => {
+    expect(normaliseView([{ type: 'text', value: 'x' }]).view.values).toEqual({});
+    expect(initialValues(undefined)).toEqual({});
+  });
+
+  /**
+   * Two inputs sharing a key is one value, and that is the author's mistake to
+   * see rather than something to rename around — inventing `rules-2` would hide
+   * it and hand back a key nobody asked for.
+   */
+  it('lets a repeated key be one value rather than inventing a second', () => {
+    const { view: out } = normaliseView([
+      { type: 'field', key: 'rules', value: 'first' },
+      { type: 'field', key: 'rules', value: 'second' },
+    ]);
+
+    expect(out.values).toEqual({ rules: 'second' });
   });
 });

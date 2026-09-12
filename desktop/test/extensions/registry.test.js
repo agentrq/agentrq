@@ -164,7 +164,7 @@ describe('createRegistries', () => {
   it('offers the surfaces an extension can contribute to', () => {
     const registries = createRegistries()
 
-    expect(Object.keys(registries).sort()).toEqual(['renderers', 'schedules', 'shortcuts', 'ui'])
+    expect(Object.keys(registries).sort()).toEqual(['hooks', 'renderers', 'schedules', 'shortcuts', 'ui'])
   })
 
   /**

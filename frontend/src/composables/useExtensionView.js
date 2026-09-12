@@ -42,7 +42,35 @@ export const NODE_TYPES = Object.freeze({
   // an extension hand back SVG instead would put third-party markup on a
   // privileged origin, which is the one thing this vocabulary exists to avoid.
   diagram: ['format', 'source', 'label'],
+  // The four that take something back. Everything above describes what to show;
+  // these describe what to ask for, and they are what lets an extension own a
+  // settings screen without owning any of its styling.
+  field: ['key', 'label', 'input', 'value', 'placeholder'],
+  select: ['key', 'label', 'value', 'options'],
+  toggle: ['key', 'label', 'value'],
+  form: ['action', 'submit', 'children'],
 });
+
+/**
+ * What a `field` may ask for.
+ *
+ * Deliberately short. Each one is a real control this application already
+ * styles, and a type nobody recognises falls back to `text` rather than failing
+ * the view — the difference between a password box and a text box is worth
+ * getting right, and not worth a blank panel when an author typos it.
+ *
+ * `secret` is the one with a rule attached: it renders masked, and an
+ * extension is expected to put what comes back into `ctx.storage.secret` rather
+ * than its ordinary storage. Nothing here can enforce that — it is the author's
+ * to get right — but naming the type is what makes the omission visible.
+ */
+export const INPUT_TYPES = Object.freeze(['text', 'multiline', 'number', 'secret']);
+
+/** A settings key: an identifier an extension will read back by name. */
+export const KEY_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+
+/** As many choices as a select may offer before it should have been a search. */
+export const MAX_OPTIONS = 50;
 
 /**
  * What a diagram format has to *look* like, which is not the same as one this
@@ -144,6 +172,75 @@ function normaliseNode(node, depth, budget) {
     return { ok: true, node: out };
   }
 
+  // A form holds children and carries the action its submit button fires. Read
+  // before `group`/`rows` would have been, because it nests the same way and
+  // needs the same recursion with one extra field.
+  if (type === 'form') {
+    if (!Array.isArray(node.children)) return fail('A "form" needs a list of elements.');
+
+    const normalised = [];
+    for (const child of node.children) {
+      const result = normaliseNode(child, depth + 1, budget);
+      if (!result.ok) return result;
+      normalised.push(result.node);
+    }
+    const action = String(node.action ?? '');
+    // Refused rather than defaulted: a form with nothing to submit to is a
+    // screen where typing does nothing, which is the most confusing thing this
+    // vocabulary could produce.
+    if (!action) return fail('A "form" needs an "action" to submit to.');
+
+    out.action = action;
+    out.submit = text(node.submit) || 'Save';
+    out.children = normalised;
+    return { ok: true, node: out };
+  }
+
+  if (type === 'field' || type === 'select' || type === 'toggle') {
+    const key = String(node.key ?? '');
+    if (!KEY_RE.test(key)) {
+      // Named, because this is the field an extension reads back by name and a
+      // view that silently renamed it would hand back values nobody asked for.
+      return fail(`"${key || '(none)'}" is not a settings key. Use letters, digits, dot, dash or underscore.`);
+    }
+    out.key = key;
+    out.label = text(node.label);
+
+    if (type === 'toggle') {
+      out.value = Boolean(node.value);
+      return { ok: true, node: out };
+    }
+
+    if (type === 'select') {
+      if (!Array.isArray(node.options) || node.options.length === 0) {
+        return fail(`The select "${key}" needs a list of options.`);
+      }
+      if (node.options.length > MAX_OPTIONS) {
+        return fail(`The select "${key}" offers more than ${MAX_OPTIONS} options.`);
+      }
+      // An option is a value and what to call it. A bare string is accepted as
+      // both, because half the selects anybody writes have nothing else to say.
+      out.options = node.options.map((option) =>
+        typeof option === 'object' && option !== null
+          ? { value: text(option.value), label: text(option.label) || text(option.value) }
+          : { value: text(option), label: text(option) },
+      );
+      out.value = text(node.value);
+      return { ok: true, node: out };
+    }
+
+    // A field. An unrecognised input falls back rather than failing the view:
+    // a text box where somebody meant a number box is a small wrong thing, and
+    // a blank panel is a large one.
+    out.input = INPUT_TYPES.includes(node.input) ? node.input : 'text';
+    out.placeholder = text(node.placeholder);
+    // Never echoed back. A secret this application has stored is not shown in
+    // `config`, and a view drawing one into an input would put it on screen, in
+    // a screenshot, and in whatever the renderer's memory ends up in.
+    out.value = out.input === 'secret' ? '' : text(node.value);
+    return { ok: true, node: out };
+  }
+
   if (type === 'diagram') {
     const format = String(node.format ?? '');
     if (!DIAGRAM_FORMAT.test(format)) {
@@ -198,5 +295,27 @@ export function normaliseView(spec) {
     out.push(result.node);
   }
 
-  return { ok: true, view: { title: text(spec.title ?? ''), nodes: out } };
+  return { ok: true, view: { title: text(spec.title ?? ''), nodes: out, values: initialValues(out) } };
+}
+
+/**
+ * What every input in a view starts out holding.
+ *
+ * Collected here, once, rather than read off each input as it renders — because
+ * what the user is typing has to survive the view being redrawn. An extension
+ * answers a submit with a fresh view, and if the draft lived in the inputs
+ * themselves every redraw would wipe whatever had not been submitted yet.
+ *
+ * Keyed by the extension's own key, so two inputs sharing one are one value.
+ * That is the author's decision to make, not something to rename around: a
+ * `field` and a `toggle` called the same thing is a mistake worth them seeing,
+ * and inventing `key-2` would hide it.
+ */
+export function initialValues(nodes, into = {}) {
+  for (const node of nodes ?? []) {
+    if (node.type === 'form' || node.type === 'group') initialValues(node.children, into);
+    else if (node.type === 'rows') initialValues(node.items, into);
+    else if (node.key) into[node.key] = node.value;
+  }
+  return into;
 }

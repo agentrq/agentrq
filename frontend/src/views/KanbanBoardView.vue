@@ -115,8 +115,9 @@
       @confirm="onMoveConfirm"
     />
 
-    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value"
-                       @action="onExtensionAction" @close="extensions.dismiss" />
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" :values="extensions.values"
+                       @action="onExtensionAction" @input="extensions.setValue"
+                       @submit="extensions.submit" @close="extensions.dismiss" />
 
     <!-- Task Context Menu -->
     <ContextMenu

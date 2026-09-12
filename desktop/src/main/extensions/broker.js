@@ -134,6 +134,13 @@ export function createBroker({ callWorkspace, callSupervisor, record = () => {},
           workspace: [...(grant?.tools?.workspace ?? [])],
           supervisor: [...(grant?.tools?.supervisor ?? [])],
         },
+        // Consent to be *asked* something, which is the other direction from
+        // everything above and is enforced elsewhere — `tool-calls.js` reads it
+        // from here. Copied rather than ignored because a grant that lost it on
+        // the way through would be a consent the user gave and the app forgot,
+        // and the only visible symptom would be an extension that never
+        // reviews anything.
+        hooks: { toolCall: String(grant?.hooks?.toolCall ?? 'none') },
       })
     },
 

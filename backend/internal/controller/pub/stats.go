@@ -251,6 +251,10 @@ func (c *statsController) handleMCP(event mcp.MCPEvent) {
 			action = model.ActionIDMCPPermissionAuto
 		case "permission_manual_deny":
 			action = model.ActionIDMCPPermissionDeny
+		case "permission_extension_allow":
+			action = model.ActionIDMCPPermissionExtensionAllow
+		case "permission_extension_deny":
+			action = model.ActionIDMCPPermissionExtensionDeny
 		}
 	}
 	c.recordAction(action)
@@ -286,6 +290,10 @@ func actionName(action uint8) string {
 		return "mcp_permission_auto"
 	case model.ActionIDMCPPermissionDeny:
 		return "mcp_permission_deny"
+	case model.ActionIDMCPPermissionExtensionAllow:
+		return "mcp_permission_extension_allow"
+	case model.ActionIDMCPPermissionExtensionDeny:
+		return "mcp_permission_extension_deny"
 	case model.ActionIDTaskRejectManual:
 		return "task_reject_manual"
 	case model.ActionIDTaskComplete:

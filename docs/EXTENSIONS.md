@@ -41,16 +41,19 @@ export function apply(ctx, config) {
 unloading is complete by construction rather than by an author remembering to
 tidy up.
 
-### The three examples are the tutorial
+### The examples are the tutorial
 
-They live in [`examples/extensions/`](../examples/extensions/) and go from
-smallest to largest:
+They live in [`examples/extensions/`](../examples/extensions/). The first three
+go from smallest to largest; the fourth is the odd one out, and deliberately so
+— everything else contributes something the app draws, and it gets asked a
+question instead.
 
 | | Asks for | Shows |
 |---|---|---|
 | [`task-stats`](../examples/extensions/task-stats/) | nothing at all | The smallest possible extension: a task menu item, no permissions, no network |
 | [`standup`](../examples/extensions/standup/) | three workspace tools | A page, a task menu item, a keyboard shortcut, a config field, brokered MCP calls |
 | [`digest`](../examples/extensions/digest/) | the supervisor | Three surfaces, a secret, a declared host, and standing work on a schedule |
+| [`guardrail`](../examples/extensions/guardrail/) | to be *asked* | The one registry that answers back: it reviews an agent's permission prompt and refuses the commands that cannot be undone |
 
 Read the first two together: `task-stats` describes the task it was handed and
 says out loud that it cannot see the conversation; `standup` asks for `getTask`
@@ -75,6 +78,7 @@ a demo.
   "license": "MIT",
   "engines": { "agentrq": ">=0.5" },
   "mcp": { "workspace": ["listTasks", "getTask"] },
+  "hooks": { "toolCall": "deny" },
   "net": ["api.example.com"],
   "config": [{ "key": "since", "type": "number", "label": "Hours to look back" }],
   "provides": { "ui": ["page"], "shortcuts": ["s"] },
@@ -98,6 +102,7 @@ a demo.
 | `description` | no | One line, shown in the catalogue |
 | `mcp.workspace` | no | Workspace-server tools this extension may call |
 | `mcp.supervisor` | no | Supervisor tools this extension may call |
+| `hooks.toolCall` | no | `deny` or `decide` — that it wants to review an agent's permission prompts. **See below** |
 | `net` | no | Hosts the author says it contacts — **see below** |
 | `config` | no | Settings the user fills in: `string`, `number`, `boolean` or `secret` |
 | `provides` | no | What it contributes, for the catalogue card |
@@ -186,9 +191,16 @@ especially — the ones with no permission list at all.
 1. **Which registries an extension can reach**, and which names it may claim
    inside them.
 2. **Which MCP tools it may call, and against which workspaces.**
+3. **Whether it is asked anything on your behalf**, and if so whether it may
+   only refuse or may also approve.
 
 That is a real boundary around your AgentRQ data. It is not a boundary around
 your machine.
+
+The third is the odd one, because it is a permission to be *asked* rather than a
+permission to reach something — see [`hooks`](#hooks--reviewing-a-tool-call-before-the-user-is-asked).
+It has its own section on the install screen, starts switched off, and is the
+only grant that can be changed afterwards without reinstalling.
 
 ### The credential never reaches the extension
 
@@ -248,6 +260,11 @@ that workspace"* for a workspace the user believed they had just allowed.
 An extension that asks for nothing shows **no permission list at all** — only
 the confirmation and the sentence about machine access.
 
+The ladder above is about what an extension *reaches*. An extension asking to
+review tool calls is asking for something that is not on it, and can ask for
+that and nothing else: it gets its own section, with its own three rungs — not
+at all, may refuse, may approve or refuse — starting at the first.
+
 There is deliberately no "supervisor, but only this workspace". `listAllTasks`
 spans the platform and `createTask(workspaceId)` reaches anywhere, so the
 supervisor surface *is* every workspace; that combination would be the same
@@ -258,7 +275,13 @@ than merely discouraged.
 
 ## What an extension can contribute
 
-Three registries, reached through `inject`.
+Five registries, reached through `inject`. Four of them are contributions the
+app draws; `hooks` is the one that gets asked a question.
+
+Two things are **not** registries and are always on `ctx` whatever you inject:
+[`ctx.mcp`](#the-credential-never-reaches-the-extension), which is how you reach
+AgentRQ, and [`ctx.storage`](#ctxstorage--settings-you-define-the-shape-of),
+which is where you keep settings of your own shape.
 
 ### `ui` — pages, actions and menu items
 
@@ -271,6 +294,7 @@ ctx.ui.add({ id, surface, label, order, view, run, when })
 | `page` | The sidebar, at `/extensions/:name/:id` | `view(context)` returns a view spec |
 | `workspace-action` | The top of a workspace | `run(context)` |
 | `task-menu` | A task's right-click menu | `run(task)`, filtered by `when(task)` |
+| `workspace-settings-tab` | A tab in a workspace's settings | `view(context)`, always with `context.workspaceId` — [see below](#workspace-settings-tab--somewhere-to-configure-it) |
 
 `run` and `view` are the same thing under two names — an action produces a
 panel, a page produces a page — and either is accepted on any surface.
@@ -306,6 +330,33 @@ never depends on which extension happened to load first.
 ten permanent rows on every task, and a menu that long is one nobody reads. An
 entry that says nothing about when it applies is assumed to always apply, which
 is right for AgentRQ's own items and rare for anybody else's.
+
+### `workspace-settings-tab` — somewhere to configure it
+
+```js
+ctx.ui.add({
+  id: 'rules',
+  surface: 'workspace-settings-tab',
+  label: 'Guardrail',
+  async view(context) {              // context.workspaceId, always
+    if (context.action === 'save') { /* context.values */ }
+    return { title: 'Guardrail', nodes: [...] }
+  },
+})
+```
+
+A tab of your own in a workspace's settings, below the built-in ones and above
+Danger Zone. The fourth UI surface, and the only one that answers *"configure
+this extension, **here**"* — the other three are places to go and things to do.
+
+**Always resolved for a workspace**, which is the point: one extension can hold
+different settings for different workspaces without inventing a scheme for
+keying them, and `ctx.storage.workspace(id)` is the other half of that.
+
+The tab carries your extension's name, the same way the permission card names
+whichever extension answered it. Once an extension can draw inputs, a tab can
+look like AgentRQ asking somebody for something, and it must not be mistaken for
+one.
 
 ### `shortcuts` — keys under the `x` prefix
 
@@ -392,6 +443,148 @@ through your grant, because otherwise every extension that wanted a nightly task
 would have to ask for the ability to delete any task on the account. What bounds
 it instead: it only ever touches what it created, and a schedule naming a
 workspace your grant does not reach is refused.
+
+### `hooks` — reviewing a tool call before the user is asked
+
+```js
+export const inject = ['hooks']
+
+export function apply(ctx) {
+  ctx.hooks.add({
+    id: 'irreversible-shell',
+    review(request) {
+      // { workspaceId, taskId, requestId, toolName, description, inputPreview }
+      if (looksDestructive(request)) return { behavior: 'deny', reason: 'this cannot be undone' }
+      return undefined   // no opinion: the user is asked, exactly as before
+    },
+  })
+}
+```
+
+This is the only registry that points the other way. When an agent asks
+permission to run something, AgentRQ normally writes the request into the task
+and waits for a person. With a reviewer installed and consented to, it asks the
+reviewer first and sends its answer as the user's.
+
+**Declare it, or it is never called.** `"hooks": { "toolCall": "deny" }` in the
+manifest asks to be able to refuse; `"decide"` asks to be able to approve as
+well. The install screen offers nothing above what you declared, so an extension
+that only means to block things cannot later approve one.
+
+#### Three rules, all from one asymmetry
+
+Refusing costs a tool call. Approving costs whatever the tool call does.
+
+- **A single refusal settles it, immediately.** Reviewers are not voting — the
+  first `deny` is the answer and nobody after it is asked.
+- **Silence is never an allow.** Abstaining, throwing, taking longer than five
+  seconds, or not being consented to all leave the request where it was: in
+  front of the user. Every bug in your reviewer fails that way.
+- **Approving needs a consent that refusing does not.** A reviewer installed at
+  `deny` that answers `allow` is treated as having abstained, and told so in the
+  log.
+
+#### What it is not
+
+**It is not a security control, and must not be described as one.** Extensions
+are desktop-only: with the app closed, every request waits for a person exactly
+as it did before yours was installed. It is a convenience that can be absent,
+never a guarantee — a request nobody reviewed is not a request that was
+approved.
+
+It also reads the *preview* the harness sent, which is a string that was easy to
+produce rather than a promise about what will execute. A pattern list is worth
+having for the ordinary case; it is not a sandbox, and nothing here is.
+
+#### The user stays in charge of it
+
+Consent starts at **not at all** on the install screen — it is the one thing
+that never arrives pre-selected — and it can be changed or taken away from the
+extension's row on the Extensions screen without uninstalling anything. An
+extension refusing every tool call looks exactly like a broken agent, and
+"uninstall it to find out" is not a diagnosis anybody should have to make.
+
+Whatever a reviewer decides is recorded against its name: the permission card in
+the task says *"by guardrail"* rather than showing a verdict the user is invited
+to remember giving, and those decisions are counted separately from the ones a
+person actually made. A reviewer also cannot answer `allow_always` — writing a
+standing auto-allow rule is the user's own instruction, and it would outlive
+both the review and the extension.
+
+See [`guardrail`](../examples/extensions/guardrail/) for a complete one.
+
+---
+
+## `ctx.storage` — settings you define the shape of
+
+```js
+await ctx.storage.set('rules', { list: [...] })           // this install
+await ctx.storage.workspace(id).set('rules', { ... })     // this workspace
+await ctx.storage.workspace(id).get('rules')
+await ctx.storage.secret.set('apiKey', value)             // the OS keychain
+```
+
+`config` in the manifest is fields **AgentRQ renders and validates** — right for
+an API key and a "look back N hours" number, hopeless for anything with
+structure. `ctx.storage` is the other half: you draw the screen, you decide what
+a setting is, and nothing here looks inside the value.
+
+Also available: `get`, `all`, `keys`, `delete`, and `secret.has` / `secret.get` /
+`secret.clear`. Every write answers `{ ok, reason }` rather than throwing, so a
+refusal is a sentence you can show somebody.
+
+**Why the container is AgentRQ's when the data is yours.** An extension is
+trusted Node — it can `import fs` and write its own file today, with no
+permission from anybody. This is not a capability being granted; it is a
+container being offered, because writing that file yourself gives up four
+things:
+
+- **Uninstall stops meaning anything.** This is emptied on removal; your file is
+  not, and nothing in the app knows it is there.
+- **Secrets lose the keychain.** A secret here is *refused* on a machine with no
+  secure storage rather than written in the clear.
+- **Workspaces stop staying apart.** Key it yourself and only you know the data
+  is per-workspace.
+- **Size is unbounded.** 64 KB per value, 512 KB per scope, **refused rather
+  than truncated** — an extension told its value is too large can split it; one
+  silently cut in half cannot know to.
+
+---
+
+## Asking for something: `field`, `select`, `toggle`, `form`
+
+```js
+{ type: 'form', action: 'save', submit: 'Save rules', children: [
+  { type: 'field',  key: 'patterns', label: 'Refuse when', input: 'multiline', value: saved },
+  { type: 'select', key: 'mode', label: 'Mode', options: ['off', { value: 'on', label: 'Switched on' }] },
+  { type: 'toggle', key: 'strict', label: 'Strict', value: true },
+]}
+```
+
+`input` is `text`, `multiline`, `number` or `secret`. A `secret` renders masked
+and is **never echoed back** into the box — put what comes back into
+`ctx.storage.secret`.
+
+Submitting calls your same `view` handler again with `context.action` set to the
+form's action and `context.values` holding every key. One entry point rather
+than two: a form needs no separate registration, no separate lookup and no
+separate failure modes.
+
+```js
+async view(context) {
+  const at = ctx.storage.workspace(context.workspaceId)
+  if (context.action === 'save') await at.set('rules', context.values)
+  return draw(await at.get('rules'))
+}
+```
+
+**You never style any of it.** These render as AgentRQ's own controls — that is
+the only version of "an extension cannot break the design" that is a fact rather
+than a request. What somebody is typing is held outside the inputs, so answering
+a submit with a fresh view does not wipe a draft.
+
+Inputs work in any view: a settings tab, a sidebar page, a task panel. They are
+part of the one vocabulary, not a feature of one surface.
 
 ---
 
@@ -484,6 +677,12 @@ message under a heading that says otherwise.
 ```
 
 Values arrive as `ctx.config` and as the second argument to `apply`.
+
+**This is the half AgentRQ renders.** The manifest declares the fields, the app
+draws the form and validates what comes back. For anything with structure — a
+list of rules, per-workspace overrides, anything somebody builds rather than
+fills in — use [`ctx.storage`](#ctxstorage--settings-you-define-the-shape-of)
+and draw your own screen.
 
 A `secret` is stored encrypted through the OS keychain, never shown back to the
 user or to the catalogue, and — importantly — **refused rather than written in
@@ -602,6 +801,13 @@ extension must not still be creating tasks at three in the morning.
 **Uninstall** does that and then forgets its settings, its grant and its files. A
 linked folder is unlinked, never deleted; it is your working copy.
 
+A row for an extension that reviews tool calls also carries a **Tool calls**
+switch — *not asked*, *may refuse*, *may decide* — never above what its manifest
+asked for. It is the one permission that can be changed after install, because
+it is the one whose misbehaviour is indistinguishable from the app itself going
+wrong: an extension refusing everything looks exactly like a broken agent, and
+finding that out should not require uninstalling it.
+
 ---
 
 ## Testing yours
@@ -618,6 +824,10 @@ pattern:
 - **Test the refusals.** `{ ok: false, reason }` is a normal answer, not an edge
   case: it is what a user who declined a permission, or narrowed a grant later,
   will actually see.
+- **If you review tool calls, test what you decline to answer.** `guardrail`'s
+  tests spend as much space on the commands it leaves alone as on the ones it
+  blocks. A reviewer that quietly narrows what its user is ever asked about is
+  worse than no reviewer, and only a test of the abstentions catches that.
 
 ---
 
@@ -631,7 +841,9 @@ pattern:
 | Loading, and unloading completely | `desktop/src/main/extensions/host.js` |
 | The registries | `desktop/src/main/extensions/registry.js` |
 | The MCP boundary | `desktop/src/main/extensions/broker.js` |
+| Reviewing a tool call | `desktop/src/main/extensions/tool-calls.js` |
 | Config and secrets | `desktop/src/main/extensions/config.js` |
 | Schedule reconciliation | `desktop/src/main/extensions/schedules.js` |
+| Extensions' own settings storage | `desktop/src/main/extensions/storage.js` |
 | The grant screen's rules | `frontend/src/composables/useExtensionGrant.js` |
 | The view vocabulary | `frontend/src/composables/useExtensionView.js` |

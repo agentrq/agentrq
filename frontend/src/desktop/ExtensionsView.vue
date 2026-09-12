@@ -143,6 +143,25 @@
                 <span v-if="row.installation.linked" class="text-[10px] text-gray-400 dark:text-zinc-600 font-mono">
                   linked folder
                 </span>
+                <!-- The off switch, on the row rather than behind a reinstall.
+                     Shown only for the extensions that asked to review tool
+                     calls, which is nearly none of them.
+
+                     Inside this branch rather than beside it: the `v-else`
+                     below belongs to `row.installed`, and anything carrying its
+                     own `v-if` in between would steal it — which drew the
+                     catalogue's Install button onto every installed row. -->
+                <label v-if="(row.installation.consents ?? []).length > 0"
+                       class="flex items-center gap-1.5 ml-auto text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+                  Tool calls
+                  <select :value="row.installation.grant?.hooks?.toolCall ?? 'none'"
+                          @change="setHookConsent(row.name, $event.target.value)" :disabled="busy"
+                          class="px-1.5 py-0.5 rounded-sm border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-[10px] font-bold uppercase tracking-wider text-gray-700 dark:text-zinc-300 disabled:opacity-40">
+                    <option v-for="option in row.installation.consents" :key="option" :value="option">
+                      {{ CONSENT_WORDS[option] }}
+                    </option>
+                  </select>
+                </label>
               </template>
               <template v-else>
                 <!-- Offered only where there is a release to fetch. A blocked
@@ -201,6 +220,20 @@ const GROUP_LABELS = {
   unavailable: 'Unavailable',
 };
 
+/**
+ * The row's version of the consent ladder, in one word each.
+ *
+ * A row has no space for the sentences the install screen uses, and the full
+ * meaning belongs there — where the decision is first made, with the paragraph
+ * explaining it. Here it is a switch somebody is coming back to, and "asked" /
+ * "refuse" / "decide" is enough to say which way it is set.
+ */
+const CONSENT_WORDS = {
+  none: 'Not asked',
+  deny: 'May refuse',
+  decide: 'May decide',
+};
+
 const workspaceStore = useWorkspaceStore();
 
 const {
@@ -223,6 +256,7 @@ const {
   cancelInstall,
   uninstall,
   setEnabled,
+  setHookConsent,
 } = useExtensionCatalogue();
 
 // One flag for every control, so nothing can be pressed twice while a folder is

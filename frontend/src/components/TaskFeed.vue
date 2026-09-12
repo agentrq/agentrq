@@ -39,8 +39,9 @@
       @select="onContextMenuSelect"
     />
 
-    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value"
-                       @action="onExtensionAction" @close="extensions.dismiss" />
+    <ExtensionViewPanel v-if="extensions.panel.value" :view="extensions.panel.value" :values="extensions.values"
+                       @action="onExtensionAction" @input="extensions.setValue"
+                       @submit="extensions.submit" @close="extensions.dismiss" />
 
     <!-- Action Bar moved to parent for better layout consistency -->
 

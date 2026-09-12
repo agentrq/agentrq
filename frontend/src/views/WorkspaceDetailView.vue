@@ -200,8 +200,9 @@
     </div>
       </div>
     </template>
-    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel"
-                      @action="onExtensionAction" @close="extensionSurfaces.dismiss" />
+    <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel" :values="extensionSurfaces.values"
+                      @action="onExtensionAction" @input="extensionSurfaces.setValue"
+                      @submit="extensionSurfaces.submit" @close="extensionSurfaces.dismiss" />
   </div>
 
   <!-- Modals -->

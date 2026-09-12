@@ -54,6 +54,7 @@ export default defineConfig({
         'src/utils/markdownBlocks.js',
         'src/composables/useExtensionPages.js',
         'src/composables/useExtensionRenderers.js',
+        'src/composables/useExtensionSettingsTabs.js',
         'src/composables/useExtensionSurfaces.js',
         'src/composables/useExtensionView.js',
         'src/composables/useTaskContextMenu.js',

@@ -15,7 +15,8 @@
 
   <!-- rows -->
   <dl v-else-if="node.type === 'rows'" class="flex flex-col divide-y divide-gray-100 dark:divide-zinc-800">
-    <ExtensionNode v-for="(item, i) in node.items" :key="i" :node="item" @action="$emit('action', $event)" />
+    <ExtensionNode v-for="(item, i) in node.items" :key="i" :node="item" :values="values"
+                   @action="$emit('action', $event)" @input="$emit('input', $event)" @submit="$emit('submit', $event)" />
   </dl>
 
   <!-- row: a label and a value, so numbers line up down the column -->
@@ -61,12 +62,63 @@
   <DiagramBlock v-else-if="node.type === 'diagram'"
                 :format="node.format" :source="node.source" :label="node.label" />
 
+  <!-- field: a label and one control, drawn with this application's own styles
+       so an extension's settings screen cannot look like somebody else's -->
+  <label v-else-if="node.type === 'field'" class="flex flex-col gap-1">
+    <span v-if="node.label" class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+      {{ node.label }}
+    </span>
+    <textarea v-if="node.input === 'multiline'" :value="String(values[node.key] ?? '')"
+              @input="$emit('input', { key: node.key, value: $event.target.value })"
+              :placeholder="node.placeholder" rows="4"
+              class="px-2.5 py-1.5 text-[12px] rounded-sm border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white focus:outline-none focus:border-gray-400 dark:focus:border-zinc-600 resize-y"></textarea>
+    <input v-else :value="String(values[node.key] ?? '')"
+           @input="$emit('input', { key: node.key, value: $event.target.value })"
+           :type="node.input === 'secret' ? 'password' : node.input === 'number' ? 'number' : 'text'"
+           :placeholder="node.placeholder"
+           class="px-2.5 py-1.5 text-[12px] rounded-sm border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white focus:outline-none focus:border-gray-400 dark:focus:border-zinc-600" />
+  </label>
+
+  <!-- select: the options came from the extension, the styling never does -->
+  <label v-else-if="node.type === 'select'" class="flex flex-col gap-1">
+    <span v-if="node.label" class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+      {{ node.label }}
+    </span>
+    <select :value="String(values[node.key] ?? '')"
+            @change="$emit('input', { key: node.key, value: $event.target.value })"
+            class="px-2.5 py-1.5 text-[12px] rounded-sm border border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white focus:outline-none focus:border-gray-400 dark:focus:border-zinc-600">
+      <option v-for="option in node.options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>
+  </label>
+
+  <!-- toggle -->
+  <label v-else-if="node.type === 'toggle'" class="flex items-center gap-2.5">
+    <input type="checkbox" :checked="Boolean(values[node.key])"
+           @change="$emit('input', { key: node.key, value: $event.target.checked })"
+           class="accent-black dark:accent-white" />
+    <span class="text-[11px] text-gray-800 dark:text-zinc-200">{{ node.label }}</span>
+  </label>
+
+  <!-- form: a div and a button, never a <form> element. These are drawn inside
+       screens that already have one — the workspace settings page, for one —
+       and a nested form is invalid HTML whose submit behaviour is whatever the
+       browser decides that day. -->
+  <div v-else-if="node.type === 'form'" class="flex flex-col gap-3">
+    <ExtensionNode v-for="(child, i) in node.children" :key="i" :node="child" :values="values"
+                   @action="$emit('action', $event)" @input="$emit('input', $event)" @submit="$emit('submit', $event)" />
+    <button type="button" @click="$emit('submit', node.action)"
+            class="self-start px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest hover:opacity-80 transition-all">
+      {{ node.submit }}
+    </button>
+  </div>
+
   <!-- group -->
   <section v-else-if="node.type === 'group'" class="flex flex-col gap-1.5">
     <h3 v-if="node.label" class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">
       {{ node.label }}
     </h3>
-    <ExtensionNode v-for="(child, i) in node.children" :key="i" :node="child" @action="$emit('action', $event)" />
+    <ExtensionNode v-for="(child, i) in node.children" :key="i" :node="child" :values="values"
+                   @action="$emit('action', $event)" @input="$emit('input', $event)" @submit="$emit('submit', $event)" />
   </section>
 </template>
 
@@ -78,6 +130,13 @@
  * gets here: `normaliseView` refuses anything deeper than five levels or larger
  * than two hundred nodes, so this cannot be handed a spec that renders forever.
  *
+ * ## Inputs are ours, filled with their values
+ *
+ * The four input types render as this application's own controls. An extension
+ * chooses the key, the label and what goes in it, and has no say at all in how
+ * it looks — which is the only version of "extensions cannot break the design"
+ * that is a fact rather than a request.
+ *
  * Every branch is `v-if` on a type from a closed vocabulary. There is no
  * fallback branch on purpose: an unknown type never reaches this component,
  * because the validator rejects the whole view rather than skipping the node —
@@ -88,8 +147,18 @@ import { computed } from 'vue';
 
 import DiagramBlock from './DiagramBlock.vue';
 
-const props = defineProps({ node: { type: Object, required: true } });
-defineEmits(['action']);
+const props = defineProps({
+  node: { type: Object, required: true },
+  /**
+   * What every input in this view is currently holding.
+   *
+   * Passed down rather than held per node, because a view is redrawn whenever
+   * the extension answers a submit — and a draft that lived in the input would
+   * be wiped by the redraw that is showing the result of saving it.
+   */
+  values: { type: Object, default: () => ({}) },
+});
+defineEmits(['action', 'input', 'submit']);
 
 /** Extension tones map to this application's palette, never to a colour they chose. */
 const TONE_TEXT = {

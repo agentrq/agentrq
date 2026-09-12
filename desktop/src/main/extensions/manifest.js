@@ -44,6 +44,7 @@ const KNOWN_KEYS = new Set([
   'license',
   'engines',
   'mcp',
+  'hooks',
   'net',
   'config',
   'provides',
@@ -284,6 +285,53 @@ function validateToolList(value, surface) {
   return { ok: true, tools }
 }
 
+/**
+ * What an extension may be *asked* on, rather than what it may call.
+ *
+ * Everything else in a manifest describes what an extension reaches for. A hook
+ * is the other direction: the app stops and asks the extension something, and
+ * the extension's answer stands in for the user's. `toolCall` is the only one,
+ * and it is the moment an agent asks permission to run something.
+ *
+ * ## Two levels, because refusing and approving are not the same ask
+ *
+ * An extension that only ever *refuses* is a guardrail — it can cost you a tool
+ * call you wanted, and nothing worse. One that can *approve* is answering yes on
+ * your behalf, to a question the app exists to put in front of you. Collapsing
+ * those into one "may review tool calls" would charge the same price for both
+ * and quietly sell the second under the name of the first.
+ *
+ * So a manifest declares which it needs, the install screen offers no rung above
+ * it, and an extension that only means to block things cannot later approve one
+ * because its author widened the manifest without anybody re-reading it.
+ */
+const HOOK_LEVELS = new Set(['deny', 'decide'])
+
+function validateHooks(value) {
+  if (value === undefined) return { ok: true, hooks: {} }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return fail('"hooks" must be an object, for example { "toolCall": "deny" }.')
+  }
+
+  const unknown = Object.keys(value).filter((key) => key !== 'toolCall')
+  if (unknown.length > 0) {
+    // Named rather than ignored, for the same reason a mistyped top-level key
+    // is: an author who wrote a hook that does not exist is expecting behaviour
+    // they will never get, and nothing else would ever tell them.
+    return fail(`Unknown hook${unknown.length > 1 ? 's' : ''}: ${unknown.map((k) => `"${k}"`).join(', ')}.`)
+  }
+
+  const toolCall = str(value.toolCall)
+  if (!toolCall) return { ok: true, hooks: {} }
+  if (!HOOK_LEVELS.has(toolCall)) {
+    return fail(
+      `"hooks.toolCall" must be "deny" (it may only refuse a tool call) or "decide" ` +
+        `(it may approve or refuse one). Got "${toolCall}".`,
+    )
+  }
+  return { ok: true, hooks: { toolCall } }
+}
+
 /** The release asset an install downloads, and the digest that pins it. */
 function validateArtifact(value) {
   if (!value || typeof value !== 'object') {
@@ -424,6 +472,9 @@ export function parseManifest(source) {
   const supervisor = validateToolList(mcp.supervisor, 'supervisor')
   if (!supervisor.ok) return supervisor
 
+  const hooks = validateHooks(raw.hooks)
+  if (!hooks.ok) return hooks
+
   const net = validateNet(raw.net)
   if (!net.ok) return net
 
@@ -446,6 +497,7 @@ export function parseManifest(source) {
       license: license.license,
       engines: { agentrq },
       mcp: { workspace: workspace.tools, supervisor: supervisor.tools },
+      hooks: hooks.hooks,
       net: net.net,
       config: config.config,
       // Passed through as the author wrote it, except `drawers`, which names

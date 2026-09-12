@@ -44,6 +44,11 @@ export const REGISTRY_FOR = Object.freeze({
   page: 'ui',
   'workspace-action': 'ui',
   'task-menu': 'ui',
+  // A tab in a workspace's settings. The fourth UI surface, and the only one
+  // that answers "configure this extension, *here*" — the others are all places
+  // to go or things to do. It is resolved per workspace like a header action,
+  // which is what lets an extension keep different settings for each one.
+  'workspace-settings-tab': 'ui',
   shortcut: 'shortcuts',
   // A renderer claims a fenced-code language and is asked to draw one block.
   'code-block': 'renderers',
