@@ -137,6 +137,20 @@ export function createRuntime({
   schedules,
   configStore,
   readManifest,
+  /**
+   * Reads a drawer's file out of an installation's directory.
+   *
+   * Injected rather than imported so the rule about *where* a file may be —
+   * inside the directory it was installed into, symlinks included — is checked
+   * by a test with no filesystem in it.
+   *
+   * Required, with no default. A no-op default would turn a forgotten wire into
+   * "no extension ever draws anything" — which looks like a feature that does
+   * not work rather than a dependency nobody passed.
+   *
+   * @type {(dir: string, entry: string) => Promise<{ok: true, code: string} | {ok: false, reason: string}>}
+   */
+  readDrawer,
   servers = () => ({}),
   logger = console,
 }) {
@@ -365,6 +379,63 @@ export function createRuntime({
       // it: the digest proves they are the same bytes, and the one that was
       // actually unpacked is the one whose settings get saved.
       return settle(installed, installed.installation.manifest ?? entry.manifest, { grant, config })
+    },
+
+    /**
+     * The code for a drawer, or why there is none.
+     *
+     * Looked up by format across what is installed and enabled, and read from
+     * the installation's own directory. The renderer sends a format and gets
+     * text back — it never names a path, because a path from the page is a path
+     * somebody could aim.
+     *
+     * The entry was already checked at parse time (`parseDrawerEntry`), and it
+     * is checked again here against the resolved directory. Two guards that
+     * fail differently: one is a rule about the manifest, the other is a fact
+     * about the filesystem, and a symlink is only visible to the second.
+     */
+    /**
+     * Whether anything installed draws a format, without reading the file.
+     *
+     * What the renderer asks, and all it needs: the answer decides whether a
+     * block shows a frame or a sentence. The code itself is fetched by the
+     * frame from a URL — a real drawer is megabytes, and sending that over the
+     * bridge to answer a yes-or-no question would be absurd.
+     */
+    async hasDrawer(format) {
+      const wanted = String(format ?? '').toLowerCase()
+      if (!wanted) return fail('No format was named.')
+
+      for (const installation of await installer.list()) {
+        if (installation.enabled === false) continue
+        const declared = (installation.manifest?.provides?.drawers ?? []).some(
+          (drawer) => drawer.format === wanted,
+        )
+        if (declared) return { ok: true, owner: installation.name }
+      }
+      return fail(`Nothing installed draws "${wanted}".`)
+    },
+
+    async drawerFor(format) {
+      const wanted = String(format ?? '').toLowerCase()
+      if (!wanted) return fail('No format was named.')
+
+      for (const installation of await installer.list()) {
+        if (installation.enabled === false) continue
+
+        const declared = (installation.manifest?.provides?.drawers ?? []).find(
+          (drawer) => drawer.format === wanted,
+        )
+        if (!declared) continue
+
+        const read = await readDrawer(installation.dir, declared.entry)
+        // Named rather than swallowed: an extension that declares a drawer and
+        // ships no file is a broken package, and its author should hear so.
+        if (!read.ok) return fail(`${installation.name} declares a "${wanted}" drawer it does not ship: ${read.reason}`)
+        return { ok: true, code: read.code, owner: installation.name }
+      }
+
+      return fail(`Nothing installed draws "${wanted}".`)
     },
 
     /**

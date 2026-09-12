@@ -25,7 +25,12 @@
       <pre class="mt-2 m-0 text-[12px] leading-relaxed overflow-x-auto custom-scrollbar text-gray-600 dark:text-zinc-400"><code>{{ source }}</code></pre>
     </div>
 
-    <div v-else-if="svg" class="px-3 py-2.5 overflow-x-auto custom-scrollbar agentrq-diagram" v-html="svg"></div>
+    <!-- The drawing, and only the drawing. Everything around it — this border,
+         the caption, the label, the toggle — is out here, which is what keeps a
+         diagram looking like every other block on the page. -->
+    <div v-else-if="url" class="px-3 py-2.5 overflow-x-auto custom-scrollbar">
+      <DrawerFrame :url="url" :source="source" @failed="onFailed" />
+    </div>
 
     <p v-else class="px-3 py-2.5 text-[11px] text-gray-400 dark:text-zinc-500">Drawing…</p>
 
@@ -36,22 +41,22 @@
 /**
  * A diagram, and the text it was drawn from.
  *
- * The `v-html` here is the only one in anything an extension can reach, and it
- * is deliberate: mermaid turns text into an `<svg>` string, and there is no
- * other way to put that in the document. What makes it safe is that the string
- * is produced by *this application's* dependency from source that never
- * contained markup, and then passed through DOMPurify's SVG profile — which
- * removes `foreignObject`, the element that would otherwise let HTML back in
- * through a diagram label. See `useDiagram.js`.
+ * **Nothing is drawn here.** The extension that claimed the fence supplies the
+ * code, and it runs in a sandboxed frame with an opaque origin — see
+ * `useDrawerFrame.js`. This component decides what the block shows and never
+ * touches the drawing itself.
  *
- * Redrawn when the theme changes, because mermaid bakes its colours into the
- * SVG rather than reading them from the page.
+ * That is why there is no `v-html` in this file any more. There used to be: the
+ * host drew mermaid itself, turned it into an `<svg>` string, and put it in the
+ * page behind a sanitiser. The frame replaces that entirely — markup produced
+ * from an extension's source now stays inside a document that can reach
+ * nothing, so there is no sanitiser to get right and no third-party markup on a
+ * privileged origin at all.
  */
 import { ref, watch } from 'vue';
-import { storeToRefs } from 'pinia';
 
-import { renderDiagram } from '../composables/useDiagram';
-import { useThemeStore } from '../stores/themeStore';
+import DrawerFrame from './DrawerFrame.vue';
+import { createDrawerSource } from '../composables/useDrawerFrame';
 
 const props = defineProps({
   format: { type: String, required: true },
@@ -59,36 +64,36 @@ const props = defineProps({
   label: { type: String, default: '' },
 });
 
-const themeStore = useThemeStore();
-const { isDark } = storeToRefs(themeStore);
+const drawers = createDrawerSource();
 
-const svg = ref('');
+/** Where the frame imports the drawer from. The page never holds the code. */
+const url = ref('');
 const error = ref('');
 const showSource = ref(false);
 
-/** Which draw is the current one, so a slow answer cannot land on a new source. */
-let drawing = 0;
+/** Which lookup is the current one, so a slow answer cannot land on a new source. */
+let finding = 0;
 
-async function draw() {
-  const token = (drawing += 1);
-  svg.value = '';
+async function find() {
+  const token = (finding += 1);
+  url.value = '';
   error.value = '';
 
-  const result = await renderDiagram(props.source, { theme: isDark.value ? 'dark' : 'light' });
-  if (token !== drawing) return;
+  const found = await drawers.find(props.format);
+  if (token !== finding) return;
 
-  if (result.ok) svg.value = result.svg;
-  else error.value = result.reason;
+  if (found.ok) url.value = found.url;
+  // Said rather than left blank: a format nothing draws is the commonest reason
+  // a block does not become a picture, and the reader is owed the sentence.
+  else error.value = found.reason || `Nothing installed draws ${props.format}.`;
 }
 
-watch(() => [props.source, isDark.value], draw, { immediate: true });
+/** A drawer that threw, or never answered. The source is still worth showing. */
+function onFailed(reason) {
+  url.value = '';
+  error.value = reason || 'This could not be drawn.';
+}
+
+// The format is watched as well as the source: it decides which drawer runs.
+watch(() => [props.format, props.source], find, { immediate: true });
 </script>
-
-<style>
-/* Mermaid sizes to its content; this keeps a wide diagram inside the message
-   rather than pushing the conversation sideways. */
-.agentrq-diagram svg {
-  max-width: 100%;
-  height: auto;
-}
-</style>

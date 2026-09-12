@@ -61,6 +61,86 @@ const NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const SHA256_RE = /^[a-f0-9]{64}$/
 
 /**
+ * A diagram format, which is a lookup key and a visible label both.
+ *
+ * The same shape the renderer checks. Duplicated across the process boundary
+ * rather than shared, because the two halves cannot import from each other —
+ * and the frontend's copy is in `useExtensionView.js` if this one ever moves.
+ */
+const FORMAT_RE = /^[a-z][a-z0-9-]{0,31}$/i
+
+/**
+ * One path segment inside an extension's package.
+ *
+ * **It may not begin with a dot**, which is the whole of the traversal defence:
+ * that single rule makes `..` and `.` both unmatchable, so no entry can name a
+ * file outside the directory it was installed into. Hidden files go with them,
+ * which is no loss.
+ */
+const SEGMENT_RE = /^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/
+
+/**
+ * A drawer's file, relative to the package, or '' when it is not one.
+ *
+ * This value is read from disk by the main process and handed to a frame to
+ * execute, so it is checked here rather than trusted: relative only, no
+ * backslashes, every segment ordinary, and a JavaScript file at the end.
+ */
+export function parseDrawerEntry(value) {
+  const path = String(value ?? '')
+  if (!path || path.length > 200) return ''
+  // Backslashes first: a Windows-shaped path would otherwise slip past a check
+  // that only knows about forward slashes.
+  if (path.includes('\\') || path.startsWith('/')) return ''
+
+  const segments = path.split('/')
+  if (!segments.every((segment) => SEGMENT_RE.test(segment))) return ''
+  if (!/\.m?js$/.test(segments[segments.length - 1])) return ''
+  return path
+}
+
+/**
+ * The drawers a manifest declares, or the reason it declares none properly.
+ *
+ * A drawer is how an extension draws its own format: the host hands the file to
+ * a sandboxed frame, which runs it at an opaque origin with no bridge. Declared
+ * in the manifest rather than registered at runtime because it is a *file*, and
+ * the main process has to find it before any of the extension's code has run.
+ *
+ * Refused rather than dropped. An author who typed a path wrong should be told
+ * at install, not left wondering why one format never draws.
+ */
+export function parseDrawers(provides) {
+  const raw = provides?.drawers
+  if (raw === undefined) return { ok: true, drawers: [] }
+  if (!Array.isArray(raw)) return { ok: false, reason: '"provides.drawers" must be an array.' }
+
+  const drawers = []
+  const claimed = new Set()
+  for (const item of raw) {
+    const format = String(item?.format ?? '').toLowerCase()
+    if (!FORMAT_RE.test(format)) {
+      return { ok: false, reason: `"${item?.format ?? '(none)'}" is not a diagram format.` }
+    }
+    if (claimed.has(format)) {
+      return { ok: false, reason: `This manifest declares "${format}" twice.` }
+    }
+
+    const entry = parseDrawerEntry(item?.entry)
+    if (!entry) {
+      return {
+        ok: false,
+        reason: `The drawer for "${format}" needs an "entry": a .js file inside the package, named relative to it.`,
+      }
+    }
+
+    claimed.add(format)
+    drawers.push({ format, entry })
+  }
+  return { ok: true, drawers }
+}
+
+/**
  * SPDX identifiers we recognise, plus the honest refusal.
  *
  * An extension runs with full access to the machine, so the terms it is offered
@@ -350,6 +430,9 @@ export function parseManifest(source) {
   const artifact = validateArtifact(raw.artifact)
   if (!artifact.ok) return artifact
 
+  const drawers = parseDrawers(raw.provides)
+  if (!drawers.ok) return drawers
+
   return {
     ok: true,
     manifest: {
@@ -362,7 +445,12 @@ export function parseManifest(source) {
       mcp: { workspace: workspace.tools, supervisor: supervisor.tools },
       net: net.net,
       config: config.config,
-      provides: raw.provides && typeof raw.provides === 'object' ? raw.provides : {},
+      // Passed through as the author wrote it, except `drawers`, which names
+      // files this app will read and run — so that half is the parsed copy.
+      provides: {
+        ...(raw.provides && typeof raw.provides === 'object' ? raw.provides : {}),
+        drawers: drawers.drawers,
+      },
       shortcuts: Array.isArray(raw.shortcuts) ? raw.shortcuts : [],
       artifact: artifact.artifact,
     },

@@ -12,6 +12,7 @@ import {
   mimeTypeFor,
   createAppProtocolHandler,
 } from '../src/main/protocol.js'
+import { DRAWER_CODE_PREFIX, DRAWER_FRAME_PATH } from '../src/main/extensions/drawer-frame.js'
 
 const SERVER = 'http://localhost:3000'
 
@@ -31,6 +32,7 @@ function makeHandler(overrides = {}) {
       readFile: overrides.readFile ?? (async () => new TextEncoder().encode('<html></html>')),
       ...(overrides.devServerUrl !== undefined ? { devServerUrl: overrides.devServerUrl } : {}),
       ...(overrides.attachments !== undefined ? { attachments: overrides.attachments } : {}),
+      ...(overrides.drawerFor !== undefined ? { drawerFor: overrides.drawerFor } : {}),
       ...(overrides.onRequestProxied !== undefined ? { onRequestProxied: overrides.onRequestProxied } : {}),
     }),
   }
@@ -367,6 +369,112 @@ describe('createAppProtocolHandler — proxying', () => {
   it('defaults to a no-op hook so callers that do not care are unaffected', async () => {
     const { handler } = makeHandler()
     await expect(handler(makeRequest('app://agentrq/api/v1/tasks'))).resolves.toBeDefined()
+  })
+})
+
+describe('createAppProtocolHandler — the drawer frame', () => {
+  /**
+   * Served from a URL, with its own policy, and that is the only thing that
+   * works: a `srcdoc`, `data:` or `blob:` document inherits the embedder's CSP,
+   * and under `script-src 'self'` a sandboxed frame's opaque origin matches
+   * nothing — so no script could run in one at all.
+   */
+  it('serves the frame document with a policy of its own', async () => {
+    const { handler, netFetch } = makeHandler()
+
+    const response = await handler(makeRequest(`app://x${DRAWER_FRAME_PATH}`))
+    const body = await response.text()
+    const csp = response.headers.get('content-security-policy')
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/html')
+    expect(csp).toContain("default-src 'none'")
+    // The header and the document agree, or the bootstrap is refused and the
+    // frame looks broken for a reason nobody would guess.
+    expect(body).toContain(csp)
+    // Nothing was proxied and nothing was read off disk to answer it.
+    expect(netFetch).not.toHaveBeenCalled()
+  })
+
+  it('never caches it, because the nonce inside it changes', async () => {
+    const { handler } = makeHandler()
+
+    const first = await handler(makeRequest(`app://x${DRAWER_FRAME_PATH}`))
+    const second = await handler(makeRequest(`app://x${DRAWER_FRAME_PATH}`))
+
+    expect(first.headers.get('cache-control')).toBe('no-store')
+    expect(await first.text()).not.toBe(await second.text())
+  })
+
+  // It is matched exactly, so it cannot be reached by a path that merely starts
+  // the same way, and it does not shadow a real asset.
+  it('is one path and not a prefix', async () => {
+    const { handler } = makeHandler({ fileExists: async () => false })
+
+    const near = await handler(makeRequest(`app://x${DRAWER_FRAME_PATH}/extra`))
+
+    // It falls through to the app, which means the app's own policy — not the
+    // frame's permissive one, which would be the dangerous way to be wrong.
+    expect(near.headers.get('content-security-policy')).toContain("default-src 'self'")
+    expect(near.headers.get('content-security-policy')).not.toContain("default-src 'none'")
+  })
+})
+
+describe('createAppProtocolHandler — a drawer\'s code', () => {
+  const drawerFor = vi.fn(async (format) =>
+    format === 'mermaid' ? { ok: true, code: 'export default () => {}' } : { ok: false, reason: `Nothing draws "${format}".` },
+  )
+
+  /**
+   * Served rather than posted into the frame: a real drawer is megabytes —
+   * mermaid bundled and minified is five — and handing that to every frame on
+   * the page is not something to do once, let alone per diagram.
+   */
+  it('serves the code, readable from an opaque origin', async () => {
+    const { handler } = makeHandler({ drawerFor })
+
+    const response = await handler(makeRequest(`app://x${DRAWER_CODE_PREFIX}mermaid.js`))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('javascript')
+    // The frame's origin is opaque, so importing a module from it is a
+    // cross-origin request that needs CORS to be readable at all.
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(await response.text()).toContain('export default')
+  })
+
+  it('is not cached, because what is installed changes under the app', async () => {
+    const { handler } = makeHandler({ drawerFor })
+
+    const response = await handler(makeRequest(`app://x${DRAWER_CODE_PREFIX}mermaid.js`))
+
+    expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('answers 404 for a format nothing draws, saying why when there is a why', async () => {
+    const { handler } = makeHandler({ drawerFor })
+
+    const response = await handler(makeRequest(`app://x${DRAWER_CODE_PREFIX}vega-lite.js`))
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toContain('Nothing draws')
+  })
+
+  it('still answers 404 when the refusal carries no reason', async () => {
+    const { handler } = makeHandler({ drawerFor: async () => ({ ok: false }) })
+
+    const response = await handler(makeRequest(`app://x${DRAWER_CODE_PREFIX}mermaid.js`))
+
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe('No such drawer')
+  })
+
+  // Nothing is wired in the browser build, so the default has to answer rather
+  // than throw out of the handler.
+  it('answers without a drawer source at all', async () => {
+    const { handler } = makeHandler()
+
+    expect((await handler(makeRequest(`app://x${DRAWER_CODE_PREFIX}mermaid.js`))).status).toBe(404)
   })
 })
 

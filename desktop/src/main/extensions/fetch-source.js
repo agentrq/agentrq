@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 /**
  * Getting the bytes, for each of the three sources.
@@ -27,6 +27,57 @@ import { join } from 'node:path'
 /** Where staging happens. Removed by the installer whether or not it succeeds. */
 export async function makeTempDir() {
   return mkdtemp(join(tmpdir(), 'agentrq-ext-'))
+}
+
+/** A filesystem error in words, without the path it happened to be holding. */
+function whyNot(error) {
+  const code = String(error?.code ?? '')
+  if (code === 'ENOENT') return 'that file is not there'
+  if (code === 'EACCES' || code === 'EPERM') return 'that file cannot be read'
+  return String(error?.message ?? error ?? 'unknown error')
+}
+
+/** How much drawer a frame is worth handing. Bounded, because it is parsed there. */
+// Mermaid bundled and minified is five megabytes, which sets the floor here:
+// a cap below that refuses the first real drawer anybody writes. Bounded all
+// the same, because it is parsed in a window somebody is reading in.
+export const MAX_DRAWER_BYTES = 16 * 1024 * 1024
+
+/**
+ * Reads a drawer's file out of the directory an extension was installed into.
+ *
+ * The entry was already checked when the manifest was parsed, and it is checked
+ * again here — against the *resolved* path this time. Two guards that fail
+ * differently: the first is a rule about a string, and this one is a fact about
+ * the filesystem. A symlink pointing out of the directory satisfies the first
+ * and is caught by the second, because `realpath` is what it actually is.
+ */
+export async function readDrawer(dir, entry) {
+  if (!dir || !entry) return { ok: false, reason: 'no drawer was named' }
+
+  let root
+  let file
+  try {
+    root = await realpath(resolve(dir))
+    file = await realpath(resolve(root, entry))
+  } catch (error) {
+    return { ok: false, reason: whyNot(error) }
+  }
+
+  // `sep` on the end, so a sibling directory whose name merely starts the same
+  // way — `/ext/mermaid-evil` beside `/ext/mermaid` — is not inside it.
+  if (file !== root && !file.startsWith(root + sep)) {
+    return { ok: false, reason: 'that file is not inside the extension' }
+  }
+
+  try {
+    const stat = await lstat(file)
+    if (!stat.isFile()) return { ok: false, reason: 'that is not a file' }
+    if (stat.size > MAX_DRAWER_BYTES) return { ok: false, reason: 'that drawer is too large' }
+    return { ok: true, code: await readFile(file, 'utf8') }
+  } catch (error) {
+    return { ok: false, reason: whyNot(error) }
+  }
 }
 
 /** The manifest inside an unpacked extension, or null when there is none. */

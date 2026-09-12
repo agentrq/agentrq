@@ -232,6 +232,14 @@ contextBridge.exposeInMainWorld('agentrq', {
     entries: (surface, context = {}) => ipcRenderer.invoke('agentrq:extensions:entries', { surface, context }),
 
     /**
+     * The code for a drawer, named by format.
+     *
+     * Answers with text, which the page hands to a sandboxed frame to run —
+     * never to itself. Only a format crosses, so the page cannot name a file.
+     */
+    drawer: (format) => ipcRenderer.invoke('agentrq:extensions:drawer', format),
+
+    /**
      * Run one, and get back what it wants drawn.
      *
      * @returns {Promise<{ok: boolean, view?: object|null, reason?: string}>}

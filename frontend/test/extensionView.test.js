@@ -183,12 +183,36 @@ describe('a diagram node', () => {
     expect(drawn.nodes[0].format).toBe('mermaid');
   });
 
-  it('names the formats it knows when given one it does not', () => {
-    const { ok, reason } = normaliseView([diagram({ format: 'mermaidjs' })]);
+  // The bug this replaces. An unknown format used to fail `normaliseView`,
+  // which fails the *whole view*, which MarkdownBody then drops — so the fence
+  // fell back to an ordinary code block and nothing said why, to the reader or
+  // to the author. Extensions may name any format; what the host cannot draw
+  // degrades to showing its source, which is what the reader wanted anyway.
+  it('accepts a format nobody here draws, rather than losing the view', () => {
+    for (const format of ['vega-lite', 'plantuml', 'graphviz', 'd2', 'mermaidjs']) {
+      const { ok, view } = normaliseView([diagram({ format })]);
 
-    expect(ok).toBe(false);
-    expect(reason).toContain('mermaidjs');
-    expect(reason).toContain('mermaid');
+      expect(ok).toBe(true);
+      expect(view.nodes[0].format).toBe(format);
+      expect(view.nodes[0].source).toBe('graph TD;\n  A-->B;');
+    }
+  });
+
+  // A format is a lookup key and a visible label, and neither tolerates
+  // arbitrary text — so the shape is still checked even though the list is not.
+  it('still refuses one that is not a format at all', () => {
+    for (const format of ['BAD FORMAT!', 'has space', '<script>', '9lives', '-leading', 'x'.repeat(33)]) {
+      const { ok, reason } = normaliseView([diagram({ format })]);
+
+      expect(ok).toBe(false);
+      expect(reason).toContain('is not a diagram format');
+    }
+  });
+
+  it('accepts the shapes that are legitimate', () => {
+    for (const format of ['mermaid', 'math', 'vega-lite', 'd2', 'a', 'x'.repeat(32)]) {
+      expect(normaliseView([diagram({ format })]).ok).toBe(true);
+    }
   });
 
   it('says "(none)" rather than an empty pair of quotes', () => {

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
-import { access, mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createFetchSource } from '../../src/main/extensions/fetch-source.js'
+import { createFetchSource, readDrawer } from '../../src/main/extensions/fetch-source.js'
 
 /**
  * Thin on purpose — everything decidable lives in source.js and install.js,
@@ -120,5 +120,74 @@ describe('createFetchSource · release', () => {
         '/tmp/s',
       ),
     ).rejects.toThrow('Could not download x.tgz (404)')
+  })
+})
+
+
+/**
+ * Reading a drawer out of the directory an extension was installed into.
+ *
+ * This is the *second* guard. The first is `parseDrawerEntry`, which is a rule
+ * about the string in the manifest; this one is a fact about the filesystem,
+ * and the difference matters — a symlink satisfies every rule about the string
+ * and is only caught by resolving what it actually points at.
+ */
+describe('readDrawer', () => {
+  const build = async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agentrq-drawer-'))
+    const ext = join(root, 'mermaid')
+    await mkdir(join(ext, 'dist'), { recursive: true })
+    await writeFile(join(ext, 'drawer.js'), 'export default () => {}')
+    await writeFile(join(ext, 'dist', 'nested.js'), 'nested')
+    await writeFile(join(root, 'secret.js'), 'SECRET')
+    await symlink(join(root, 'secret.js'), join(ext, 'link.js'))
+    // A sibling whose name merely *starts* the same way.
+    await mkdir(join(root, 'mermaid-evil'))
+    await writeFile(join(root, 'mermaid-evil', 'evil.js'), 'EVIL')
+    return { root, ext }
+  }
+
+  it('reads a file inside the package', async () => {
+    const { root, ext } = await build()
+
+    expect(await readDrawer(ext, 'drawer.js')).toEqual({ ok: true, code: 'export default () => {}' })
+    expect((await readDrawer(ext, 'dist/nested.js')).code).toBe('nested')
+
+    await rm(root, { recursive: true, force: true })
+  })
+
+  // The one the string rule cannot catch.
+  it('refuses a symlink that points out of the package', async () => {
+    const { root, ext } = await build()
+
+    const result = await readDrawer(ext, 'link.js')
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('not inside the extension')
+
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('refuses a traversal, and a sibling whose name starts the same way', async () => {
+    const { root, ext } = await build()
+
+    expect((await readDrawer(ext, '../secret.js')).reason).toContain('not inside the extension')
+    expect((await readDrawer(ext, '../mermaid-evil/evil.js')).reason).toContain('not inside the extension')
+
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('refuses what is not a file, and what is not there', async () => {
+    const { root, ext } = await build()
+
+    expect((await readDrawer(ext, 'dist')).reason).toContain('not a file')
+    expect((await readDrawer(ext, 'missing.js')).reason).toContain('not there')
+
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it('has nothing to read without both a directory and an entry', async () => {
+    expect((await readDrawer('', 'a.js')).reason).toContain('no drawer')
+    expect((await readDrawer('/tmp', '')).reason).toContain('no drawer')
   })
 })

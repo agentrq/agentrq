@@ -19,6 +19,7 @@
  */
 
 import { isAttachmentRequest } from '../../../frontend/src/composables/useAttachmentCache.js'
+import { DRAWER_CODE_PREFIX, DRAWER_FRAME_PATH, drawerFrameDocument } from './extensions/drawer-frame.js'
 
 /**
  * Path prefixes forwarded to the AgentRQ server. These mirror the backend's own
@@ -248,6 +249,11 @@ export function createAppProtocolHandler({
   readFile,
   devServerUrl = '',
   attachments = null,
+  /**
+   * The code for a drawer, by format. Injected so the handler does not have to
+   * know what an extension is — it serves what it is given.
+   */
+  drawerFor = async () => ({ ok: false, reason: 'Extensions are unavailable.' }),
   onRequestProxied = () => {},
 }) {
   const dev = Boolean(devServerUrl)
@@ -376,6 +382,50 @@ export function createAppProtocolHandler({
 
   return async function handleAppProtocol(request) {
     const url = new URL(request.url)
+
+    // Before anything else static. This is not a renderer asset — it is the
+    // document an extension's drawer runs in, and it carries its own policy
+    // rather than the app's, which is the only way a sandboxed frame can run a
+    // script at all. See `extensions/drawer-frame.js`.
+    if (url.pathname === DRAWER_FRAME_PATH) {
+      // Both halves together: the header and the document carry the same nonce,
+      // and generating them apart would let them disagree — which refuses the
+      // bootstrap and looks exactly like the frame being broken.
+      const frame = drawerFrameDocument()
+      return new Response(frame.html, {
+        status: 200,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'content-security-policy': frame.csp,
+          // Never cached: the document is generated, and a stale copy of the
+          // bootstrap is the kind of thing nobody thinks to look for.
+          'cache-control': 'no-store',
+        },
+      })
+    }
+
+    // A drawer's code, for the frame to import. Served rather than posted into
+    // the frame: a real drawer is megabytes — mermaid bundled is five — and
+    // handing that to every frame on the page is not something to do once,
+    // let alone per diagram. A URL is fetched once and cached.
+    if (url.pathname.startsWith(DRAWER_CODE_PREFIX)) {
+      const format = decodeURIComponent(url.pathname.slice(DRAWER_CODE_PREFIX.length).replace(/\.js$/, ''))
+      const found = await drawerFor(format)
+      if (!found.ok) return new Response(found.reason ?? 'No such drawer', { status: 404 })
+
+      return new Response(found.code, {
+        status: 200,
+        headers: {
+          'content-type': 'text/javascript; charset=utf-8',
+          // The frame's origin is opaque, so an ES module import from it is a
+          // cross-origin request that needs CORS to be readable at all.
+          'access-control-allow-origin': '*',
+          // No store: what is installed can change under the app, and a cached
+          // drawer would outlive the extension that supplied it.
+          'cache-control': 'no-store',
+        },
+      })
+    }
 
     if (isProxyPath(url.pathname)) {
       if (attachments && request.method === 'GET' && isAttachmentRequest(url.pathname)) {

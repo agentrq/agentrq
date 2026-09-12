@@ -63,6 +63,13 @@ function build(over = {}) {
 
   const shortcuts = { list: () => over.takenShortcuts ?? [] }
   const loaded = []
+  /** Drawer files, keyed by "<dir>/<entry>", so a test can say what is on disk. */
+  const files = over.files ?? {}
+  const readDrawer = vi.fn(async (dir, entry) => {
+    const code = files[`${dir}/${entry}`]
+    return code === undefined ? { ok: false, reason: 'that file is not there' } : { ok: true, code }
+  })
+
   const host = {
     registries: { ui: { listFor: () => [] }, shortcuts: { ...shortcuts, listFor: () => [] }, schedules: { listFor: () => [] } },
     list: () => loaded.map((name) => ({ name, version: '1.0.0', failures: 0 })),
@@ -108,11 +115,12 @@ function build(over = {}) {
     schedules,
     configStore,
     readManifest: over.readManifest ?? (async () => JSON.stringify(manifest())),
+    readDrawer,
     servers: () => SERVERS,
     logger,
   })
 
-  return { runtime, installer, host, broker, schedules, configStore, logger, order, held }
+  return { runtime, installer, host, broker, schedules, configStore, logger, order, held, readDrawer }
 }
 
 /**
@@ -524,6 +532,126 @@ describe('installFromCatalogue', () => {
 
     expect(result.ok).toBe(true)
     expect(configStore.save).toHaveBeenCalledWith('standup', manifest().config, { since: 8 })
+  })
+})
+
+describe('drawerFor', () => {
+  const drawing = (over = {}) => ({
+    ...manifest(),
+    provides: { drawers: [{ format: 'mermaid', entry: 'dist/draw.js' }] },
+    ...over,
+  })
+
+  it('reads the file the extension declared, from its own directory', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: drawing(), dir: '/ext/standup' })],
+      files: { '/ext/standup/dist/draw.js': 'export default () => {}' },
+    })
+
+    expect(await runtime.drawerFor('mermaid')).toEqual({
+      ok: true,
+      code: 'export default () => {}',
+      owner: 'standup',
+    })
+  })
+
+  it('folds the format, so one drawer is not two', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: drawing(), dir: '/ext/standup' })],
+      files: { '/ext/standup/dist/draw.js': 'code' },
+    })
+
+    expect((await runtime.drawerFor('MERMAID')).ok).toBe(true)
+  })
+
+  it('says so when nothing installed draws it', async () => {
+    const { runtime } = build({ installations: [installation({ manifest: drawing() })] })
+
+    expect((await runtime.drawerFor('vega-lite')).reason).toContain('Nothing installed draws')
+  })
+
+  // A disabled extension is one the user turned off; its drawer goes with it.
+  it('skips an extension that is disabled', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: drawing(), dir: '/ext/standup', enabled: false })],
+      files: { '/ext/standup/dist/draw.js': 'code' },
+    })
+
+    expect((await runtime.drawerFor('mermaid')).ok).toBe(false)
+  })
+
+  // Named rather than swallowed: an extension declaring a drawer it does not
+  // ship is a broken package, and its author should hear which one.
+  it('names the extension when the file it promised is not there', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: drawing(), dir: '/ext/standup' })],
+    })
+
+    const result = await runtime.drawerFor('mermaid')
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('standup')
+    expect(result.reason).toContain('mermaid')
+  })
+
+  /**
+   * What the renderer actually asks, and all it needs: the answer decides
+   * whether a block shows a frame or a sentence. The code itself is fetched by
+   * the frame from a URL — a real drawer is megabytes, and sending that over
+   * the bridge to answer yes or no would be absurd.
+   */
+  describe('hasDrawer', () => {
+    it('says yes without reading anything off disk', async () => {
+      const { runtime, readDrawer } = build({
+        installations: [installation({ manifest: drawing(), dir: '/ext/standup' })],
+      })
+
+      expect(await runtime.hasDrawer('mermaid')).toEqual({ ok: true, owner: 'standup' })
+      expect(readDrawer).not.toHaveBeenCalled()
+    })
+
+    it('folds the format, and says no for one nothing draws', async () => {
+      const { runtime } = build({ installations: [installation({ manifest: drawing() })] })
+
+      expect((await runtime.hasDrawer('MERMAID')).ok).toBe(true)
+      expect((await runtime.hasDrawer('vega-lite')).reason).toContain('Nothing installed draws')
+    })
+
+    it('skips an extension that is disabled', async () => {
+      const { runtime } = build({
+        installations: [installation({ manifest: drawing(), enabled: false })],
+      })
+
+      expect((await runtime.hasDrawer('mermaid')).ok).toBe(false)
+    })
+
+    it('has nothing to look up for no format', async () => {
+      const { runtime } = build()
+
+      expect((await runtime.hasDrawer('')).reason).toContain('No format')
+      expect((await runtime.hasDrawer(undefined)).ok).toBe(false)
+    })
+
+    it('passes over an extension that declares none', async () => {
+      const { runtime } = build({ installations: [installation()] })
+
+      expect((await runtime.hasDrawer('mermaid')).ok).toBe(false)
+    })
+  })
+
+  it('has nothing to look up for no format', async () => {
+    const { runtime, readDrawer } = build()
+
+    expect((await runtime.drawerFor('')).reason).toContain('No format')
+    expect((await runtime.drawerFor(undefined)).ok).toBe(false)
+    expect(readDrawer).not.toHaveBeenCalled()
+  })
+
+  // An extension declaring none is the ordinary case and must not throw.
+  it('passes over an extension that declares no drawers at all', async () => {
+    const { runtime } = build({ installations: [installation()] })
+
+    expect((await runtime.drawerFor('mermaid')).ok).toBe(false)
   })
 })
 

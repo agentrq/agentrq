@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 
 import {
   SPDX_IDENTIFIERS,
+  parseDrawerEntry,
+  parseDrawers,
   checkCompatibility,
   parseManifest,
   satisfiesRange,
@@ -28,6 +30,113 @@ const valid = () => ({
   config: [{ key: 'apiKey', type: 'secret', label: 'Linear API key' }],
   provides: { ui: ['workspacePanel'] },
   artifact: { release: 'v1.2.0', asset: 'linear-1.2.0.tgz', sha256: 'a'.repeat(64) },
+})
+
+/**
+ * A drawer names a file this app reads from disk and hands to a frame to run.
+ * So the path is checked here rather than trusted, and the single rule that
+ * does the work is that a segment may not begin with a dot — which makes `..`
+ * and `.` both unmatchable.
+ */
+describe('parseDrawerEntry', () => {
+  it('takes an ordinary relative path to a script', () => {
+    for (const entry of ['drawer.js', 'dist/drawer.js', 'dist/draw/mermaid.mjs', 'a-b_c/d.js']) {
+      expect(parseDrawerEntry(entry), entry).toBe(entry)
+    }
+  })
+
+  it('refuses anything that could name a file outside the package', () => {
+    for (const entry of [
+      '../secrets.js',
+      'dist/../../secrets.js',
+      './drawer.js',
+      '/etc/passwd.js',
+      'dist\\drawer.js',
+      '..',
+      '.',
+      '.hidden.js',
+    ]) {
+      expect(parseDrawerEntry(entry), entry).toBe('')
+    }
+  })
+
+  it('refuses anything that is not a script', () => {
+    for (const entry of ['drawer.json', 'drawer', 'drawer.js.png', 'index.html']) {
+      expect(parseDrawerEntry(entry), entry).toBe('')
+    }
+  })
+
+  it('refuses nothing, and refuses a path nobody would type', () => {
+    expect(parseDrawerEntry('')).toBe('')
+    expect(parseDrawerEntry(undefined)).toBe('')
+    expect(parseDrawerEntry(`${'a/'.repeat(120)}x.js`)).toBe('')
+  })
+})
+
+describe('a drawer, through the whole manifest', () => {
+  // The integration point that matters: a bad drawer refuses the manifest, and
+  // the reason is what the catalogue shows against the extension at install.
+  it('refuses the manifest, with the reason a person will read', () => {
+    const provides = { drawers: [{ format: 'mermaid', entry: '../../../etc/passwd.js' }] }
+    const { ok, reason } = parseManifest({ ...valid(), provides })
+
+    expect(ok).toBe(false)
+    expect(reason).toContain('mermaid')
+  })
+
+  it('carries a good one through to the parsed manifest', () => {
+    const provides = { ui: ['workspacePanel'], drawers: [{ format: 'mermaid', entry: 'dist/draw.js' }] }
+    const { ok, manifest } = parseManifest({ ...valid(), provides })
+
+    expect(ok).toBe(true)
+    expect(manifest.provides.drawers).toEqual([{ format: 'mermaid', entry: 'dist/draw.js' }])
+    // The rest of `provides` is still the author's own, passed through.
+    expect(manifest.provides.ui).toEqual(['workspacePanel'])
+  })
+})
+
+describe('parseDrawers', () => {
+  it('reads what an extension says it can draw', () => {
+    const { ok, drawers } = parseDrawers({ drawers: [{ format: 'mermaid', entry: 'dist/mermaid.js' }] })
+
+    expect(ok).toBe(true)
+    expect(drawers).toEqual([{ format: 'mermaid', entry: 'dist/mermaid.js' }])
+  })
+
+  it('folds the format, so one drawer is not two', () => {
+    expect(parseDrawers({ drawers: [{ format: 'Mermaid', entry: 'd.js' }] }).drawers[0].format).toBe('mermaid')
+  })
+
+  it('declaring none is not an error', () => {
+    expect(parseDrawers(undefined)).toEqual({ ok: true, drawers: [] })
+    expect(parseDrawers({})).toEqual({ ok: true, drawers: [] })
+    expect(parseDrawers({ drawers: [] })).toEqual({ ok: true, drawers: [] })
+  })
+
+  // Refused rather than dropped: an author who typed a path wrong should be
+  // told at install, not left wondering why one format never draws.
+  it('refuses a path it will not read, and says which format', () => {
+    const { ok, reason } = parseDrawers({ drawers: [{ format: 'mermaid', entry: '../../etc/passwd.js' }] })
+
+    expect(ok).toBe(false)
+    expect(reason).toContain('mermaid')
+    expect(reason).toContain('inside the package')
+  })
+
+  it('refuses a format that is not one', () => {
+    expect(parseDrawers({ drawers: [{ format: 'BAD FORMAT', entry: 'd.js' }] }).reason).toContain('not a diagram format')
+    expect(parseDrawers({ drawers: [{ entry: 'd.js' }] }).reason).toContain('(none)')
+  })
+
+  it('refuses the same format claimed twice by one extension', () => {
+    const drawers = [{ format: 'math', entry: 'a.js' }, { format: 'math', entry: 'b.js' }]
+
+    expect(parseDrawers({ drawers }).reason).toContain('twice')
+  })
+
+  it('refuses a drawers field that is not a list', () => {
+    expect(parseDrawers({ drawers: 'mermaid' }).reason).toContain('must be an array')
+  })
 })
 
 describe('parseManifest', () => {
@@ -286,7 +395,7 @@ describe('parseManifest', () => {
 
     expect(ok).toBe(true)
     expect(manifest.config).toEqual([])
-    expect(manifest.provides).toEqual({})
+    expect(manifest.provides).toEqual({ drawers: [] })
     expect(manifest.shortcuts).toEqual([])
   })
 
@@ -302,7 +411,7 @@ describe('parseManifest', () => {
   it('ignores optional fields of the wrong shape rather than adopting them', () => {
     const { manifest } = parseManifest({ ...valid(), provides: 'everything', shortcuts: 'x' })
 
-    expect(manifest.provides).toEqual({})
+    expect(manifest.provides).toEqual({ drawers: [] })
     expect(manifest.shortcuts).toEqual([])
   })
 

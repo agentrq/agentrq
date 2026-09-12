@@ -30,13 +30,15 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from '../src/main/protocol.js'
+import { DRAWER_FRAME_URL, FRAME_SANDBOX } from '../../frontend/src/composables/useDrawerFrame.js'
+import { drawerCodeUrl } from '../src/main/extensions/drawer-frame.js'
 import { createHost } from '../src/main/extensions/host.js'
 import { createInstaller } from '../src/main/extensions/install.js'
 import { createBroker } from '../src/main/extensions/broker.js'
 import { createSchedules } from '../src/main/extensions/schedules.js'
 import { createConfigStore } from '../src/main/extensions/config.js'
 import { createRuntime } from '../src/main/extensions/runtime.js'
-import { readManifest } from '../src/main/extensions/fetch-source.js'
+import { readDrawer, readManifest } from '../src/main/extensions/fetch-source.js'
 import { serverTools } from '../src/main/extensions/servers.js'
 import { entriesFor, invokeEntry } from '../src/main/extensions/surfaces.js'
 // The renderer's own modules, imported here rather than from inside the page: a
@@ -204,6 +206,7 @@ function buildRuntime() {
     schedules,
     configStore,
     readManifest,
+    readDrawer,
     // The real lists, as index.js passes them. Passing only the version is what
     // refused every extension that wanted any tool at all.
     servers: () => serverTools(app.getVersion()),
@@ -235,6 +238,12 @@ app.whenReady().then(async () => {
       netFetch: net.fetch,
       fileExists,
       readFile: (pathname) => readFile(join(RENDERER_ROOT, pathname)),
+      // The real lookup, against whatever this run installed — so the frame
+      // below imports an actual extension's drawer rather than a stand-in.
+      drawerFor: async (format) =>
+        format === 'verify-escape'
+          ? { ok: true, code: ESCAPE_DRAWER }
+          : runtime.drawerFor(format),
     }),
   )
 
@@ -360,90 +369,158 @@ app.whenReady().then(async () => {
   await digest.runtime.installLocal(join(EXAMPLES, 'digest'), { config: { workspaceId: 'ws1' } })
   const headerActions = digest.runtime.entries('workspace-action', { workspaceId: 'ws1' })
   record('a header action is offered for a workspace', headerActions.length === 1, JSON.stringify(headerActions))
-
-  // A mermaid diagram, drawn end to end in a real browser.
+  // ── A drawer, in the frame that is supposed to contain it ────────────────
   //
-  // jsdom cannot do this: mermaid measures text with `getBBox`, which it does
-  // not implement — so the unit tests inject a fake mermaid and prove the
-  // wiring, and this proves the dependency. It is also the only place the
-  // sanitiser is exercised against real mermaid output rather than a fixture.
-  const mermaidChunk = (await readdir(join(RENDERER_ROOT, 'assets')))
-    .find((file) => /^mermaid\.core-.*\.js$/.test(file))
+  // The whole security argument is one attribute — `allow-scripts` with no
+  // `allow-same-origin` — and an argument is not a test. This runs a drawer in
+  // a real frame in a real window and asks it to reach back, which is the only
+  // way to know the boundary is where it is claimed to be.
+  //
+  // The real constants are imported here in Node and injected, rather than
+  // imported in the page: `/src/...` resolves only under the dev server, and a
+  // check that quietly tests something other than the shipped module is worse
+  // than no check. `useDrawerFrame.js` has no dependencies, which is what makes
+  // that possible.
+  // Drawn twice: the real extension's drawer proves the mechanism carries a
+  // five-megabyte bundle, and this one proves the wall is where it is claimed.
+  const ESCAPE_DRAWER = [
+    'export default function draw(root, source) {',
+    '  const p = document.createElement("p");',
+    '  p.textContent = "drew: " + source;',
+    '  root.appendChild(p);',
+    '  try { window.parent.document.title = "ESCAPED"; } catch (error) { root.dataset.blocked = error.name; }',
+    '}',
+  ].join('\n')
 
-  const diagram = mermaidChunk
-    ? await win.webContents.executeJavaScript(`(async () => {
-        try {
-          // The built chunk, not a source path: a production bundle has none,
-          // and this is about the dependency rather than our module graph.
-          const mermaid = (await import('/assets/${mermaidChunk}')).default;
-          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false });
-          // A label carrying markup, which is what a diagram built from an
-          // agent's message or an issue title actually looks like on a bad day.
-          const source = 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;\\n  A-->C;';
-          // Rendered twice, with a theme change between: initialize replaces
-          // the configuration rather than merging, and a partial call used to
-          // put htmlLabels back on — which turned every label into a
-          // foreignObject the sanitiser then removed, leaving a diagram with
-          // nothing written on it.
-          await mermaid.render('verify-warmup', 'graph TD;\\n  X-->Y;');
-          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, theme: 'dark' });
-          const { svg } = await mermaid.render('verify-diagram', source);
-          // Through the real sanitiser, in the page, because DOMPurify needs a
-          // DOM — so this is the SVG a person actually gets.
-          const { sanitiseSvg } = await import('/src/composables/useDiagram.js').catch(() => ({}));
-          const shown = sanitiseSvg ? sanitiseSvg(svg) : svg;
-          // Measured here, on the whole thing. The stylesheet alone is longer
-          // than any slice worth sending back, so counting on a truncated copy
-          // reports zero of everything and looks like a broken diagram.
-          return {
-            ok: true,
-            sanitised: Boolean(sanitiseSvg),
-            svg: shown.slice(0, 1200),
-            counts: {
-              text: (shown.match(/<text/g) ?? []).length,
-              foreignObject: (shown.match(/foreignObject/g) ?? []).length,
-              style: (shown.match(/<style/g) ?? []).length,
-              fill: (shown.match(/fill:/g) ?? []).length,
-            },
-            labels: [...shown.matchAll(/<text[^>]*>([\\s\\S]*?)<\\/text>/g)].map((m) => m[1].replace(/<[^>]*>/g, '')).slice(0, 6),
-          };
-        } catch (error) {
-          return { ok: false, reason: String(error) };
-        }
-      })()`)
-    : { ok: false, reason: 'no mermaid chunk in the build' }
+  const sandboxScript = `(async () => {
+    try {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', ${JSON.stringify(FRAME_SANDBOX)});
+      frame.src = ${JSON.stringify(DRAWER_FRAME_URL)};
+      document.body.appendChild(frame);
 
-  record('mermaid draws a diagram in a real browser', diagram.ok === true, String(diagram.reason ?? ''))
-  // The bug that made a diagram unreadable: mermaid puts its whole theme in a
-  // <style> element, and the sanitiser was dropping it — solid black boxes with
-  // invisible labels. Checked against real output, because a fixture only
-  // proves what somebody already thought to write down.
+      const answer = (want) => new Promise((resolve) => {
+        const onMessage = (event) => {
+          if (event.source !== frame.contentWindow) return;
+          const data = event.data;
+          if (!data || !want.includes(data.type)) return;
+          window.removeEventListener('message', onMessage);
+          resolve(data);
+        };
+        window.addEventListener('message', onMessage);
+        setTimeout(() => resolve({ type: 'timeout' }), 5000);
+      });
+
+      const ready = await answer(['ready']);
+      if (ready.type !== 'ready') return { ok: false, reason: 'the frame never became ready' };
+
+      const before = document.title;
+      frame.contentWindow.postMessage(
+        { type: 'draw', url: ${JSON.stringify(drawerCodeUrl('verify-escape'))}, source: 'hello', theme: 'light' },
+        '*',
+      );
+      const drawn = await answer(['drawn', 'failed']);
+
+      // The wall seen from this side: an opaque origin cannot be read into.
+      let parentCanRead = false;
+      try { parentCanRead = Boolean(frame.contentWindow.document.body); } catch { parentCanRead = false; }
+
+      frame.remove();
+      return {
+        ok: true,
+        drawn: drawn.type,
+        reason: drawn.reason ?? '',
+        height: drawn.height ?? 0,
+        titleUnchanged: document.title === before,
+        parentCanRead,
+      };
+    } catch (error) {
+      return { ok: false, reason: String(error) };
+    }
+  })()`
+
+  // The real extension, from the checkout beside this one. Its drawer is
+  // mermaid bundled — five megabytes — which is the case the URL exists for.
+  const MERMAID_EXT = join(__dirname, '../../../extensions/mermaid-agentrq')
+  const mermaidInstalled = await runtime.installLocal(MERMAID_EXT).catch((error) => ({ ok: false, reason: String(error) }))
+  record('the mermaid extension installs from its folder', mermaidInstalled.ok === true, String(mermaidInstalled.reason ?? ''))
+
+  const declared = await runtime.hasDrawer('mermaid')
+  record('and declares a drawer the host can find', declared.ok === true, JSON.stringify(declared))
+
+  const read = await runtime.drawerFor('mermaid')
   record(
-    'with its labels written as text, not as embedded HTML',
-    (diagram.counts?.text ?? 0) > 0 && (diagram.counts?.foreignObject ?? 0) === 0,
-    JSON.stringify(diagram.counts),
+    'whose bundle is on disk and readable',
+    read.ok === true && (read.code?.length ?? 0) > 1_000_000,
+    read.ok ? `${(read.code.length / 1048576).toFixed(1)} MB` : String(read.reason),
+  )
+
+  const sandbox = await win.webContents.executeJavaScript(sandboxScript)
+
+  record('a drawer runs in a sandboxed frame and draws', sandbox.drawn === 'drawn', JSON.stringify(sandbox))
+  record('and it reported a height to size the frame by', (sandbox.height ?? 0) > 0, String(sandbox.height ?? 0))
+  // The line that must never move.
+  record('the sandbox grants scripts and nothing else', FRAME_SANDBOX === 'allow-scripts', FRAME_SANDBOX)
+  // What the sandbox is actually for.
+  record(
+    'a drawer reaching for the page it is drawn in cannot touch it',
+    sandbox.titleUnchanged === true,
+    `document.title unchanged: ${sandbox.titleUnchanged}`,
   )
   record(
-    'and the labels say what the diagram said',
-    (diagram.labels ?? []).some((label) => label.includes('B')),
-    JSON.stringify(diagram.labels),
+    'and the page cannot read into the frame, because the origin is opaque',
+    sandbox.parentCanRead === false,
+    `parent could read the frame document: ${sandbox.parentCanRead}`,
+  )
+
+  // The real thing: mermaid, bundled by the extension, imported over the URL,
+  // drawing an actual diagram. A toy drawer proves the mechanism; this proves
+  // it carries what anybody would actually put through it.
+  const realDraw = await win.webContents.executeJavaScript(`(async () => {
+    try {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', ${JSON.stringify(FRAME_SANDBOX)});
+      frame.src = ${JSON.stringify(DRAWER_FRAME_URL)};
+      document.body.appendChild(frame);
+
+      const answer = (want) => new Promise((resolve) => {
+        const onMessage = (event) => {
+          if (event.source !== frame.contentWindow) return;
+          if (!event.data || !want.includes(event.data.type)) return;
+          window.removeEventListener('message', onMessage);
+          resolve(event.data);
+        };
+        window.addEventListener('message', onMessage);
+        setTimeout(() => resolve({ type: 'timeout' }), 20000);
+      });
+
+      await answer(['ready']);
+      frame.contentWindow.postMessage(
+        {
+          type: 'draw',
+          url: ${JSON.stringify(drawerCodeUrl('mermaid'))},
+          source: 'graph TD;\\n  A["<img src=x onerror=alert(1)>"]-->B;',
+          theme: 'light',
+        },
+        '*',
+      );
+      const drawn = await answer(['drawn', 'failed']);
+      frame.remove();
+      return { type: drawn.type, reason: drawn.reason ?? '', height: drawn.height ?? 0 };
+    } catch (error) {
+      return { type: 'threw', reason: String(error) };
+    }
+  })()`)
+
+  record(
+    'the real mermaid drawer imports and draws a diagram',
+    realDraw.type === 'drawn',
+    JSON.stringify(realDraw),
   )
   record(
-    'carrying the stylesheet that makes it readable',
-    (diagram.counts?.style ?? 0) > 0 && (diagram.counts?.fill ?? 0) > 0,
-    JSON.stringify(diagram.counts),
-  )
-  record(
-    'and it is an svg with a flowchart in it',
-    /<svg/.test(diagram.svg ?? '') && /flowchart/.test(diagram.svg ?? ''),
-    (diagram.svg ?? '').slice(0, 120),
-  )
-  // Strict mode escapes its own labels, so even before the sanitiser the
-  // markup in that node is text rather than an element.
-  record(
-    'with a label full of markup rendered as text, not as an element',
-    diagram.ok && !/<img[^>]*onerror/i.test(diagram.svg ?? ''),
-    (diagram.svg ?? '').slice(0, 300),
+    'and the diagram has a size, so it was actually laid out',
+    (realDraw.height ?? 0) > 20,
+    `height: ${realDraw.height}`,
   )
 
   // The drawing and the sanitising both happen in the page, because DOMPurify

@@ -50,7 +50,7 @@ import { UpdateStatus, createUpdater } from './updater.js'
 import { createDiscovery } from './extensions/discovery.js'
 import { decorate } from './extensions/catalogue.js'
 import { createInstaller } from './extensions/install.js'
-import { createFetchSource, makeTempDir, readManifest } from './extensions/fetch-source.js'
+import { createFetchSource, makeTempDir, readDrawer, readManifest } from './extensions/fetch-source.js'
 import { createHost } from './extensions/host.js'
 import { createBroker, permitsWorkspace } from './extensions/broker.js'
 import { createSchedules } from './extensions/schedules.js'
@@ -212,6 +212,10 @@ function sessionFor(partition) {
         // The web build caches attachments in a service worker. This build has
         // none, so the bytes are kept on disk and served from here instead.
         attachments: attachmentStoreFor(partition),
+        // Read from whatever is installed at the moment the frame asks, rather
+        // than captured here — what is installed changes under a running app.
+        drawerFor: async (format) =>
+          (await extensions?.drawerFor(format)) ?? { ok: false, reason: 'Extensions are unavailable.' },
         onRequestProxied: (method, pathname) => selfActionGate.markSelf(taskIdFromSelfActionRequest(method, pathname)),
       })
     )
@@ -975,6 +979,17 @@ function registerIpc(getWindow) {
     extensions?.entries(surface ?? '', context ?? {}) ?? [],
   )
 
+  /**
+   * The code for a drawer, by format.
+   *
+   * The renderer names a *format*, never a path — a path from the page is a
+   * path somebody could aim. The main process resolves it against what is
+   * installed and reads the file out of that extension's own directory.
+   */
+  ipcMain.handle('agentrq:extensions:drawer', async (_event, format) =>
+    (await extensions?.hasDrawer(format)) ?? { ok: false, reason: 'Extensions are unavailable.' },
+  )
+
   ipcMain.handle('agentrq:extensions:invoke', async (_event, { target, context } = {}) =>
     (await extensions?.invoke(target ?? {}, context ?? {})) ?? {
       ok: false,
@@ -1311,6 +1326,7 @@ function buildExtensionRuntime() {
     schedules,
     configStore,
     readManifest,
+    readDrawer,
     // The tool lists as well as the version. Passing only the version left
     // `checkCompatibility` judging every extension against an empty surface, so
     // anything wanting MCP at all was refused with "the workspace server does

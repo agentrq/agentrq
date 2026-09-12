@@ -41,8 +41,23 @@ export const NODE_TYPES = Object.freeze({
   diagram: ['format', 'source', 'label'],
 });
 
-/** Diagram languages AgentRQ knows how to draw. */
-export const DIAGRAM_FORMATS = Object.freeze(['mermaid']);
+/**
+ * What a diagram format has to *look* like, which is not the same as one this
+ * app can draw.
+ *
+ * `format` is two things at once: a lookup key into the drawer registry, and a
+ * label shown to the reader when there is no title. So its shape is checked —
+ * a word, optionally hyphenated, bounded — and nothing more.
+ *
+ * Membership is deliberately not checked here. It used to be, against a list of
+ * one, and the cost was out of all proportion: an unknown format failed
+ * `normaliseView`, which fails the *whole view*, which `MarkdownBody` then drops
+ * entirely — so the fence fell back to an ordinary code block and nothing, to
+ * the reader or the author, said why. A format nobody draws is now a valid node
+ * that degrades to showing its source, which is what the reader wanted from it
+ * anyway. See `createDrawerSource` in `useDrawerFrame.js`.
+ */
+export const DIAGRAM_FORMAT = /^[a-z][a-z0-9-]{0,31}$/i;
 
 /**
  * How much diagram source is worth drawing.
@@ -128,10 +143,10 @@ function normaliseNode(node, depth, budget) {
 
   if (type === 'diagram') {
     const format = String(node.format ?? '');
-    if (!DIAGRAM_FORMATS.includes(format)) {
-      // Named, and the alternatives listed, the same way an unknown node type
-      // is: an author who wrote "mermaidjs" is one word from working.
-      return fail(`"${format || '(none)'}" is not a diagram this can draw. Use one of: ${DIAGRAM_FORMATS.join(', ')}.`);
+    if (!DIAGRAM_FORMAT.test(format)) {
+      // Still refused, because a malformed format is a malformed node: it is a
+      // lookup key and a visible label, and neither tolerates arbitrary text.
+      return fail(`"${format || '(none)'}" is not a diagram format. A format is a word, like "mermaid".`);
     }
     const source = typeof node.source === 'string' ? node.source : '';
     if (!source.trim()) return fail('A diagram needs source to draw.');
