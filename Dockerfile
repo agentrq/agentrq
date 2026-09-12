@@ -26,7 +26,7 @@ RUN find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -ex
 RUN	find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec brotli -9 -f -k {} +
 
 
-FROM golang:1.25-bookworm AS build
+FROM golang:1.27-bookworm AS build
 
 WORKDIR /app
 RUN apt-get update && \
