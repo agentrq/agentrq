@@ -5,6 +5,7 @@ import {
   INSTALL_STEP,
   blockedReason,
   groupFor,
+  asksFor,
   installedRow,
   statusOf,
   summarise,
@@ -378,9 +379,40 @@ describe('useExtensionCatalogue', () => {
       const row = await rowFor(catalogue);
 
       await catalogue.beginInstall(row);
+      await catalogue.install({ grant: null, config: null });
 
       expect(bridge.installFromCatalogue).toHaveBeenCalledWith('owner/thing', { grant: null, config: null });
       expect(catalogue.notice.value).toBe('Thing installed.');
+    });
+
+    // The one place this differs from the folder install, deliberately. Picking
+    // a folder is running code you already have; installing from the catalogue
+    // downloads a stranger's and runs it with full access to the machine. The
+    // screen is not empty either — it names the author, the repository, the
+    // version and the licence — so there is something to read before agreeing.
+    it('asks before installing even when it wants no permission at all', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+      const row = await rowFor(catalogue);
+
+      expect(asksFor(row.manifest)).toBe(0);
+
+      await catalogue.beginInstall(row);
+
+      expect(catalogue.step.value).toBe('asking');
+      expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
+    });
+
+    // Cancelling is a decision, and it must install nothing.
+    it('installs nothing when the question is declined', async () => {
+      const bridge = fakeBridge();
+      const catalogue = useExtensionCatalogue({ bridge });
+
+      await catalogue.beginInstall(await rowFor(catalogue));
+      catalogue.cancelInstall();
+
+      expect(catalogue.step.value).toBe('idle');
+      expect(bridge.installFromCatalogue).not.toHaveBeenCalled();
     });
 
     // An extension that asks for nothing goes straight to installing.
@@ -439,6 +471,7 @@ describe('useExtensionCatalogue', () => {
       const catalogue = useExtensionCatalogue({ bridge });
 
       await catalogue.beginInstall(await rowFor(catalogue));
+      await catalogue.install({ grant: null, config: null });
 
       expect(catalogue.error.value).toBe('That checksum did not match.');
     });
@@ -451,6 +484,7 @@ describe('useExtensionCatalogue', () => {
       const catalogue = useExtensionCatalogue({ bridge });
 
       await catalogue.beginInstall(await rowFor(catalogue));
+      await catalogue.install({ grant: null, config: null });
 
       expect(catalogue.notice.value).toBe('Thing installed, but did not start: Cannot find module "x"');
     });

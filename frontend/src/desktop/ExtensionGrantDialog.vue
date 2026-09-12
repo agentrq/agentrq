@@ -6,7 +6,12 @@
         <h2 class="text-lg font-black text-gray-900 dark:text-white">
           Install {{ candidate.manifest.displayName || candidate.manifest.name }}?
         </h2>
-        <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1 font-mono truncate">{{ candidate.path }}</p>
+        <!-- Where it is about to come from. A folder shows its path; a
+             catalogue entry shows the repository, because "who published this"
+             is the question being answered by pressing Install. -->
+        <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1 font-mono truncate">
+          {{ candidate.path || candidate.fullName }}
+        </p>
 
         <!-- The sentence that is true on every install, whatever else is on the
              screen. It carries the whole weight when the permission list below

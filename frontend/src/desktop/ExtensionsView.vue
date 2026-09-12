@@ -16,11 +16,21 @@
         </div>
       </div>
 
-      <p class="text-[11px] text-gray-500 dark:text-zinc-400 mb-6">
+      <p class="text-[11px] text-gray-500 dark:text-zinc-400 mb-3">
         {{ summary }} ·
         <span class="text-gray-400 dark:text-zinc-500">
           Published by anyone on GitHub under the <code class="font-mono">agentrq-extension</code> topic.
         </span>
+      </p>
+
+      <!-- Standing, not dismissible, and above the list rather than beside a
+           button: the catalogue is uncurated, nobody reviews what appears in it,
+           and an extension runs as this app's own code once installed. The row
+           says who published it because that is the whole of the decision. -->
+      <p class="mb-6 px-3 py-2 rounded-sm border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+        Install only extensions you trust. Anyone can publish one, nothing here is
+        reviewed, and an extension runs with full access to your computer — there
+        is no sandbox.
       </p>
 
       <div v-if="error"

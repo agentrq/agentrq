@@ -346,11 +346,18 @@ export function useExtensionCatalogue({ bridge = globalThis.window?.agentrq?.ext
       return;
     }
 
+    // Always asked, even when the extension wants no permission at all — which
+    // is the one place this differs from the folder install, deliberately.
+    //
+    // The rule there is that a permission screen with nothing on it teaches
+    // people to click past the screen that does have something on it, and that
+    // rule is right: you picked that folder, so you already have the code.
+    // Installing from the catalogue is the other thing. It downloads a
+    // stranger's code and runs it with full access to this machine, and the
+    // screen is not empty — it names the author, the repository, the version
+    // and the licence, and carries the sentence about machine access. That is
+    // the whole of the decision, and it is not one to make by single click.
     candidate.value = { ...row, kind: 'catalogue' };
-    if (asksFor(row.manifest) === 0) {
-      await install({ grant: null, config: null });
-      return;
-    }
     step.value = INSTALL_STEP.asking;
   }
 

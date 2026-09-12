@@ -562,12 +562,30 @@ Extensions → Install from folder → examples/extensions/task-stats
 
 Anything listed under **Available** has a release to fetch, and its row carries
 an **Install** button. It asks the same permission-and-settings question the
-folder install asks, and for the same reason — an extension that asks for
-nothing installs without that step.
+folder install asks — and, unlike the folder install, **it asks every time**,
+even when the extension wants no permission at all.
+
+That difference is deliberate. Picking a folder is running code you already
+have; installing from the catalogue is downloading a stranger's and running it
+with full access to your machine. The screen is not empty in that case either —
+it names the author, the repository, the version and the licence, and carries
+the sentence about machine access — so there is something to read before
+agreeing to it.
 
 A release install is **copied**, not linked: the app owns what it downloaded, so
 uninstalling removes it. Only a folder is left alone, because a folder is the
 author's own working copy.
+
+### Nothing here is reviewed
+
+The catalogue is every repository carrying a topic. There is no review, no
+signing, and no sandbox — an installed extension runs as this app's own code,
+with the app's access to your files, your clipboard and your shell. The screen
+says so above the list, and the install question says so again.
+
+So the decision is about the author, which is why the row leads with who
+published it rather than with what it does. **Install only extensions you
+trust.**
 
 The installer also supports **a git URL** cloned at a commit, for a private
 repository.
