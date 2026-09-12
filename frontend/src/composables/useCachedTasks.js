@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { mergeTaskUpdate } from './useTaskEvents';
 import { getCachedTask, openCache, putTask } from './useLocalCache';
 import { taskTerms } from './useTaskIndex';

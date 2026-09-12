@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 export const WHISPER_LANGUAGES = {
   "af": "Afrikaans",
   "am": "Amharic",

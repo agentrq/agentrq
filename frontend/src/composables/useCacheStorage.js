@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { cacheSettingKey, resetSharedCache, SETTING_OFF } from './useCachedTasks';
 import { clearWorkspace, deleteTasks, destroyCache, findCachedTaskById } from './useLocalCache';
 

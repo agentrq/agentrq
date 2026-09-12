@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'
 import { releaseSource } from './source.js'

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineConfig } from 'vite'
 import { builtinModules } from 'node:module'
 import { fileURLToPath, URL } from 'node:url'

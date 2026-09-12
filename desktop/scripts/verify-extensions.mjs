@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * End-to-end check that an extension's contribution actually reaches the screen.
  *

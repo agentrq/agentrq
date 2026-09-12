@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * What a workflow's boxes say when you hover them.
  *

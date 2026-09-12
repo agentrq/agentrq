@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { stopTask } from '../src/api'

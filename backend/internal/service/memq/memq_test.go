@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package memq
 
 import (
@@ -33,10 +35,10 @@ func TestMemq(t *testing.T) {
 
 	t.Run("AddWorkersAndProcess", func(t *testing.T) {
 		res, _ := s.Create(context.Background(), CreateRequest{Name: "worker-q", Size: 10})
-		
+
 		var processed int32
 		done := make(chan bool)
-		
+
 		handle := func(ctx context.Context, t Task) error {
 			atomic.AddInt32(&processed, 1)
 			if atomic.LoadInt32(&processed) == 2 {
@@ -70,7 +72,7 @@ func TestMemq(t *testing.T) {
 		if err != ErrQueueNotFound {
 			t.Errorf("expected ErrQueueNotFound, got %v", err)
 		}
-		
+
 		err = s.AddWorkers(context.Background(), AddWorkersRequest{QueueID: 999})
 		if err != ErrQueueNotFound {
 			t.Errorf("expected ErrQueueNotFound, got %v", err)
@@ -96,16 +98,16 @@ func TestMemq(t *testing.T) {
 
 	t.Run("WorkerPanicRecovery", func(t *testing.T) {
 		res, _ := s.Create(context.Background(), CreateRequest{Name: "panic-q", Size: 10})
-		
+
 		var panics int32
 		handle := func(ctx context.Context, t Task) error {
 			atomic.AddInt32(&panics, 1)
 			panic("boom")
 		}
-		
+
 		s.AddWorkers(context.Background(), AddWorkersRequest{QueueID: res.ID, Count: 1, Handle: handle})
 		s.AddTask(context.Background(), AddTaskRequest{QueueID: res.ID, Task: Task{ID: 1}})
-		
+
 		// Wait a bit for recovery
 		time.Sleep(100 * time.Millisecond)
 		if atomic.LoadInt32(&panics) != 1 {

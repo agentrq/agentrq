@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="h-full flex flex-col w-full">
     <!-- Page Header -->

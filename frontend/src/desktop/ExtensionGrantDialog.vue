@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" @click.self="$emit('cancel')">
     <div class="w-full max-w-lg bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm max-h-[85vh] overflow-y-auto custom-scrollbar">

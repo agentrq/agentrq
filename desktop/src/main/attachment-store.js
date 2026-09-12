@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { budgetFor, evictionPlan, withinSizeCap } from '../../../frontend/src/composables/useAttachmentCache.js'
 
 /**

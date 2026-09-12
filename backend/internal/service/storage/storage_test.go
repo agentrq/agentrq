@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package storage
 
 import (
@@ -62,7 +64,7 @@ func TestStorage(t *testing.T) {
 			t.Error("expected error for invalid base64")
 		}
 	})
-	
+
 	t.Run("NewDirError", func(t *testing.T) {
 		// Try to create storage in a path that is a file
 		f, _ := os.CreateTemp("", "not-a-dir")

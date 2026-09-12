@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { build } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 

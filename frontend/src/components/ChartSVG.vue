@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="w-full h-full flex flex-col">
     <!-- Chart area -->

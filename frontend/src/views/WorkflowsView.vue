@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';

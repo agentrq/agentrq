@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Getting what an extension contributed across to the window that draws it.
  *

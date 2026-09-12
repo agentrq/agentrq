@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { ref, onUnmounted, watch } from 'vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';

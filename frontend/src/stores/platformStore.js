@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineStore } from 'pinia'
 
 /** Platforms the app can run on. Anything else is treated as the browser. */

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * What an event on the live stream is worth saying out loud, in the browser.
  *

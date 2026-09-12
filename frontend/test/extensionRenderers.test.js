@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { resetRenderers, useExtensionRenderers } from '../src/composables/useExtensionRenderers';

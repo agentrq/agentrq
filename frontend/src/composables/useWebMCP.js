@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Offering the AgentRQ interface to an agent running in the browser.
  *

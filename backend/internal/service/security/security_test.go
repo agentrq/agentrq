@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package security
 
 import (
@@ -32,7 +34,7 @@ func TestSecurity(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for short key in Encrypt")
 		}
-		
+
 		_, err = Decrypt("ct", "short", "nonce")
 		if err == nil {
 			t.Error("expected error for short key in Decrypt")
@@ -44,7 +46,7 @@ func TestSecurity(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for invalid hex")
 		}
-		
+
 		_, err = Decrypt("abc", key, "invalid hex")
 		if err == nil {
 			t.Error("expected error for invalid hex nonce")

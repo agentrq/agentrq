@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { fetchWorkspaces as apiFetchWorkspaces } from '../api';

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, expect, it } from 'vitest'
 
 import { FileOpenAction, fileOpenAction, localPathFromFileUrl } from '../src/main/files.js'

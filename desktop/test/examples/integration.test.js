@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'

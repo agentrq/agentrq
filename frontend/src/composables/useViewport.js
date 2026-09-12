@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { ref, onMounted, onUnmounted } from 'vue';
 
 export function useViewport() {

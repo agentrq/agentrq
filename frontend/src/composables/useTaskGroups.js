@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Which sections a task list shows for a given filter, and what goes in each.
  *

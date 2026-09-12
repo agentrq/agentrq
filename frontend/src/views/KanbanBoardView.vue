@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="flex flex-col h-full w-full bg-transparent min-h-0">
     <div v-if="loading" class="flex-1 flex items-center justify-center py-20">

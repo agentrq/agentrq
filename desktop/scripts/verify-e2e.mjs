@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * End-to-end check of the app:// proxy against a real AgentRQ backend.
  *

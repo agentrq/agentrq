@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { cacheSettingKey } from './useCachedTasks';
 import { deleteTasks, listAllCachedTasks, metaKey, STORE_META } from './useLocalCache';
 

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Where a task's activity belongs: the conversation, or the trajectory.
  *

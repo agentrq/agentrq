@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { ref } from 'vue';
 
 const toasts = ref([]);

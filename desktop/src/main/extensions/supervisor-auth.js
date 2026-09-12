@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Getting a supervisor credential, by asking the person in front of the app.
  *

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createMemoryHistory } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'

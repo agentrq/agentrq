@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="md-body">
     <template v-for="(segment, i) in segments" :key="i">

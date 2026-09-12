@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * The smallest MCP client that can call a tool, for the main process.
  *

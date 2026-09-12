@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
 export const API_BASE_URL = `${cleanBase}/api/v1`;
 

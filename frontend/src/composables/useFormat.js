@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 export function useFormat() {
   const toKebabCase = (str) => {
     if (!str) return '';

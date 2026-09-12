@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 

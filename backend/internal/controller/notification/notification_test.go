@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package notification
 
 import (
@@ -7,11 +9,11 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	mock_memq "github.com/agentrq/agentrq/backend/internal/service/mocks/memq"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 	mock_smtp "github.com/agentrq/agentrq/backend/internal/service/mocks/smtp"
-	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/golang/mock/gomock"
 )
@@ -56,7 +58,7 @@ func TestNotificationController(t *testing.T) {
 		taskID := int64(42)
 		wsID := int64(1)
 		mockRepo.EXPECT().SystemGetTask(gomock.Any(), taskID).Return(model.Task{ID: taskID, WorkspaceID: wsID, Title: "Test Task"}, nil)
-		
+
 		ws := model.Workspace{
 			ID:                   wsID,
 			Name:                 "Test WS",
@@ -65,7 +67,7 @@ func TestNotificationController(t *testing.T) {
 		}
 		mockRepo.EXPECT().SystemGetWorkspace(gomock.Any(), wsID).Return(ws, nil)
 		mockRepo.EXPECT().SystemGetUser(gomock.Any(), int64(1)).Return(model.User{ID: 1, Email: "user@test.com", Name: "Test User"}, nil)
-		
+
 		// ExpectAddTask
 		mockMemQ.EXPECT().AddTask(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -95,7 +97,7 @@ func TestNotificationController(t *testing.T) {
 		// Test handleEmailTask directly via the interface if possible, or Mocking MemQ to call it
 		// But handleEmailTask is a private method passed to AddWorkers.
 		// We can test it by calling it directly since we are in the same package.
-		
+
 		emailTask := emailTask{
 			To:      "to@test.com",
 			Subject: "Sub",

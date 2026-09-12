@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <!-- text -->
   <p v-if="node.type === 'text'" class="text-[12px] leading-relaxed" :class="toneClass">{{ node.value }}</p>

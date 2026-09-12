@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Model-facing text this plugin owns: the AgentRQ working agreement contributed
  * as a system-prompt section, and the framings used when the plugin queues a

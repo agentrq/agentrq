@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
 import { isOfferable, useRegisterSW } from '../src/desktop/useDesktopUpdates'

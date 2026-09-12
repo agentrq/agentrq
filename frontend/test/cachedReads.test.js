@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { createApp, h } from 'vue'

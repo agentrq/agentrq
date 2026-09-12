@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import type { AgentRqClient, AgentRqTask } from '../src/client.js'

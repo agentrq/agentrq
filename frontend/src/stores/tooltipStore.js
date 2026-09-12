@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineStore } from 'pinia'
 
 export const useTooltipStore = defineStore('tooltip', {

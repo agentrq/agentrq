@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi } from 'vitest'
 
 import { REDIRECT_URI, createSupervisorAuth, readRedirect } from '../../src/main/extensions/supervisor-auth.js'

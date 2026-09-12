@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <script setup>
 /**
  * The task finder, opened with Cmd/Ctrl+K.

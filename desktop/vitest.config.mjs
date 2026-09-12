@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
@@ -6,7 +8,7 @@ export default defineConfig({
     include: ['test/**/*.test.js'],
     coverage: {
       provider: 'v8',
-      include: ['src/main/**/*.js', 'src/version.js'],
+      include: ['src/main/**/*.js', 'src/version.js', 'src/copyright.js'],
       // The Electron entry point is app lifecycle wiring: it imports `electron`
       // at module scope and its behaviour is only observable with a real
       // Electron binary. Every rule it depends on lives in the modules beside

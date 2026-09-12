@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package eventbus
 
 import (
@@ -12,14 +14,14 @@ func TestEventBus(t *testing.T) {
 	t.Run("SubscribeAndPublish", func(t *testing.T) {
 		ch := bus.Subscribe(workspaceID, "")
 		evt := Event{Type: "test", Payload: "data"}
-		
+
 		go bus.Publish(workspaceID, "", evt)
-		
+
 		msg := <-ch
 		if !bytes.Contains(msg, []byte(`"type":"test"`)) {
 			t.Errorf("unexpected message: %s", string(msg))
 		}
-		
+
 		bus.Unsubscribe(workspaceID, "", ch)
 	})
 

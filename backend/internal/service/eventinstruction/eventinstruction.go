@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 // Package eventinstruction builds the "publish this event when you finish"
 // text appended to a task body.
 //

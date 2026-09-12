@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <script setup>
 // Reusable loading state: a spinner + optional label, centered by default.
 // Pass extra classes (e.g. "py-20") via the class attribute for spacing.

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 // Package slack implements the Slack integration controller.
 // It handles workspace channel provisioning, task thread creation,
 // bidirectional message sync, and interactive button actions.

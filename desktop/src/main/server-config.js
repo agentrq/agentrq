@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Which AgentRQ server the desktop app talks to, and how that choice is stored.
  *

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { defineConfig } from 'tsdown'
 
 // `prepare` runs this after a git install, where the consumer has no project

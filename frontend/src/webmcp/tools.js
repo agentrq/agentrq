@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * The WebMCP tool catalogue: everything the AgentRQ interface can do, offered
  * to an agent running in the browser.

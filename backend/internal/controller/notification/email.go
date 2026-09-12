@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package notification
 
 import (
@@ -7,8 +9,8 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
-	zlog "github.com/rs/zerolog/log"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 )
 
 type emailTask struct {

@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden bg-transparent" v-if="!loading">
 

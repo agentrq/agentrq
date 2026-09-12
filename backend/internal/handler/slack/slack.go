@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 // Package slack provides HTTP handlers for Slack's Events API and
 // Block Kit Interactive Components endpoints.
 package slack

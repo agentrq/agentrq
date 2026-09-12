@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package slack
 
 import (
@@ -130,7 +132,6 @@ func findChannelByName(ctx context.Context, client *slackapi.Client, name string
 	}
 	return "", fmt.Errorf("slack: channel %q not visible to bot", name)
 }
-
 
 // InviteUsersToChannel invites one or more Slack users into a channel by their user IDs.
 // It silently ignores "already_in_channel" errors.

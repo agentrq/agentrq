@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi } from 'vitest'
 
 import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate, findMenuItems } from '../src/main/menu.js'

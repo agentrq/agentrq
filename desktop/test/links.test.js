@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, expect, it } from 'vitest'
 
 import { LinkTarget, classifyLink, linkWindowBounds } from '../src/main/links.js'

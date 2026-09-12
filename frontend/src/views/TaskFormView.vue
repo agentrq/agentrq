@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
     <!-- Breadcrumb Header -->

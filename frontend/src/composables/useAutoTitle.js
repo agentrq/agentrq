@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { ref, watch, onUnmounted } from 'vue';
 import TitleWorker from '../workers/titleWorker.js?worker';
 import { recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';

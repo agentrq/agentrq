@@ -1,3 +1,5 @@
+<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm" aria-modal="true" role="dialog">
     <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">

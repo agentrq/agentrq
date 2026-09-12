@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * Reading the telemetry an agent streams alongside its answer: the reasoning
  * behind it, the plan it is working to, and what the turn is costing.

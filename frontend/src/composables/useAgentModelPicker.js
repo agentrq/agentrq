@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { computed, ref, watch } from 'vue';
 
 import { currentModelName } from './useAgentSummary';

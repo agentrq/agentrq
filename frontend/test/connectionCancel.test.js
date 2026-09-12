@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi, afterEach } from 'vitest'
 
 import { NO_PROFILE_TO_RETURN_TO, useConnectionCancel } from '../src/desktop/useConnectionCancel'

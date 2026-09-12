@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createApp, defineComponent, h, ref } from 'vue'
 

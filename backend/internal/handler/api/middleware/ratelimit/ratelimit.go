@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package ratelimit
 
 import (
@@ -168,22 +170,22 @@ func New(enabled bool, maxPerIP int, maxPerUser int, window time.Duration, token
 
 			// Set rate limit headers
 			w.Header().Set("X-RateLimit-Limit-IP", strconv.Itoa(maxPerIP))
-			w.Header().Set("X-RateLimit-Remaining-IP", strconv.Itoa(maxPerIP - ipInfo.requestCount))
+			w.Header().Set("X-RateLimit-Remaining-IP", strconv.Itoa(maxPerIP-ipInfo.requestCount))
 			w.Header().Set("X-RateLimit-Reset-IP", strconv.FormatInt(ipInfo.windowStart.Add(window).Unix(), 10))
 
 			if userKey != "" {
 				w.Header().Set("X-RateLimit-Limit-User", strconv.Itoa(maxPerUser))
-				w.Header().Set("X-RateLimit-Remaining-User", strconv.Itoa(maxPerUser - userInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining-User", strconv.Itoa(maxPerUser-userInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset-User", strconv.FormatInt(userInfo.windowStart.Add(window).Unix(), 10))
 
 				// Set primary headers to User limits since it's the more specific limit
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(maxPerUser))
-				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerUser - userInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerUser-userInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(userInfo.windowStart.Add(window).Unix(), 10))
 			} else {
 				// Set primary headers to IP limits
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(maxPerIP))
-				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerIP - ipInfo.requestCount))
+				w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(maxPerIP-ipInfo.requestCount))
 				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(ipInfo.windowStart.Add(window).Unix(), 10))
 			}
 

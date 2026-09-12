@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect } from 'vitest'
 
 import { createAttachmentStore, parseAttachmentPath } from '../src/main/attachment-store.js'

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 import { describe, it, expect, vi } from 'vitest'
 
 import { FAILURE_LIMIT, buildContext, createHost, validateModule } from '../../src/main/extensions/host.js'

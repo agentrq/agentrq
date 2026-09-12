@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * The app:// protocol handler — the piece that makes the desktop app work at all.
  *

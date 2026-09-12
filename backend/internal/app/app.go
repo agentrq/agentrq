@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 // Package app wires all dependencies and starts the server.
 package app
 

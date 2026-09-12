@@ -1,0 +1,30 @@
+name: Copyright
+
+# Deliberately not filtered by path. Every other workflow here runs only when
+# its own directory changes, which is right for a build — but the thing being
+# checked is that *no* source file has lost its notice, and a run that skips the
+# file somebody edited checks nothing at all.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  notice:
+    name: Every source file carries the notice
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No install step: the check reads files and asks git what is tracked, and
+      # depends on nothing that would have to be fetched first.
+      - name: Check the copyright notice
+        run: node desktop/scripts/copyright.mjs

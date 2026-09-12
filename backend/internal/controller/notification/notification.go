@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 package notification
 
 import (
@@ -219,22 +221,22 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 	}
 
 	return entity.Task{
-		ID:           m.ID,
-		CreatedAt:    m.CreatedAt,
-		UpdatedAt:    m.UpdatedAt,
-		WorkspaceID:  m.WorkspaceID,
-		UserID:       m.UserID,
-		CreatedBy:    m.CreatedBy,
-		Assignee:     m.Assignee,
-		Status:       m.Status,
-		Title:        m.Title,
-		Body:         m.Body,
-		Response:     m.Response,
-		ReplyText:    m.ReplyText,
-		Attachments:  atts,
-		CronSchedule: m.CronSchedule,
-		ParentID:     m.ParentID,
-		SortOrder:    m.SortOrder,
+		ID:               m.ID,
+		CreatedAt:        m.CreatedAt,
+		UpdatedAt:        m.UpdatedAt,
+		WorkspaceID:      m.WorkspaceID,
+		UserID:           m.UserID,
+		CreatedBy:        m.CreatedBy,
+		Assignee:         m.Assignee,
+		Status:           m.Status,
+		Title:            m.Title,
+		Body:             m.Body,
+		Response:         m.Response,
+		ReplyText:        m.ReplyText,
+		Attachments:      atts,
+		CronSchedule:     m.CronSchedule,
+		ParentID:         m.ParentID,
+		SortOrder:        m.SortOrder,
 		AllowAllCommands: m.AllowAllCommands,
 	}
 }

@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 // Package mcp provides a dynamic per-workspace MCP server manager.
 package mcp
 

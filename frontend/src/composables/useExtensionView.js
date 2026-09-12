@@ -1,3 +1,5 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+
 /**
  * What an extension is allowed to draw, and what happens to what it sends.
  *
