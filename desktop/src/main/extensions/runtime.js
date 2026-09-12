@@ -5,6 +5,7 @@ import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'
 import { releaseSource } from './source.js'
 import { entriesFor, invokeEntry, registryFor } from './surfaces.js'
+import { CONSENT_ORDER, availableConsents, narrowConsent } from './tool-calls.js'
 
 /**
  * The order things have to happen in, and the one place that knows it.
@@ -88,6 +89,13 @@ export function clampToManifest(grant, manifest) {
       workspace: keep(grant.tools?.workspace, declared.workspace),
       supervisor: keep(grant.tools?.supervisor, declared.supervisor),
     },
+    // The same intersection, for the consent to be asked about a tool call. It
+    // matters more here than anywhere else in this function: the drift it
+    // guards against is an extension that shipped asking only to refuse things,
+    // was installed on that basis, and then widened its own manifest to
+    // "decide" — which without this would leave it approving calls under a
+    // consent nobody was ever shown.
+    hooks: { toolCall: narrowConsent(grant.hooks?.toolCall, manifest?.hooks?.toolCall) },
   }
 }
 
@@ -119,6 +127,9 @@ export function describeCandidate(source, { appVersion, workspaceTools, supervis
     reasons: compatibility.reasons,
     shortcutProblems: shortcuts.problems,
     keys: requestedKeys(manifest),
+    // Empty for the overwhelming majority of extensions, which ask to be asked
+    // nothing. The screen shows the section only when there is a question.
+    consents: availableConsents(manifest),
   }
 }
 
@@ -288,6 +299,10 @@ export function createRuntime({
           // app.
           linked: installation.linked ?? installation.source?.kind === 'local',
           grant: broker.grantFor(installation.name),
+          // What its manifest asks to be asked, so the row can offer the switch
+          // — and offer nothing at all for the extensions that review nothing,
+          // which is nearly all of them.
+          consents: availableConsents(installation.manifest),
           contributes: Object.fromEntries(contributions),
         }
       })
@@ -522,6 +537,55 @@ export function createRuntime({
         results.push({ name: installation.name, ok: started.ok, reason: started.reason })
       }
       return results
+    },
+
+    /**
+     * Every registered tool-call reviewer, with its owner.
+     *
+     * Handed out rather than dispatched from here because the dispatcher needs
+     * the *live* list — an extension enabled, disabled or reloaded between two
+     * requests must change who gets asked about the second one, and a list
+     * captured once would keep asking a reviewer that is no longer loaded.
+     */
+    reviewers: () => host.registries.hooks.list(),
+
+    /**
+     * Change what an extension may answer on the user's behalf, after install.
+     *
+     * A grant is otherwise fixed at install, and for tools that is right: the
+     * question was asked, the answer was given. This one has to be changeable
+     * without uninstalling, because it is the only permission whose misbehaviour
+     * the user experiences as the app itself going wrong — an extension refusing
+     * every tool call looks exactly like a broken agent, and "uninstall it to
+     * find out" is not a diagnosis anybody should have to make.
+     *
+     * Never above what the manifest asks for. Raising the ceiling is a different
+     * question and belongs to an install screen.
+     */
+    async setHookConsent(name, level) {
+      const installations = await installer.list()
+      const installation = installations.find((entry) => entry.name === name)
+      if (!installation) return fail(`${name} is not installed.`)
+
+      if (availableConsents(installation.manifest).length === 0) {
+        return fail(`${name} does not review tool calls.`)
+      }
+      // Refused rather than read as the narrowest rung. Every value that is not
+      // one of the three is a caller with a bug, and answering "fine, it is now
+      // off" would let a screen show a setting that was never applied.
+      if (!CONSENT_ORDER.includes(level)) {
+        return fail(`"${level}" is not something an extension can be given.`)
+      }
+
+      // Clamped rather than trusted: a screen built from a stale manifest could
+      // offer a rung the extension no longer asks for.
+      const wanted = narrowConsent(level, installation.manifest?.hooks?.toolCall)
+
+      const grant = grants.get(name) ?? { scope: 'workspace', workspaces: [], tools: { workspace: [], supervisor: [] } }
+      const updated = { ...grant, hooks: { toolCall: wanted } }
+      grants.set(name, updated)
+      broker.setGrant(name, updated)
+      return { ok: true, level: wanted }
     },
 
     /** Remember a grant read back from disk, without loading anything. */

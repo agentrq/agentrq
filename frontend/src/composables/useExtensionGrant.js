@@ -36,6 +36,50 @@ export const SCOPE = {
 export const SCOPE_ORDER = [SCOPE.workspace, SCOPE.selected, SCOPE.supervisor];
 
 /**
+ * The rungs for consent to answer a tool-call permission prompt on your behalf.
+ *
+ * Duplicated from `desktop/src/main/extensions/tool-calls.js` rather than
+ * shared, because the two halves are in different processes and cannot import
+ * from each other — the same arrangement the diagram-format pattern already
+ * uses. The main process is the one that enforces it; this copy exists so the
+ * screen can ask the question.
+ *
+ * They escalate, and `none` is a real answer rather than the absence of one.
+ */
+export const CONSENT = {
+  none: 'none',
+  deny: 'deny',
+  decide: 'decide',
+};
+
+export const CONSENT_ORDER = [CONSENT.none, CONSENT.deny, CONSENT.decide];
+
+/**
+ * Which rungs this extension's manifest allows the screen to offer.
+ *
+ * Never above what it asked for. An extension that only means to block things
+ * cannot be handed the power to approve one because somebody clicked the wrong
+ * radio button — and the manifest is where that ceiling is set, by its author,
+ * in public, rather than here.
+ */
+export function consentsFor(manifest) {
+  const declared = manifest?.hooks?.toolCall;
+  if (declared === CONSENT.decide) return [CONSENT.none, CONSENT.deny, CONSENT.decide];
+  if (declared === CONSENT.deny) return [CONSENT.none, CONSENT.deny];
+  return [];
+}
+
+/**
+ * What each rung means, in the second person, because it is about what happens
+ * to the person reading it.
+ */
+export function consentLabel(level) {
+  if (level === CONSENT.deny) return 'It may refuse a tool call, but never approve one';
+  if (level === CONSENT.decide) return 'It may approve or refuse a tool call without asking you';
+  return 'It is not asked — every prompt still comes to you';
+}
+
+/**
  * What a manifest is asking for.
  *
  * `level` decides how much of the screen appears; the two tool lists are shown
@@ -53,11 +97,23 @@ export function describeAsk(manifest) {
   const workspace = manifest?.mcp?.workspace ?? [];
   const supervisor = manifest?.mcp?.supervisor ?? [];
   const net = manifest?.net ?? [];
+  const consents = consentsFor(manifest);
 
   return {
     workspace,
     supervisor,
     net,
+    consents,
+    /**
+     * Whether this extension wants to answer permission prompts for you.
+     *
+     * Kept apart from `level` on purpose. `level` measures what the extension
+     * reaches *into*, and this is the one ask pointing the other way — the app
+     * stopping to ask the extension something, with the answer standing in for
+     * yours. An extension can want this and nothing else, which is why it
+     * cannot be a rung on the same ladder.
+     */
+    reviewsToolCalls: consents.length > 0,
     level: supervisor.length > 0 ? 'supervisor' : workspace.length > 0 ? 'workspace' : 'none',
     // The one thing that is always true, whatever the level.
     machineAccess: 'This extension runs with full access to your computer.',
@@ -168,6 +224,15 @@ export function toGrant(ask, choice) {
     // Recorded because it is a materially broader promise than the same list
     // frozen at install, and the screen has to be able to say which was given.
     includesFutureWorkspaces: scope === SCOPE.supervisor,
+    /**
+     * Consent to answer a tool-call prompt on the user's behalf.
+     *
+     * Clamped to what the manifest asked for here as well as in the main
+     * process. Not belt and braces: this is what stops a screen built from a
+     * stale manifest *offering* a rung, and the main process is what stops one
+     * being enforced. The two answer different questions and both are needed.
+     */
+    hooks: { toolCall: ask.consents.includes(choice.consent) ? choice.consent : CONSENT.none },
   };
 }
 
@@ -192,7 +257,24 @@ export function useExtensionGrant({ manifest, workspaceId = '', workspaces = [] 
   const scope = ref(scopes.value[0] ?? SCOPE.workspace);
   const selected = ref([]);
 
-  const choice = computed(() => ({ scope: scope.value, workspaces: selected.value, workspaceId }));
+  /**
+   * Starts at `none`, and that is not the same rule as the scope above.
+   *
+   * A scope starts on the narrowest rung that is *useful*, because an extension
+   * has to be able to reach something to work at all. This starts on the rung
+   * that does nothing, because an extension answering prompts for you is not
+   * something to arrive pre-selected — it is the question this section exists to
+   * ask. An extension installed at `none` is inert rather than broken, and the
+   * switch is on its row afterwards.
+   */
+  const consent = ref(CONSENT.none);
+
+  const choice = computed(() => ({
+    scope: scope.value,
+    workspaces: selected.value,
+    consent: consent.value,
+    workspaceId,
+  }));
   const validity = computed(() => validateGrant(ask.value, choice.value));
 
   return {
@@ -200,7 +282,18 @@ export function useExtensionGrant({ manifest, workspaceId = '', workspaces = [] 
     scopes,
     scope,
     selected,
+    consent,
+    consents: computed(() => ask.value.consents),
     workspaces,
+    /**
+     * Whether there is a grant to record at all.
+     *
+     * Not the same as "asks for a tool". An extension can ask for no MCP tools
+     * and still ask to review tool calls, and sending `null` for that — which is
+     * what "level is none" used to mean — would throw away the one consent the
+     * screen had just collected.
+     */
+    hasAsk: computed(() => ask.value.level !== 'none' || ask.value.reviewsToolCalls),
     valid: computed(() => validity.value.ok),
     problem: computed(() => (validity.value.ok ? '' : validity.value.reason)),
     label: computed(() => scopeLabel(scope.value)),

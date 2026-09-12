@@ -399,6 +399,14 @@ activity notifies - being told about your own click is noise. Reconnect and
 backoff match `useEventBus.js`: one second, doubling to thirty, and a hard stop
 on 401.
 
+That same connection is what lets an extension review a tool call. A pending
+permission request arrives on it as an ordinary message, so
+`extensions/tool-calls.js` reads what is already there rather than opening a
+second channel - which is also why review happens **only while this app is
+running**. With it closed, every request waits for a person exactly as it did
+before. That is a convenience that can be absent, never a control anything
+should be built on, and `docs/EXTENSIONS.md` says so in those words.
+
 `frontend/src/composables/usePushNotifications.js` is untouched and still serves
 the browser build; the desktop renderer simply never calls it.
 

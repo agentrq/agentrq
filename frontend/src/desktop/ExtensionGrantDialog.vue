@@ -74,6 +74,32 @@
           </div>
         </section>
 
+        <!-- Set apart from everything above it, and coloured, because it is the
+             one section that is not about what the extension reaches. It is
+             about the app stopping to ask the extension a question that is
+             otherwise put to you, and answering it in your name. -->
+        <section v-if="ask.reviewsToolCalls"
+                 class="border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 rounded-sm px-3 py-3">
+          <h3 class="text-[10px] font-black uppercase tracking-widest text-amber-800 dark:text-amber-400 mb-1.5">
+            Answering permission prompts for you
+          </h3>
+          <p class="text-[11px] leading-relaxed text-gray-700 dark:text-zinc-300 mb-2.5">
+            When an agent asks permission to run something, this extension wants to be asked first.
+            It only works while AgentRQ is open, so it is a convenience and never a guarantee —
+            anything it does not answer still comes to you. You can change this later.
+          </p>
+          <div class="flex flex-col gap-1.5">
+            <label v-for="option in consents" :key="option"
+                   class="flex items-start gap-2.5 px-3 py-2 rounded-sm border cursor-pointer transition-colors bg-white dark:bg-zinc-900"
+                   :class="consent === option
+                     ? 'border-gray-900 dark:border-white'
+                     : 'border-gray-200 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-700'">
+              <input type="radio" :value="option" v-model="consent" class="mt-0.5 accent-black dark:accent-white" />
+              <span class="text-[11px] text-gray-800 dark:text-zinc-200 leading-snug">{{ consentLabel(option) }}</span>
+            </label>
+          </div>
+        </section>
+
         <section v-if="fields.length > 0">
           <h3 class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-2">
             Settings
@@ -128,6 +154,14 @@
  * extension asking for nothing installs without it, because a permission screen
  * with nothing on it is how people learn to click past the one that matters.
  *
+ * ## The third conversation, which is neither of those
+ *
+ * An extension can ask to *be asked*: to review the permission prompt an agent
+ * raises before running something, and answer it in your place. That is not a
+ * tool it may call and not a workspace it may reach, so it gets its own section
+ * rather than another rung on the scope ladder — and it starts switched off,
+ * because consent to answer for somebody is not a thing to arrive pre-selected.
+ *
  * ## Why the network line is not in the permission list
  *
  * `net` is the author saying what their extension contacts. Nothing enforces it
@@ -137,7 +171,7 @@
  */
 import { reactive } from 'vue';
 
-import { SCOPE, useExtensionGrant, scopeLabel as labelFor } from '../composables/useExtensionGrant';
+import { SCOPE, consentLabel, useExtensionGrant, scopeLabel as labelFor } from '../composables/useExtensionGrant';
 
 const props = defineProps({
   candidate: { type: Object, required: true },
@@ -147,7 +181,7 @@ const props = defineProps({
 
 const emit = defineEmits(['cancel', 'confirm']);
 
-const { ask, scopes, scope, selected, valid, problem, grant } = useExtensionGrant({
+const { ask, scopes, scope, selected, consent, consents, hasAsk, valid, problem, grant } = useExtensionGrant({
   manifest: props.candidate.manifest,
   workspaceId: props.workspaceId,
   workspaces: props.workspaces,
@@ -169,7 +203,10 @@ function confirm() {
   // means.
   const config = Object.fromEntries(Object.entries(values).filter(([, value]) => String(value).trim() !== ''));
   emit('confirm', {
-    grant: ask.value.level === 'none' ? null : grant.value,
+    // `hasAsk` rather than the scope level: an extension can ask for no tools at
+    // all and still have been given consent to review tool calls, and sending
+    // `null` there would discard the one answer this screen collected.
+    grant: hasAsk.value ? grant.value : null,
     config: Object.keys(config).length > 0 ? config : null,
   });
 }

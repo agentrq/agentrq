@@ -6,6 +6,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -732,9 +733,15 @@ func (h *handler) sendPermissionVerdict() fiber.Handler {
 			}
 		}
 
-		if err := srv.SendPermissionVerdict(c.Context(), taskID, rq.RequestID, rq.Behavior); err != nil {
+		if err := srv.SendPermissionVerdictFrom(c.Context(), taskID, rq.RequestID, rq.Behavior, rq.DecidedBy); err != nil {
 			if strings.Contains(err.Error(), "(expired)") {
 				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This action request has expired (server was likely restarted). The agent must re-request this action."})
+			}
+			// Told apart from a server-side failure: both of these mean the
+			// request was malformed, and answering 500 would have the desktop
+			// app retrying something that can never succeed.
+			if errors.Is(err, mcpctrl.ErrBadDecider) || errors.Is(err, mcpctrl.ErrExtensionCannotRemember) {
+				return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 			}
 			zlog.Error().Err(err).Msg("Failed to send permission verdict")
 			c.Set(_headerContentType, _mimeJSON)
