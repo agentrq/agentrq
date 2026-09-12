@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
-import { NOTICE, carriesNotice, isOurs, withNotice } from '../src/copyright.js'
+import { NOTICE_LINES, carriesNotice, isOurs, withNotice } from '../src/copyright.js'
 
 /** The repository, not this package: the notice belongs on every file in it. */
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -44,7 +44,9 @@ if (fix) {
   console.error(`✗ ${missing.length} file${missing.length === 1 ? '' : 's'} without the copyright notice:\n`)
   for (const path of missing.slice(0, 40)) console.error(`    ${path}`)
   if (missing.length > 40) console.error(`    … and ${missing.length - 40} more`)
-  console.error(`\nExpected, exactly:\n\n    ${NOTICE}\n\nRun: node desktop/scripts/copyright.mjs --fix`)
+  // The whole block, because a file may be failing on the second line alone.
+  console.error(`\nExpected, exactly:\n\n${NOTICE_LINES.map((line) => `    ${line}`).join('\n')}`)
+  console.error(`\nRun: node desktop/scripts/copyright.mjs --fix`)
   process.exit(1)
 } else {
   console.log(`✓ ${files.length} source files carry the copyright notice`)

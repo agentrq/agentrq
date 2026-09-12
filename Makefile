@@ -61,6 +61,9 @@ install:
 
 # Point git at the tracked hooks in .githooks so every clone shares them
 # (.git/hooks itself is not version-controlled).
+#
+#   pre-commit  formats staged Go files
+#   pre-push    refuses a tree that has lost its copyright notice
 hooks:
 	@git config core.hooksPath .githooks
 	@chmod +x .githooks/* 2>/dev/null || true

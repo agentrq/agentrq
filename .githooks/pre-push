@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Refuses a push whose tree has lost the copyright notice.
+#
+# Placed on push rather than commit because a push is what a pull request is
+# made from: this is the last moment the check is still local, and failing here
+# costs a few seconds instead of a round trip through CI.
+#
+# It runs the *same* script CI runs, over the whole tree, rather than a
+# cheaper approximation over staged files. A local check that can disagree with
+# the one that gates merging is worse than no local check — it teaches people to
+# trust a green run that means nothing.
+#
+# Install with: make hooks
+# Skip once with: git push --no-verify
+
+set -e
+
+# Nothing to check without node, and a machine that cannot run it is not a
+# machine this should stop from pushing.
+command -v node >/dev/null 2>&1 || exit 0
+
+repo_root=$(git rev-parse --show-toplevel)
+
+if ! node "$repo_root/desktop/scripts/copyright.mjs"; then
+    printf '\npre-push: refused — see above.\n'
+    printf 'Fix with: node desktop/scripts/copyright.mjs --fix\n'
+    exit 1
+fi
+
+exit 0
