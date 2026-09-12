@@ -1,6 +1,10 @@
 # Contributing to AgentRQ
 
-Contributions come in three forms. There is no fourth.
+Contributions to this repository come in three forms. There is no fourth.
+
+Building an **extension** is not a contribution to this repository and needs
+nothing from us — [skip to that](#extensions-need-none-of-this) if that is what
+you are here for.
 
 | Your intent | What to do |
 |---|---|
@@ -10,6 +14,44 @@ Contributions come in three forms. There is no fourth.
 
 Both kinds of proposal are submitted the same way: a pull request that adds one
 `.md` file to the relevant folder.
+
+## Extensions need none of this
+
+The three forms above are how you change *this* repository. Building an
+**extension** is not one of them, because it does not touch this repository at
+all — and that is the point. You need no permission, no proposal and no reply
+from us. There is no review, no approval queue, no registry to be admitted to
+and no fee.
+
+Publishing one is three things:
+
+1. Add the **`agentrq-extension`** topic to your GitHub repository. That is the
+   whole of discovery — the desktop app searches for that topic, and anything
+   carrying it shows up in everyone's Extensions screen.
+2. Put an `agentrq-extension.json` manifest at the root.
+3. Cut a release with your built asset attached, and put its SHA-256 in the
+   manifest.
+
+It is an ordinary Node module. It can add pages, context-menu actions, keyboard
+shortcuts, scheduled work, and renderers for fenced code blocks — and it can
+call the same MCP tools the app itself uses, with whatever permissions the
+person installing it agrees to.
+
+**[docs/EXTENSIONS.md](https://github.com/agentrq/agentrq/blob/main/docs/EXTENSIONS.md)**
+is the whole of it: what the manifest holds, what each surface can do, how
+permissions are asked for, and how to develop one against a running app without
+publishing anything.
+
+Three worked examples live in [`examples/extensions/`](examples/extensions) —
+`task-stats`, `standup` and `digest` — and
+[agentrq/mermaid-agentrq](https://github.com/agentrq/mermaid-agentrq) is a real
+published one, small enough to read in a sitting.
+
+The flip side of no gatekeeper is worth stating, since it is your users who
+carry it: nothing in the catalogue is reviewed and there is no sandbox, so an
+extension runs with full access to the machine of whoever installs it. The app
+says so on the screen and asks before installing anything. Write yours as though
+somebody is going to read it, because somebody should.
 
 ## Why we work this way
 
