@@ -13,10 +13,23 @@ import { REDIRECT_URI, createSupervisorAuth, readRedirect } from '../../src/main
 
 const redirect = (params) => `${REDIRECT_URI}?${new URLSearchParams(params)}`
 
+const SERVER = 'http://localhost:3000'
+
+/** What the backend publishes: the core MCP server's endpoints, under /mcp. */
+const METADATA = {
+  issuer: SERVER,
+  registration_endpoint: `${SERVER}/mcp/oauth2/register`,
+  authorization_endpoint: `${SERVER}/mcp/oauth2/authorize`,
+  token_endpoint: `${SERVER}/mcp/oauth2/token`,
+}
+
 function build(over = {}) {
   const calls = []
   const fetchImpl = vi.fn(async (url, init) => {
     calls.push({ url, init })
+    if (url.endsWith('/.well-known/oauth-authorization-server')) {
+      return { ok: true, status: 200, json: async () => METADATA }
+    }
     if (url.endsWith('/oauth2/register')) {
       return { ok: true, status: 201, json: async () => ({ client_id: 'client-1' }) }
     }
@@ -28,7 +41,7 @@ function build(over = {}) {
   })
 
   const auth = createSupervisorAuth({
-    serverUrl: () => 'http://localhost:3000',
+    serverUrl: () => SERVER,
     fetchImpl,
     openWindow: vi.fn(async () => redirect({ code: 'the-code', state: 'st' })),
     randomState: () => 'st',
@@ -90,7 +103,11 @@ describe('authorize', () => {
 
     expect(await auth.authorize()).toEqual({ ok: true })
 
-    expect(calls.map((call) => new URL(call.url).pathname)).toEqual(['/oauth2/register', '/oauth2/token'])
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/.well-known/oauth-authorization-server',
+      '/mcp/oauth2/register',
+      '/mcp/oauth2/token',
+    ])
     expect(auth.authorized()).toBe(true)
     expect(auth.token()).toBe('at-1')
   })
@@ -99,7 +116,7 @@ describe('authorize', () => {
     const { auth, calls } = build()
     await auth.authorize()
 
-    const registered = JSON.parse(calls[0].init.body)
+    const registered = JSON.parse(calls[1].init.body)
     expect(registered.redirect_uris).toEqual([REDIRECT_URI])
     // A public client: no secret is issued and none is expected.
     expect(registered.token_endpoint_auth_method).toBe('none')
@@ -112,7 +129,7 @@ describe('authorize', () => {
     await auth.authorize()
 
     const url = new URL(openWindow.mock.calls[0][0])
-    expect(url.pathname).toBe('/oauth2/authorize')
+    expect(url.pathname).toBe('/mcp/oauth2/authorize')
     expect(url.searchParams.get('client_id')).toBe('client-1')
     expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT_URI)
     expect(url.searchParams.get('response_type')).toBe('code')
@@ -125,7 +142,7 @@ describe('authorize', () => {
     const { auth, calls } = build()
     await auth.authorize()
 
-    const body = new URLSearchParams(calls[1].init.body)
+    const body = new URLSearchParams(calls[2].init.body)
     expect(body.get('grant_type')).toBe('authorization_code')
     expect(body.get('code')).toBe('the-code')
     expect(body.get('client_id')).toBe('client-1')
@@ -232,6 +249,112 @@ describe('authorize', () => {
 
     expect(states.size).toBe(3)
     for (const state of states) expect(state.length).toBeGreaterThan(16)
+  })
+
+  // The regression this exists for: the endpoints are under /mcp, and posting
+  // to the origin root reached the SPA's GET-only catch-all, which answers a
+  // POST with 405 — the person was told AgentRQ could not register.
+  it('registers where the core MCP server actually is, with no metadata to read', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) return { ok: false, status: 404 }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const openWindow = vi.fn(async () => redirect({ code: 'the-code', state: 'st' }))
+    const { auth } = build({ fetchImpl, openWindow })
+
+    expect(await auth.authorize()).toEqual({ ok: true })
+
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/.well-known/oauth-authorization-server',
+      '/mcp/oauth2/register',
+      '/mcp/oauth2/token',
+    ])
+    expect(new URL(openWindow.mock.calls[0][0]).pathname).toBe('/mcp/oauth2/authorize')
+  })
+
+  // A host that serves the core MCP server at its root says so, and is believed.
+  it('follows the endpoints the server publishes', async () => {
+    const published = {
+      registration_endpoint: `${SERVER}/oauth2/register`,
+      authorization_endpoint: `${SERVER}/oauth2/authorize`,
+      token_endpoint: `${SERVER}/oauth2/token`,
+    }
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return { ok: true, json: async () => published }
+      }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const { auth } = build({ fetchImpl })
+
+    expect(await auth.authorize()).toEqual({ ok: true })
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/.well-known/oauth-authorization-server',
+      '/oauth2/register',
+      '/oauth2/token',
+    ])
+  })
+
+  // The fetch carries the session cookie, so an endpoint pointing somewhere
+  // else is a document talking this app into spending that cookie off-origin.
+  it('will not be sent off-origin by the metadata', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return {
+          ok: true,
+          json: async () => ({
+            registration_endpoint: 'https://elsewhere.example/oauth2/register',
+            authorization_endpoint: 'https://elsewhere.example/oauth2/authorize',
+            token_endpoint: 'https://elsewhere.example/oauth2/token',
+          }),
+        }
+      }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const { auth } = build({ fetchImpl })
+
+    await auth.authorize()
+
+    for (const call of calls) expect(new URL(call.url).origin).toBe(SERVER)
+  })
+
+  // Half a document read is a flow that registers in one place and redeems the
+  // code in another, which fails later and less legibly.
+  it('keeps the known layout when the metadata is only half there', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return { ok: true, json: async () => ({ registration_endpoint: `${SERVER}/oauth2/register` }) }
+      }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const { auth } = build({ fetchImpl })
+
+    await auth.authorize()
+
+    expect(new URL(calls[1].url).pathname).toBe('/mcp/oauth2/register')
+  })
+
+  // Asked once. A second flow does not re-read a document that has not moved.
+  it('asks the server where its endpoints are only once', async () => {
+    const { auth, calls } = build()
+
+    await auth.authorize()
+    await auth.authorize()
+
+    const discoveries = calls.filter((call) => call.url.endsWith('/.well-known/oauth-authorization-server'))
+    expect(discoveries).toHaveLength(1)
   })
 
   it('ties each attempt to its own state', async () => {

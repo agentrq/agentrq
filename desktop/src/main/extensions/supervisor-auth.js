@@ -26,6 +26,16 @@
  * silently acquires an account-wide credential because something was installed
  * has taken a decision that was not its to take.
  *
+ * ## The endpoints are asked for, not guessed
+ *
+ * The core MCP server is mounted under `/mcp`, and so are its OAuth endpoints
+ * — except on an `mcp.<domain>` host, where they sit at the origin root. This
+ * used to assume the root either way, which on an ordinary host reached no API
+ * route at all and fell through to the SPA's GET-only catch-all: a POST to it
+ * comes back `405`, and the person was told AgentRQ could not register. RFC
+ * 8414 metadata already answers the question, so this asks and keeps the known
+ * `/mcp/oauth2` layout only for a server that does not answer.
+ *
  * ## The redirect comes back to the app, not to a page
  *
  * The window is watched for a navigation to the redirect URI and closed at that
@@ -77,6 +87,30 @@ function describeOAuthError(error) {
   return `The server refused the authorisation: ${error}.`
 }
 
+/** Where the endpoints sit on a server that publishes no metadata. */
+function defaultEndpoints(base) {
+  return {
+    registration: `${base}/mcp/oauth2/register`,
+    authorization: `${base}/mcp/oauth2/authorize`,
+    token: `${base}/mcp/oauth2/token`,
+  }
+}
+
+/**
+ * Metadata names its own endpoints; one naming somebody else's is not followed.
+ *
+ * The fetch here carries the session cookie, so an endpoint pointing off-origin
+ * would be a document talking this app into spending that cookie elsewhere.
+ */
+function sameOrigin(base, candidate) {
+  if (typeof candidate !== 'string' || !candidate) return ''
+  try {
+    return new URL(candidate).origin === new URL(base).origin ? candidate : ''
+  } catch {
+    return ''
+  }
+}
+
 /**
  * @param {object} deps
  * @param {() => string} deps.serverUrl
@@ -90,9 +124,45 @@ export function createSupervisorAuth({ serverUrl, fetchImpl, openWindow, randomS
   let token = ''
   let refreshToken = ''
 
+  /** What the server last said its endpoints were, and which server said it. */
+  let discovered = null
+
+  /** Reads RFC 8414 metadata, or answers with nothing and lets the caller cope. */
+  async function fromMetadata(base) {
+    try {
+      const response = await fetchImpl(`${base}/.well-known/oauth-authorization-server`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) return null
+
+      const body = await response.json()
+      const found = {
+        registration: sameOrigin(base, body?.registration_endpoint),
+        authorization: sameOrigin(base, body?.authorization_endpoint),
+        token: sameOrigin(base, body?.token_endpoint),
+      }
+      // All three or none. Half a document read is a flow that registers in one
+      // place and redeems the code in another, which fails later and less
+      // legibly than simply using the layout this app already knows.
+      return found.registration && found.authorization && found.token ? found : null
+    } catch {
+      return null
+    }
+  }
+
+  /** The three endpoints for the configured server, asked for once per server. */
+  async function endpoints() {
+    const base = serverUrl().replace(/\/+$/, '')
+    if (discovered?.base === base) return discovered.endpoints
+
+    const resolved = (await fromMetadata(base)) ?? defaultEndpoints(base)
+    discovered = { base, endpoints: resolved }
+    return resolved
+  }
+
   /** Registers a throwaway client and answers with its id. */
-  async function register() {
-    const response = await fetchImpl(`${serverUrl()}/oauth2/register`, {
+  async function register(endpoint) {
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -113,8 +183,8 @@ export function createSupervisorAuth({ serverUrl, fetchImpl, openWindow, randomS
   }
 
   /** Exchanges the code for a token. */
-  async function exchange(code, clientId) {
-    const response = await fetchImpl(`${serverUrl()}/oauth2/token`, {
+  async function exchange(code, clientId, endpoint) {
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -164,10 +234,11 @@ export function createSupervisorAuth({ serverUrl, fetchImpl, openWindow, randomS
       if (!serverUrl()) return fail('No server is configured.')
 
       try {
-        const clientId = await register()
+        const where = await endpoints()
+        const clientId = await register(where.registration)
         const state = randomState()
 
-        const url = new URL(`${serverUrl()}/oauth2/authorize`)
+        const url = new URL(where.authorization)
         url.searchParams.set('client_id', clientId)
         url.searchParams.set('redirect_uri', REDIRECT_URI)
         url.searchParams.set('response_type', 'code')
@@ -181,7 +252,7 @@ export function createSupervisorAuth({ serverUrl, fetchImpl, openWindow, randomS
         const read = readRedirect(redirect, { state })
         if (!read.ok) return read
 
-        const granted = await exchange(read.code, clientId)
+        const granted = await exchange(read.code, clientId, where.token)
         token = granted.access_token
         refreshToken = granted.refresh_token ?? ''
         return { ok: true }
@@ -201,7 +272,8 @@ export function createSupervisorAuth({ serverUrl, fetchImpl, openWindow, randomS
       if (!refreshToken) return fail('There is nothing to refresh.')
 
       try {
-        const response = await fetchImpl(`${serverUrl()}/oauth2/token`, {
+        const { token: tokenEndpoint } = await endpoints()
+        const response = await fetchImpl(tokenEndpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }).toString(),
