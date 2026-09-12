@@ -346,6 +346,65 @@ describe('authorize', () => {
     expect(new URL(calls[1].url).pathname).toBe('/mcp/oauth2/register')
   })
 
+  // A document can be well-formed JSON and still name nothing followable.
+  it('keeps the known layout when an endpoint is not a URL at all', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return {
+          ok: true,
+          json: async () => ({
+            registration_endpoint: 'not a url',
+            authorization_endpoint: '',
+            token_endpoint: `${SERVER}/oauth2/token`,
+          }),
+        }
+      }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const openWindow = vi.fn(async () => redirect({ code: 'the-code', state: 'st' }))
+    const { auth } = build({ fetchImpl, openWindow })
+
+    expect(await auth.authorize()).toEqual({ ok: true })
+    expect(new URL(calls[1].url).pathname).toBe('/mcp/oauth2/register')
+    expect(new URL(openWindow.mock.calls[0][0]).pathname).toBe('/mcp/oauth2/authorize')
+  })
+
+  // A server answering `null`, which is JSON and is not a metadata document.
+  it('keeps the known layout when the metadata is not an object', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return { ok: true, json: async () => null }
+      }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const { auth } = build({ fetchImpl })
+
+    expect(await auth.authorize()).toEqual({ ok: true })
+    expect(new URL(calls[1].url).pathname).toBe('/mcp/oauth2/register')
+  })
+
+  // A configured server is a thing people paste, and people paste trailing
+  // slashes. `${base}/mcp/...` would otherwise become a double slash.
+  it('takes a server URL with a trailing slash', async () => {
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      calls.push({ url, init })
+      if (url.endsWith('/.well-known/oauth-authorization-server')) return { ok: false, status: 404 }
+      if (url.endsWith('/oauth2/register')) return { ok: true, json: async () => ({ client_id: 'c' }) }
+      return { ok: true, json: async () => ({ access_token: 'at' }) }
+    })
+    const { auth } = build({ fetchImpl, serverUrl: () => `${SERVER}/` })
+
+    expect(await auth.authorize()).toEqual({ ok: true })
+    expect(calls[1].url).toBe(`${SERVER}/mcp/oauth2/register`)
+  })
+
   // Asked once. A second flow does not re-read a document that has not moved.
   it('asks the server where its endpoints are only once', async () => {
     const { auth, calls } = build()
