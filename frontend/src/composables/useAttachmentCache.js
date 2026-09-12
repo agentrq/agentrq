@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 /**
  * Which requests the service worker may keep, and how much of it.

@@ -1,4 +1,7 @@
-<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm" aria-modal="true" role="dialog">

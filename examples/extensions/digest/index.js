@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 /**
  * Daily Digest — the full case, and the top of the grant ladder.

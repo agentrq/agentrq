@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 import { ref, watch, onUnmounted } from 'vue';
 import TitleWorker from '../workers/titleWorker.js?worker';

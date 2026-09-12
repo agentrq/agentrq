@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 import { build } from 'vite'
 import { fileURLToPath, URL } from 'node:url'

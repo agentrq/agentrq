@@ -1,4 +1,7 @@
-<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
 
 <template>
   <div class="flex-1 flex flex-col min-h-0 w-full bg-transparent relative">

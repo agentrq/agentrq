@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 /**
  * Counting how the interface itself gets used.

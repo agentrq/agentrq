@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'

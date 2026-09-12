@@ -1,4 +1,7 @@
-<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
 
 <script setup>
 // Reusable loading state: a spinner + optional label, centered by default.

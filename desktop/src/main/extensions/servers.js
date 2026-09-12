@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 /**
  * What the two MCP servers offer, so an extension can be told before it installs.

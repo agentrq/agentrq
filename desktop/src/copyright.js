@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 /**
  * The copyright line every source file carries, and the rules about it.
@@ -26,8 +27,22 @@
  * `version.js` is: the rules are testable and the runner is plumbing.
  */
 
-/** The notice itself. The only place it is written down. */
-export const NOTICE = 'Copyright 2026 Contextual, Inc. https://agentrq.com'
+/**
+ * The notice itself. The only place it is written down.
+ *
+ * The second line says what the first cannot enforce on its own. It is a claim
+ * about intent, not a mechanism — the mechanism is the check below and the
+ * workflow that runs it — but a reader who is about to delete the line should
+ * be told they are not meant to, and a tool that rewrites headers should find
+ * something that says so.
+ */
+export const NOTICE_LINES = Object.freeze([
+  'Copyright 2026 Contextual, Inc. https://agentrq.com',
+  'This notice may not be modified or removed.',
+])
+
+/** The first line on its own, which is what identifies a notice as ours. */
+export const NOTICE = NOTICE_LINES[0]
 
 /**
  * How each kind of file says it.
@@ -35,12 +50,15 @@ export const NOTICE = 'Copyright 2026 Contextual, Inc. https://agentrq.com'
  * A Vue single-file component is markup at the top level, so its line goes in
  * an HTML comment above `<template>`; everything else here takes `//`.
  */
+const slashes = (lines) => lines.map((line) => `// ${line}`).join('\n')
+
 export const COMMENT = Object.freeze({
-  '.go': (text) => `// ${text}`,
-  '.js': (text) => `// ${text}`,
-  '.mjs': (text) => `// ${text}`,
-  '.ts': (text) => `// ${text}`,
-  '.vue': (text) => `<!-- ${text} -->`,
+  '.go': slashes,
+  '.js': slashes,
+  '.mjs': slashes,
+  '.ts': slashes,
+  // One comment rather than two, because two would read as two notices.
+  '.vue': (lines) => ['<!--', ...lines.map((line) => `  ${line}`), '-->'].join('\n'),
 })
 
 /** Directories whose contents are not ours to mark. */
@@ -68,7 +86,7 @@ export function isOurs(path) {
 /** The exact line this file should carry, or '' for a file that carries none. */
 export function noticeFor(path) {
   const comment = COMMENT[extensionOf(path)]
-  return comment ? comment(NOTICE) : ''
+  return comment ? comment(NOTICE_LINES) : ''
 }
 
 /**
@@ -79,13 +97,20 @@ export function noticeFor(path) {
  * constraint — and the point is that the notice is *there*, not that it is on
  * line one.
  */
-export function carriesNotice(contents, path, within = 5) {
+export function carriesNotice(contents, path, within = 8) {
   const wanted = noticeFor(path)
   if (!wanted) return true
-  return String(contents ?? '')
+
+  // Every line of the block, in order, near the top. A file carrying only the
+  // first line has a notice that has been edited, which is exactly the case
+  // this is here to catch.
+  const head = String(contents ?? '')
     .split('\n')
     .slice(0, within)
-    .some((line) => line.trim() === wanted)
+    .map((line) => line.trim())
+  const block = wanted.split('\n').map((line) => line.trim())
+
+  return head.some((_, at) => block.every((line, n) => head[at + n] === line))
 }
 
 /**

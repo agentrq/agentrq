@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 // Package eventbus provides a simple per-workspace SSE event broadcaster.
 // Human clients subscribe to workspace events; the MCP layer publishes them.

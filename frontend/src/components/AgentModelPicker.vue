@@ -1,4 +1,7 @@
-<!-- Copyright 2026 Contextual, Inc. https://agentrq.com -->
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+-->
 
 <template>
   <!-- Nothing at all unless a choice exists and would do something. An agent

@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 // Package mcp provides a Fiber handler that bridges Fiber routing with the
 // standard http.Handler returned by mcp-go's SSEServer.

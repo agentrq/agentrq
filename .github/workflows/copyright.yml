@@ -15,6 +15,12 @@ jobs:
   notice:
     name: Every source file carries the notice
     runs-on: ubuntu-latest
+    # Read and nothing else. The job checks out the tree, reads files and asks
+    # git what is tracked; it writes nothing, anywhere. Every other workflow
+    # here says so explicitly and this one was the only one that did not.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'

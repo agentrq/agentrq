@@ -1,4 +1,5 @@
 // Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
 
 import { ref, onUnmounted, unref, getCurrentInstance } from 'vue';
 import { API_BASE_URL } from './api';
