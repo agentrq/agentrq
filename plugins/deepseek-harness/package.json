@@ -86,8 +86,9 @@
     "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
     "@deepseek-ai/dsh-workspace": "^0.1.0-rc.6",
     "@types/node": "^22.20.1",
-    "tsdown": "^0.15.1",
-    "typescript": "^5.9.2",
-    "vitest": "^4.1.11"
+    "tsdown": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
   }
 }
