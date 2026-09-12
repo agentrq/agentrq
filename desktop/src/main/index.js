@@ -1098,6 +1098,7 @@ function buildExtensionRuntime() {
     fetchSource: createFetchSource({ spawn }),
     readManifest,
     move: (from, to) => fsPromises.rename(from, to),
+    makeDir: (dir) => fsPromises.mkdir(dir, { recursive: true }),
     remove: (target) => fsPromises.rm(target, { recursive: true, force: true }),
     makeTempDir,
     dirFor: (name) => join(app.getPath('userData'), 'extensions', name),

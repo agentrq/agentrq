@@ -37,6 +37,7 @@ function build({ manifest = manifestFor('thing'), fetched = {}, ...over } = {}) 
   let saved = { installations: [] }
   // Mutable so a test can change what the *next* stage finds — which is how an
   // update that asks for more than the version already installed is set up.
+  const made = []
   const current = { manifest }
 
   const deps = {
@@ -48,6 +49,7 @@ function build({ manifest = manifestFor('thing'), fetched = {}, ...over } = {}) 
     })),
     readManifest: vi.fn(async () => current.manifest),
     move: vi.fn(async (from, to) => moved.push([from, to])),
+    makeDir: vi.fn(async (dir) => made.push(dir)),
     remove: vi.fn(async (dir) => removed.push(dir)),
     makeTempDir: vi.fn(async () => '/tmp/stage'),
     dirFor: (name) => `/ext/${name}`,
@@ -66,6 +68,7 @@ function build({ manifest = manifestFor('thing'), fetched = {}, ...over } = {}) 
     deps,
     removed,
     moved,
+    made,
     saved: () => saved,
     /** What the next fetch will find in the package. */
     setManifest: (next) => {
@@ -149,6 +152,36 @@ describe('install', () => {
     expect(installation.pin).toEqual({ kind: 'sha256', value: 'a'.repeat(64) })
     expect(installation.sourceLabel).toBe('acme/thing · v1.0.0')
     expect(saved().installations).toHaveLength(1)
+  })
+
+  // The bug this exists for: the extensions directory need not exist yet.
+  // Nothing else creates it — installing a folder only *records* the path, so
+  // the first thing ever written there is a download — and `rename` reports a
+  // missing parent as ENOENT against the destination, which reads as "could not
+  // install into <target>" and sends somebody looking at the wrong path.
+  it('creates the directory extensions live in before moving into it', async () => {
+    const { installer, made, moved, deps } = build()
+
+    await installer.install(releaseSource())
+
+    expect(made).toEqual(['/ext'])
+    // Before, not after: the move is what needs the parent to be there.
+    expect(deps.makeDir.mock.invocationCallOrder[0]).toBeLessThan(deps.move.mock.invocationCallOrder[0])
+    expect(moved).toEqual([['/tmp/stage/unpacked', '/ext/thing']])
+  })
+
+  it('reports a directory it could not create, rather than the rename that followed', async () => {
+    const { installer, moved } = build({
+      makeDir: vi.fn(async () => {
+        throw new Error('EACCES: permission denied')
+      }),
+    })
+
+    const result = await installer.install(releaseSource())
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain('EACCES')
+    expect(moved).toEqual([])
   })
 
   it('refuses a download that does not match its digest, and leaves nothing behind', async () => {

@@ -1,3 +1,5 @@
+import { dirname } from 'node:path'
+
 import { parseManifest } from './manifest.js'
 import { checkShortcuts } from './shortcuts.js'
 import { describeSource, pinFor, verifyDigest } from './source.js'
@@ -124,6 +126,7 @@ export function createInstaller({
   fetchSource,
   readManifest,
   move,
+  makeDir,
   remove,
   makeTempDir,
   dirFor,
@@ -243,6 +246,12 @@ export function createInstaller({
 
       const target = dirFor(staged.manifest.name)
       try {
+        // The directory extensions live in need not exist yet. Nothing else
+        // creates it: installing a folder only *records* the path, so the first
+        // thing ever written there is a download — and `rename` reports a
+        // missing parent as ENOENT on the destination, which reads as "could
+        // not install into <target>" and sends you looking at the wrong path.
+        await makeDir(dirname(target))
         // Whatever was there is removed only once the replacement is staged and
         // verified, so a failed update cannot leave the machine with neither.
         await remove(target)
@@ -301,6 +310,7 @@ export function createInstaller({
 
       const target = dirFor(name)
       try {
+        await makeDir(dirname(target))
         await remove(target)
         await move(staged.dir, target)
       } catch (error) {
