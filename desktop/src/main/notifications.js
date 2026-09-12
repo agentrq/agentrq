@@ -11,12 +11,16 @@
  * `frontend/src/composables/usePushNotifications.js` is untouched and still
  * serves the browser; the desktop renderer simply never calls it.
  *
- * One rule the push controller does not need: the SSE payload is a task, not
- * a message, so there is no sender field to check before deciding whether a
- * reply/respond notification is about the human's own action. `protocol.js`
- * sees every outgoing request the renderer makes, so it reports reply/respond
- * calls here instead — `taskIdFromSelfActionRequest` and `createSelfActionGate`
- * are how that becomes "mute the next notification for this task".
+ * One rule the push controller does not need: telling the human's own message
+ * apart from the agent's. The payload **does** carry the task's messages — the
+ * forwarder loads them before publishing — so `lastMessageSender` answers it
+ * directly, and that is what `shouldNotify` gates on.
+ *
+ * `protocol.js` additionally reports this instance's own reply/respond calls
+ * (`taskIdFromSelfActionRequest`, `createSelfActionGate`), which covers the
+ * narrower case of an echo arriving before the write is visible. It is a
+ * backstop, not the rule: keyed on time alone it swallowed agents that answered
+ * quickly, which is the whole of the bug it once caused.
  *
  * Pure functions, so the mapping and mute rules are testable without Electron.
  */
@@ -44,10 +48,16 @@ export function shouldNotify(event, { mutedWorkspaces = [] } = {}) {
   if (!task || typeof task !== 'object') return false
   if (!task.workspaceId || !task.id) return false
 
-  // `createdBy` is the actor on the task view. The push controller gates on
-  // `ev.Actor != ActorAgent`; this is the same rule expressed in what the SSE
-  // payload actually carries.
-  const actor = event.type === 'reply.received' ? 'agent' : task.createdBy
+  // Who just spoke, when the payload says — and it does for every event the
+  // forwarder publishes. A reply is not news because it is a reply; it is news
+  // because somebody else wrote it. Replying from a browser, a phone or Slack
+  // while this app is open used to announce your own message back at you,
+  // because `reply.received` was simply assumed to mean "the agent".
+  //
+  // The fallback keeps the old reading for a payload carrying no messages:
+  // `createdBy` for a task event, and the agent for a reply.
+  const sender = lastMessageSender(task)
+  const actor = sender || (event.type === 'reply.received' ? 'agent' : task.createdBy)
   if (actor !== 'agent') return false
 
   return !mutedWorkspaces.includes(task.workspaceId)
@@ -84,18 +94,26 @@ export function mapEventToNotification(event, { mutedWorkspaces = [], workspaceN
         title: `Task ${String(task.status ?? '').toUpperCase()}: ${truncate(task.title, 50)}`,
         body: workspace,
         route: workspaceRoute,
-        tag: `task-status-${task.id}`,
+        // Same reasoning as the reply below: when this event is the other half
+        // of an agent's reply, the message is what both are about.
+        tag: lastMessageId(task) || `task-status-${task.id}`,
       }
 
     default:
-      // reply.received. The stream carries the task, not the message, so the
-      // reply text the browser notification shows is not available here; the
-      // workspace name is the honest stand-in.
+      // reply.received. The reply text the browser notification shows is not
+      // used here — the workspace name is the honest stand-in — but the message
+      // id is, as the tag.
+      //
+      // One agent reply publishes two events: `task.updated` directly, and
+      // `reply.received` through the forwarder. Tagged by task they were two
+      // different tags for one message and both fired; tagged by the message
+      // they are the same notification twice, which is what the dedupe gate is
+      // for.
       return {
         title: `Reply on: ${truncate(task.title, 55)}`,
         body: workspace,
         route: `${workspaceRoute}/tasks/${task.id}`,
-        tag: `reply-${task.id}`,
+        tag: lastMessageId(task) || `reply-${task.id}`,
       }
   }
 }
@@ -135,12 +153,25 @@ export const SELF_ACTION_WINDOW_MS = 10000
 const SELF_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
 
 /**
+ * The id of the newest message on a task, or '' when the payload carries none.
+ *
+ * Used as the notification tag. One agent reply publishes two events, and
+ * tagging both by the message they describe is what makes the dedupe gate treat
+ * them as the one piece of news they are.
+ */
+export function lastMessageId(task) {
+  const messages = task?.messages
+  if (!Array.isArray(messages) || messages.length === 0) return ''
+  return String(messages[messages.length - 1]?.id ?? '')
+}
+
+/**
  * Who wrote the newest message on a task, or '' when the payload carries none.
  *
- * The gate below used to work around not having this — its own comment said the
- * payload "carries the task rather than the message". That is no longer true:
- * the forwarder loads a task's messages before publishing, so who just spoke is
- * on the event rather than something to infer from timing.
+ * The gate below used to work around not having this — the module doc once said
+ * the payload "carries the task rather than the message". That stopped being
+ * true when the forwarder began loading a task's messages before publishing, so
+ * who just spoke is on the event rather than something to infer from timing.
  */
 export function lastMessageSender(task) {
   const messages = task?.messages

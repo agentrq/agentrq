@@ -72,13 +72,41 @@ describe('toastFor', () => {
   });
 
   it('asks for an answer when the agent wants a tool', () => {
-    const asking = from('agent', { metadata: { type: 'permission_request', tool_name: 'bash' } });
+    // The MCP server writes this metadata as `toolName`; older rows carry
+    // `tool_name`. Reading only the second gave "Permission required: undefined"
+    // for every permission request the app has ever shown.
+    const camel = from('agent', { metadata: { type: 'permission_request', toolName: 'bash' } });
+    const snake = from('agent', { metadata: { type: 'permission_request', tool_name: 'bash' } });
 
-    expect(toastFor(reply([asking]))).toEqual({
-      tone: 'error',
-      title: 'Action Needed',
-      message: 'Permission required: bash',
-    });
+    for (const asking of [camel, snake]) {
+      expect(toastFor(reply([asking]))).toEqual({
+        tone: 'error',
+        title: 'Action Needed',
+        message: 'Permission required: bash',
+      });
+    }
+  });
+
+  // The desktop shell runs its own stream and fires a real system notification
+  // for this event, and it is the one that honours the per-workspace mute.
+  it('leaves an ordinary reply to the shell on desktop', () => {
+    expect(toastFor(reply([from('agent')]), { platform: 'desktop' })).toBeNull();
+  });
+
+  // But not the two that say more than the shell's notification does.
+  it('still asks about a permission and a status change on desktop', () => {
+    const asking = from('agent', { metadata: { type: 'permission_request', toolName: 'bash' } });
+    const said = from('agent', { text: 'Status updated to: ongoing' });
+
+    expect(toastFor(reply([asking]), { platform: 'desktop' })?.tone).toBe('error');
+    expect(toastFor(reply([said]), { platform: 'desktop' })?.tone).toBe('info');
+  });
+
+  // An agent is told to report every few steps. Toasting each one over the task
+  // you are reading is being talked over, not being kept informed.
+  it('says nothing about the task you are already looking at', () => {
+    expect(toastFor(reply([from('agent')]), { openTaskId: 't1' })).toBeNull();
+    expect(toastFor(reply([from('agent')]), { openTaskId: 'another' })).not.toBeNull();
   });
 
   // Read as the status rather than as the sentence the agent wrote about it.

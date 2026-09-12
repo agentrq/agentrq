@@ -167,6 +167,68 @@ describe('taskIdFromSelfActionRequest', () => {
   })
 })
 
+describe('who the payload says spoke', () => {
+  const withMessages = (type, messages, over = {}) => ({
+    type,
+    payload: { id: 't1', workspaceId: 'w1', title: 'Ship it', createdBy: 'human', messages, ...over },
+  })
+
+  // Replying from a browser, a phone or Slack while the desktop app is open.
+  // The self-action gate cannot help — it only knows what *this* instance sent
+  // — so the payload has to say, and it does.
+  it('says nothing about a reply the human wrote somewhere else', () => {
+    const event = withMessages('reply.received', [{ id: 'm1', sender: 'human', text: 'any update?' }])
+
+    expect(mapEventToNotification(event)).toBeNull()
+  })
+
+  it('still announces the agent answering', () => {
+    const event = withMessages('reply.received', [{ id: 'm1', sender: 'agent', text: 'on it' }])
+
+    expect(mapEventToNotification(event)?.title).toContain('Reply on: Ship it')
+  })
+
+  // Without messages there is nothing to read, so the old reading stands:
+  // a reply is the agent's, and a task event is judged by who created it.
+  it('falls back to the old reading when the payload carries no messages', () => {
+    expect(mapEventToNotification({ type: 'reply.received', payload: { id: 't1', workspaceId: 'w1', title: 'T' } })).not.toBeNull()
+    expect(mapEventToNotification({ type: 'task.created', payload: { id: 't1', workspaceId: 'w1', title: 'T', createdBy: 'agent' } })).not.toBeNull()
+    expect(mapEventToNotification({ type: 'task.created', payload: { id: 't1', workspaceId: 'w1', title: 'T', createdBy: 'human' } })).toBeNull()
+  })
+
+  // One agent reply publishes two events — `task.updated` directly and
+  // `reply.received` through the forwarder. Tagged by task they were two tags
+  // for one message and both fired; tagged by the message the dedupe gate
+  // collapses them, which is what it is for.
+  it('tags both halves of one reply with the message they are about', () => {
+    const messages = [{ id: 'm9', sender: 'agent', text: 'done' }]
+
+    const reply = mapEventToNotification(withMessages('reply.received', messages))
+    const updated = mapEventToNotification(withMessages('task.updated', messages))
+
+    expect(reply.tag).toBe('m9')
+    expect(updated.tag).toBe('m9')
+    expect(createNotificationGate().allow(reply.tag)).toBe(true)
+  })
+
+  // A message row carrying no id names nothing, so the task-shaped tag stands
+  // rather than every such event colliding on one empty tag and being deduped
+  // into silence.
+  it('keeps a tag of its own when the newest message has no id', () => {
+    const event = withMessages('reply.received', [{ sender: 'agent', text: 'done' }])
+
+    expect(mapEventToNotification(event).tag).toBe('reply-t1')
+  })
+
+  it('keeps a tag of its own when there is no message to name', () => {
+    const reply = mapEventToNotification({ type: 'reply.received', payload: { id: 't1', workspaceId: 'w1', title: 'T' } })
+    const created = mapEventToNotification({ type: 'task.created', payload: { id: 't1', workspaceId: 'w1', title: 'T', createdBy: 'agent' } })
+
+    expect(reply.tag).toBe('reply-t1')
+    expect(created.tag).toBe('task-create-t1')
+  })
+})
+
 describe('createSelfActionGate', () => {
   /**
    * An event as the stream delivers it. `sender` is what settles whether this

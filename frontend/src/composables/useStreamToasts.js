@@ -40,7 +40,7 @@ export function isOpenPermissionRequest(message) {
  *
  * @returns {{ tone: 'success'|'info'|'error', message: string, title?: string }|null}
  */
-export function toastFor(event) {
+export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   const task = event?.payload;
   if (!task) return null;
 
@@ -62,7 +62,9 @@ export function toastFor(event) {
     return {
       tone: 'error',
       title: 'Action Needed',
-      message: `Permission required: ${message.metadata.tool_name}`,
+      // Both spellings, because both have been written: the metadata the MCP
+      // server stores uses `toolName`, and older rows carry `tool_name`.
+      message: `Permission required: ${message.metadata.toolName || message.metadata.tool_name}`,
     };
   }
 
@@ -71,6 +73,21 @@ export function toastFor(event) {
   if (message.text?.includes('Status updated to:')) {
     return { tone: 'info', message: `Task "${task.title}" is now ${task.status}` };
   }
+
+  // Past here it is an ordinary reply, and two things make it not worth saying.
+  //
+  // On the desktop the shell runs its own stream and fires a real system
+  // notification for this same event — a toast as well is the same news twice,
+  // and the shell's is the one that honours the per-workspace mute, which lives
+  // in the main process and is not known here. The two above are still worth a
+  // toast there: a permission request names the tool, which the shell's
+  // notification does not.
+  if (platform === 'desktop') return null;
+
+  // And nothing is worth announcing about a task already on screen: the message
+  // renders itself there, and an agent is told to report every few steps — so
+  // this is the difference between being kept informed and being talked over.
+  if (openTaskId && openTaskId === task.id) return null;
 
   return { tone: 'info', message: `New reply on "${task.title}"` };
 }

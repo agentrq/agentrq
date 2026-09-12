@@ -828,7 +828,10 @@ onEvent((event) => {
   // The rules live in useStreamToasts, tested on their own — this only shows
   // what they decided. See that file for why the sender decides and not the
   // event type.
-  const toast = toastFor(event)
+  const toast = toastFor(event, {
+    platform: platformStore.isDesktop ? 'desktop' : 'web',
+    openTaskId: route.params.taskId ?? '',
+  })
   if (toast) {
     const show = toast.tone === 'error' ? notifyError : toast.tone === 'success' ? notifySuccess : notifyInfo
     show(toast.message, ...(toast.title ? [toast.title] : []))
