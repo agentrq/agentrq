@@ -168,20 +168,30 @@ describe('taskIdFromSelfActionRequest', () => {
 })
 
 describe('createSelfActionGate', () => {
+  /**
+   * An event as the stream delivers it. `sender` is what settles whether this
+   * is this desktop's own reply coming back or somebody else's news — the
+   * payload carries the messages, so the gate reads rather than guesses.
+   */
+  const selfEcho = (id, type, sender = 'human') => ({
+    type,
+    payload: { id, messages: [{ sender, text: 'hi' }] },
+  })
+
   it('reports no recent self-action for a task never marked', () => {
-    expect(createSelfActionGate().isRecentSelfAction('t1', 'reply.received')).toBe(false)
+    expect(createSelfActionGate().isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(false)
   })
 
   it('reports a recent self-action right after it is marked', () => {
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(true)
   })
 
   it('recognises task.updated as the other type a reply/respond can echo as', () => {
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t1', 'task.updated')).toBe(true)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'task.updated'))).toBe(true)
   })
 
   it('does not mute a type a reply/respond could never produce', () => {
@@ -190,21 +200,21 @@ describe('createSelfActionGate', () => {
     // desktop instance just replied to.
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t1', 'task.created')).toBe(false)
-    expect(gate.isRecentSelfAction('t1', 'status.updated')).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'task.created'))).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'status.updated'))).toBe(false)
   })
 
   it('does not mark a task when given no id', () => {
     const gate = createSelfActionGate()
     gate.markSelf(null)
     gate.markSelf(undefined)
-    expect(gate.isRecentSelfAction(null, 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho(null, 'reply.received'))).toBe(false)
   })
 
   it('does not confuse one task for another', () => {
     const gate = createSelfActionGate()
     gate.markSelf('t1')
-    expect(gate.isRecentSelfAction('t2', 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t2', 'reply.received'))).toBe(false)
   })
 
   it('expires the mute once the window passes', () => {
@@ -213,9 +223,47 @@ describe('createSelfActionGate', () => {
 
     gate.markSelf('t1')
     clock = 999
-    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(true)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(true)
     clock = 1000
-    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(false)
+  })
+
+  // The bug this gate caused. A human replies, the gate arms for ten seconds,
+  // and the agent answers in two — which is most of them. Keyed on the clock
+  // alone that reply was this desktop's own echo and was dropped; the status
+  // change that followed arrived after the window and still notified, which is
+  // exactly the difference that got reported.
+  it('does not mute the agent answering inside the window', () => {
+    let clock = 0
+    const gate = createSelfActionGate({ windowMs: 10000, now: () => clock })
+
+    gate.markSelf('t1')
+    clock = 2000
+
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received', 'agent'))).toBe(false)
+    // And the human's own message in that same window is still the echo it was.
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received', 'human'))).toBe(true)
+  })
+
+  // Older events, and anything the forwarder publishes without them, fall back
+  // to the window rather than notifying on everything.
+  it('still uses the window when the payload carries no messages', () => {
+    const gate = createSelfActionGate()
+    gate.markSelf('t1')
+
+    expect(gate.isRecentSelfAction({ type: 'reply.received', payload: { id: 't1' } })).toBe(true)
+    expect(gate.isRecentSelfAction({ type: 'reply.received', payload: { id: 't1', messages: [] } })).toBe(true)
+    // A message row that names nobody is not the agent, so it falls back too
+    // rather than reading as somebody else's news.
+    expect(gate.isRecentSelfAction({ type: 'reply.received', payload: { id: 't1', messages: [{}] } })).toBe(true)
+    expect(gate.isRecentSelfAction({ type: 'reply.received', payload: { id: 't1', messages: [null] } })).toBe(true)
+  })
+
+  it('holds up against an event that is barely one', () => {
+    const gate = createSelfActionGate()
+
+    expect(gate.isRecentSelfAction(undefined)).toBe(false)
+    expect(gate.isRecentSelfAction({})).toBe(false)
   })
 
   it('lets a genuine later reply on the same task notify again', () => {
@@ -226,7 +274,7 @@ describe('createSelfActionGate', () => {
 
     gate.markSelf('t1')
     clock = 2000
-    expect(gate.isRecentSelfAction('t1', 'reply.received')).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(false)
   })
 
   it('forgets a stale mark even when only markSelf is ever called for it again', () => {
@@ -242,8 +290,8 @@ describe('createSelfActionGate', () => {
     gate.markSelf('other-task')
 
     clock = 5001
-    expect(gate.isRecentSelfAction('stale-task', 'reply.received')).toBe(false)
-    expect(gate.isRecentSelfAction('other-task', 'reply.received')).toBe(true)
+    expect(gate.isRecentSelfAction(selfEcho('stale-task', 'reply.received'))).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('other-task', 'reply.received'))).toBe(true)
   })
 
   it('has a sane default window', () => {

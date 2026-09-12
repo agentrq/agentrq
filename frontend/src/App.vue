@@ -443,6 +443,7 @@ import { useTooltipStore } from './stores/tooltipStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
+import { toastFor } from './composables/useStreamToasts'
 import Toast from './components/Toast.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
@@ -824,21 +825,13 @@ onEvent((event) => {
     forgetCachedTask(sharedCache(), event.payload?.id)
   }
 
-  if (event.type === 'task.created' && event.payload.createdBy === 'agent') {
-    notifySuccess(`Agent started a new task: ${event.payload.title}`)
-  } else if (event.type === 'reply.received') {
-    const task = event.payload
-    const lastMsg = task.messages?.[task.messages.length - 1]
-
-    // Check for permission requests
-    if (lastMsg?.metadata?.type === 'permission_request' && lastMsg.metadata.status !== 'allow' && lastMsg.metadata.status !== 'deny') {
-      notifyError(`Permission required: ${lastMsg.metadata.tool_name}`, 'Action Needed')
-    } 
-    // Check for agent-initiated status updates
-    else if (lastMsg?.sender === 'agent' && lastMsg.text?.includes('Status updated to:')) {
-      const status = task.status;
-      notifyInfo(`Task "${task.title}" is now ${status}`)
-    }
+  // The rules live in useStreamToasts, tested on their own — this only shows
+  // what they decided. See that file for why the sender decides and not the
+  // event type.
+  const toast = toastFor(event)
+  if (toast) {
+    const show = toast.tone === 'error' ? notifyError : toast.tone === 'success' ? notifySuccess : notifyInfo
+    show(toast.message, ...(toast.title ? [toast.title] : []))
   }
 })
 

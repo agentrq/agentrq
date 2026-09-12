@@ -135,6 +135,20 @@ export const SELF_ACTION_WINDOW_MS = 10000
 const SELF_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
 
 /**
+ * Who wrote the newest message on a task, or '' when the payload carries none.
+ *
+ * The gate below used to work around not having this — its own comment said the
+ * payload "carries the task rather than the message". That is no longer true:
+ * the forwarder loads a task's messages before publishing, so who just spoke is
+ * on the event rather than something to infer from timing.
+ */
+export function lastMessageSender(task) {
+  const messages = task?.messages
+  if (!Array.isArray(messages) || messages.length === 0) return ''
+  return String(messages[messages.length - 1]?.sender ?? '')
+}
+
+/**
  * Removes entries whose timestamp is at least `windowMs` old.
  *
  * Shared by the two windowed-key trackers below, which differ in what they
@@ -171,10 +185,24 @@ export function createSelfActionGate({ windowMs = SELF_ACTION_WINDOW_MS, now = (
       pruneStale(markedAt, windowMs, at)
       if (taskId) markedAt.set(taskId, at)
     },
-    /** @returns {boolean} true when this event is likely this desktop's own reply/respond echoing back. */
-    isRecentSelfAction(taskId, eventType) {
+    /**
+     * @returns {boolean} true when this event is this desktop's own
+     *   reply/respond echoing back.
+     *
+     * Takes the whole event, because the payload settles it. The window alone
+     * could not: an agent answering inside ten seconds — which is most of them
+     * — landed in the mute this desktop had just armed for its own message, and
+     * its reply was dropped. A status change arriving later, after the agent
+     * had done some work, fell outside the window and still notified, which is
+     * exactly the difference somebody reported.
+     */
+    isRecentSelfAction(event) {
       pruneStale(markedAt, windowMs, now())
-      return SELF_ECHO_TYPES.has(eventType) && markedAt.has(taskId)
+      if (!SELF_ECHO_TYPES.has(event?.type)) return false
+      // The agent wrote the last message, so this is not this desktop's echo,
+      // whatever the clock says.
+      if (lastMessageSender(event?.payload) === 'agent') return false
+      return markedAt.has(event?.payload?.id)
     },
   }
 }

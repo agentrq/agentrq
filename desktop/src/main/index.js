@@ -504,7 +504,7 @@ function handleStreamEvent(event) {
   if (!notification) return
   // This desktop instance sent the reply/respond that produced this event
   // itself — being told about your own message is noise, not news.
-  if (selfActionGate.isRecentSelfAction(event.payload.id, event.type)) return
+  if (selfActionGate.isRecentSelfAction(event)) return
 
   // An unknown workspace means the list is stale — refresh for next time
   // rather than blocking this notification on a round trip.
