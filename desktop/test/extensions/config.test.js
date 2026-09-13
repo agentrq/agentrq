@@ -270,3 +270,30 @@ describe('createConfigStore', () => {
     ])
   })
 })
+
+describe('two saves that arrive before the first read finishes', () => {
+  /**
+   * The file is read once, however many callers want it.
+   *
+   * Two extensions saving their settings as the app starts, or an install
+   * writing config while something already running saves its own. Reading the
+   * file per caller gave each of them a *different* state object, and the last
+   * write persisted one that had never seen the others — settings that were
+   * saved, reported saved, and silently gone. A secret lost that way is worse
+   * again: the screen still says it is set.
+   */
+  it('keeps both, and reads the file once', async () => {
+    const store = fakeStore()
+    const config = createConfigStore({ store, vault: fakeVault() })
+
+    const [first, second] = await Promise.all([
+      config.save('linear', fields, { teamId: 'ENG' }),
+      config.save('linear', fields, { apiKey: 'sk-1' }),
+    ])
+
+    expect(first.ok && second.ok).toBe(true)
+    expect(store.read).toHaveBeenCalledTimes(1)
+    expect(store.saved.config.linear).toEqual({ teamId: 'ENG' })
+    expect(await config.resolve('linear')).toEqual({ teamId: 'ENG', apiKey: 'sk-1' })
+  })
+})

@@ -94,15 +94,38 @@ export function describeSecrets(fields = [], stored = {}) {
  */
 export function createConfigStore({ store, vault, logger = console }) {
   let state = null
+  /**
+   * The read in flight, so a cold store is read once however many callers want
+   * it.
+   *
+   * Without it two `save` calls that arrive before the first read finishes each
+   * start their own, each end up holding a *different* state object, and the
+   * second write persists a state that never saw the first. That is one
+   * extension's settings quietly undoing another's as they both come up at
+   * startup, or an install writing config over what a running extension just
+   * saved — and the loser was told it saved, so nothing anywhere reports it. A
+   * lost secret is worse still: the field reads as set and the value is gone.
+   */
+  let reading = null
 
   async function load() {
     if (state) return state
-    try {
-      const raw = await store.read()
-      state = { config: raw?.config ?? {}, secrets: raw?.secrets ?? {} }
-    } catch {
-      state = { config: {}, secrets: {} }
+    if (!reading) {
+      reading = (async () => {
+        try {
+          const raw = await store.read()
+          return { config: raw?.config ?? {}, secrets: raw?.secrets ?? {} }
+        } catch {
+          // No file yet, or one that will not parse. An extension nobody has
+          // configured is the state every fresh install is in.
+          return { config: {}, secrets: {} }
+        }
+      })()
     }
+    const loaded = await reading
+    // Checked again: a caller that woke first may already have installed it,
+    // and replacing it here would throw away whatever it has since written.
+    if (!state) state = loaded
     return state
   }
 
