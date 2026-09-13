@@ -6,6 +6,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -331,10 +332,21 @@ func TestGetWorkspaceTaskCounts(t *testing.T) {
 type mockCrudWorkspaceAccess struct {
 	crud.Controller
 	checkWorkspaceAccessFunc func(ctx context.Context, id int64, userID string) (bool, error)
+	// Only the paths that succeed reach telemetry, so this stayed nil until
+	// there was a test that got that far. Left optional: a refusal never counts
+	// anything, and a test about a refusal should not have to say so.
+	recordTelemetryFunc func(ctx context.Context, rq entity.RecordTelemetryRequest) error
 }
 
 func (m *mockCrudWorkspaceAccess) CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error) {
 	return m.checkWorkspaceAccessFunc(ctx, id, userID)
+}
+
+func (m *mockCrudWorkspaceAccess) RecordTelemetry(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+	if m.recordTelemetryFunc == nil {
+		return nil
+	}
+	return m.recordTelemetryFunc(ctx, rq)
 }
 
 func TestSendPermissionVerdict_RequiresWorkspaceAccess(t *testing.T) {
@@ -472,11 +484,11 @@ func TestSendPermissionVerdict_RefusesADeciderThatIsNotAnExtension(t *testing.T)
 			}
 			h := &handler{
 				crud: crudCtrl,
-				mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
-					// Refused before anything about the request is looked up, so
-					// a server with nothing in it is the honest double here.
-					return &mcpctrl.WorkspaceServer{}
-				}),
+				// A real server, because the refusal under test is the real
+				// one: this is checked before anything about the request is
+				// looked up, and a double here would be asserting on the
+				// double. The fake manager only stands in for the lookup.
+				mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}},
 			}
 
 			app.Post("/api/v1/workspaces/:id/tasks/:taskID/permission", func(c *fiber.Ctx) error {
@@ -513,10 +525,10 @@ func TestStopTask_RefusesWhenTheAgentCannotBeStopped(t *testing.T) {
 	}
 	h := &handler{
 		crud: crudCtrl,
-		mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
-			// A workspace server with nothing connected to it.
-			return &mcpctrl.WorkspaceServer{}
-		}),
+		// A real workspace server with nothing connected to it. The 409 under
+		// test is the controller's own answer — that a server holding no
+		// session cannot stop anything — so the real one has to give it.
+		mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}},
 	}
 
 	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
@@ -549,9 +561,9 @@ func TestStopTask_WithoutAWorkspaceServer(t *testing.T) {
 	}
 	h := &handler{
 		crud: crudCtrl,
-		mcpManager: mcpctrl.NewManager(func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer {
-			return nil
-		}),
+		// No server for the workspace: the zero value of the fake's server
+		// field is a nil interface, which is what "nothing to ask" looks like.
+		mcpManager: &fakeMCPManager{},
 	}
 
 	app.Post("/api/v1/workspaces/:id/tasks/:taskID/stop", func(c *fiber.Ctx) error {
@@ -1000,9 +1012,7 @@ func TestSetAgentModel_ReportsThatNothingIsConnected(t *testing.T) {
 	}
 	// A manager that builds no server for the workspace, which is what "nothing
 	// is connected" looks like from here.
-	h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
-		func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return nil },
-	)}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{}}
 
 	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
@@ -1154,9 +1164,7 @@ func TestSetAgentConcurrency_ReportsThatNothingIsConnected(t *testing.T) {
 			return true, nil
 		},
 	}
-	h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
-		func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return nil },
-	)}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{}}
 
 	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
 		c.Locals("user_id", monoflake.ID(100).String())
@@ -1202,10 +1210,11 @@ func TestSetAgentConcurrency_AnswersTheServerRefusals(t *testing.T) {
 					return true, nil
 				},
 			}
-			srv := &mcpctrl.WorkspaceServer{}
-			h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
-				func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return srv },
-			)}
+			// A real server throughout: every expectation in this table is
+			// the controller's own — a limit below 1 refused as invalid, and a
+			// server that never offered the control refusing to act. A double
+			// would answer whatever it was told to and prove none of it.
+			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: &mcpctrl.WorkspaceServer{}}}
 
 			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
 				c.Locals("user_id", monoflake.ID(100).String())
@@ -1227,5 +1236,299 @@ func TestSetAgentConcurrency_AnswersTheServerRefusals(t *testing.T) {
 				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
 			}
 		})
+	}
+}
+
+// The successful paths, which had no test before this package could inject a
+// server. Both assert what was asked of the agent, not just the status code:
+// a 202 means "asked", so a handler that answered 202 without passing the value
+// on would be exactly as wrong as one that refused, and indistinguishable from
+// the outside.
+
+func TestSetAgentModel_AsksTheConnectedAgent(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	// Counted on the asking, not on the agent's confirmation: what is worth
+	// knowing is how often people reach for this, and an agent that then
+	// refuses is a different question.
+	var counted []entity.Action
+	crudCtrl.recordTelemetryFunc = func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+		counted = append(counted, rq.Action)
+		return nil
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentModel()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+		strings.NewReader(`{"modelId":"gemini-2.5-pro"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Accepted, not OK: the agent has been asked, and only its own next models
+	// notification says whether it switched.
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	if srv.modelCalls != 1 {
+		t.Errorf("asked the agent %d times, want exactly 1", srv.modelCalls)
+	}
+	if srv.modelID != "gemini-2.5-pro" {
+		t.Errorf("asked for model %q, want the one the request named", srv.modelID)
+	}
+
+	var body struct {
+		Requested string `json:"requested"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// What was asked for, never a claim about what is now in force.
+	if body.Requested != "gemini-2.5-pro" {
+		t.Errorf("body named %q, want the requested model", body.Requested)
+	}
+	if len(counted) != 1 || counted[0] != entity.ActionAgentModelSelect {
+		t.Errorf("counted %v, want one agent-model-select", counted)
+	}
+}
+
+func TestSetAgentConcurrency_AsksTheConnectedGateway(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentConcurrency()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+		strings.NewReader(`{"maxConcurrency":8}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	if srv.concurrencyCalls != 1 {
+		t.Errorf("asked the gateway %d times, want exactly 1", srv.concurrencyCalls)
+	}
+	if srv.limit != 8 {
+		t.Errorf("asked for a limit of %d, want the one the request named", srv.limit)
+	}
+
+	var body struct {
+		Requested int `json:"requested"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Requested != 8 {
+		t.Errorf("body named %d, want the requested limit", body.Requested)
+	}
+}
+
+// A value above the gateway's own ceiling is forwarded rather than refused: the
+// gateway clamps it and reports what it settled on, which is more truthful than
+// refusing against a range this server only holds a cached copy of.
+func TestSetAgentConcurrency_ForwardsAValueTheGatewayWillClamp(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentConcurrency()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+		strings.NewReader(`{"maxConcurrency":9000}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	if srv.limit != 9000 {
+		t.Errorf("forwarded %d, want the value passed through untouched", srv.limit)
+	}
+}
+
+// Which refusal becomes which status is a real decision, and a wrong one is a
+// real bug: a 409 tells a client "nothing here will do that", a 400 tells it
+// "ask for something else", and a 500 sends someone to the logs. Injecting the
+// error is the only way to assert the mapping — before the seam these branches
+// needed a live gateway in a particular state, or a race, to reach at all.
+func TestSetAgentModel_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nothing connected can switch model", mcpctrl.ErrModelSelectUnsupported, http.StatusConflict},
+		{"that model is not on offer", mcpctrl.ErrModelNotOffered, http.StatusBadRequest},
+		{"the agent went away before it could be told", mcpctrl.ErrModelSetNotDelivered, http.StatusConflict},
+		// No path in the controller produces this today — it has four exits and
+		// the three above are all the errors. The mapping is asserted anyway so
+		// that a fourth, when it arrives, lands somewhere deliberate.
+		{"anything else is ours, not the caller's", errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			srv := &fakeWorkspaceServer{modelErr: tc.err}
+			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+			app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.setAgentModel()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+				strings.NewReader(`{"modelId":"gemini-2.5-pro"}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestSetAgentConcurrency_MapsEveryRefusalToItsOwnStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"not a limit at all", mcpctrl.ErrConcurrencyInvalid, http.StatusBadRequest},
+		{"nothing connected will act on it", mcpctrl.ErrConcurrencySetUnsupported, http.StatusConflict},
+		// The gateway disconnecting between being picked and being notified.
+		// Unreachable through a real server — the in-memory transport cannot
+		// stage the race — which is exactly why injecting the error is worth it.
+		{"the gateway went away before it could be told", mcpctrl.ErrConcurrencySetNotDelivered, http.StatusConflict},
+		{"anything else is ours, not the caller's", errors.New("boom"), http.StatusInternalServerError},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			srv := &fakeWorkspaceServer{concurrencyErr: tc.err}
+			h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.setAgentConcurrency()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+				strings.NewReader(`{"maxConcurrency":4}`),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
+			}
+		})
+	}
+}
+
+// The switch happened; the count did not. Reporting that as a failed switch
+// would be a lie the caller acts on — the picker would spring back to a model
+// the agent has already been asked for.
+func TestSetAgentModel_StillSucceedsWhenTheCountFails(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+		recordTelemetryFunc: func(ctx context.Context, rq entity.RecordTelemetryRequest) error {
+			return errors.New("the counter is down")
+		},
+	}
+	srv := &fakeWorkspaceServer{}
+	h := &handler{crud: crudCtrl, mcpManager: &fakeMCPManager{server: srv}}
+
+	app.Post("/api/v1/workspaces/:id/agent/model", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentModel()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/model",
+		strings.NewReader(`{"modelId":"gemini-2.5-pro"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("expected 202, got %d", resp.StatusCode)
+	}
+	if srv.modelCalls != 1 {
+		t.Errorf("asked the agent %d times, want exactly 1", srv.modelCalls)
 	}
 }

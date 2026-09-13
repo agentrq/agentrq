@@ -58,7 +58,7 @@ type (
 		githubAuth       auth.Service
 		githubClientID   string
 		tokenSvc         auth.TokenService
-		mcpManager       *mcpctrl.Manager
+		mcpManager       mcpManager
 		bus              *eventbus.Bus
 		baseURL          string
 		mcpBaseURL       string
@@ -98,7 +98,7 @@ func New(p Params) (Handler, error) {
 		githubAuth:       p.GithubAuth,
 		githubClientID:   p.GithubClientID,
 		tokenSvc:         p.TokenSvc,
-		mcpManager:       p.MCPManager,
+		mcpManager:       liveMCPManager{p.MCPManager},
 		bus:              p.EventBus,
 		baseURL:          p.BaseURL,
 		mcpBaseURL:       p.MCPBaseURL,
