@@ -38,6 +38,7 @@ var customNotificationMethods = []string{
 	mcpctrl.AgentModelsNotificationMethod,
 	mcpctrl.AgentCommandsNotificationMethod,
 	mcpctrl.AgentIdentityNotificationMethod,
+	mcpctrl.AgentConcurrencyNotificationMethod,
 }
 
 // customNotificationMethod reports which of those a request body declares.

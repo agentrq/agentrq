@@ -130,7 +130,7 @@ Named signals that let one workspace trigger tasks in another.
 
 ## WebMCP (`frontend/src/webmcp/`)
 
-The interface offers itself to a browser agent as WebMCP tools — 52 of them,
+The interface offers itself to a browser agent as WebMCP tools — 53 of them,
 registered on sign-in and withdrawn on sign-out.
 
 - `modelContext.js` is the browser seam (finds `document.modelContext`, falling

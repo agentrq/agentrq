@@ -405,6 +405,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, modelId }) => api.setAgentModel(workspaceId, modelId),
     }),
     tool({
+      name: 'setAgentConcurrency',
+      description:
+        'Ask the workspace\'s connected gateway to run a different number of tasks at once. Only ' +
+        'offered where the gateway reported a limit and said it can change it; the value may be ' +
+        'clamped to the range it reported, and asking is not the same as it having changed, which ' +
+        'the workspace reports separately.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        maxConcurrency: int('How many tasks to run at once, within the range the gateway reported.'),
+      },
+      required: ['workspaceId', 'maxConcurrency'],
+      run: ({ workspaceId, maxConcurrency }) => api.setAgentConcurrency(workspaceId, maxConcurrency),
+    }),
+    tool({
       name: 'deleteTask',
       description: 'Permanently delete a task and its conversation. This cannot be undone.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },

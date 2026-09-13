@@ -108,6 +108,49 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /**
+   * Record how many tasks a workspace's gateway is running at once.
+   *
+   * Lives here for the same reason `agentModels` does: it changes from outside
+   * the app — the gateway reports it on connect, on every reconnect, and again
+   * after every set — and a control built on the page-load payload alone would
+   * never move. IDs are compared as strings for the reason `findIndex` gives.
+   *
+   * A report with no limit in it clears the field rather than storing an empty
+   * object, so `agentConcurrency` keeps meaning "there is a number here" —
+   * which is what the REST payload means by omitting it.
+   *
+   * Nothing here is written optimistically. This is only ever called with what
+   * the gateway said, which is the only thing that knows whether a change was
+   * accepted, clamped, or ignored.
+   */
+  function updateAgentConcurrency(workspaceId, concurrency) {
+    const idx = findIndex(workspaceId);
+    if (idx !== -1) {
+      const maxConcurrency = Number(concurrency?.maxConcurrency) || 0;
+      const agentConcurrency = maxConcurrency > 0
+        ? {
+            maxConcurrency,
+            // active may legitimately exceed maxConcurrency for a while after
+            // a lower: running tasks are never interrupted, the queue just
+            // stops handing out new ones. Stored as reported.
+            active: Number(concurrency?.active) || 0,
+            queued: Number(concurrency?.queued) || 0,
+            min: Number(concurrency?.min) || 1,
+            // 0 means the gateway named no ceiling of its own, which is a
+            // different thing from a ceiling of zero.
+            max: Number(concurrency?.max) || 0,
+            // Carried through explicitly and defaulted to false rather than
+            // left undefined: this is what decides whether a control is
+            // offered at all, and an event that dropped it would take the
+            // control away from a gateway that can still be told to change.
+            canSet: concurrency?.canSet === true,
+          }
+        : undefined;
+      workspaces.value[idx] = { ...workspaces.value[idx], agentConcurrency };
+    }
+  }
+
   /** The workspace with this ID, or undefined. */
   function getWorkspace(workspaceId) {
     const idx = findIndex(workspaceId);
@@ -133,6 +176,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateAgentStatus,
     updateAgentCommands,
     updateAgentModels,
+    updateAgentConcurrency,
     getWorkspace,
     isAgentConnected
   };

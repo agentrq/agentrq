@@ -576,6 +576,81 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
 
+  /workspaces/{id}/agent/concurrency:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Ask the connected gateway to change how many tasks it runs at once
+      description: |
+        A request, not a state change. The gateway is asked over its MCP channel
+        and always answers with a fresh concurrency notification — accepted,
+        clamped to its own range, or left untouched — which is the only thing
+        that knows what actually happened, so a `202` means asked, never
+        settled. Clients render the gateway's next report rather than the value
+        they sent.
+
+        A value outside the gateway's reported `min`/`max` is **not** refused
+        here: the gateway clamps it and reports what it settled on. Only a value
+        below 1 is refused, since that is a queue that never hands anything out.
+
+        Raising takes effect at once and queued tasks start immediately, up to
+        the new headroom. Lowering never interrupts a running task — they
+        finish, and the queue stops handing out new ones until the active count
+        falls below the new limit, so `active` may legitimately exceed
+        `maxConcurrency` for a while afterwards.
+
+        The limit lives in the gateway's memory. It survives an MCP reconnect
+        but not a gateway restart, which falls back to the gateway's own
+        `--max-concurrency` flag.
+
+        Available only where `agentConcurrency.canSet` is true on the workspace.
+        A gateway that reports its limit but cannot be told to change it — every
+        gateway older than this feature — refuses with a `409`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [maxConcurrency]
+              properties:
+                maxConcurrency:
+                  type: integer
+                  minimum: 1
+                  description: |
+                    How many tasks to run at once. Clamped by the gateway to the
+                    range it reported in `agentConcurrency`.
+      responses:
+        '202':
+          description: The gateway was asked to change its concurrency
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requested: { type: integer }
+        '400':
+          description: No limit named, or a limit below 1
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: The connected gateway does not support changing its concurrency, or could not be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
   # ── Tasks ───────────────────────────────────────────────────────────────────
   /tasks:
     get:
@@ -1772,6 +1847,12 @@ components:
             What the connected agent can switch between. Absent when no agent is
             connected, or when the connected one has not reported any, so its
             presence means a choice exists.
+        agentConcurrency:
+          allOf: [{ $ref: '#/components/schemas/AgentConcurrency' }]
+          description: |
+            How many tasks the connected gateway runs at once. Absent when no
+            gateway is connected, or when the connected one has not reported a
+            limit, so its presence means there is a number to show.
         mcpUrl: { type: string }
         mcpToken:
           type: string
@@ -1824,6 +1905,45 @@ components:
         group:
           type: string
           description: Optional grouping, e.g. the provider name.
+
+    AgentConcurrency:
+      type: object
+      description: |
+        Live state read off the workspace's MCP session rather than a stored
+        column: it arrives as a `notifications/claude/channel/concurrency`
+        notification from the gateway and is reported only while the session
+        that sent it is still connected. The limit itself lives in the
+        gateway's memory and does not survive its restart.
+      properties:
+        maxConcurrency:
+          type: integer
+          description: How many tasks the gateway will run at once.
+        active:
+          type: integer
+          description: |
+            How many it is running. May legitimately exceed `maxConcurrency`
+            for a while after a lower, since running tasks are allowed to
+            finish — worth showing rather than treating as an error state.
+        queued:
+          type: integer
+          description: How many are waiting for a slot.
+        min:
+          type: integer
+          description: The lowest limit the gateway will accept.
+        max:
+          type: integer
+          description: |
+            The highest limit the gateway will accept, or 0 when it named no
+            ceiling of its own. Read this rather than assuming one — the
+            gateway owns its ceiling.
+        canSet:
+          type: boolean
+          description: |
+            Whether changing the limit would do anything. False for a gateway
+            that reports what it is running but cannot be told to change it,
+            which includes every gateway older than this feature — so a client
+            shows a control only when this is true, and a read-only number
+            otherwise.
 
     SlackConfig:
       type: object

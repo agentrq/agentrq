@@ -175,6 +175,107 @@ describe('workspaceStore', () => {
     })
   })
 
+  describe('updateAgentConcurrency', () => {
+    beforeEach(async () => {
+      fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })
+      await useWorkspaceStore().fetchWorkspaces()
+    })
+
+    const concurrencyOf = (store, id) => store.getWorkspace(id)?.agentConcurrency
+    const reported = { maxConcurrency: 4, active: 2, queued: 3, min: 1, max: 64, canSet: true }
+
+    it('records the limit against the named workspace only', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', reported)
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toEqual(reported)
+      expect(concurrencyOf(store, '0iAx25vra8v')).toBeUndefined()
+    })
+
+    it('carries a changed limit and a moving queue through', () => {
+      // The whole point of the event: the gateway answered a set, and every
+      // surface reading this store has to say so without a reload.
+      const store = useWorkspaceStore()
+      store.updateAgentConcurrency('0ZzhYQG2qtl', reported)
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', { ...reported, maxConcurrency: 8, active: 5, queued: 0 })
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toMatchObject({ maxConcurrency: 8, active: 5, queued: 0 })
+    })
+
+    it('keeps an active count above the limit rather than tidying it away', () => {
+      // Lowering never interrupts a running task, so this is the feature
+      // working. Clamping it here would hide the only evidence of that.
+      const store = useWorkspaceStore()
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', { ...reported, maxConcurrency: 1, active: 4 })
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toMatchObject({ maxConcurrency: 1, active: 4 })
+    })
+
+    it('keeps a read-only gateway read-only', () => {
+      // A gateway that reports what it is running but cannot be told to change
+      // it. The field has to survive as false rather than vanish, because its
+      // absence is what a control would read as "no opinion".
+      const store = useWorkspaceStore()
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', { ...reported, canSet: false })
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl').canSet).toBe(false)
+    })
+
+    it('treats a missing canSet as no', () => {
+      // Every gateway older than this feature sends no such field, and reading
+      // silence as consent would offer a control that does nothing.
+      const store = useWorkspaceStore()
+      const { canSet, ...withoutCanSet } = reported
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', withoutCanSet)
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl').canSet).toBe(false)
+    })
+
+    it('fills in a range the gateway did not state', () => {
+      // A ceiling of 0 means the gateway named none, which is a different
+      // thing from a ceiling of zero — and the floor is 1 whatever it says.
+      const store = useWorkspaceStore()
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', { maxConcurrency: 4 })
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toMatchObject({ min: 1, max: 0, active: 0, queued: 0 })
+    })
+
+    it('takes the number away when the gateway withdraws its limit', () => {
+      // The field's absence is what every surface reads as "there is no number
+      // here", which is also what the REST payload means by omitting it.
+      const store = useWorkspaceStore()
+      store.updateAgentConcurrency('0ZzhYQG2qtl', reported)
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', { maxConcurrency: 0, active: 0, queued: 0 })
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    it('takes the number away when handed nothing at all', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentConcurrency('0ZzhYQG2qtl', reported)
+
+      store.updateAgentConcurrency('0ZzhYQG2qtl', undefined)
+
+      expect(concurrencyOf(store, '0ZzhYQG2qtl')).toBeUndefined()
+    })
+
+    it('ignores an ID that names no workspace it holds', () => {
+      const store = useWorkspaceStore()
+
+      store.updateAgentConcurrency(1234567890123, reported)
+      store.updateAgentConcurrency(undefined, reported)
+
+      expect(store.workspaces.some((w) => w.agentConcurrency)).toBe(false)
+    })
+  })
+
   describe('updateAgentModels', () => {
     beforeEach(async () => {
       fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })

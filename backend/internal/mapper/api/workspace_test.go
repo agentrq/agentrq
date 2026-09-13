@@ -59,3 +59,54 @@ func TestFromEntityAgentClientToView(t *testing.T) {
 		}
 	})
 }
+
+func TestFromEntityAgentConcurrencyToView(t *testing.T) {
+	t.Run("nil stays nil, so the field is omitted entirely", func(t *testing.T) {
+		// A client reads the field's presence as "there is a number to show",
+		// so an empty object here would render a control around no limit.
+		if got := fromEntityAgentConcurrencyToView(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("carries every field across", func(t *testing.T) {
+		got := fromEntityAgentConcurrencyToView(&entity.AgentConcurrency{
+			MaxConcurrency: 4,
+			Active:         2,
+			Queued:         3,
+			Min:            1,
+			Max:            64,
+			CanSet:         true,
+		})
+
+		if got == nil {
+			t.Fatal("got nil")
+		}
+		if got.MaxConcurrency != 4 || got.Active != 2 || got.Queued != 3 {
+			t.Errorf("queue state = %+v", got)
+		}
+		if got.Min != 1 || got.Max != 64 || !got.CanSet {
+			t.Errorf("range and permission = %+v", got)
+		}
+	})
+
+	t.Run("an active count above the limit is carried, not corrected", func(t *testing.T) {
+		// Lowering the limit never interrupts a running task, so this is the
+		// feature working. Clamping it here would hide the one moment the
+		// number explains something.
+		got := fromEntityAgentConcurrencyToView(&entity.AgentConcurrency{
+			MaxConcurrency: 1,
+			Active:         3,
+		})
+		if got == nil || got.Active != 3 {
+			t.Errorf("got %+v, want active 3", got)
+		}
+	})
+
+	t.Run("a gateway that cannot be told a limit says so", func(t *testing.T) {
+		got := fromEntityAgentConcurrencyToView(&entity.AgentConcurrency{MaxConcurrency: 8})
+		if got == nil || got.CanSet {
+			t.Errorf("got %+v, want canSet false", got)
+		}
+	})
+}

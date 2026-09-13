@@ -158,6 +158,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
 		AgentCommands:         fromEntityAgentCommandsToView(p.AgentCommands),
 		AgentClient:           fromEntityAgentClientToView(p.AgentClient),
+		AgentConcurrency:      fromEntityAgentConcurrencyToView(p.AgentConcurrency),
 		MCPURL:                mcpURL,
 		AutoAllowedTools:      p.AutoAllowedTools,
 		AllowAllCommands:      p.AllowAllCommands,
@@ -232,6 +233,27 @@ func fromEntityAgentModelsToView(m *entity.AgentModels) *view.AgentModels {
 		CurrentModel: m.CurrentModel,
 		Models:       models,
 		CanSet:       m.CanSet,
+	}
+}
+
+// fromEntityAgentConcurrencyToView renders how many tasks the connected gateway
+// runs at once.
+//
+// nil rather than an empty object when nothing is connected or nothing was
+// reported, for the same reason as the models above: the field is omitted from
+// the response entirely, so a client can read its presence as "there is a
+// number to show here".
+func fromEntityAgentConcurrencyToView(c *entity.AgentConcurrency) *view.AgentConcurrency {
+	if c == nil {
+		return nil
+	}
+	return &view.AgentConcurrency{
+		MaxConcurrency: c.MaxConcurrency,
+		Active:         c.Active,
+		Queued:         c.Queued,
+		Min:            c.Min,
+		Max:            c.Max,
+		CanSet:         c.CanSet,
 	}
 }
 

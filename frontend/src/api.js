@@ -262,6 +262,33 @@ export async function setAgentModel(workspaceId, modelId) {
   return res.json();
 }
 
+/**
+ * Ask the workspace's connected gateway to run a different number of tasks at
+ * once.
+ *
+ * Answers 202 rather than 200, and for a stronger reason than the model
+ * switch: the gateway answers every set with a fresh concurrency report —
+ * accepted, clamped to its own range, or ignored because the value was not a
+ * number — and that report, which arrives over the event stream, is the only
+ * thing that knows which of the three happened. Callers must not treat this
+ * resolving as the limit having changed.
+ */
+export async function setAgentConcurrency(workspaceId, maxConcurrency) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/agent/concurrency`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxConcurrency })
+  });
+  if (!res.ok) {
+    // The server says why it refused — most usefully that nothing connected
+    // can be told to change its concurrency — and that reason is worth more
+    // than "failed".
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || 'Failed to change the concurrency');
+  }
+  return res.json();
+}
+
 export async function stopTask(workspaceId, taskId) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/stop`, {
     method: 'POST'

@@ -153,17 +153,23 @@ type WorkspaceServer struct {
 	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
 	agentIdentitiesMu sync.RWMutex
 	agentIdentities   map[string]AgentClientInfo // sessionID -> the agent a gateway says it drives
-	streamingMu       sync.RWMutex
-	streaming         map[string]int // sessionID -> how many streams it currently holds
-	elicitationsMu    sync.Mutex
-	elicitations      map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
-	metadataMu        sync.RWMutex
-	icon              string
-	name              string
-	description       string
-	archivedAt        *time.Time
-	lastUpdateCheckAt time.Time
-	agentConnections  atomic.Int32
+	// How many tasks each connected gateway will run at once, and what its
+	// queue is doing. Cached for the same reason the models are: it only ever
+	// arrives by notification, and a page has to be able to render a number
+	// before the gateway next speaks.
+	agentConcurrencyMu sync.RWMutex
+	agentConcurrency   map[string]AgentConcurrencySnapshot // sessionID -> concurrency last reported
+	streamingMu        sync.RWMutex
+	streaming          map[string]int // sessionID -> how many streams it currently holds
+	elicitationsMu     sync.Mutex
+	elicitations       map[string]chan elicitationResponse // requestID -> channel the waiting elicit tool call blocks on
+	metadataMu         sync.RWMutex
+	icon               string
+	name               string
+	description        string
+	archivedAt         *time.Time
+	lastUpdateCheckAt  time.Time
+	agentConnections   atomic.Int32
 
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
 	// removed workspace server does not leak them for the lifetime of the process.
@@ -398,6 +404,7 @@ func NewWorkspaceServer(
 		agentModels:            make(map[string]AgentModelsSnapshot),
 		agentCommands:          make(map[string]AgentCommandsSnapshot),
 		agentIdentities:        make(map[string]AgentClientInfo),
+		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),
 		streaming:              make(map[string]int),
 		elicitations:           make(map[string]chan elicitationResponse),
 		icon:                   icon,
@@ -2404,6 +2411,18 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 			return
 		}
 		ps.HandleAgentIdentity(ctx, sessionID, identity.Params)
+		return
+	}
+
+	if msg.Method == AgentConcurrencyNotificationMethod {
+		var concurrency struct {
+			Params AgentConcurrencyParams `json:"params"`
+		}
+		if err := json.Unmarshal(data, &concurrency); err != nil {
+			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent concurrency notification")
+			return
+		}
+		ps.HandleAgentConcurrency(ctx, sessionID, concurrency.Params)
 		return
 	}
 

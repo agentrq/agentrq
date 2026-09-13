@@ -811,6 +811,16 @@ onEvent((event) => {
     workspaceStore.updateAgentModels(workspaceId, { configId, currentModel, canSet, models })
   }
 
+  // How many tasks the gateway is running at once, and what its queue is
+  // doing. Arrives on connect, on every reconnect, and after every set — the
+  // last of which is the whole point: the gateway's own report is the only
+  // thing that knows whether a change was accepted, clamped or ignored, so the
+  // control renders this rather than what was asked for.
+  if (event.type === 'agent.concurrency') {
+    const { maxConcurrency, active, queued, min, max, canSet, workspaceId } = event.payload
+    workspaceStore.updateAgentConcurrency(workspaceId, { maxConcurrency, active, queued, min, max, canSet })
+  }
+
   // Handle workspace metadata updates
   if (event.type === 'workspace.updated') {
     workspaceStore.updateWorkspaceMetadata(event.payload)

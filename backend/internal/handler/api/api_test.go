@@ -1024,3 +1024,208 @@ func TestSetAgentModel_ReportsThatNothingIsConnected(t *testing.T) {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
+
+func TestAgentConcurrencyEntity(t *testing.T) {
+	t.Run("nil stays nil, so nothing is advertised", func(t *testing.T) {
+		if got := agentConcurrencyEntity(nil); got != nil {
+			t.Errorf("got %+v, want nil", got)
+		}
+	})
+
+	t.Run("carries the snapshot across into the API layer's own shape", func(t *testing.T) {
+		got := agentConcurrencyEntity(&mcpctrl.AgentConcurrencySnapshot{
+			MaxConcurrency: 4,
+			Active:         2,
+			Queued:         3,
+			Min:            1,
+			Max:            64,
+			CanSet:         true,
+		})
+
+		if got == nil {
+			t.Fatal("got nil")
+		}
+		if got.MaxConcurrency != 4 || got.Active != 2 || got.Queued != 3 {
+			t.Errorf("queue state = %+v", got)
+		}
+		if got.Min != 1 || got.Max != 64 || !got.CanSet {
+			t.Errorf("range and permission = %+v", got)
+		}
+	})
+
+	t.Run("a gateway willing to be told a limit but naming none cannot set", func(t *testing.T) {
+		// Settable(), not the raw flag. A control offered on that promise would
+		// have no number to start from and no way to tell a change had landed.
+		got := agentConcurrencyEntity(&mcpctrl.AgentConcurrencySnapshot{CanSet: true})
+		if got == nil || got.CanSet {
+			t.Errorf("got %+v, want canSet false", got)
+		}
+	})
+}
+
+// Changing the limit is refused with a reason worth reading, the same way
+// choosing a model is: "failed" tells someone whose control just sprang back
+// precisely nothing, and the three refusals below mean three different things.
+
+func TestSetAgentConcurrency_RefusesACallerWithoutAccess(t *testing.T) {
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return false, nil
+		},
+	}
+	// Intentionally no MCPManager: an unauthorized request must be refused
+	// before anything reaches a workspace server.
+	h := &handler{crud: crudCtrl}
+
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentConcurrency()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+		strings.NewReader(`{"maxConcurrency":4}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+func TestSetAgentConcurrency_RejectsARequestNamingNoLimit(t *testing.T) {
+	// Absent is not zero. A missing field read as 0 would ask the gateway to
+	// stall its queue, so it is refused here and told apart from a body that
+	// deliberately names a number.
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"no limit at all", `{}`},
+		{"an explicitly null limit", `{"maxConcurrency":null}`},
+		{"a body that is not JSON", `not json`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			h := &handler{crud: crudCtrl}
+
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.setAgentConcurrency()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+				strings.NewReader(tc.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestSetAgentConcurrency_ReportsThatNothingIsConnected(t *testing.T) {
+	// 404 rather than 409, for the same reason as the model picker: nothing is
+	// running to be asked, as against something running that will not act.
+	app := fiber.New()
+	crudCtrl := &mockCrudWorkspaceAccess{
+		checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+			return true, nil
+		},
+	}
+	h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
+		func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return nil },
+	)}
+
+	app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+		c.Locals("user_id", monoflake.ID(100).String())
+		return h.setAgentConcurrency()(c)
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+		strings.NewReader(`{"maxConcurrency":4}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestSetAgentConcurrency_AnswersTheServerRefusals(t *testing.T) {
+	// A server with nothing attached, which is what both refusals below look
+	// like from the handler: a limit that is not a limit is refused before any
+	// session is consulted, and a workspace whose gateway never offered the
+	// control answers that it will not act rather than that it is missing.
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"a limit of zero is a stalled queue, not a setting", `{"maxConcurrency":0}`, http.StatusBadRequest},
+		{"a negative limit is refused the same way", `{"maxConcurrency":-1}`, http.StatusBadRequest},
+		{"a gateway that never offered the control will not act", `{"maxConcurrency":4}`, http.StatusConflict},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			crudCtrl := &mockCrudWorkspaceAccess{
+				checkWorkspaceAccessFunc: func(ctx context.Context, id int64, userID string) (bool, error) {
+					return true, nil
+				},
+			}
+			srv := &mcpctrl.WorkspaceServer{}
+			h := &handler{crud: crudCtrl, mcpManager: mcpctrl.NewManager(
+				func(workspaceID int64, userID string) *mcpctrl.WorkspaceServer { return srv },
+			)}
+
+			app.Post("/api/v1/workspaces/:id/agent/concurrency", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return h.setAgentConcurrency()(c)
+			})
+
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/workspaces/"+monoflake.ID(1).String()+"/agent/concurrency",
+				strings.NewReader(tc.body),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.StatusCode != tc.want {
+				t.Errorf("expected %d, got %d", tc.want, resp.StatusCode)
+			}
+		})
+	}
+}

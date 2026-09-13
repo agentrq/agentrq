@@ -119,6 +119,19 @@ func (m *Manager) AgentCommands(workspaceID int64) *AgentCommandsSnapshot {
 	return srv.AgentCommands()
 }
 
+// AgentConcurrency reports how many tasks the workspace's connected gateway
+// will run at once, or nil when there is no server running for it or nothing
+// has reported a limit.
+func (m *Manager) AgentConcurrency(workspaceID int64) *AgentConcurrencySnapshot {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok || srv == nil {
+		return nil
+	}
+	return srv.AgentConcurrency()
+}
+
 // AgentClient reports what is attached to the workspace, or nil when there is
 // no server running for it or nothing has connected.
 func (m *Manager) AgentClient(workspaceID int64) *AgentClientInfo {
