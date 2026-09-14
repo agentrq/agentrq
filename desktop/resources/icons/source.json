@@ -1,0 +1,14 @@
+{
+  "source": "frontend/public/favicon.svg",
+  "sha256": "1051b6475bba150e2c1b9afb57391fbf006312cf8db2e7979f60b1313948db58",
+  "sizes": [
+    16,
+    24,
+    32,
+    48,
+    64,
+    128,
+    256,
+    512
+  ]
+}

@@ -26,13 +26,20 @@ import { join } from 'node:path'
 /**
  * The icon file, named as the *frontend* publishes it.
  *
- * There is deliberately no copy of this asset under `desktop/`: the renderer's
- * Vite config sets `publicDir` to `frontend/public`, so the build already
- * places this file at the root of the renderer output, and electron-builder
- * already packages the whole renderer directory. A second copy would be a
- * second thing to keep in step with the web app's icon.
+ * There is deliberately no copy of this asset under `desktop/src`: the
+ * renderer's Vite config sets `publicDir` to `frontend/public`, so the build
+ * already places this file at the root of the renderer output, and
+ * electron-builder already packages the whole renderer directory. A second
+ * copy would be a second thing to keep in step with the web app's icon.
+ *
+ * This is the rounded, transparent mark rather than `large-icon.png`, which is
+ * the same artwork on an opaque square tile. Windows and macOS want the tile —
+ * it is what their packaged icon is built from — but on Linux the window icon
+ * sits beside the launcher icon in the switcher and the dock, and that one is
+ * rendered from the SVG, which is rounded. Two shapes for one app, a few
+ * pixels apart, is precisely the kind of wrongness this module exists to stop.
  */
-export const ICON_FILENAME = 'large-icon.png'
+export const ICON_FILENAME = 'agentrq.png'
 
 /**
  * Whether this platform needs to be handed a window icon at all.

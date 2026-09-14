@@ -373,11 +373,11 @@ already uses, and the one Electron already derived by default. Setting it
 renames no installed file and changes nothing at runtime; it only makes
 `StartupWMClass` agree with what the window was always announcing.
 
-### A leftover: the installed icon set has exactly one size
+### The icon set has to be rendered, because electron-builder will not
 
-Worth knowing before someone goes looking. A `.deb` built from this config
-installs a single `usr/share/icons/hicolor/1024x1024/apps/agentrq-desktop.png`
-and nothing else, because of this branch in electron-builder's icon converter
+A Linux package installs one icon file per size into the freedesktop hicolor
+theme. electron-builder builds that set for you from a single source — except
+when the source is already a PNG, which is this branch of its icon converter
 (`app-builder-lib/out/util/iconConverter.js`):
 
 ```js
@@ -386,16 +386,34 @@ const { width, height } = await getPngSize(resolved)
 return [{ file: resolved, size: Math.max(width, height) }]
 ```
 
-For the `set` format the output extension *is* `.png`, so a single PNG source
-is passed straight through as a one-entry set and the sizing tool never runs.
-Pointing `linux.icon` at a **directory** of `NxN.png` files is what produces a
-real set. The icon-theme spec has desktop environments scale the nearest match,
-so one large entry is found rather than ignored — this is quality and weight
-rather than a second outage — but it is not what a Linux package should ship.
+For the `set` format the output extension *is* `.png`, so the 1024px app icon
+was handed back as a set of exactly one and the sizing tool never ran. The
+`.deb` installed `hicolor/1024x1024/apps/agentrq-desktop.png` and nothing else.
 
-Neither half fails the build when it breaks, and neither is visible on the two
-platforms most development happens on, so `test/app-icon.test.js` asserts the
-two files still agree and that the configured icon is really there.
+Only a **directory** of `NxN.png` files produces a real set, so `linux.icon`
+points at `resources/icons` and `npm run icons` fills it — rendering each size
+from `frontend/public/favicon.svg`, the same mark, via sharp. Rendering per
+size rather than downscaling the big PNG is the point: the mark is 2px strokes
+on a 32-unit grid, and those survive rasterisation at 16px where resampling a
+1024px bitmap to 16px would turn them to mush.
+
+The output is **committed**. Packaging then never depends on that script, or on
+sharp, having been run — which matters because a missing icon directory does
+not fail an electron-builder run, it quietly falls back to the default Electron
+icon. Committed PNGs cannot tell you they are stale, so `resources/icons/source.json`
+records the SHA-256 of the SVG they came from and a test compares it against the
+current file: change the mark without re-running `npm run icons` and the test
+fails rather than the icon silently staying old.
+
+One consequence worth knowing: the window icon is `agentrq.png` rather than
+`large-icon.png`. They are the same artwork, but `large-icon.png` is an opaque
+square tile — right for the `.ico` and `.icns`, which is what it feeds — while
+the set rendered from the SVG is rounded and transparent. On Linux the window
+icon and the launcher icon sit next to each other in the switcher and the dock,
+so shipping both shapes would look like a bug.
+
+A `.deb` built from this config now installs 16, 24, 32, 48, 64, 128, 256 and
+512.
 
 ## Auto-update
 

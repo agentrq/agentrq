@@ -91,6 +91,21 @@ nsis:
 linux:
   category: Development
   maintainer: AgentRQ <hi@agentrq.com>
+  # A directory, not the PNG above, and that is the whole point. A Linux
+  # package installs one icon file per size into the freedesktop hicolor
+  # theme, but electron-builder does not resize anything to build that set:
+  # for the `set` format the output extension *is* `.png`, so a single PNG
+  # source is passed straight through as a set of exactly one, and the .deb
+  # ships a 1024x1024 icon and nothing else. Only a directory of `NxN.png`
+  # files produces a real set.
+  #
+  # The contents are rendered from frontend/public/favicon.svg — the same mark
+  # — by `npm run icons`, and committed, so packaging never depends on that
+  # script having been run. It matters that it cannot be skipped: a missing
+  # icon directory does not fail the build, it quietly falls back to the
+  # default Electron icon. desktop/test/app-icon.test.js checks the committed
+  # set is complete and still matches the mark.
+  icon: resources/icons
   # What links a running window to its installed launcher entry, and so what
   # decides whether the dock shows the app's icon or a generic one.
   #

@@ -79,7 +79,11 @@ Consequences worth knowing before changing anything here:
   platform where electron-builder names things after `package.json`'s `name`
   rather than the product name, so the two must be `agentrq-desktop`, not
   `AgentRQ`. Changing either without the other silently returns the dock to a
-  generic icon; `desktop/test/app-icon.test.js` is the check.
+  generic icon; `desktop/test/app-icon.test.js` is the check. The *installed*
+  icon is a third thing again: electron-builder does not resize a PNG to build
+  a freedesktop icon set, so `linux.icon` points at `desktop/resources/icons`,
+  a committed set rendered from the app's SVG by `npm run icons`. Change the
+  mark and re-run that, or a test fails on the recorded source hash.
 
 Full detail, including the verification scripts, is in `desktop/README.md`.
 User-facing documentation is `docs/DESKTOP.md`.
