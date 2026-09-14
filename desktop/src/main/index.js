@@ -22,7 +22,7 @@ import {
 import { spawn } from 'node:child_process'
 import { readFile, writeFile, access } from 'node:fs/promises'
 import * as fsPromises from 'node:fs/promises'
-import { constants } from 'node:fs'
+import { constants, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -72,6 +72,7 @@ import electronUpdater from 'electron-updater'
 import { DEEP_LINK_SCHEME, deepLinkFromArgv, parseDeepLink } from './deep-link.js'
 import { buildTrayMenuTemplate, createRecentWorkspaces, trayTooltip } from './tray.js'
 import { applyTheme, backgroundColorFor } from './theme.js'
+import { resolveWindowIcon, windowIconOptions } from './app-icon.js'
 import {
   WINDOW_STATE_FILENAME,
   captureWindowState,
@@ -88,6 +89,19 @@ const APP_ORIGIN = `app://${APP_HOST}`
 
 const RENDERER_ROOT = join(__dirname, '../renderer')
 const PRELOAD = join(__dirname, '../preload/index.cjs')
+const PROJECT_ROOT = join(__dirname, '../..')
+
+/**
+ * Resolved once, at startup, because it cannot change while the app runs and
+ * every window wants the same answer. Null on Windows and macOS, where the
+ * packaged app already carries its icon.
+ */
+const WINDOW_ICON = resolveWindowIcon({
+  platform: process.platform,
+  rendererRoot: RENDERER_ROOT,
+  projectRoot: PROJECT_ROOT,
+  exists: existsSync,
+})
 
 /**
  * Must run before app.whenReady(). `standard` is what gives app:// a real
@@ -311,6 +325,7 @@ function openLinkWindow(url, parentWin) {
     width,
     height,
     autoHideMenuBar: true,
+    ...windowIconOptions(WINDOW_ICON),
     backgroundColor: backgroundColorFor(currentTheme),
     webPreferences: {
       contextIsolation: true,
@@ -373,6 +388,7 @@ function openAuthorizationWindow(url, redirectUri) {
       height: 720,
       title: 'Authorise AgentRQ',
       autoHideMenuBar: true,
+      ...windowIconOptions(WINDOW_ICON),
       webPreferences: {
         partition: currentPartition(),
         contextIsolation: true,
@@ -419,6 +435,7 @@ async function startOAuth(win, pathname, search) {
         height: 720,
         title: 'Sign in to AgentRQ',
         autoHideMenuBar: true,
+        ...windowIconOptions(WINDOW_ICON),
         webPreferences: {
           // No preload: this window shows a third-party sign-in page, so it
           // gets no bridge. It runs on the *active profile's* partition, which
@@ -575,6 +592,7 @@ function createWindow() {
     minWidth: 940,
     minHeight: 600,
     show: false,
+    ...windowIconOptions(WINDOW_ICON),
     backgroundColor: backgroundColorFor(currentTheme, nativeTheme.shouldUseDarkColors),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {

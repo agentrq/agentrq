@@ -325,6 +325,78 @@ but macOS only routes a scheme to an app that declares it in its bundle. The
 `Info.plist`; without it `agentrq://` links silently do nothing on a packaged
 macOS build, and no amount of runtime code fixes that.
 
+### The app icon is two separate things on Linux
+
+One `icon:` in `electron-builder.yml` is the whole story on Windows and macOS:
+electron-builder converts that PNG into the `.ico` compiled into the `.exe` and
+the `.icns` placed in the app bundle, and each platform reads its own icon from
+there without being asked. Linux gets an icon set installed into the hicolor
+theme from the same PNG — and still shows no icon, because on Linux the icon is
+answered by two mechanisms and packaging only supplies one of them.
+
+**The window's icon** has no packaged source at all. Nothing about an AppImage
+or a `.deb` tells a running window what to display, so a `BrowserWindow` created
+without an `icon` gets Electron's default in the taskbar, the alt-tab switcher
+and the window list. Every window the shell opens is therefore handed the icon
+explicitly; `src/main/app-icon.js` resolves it, and returns nothing on the two
+platforms whose packaged icon is already better than a raw PNG.
+
+The file it resolves is not a copy. The renderer's Vite config sets `publicDir`
+to `frontend/public`, so the web app's own icon is already at the root of the
+renderer output and already inside the asar — and Electron reads through an asar
+transparently, so the packaged path needs no special case. Only `npm run dev`
+does, because it serves the renderer from Vite and never builds it; the fallback
+is the same file one step earlier, in `frontend/public`.
+
+**The dock's icon** is a matching problem rather than an asset problem. A
+desktop environment shows the running window under its installed launcher entry
+only if it can match the two, and it matches them by app id. Electron takes its
+id from `desktopName` in `package.json`, defaulting to `<app name>.desktop`;
+electron-builder writes `StartupWMClass` from that same value, but *only* when
+`linux.syncDesktopName` is set, and otherwise from the **product** name.
+
+Those are two different names here, which is the whole trap. Linux is the one
+platform where electron-builder derives things from `package.json`'s `name`
+rather than the product name — `LinuxPackager` sets `executableName` to
+`appInfo.sanitizedName.toLowerCase()` — so the executable, the `.deb`, the
+installed icon and the `.desktop` file are all `agentrq-desktop`, while the
+product is `AgentRQ`. The generated entry therefore claimed:
+
+```ini
+Icon=agentrq-desktop
+Exec=/opt/AgentRQ/agentrq-desktop %U
+StartupWMClass=AgentRQ          # ← a window that never existed
+```
+
+`agentrq-desktop.desktop` is deliberately the name everything else on Linux
+already uses, and the one Electron already derived by default. Setting it
+renames no installed file and changes nothing at runtime; it only makes
+`StartupWMClass` agree with what the window was always announcing.
+
+### A leftover: the installed icon set has exactly one size
+
+Worth knowing before someone goes looking. A `.deb` built from this config
+installs a single `usr/share/icons/hicolor/1024x1024/apps/agentrq-desktop.png`
+and nothing else, because of this branch in electron-builder's icon converter
+(`app-builder-lib/out/util/iconConverter.js`):
+
+```js
+// set: source is already a .png — return as-is with its dimensions
+const { width, height } = await getPngSize(resolved)
+return [{ file: resolved, size: Math.max(width, height) }]
+```
+
+For the `set` format the output extension *is* `.png`, so a single PNG source
+is passed straight through as a one-entry set and the sizing tool never runs.
+Pointing `linux.icon` at a **directory** of `NxN.png` files is what produces a
+real set. The icon-theme spec has desktop environments scale the nearest match,
+so one large entry is found rather than ignored — this is quality and weight
+rather than a second outage — but it is not what a Linux package should ship.
+
+Neither half fails the build when it breaks, and neither is visible on the two
+platforms most development happens on, so `test/app-icon.test.js` asserts the
+two files still agree and that the configured icon is really there.
+
 ## Auto-update
 
 Updates come from this repository's GitHub Releases, published by the workflow

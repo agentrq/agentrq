@@ -23,7 +23,13 @@ files:
   - dist/**/*
   - package.json
 
-# Both are the app's own icon, shared with the web build rather than duplicated.
+# Every platform's icon, shared with the web build rather than duplicated.
+# electron-builder converts this one PNG into the .icns macOS wants, the .ico
+# Windows wants, and the hicolor icon set a Linux package installs.
+#
+# It is not, however, enough on Linux on its own: nothing in an AppImage or a
+# .deb tells a *running window* what icon to show, so the windows are handed
+# this same file at runtime too. See desktop/src/main/app-icon.js.
 icon: ../frontend/public/large-icon.png
 
 # Deep links. `app.setAsDefaultProtocolClient()` at runtime is enough for
@@ -85,6 +91,25 @@ nsis:
 linux:
   category: Development
   maintainer: AgentRQ <hi@agentrq.com>
+  # What links a running window to its installed launcher entry, and so what
+  # decides whether the dock shows the app's icon or a generic one.
+  #
+  # A desktop environment matches the two by app id. Electron takes its id from
+  # `desktopName` in package.json, defaulting to `<app name>.desktop`;
+  # electron-builder writes `StartupWMClass` from that same value, but only
+  # when this flag is set, and otherwise from the *product* name. Those two
+  # names are not the same here — Linux names the executable, the package and
+  # the icon `agentrq-desktop` (package.json's `name`) while the product is
+  # AgentRQ — so by default the entry claims `StartupWMClass=AgentRQ` for a
+  # window that announces itself as `agentrq-desktop`. The two never meet, and
+  # GNOME and KDE show the running window with a generic icon however good the
+  # installed icon set is.
+  #
+  # `agentrq-desktop.desktop` is deliberately the name everything else on Linux
+  # already uses, and the one Electron already derives by default: setting it
+  # renames no installed file and changes no runtime behaviour. It only makes
+  # StartupWMClass agree with what was always being announced.
+  syncDesktopName: true
   # arm64 alongside x64: ARM single-board machines and ARM cloud instances are
   # both ordinary places to run this. Nothing here has a native dependency, so
   # both architectures cross-build from one runner.

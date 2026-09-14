@@ -48,7 +48,7 @@ Consequences worth knowing before changing anything here:
   `writeClipboard` prefers `window.agentrq.clipboard` and falls back to the
   browser API only where there is no shell.
 
-### Three traps that are invisible in source
+### Four traps that are invisible in source
 
 - **Tailwind scans from the build root.** The desktop build's Vite root is
   `desktop/src/renderer`, so a class used only in a file under `desktop/` is
@@ -67,6 +67,19 @@ Consequences worth knowing before changing anything here:
   `app.setAsDefaultProtocolClient()` is enough for Windows and Linux, but the
   `protocols` entry in `desktop/electron-builder.yml` is what makes
   `agentrq://` links work on a packaged macOS build.
+- **The Linux app icon is two mechanisms, and packaging supplies one.** The
+  single `icon:` in `electron-builder.yml` is the whole story on Windows (it is
+  compiled into the `.exe`) and macOS (it is the `.icns` in the bundle), which
+  is why a Linux-only icon bug is invisible on both. On Linux nothing tells a
+  *running window* what to show, so every `BrowserWindow` is handed the icon
+  explicitly via `desktop/src/main/app-icon.js` — and separately, the dock only
+  shows it if the window can be matched to its installed launcher entry by app
+  id, which is what `desktopName` in `desktop/package.json` and
+  `linux.syncDesktopName` exist to make agree. Note that Linux is the one
+  platform where electron-builder names things after `package.json`'s `name`
+  rather than the product name, so the two must be `agentrq-desktop`, not
+  `AgentRQ`. Changing either without the other silently returns the dock to a
+  generic icon; `desktop/test/app-icon.test.js` is the check.
 
 Full detail, including the verification scripts, is in `desktop/README.md`.
 User-facing documentation is `docs/DESKTOP.md`.
