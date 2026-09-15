@@ -1,4 +1,15 @@
-FROM node:25-alpine3.22 AS frontendbuild
+# Pinned to the BUILD platform, not the target, and that is the whole point of
+# this line. Under `buildx --platform linux/arm64` on an amd64 runner, an
+# unpinned stage runs the entire npm install and vite build under QEMU — and
+# Node's V8 JIT emits instructions QEMU's user-mode emulation does not
+# implement, so the build dies with
+#   qemu: uncaught target signal 4 (Illegal instruction) - core dumped
+#
+# Emulating it bought nothing even when it worked: the output is JavaScript and
+# CSS, byte-identical on either architecture. The platform-specific things npm
+# installs here (esbuild, rollup, sharp) stay in this stage and are never
+# copied into the image.
+FROM --platform=$BUILDPLATFORM node:25-alpine3.22 AS frontendbuild
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -26,7 +37,11 @@ RUN find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -ex
 RUN	find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec brotli -9 -f -k {} +
 
 
-FROM golang:1.27-bookworm AS build
+# Also the build platform: this stage already cross-compiles by setting GOARCH
+# from TARGETARCH with CGO disabled, so running the Go toolchain itself under
+# emulation was pure cost. Go does not JIT, so this never crashed the way the
+# Node stage did — it was just slow.
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm AS build
 
 WORKDIR /app
 RUN apt-get update && \
