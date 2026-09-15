@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/mustafaturan/monoflake"
 
 	_crud "github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -15,6 +16,7 @@ import (
 )
 
 const (
+	_routePathMachines     = "/machines"
 	_routePathMachineEnrol = "/machines/enroll"
 	_routePathMachineCodes = "/machines/codes"
 )
@@ -34,6 +36,131 @@ func (h *handler) registerPublicMachineRoutes() {
 // registerMachineRoutes exposes the routes a signed-in person uses.
 func (h *handler) registerMachineRoutes() {
 	h.router.Post(_routePathMachineCodes, h.createEnrolmentCode())
+	h.router.Get(_routePathMachines, h.listMachines())
+	h.router.Get(_routePathMachines+"/:id", h.getMachine())
+	h.router.Patch(_routePathMachines+"/:id", h.updateMachine())
+	h.router.Delete(_routePathMachines+"/:id", h.deleteMachine())
+}
+
+func (h *handler) listMachines() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.ListMachines(ctx, entity.ListMachinesRequest{
+			UserID: c.Locals("user_id").(string),
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(rs)
+	}
+}
+
+func (h *handler) getMachine() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.GetMachine(ctx, entity.GetMachineRequest{
+			UserID:    c.Locals("user_id").(string),
+			MachineID: c.Params("id"),
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(rs)
+	}
+}
+
+// updateMachine renames a machine or flips its kill switch.
+func (h *handler) updateMachine() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+
+		// Pointers, so "not mentioned" and "set to empty/false" stay different
+		// requests. Without that, a rename would silently re-enable a machine
+		// somebody had deliberately turned off.
+		var payload struct {
+			Name    *string `json:"name"`
+			Enabled *bool   `json:"enabled"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.UpdateMachine(ctx, entity.UpdateMachineRequest{
+			UserID:    c.Locals("user_id").(string),
+			MachineID: c.Params("id"),
+			Name:      payload.Name,
+			Enabled:   payload.Enabled,
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		// Disabling is a kill switch, and a kill switch that waits for the
+		// other end to cooperate is not one. The database change alone would
+		// leave a connected daemon running until it next authenticated, so the
+		// socket is closed from this side now.
+		if payload.Enabled != nil && !*payload.Enabled {
+			h.dropMachineSocket(rs.Machine.ID)
+		}
+		return c.JSON(rs)
+	}
+}
+
+func (h *handler) deleteMachine() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		id := c.Params("id")
+		if err := h.crud.DeleteMachine(ctx, entity.DeleteMachineRequest{
+			UserID:    c.Locals("user_id").(string),
+			MachineID: id,
+		}); err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		// Same reasoning as disabling: the row going is what makes the token
+		// unusable, but a daemon already connected would keep running until it
+		// next tried to authenticate.
+		h.dropMachineSocket(id)
+
+		c.Status(http.StatusNoContent)
+		return nil
+	}
+}
+
+// dropMachineSocket closes a machine's socket if this instance holds it.
+//
+// Only this instance's — another one holding the socket will not be reached
+// here. That is a known limit of revoking across instances and is why a
+// disabled machine is also refused at the next authentication: the socket
+// closing is the fast path, not the guarantee.
+func (h *handler) dropMachineSocket(machineID string) {
+	if h.machineRegistry == nil {
+		return
+	}
+	if id := monoflake.IDFromBase62(machineID).Int64(); id != 0 {
+		h.machineRegistry.Drop(id)
+	}
 }
 
 // createEnrolmentCode hands out a short code to type on a machine.

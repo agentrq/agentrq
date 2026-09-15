@@ -1204,3 +1204,60 @@ type (
 		MachineToken string `json:"machineToken"`
 	}
 )
+
+type (
+	// MachineView is one machine as the control panel sees it.
+	//
+	// Online is **derived** here rather than stored, from LastSeenAt against a
+	// threshold. A stored flag says "online" forever when a daemon is killed,
+	// which is exactly the moment somebody is looking at the screen to find out.
+	MachineView struct {
+		ID         string     `json:"id"`
+		Name       string     `json:"name"`
+		Hostname   string     `json:"hostname"`
+		OS         string     `json:"os"`
+		Arch       string     `json:"arch"`
+		Version    string     `json:"version"`
+		Enabled    bool       `json:"enabled"`
+		Online     bool       `json:"online"`
+		LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
+		CreatedAt  time.Time  `json:"createdAt"`
+
+		AvailableVersion string `json:"availableVersion,omitempty"`
+	}
+
+	ListMachinesRequest struct {
+		UserID string
+	}
+	ListMachinesResponse struct {
+		Machines []MachineView `json:"machines"`
+	}
+
+	GetMachineRequest struct {
+		UserID    string
+		MachineID string
+	}
+	GetMachineResponse struct {
+		Machine MachineView `json:"machine"`
+	}
+
+	// UpdateMachineRequest renames or enables/disables a machine.
+	//
+	// Both fields are pointers so "not mentioned" and "set to empty/false" are
+	// different requests. Without that, a rename would silently re-enable a
+	// machine somebody had deliberately turned off.
+	UpdateMachineRequest struct {
+		UserID    string
+		MachineID string
+		Name      *string
+		Enabled   *bool
+	}
+	UpdateMachineResponse struct {
+		Machine MachineView `json:"machine"`
+	}
+
+	DeleteMachineRequest struct {
+		UserID    string
+		MachineID string
+	}
+)

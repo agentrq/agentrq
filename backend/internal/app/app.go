@@ -849,6 +849,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("mcp handler: %w", err)
 	}
 
+	// The daemon sockets this process holds. Created here rather than at the
+	// mount below because the API handler needs it too: revoking a machine has
+	// to close its socket, and only the process holding it can do that.
+	machineRegistry := machine.NewRegistry(instanceID())
+
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
 	if _, err := handlerapi.New(handlerapi.Params{
@@ -857,6 +862,7 @@ func New(cfg Config) (*App, error) {
 		GithubAuth:       githubAuthSvc,
 		TokenSvc:         tokenSvc,
 		MCPManager:       mcpManager,
+		MachineRegistry:  machineRegistry,
 		EventBus:         bus,
 		BaseURL:          cfg.App.BaseURL,
 		MCPBaseURL:       cfg.App.BaseURL,
@@ -934,7 +940,6 @@ func New(cfg Config) (*App, error) {
 	// same structural reason: Fiber is mounted here through an adaptor that
 	// synthesises a fasthttp context, and a WebSocket upgrade needs to hijack
 	// the real connection, which a synthesised context has none of.
-	machineRegistry := machine.NewRegistry(instanceID())
 	mux.Handle("/api/v1/daemon/connect", &machine.Handler{
 		Registry: machineRegistry,
 		Auth:     machine.StoreAuthenticator{Store: repo},
