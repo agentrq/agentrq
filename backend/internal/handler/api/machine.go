@@ -4,21 +4,25 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 
 	_crud "github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 const (
-	_routePathMachines     = "/machines"
-	_routePathMachineEnrol = "/machines/enroll"
-	_routePathMachineCodes = "/machines/codes"
+	_routePathMachines      = "/machines"
+	_routePathMachineEnrol  = "/machines/enroll"
+	_routePathMachineCodes  = "/machines/codes"
+	_routePathMachineUpdate = "/machines/:id/update"
 )
 
 // registerPublicMachineRoutes exposes the one machine route that cannot be
@@ -40,6 +44,88 @@ func (h *handler) registerMachineRoutes() {
 	h.router.Get(_routePathMachines+"/:id", h.getMachine())
 	h.router.Patch(_routePathMachines+"/:id", h.updateMachine())
 	h.router.Delete(_routePathMachines+"/:id", h.deleteMachine())
+	h.router.Post(_routePathMachineUpdate, h.approveMachineUpdate())
+}
+
+// approveMachineUpdate tells a daemon to install the release it offered.
+//
+// This is the one request in the product that deliberately destroys work in
+// progress: the daemon stops every session on that machine, replaces itself,
+// and starts them again as new processes with empty terminals. The UI says so
+// in those words before it gets here, and the version is required so that
+// "yes" means yes to a particular release rather than to whatever the feed
+// offers by the time the daemon looks.
+func (h *handler) approveMachineUpdate() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+
+		var payload struct {
+			Version string `json:"version"`
+		}
+		if err := c.BodyParser(&payload); err != nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		approved, err := h.crud.ApproveMachineUpdate(ctx, entity.ApproveMachineUpdateRequest{
+			UserID:    c.Locals("user_id").(string),
+			MachineID: c.Params("id"),
+			Version:   payload.Version,
+		})
+		if err != nil {
+			if errors.Is(err, _crud.ErrNoUpdateOffered) {
+				c.Status(http.StatusConflict)
+				return c.Send(mapper.FromMessageToHTTPResponse(err.Error(), http.StatusConflict))
+			}
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		if h.machineRegistry == nil {
+			c.Status(http.StatusServiceUnavailable)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"machine connections are not available on this server", http.StatusServiceUnavailable))
+		}
+		if _, err := h.machineRegistry.Get(approved.MachineID); err != nil {
+			c.Status(http.StatusConflict)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"that machine is not connected", http.StatusConflict))
+		}
+
+		body, err := json.Marshal(wire.UpdateNow{Version: approved.Version})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		frame, err := wire.ControlFrame(wire.Control{Op: wire.OpUpdateNow, Body: body})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		if err := h.machineRegistry.Send(approved.MachineID, frame); err != nil {
+			zlog.Error().Err(err).Int64("machine_id", approved.MachineID).Msg("[machine] could not send the approval")
+			c.Status(http.StatusBadGateway)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"could not reach that machine", http.StatusBadGateway))
+		}
+
+		// Audited, because this destroys work that somebody else may be in the
+		// middle of. Who approved it, for which machine, to which version.
+		zlog.Info().
+			Str("user_id", c.Locals("user_id").(string)).
+			Int64("machine_id", approved.MachineID).
+			Str("version", approved.Version).
+			Msg("[audit] agentrqd update approved")
+
+		c.Status(http.StatusAccepted)
+		return nil
+	}
 }
 
 func (h *handler) listMachines() fiber.Handler {

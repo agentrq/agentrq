@@ -59,6 +59,7 @@ export function useMachineDetail(deps = {}) {
     updateMachine = api.updateMachine,
     deleteMachine = api.deleteMachine,
     killSession = api.killSession,
+    approveMachineUpdate = api.approveMachineUpdate,
   } = deps
 
   const machine = ref(null)
@@ -153,6 +154,30 @@ export function useMachineDetail(deps = {}) {
     }
   }
 
+  /**
+   * Say yes to the update this machine has offered.
+   *
+   * The version travels with the approval, so a release that appeared between
+   * the offer and the yes is refused rather than installed: somebody who
+   * agreed to lose their sessions for one version did not agree to lose them
+   * for another.
+   */
+  async function approveUpdate() {
+    const version = machine.value?.availableVersion
+    if (!version) return false
+    busy.value = true
+    error.value = ''
+    try {
+      await approveMachineUpdate(machineId, version)
+      return true
+    } catch (e) {
+      error.value = e?.message || 'Failed to approve the update'
+      return false
+    } finally {
+      busy.value = false
+    }
+  }
+
   /** Fold a live update in. */
   function handleEvent(event) {
     if (event?.type === 'machine.updated') {
@@ -193,6 +218,7 @@ export function useMachineDetail(deps = {}) {
     setEnabled,
     remove,
     stop,
+    approveUpdate,
     handleEvent,
   }
 }

@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/agentrq/agentrq/daemon/internal/restore"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -45,6 +46,14 @@ type Link struct {
 	// Rand is the jitter source, injected so backoff can be tested.
 	Rand func() float64
 
+	// Updater replaces this daemon's binary when somebody approves it. Nil in
+	// a build that cannot update itself, which then simply refuses.
+	Updater *Updater
+
+	// Pending are sessions an update stopped, to be started again on the first
+	// connection. Each link takes only its own profile's.
+	Pending []restore.Session
+
 	// Metrics is the machine's last measurement, and whether there has been
 	// one. Read rather than measured: a heartbeat that waited on a disk that
 	// had gone away would stop being a heartbeat at exactly the moment it was
@@ -55,7 +64,8 @@ type Link struct {
 	// several beats before anybody is told it is gone.
 	HeartbeatEvery time.Duration
 
-	streams *streams
+	streams  *streams
+	restored bool
 }
 
 // New builds a link.
@@ -151,6 +161,19 @@ func (l *Link) once(ctx context.Context) error {
 	l.Log.Info("connected to the backend")
 
 	go l.heartbeat(connCtx, conn)
+	if l.Updater != nil {
+		go l.Updater.Watch(connCtx, conn)
+	}
+
+	// Once, on the first connection that works. A reconnect is not a restart,
+	// and restoring again would start a second copy of everything.
+	if !l.restored {
+		l.restored = true
+		for _, s := range l.Pending {
+			l.Restore(connCtx, conn, s)
+		}
+		l.Pending = nil
+	}
 
 	return l.serve(connCtx, ws, conn)
 }
@@ -258,6 +281,8 @@ func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 		// Handled by the supervisor, and then wired to a pump — the supervisor
 		// knows about processes, and this knows about the connection.
 		l.start(ctx, conn, c)
+	case wire.OpUpdateNow:
+		l.updateNow(ctx, conn, c)
 	default:
 		if err := l.Supervisor.Handle(ctx, l.Profile, c, conn); err != nil {
 			l.Log.Warn("control message failed", "op", string(c.Op), "error", err)
@@ -289,6 +314,40 @@ func (r *capturingReporter) reason() string {
 		return "no reason was reported"
 	}
 	return r.last
+}
+
+// updateNow acts on an approval.
+//
+// Run on its own goroutine, because it ends with this process being replaced
+// and the frame loop is what would otherwise be waiting for it.
+func (l *Link) updateNow(ctx context.Context, conn *Conn, c wire.Control) {
+	var req wire.UpdateNow
+	if err := json.Unmarshal(c.Body, &req); err != nil {
+		l.Log.Warn("unreadable update approval", "error", err)
+		return
+	}
+	if l.Updater == nil {
+		// A build that cannot update itself says so rather than ignoring the
+		// request: somebody is watching a button they just pressed.
+		l.report(conn, c.ID, "this build cannot update itself")
+		return
+	}
+
+	go func() {
+		if err := l.Updater.Apply(ctx, req.Version); err != nil {
+			l.Log.Error("update refused", "approved", req.Version, "error", err)
+			l.report(conn, c.ID, err.Error())
+		}
+	}()
+}
+
+// report sends an error back, correlated with whatever provoked it.
+func (l *Link) report(conn *Conn, id, message string) {
+	_ = conn.Control(wire.Control{
+		ID:   id,
+		Op:   wire.OpError,
+		Body: mustJSON(map[string]string{"error": message}),
+	})
 }
 
 func (l *Link) attach(c wire.Control) {
