@@ -95,6 +95,7 @@ func cmdServe(ctx context.Context, args []string) error {
 	pending := link.Restored(ctx, st.dir, sup, log)
 
 	var wg sync.WaitGroup
+	links := make([]*link.Link, 0, len(profiles))
 	started := 0
 	for _, p := range profiles {
 		token, err := st.tokens.Get(p.ID)
@@ -127,6 +128,7 @@ func cmdServe(ctx context.Context, args []string) error {
 		l.Pending = pending
 		l.Updater = newUpdater(p.ID, st.dir, log.With("profile", p.ID), sup, *manifestURL)
 
+		links = append(links, l)
 		started++
 		wg.Add(1)
 		go func() {
@@ -139,6 +141,10 @@ func cmdServe(ctx context.Context, args []string) error {
 		return fmt.Errorf("no profile could be connected")
 	}
 	log.Info("agentrqd running", "profiles", started, "version", version)
+
+	// The machine's own record of what is running on it, for whoever is
+	// sitting at it. `agentrqd status` reads this.
+	go reportStatus(ctx, st.dir, sup, links, log)
 
 	<-ctx.Done()
 	// The sessions are left alone. Stopping the daemon is not a reason to kill

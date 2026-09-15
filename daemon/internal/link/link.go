@@ -65,6 +65,7 @@ type Link struct {
 	HeartbeatEvery time.Duration
 
 	streams  *streams
+	viewers  *viewerCount
 	restored bool
 }
 
@@ -80,6 +81,7 @@ func New(profile, url string, id Identity, d Dialer, s *supervisor.Supervisor, l
 		Rand:           rand.Float64,
 		HeartbeatEvery: DefaultHeartbeat,
 		streams:        newStreams(),
+		viewers:        newViewerCount(),
 	}
 }
 
@@ -364,10 +366,19 @@ func (l *Link) attach(c wire.Control) {
 		l.Log.Debug("attach for a session with no stream", "session", req.SessionID)
 		return
 	}
+	// Logged on the machine, not only on the server. Somebody at this keyboard
+	// must be able to find out that a terminal here is being watched, without
+	// having to ask the account that is watching it — which is the whole point
+	// of a local record. The keystrokes are not logged: those carry secrets,
+	// and the fact of the attach is what belongs in the record.
 	if c.Op == wire.OpDetach {
 		p.Detach()
+		l.Log.Info("a viewer stopped watching a terminal on this machine", "session", req.SessionID)
+		l.viewers.leave(req.SessionID)
 		return
 	}
+	l.Log.Warn("a viewer is watching a terminal on this machine", "session", req.SessionID)
+	l.viewers.join(req.SessionID)
 	if err := p.Attach(); err != nil {
 		l.Log.Warn("could not send the screen to a new viewer", "session", req.SessionID, "error", err)
 	}
