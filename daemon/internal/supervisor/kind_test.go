@@ -17,7 +17,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := "claude --name agentrq-code server:agentrq-workspace"
+	want := "claude --name agentrq-code --dangerously-load-development-channels server:agentrq-workspace"
 	if got := strings.Join(c.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -38,23 +38,27 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	}
 }
 
-// A flag with "dangerously" in its name should be switched on by somebody who
-// meant it, not inherited from a developer's make target.
-func TestDevChannelsFlagIsOffUnlessAskedFor(t *testing.T) {
-	off, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s"})
+// Confirmed by the owner: the daemon always passes it. The flag is what loads
+// the `server:<name>` channel, which is how the agent receives tasks — without
+// it the process starts and then does nothing, which is a worse failure than
+// it sounds because it looks like success.
+func TestDevelopmentChannelsFlagIsAlwaysPassedToClaude(t *testing.T) {
+	c, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.Join(off.Argv, " "), "dangerously") {
-		t.Error("the development-channels flag was passed without being asked for")
+	if !strings.Contains(strings.Join(c.Argv, " "), "--dangerously-load-development-channels") {
+		t.Error("the flag is required for the channel to load, and was not passed")
 	}
 
-	on, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s", DevChannels: true})
+	// And only to claude-code: the gateway has no such flag, and passing an
+	// unknown one to it would be a startup failure.
+	g, err := Resolve(KindACPGateway, Params{Model: "m", Agent: "a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(on.Argv, " "), "--dangerously-load-development-channels") {
-		t.Error("the flag was asked for and not passed")
+	if strings.Contains(strings.Join(g.Argv, " "), "dangerously") {
+		t.Error("the flag leaked into the acp-gateway command")
 	}
 }
 

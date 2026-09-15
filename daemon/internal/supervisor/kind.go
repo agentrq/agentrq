@@ -48,12 +48,6 @@ type Params struct {
 	// Model and Agent are the acp-gateway's selections.
 	Model string
 	Agent string
-	// DevChannels passes --dangerously-load-development-channels.
-	//
-	// Off unless asked for. The flag is in the repository's dev make target,
-	// and a daemon is not a developer's terminal — a flag with "dangerously"
-	// in its name should be switched on by somebody who meant it.
-	DevChannels bool
 }
 
 // safeParam is what a parameter may contain.
@@ -95,14 +89,30 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if err := checkParam("serverName", p.ServerName); err != nil {
 			return Command{}, err
 		}
-		argv := []string{"claude", "--name", p.Workspace}
-		if p.DevChannels {
-			argv = append(argv, "--dangerously-load-development-channels")
-		}
+		// --dangerously-load-development-channels is always passed, confirmed
+		// by the owner on 2026-09-15 when I asked whether a daemon should.
+		//
+		// It is what loads the `server:<name>` channel, which is the mechanism
+		// by which the agent receives tasks at all — so without it this kind
+		// starts and then does nothing, which is a worse failure than it
+		// sounds because it looks like success.
+		//
+		// Recording that it was asked and answered rather than leaving it to
+		// be rediscovered: a flag named "dangerously" appearing unconditionally
+		// in a daemon should make a reader stop, and this comment is the answer
+		// to why it is there.
+		//
 		// `server:<name>` names the MCP server in .mcp.json, which is why the
 		// daemon writes that file and passes this argument as one step.
-		argv = append(argv, "server:"+p.ServerName)
-		return Command{Argv: argv, NeedsMCPConfig: true}, nil
+		return Command{
+			Argv: []string{
+				"claude",
+				"--name", p.Workspace,
+				"--dangerously-load-development-channels",
+				"server:" + p.ServerName,
+			},
+			NeedsMCPConfig: true,
+		}, nil
 
 	case KindACPGateway:
 		if err := checkParam("model", p.Model); err != nil {

@@ -206,3 +206,15 @@ func TestNoTemporaryFilesAreLeftBehind(t *testing.T) {
 		t.Errorf("directory holds %v, want only %s", names, MCPConfigName)
 	}
 }
+
+// readMCPConfigExists reports whether a config file is present.
+func readMCPConfigExists(dir string) (MCPConfig, error) {
+	cfg, existed, err := readMCPConfig(filepath.Join(dir, MCPConfigName))
+	if err != nil {
+		return cfg, err
+	}
+	if !existed {
+		return cfg, os.ErrNotExist
+	}
+	return cfg, nil
+}
