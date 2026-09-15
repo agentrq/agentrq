@@ -134,3 +134,60 @@ func (r *repository) ReleaseMachine(ctx context.Context, id int64, instanceID st
 		Where("id = ? AND instance_id = ?", id, instanceID).
 		Updates(map[string]any{"instance_id": "", "connected_at": nil}).Error
 }
+
+// CreateSession records a session the daemon has been asked to start.
+func (r *repository) CreateSession(ctx context.Context, s model.Session) (model.Session, error) {
+	if err := r.conn(ctx).Create(&s).Error; err != nil {
+		return model.Session{}, err
+	}
+	return s, nil
+}
+
+// GetSession reads one session belonging to a user.
+func (r *repository) GetSession(ctx context.Context, id, userID int64) (model.Session, error) {
+	var s model.Session
+	if err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
+		return model.Session{}, err
+	}
+	return s, nil
+}
+
+// ListSessionsByMachine returns a machine's sessions, newest first.
+func (r *repository) ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error) {
+	var out []model.Session
+	err := r.conn(ctx).Where("machine_id = ? AND user_id = ?", machineID, userID).
+		Order("created_at DESC").Find(&out).Error
+	return out, err
+}
+
+// ActiveSessionForWorkspace finds a session that has not finished.
+//
+// Used to answer "does this workspace already have an agent?" from the
+// database, which is the half of that question that survives a backend
+// restart. The live socket answers the other half.
+func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error) {
+	var s model.Session
+	err := r.conn(ctx).
+		Where("workspace_id = ? AND user_id = ? AND status IN ?", workspaceID, userID, []string{"starting", "running"}).
+		Order("created_at DESC").First(&s).Error
+	if err != nil {
+		return model.Session{}, err
+	}
+	return s, nil
+}
+
+// UpdateSessionState records what the daemon reported.
+//
+// A narrow update rather than a full save: state reports arrive while a person
+// may be renaming things, and writing every column would overwrite whatever
+// landed in between.
+func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time) error {
+	fields := map[string]any{"status": status, "updated_at": time.Now()}
+	if exitCode != nil {
+		fields["exit_code"] = *exitCode
+	}
+	if endedAt != nil {
+		fields["ended_at"] = *endedAt
+	}
+	return r.conn(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(fields).Error
+}

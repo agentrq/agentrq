@@ -156,3 +156,26 @@ func IsOnline(lastSeen, now time.Time, threshold time.Duration) bool {
 	// online is the safe reading: the machine plainly just spoke to us.
 	return !now.After(lastSeen.Add(threshold))
 }
+
+// Session states, shared by the controller, the handler and the daemon.
+//
+// Strings rather than an enum because they are stored in a column and sent
+// over a socket; a value that survives both round trips is worth more than one
+// that needs translating at each edge.
+const (
+	SessionStarting = "starting"
+	SessionRunning  = "running"
+	SessionExited   = "exited"
+	SessionKilled   = "killed"
+	SessionFailed   = "failed"
+)
+
+// SessionTerminal reports whether a session can still change.
+func SessionTerminal(status string) bool {
+	switch status {
+	case SessionExited, SessionKilled, SessionFailed:
+		return true
+	default:
+		return false
+	}
+}
