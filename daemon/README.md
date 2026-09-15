@@ -12,13 +12,65 @@ bound.
 
 ## Status
 
-Milestone **M0** — the spike. Two packages exist and nothing is wired together
-yet.
+Milestones **M0** (the spike) and **M1** (enrolment). A machine can enrol,
+and its identity survives a restart. Nothing talks to the backend socket yet —
+that is M1b, which needs the server side to exist.
 
 | Package | What it is |
 |---|---|
 | `wire/` | The frame format, and deliberately the only definition of it |
 | `internal/pty/` | The platform layer: a process in a pseudo-terminal |
+| `internal/config/` | Profiles — an account, its server, its machine id |
+| `internal/secret/` | Machine tokens, one 0600 file each |
+| `internal/enrol/` | Trading a one-time code for a machine token |
+| `internal/guard/` | The checks the daemon makes about itself before it runs |
+| `cmd/agentrqd/` | The CLI: enroll, status, disable, version |
+
+## Enrolling
+
+```sh
+# The control panel: Machines → Add machine gives you a short code.
+agentrqd enroll --server https://app.agentrq.com --code ABCD-1234 --profile work
+agentrqd status
+agentrqd disable --profile work
+```
+
+Enrolment is a **local act**. Someone reads a code off the control panel and
+types it at a terminal on the machine being enrolled — there is no remote
+enrolment, and nothing the backend can say will cause a machine to enrol itself.
+
+A code rather than an OAuth2 browser flow because **the obvious place to run
+this is a headless build box**, and a flow needing a browser on the machine
+being enrolled does not work where it is most wanted.
+
+### TLS, and the one thing `--insecure` does not mean
+
+TLS is required and verified unless the server is loopback. There is no network
+to intercept on `localhost`, and demanding a certificate there would only push
+people towards a blanket skip-verification flag — the worst of both worlds.
+
+`--insecure` permits **plain HTTP to a remote host** and nothing else. It never
+disables certificate verification for an `https` URL: *"there is no
+certificate"* and *"the certificate is wrong"* are different problems, and only
+one of them is ever deliberate.
+
+A profile enrolled that way is marked, and says so on **every** `status` and
+every start — not once at enrolment. A security decision that becomes invisible
+after first boot has stopped being a decision.
+
+## Where the token lives
+
+In a `0600` file, one per profile, under a `0700` directory. The directory
+permissions are not belt-and-braces with the file ones: they are what stops
+another user *listing which profiles exist*, which is information on its own.
+
+The plan says "OS keychain where there is one, else a file". The file store is
+here and the keychain is not, and that order is deliberate: **a headless Linux
+box has no keyring daemon**, so a keychain implementation would fall back to a
+file on exactly the machines this is aimed at, while adding a dependency that
+fails in ways that are miserable to debug over SSH. [`secret.Store`] is the
+interface a keychain-backed store can be dropped into when there is a desktop
+case that wants one.
 
 ## `wire` is imported by the backend
 
