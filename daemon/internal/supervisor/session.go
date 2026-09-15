@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -288,6 +289,24 @@ func (s *Supervisor) Count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.sessions)
+}
+
+// Running lists the sessions that are still alive.
+//
+// Finished ones are excluded on purpose: this answers "what is this daemon
+// actually supervising", which is what a reconnecting backend needs in order
+// to correct rows it believes are running.
+func (s *Supervisor) Running() []uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]uint64, 0, len(s.sessions))
+	for id, sess := range s.sessions {
+		if state, _, _ := sess.State(); !state.Terminal() {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
 }
 
 // Ended closes once the session has finished and its outcome is recorded.

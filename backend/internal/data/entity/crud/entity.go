@@ -1200,7 +1200,13 @@ type (
 
 	// EnrolMachineResponse is returned once. The token is never recoverable.
 	EnrolMachineResponse struct {
-		MachineID    string `json:"machineId"`
+		MachineID string `json:"machineId"`
+		// UserID is the account this machine now belongs to. Not a secret —
+		// the daemon just traded a code issued by that account — and it is
+		// what lets the daemon name itself in the headers on every later
+		// connection, so a mismatch between token and claim is something the
+		// backend can refuse rather than something it has to infer.
+		UserID       string `json:"userId"`
 		MachineToken string `json:"machineToken"`
 	}
 )

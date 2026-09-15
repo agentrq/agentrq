@@ -48,6 +48,24 @@ type Resize struct {
 	Rows uint16 `json:"rows"`
 }
 
+// Hello is the first message a daemon sends.
+//
+// It is informational: the token has already decided who this is, and nothing
+// here is trusted for authorisation. What it is for is the control panel being
+// able to say which version a machine is running without waiting for an
+// update check, and the log line that records a reconnection being useful.
+//
+// Sessions lists what this daemon believes is still running. After a restart
+// it is empty, which is how the backend learns that rows it thinks are running
+// are not.
+type Hello struct {
+	Version  string   `json:"version"`
+	OS       string   `json:"os,omitempty"`
+	Arch     string   `json:"arch,omitempty"`
+	Hostname string   `json:"hostname,omitempty"`
+	Sessions []uint64 `json:"sessions,omitempty"`
+}
+
 // Presence names everyone attached to a session.
 //
 // Two browsers on one terminal is allowed — that is how one person shows
