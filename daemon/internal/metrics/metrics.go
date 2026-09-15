@@ -14,6 +14,7 @@ import (
 	"errors"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -232,11 +233,17 @@ func under(path, mount string) bool {
 	if path == mount {
 		return true
 	}
-	if mount == string(filepath.Separator) {
-		return true
-	}
 	sep := string(filepath.Separator)
-	// The separator matters: /srv must not match /srvfoo.
+
+	// A mount that already ends in a separator is a root — "/" everywhere, and
+	// "C:\" on Windows — and requiring another separator after it would mean
+	// nothing ever matched a Windows drive. That is not hypothetical: it would
+	// have left every Windows machine reporting no disks at all.
+	if strings.HasSuffix(mount, sep) {
+		return strings.HasPrefix(path, mount)
+	}
+
+	// Otherwise the separator is what stops /srv matching /srvfoo.
 	return len(path) > len(mount) && path[:len(mount)] == mount && path[len(mount):len(mount)+1] == sep
 }
 

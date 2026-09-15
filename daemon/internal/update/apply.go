@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 )
 
 // ErrAlreadyCurrent means there is nothing newer to install.
@@ -53,7 +52,7 @@ func Prepare(ctx context.Context, client Fetcher, manifestURL, currentVersion, g
 		return Plan{}, err
 	}
 
-	staged, err := Download(ctx, client, a, filepath.Dir(binaryPath))
+	staged, err := Download(ctx, client, a, binaryPath)
 	if err != nil {
 		return Plan{}, err
 	}

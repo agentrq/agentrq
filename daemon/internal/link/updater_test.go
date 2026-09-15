@@ -28,6 +28,14 @@ import (
 )
 
 // feed serves a signed manifest and the binary it names.
+// stubSuffix is the extension a runnable stub needs on this platform.
+func stubSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".bat"
+	}
+	return ""
+}
+
 type feed struct {
 	manifest string
 	artifact string
@@ -110,7 +118,10 @@ func newUpdater(t *testing.T, f *feed, current string) *updaterHarness {
 	t.Helper()
 	dir := t.TempDir()
 	state := t.TempDir()
-	binary := filepath.Join(dir, "agentrqd")
+	// With the stub's extension: the staged file inherits it, and Windows will
+	// not run a batch file that is not called .bat. A real release replaces
+	// agentrqd.exe with agentrqd.exe; this replaces a script with a script.
+	binary := filepath.Join(dir, "agentrqd"+stubSuffix())
 	if err := os.WriteFile(binary, []byte("v-old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
