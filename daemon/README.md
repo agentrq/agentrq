@@ -55,6 +55,43 @@ CI therefore runs this suite on **ubuntu, macOS and windows** (see
 `.github/workflows/daemon.yml`), and cross-compiles all six release targets from
 one runner, since the daemon uses no cgo.
 
+## Enter is CR, and the platforms disagree about it afterwards
+
+The first thing the three-platform suite caught, and it is worth writing down
+because it passes on two platforms out of three.
+
+**Pressing Enter sends carriage return (0x0d), not line feed.** That is what a
+real terminal transmits, and what `xterm.js`'s `onData` will hand the browser
+side. A test that writes `"\n"` instead passes on Linux and macOS — their line
+discipline accepts NL as a line ending — and **hangs on Windows**: the ConPTY
+echoes the characters back but never treats the line as submitted, so the child
+sits in its read until the test times out.
+
+Then the mirror image, one layer down. The line discipline rewrites whichever
+terminator it does not use: Unix maps the CR that Enter sends into NL *before
+the child sees it*. So a child waiting for a specific byte waits forever on the
+other platform. Read until either.
+
+The daemon itself is correct in both directions — it is a transparent byte pipe
+and translates nothing, which is the whole design. The bug was in code that had
+quietly encoded one platform's convention. That is the class of thing this suite
+exists to find, and it would have surfaced as "the Enter key does nothing on
+Windows" months later otherwise.
+
+## What ConPTY sends before anything happens
+
+A Windows session opens with a burst of console setup that Unix does not send:
+
+```
+\x1b[?9001h   win32-input mode on      \x1b[2J     clear screen
+\x1b[?1004h   focus reporting on       \x1b[H      cursor home
+\x1b[?25l     hide cursor              OSC 0;…BEL  set window title
+```
+
+Nothing here needs handling at this layer — they are bytes like any others — but
+the screen-state work in M3 will consume them, and anything that assumes a
+session's first output is program output will be wrong on Windows.
+
 ## What the tests do not cover
 
 `internal/pty` sits around 87%, and the gap is syscall failure paths — a

@@ -50,6 +50,25 @@ func helperMain(mode string) int {
 			fmt.Printf("got:%s\n", line)
 		}
 		return 0
+	case mode == "bytes":
+		in := bufio.NewReader(os.Stdin)
+		var hex strings.Builder
+		for {
+			b, err := in.ReadByte()
+			if err != nil {
+				return 1
+			}
+			// Either terminator ends the line. The line discipline rewrites
+			// whichever one it does not use — Unix turns the CR that Enter
+			// sends into NL before the child sees it — so a reader waiting for
+			// one specific byte waits forever on the other platform.
+			if b == '\r' || b == '\n' {
+				break
+			}
+			fmt.Fprintf(&hex, "%02x", b)
+		}
+		fmt.Printf("hex:%s\n", hex.String())
+		return 0
 	case mode == "sleep":
 		time.Sleep(time.Minute)
 		return 0
@@ -156,6 +175,18 @@ func TestWaitIsIdempotent(t *testing.T) {
 }
 
 // The keyboard half. Input is written as raw bytes and the child must see them.
+//
+// Note the CR. Pressing Enter on a real terminal sends carriage return (0x0d),
+// not line feed — which is what xterm.js's onData yields, and therefore what
+// will arrive from the browser. Writing "\n" here instead passed on Linux and
+// macOS and failed on Windows: the ConPTY echoed the characters back but never
+// treated the line as submitted, so the child sat in its scanner until the test
+// timed out. Unix forgives it because the line discipline maps NL to a line
+// ending; ConPTY does not.
+//
+// The daemon is right either way — it is a transparent byte pipe and translates
+// nothing — but the test had encoded an assumption that only one platform
+// shares, which is exactly the class of bug this suite exists to catch.
 func TestWritingInputReachesTheProcess(t *testing.T) {
 	s, err := Start(t.Context(), helperSpec(t, "echo"))
 	if err != nil {
@@ -163,11 +194,32 @@ func TestWritingInputReachesTheProcess(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	if _, err := s.Write([]byte("ping\n")); err != nil {
+	if _, err := s.Write([]byte("ping\r")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if !readUntil(t, s, "got:ping") {
 		t.Error("the child never saw the input")
+	}
+}
+
+// Esc has to arrive as the single byte 0x1b, through every layer, on every
+// platform. It is the example in the brief and the thing most likely to be
+// "helpfully" transformed by something in the middle.
+func TestEscapeByteReachesTheProcessIntact(t *testing.T) {
+	s, err := Start(t.Context(), helperSpec(t, "bytes"))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Esc, then Enter so the helper's line is submitted.
+	if _, err := s.Write([]byte{0x1b, '\r'}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	// The helper reports what it received as hex, so the assertion does not
+	// depend on the terminal echoing a control character legibly.
+	if !readUntil(t, s, "hex:1b") {
+		t.Error("Esc did not arrive as 0x1b")
 	}
 }
 
