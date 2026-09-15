@@ -116,7 +116,8 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 // It waits on the session rather than on the pseudo-terminal. Waiting on the
 // terminal would wake at the same instant as the goroutine that records what
 // happened, and reporting whichever won would sometimes report a session that
-// has just exited as still running.
+// has just exited as still running — a flake that failed roughly three runs in
+// five, and only on a machine slow enough to lose the race.
 func (s *Supervisor) awaitEnd(sess *Session) {
 	<-sess.Ended()
 }

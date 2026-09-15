@@ -6,6 +6,8 @@ package metrics
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -154,12 +156,18 @@ func TestAnUnmeasurableMountIsOmittedRatherThanReportedEmpty(t *testing.T) {
 }
 
 // "/" contains everything, so the longest match is the only correct one.
+//
+// Written through filepath.FromSlash because this is about path *separators*,
+// and hard-coding "/" tests nothing on the one platform where the answer could
+// differ. The first version of this test failed on Windows for exactly that
+// reason — the function was right and the expectations were Unix.
 func TestTheDeepestMountWins(t *testing.T) {
+	sep := filepath.FromSlash
 	parts := []Partition{
-		{Mount: "/"},
-		{Mount: "/srv"},
-		{Mount: "/srv/data"},
-		{Mount: "/srvfoo"},
+		{Mount: sep("/")},
+		{Mount: sep("/srv")},
+		{Mount: sep("/srv/data")},
+		{Mount: sep("/srvfoo")},
 	}
 	for path, want := range map[string]string{
 		"/srv/data/app":  "/srv/data",
@@ -168,14 +176,37 @@ func TestTheDeepestMountWins(t *testing.T) {
 		"/home/rpi/code": "/",
 		"/srv":           "/srv",
 	} {
-		if got := mountFor(path, parts); got != want {
+		if got := mountFor(sep(path), parts); got != sep(want) {
+			t.Errorf("mountFor(%q) = %q, want %q", sep(path), got, sep(want))
+		}
+	}
+}
+
+// Windows mounts are drive letters, which is what gopsutil actually reports
+// there — so that is what the matching has to work on, not a Unix path with
+// the separators swapped.
+//
+// This found a real bug rather than a test one: a drive root already ends in a
+// separator, and the matching required another one after the mount. Every
+// Windows machine would have reported no disks at all.
+func TestDriveLettersAreMounts(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive letters are a Windows shape")
+	}
+	parts := []Partition{{Mount: `C:\`}, {Mount: `D:\`}, {Mount: `C:\data`}}
+	for path, want := range map[string]string{
+		`C:\Users\rpi\src`: `C:\`,
+		`C:\data\app`:      `C:\data`,
+		`D:\build`:         `D:\`,
+	} {
+		if got := mountFor(path, parts); got != filepath.Clean(want) {
 			t.Errorf("mountFor(%q) = %q, want %q", path, got, want)
 		}
 	}
 }
 
 func TestMountForWithNothingMounted(t *testing.T) {
-	if got := mountFor("/srv/app", nil); got != "" {
+	if got := mountFor(filepath.FromSlash("/srv/app"), nil); got != "" {
 		t.Errorf("mountFor with no partitions = %q", got)
 	}
 }
