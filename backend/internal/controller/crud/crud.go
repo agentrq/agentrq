@@ -38,6 +38,7 @@ type (
 		TelemetryController
 		MachineController
 		MachineManageController
+		SessionController
 	}
 
 	controller struct {

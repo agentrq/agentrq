@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -258,5 +259,38 @@ func TestVersionIsAnnouncedFromTheStart(t *testing.T) {
 	// Worthless if added once there is already a fleet that never sent it.
 	if Version < 1 {
 		t.Errorf("Version = %d, want >= 1", Version)
+	}
+}
+
+// Start requests are exactly the thing somebody turns logging up on when a
+// launch is not working, and the MCP URL carries the workspace token.
+func TestStartSessionRedactsItsCredential(t *testing.T) {
+	const secret = "eyJhbGciOiJIUzI1NiJ9.SECRET.sig"
+	s := StartSession{
+		SessionID: 7,
+		Kind:      "claude-code",
+		Dir:       "/srv/app",
+		MCPURL:    "https://abc.mcp.agentrq.com?token=" + secret,
+		Workspace: "agentrq-code",
+	}
+
+	r := s.Redacted()
+	if strings.Contains(r.MCPURL, secret) {
+		t.Errorf("Redacted() still carries the token: %q", r.MCPURL)
+	}
+	// Everything a log is actually useful for must survive.
+	if r.SessionID != 7 || r.Kind != "claude-code" || r.Dir != "/srv/app" || r.Workspace != "agentrq-code" {
+		t.Errorf("Redacted() lost context a log needs: %+v", r)
+	}
+	// And the original is untouched — redaction is for logging, not a mutation
+	// that would strip the URL before it is used.
+	if !strings.Contains(s.MCPURL, secret) {
+		t.Error("Redacted() mutated the original")
+	}
+
+	// A start with no URL redacts to nothing rather than to "<redacted>",
+	// which would be a lie about a field that was never set.
+	if got := (StartSession{}).Redacted(); got.MCPURL != "" {
+		t.Errorf("an absent URL became %q", got.MCPURL)
 	}
 }

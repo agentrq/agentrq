@@ -1261,3 +1261,52 @@ type (
 		MachineID string
 	}
 )
+
+type (
+	// SessionView is one agent session as the control panel sees it.
+	SessionView struct {
+		ID          string     `json:"id"`
+		MachineID   string     `json:"machineId"`
+		WorkspaceID string     `json:"workspaceId,omitempty"`
+		Kind        string     `json:"kind"`
+		Status      string     `json:"status"`
+		ExitCode    *int       `json:"exitCode,omitempty"`
+		Restored    bool       `json:"restored,omitempty"`
+		Cols        int        `json:"cols,omitempty"`
+		Rows        int        `json:"rows,omitempty"`
+		StartedAt   *time.Time `json:"startedAt,omitempty"`
+		EndedAt     *time.Time `json:"endedAt,omitempty"`
+		CreatedAt   time.Time  `json:"createdAt"`
+	}
+
+	CreateSessionRequest struct {
+		UserID      string
+		MachineID   string
+		WorkspaceID string
+		Kind        string
+		Cols        uint16
+		Rows        uint16
+	}
+	CreateSessionResponse struct {
+		Session SessionView `json:"session"`
+	}
+
+	UpdateSessionStateRequest struct {
+		SessionID string
+		Status    string
+		ExitCode  *int
+		EndedAt   *time.Time
+		// Error explains a failure in terms the person can act on. Not stored
+		// on the row today — it reaches the UI through the event stream — but
+		// carried here so the controller has it when that lands.
+		Error string
+	}
+
+	ListSessionsRequest struct {
+		UserID    string
+		MachineID string
+	}
+	ListSessionsResponse struct {
+		Sessions []SessionView `json:"sessions"`
+	}
+)
