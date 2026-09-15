@@ -191,3 +191,48 @@ func (r *repository) UpdateSessionState(ctx context.Context, id int64, status st
 	}
 	return r.conn(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(fields).Error
 }
+
+// RecordMachineMetrics stores the latest snapshot and nothing historical.
+//
+// Latest only, deliberately: writing every heartbeat to a table would grow
+// forever to power a widget nobody has asked for. If a graph is wanted later,
+// a bounded in-memory ring is the right trade — it empties on restart, which
+// is fine for something that is only ever about right now.
+//
+// A narrow update for the same reason TouchMachine is one: these arrive every
+// few seconds, and writing every column would overwrite a rename or a disable
+// that landed in between.
+func (r *repository) RecordMachineMetrics(ctx context.Context, m model.Machine) error {
+	return r.conn(ctx).Model(&model.Machine{}).
+		Where("id = ?", m.ID).
+		Updates(map[string]any{
+			"mem_total":     m.MemTotal,
+			"mem_available": m.MemAvailable,
+			"cpu_percent":   m.CPUPercent,
+			"load_avg":      m.LoadAvg,
+			"uptime_sec":    m.UptimeSec,
+			"disks":         m.Disks,
+			"metrics_at":    m.MetricsAt,
+		}).Error
+}
+
+// ReconcileSessions ends the sessions a machine is no longer running.
+//
+// The daemon says what it is supervising; anything this machine still has
+// marked live and the daemon did not name has ended without anybody being
+// told — most often because the daemon restarted. Left alone, those rows sit
+// as "running" forever and block the workspace's next launch.
+//
+// Scoped to one machine, so a daemon can only ever correct its own rows.
+func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error {
+	q := r.conn(ctx).Model(&model.Session{}).
+		Where("machine_id = ? AND status IN ?", machineID, []string{"starting", "running"})
+	if len(running) > 0 {
+		q = q.Where("id NOT IN ?", running)
+	}
+	return q.Updates(map[string]any{
+		"status":     "exited",
+		"ended_at":   at,
+		"updated_at": at,
+	}).Error
+}

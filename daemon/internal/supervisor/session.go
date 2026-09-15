@@ -50,6 +50,9 @@ type Request struct {
 type Session struct {
 	ID   uint64
 	Kind Kind
+	// Dir is the workspace folder this session runs in. Kept so the machine
+	// can report the free space on the filesystem that actually matters.
+	Dir string
 
 	mu       sync.RWMutex
 	state    State
@@ -135,7 +138,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	// Reserved before the slow work below, so two concurrent starts cannot
 	// both pass the capacity check.
-	sess := &Session{ID: req.ID, Kind: req.Kind, state: StateStarting, ended: make(chan struct{})}
+	sess := &Session{ID: req.ID, Kind: req.Kind, Dir: req.Dir, state: StateStarting, ended: make(chan struct{})}
 	s.sessions[req.ID] = sess
 	s.profiles[req.ID] = profile
 	s.mu.Unlock()
@@ -311,6 +314,29 @@ func (s *Supervisor) Running() []uint64 {
 
 // Ended closes once the session has finished and its outcome is recorded.
 func (sess *Session) Ended() <-chan struct{} { return sess.ended }
+
+// Dirs are the working directories of the sessions still running.
+//
+// Used to decide which filesystems are worth reporting: the mount a workspace
+// sits on is the one that fills up, and it is not always the root one.
+func (s *Supervisor) Dirs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[string]bool{}
+	out := make([]string, 0, len(s.sessions))
+	for _, sess := range s.sessions {
+		if state, _, _ := sess.State(); state.Terminal() {
+			continue
+		}
+		if sess.Dir == "" || seen[sess.Dir] {
+			continue
+		}
+		seen[sess.Dir] = true
+		out = append(out, sess.Dir)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // State reports a session's current state and exit code.
 func (sess *Session) State() (State, int, error) {

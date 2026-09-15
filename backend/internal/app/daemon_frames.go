@@ -17,10 +17,12 @@ import (
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
-// sessionRecorder is the slice of the CRUD controller this needs. Narrow so
-// the routing can be tested without a database.
-type sessionRecorder interface {
+// daemonRecorder is the slice of the CRUD controller this needs. Narrow so the
+// routing can be tested without a database.
+type daemonRecorder interface {
 	UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error
+	RecordMachineMetrics(ctx context.Context, req entity.RecordMachineMetricsRequest) error
+	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 }
 
 // daemonFrames routes a frame arriving from a daemon.
@@ -30,7 +32,7 @@ type sessionRecorder interface {
 // newer daemon is ignored: dropping the socket over one would turn every
 // addition to the protocol into a breaking change for daemons already in the
 // field, and would take the machine's other sessions down with it.
-func daemonFrames(relay *machine.Relay, rec sessionRecorder) func(context.Context, *machine.Session, wire.Frame) error {
+func daemonFrames(relay *machine.Relay, rec daemonRecorder) func(context.Context, *machine.Session, wire.Frame) error {
 	return func(ctx context.Context, s *machine.Session, f wire.Frame) error {
 		if f.Type != wire.TypeControl {
 			// Terminal traffic. Copied to whoever is watching and not read:
@@ -45,8 +47,28 @@ func daemonFrames(relay *machine.Relay, rec sessionRecorder) func(context.Contex
 			zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] unreadable control frame")
 			return nil
 		}
-		if c.Op != wire.OpSessionState {
-			// Heartbeats and everything else are handled elsewhere or not yet.
+		switch c.Op {
+		case wire.OpSessionState:
+			// Below.
+		case wire.OpHello:
+			var hello wire.Hello
+			if err := json.Unmarshal(c.Body, &hello); err != nil {
+				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] unreadable hello")
+				return nil
+			}
+			reconcile(ctx, rec, s.Identity.MachineID, hello.Sessions)
+			return nil
+		case wire.OpHeartbeat:
+			var hb wire.Heartbeat
+			if err := json.Unmarshal(c.Body, &hb); err != nil {
+				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] unreadable heartbeat")
+				return nil
+			}
+			recordMetrics(ctx, rec, s.Identity.MachineID, hb)
+			reconcile(ctx, rec, s.Identity.MachineID, hb.Sessions)
+			return nil
+		default:
+			// An op from a newer daemon. Ignored, not fatal.
 			return nil
 		}
 
@@ -76,5 +98,49 @@ func daemonFrames(relay *machine.Relay, rec sessionRecorder) func(context.Contex
 	}
 }
 
+// recordMetrics stores what a machine said about itself.
+//
+// The machine id comes from the authenticated socket and never from the
+// payload: a daemon may only ever describe itself, and a heartbeat claiming
+// another machine's id is the one thing this must not honour.
+func recordMetrics(ctx context.Context, rec daemonRecorder, machineID int64, hb wire.Heartbeat) {
+	disks := make([]entity.MachineDiskView, 0, len(hb.Disks))
+	for _, d := range hb.Disks {
+		disks = append(disks, entity.MachineDiskView{Mount: d.Mount, Total: d.Total, Free: d.Free})
+	}
+	err := rec.RecordMachineMetrics(ctx, entity.RecordMachineMetricsRequest{
+		MachineID:    machineID,
+		MemTotal:     hb.MemTotal,
+		MemAvailable: hb.MemAvailable,
+		CPUPercent:   hb.CPUPercent,
+		LoadAvg:      hb.LoadAvg,
+		UptimeSec:    hb.UptimeSec,
+		Disks:        disks,
+		ReportedAt:   time.Now(),
+	})
+	if err != nil {
+		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not record metrics")
+	}
+}
+
+// reconcile ends the sessions this machine is no longer running.
+//
+// A daemon that restarted comes back supervising nothing, and the rows it left
+// behind would otherwise sit as "running" forever and block the workspace's
+// next launch. Scoped to the machine on the socket, so a daemon can only
+// correct its own.
+func reconcile(ctx context.Context, rec daemonRecorder, machineID int64, running []uint64) {
+	ids := make([]int64, 0, len(running))
+	for _, id := range running {
+		ids = append(ids, int64(id))
+	}
+	if err := rec.ReconcileSessions(ctx, entity.ReconcileSessionsRequest{
+		MachineID: machineID,
+		Running:   ids,
+	}); err != nil {
+		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not reconcile sessions")
+	}
+}
+
 // compile-time check that the CRUD controller satisfies the narrow interface.
-var _ sessionRecorder = crud.Controller(nil)
+var _ daemonRecorder = crud.Controller(nil)

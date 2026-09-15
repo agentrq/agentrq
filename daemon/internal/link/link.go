@@ -44,9 +44,16 @@ type Link struct {
 
 	// Rand is the jitter source, injected so backoff can be tested.
 	Rand func() float64
-	// OnConnect is called with the live connection, for what has to be set up
-	// per connection — the heartbeat, and later the metrics that ride on it.
-	OnConnect func(ctx context.Context, c *Conn)
+
+	// Metrics is the machine's last measurement, and whether there has been
+	// one. Read rather than measured: a heartbeat that waited on a disk that
+	// had gone away would stop being a heartbeat at exactly the moment it was
+	// most informative.
+	Metrics func() (wire.Heartbeat, bool)
+	// HeartbeatEvery is how often one is sent. Well under the backend's
+	// threshold for calling a machine offline, so a machine has to miss
+	// several beats before anybody is told it is gone.
+	HeartbeatEvery time.Duration
 
 	streams *streams
 }
@@ -54,14 +61,15 @@ type Link struct {
 // New builds a link.
 func New(profile, url string, id Identity, d Dialer, s *supervisor.Supervisor, log *slog.Logger) *Link {
 	return &Link{
-		Profile:    profile,
-		URL:        url,
-		Identity:   id,
-		Dialer:     d,
-		Supervisor: s,
-		Log:        log,
-		Rand:       rand.Float64,
-		streams:    newStreams(),
+		Profile:        profile,
+		URL:            url,
+		Identity:       id,
+		Dialer:         d,
+		Supervisor:     s,
+		Log:            log,
+		Rand:           rand.Float64,
+		HeartbeatEvery: DefaultHeartbeat,
+		streams:        newStreams(),
 	}
 }
 
@@ -142,12 +150,66 @@ func (l *Link) once(ctx context.Context) error {
 	}
 	l.Log.Info("connected to the backend")
 
-	if l.OnConnect != nil {
-		l.OnConnect(connCtx, conn)
-	}
+	go l.heartbeat(connCtx, conn)
 
 	return l.serve(connCtx, ws, conn)
 }
+
+// DefaultHeartbeat is how often the machine reports itself.
+const DefaultHeartbeat = 15 * time.Second
+
+// heartbeat reports the machine until the connection ends.
+//
+// Nothing is sent until there is a measurement to send. An empty heartbeat
+// would land on the row as a snapshot of zero memory and an idle CPU, which is
+// a confident lie where "we have not heard yet" is the truth — and it would
+// defeat the nullable field that exists to tell those apart.
+//
+// Liveness does not depend on this. The connection's own ping and pong is what
+// keeps a machine online, and the backend counts every pong.
+func (l *Link) heartbeat(ctx context.Context, conn *Conn) {
+	every := l.HeartbeatEvery
+	if every <= 0 {
+		every = DefaultHeartbeat
+	}
+	send := func() bool {
+		if l.Metrics == nil {
+			return false
+		}
+		hb, ok := l.Metrics()
+		if !ok {
+			return false
+		}
+		hb.Sessions = l.Supervisor.Running()
+		if err := conn.Control(wire.Control{Op: wire.OpHeartbeat, Body: mustJSON(hb)}); err != nil {
+			l.Log.Debug("heartbeat not sent", "error", err)
+		}
+		return true
+	}
+
+	// Connecting and taking the first measurement race, and connecting
+	// usually wins. Looking again shortly rather than waiting out a whole
+	// interval is what stops a machine showing no metrics at all for the first
+	// quarter of a minute after it appears.
+	next := time.NewTimer(0)
+	defer next.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-next.C:
+			if send() {
+				next.Reset(every)
+			} else {
+				next.Reset(WaitingForMetrics)
+			}
+		}
+	}
+}
+
+// WaitingForMetrics is how often the heartbeat looks again while the first
+// measurement is still being taken.
+const WaitingForMetrics = 500 * time.Millisecond
 
 // serve reads frames until the connection ends.
 func (l *Link) serve(ctx context.Context, ws *websocket.Conn, conn *Conn) error {

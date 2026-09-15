@@ -66,6 +66,48 @@ type Hello struct {
 	Sessions []uint64 `json:"sessions,omitempty"`
 }
 
+// Disk is one filesystem's space.
+//
+// Per mount, never one number for the machine. A single "free space" figure is
+// a lie on any box with more than one filesystem: it can be 2% full and still
+// fail to check out a repository, because the full one is the one that matters.
+type Disk struct {
+	Mount string `json:"mount"`
+	Total int64  `json:"total"`
+	Free  int64  `json:"free"`
+}
+
+// Heartbeat is what a daemon reports about the machine it is on.
+//
+// Enough to answer "can this box take another agent?" without opening a
+// terminal on it, and nothing more: this is a liveness and capacity signal,
+// not an inventory.
+type Heartbeat struct {
+	// MemAvailable is what a new process could actually get, not what is
+	// unused. On Linux "free" excludes the page cache and reads alarmingly low
+	// on a perfectly healthy machine, which would make every box look full.
+	MemTotal     int64 `json:"memTotal"`
+	MemAvailable int64 `json:"memAvailable"`
+
+	// CPUPercent is a rate measured over an interval, not a reading taken at
+	// an instant — there is no such thing as an instantaneous CPU percentage.
+	CPUPercent float64 `json:"cpuPercent"`
+
+	// LoadAvg is Unix-only and simply absent on Windows.
+	//
+	// Nil rather than zeroes, and the difference matters: three zeroes render
+	// as a perfectly idle machine, which is the most misleading thing this
+	// payload could say about a box that never reports load at all.
+	LoadAvg []float64 `json:"loadAvg,omitempty"`
+
+	UptimeSec int64  `json:"uptimeSec"`
+	Disks     []Disk `json:"disks,omitempty"`
+
+	// Sessions is what this daemon is still supervising, so a backend that
+	// restarted can correct rows it believes are running.
+	Sessions []uint64 `json:"sessions,omitempty"`
+}
+
 // Presence names everyone attached to a session.
 //
 // Two browsers on one terminal is allowed — that is how one person shows
