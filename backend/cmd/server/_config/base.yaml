@@ -74,3 +74,9 @@ ratelimit:
 
 storage:
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
+
+# The node id must be unique across running instances: monoflake ids collide
+# otherwise. It is also what identifies this process when a daemon socket is
+# paired to an instance, so the same value has to be right for both reasons.
+idgen:
+  node: ${MONOFLAKE_NODE:1}

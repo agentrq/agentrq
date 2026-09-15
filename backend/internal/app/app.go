@@ -91,6 +91,15 @@ type (
 			RootLoginEnabled  bool   `yaml:"rootLoginEnabled"`
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
 		} `yaml:"auth"`
+		// Idgen's node id doubles as this process's instance id, because the
+		// two need exactly the same property: monoflake ids collide unless
+		// every node is distinct, so a deployment that runs more than one
+		// instance has already had to make this unique. Reusing it means one
+		// value to get right instead of two.
+		Idgen struct {
+			Node uint16 `yaml:"node"`
+		} `yaml:"idgen"`
+
 		SMTP    smtp.Config     `yaml:"smtp"`
 		Slack   slacksvc.Config `yaml:"slack"`
 		WebPush pushctrl.Config `yaml:"webPush"`
@@ -214,7 +223,15 @@ func New(cfg Config) (*App, error) {
 	}
 
 	// ── Core Services ──────────────────────────────────────────────────────────
-	ids, err := idgen.New(uint16(1))
+	// Defaults to 1 rather than 0 only because that is what this was
+	// hardcoded to; changing it would change the node bits of every id a
+	// existing deployment generates from here on. Uniqueness is what matters,
+	// not the value.
+	idgenNode := cfg.Idgen.Node
+	if idgenNode == 0 {
+		idgenNode = 1
+	}
+	ids, err := idgen.New(idgenNode)
 	if err != nil {
 		return nil, fmt.Errorf("idgen: %w", err)
 	}
@@ -852,7 +869,7 @@ func New(cfg Config) (*App, error) {
 	// The daemon sockets this process holds. Created here rather than at the
 	// mount below because the API handler needs it too: revoking a machine has
 	// to close its socket, and only the process holding it can do that.
-	machineRegistry := machine.NewRegistry(instanceID())
+	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
 
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
@@ -985,14 +1002,19 @@ func New(cfg Config) (*App, error) {
 // than it is wrong, and a random value would be worse: it changes on every
 // restart, leaving stale pairings that point at an instance id nothing will
 // ever answer to again.
-func instanceID() string {
+func instanceID(idgenNode uint16) string {
 	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {
 		return v
 	}
-	if h, err := os.Hostname(); err == nil && h != "" {
-		return h
-	}
-	return "unknown"
+	// The idgen node id, because it already has to be unique per instance:
+	// monoflake ids collide otherwise. A deployment running several instances
+	// has therefore already set it, and one that has not is running one
+	// instance, where the pairing does not matter anyway.
+	//
+	// Better than a hostname, which is only usually unique, and far better
+	// than a random value, which changes on every restart and leaves pairings
+	// pointing at an id nothing will ever answer to again.
+	return fmt.Sprintf("node-%d", idgenNode)
 }
 
 // taskEventPayload loads the task an SSE event is about, with the relations a
