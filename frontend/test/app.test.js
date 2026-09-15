@@ -41,6 +41,7 @@ describe('routes', () => {
       // everything else — the desktop build mounts exactly this list.
       '/extensions',
       '/extensions/:name/:pageId',
+      '/sessions/:id',
       '/workflows',
       '/workflows/:id',
       '/login',

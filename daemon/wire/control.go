@@ -23,6 +23,7 @@ const (
 	OpDetach          Op = "detach"          // backend → daemon
 	OpUpdateAvailable Op = "updateAvailable" // daemon → backend
 	OpUpdateNow       Op = "updateNow"       // backend → daemon, the user approved
+	OpPresence        Op = "presence"        // backend → viewer, who else is watching
 	OpError           Op = "error"           // either way, always correlated
 )
 
@@ -45,6 +46,32 @@ type Control struct {
 type Resize struct {
 	Cols uint16 `json:"cols"`
 	Rows uint16 `json:"rows"`
+}
+
+// Presence names everyone attached to a session.
+//
+// Two browsers on one terminal is allowed — that is how one person shows
+// another what is happening — but it must never be a surprise. Keystrokes
+// arriving from nowhere while somebody is typing are indistinguishable from a
+// machine that has gone wrong, so the UI names the other viewer instead.
+//
+// This op only ever travels backend → viewer. The daemon has no interest in
+// who is watching, and telling it would be telling a machine something about
+// the people using it that it has no need to know.
+type Presence struct {
+	SessionID uint64 `json:"sessionId"`
+	// Viewers are display names, sorted, one per attached browser. The same
+	// person in two tabs is two entries, which is the honest answer: it is
+	// two terminals that can both type.
+	Viewers []string `json:"viewers"`
+	// You is the recipient's own index into Viewers, which is why this message
+	// is built per viewer rather than broadcast.
+	//
+	// Without it a browser cannot tell which entry is itself — two tabs
+	// belonging to the same person produce two identical names, and a UI that
+	// guessed would tell somebody they are sharing a terminal with themselves
+	// or, worse, that they are alone when they are not.
+	You int `json:"you"`
 }
 
 // Exit is the payload of a [TypeExit] frame.
