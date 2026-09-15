@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -57,12 +58,17 @@ func TestDownloadVerifiesBeforeItInstalls(t *testing.T) {
 
 	// Executable only after it has been verified: a file that is executable
 	// before it has been checked is a file something could run before it was.
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm()&0o111 == 0 {
-		t.Errorf("mode = %v, want executable", info.Mode())
+	//
+	// Windows has no execute bit — what a file can do there is decided by its
+	// extension and its ACL, not by a mode — so there is nothing to assert.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			t.Errorf("mode = %v, want executable", info.Mode())
+		}
 	}
 }
 
