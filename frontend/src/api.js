@@ -250,6 +250,31 @@ export async function createEnrolmentCode() {
   return res.json();
 }
 
+/**
+ * Approve a machine's agentrqd update.
+ *
+ * The one request in the product that deliberately destroys work in progress:
+ * the daemon stops every session on that machine, replaces itself, and starts
+ * them again as new processes with empty terminals. The version is required so
+ * that "yes" means yes to a particular release rather than to whatever the
+ * release feed offers by the time the daemon looks.
+ *
+ * Answers 202: the daemon has been asked, and its own next connection is what
+ * says whether it came back.
+ */
+export async function approveMachineUpdate(machineId, version) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message || body?.error || 'Failed to approve the update');
+  }
+  return true;
+}
+
 export async function fetchMachineSessions(machineId) {
   const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/sessions`);
   if (!res.ok) throw new Error('Failed to fetch sessions');

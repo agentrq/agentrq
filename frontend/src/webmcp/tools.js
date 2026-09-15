@@ -571,6 +571,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         api.launchAgent(workspaceId, { machineId, kind, model, agent, cols, rows }),
     }),
     tool({
+      name: 'approveMachineUpdate',
+      description:
+        "Install the agentrqd release a machine has offered. This stops every session on that machine and starts them again as new terminals: scrollback and in-flight work are lost.",
+      properties: {
+        machineId: MACHINE_ID,
+        version: str('The offered version, exactly as the machine reported it.'),
+      },
+      required: ['machineId', 'version'],
+      destructive: true,
+      run: ({ machineId, version }) => api.approveMachineUpdate(machineId, version),
+    }),
+    tool({
       name: 'killSession',
       description: 'Ask a machine to end an agent session. Anything the agent has not saved is lost.',
       properties: { sessionId: str('The session ID (base62), as it appears in the URL.') },

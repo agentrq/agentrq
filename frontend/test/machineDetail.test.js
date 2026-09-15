@@ -22,6 +22,7 @@ function harness(over = {}) {
     updateMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, name: 'renamed' } }),
     deleteMachine: vi.fn().mockResolvedValue(true),
     killSession: vi.fn().mockResolvedValue(true),
+    approveMachineUpdate: vi.fn().mockResolvedValue(true),
     ...over,
   }
   return { deps, d: useMachineDetail(deps) }
@@ -209,6 +210,46 @@ describe('stopping a session', () => {
     const h = harness({ killSession: vi.fn().mockRejectedValue({}) })
     await h.d.stop('s1')
     expect(h.d.error.value).toBe('Failed to stop the session')
+  })
+})
+
+describe('approving an update', () => {
+  // The version travels with the approval, so a release that appeared between
+  // the offer and the yes is refused rather than installed.
+  it('sends the version the machine actually offered', async () => {
+    const h = harness({
+      getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
+    })
+    await h.d.load()
+    expect(await h.d.approveUpdate()).toBe(true)
+    expect(h.deps.approveMachineUpdate).toHaveBeenCalledWith('m1', '0.7.1')
+  })
+
+  it('does nothing when nothing has been offered', async () => {
+    const h = harness()
+    await h.d.load()
+    expect(await h.d.approveUpdate()).toBe(false)
+    expect(h.deps.approveMachineUpdate).not.toHaveBeenCalled()
+  })
+
+  it('reports an approval the server refused', async () => {
+    const h = harness({
+      getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
+      approveMachineUpdate: vi.fn().mockRejectedValue(new Error('that machine is not connected')),
+    })
+    await h.d.load()
+    expect(await h.d.approveUpdate()).toBe(false)
+    expect(h.d.error.value).toBe('that machine is not connected')
+  })
+
+  it('falls back to a message', async () => {
+    const h = harness({
+      getMachine: vi.fn().mockResolvedValue({ machine: { ...MACHINE, availableVersion: '0.7.1' } }),
+      approveMachineUpdate: vi.fn().mockRejectedValue({}),
+    })
+    await h.d.load()
+    await h.d.approveUpdate()
+    expect(h.d.error.value).toBe('Failed to approve the update')
   })
 })
 

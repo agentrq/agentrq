@@ -28,6 +28,8 @@ machine with its keystrokes and output travelling both ways.
 | `internal/stream/` | The headless screen, coalescing, and the output pump |
 | `internal/link/` | The connection: dial, reconnect, route frames |
 | `internal/metrics/` | What the machine has left: memory, CPU, disk |
+| `internal/update/` | Verifying, swapping and rolling back the binary |
+| `internal/restore/` | The note that survives the daemon replacing itself |
 | `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, version |
 
 ## Running it
@@ -51,6 +53,66 @@ does not do:
 One profile that cannot start — an unreadable token, an unusable server URL —
 is skipped with an error rather than taken as a reason to refuse the others. A
 machine enrolled with two accounts should still serve the one that still works.
+
+## Updating itself
+
+The daemon never updates on its own initiative. It reads the release feed,
+reports anything newer, and waits. An approval from the panel means *"kill
+every session on this machine and restart them"*, and only a person can mean
+that.
+
+```
+verify → download → test → *write the note* → kill → swap → restart
+```
+
+Everything before the note is reversible; everything after it is not. Four
+things hold this together:
+
+- **A build with no release key cannot update itself**, and says so. A
+  verification step that silently passes when it has nothing to verify against
+  is worse than no verification, because it looks like one. The key is set at
+  build time with `-ldflags "-X …update.ReleaseKey=<hex>"`.
+- **The manifest is signed as a whole** — version and platform table included,
+  because those decide *which* file gets run — and every artefact carries a
+  mandatory SHA-256 that is checked while downloading. There is no path to an
+  artefact that skips the signature check.
+- **The new binary is run before anything is replaced.** Once the swap has
+  happened and the old process has gone, nothing can observe the new one
+  failing, so the check has to happen while not installing it is still an
+  option. That is what makes "never auto-update on a failed start"
+  enforceable rather than aspirational.
+- **The previous binary is retained** as `agentrqd.old` and is *not* cleaned up
+  at startup — that would delete the only thing a rollback can roll back to, at
+  exactly the moment the new build has proved least. It is cleared at the start
+  of the next update instead, which is also when Windows will finally let go of
+  it.
+
+Replacing a running binary is two mechanisms. Unix renames over it and the
+running process keeps its inode. Windows cannot delete or overwrite a running
+`.exe` **but can rename one**, so the running binary goes aside first — there
+is a test that holds the file open and does exactly that, including asserting
+that deleting it still fails.
+
+Who restarts depends on how it was installed: under systemd or launchd it exits
+and the service manager starts the replacement, otherwise it re-executes
+itself. Which one is read from the environment the supervisor sets, and an
+uncertain answer is the one that leaves a daemon running.
+
+## What "restore the sessions" means
+
+**Intent, not state.** What comes back are new processes with new
+pseudo-terminals: same kind, same folder, same arguments. The scrollback is
+gone, whatever the agent was part-way through is gone, and anything half-typed
+is gone. Every restored session is marked restored, in the report and therefore
+in the panel, so nobody is left wondering why their terminal is empty.
+
+The note is written to disk **before** anything is killed, because the process
+holding it in memory is the process about to be replaced. It carries no
+credential: the MCP URL has the token inside it, and writing that to disk to
+survive a restart would turn a deliberate expiry into a file. A restored agent
+reads the `.mcp.json` that was already in its folder; if that has gone, the
+session fails with a reason rather than starting an agent that cannot reach its
+workspace and merely looks broken.
 
 ## What the heartbeat says, and what it deliberately does not
 

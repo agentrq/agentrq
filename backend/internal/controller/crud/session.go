@@ -83,7 +83,7 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 	if id == 0 {
 		return fmt.Errorf("invalid session id")
 	}
-	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt)
+	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored)
 }
 
 // GetSession reads one session, scoped to its owner.

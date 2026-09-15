@@ -21,6 +21,8 @@ type recordedState struct {
 	reqs       []entity.UpdateSessionStateRequest
 	metrics    []entity.RecordMachineMetricsRequest
 	reconciled []entity.ReconcileSessionsRequest
+	offers     []entity.RecordAvailableVersionRequest
+	versions   []entity.RecordMachineVersionRequest
 	err        error
 }
 
@@ -31,6 +33,16 @@ func (r *recordedState) UpdateSessionState(_ context.Context, req entity.UpdateS
 
 func (r *recordedState) RecordMachineMetrics(_ context.Context, req entity.RecordMachineMetricsRequest) error {
 	r.metrics = append(r.metrics, req)
+	return r.err
+}
+
+func (r *recordedState) RecordAvailableVersion(_ context.Context, req entity.RecordAvailableVersionRequest) error {
+	r.offers = append(r.offers, req)
+	return r.err
+}
+
+func (r *recordedState) RecordMachineVersion(_ context.Context, req entity.RecordMachineVersionRequest) error {
+	r.versions = append(r.versions, req)
 	return r.err
 }
 
@@ -385,5 +397,122 @@ func TestNothingRequiresSomebodyToBeWatching(t *testing.T) {
 	}
 	if len(rec.metrics) != 1 {
 		t.Error("metrics were lost when nobody was listening")
+	}
+}
+
+// An offer and nothing more: the panel shows it and somebody decides.
+func TestAnUpdateOfferIsRecordedAndAnnounced(t *testing.T) {
+	rec := &recordedState{}
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, collectAnnouncements(&sent))
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 3}}
+
+	offer, err := wire.ControlFrame(wire.Control{Op: wire.OpUpdateAvailable, Body: mustBytes(t, wire.UpdateAvailable{
+		Version: "0.7.1",
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle(context.Background(), session, offer); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rec.offers) != 1 || rec.offers[0].Version != "0.7.1" {
+		t.Fatalf("recorded %+v", rec.offers)
+	}
+	// The machine id comes from the socket, never the payload.
+	if rec.offers[0].MachineID != 11 {
+		t.Errorf("recorded against machine %d", rec.offers[0].MachineID)
+	}
+	if len(sent) != 1 || sent[0].evt.Type != "machine.updated" {
+		t.Fatalf("announced %+v", sent)
+	}
+	if sent[0].evt.Payload.(map[string]any)["availableVersion"] != "0.7.1" {
+		t.Errorf("announced %+v", sent[0].evt.Payload)
+	}
+}
+
+// A restored session is a new process with an empty terminal. It is recorded
+// as restored so the panel can say so rather than leaving somebody wondering.
+func TestARestoredSessionIsRecordedAsOne(t *testing.T) {
+	rec := &recordedState{}
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, collectAnnouncements(&sent))
+
+	err := handle(context.Background(), &machine.Session{}, controlFrame(t, wire.SessionState{
+		SessionID: 9, State: machine.SessionRunning, Restored: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rec.reqs[0].Restored {
+		t.Error("a restored session was recorded as an ordinary one")
+	}
+	if sent[0].evt.Payload.(map[string]any)["restored"] != true {
+		t.Error("the browser was not told the session was restored")
+	}
+}
+
+func TestABadUpdateOfferDoesNotEndTheConnection(t *testing.T) {
+	rec := &recordedState{err: errors.New("database is down")}
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
+
+	bad, err := wire.ControlFrame(wire.Control{Op: wire.OpUpdateAvailable, Body: []byte(`"a string"`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, err := wire.ControlFrame(wire.Control{Op: wire.OpUpdateAvailable, Body: mustBytes(t, wire.UpdateAvailable{Version: "0.7.1"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []wire.Frame{bad, good} {
+		if err := handle(context.Background(), &machine.Session{}, f); err != nil {
+			t.Errorf("an update offer ended the connection: %v", err)
+		}
+	}
+}
+
+// The hello is the only message that says what is actually running, which is
+// how a machine that has just replaced itself stops showing the version it
+// replaced and an offer it has already taken.
+func TestTheHelloRecordsWhatIsRunning(t *testing.T) {
+	rec := &recordedState{}
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, collectAnnouncements(&sent))
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 3}}
+
+	hello, err := wire.ControlFrame(wire.Control{Op: wire.OpHello, Body: mustBytes(t, wire.Hello{
+		Version: "0.7.1",
+	})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle(context.Background(), session, hello); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rec.versions) != 1 || rec.versions[0].Version != "0.7.1" || rec.versions[0].MachineID != 11 {
+		t.Fatalf("recorded %+v", rec.versions)
+	}
+	if len(sent) != 1 || sent[0].evt.Payload.(map[string]any)["version"] != "0.7.1" {
+		t.Errorf("announced %+v", sent)
+	}
+}
+
+// A daemon that reports no version at all is not worth announcing as one.
+func TestAHelloWithNoVersionAnnouncesNothing(t *testing.T) {
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), &recordedState{},
+		collectAnnouncements(&sent))
+
+	hello, err := wire.ControlFrame(wire.Control{Op: wire.OpHello, Body: mustBytes(t, wire.Hello{})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handle(context.Background(), &machine.Session{}, hello); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 0 {
+		t.Errorf("announced %+v for a daemon that named no version", sent)
 	}
 }

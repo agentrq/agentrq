@@ -43,6 +43,7 @@ const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false 
 const renaming = ref(false)
 const draftName = ref('')
 const showDelete = ref(false)
+const showUpdate = ref(false)
 
 const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
@@ -93,6 +94,15 @@ async function confirmDelete() {
   }
 }
 
+async function confirmUpdate() {
+  showUpdate.value = false
+  if (await detail.approveUpdate()) {
+    notifySuccess('The machine is updating; its sessions will come back as new terminals')
+  } else {
+    notifyError(error.value)
+  }
+}
+
 async function stopSession(id) {
   if (await detail.stop(id)) notifySuccess('Asked the machine to stop that session')
   else notifyError(error.value)
@@ -125,21 +135,29 @@ async function stopSession(id) {
 
       <template v-else-if="machine">
         <!-- Update available.
-             No button yet, deliberately: approved in-place self-update is its
-             own milestone, and a button that quietly did nothing would be
-             worse than none. The consequence sentence is what that button will
-             need when it exists, and it is right here, tested, already. -->
+             The button names what it destroys before it is pressed, and the
+             confirm says it again: this is the one action in the product that
+             deliberately ends work somebody else may be in the middle of. -->
         <div
           v-if="machine.availableVersion"
-          class="border border-gray-100 dark:border-zinc-800 rounded-xl p-4 bg-white dark:bg-zinc-900"
+          class="border border-gray-100 dark:border-zinc-800 rounded-xl p-4 bg-white dark:bg-zinc-900 flex items-start justify-between gap-4"
         >
-          <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
-            agentrqd {{ machine.availableVersion }} is available
-          </p>
-          <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
-          <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-2">
-            Update it by running the installer on the machine itself. Updating from here is coming.
-          </p>
+          <div class="min-w-0">
+            <p class="text-sm font-bold text-gray-900 dark:text-zinc-100">
+              agentrqd {{ machine.availableVersion }} is available
+            </p>
+            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">{{ updateText }}</p>
+            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-1">
+              Sessions come back as new terminals: same agent, same folder, empty scrollback.
+            </p>
+          </div>
+          <button
+            :disabled="busy"
+            @click="showUpdate = true"
+            class="shrink-0 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50"
+          >
+            Update and restart
+          </button>
         </div>
 
         <!-- What the machine has left -->
@@ -321,6 +339,16 @@ async function stopSession(id) {
       :message="deleteText"
       @close="showDelete = false"
       @confirm="confirmDelete"
+    />
+
+    <!-- A bare "Update?" is not consent: the person pressing it is usually not
+         the person whose agent is mid-task. -->
+    <DeleteModal
+      :show="showUpdate"
+      title="Update and restart"
+      :message="updateText"
+      @close="showUpdate = false"
+      @confirm="confirmUpdate"
     />
 
   </div>
