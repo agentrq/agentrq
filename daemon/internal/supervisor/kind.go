@@ -50,7 +50,7 @@ type Params struct {
 	Agent string
 }
 
-// safeParam is what a parameter may contain.
+// safeParam is what an *identifier* may contain.
 //
 // Deliberately narrow, and checked rather than escaped. These values are
 // destined for an argv, and while Go's exec does not go through a shell — so
@@ -59,12 +59,37 @@ type Params struct {
 // a value into an instruction.
 var safeParam = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
-// checkParam validates one value, naming the field so a refusal is actionable.
+// safeName is what a *display name* may contain.
+//
+// Wider than safeParam, and it has to be: a workspace is called "Terminal
+// probe" or "Q3 migration", because a person named it, and refusing every name
+// with a space in it means refusing most real ones. Applying the identifier
+// rule here was a genuine bug — the first launch against a real workspace
+// failed on the space in its name.
+//
+// What it still refuses is what could change the meaning of the command
+// rather than merely being unusual: a first character that is not a letter or
+// digit (so a name can never arrive as a flag), and any control character (so
+// a name cannot forge a line in a log or move a terminal's cursor). Everything
+// between those is a name, and there is no shell for it to be dangerous in.
+var safeName = regexp.MustCompile("^[\\p{L}\\p{N}][^\\x00-\\x1f\\x7f]{0,127}$")
+
+// checkParam validates an identifier, naming the field so a refusal is
+// actionable.
 func checkParam(field, value string) error {
+	return check(safeParam, field, value)
+}
+
+// checkName validates a human-chosen name.
+func checkName(field, value string) error {
+	return check(safeName, field, value)
+}
+
+func check(pattern *regexp.Regexp, field, value string) error {
 	if value == "" {
 		return fmt.Errorf("%w: %s", ErrMissingParam, field)
 	}
-	if !safeParam.MatchString(value) {
+	if !pattern.MatchString(value) {
 		return fmt.Errorf("%w: %s=%q", ErrBadParameter, field, value)
 	}
 	return nil
@@ -83,7 +108,7 @@ type Command struct {
 func Resolve(kind Kind, p Params) (Command, error) {
 	switch kind {
 	case KindClaudeCode:
-		if err := checkParam("workspace", p.Workspace); err != nil {
+		if err := checkName("workspace", p.Workspace); err != nil {
 			return Command{}, err
 		}
 		if err := checkParam("serverName", p.ServerName); err != nil {

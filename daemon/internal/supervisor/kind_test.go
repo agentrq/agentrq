@@ -94,7 +94,7 @@ func TestResolveRequiresItsParameters(t *testing.T) {
 // no quoting to get wrong — but a value starting with a dash would be read as
 // a flag by the program being run, which is its own way of turning a parameter
 // into an instruction.
-func TestParametersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
+func TestIdentifiersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
 	bad := []string{
 		"--dangerously-skip-permissions", "-x", // would be read as flags
 		"a b", "a;b", "a|b", "a&b", "$(id)", "`id`", // shell-shaped, refused anyway
@@ -104,11 +104,39 @@ func TestParametersThatCouldBecomeFlagsOrWorseAreRefused(t *testing.T) {
 		"",
 	}
 	for _, v := range bad {
-		if _, err := Resolve(KindClaudeCode, Params{Workspace: v, ServerName: "s"}); err == nil {
-			t.Errorf("Resolve accepted workspace=%q", v)
-		}
 		if _, err := Resolve(KindACPGateway, Params{Model: v, Agent: "a"}); err == nil {
 			t.Errorf("Resolve accepted model=%q", v)
+		}
+	}
+}
+
+// A workspace name is chosen by a person, so the identifier rule is the wrong
+// rule for it — the first launch against a real workspace failed on the space
+// in "Terminal probe". What is still refused is what could change the meaning
+// of the command rather than what is merely unusual.
+func TestANameIsAllowedToLookLikeAName(t *testing.T) {
+	good := []string{
+		"Terminal probe", "Q3 migration", "AgentRQ — daemon", "客户端", "a b c",
+		"it's mine", "release/2.0", "10% faster",
+	}
+	for _, v := range good {
+		if _, err := Resolve(KindClaudeCode, Params{Workspace: v, ServerName: "s"}); err != nil {
+			t.Errorf("Resolve refused the workspace name %q: %v", v, err)
+		}
+	}
+
+	bad := map[string]string{
+		"a leading dash arrives as a flag":   "--dangerously-skip-permissions",
+		"a leading dash, however short":      "-x",
+		"a newline can forge a log line":     "a\nb",
+		"a NUL truncates":                    "a\x00b",
+		"an escape can move a real terminal": "a\x1b[2Jb",
+		"an absurd length":                   strings.Repeat("a", 200),
+		"nothing at all":                     "",
+	}
+	for why, v := range bad {
+		if _, err := Resolve(KindClaudeCode, Params{Workspace: v, ServerName: "s"}); err == nil {
+			t.Errorf("Resolve accepted %q — %s", v, why)
 		}
 	}
 }

@@ -31,6 +31,7 @@ var version = "dev"
 const usage = `agentrqd — the AgentRQ machine daemon
 
   agentrqd enroll --server <url> --code <code> [--profile <id>] [--insecure]
+  agentrqd serve [--profile <id>] [--verbose]
   agentrqd status
   agentrqd disable --profile <id>
   agentrqd version
@@ -68,6 +69,8 @@ func run(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "enroll", "enrol":
 		return cmdEnrol(ctx, args[1:])
+	case "serve", "run":
+		return cmdServe(ctx, args[1:])
 	case "status":
 		return cmdStatus()
 	case "disable":
@@ -156,6 +159,7 @@ func cmdEnrol(ctx context.Context, args []string) error {
 		Label:     *label,
 		ServerURL: resolved.URL,
 		MachineID: resp.MachineID,
+		UserID:    resp.UserID,
 		Insecure:  resolved.Insecure,
 	}
 	// Re-enrolment refreshes rather than duplicating: running this again on an

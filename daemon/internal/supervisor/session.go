@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -54,6 +55,15 @@ type Session struct {
 	state    State
 	exitCode int
 	err      error
+
+	// ended closes once the session has reached a terminal state *and* that
+	// state has been recorded.
+	//
+	// Waiting on the pseudo-terminal is not enough, and that difference is the
+	// whole reason this exists: two goroutines wake on the same exit, and a
+	// reader that only waited for the process would race the writer that
+	// records what happened — and report a dead session as running.
+	ended chan struct{}
 
 	tty pty.Session
 }
@@ -125,7 +135,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	// Reserved before the slow work below, so two concurrent starts cannot
 	// both pass the capacity check.
-	sess := &Session{ID: req.ID, Kind: req.Kind, state: StateStarting}
+	sess := &Session{ID: req.ID, Kind: req.Kind, state: StateStarting, ended: make(chan struct{})}
 	s.sessions[req.ID] = sess
 	s.profiles[req.ID] = profile
 	s.mu.Unlock()
@@ -194,18 +204,22 @@ func (s *Supervisor) reap(sess *Session) {
 	code, err := sess.tty.Wait()
 
 	sess.mu.Lock()
-	defer sess.mu.Unlock()
-	if sess.state == StateKilled {
-		// Already accounted for by Kill; the exit is the consequence, not news.
-		return
+	if sess.state != StateKilled {
+		// A kill is already accounted for by Kill; the exit it caused is the
+		// consequence, not news.
+		sess.exitCode = code
+		sess.err = err
+		if err != nil {
+			sess.state = StateFailed
+		} else {
+			sess.state = StateExited
+		}
 	}
-	sess.exitCode = code
-	sess.err = err
-	if err != nil {
-		sess.state = StateFailed
-	} else {
-		sess.state = StateExited
-	}
+	sess.mu.Unlock()
+
+	// Announced only now, with the state written. Anyone waiting on the end of
+	// this session sees the answer rather than racing for it.
+	close(sess.ended)
 }
 
 // Kill ends a session.
@@ -276,6 +290,27 @@ func (s *Supervisor) Count() int {
 	defer s.mu.Unlock()
 	return len(s.sessions)
 }
+
+// Running lists the sessions that are still alive.
+//
+// Finished ones are excluded on purpose: this answers "what is this daemon
+// actually supervising", which is what a reconnecting backend needs in order
+// to correct rows it believes are running.
+func (s *Supervisor) Running() []uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]uint64, 0, len(s.sessions))
+	for id, sess := range s.sessions {
+		if state, _, _ := sess.State(); !state.Terminal() {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+// Ended closes once the session has finished and its outcome is recorded.
+func (sess *Session) Ended() <-chan struct{} { return sess.ended }
 
 // State reports a session's current state and exit code.
 func (sess *Session) State() (State, int, error) {

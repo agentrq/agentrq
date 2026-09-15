@@ -111,14 +111,12 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 	return nil
 }
 
-// awaitEnd blocks until a session reaches a terminal state.
+// awaitEnd blocks until a session has ended and its state has been recorded.
+//
+// It waits on the session rather than on the pseudo-terminal. Waiting on the
+// terminal would wake at the same instant as the goroutine that records what
+// happened, and reporting whichever won would sometimes report a session that
+// has just exited as still running.
 func (s *Supervisor) awaitEnd(sess *Session) {
-	tty := sess.PTY()
-	if tty == nil {
-		return
-	}
-	// Wait is idempotent and already remembers its answer, so calling it here
-	// as well as in reap is safe and is what lets this goroutine block until
-	// the process is genuinely finished.
-	_, _ = tty.Wait()
+	<-sess.Ended()
 }
