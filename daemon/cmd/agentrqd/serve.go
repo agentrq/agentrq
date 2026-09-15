@@ -16,6 +16,7 @@ import (
 
 	"github.com/agentrq/agentrq/daemon/internal/config"
 	"github.com/agentrq/agentrq/daemon/internal/link"
+	"github.com/agentrq/agentrq/daemon/internal/metrics"
 	"github.com/agentrq/agentrq/daemon/internal/pty"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 )
@@ -75,6 +76,15 @@ func cmdServe(ctx context.Context, args []string) error {
 
 	sup := supervisor.New(pty.Start, sessionsPerProfile, sessionsPerMachine)
 
+	// One collector for the machine, shared by every profile. The numbers are
+	// the same hardware whichever account is asking, and measuring once per
+	// profile would make the measurement itself part of the load.
+	//
+	// It leaks nothing new: each account already knows this machine exists,
+	// having enrolled it.
+	collector := metrics.New(func() []string { return sup.Dirs() })
+	go collector.Run(ctx)
+
 	var wg sync.WaitGroup
 	started := 0
 	for _, p := range profiles {
@@ -104,6 +114,7 @@ func cmdServe(ctx context.Context, args []string) error {
 			Token:     token,
 			Version:   version,
 		}, &dialer{}, sup, log.With("profile", p.ID))
+		l.Metrics = collector.Snapshot
 
 		started++
 		wg.Add(1)

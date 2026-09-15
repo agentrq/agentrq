@@ -27,6 +27,7 @@ machine with its keystrokes and output travelling both ways.
 | `internal/supervisor/` | Starting, killing and writing to sessions |
 | `internal/stream/` | The headless screen, coalescing, and the output pump |
 | `internal/link/` | The connection: dial, reconnect, route frames |
+| `internal/metrics/` | What the machine has left: memory, CPU, disk |
 | `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, version |
 
 ## Running it
@@ -50,6 +51,32 @@ does not do:
 One profile that cannot start — an unreadable token, an unusable server URL —
 is skipped with an error rather than taken as a reason to refuse the others. A
 machine enrolled with two accounts should still serve the one that still works.
+
+## What the heartbeat says, and what it deliberately does not
+
+Enough to answer "can this box take another agent?" without opening a terminal
+on it. Four things in it are easy to get wrong, and each has a test that fails
+if it regresses:
+
+- **CPU is a rate, not a reading.** It is measured over a window by a sampling
+  loop; the heartbeat reads the last computed value. A heartbeat that waited on
+  a measurement would stop being a heartbeat at exactly the moment it was most
+  informative.
+- **Memory is `available`, not `free`.** On Linux `free` excludes the page cache
+  and reads alarmingly low on a perfectly healthy machine. The useful number is
+  what a new process could actually get.
+- **Disk is per mount.** One free-space figure is a lie on any machine with more
+  than one filesystem: it can be 2% full and still fail to check out a
+  repository. The mount each workspace sits on is included whatever kind of
+  filesystem it turns out to be.
+- **`loadAvg` is absent on Windows, not zero.** Three zeroes render as a
+  perfectly idle machine, which is the most misleading thing this payload could
+  say about a box that has no load average at all.
+
+Nothing is sent until there is a measurement to send. An empty heartbeat would
+land on the machine's row as zero memory and an idle CPU, which is a confident
+lie where "we have not heard yet" is the truth. Liveness does not depend on it —
+that is the connection's own ping and pong.
 
 ## Enrolling
 

@@ -1230,6 +1230,69 @@ type (
 		CreatedAt  time.Time  `json:"createdAt"`
 
 		AvailableVersion string `json:"availableVersion,omitempty"`
+
+		// Metrics is the last snapshot the daemon reported, or nil if it has
+		// not reported one. Nil rather than a zeroed struct: a machine that
+		// has never said how much memory it has is a different thing from one
+		// that has none.
+		Metrics *MachineMetricsView `json:"metrics,omitempty"`
+	}
+
+	// MachineMetricsView is what a machine last said about itself.
+	MachineMetricsView struct {
+		// MemAvailable is what a new process could get, not what is unused —
+		// on Linux "free" excludes the page cache and reads alarmingly low on
+		// a perfectly healthy machine.
+		MemTotal     int64 `json:"memTotal"`
+		MemAvailable int64 `json:"memAvailable"`
+
+		CPUPercent float64 `json:"cpuPercent"`
+
+		// LoadAvg is absent on Windows, and must render as absent rather than
+		// as three zeroes — which would read as a perfectly idle machine.
+		LoadAvg []float64 `json:"loadAvg,omitempty"`
+
+		UptimeSec int64 `json:"uptimeSec"`
+
+		// Disks is per mount, never one number: a machine can be 2% full and
+		// still fail to check out a repository, because the full filesystem is
+		// the one that matters.
+		Disks []MachineDiskView `json:"disks,omitempty"`
+
+		// ReportedAt is when the machine measured this, so a stale snapshot
+		// can be shown as stale rather than as current.
+		ReportedAt time.Time `json:"reportedAt"`
+	}
+
+	// MachineDiskView is one filesystem's space.
+	MachineDiskView struct {
+		Mount string `json:"mount"`
+		Total int64  `json:"total"`
+		Free  int64  `json:"free"`
+	}
+
+	// RecordMachineMetricsRequest is a daemon's report about its own machine.
+	//
+	// The machine id comes from the authenticated socket, never from the
+	// payload: a daemon may only ever describe itself.
+	RecordMachineMetricsRequest struct {
+		MachineID    int64
+		MemTotal     int64
+		MemAvailable int64
+		CPUPercent   float64
+		LoadAvg      []float64
+		UptimeSec    int64
+		Disks        []MachineDiskView
+		ReportedAt   time.Time
+	}
+
+	// ReconcileSessionsRequest ends the sessions a machine is not running.
+	//
+	// Running is what the daemon says it is supervising. Everything else this
+	// machine has marked live has ended without anybody being told.
+	ReconcileSessionsRequest struct {
+		MachineID int64
+		Running   []int64
 	}
 
 	ListMachinesRequest struct {
