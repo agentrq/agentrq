@@ -113,6 +113,10 @@ func New(p Params) (Handler, error) {
 	}
 
 	h.registerPublicAuthRoutes()
+	// Enrolment cannot be authenticated: a daemon enrolling for the first time
+	// has only its code. Registered here, before the middleware below, because
+	// registration order is what makes a route public.
+	h.registerPublicMachineRoutes()
 
 	// Protected routes
 	h.router.Use(h.authMiddleware())
@@ -126,6 +130,7 @@ func New(p Params) (Handler, error) {
 		return nil, err
 	}
 	h.registerEventRoutes()
+	h.registerMachineRoutes()
 	h.registerWorkflowRoutes()
 	if err := h.registerTelemetryRoutes(); err != nil {
 		return nil, err

@@ -48,6 +48,20 @@ type Repository interface {
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
+	// Machine — an enrolled computer running agentrqd, and the short-lived
+	// codes used to enrol one. See internal/controller/machine for the rules.
+	CreateEnrolmentCode(ctx context.Context, c model.EnrolmentCode) (model.EnrolmentCode, error)
+	GetEnrolmentCode(ctx context.Context, codeHash string) (model.EnrolmentCode, error)
+	ConsumeEnrolmentCode(ctx context.Context, id, machineID int64, at time.Time) (bool, error)
+	CreateMachine(ctx context.Context, m model.Machine) (model.Machine, error)
+	GetMachineByTokenHash(ctx context.Context, tokenHash string) (model.Machine, error)
+	GetMachine(ctx context.Context, id, userID int64) (model.Machine, error)
+	ListMachines(ctx context.Context, userID int64) ([]model.Machine, error)
+	UpdateMachine(ctx context.Context, m model.Machine) (model.Machine, error)
+	DeleteMachine(ctx context.Context, id, userID int64) error
+	TouchMachine(ctx context.Context, id int64, at time.Time, instanceID string) error
+	ReleaseMachine(ctx context.Context, id int64, instanceID string) error
+
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
 	ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error)

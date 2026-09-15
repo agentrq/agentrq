@@ -1168,3 +1168,39 @@ func (a Action) String() string {
 	}
 	return "unknown"
 }
+
+// ── Machines ────────────────────────────────────────────────────────────────
+
+type (
+	// CreateEnrolmentCodeRequest asks for a short code to type on a machine.
+	CreateEnrolmentCodeRequest struct {
+		UserID string
+	}
+
+	// CreateEnrolmentCodeResponse carries the code back exactly once. It is
+	// stored hashed, so this is the only moment it can be shown.
+	CreateEnrolmentCodeResponse struct {
+		Code      string    `json:"code"`
+		ExpiresAt time.Time `json:"expiresAt"`
+	}
+
+	// EnrolMachineRequest is what a daemon sends to trade a code for identity.
+	//
+	// There is no UserID: the caller is not authenticated, and the code is what
+	// decides whose machine this becomes. Taking an account from the request
+	// would let anyone enrol a machine into anyone's account.
+	EnrolMachineRequest struct {
+		Code     string
+		Name     string
+		Hostname string
+		OS       string
+		Arch     string
+		Version  string
+	}
+
+	// EnrolMachineResponse is returned once. The token is never recoverable.
+	EnrolMachineResponse struct {
+		MachineID    string `json:"machineId"`
+		MachineToken string `json:"machineToken"`
+	}
+)
