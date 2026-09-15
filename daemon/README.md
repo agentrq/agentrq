@@ -30,7 +30,9 @@ machine with its keystrokes and output travelling both ways.
 | `internal/metrics/` | What the machine has left: memory, CPU, disk |
 | `internal/update/` | Verifying, swapping and rolling back the binary |
 | `internal/restore/` | The note that survives the daemon replacing itself |
-| `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, version |
+| `internal/localstatus/` | What is running here, for the person at the keyboard |
+| `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, rollback, version |
+| `cmd/agentrqd-release/` | Signing and verifying a release |
 
 ## Running it
 
@@ -113,6 +115,48 @@ survive a restart would turn a deliberate expiry into a file. A restored agent
 reads the `.mcp.json` that was already in its folder; if that has gone, the
 session fails with a reason rather than starting an agent that cannot reach its
 workspace and merely looks broken.
+
+## Releasing
+
+Six targets from one runner: no cgo, so there is nothing that can only be built
+on the machine it runs on. `.goreleaser.yaml` packages the archives;
+`.github/workflows/daemon-release.yml` also publishes the **bare binaries and a
+signed manifest**, because the self-update path downloads one file and replaces
+one file rather than unpacking a tarball.
+
+```sh
+go run ./cmd/agentrqd-release keygen     # once, ever
+go run ./cmd/agentrqd-release manifest --version 0.7.1 --base-url https://… update/
+go run ./cmd/agentrqd-release verify   --version 0.7.1 update/
+```
+
+The private key is read from `AGENTRQD_RELEASE_KEY` and never from a flag: an
+argument is visible in `ps` to every user on the build machine, and a CI log
+that echoes its own command line would print it. The public half is built in
+with `-ldflags`.
+
+Three things the release job does that are worth keeping:
+
+- **It refuses to start without both halves of the key.** A release without one
+  produces daemons that can never update themselves, and that failure is silent
+  until somebody presses the button months later.
+- **It verifies the manifest against the public key that was compiled into the
+  binaries** before publishing. A manifest signed with the wrong key is a
+  release every daemon correctly refuses; catching it here costs a minute rather
+  than a support thread.
+- **The update binaries are built into `update/`, not `dist/`.** `goreleaser
+  release --clean` empties `dist/`, which would delete them before they were
+  published.
+
+`.github/workflows/daemon.yml` rehearses the whole signing and verifying path on
+every change with a throwaway key, so on release day the only new thing is the
+key itself.
+
+Install paths — the systemd **user** unit and the macOS **LaunchAgent** — are in
+`packaging/`, and both are user-level on purpose: the daemon refuses to run as
+root, and an install that works around that has removed the only thing limiting
+an agent to what you can do. `docs/DAEMON.md` is the user-facing document and
+says so in those words.
 
 ## What the heartbeat says, and what it deliberately does not
 

@@ -244,3 +244,63 @@ func TestRestoringWritesNoNewCredential(t *testing.T) {
 		t.Errorf("restoring rewrote the config:\nbefore %s\nafter  %s", before, after)
 	}
 }
+
+// Somebody at this keyboard must be able to find out that a terminal here is
+// being watched, without having to ask the account that is watching it. The
+// backend's audit log is no help to them.
+func TestAnAttachIsLoggedOnTheMachine(t *testing.T) {
+	b := newBackend(t)
+
+	var logged strings.Builder
+	h := start(t, b)
+	h.link.Log = slog.New(slog.NewTextHandler(&logged, nil))
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool { return strings.Contains(logged.String(), "is watching a terminal") },
+		"an attach was not logged on the machine")
+	if h.link.Viewers(7) != 1 {
+		t.Errorf("viewers = %d", h.link.Viewers(7))
+	}
+
+	b.send(t, controlFrame(t, wire.OpDetach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool { return strings.Contains(logged.String(), "stopped watching") },
+		"a detach was not logged on the machine")
+	if h.link.Viewers(7) != 0 {
+		t.Errorf("viewers after detach = %d", h.link.Viewers(7))
+	}
+
+	// The keystrokes are not logged: those carry secrets, and the fact of the
+	// attach is what belongs in the record.
+	f, err := wire.SessionFrame(wire.TypeInput, 7, []byte("hunter2-my-actual-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.send(t, f)
+	waitFor(t, func() bool { return len(h.tty.written()) > 0 }, "the keystrokes never arrived")
+	if strings.Contains(logged.String(), "hunter2") {
+		t.Errorf("a keystroke reached the machine's log:\n%s", logged.String())
+	}
+}
+
+// Two viewers, then one leaving, is one viewer — not none.
+func TestTheViewerCountTracksBothOfThem(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool { return h.link.Viewers(7) == 2 }, "the second viewer was not counted")
+
+	b.send(t, controlFrame(t, wire.OpDetach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool { return h.link.Viewers(7) == 1 }, "one leaving took both counts with it")
+}

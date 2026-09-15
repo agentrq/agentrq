@@ -18,10 +18,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/agentrq/agentrq/daemon/internal/config"
 	"github.com/agentrq/agentrq/daemon/internal/enrol"
 	"github.com/agentrq/agentrq/daemon/internal/guard"
+	"github.com/agentrq/agentrq/daemon/internal/localstatus"
 	"github.com/agentrq/agentrq/daemon/internal/secret"
 )
 
@@ -207,6 +209,9 @@ func cmdStatus() error {
 
 	fmt.Printf("agentrqd %s (%s/%s)\n", version, runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("Config: %s\n\n", st.path)
+
+	printRunning(st.dir)
+
 	for _, p := range file.Profiles {
 		fmt.Printf("  %s (%s)\n", p.ID, p.Label)
 		fmt.Printf("    server:  %s\n", p.ServerURL)
@@ -271,4 +276,52 @@ func orNone(s string) string {
 		return "(not enrolled)"
 	}
 	return s
+}
+
+// printRunning says what is actually running on this machine right now.
+//
+// The point of `agentrqd status` is not to list configuration — it is to
+// answer "is something driving my computer, and who is watching". That
+// question has to be answerable by the person at the keyboard without asking
+// the account that would be doing the driving.
+func printRunning(dir string) {
+	f, err := localstatus.Read(dir, time.Now())
+	switch {
+	case errors.Is(err, localstatus.ErrNoDaemon):
+		fmt.Println("Not running. Start it with: agentrqd serve")
+		fmt.Println()
+		return
+	case errors.Is(err, localstatus.ErrStale):
+		// Shown rather than hidden: what a killed daemon was last doing is
+		// exactly what somebody investigating wants to see.
+		fmt.Printf("No recent report — the daemon may have been killed. Last seen %s:\n",
+			f.UpdatedAt.Format(time.RFC3339))
+	case err != nil:
+		fmt.Printf("Cannot read the local status report: %v\n\n", err)
+		return
+	default:
+		fmt.Printf("Running as pid %d since %s\n", f.PID, f.StartedAt.Format(time.RFC3339))
+	}
+
+	if len(f.Sessions) == 0 {
+		fmt.Println("No agents are running on this machine.")
+		fmt.Println()
+		return
+	}
+
+	fmt.Printf("%d agent(s) running on this machine:\n", len(f.Sessions))
+	for _, s := range f.Sessions {
+		fmt.Printf("  %s in %s (profile %s)\n", s.Kind, s.Dir, s.Profile)
+		if s.Workspace != "" {
+			fmt.Printf("    workspace: %s\n", s.Workspace)
+		}
+		if s.Viewers > 0 {
+			// The fact most worth surfacing locally: somebody is watching this
+			// terminal right now.
+			fmt.Printf("    WATCHED by %d viewer(s) right now\n", s.Viewers)
+		}
+	}
+	fmt.Println()
+	fmt.Println("Stop everything and refuse new work: agentrqd disable --profile <id>")
+	fmt.Println()
 }

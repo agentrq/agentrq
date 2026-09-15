@@ -1,0 +1,83 @@
+# Copyright 2026 Contextual, Inc. https://agentrq.com
+# This notice may not be modified or removed.
+
+# The daemon's release build.
+#
+# Six targets from one runner, because the pseudo-terminal layer uses syscalls
+# directly and needs no cgo — so there is no per-platform runner to arrange and
+# nothing that can only be built on the machine it runs on.
+#
+# The release key is built in here. A daemon without one refuses to update
+# itself, which is the correct behaviour for a local build and a broken release
+# — so the build fails loudly if the variable is missing rather than shipping a
+# binary that quietly cannot take updates.
+version: 2
+
+project_name: agentrqd
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: agentrqd
+    main: ./cmd/agentrqd
+    binary: agentrqd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      # Empty is a build that cannot update itself. Deliberately not defaulted
+      # to anything: a release with no key is a release that has to be replaced
+      # by hand, and that should be impossible to do by accident.
+      - -X github.com/agentrq/agentrq/daemon/internal/update.ReleaseKey={{ .Env.AGENTRQD_RELEASE_PUBKEY }}
+
+archives:
+  - id: agentrqd
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "agentrqd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: packaging/agentrqd.service
+        dst: agentrqd.service
+      - src: packaging/com.agentrq.agentrqd.plist
+        dst: com.agentrq.agentrqd.plist
+      - src: packaging/INSTALL.md
+        dst: INSTALL.md
+      - src: ../docs/DAEMON.md
+        dst: DAEMON.md
+
+# The bare binaries and the signed manifest, alongside the archives: the
+# self-update path downloads one file and replaces one file, so it needs the
+# binary on its own rather than a tarball it would have to unpack before
+# verifying it.
+#
+# They live in ./update rather than ./dist, and that is not tidiness: goreleaser
+# is run with --clean, which empties dist/ — so anything built there before it
+# runs is deleted before it is published.
+#
+# Named agentrqd_<os>_<arch> because that is what agentrqd-release reads the
+# platform back out of: one naming decision, in one place, rather than a mapping
+# that can disagree with the files.
+release:
+  extra_files:
+    - glob: update/*
+
+checksums:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
