@@ -66,7 +66,16 @@ func FetchManifest(ctx context.Context, client Fetcher, manifestURL string) (Man
 // executable. A file that does not match is removed rather than left on disk:
 // a rejected update should leave nothing behind that a later mistake could
 // pick up and run.
-func Download(ctx context.Context, client Fetcher, a Artifact, dir string) (string, error) {
+//
+// It takes the path of the binary being replaced rather than its directory,
+// because the staged file has to end up with the same extension. On Windows
+// that is what makes it runnable by name — and the self-test runs it before
+// anything is swapped, so a staged file that cannot be executed is a staged
+// file that can never be installed.
+func Download(ctx context.Context, client Fetcher, a Artifact, targetPath string) (string, error) {
+	dir := filepath.Dir(targetPath)
+	ext := filepath.Ext(targetPath)
+
 	if err := checkChecksum(a.SHA256); err != nil {
 		return "", err
 	}
@@ -90,7 +99,12 @@ func Download(ctx context.Context, client Fetcher, a Artifact, dir string) (stri
 	// Written beside the target, because the swap is a rename and a rename
 	// only works within one filesystem. A temp directory elsewhere would work
 	// on a developer's laptop and fail on a machine with /tmp on tmpfs.
-	tmp, err := os.CreateTemp(dir, ".agentrqd-update-*")
+	// No leading dot: a hidden name would be tidier on Unix, but it also makes
+	// the extension unreadable — filepath.Ext of ".agentrqd-update-123" is the
+	// whole name — and the extension is the part that has to be right here. A
+	// visible "agentrqd-update-…" beside the binary explains itself, and is
+	// removed on every failure path anyway.
+	tmp, err := os.CreateTemp(dir, "agentrqd-update-*"+ext)
 	if err != nil {
 		return "", err
 	}

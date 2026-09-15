@@ -34,12 +34,19 @@ func (s *serving) Do(r *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// target is the binary an update would replace, which is what Download is
+// given: the staged file has to end up with the same extension.
+func target(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "agentrqd"+exeSuffix())
+}
+
 func TestDownloadVerifiesBeforeItInstalls(t *testing.T) {
-	dir := t.TempDir()
+	path0 := target(t)
 	client := &serving{status: 200, body: "a"}
 
 	path, err := Download(context.Background(), client,
-		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, dir)
+		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, path0)
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
@@ -62,11 +69,12 @@ func TestDownloadVerifiesBeforeItInstalls(t *testing.T) {
 // The case this whole package exists for. A file whose hash does not match is
 // not installed, and is not left on disk for a later mistake to pick up.
 func TestAFileThatDoesNotMatchIsRefusedAndRemoved(t *testing.T) {
-	dir := t.TempDir()
+	path0 := target(t)
+	dir := filepath.Dir(path0)
 	client := &serving{status: 200, body: "something else entirely"}
 
 	_, err := Download(context.Background(), client,
-		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, dir)
+		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, path0)
 	if !errors.Is(err, ErrChecksumMismatch) {
 		t.Fatalf("error = %v, want ErrChecksumMismatch", err)
 	}
@@ -85,15 +93,15 @@ func TestAFileThatDoesNotMatchIsRefusedAndRemoved(t *testing.T) {
 }
 
 func TestDownloadRefusalsBeforeAnythingIsFetched(t *testing.T) {
-	dir := t.TempDir()
+	path0 := target(t)
 	client := &serving{status: 200, body: "a"}
 
 	if _, err := Download(context.Background(), client,
-		Artifact{URL: "https://x.example/y"}, dir); !errors.Is(err, ErrNoChecksum) {
+		Artifact{URL: "https://x.example/y"}, path0); !errors.Is(err, ErrNoChecksum) {
 		t.Errorf("a checksum-less artifact was fetched anyway")
 	}
 	if _, err := Download(context.Background(), client,
-		Artifact{URL: "http://x.example/y", SHA256: sum("a")}, dir); !errors.Is(err, ErrInsecureURL) {
+		Artifact{URL: "http://x.example/y", SHA256: sum("a")}, path0); !errors.Is(err, ErrInsecureURL) {
 		t.Errorf("a plain-http artifact was fetched anyway")
 	}
 	if client.gotURL != "" {
@@ -102,13 +110,14 @@ func TestDownloadRefusalsBeforeAnythingIsFetched(t *testing.T) {
 }
 
 func TestDownloadReportsAServerThatSaysNo(t *testing.T) {
-	dir := t.TempDir()
+	path0 := target(t)
+	dir := filepath.Dir(path0)
 	a := Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}
 
-	if _, err := Download(context.Background(), &serving{status: 404}, a, dir); err == nil {
+	if _, err := Download(context.Background(), &serving{status: 404}, a, path0); err == nil {
 		t.Error("a 404 was treated as a download")
 	}
-	if _, err := Download(context.Background(), &serving{err: errors.New("no route")}, a, dir); err == nil {
+	if _, err := Download(context.Background(), &serving{err: errors.New("no route")}, a, path0); err == nil {
 		t.Error("a transport failure was treated as a download")
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
@@ -119,15 +128,21 @@ func TestDownloadReportsAServerThatSaysNo(t *testing.T) {
 // Beside the target, because the swap is a rename and a rename only works
 // within one filesystem — a temp directory elsewhere works on a laptop and
 // fails on a machine with /tmp on tmpfs.
-func TestTheDownloadLandsBesideTheBinaryItWillReplace(t *testing.T) {
-	dir := t.TempDir()
+// Beside it, and with its extension. On Windows the extension is what makes
+// the staged file runnable by name, and the self-test runs it before anything
+// is swapped — so a staged file without one could never be installed.
+func TestTheDownloadLandsBesideTheBinaryWithItsExtension(t *testing.T) {
+	path0 := target(t)
 	path, err := Download(context.Background(), &serving{status: 200, body: "a"},
-		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, dir)
+		Artifact{URL: "https://releases.example/agentrqd", SHA256: sum("a")}, path0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(path) != filepath.Clean(dir) {
-		t.Errorf("downloaded to %q, want a file in %q", path, dir)
+	if filepath.Dir(path) != filepath.Dir(path0) {
+		t.Errorf("downloaded to %q, want a file beside %q", path, path0)
+	}
+	if filepath.Ext(path) != filepath.Ext(path0) {
+		t.Errorf("staged as %q, want the extension of %q", path, path0)
 	}
 }
 

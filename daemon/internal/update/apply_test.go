@@ -63,8 +63,12 @@ func stagedRelease(t *testing.T, version, reports string) (*releaseServer, strin
 		t.Fatal(err)
 	}
 
-	// The "current" binary, so Prepare has a directory to stage beside.
-	current := filepath.Join(dir, "agentrqd")
+	// The "current" binary, so Prepare has something to stage beside — and
+	// with the stub's own extension, because the staged file inherits it and
+	// Windows will not run a batch file that is not called .bat. A real
+	// release replaces agentrqd.exe with agentrqd.exe; this replaces a script
+	// with a script.
+	current := filepath.Join(dir, "agentrqd"+stubSuffix())
 	if err := os.WriteFile(current, []byte("v-old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +76,14 @@ func stagedRelease(t *testing.T, version, reports string) (*releaseServer, strin
 }
 
 func goosArch() string { return runtime.GOOS + "/" + runtime.GOARCH }
+
+// stubSuffix is the extension a runnable stub needs on this platform.
+func stubSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".bat"
+	}
+	return ""
+}
 
 func TestPrepareVerifiesDownloadsAndTests(t *testing.T) {
 	srv, current := stagedRelease(t, "0.7.1", "0.7.1")
