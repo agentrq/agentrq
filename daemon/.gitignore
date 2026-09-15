@@ -1,4 +1,8 @@
-
 # Copied in by the goreleaser before-hook so the archive can carry it; the one
 # real copy is docs/DAEMON.md.
 packaging/DAEMON.md
+
+# Build output. `goreleaser release --clean` empties dist/, which is why the
+# bare binaries the self-update path needs are built into update/ instead.
+dist/
+update/
