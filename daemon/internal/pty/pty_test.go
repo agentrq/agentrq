@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // The tests below that touch a real pseudo-terminal re-exec this test binary as
@@ -49,6 +51,26 @@ func helperMain(mode string) int {
 			}
 			fmt.Printf("got:%s\n", line)
 		}
+		return 0
+	case mode == "rawbyte":
+		// Raw mode, because that is how a real agent runs. With the line
+		// editor out of the way there is no line to submit and no key with a
+		// special meaning — every byte is delivered as itself.
+		fd := int(os.Stdin.Fd())
+		prev, err := term.MakeRaw(fd)
+		if err != nil {
+			fmt.Printf("rawfail:%v\r\n", err)
+			return 1
+		}
+		defer func() { _ = term.Restore(fd, prev) }()
+
+		b := make([]byte, 1)
+		if _, err := os.Stdin.Read(b); err != nil {
+			fmt.Printf("readfail:%v\r\n", err)
+			return 1
+		}
+		// CRLF: in raw mode nothing translates the line ending for us.
+		fmt.Printf("hex:%02x\r\n", b[0])
 		return 0
 	case mode == "bytes":
 		in := bufio.NewReader(os.Stdin)
@@ -206,32 +228,29 @@ func TestWritingInputReachesTheProcess(t *testing.T) {
 // platform. It is the example in the brief and the thing most likely to be
 // "helpfully" transformed by something in the middle.
 func TestEscapeByteReachesTheProcessIntact(t *testing.T) {
-	s, err := Start(t.Context(), helperSpec(t, "bytes"))
+	s, err := Start(t.Context(), helperSpec(t, "rawbyte"))
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Esc and the Enter that submits it go in SEPARATE writes with a gap
-	// between them, because a terminal cannot tell a lone Escape key from the
-	// start of an escape sequence except by timing.
+	// Just the byte. No terminator, because the child is in raw mode and there
+	// is no line to submit.
 	//
-	// Sending {0x1b, '\r'} in one write passed on Unix and failed on Windows:
-	// ConPTY's input parser saw ESC, began a sequence, and swallowed the CR as
-	// part of it — the child reported a complete line containing zero bytes. A
-	// human pressing Esc and then Enter supplies the gap naturally; a single
-	// write manufactures an ambiguity that does not occur in practice.
+	// An earlier version of this test had the child reading a line from a
+	// cooked terminal, and failed on Windows with the child reporting a
+	// complete line containing zero bytes. That is not the VT parser eating an
+	// escape sequence — the CR was delivered and processed normally. It is the
+	// Windows console's **line editor**, where Esc means "clear the current
+	// input line". It cleared an empty buffer and the CR submitted the empty
+	// result. Unix has no such key in canonical mode, which is why two
+	// platforms out of three passed.
 	//
-	// This is why input must never be coalesced on its way through the daemon.
-	// Output is batched on a timer (see the plan, §10); doing the same to input
-	// would merge a deliberate Esc with whatever key came next and turn it into
-	// an escape sequence nobody typed.
+	// The test was asking the wrong question. A real agent is a TUI and puts
+	// the terminal in raw mode, where there is no line editor and Esc is
+	// delivered as a byte — so raw mode is the case that matters.
 	if _, err := s.Write([]byte{0x1b}); err != nil {
 		t.Fatalf("Write esc: %v", err)
-	}
-	time.Sleep(150 * time.Millisecond)
-	if _, err := s.Write([]byte{'\r'}); err != nil {
-		t.Fatalf("Write cr: %v", err)
 	}
 	// The helper reports what it received as hex, so the assertion does not
 	// depend on the terminal echoing a control character legibly.

@@ -78,27 +78,49 @@ quietly encoded one platform's convention. That is the class of thing this suite
 exists to find, and it would have surfaced as "the Enter key does nothing on
 Windows" months later otherwise.
 
-## Input must never be coalesced — which is the opposite of output
+## Esc, the Windows line editor, and why raw mode is the case that matters
 
-The second thing the Windows job caught, and it changed the design rather than
-just the test.
+The second Windows finding, and I got the diagnosis wrong once before getting
+it right — the wrong version is recorded here because it is the more tempting
+explanation.
 
-A terminal cannot distinguish a lone **Escape key** from the **start of an
-escape sequence** except by timing: `0x1b` alone is Esc, `0x1b` followed closely
-by more bytes is a sequence. Real terminals resolve it with a ~50ms gap.
+A test that sent Esc and then Enter to a child reading a **line** failed on
+Windows: the child reported a complete line containing **zero bytes**. My first
+reading was that ConPTY's VT parser had seen `0x1b`, begun an escape sequence,
+and swallowed the CR with it. That is wrong, and the evidence says so plainly —
+**the child received a line**. If the parser had eaten both bytes there would
+have been no line at all.
 
-Writing `{0x1b, '\r'}` as one write passed on Unix and failed on Windows.
-ConPTY's input parser saw ESC, began a sequence, and consumed the CR as part of
-it — the child reported a complete line containing **zero bytes**. A human
-pressing Esc and then Enter supplies the gap; a single write manufactures an
-ambiguity that does not occur in practice.
+The CR was delivered and processed normally. Only the Esc vanished before it,
+which points at the **Windows console line editor**, not the VT parser: in
+cooked mode the console implements line editing, and **Esc means "clear the
+current input line"**. It cleared an empty buffer; the CR submitted the empty
+result. Unix canonical mode has no such key — Esc is just another byte in the
+buffer — which is why two platforms out of three passed.
 
-**The rule this gives the daemon:** output is batched on a timer (plan §10,
-because a progress bar redraws a hundred times a second). **Input is forwarded
-immediately and never batched.** Doing to input what we do to output would merge
-a deliberate Esc with the next keystroke and produce an escape sequence nobody
-typed — and "Esc does something strange in the editor, sometimes" is close to
-unfixable once it is in the field.
+**So the test was asking the wrong question.** A real agent is a TUI and puts
+the terminal in **raw mode**, where there is no line editor and every byte is
+delivered as itself. That is the case worth testing, and it now is:
+`TestEscapeByteReachesTheProcessIntact` puts the child in raw mode with
+`golang.org/x/term`, writes a single `0x1b` with no terminator, and asserts the
+child saw exactly that byte.
+
+Worth carrying forward: **if an agent ever runs in cooked mode on Windows, Esc
+will be eaten before it arrives**, and nothing in the daemon can fix that.
+
+## Input is forwarded immediately, never batched
+
+Output is batched on a timer (plan §10) because a progress bar redraws a hundred
+times a second. **Input is the opposite**, for two reasons that hold regardless
+of the above:
+
+- **Latency.** 16–33ms of batching is invisible on output and *felt* on every
+  keypress.
+- **The Esc/Alt ambiguity is real in terminal applications**, even though it was
+  not what broke the test above. TUIs distinguish a lone Escape from `ESC`-plus-key
+  by timing — it is what vim's `ttimeoutlen` exists for. Batching input would
+  merge a deliberate Esc with the next keystroke and hand the application
+  something that reads as Alt+key.
 
 ## What ConPTY sends before anything happens
 

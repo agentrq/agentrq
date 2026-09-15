@@ -531,22 +531,34 @@ right trade, and strictly better than a corrupted stream with a marker in it.
 
 ### Input is the exception: never coalesce it
 
-Everything above is about **output**. Input is the opposite, and the distinction
-is not a nicety — it was found by the M0 spike failing on Windows.
+Everything above is about **output**. Input is the opposite, for two reasons:
 
-A terminal cannot tell a lone **Escape key** from the **start of an escape
-sequence** except by timing: `0x1b` alone is Esc; `0x1b` followed closely by
-more bytes is a sequence. Writing `{0x1b, '\r'}` in a single write passed on
-Unix and failed on ConPTY, which began a sequence and swallowed the CR — the
-receiving process saw a complete line containing zero bytes.
+- **Latency.** Coalescing output by 16–33 ms is invisible; doing it to input
+  adds that to every keypress, which is felt.
+- **The Esc/Alt ambiguity.** Terminal applications tell a lone Escape from
+  `ESC`-plus-key by timing — it is what vim's `ttimeoutlen` exists for. Batching
+  input would merge a deliberate Esc with the next keystroke and hand the
+  application something that reads as Alt+key.
 
-So **input frames are forwarded as they arrive and never batched**. Applying the
-output coalescer to input would merge a deliberate Esc with the next keystroke
-and synthesise an escape sequence nobody typed. It is also the cheaper
-direction: a person types a few bytes a second, not megabytes.
+So input frames are forwarded as they arrive. It is also the cheap direction: a
+person types a few bytes a second, not megabytes.
 
-Latency runs the same way. Coalescing output by 16–33 ms is invisible; doing it
-to input is 33 ms added to every keypress, which is felt.
+### Esc and the Windows line editor
+
+The M0 spike found this, and it is worth stating because the tempting
+explanation is the wrong one.
+
+Sending Esc to a process reading a **line** on Windows loses the Esc. Not
+because ConPTY's VT parser consumed it as the start of a sequence — the process
+still receives a line, which it would not if both bytes had been eaten — but
+because the **Windows console line editor** treats Esc as *"clear the current
+input line"*. Unix canonical mode has no such key.
+
+It does not affect the agents this daemon runs, because a TUI puts the terminal
+in **raw mode**, where there is no line editor and every byte arrives as itself.
+But it is a real constraint on anything that does not: **an agent running in
+cooked mode on Windows will never see Esc**, and nothing in the daemon can
+change that.
 
 ### Caps worth having
 
