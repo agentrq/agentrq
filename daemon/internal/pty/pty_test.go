@@ -212,9 +212,26 @@ func TestEscapeByteReachesTheProcessIntact(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Esc, then Enter so the helper's line is submitted.
-	if _, err := s.Write([]byte{0x1b, '\r'}); err != nil {
-		t.Fatalf("Write: %v", err)
+	// Esc and the Enter that submits it go in SEPARATE writes with a gap
+	// between them, because a terminal cannot tell a lone Escape key from the
+	// start of an escape sequence except by timing.
+	//
+	// Sending {0x1b, '\r'} in one write passed on Unix and failed on Windows:
+	// ConPTY's input parser saw ESC, began a sequence, and swallowed the CR as
+	// part of it — the child reported a complete line containing zero bytes. A
+	// human pressing Esc and then Enter supplies the gap naturally; a single
+	// write manufactures an ambiguity that does not occur in practice.
+	//
+	// This is why input must never be coalesced on its way through the daemon.
+	// Output is batched on a timer (see the plan, §10); doing the same to input
+	// would merge a deliberate Esc with whatever key came next and turn it into
+	// an escape sequence nobody typed.
+	if _, err := s.Write([]byte{0x1b}); err != nil {
+		t.Fatalf("Write esc: %v", err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if _, err := s.Write([]byte{'\r'}); err != nil {
+		t.Fatalf("Write cr: %v", err)
 	}
 	// The helper reports what it received as hex, so the assertion does not
 	// depend on the terminal echoing a control character legibly.

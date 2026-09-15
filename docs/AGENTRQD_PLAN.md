@@ -529,6 +529,25 @@ socket after coalescing:
 The viewer loses intermediate frames and keeps a correct screen. That is the
 right trade, and strictly better than a corrupted stream with a marker in it.
 
+### Input is the exception: never coalesce it
+
+Everything above is about **output**. Input is the opposite, and the distinction
+is not a nicety — it was found by the M0 spike failing on Windows.
+
+A terminal cannot tell a lone **Escape key** from the **start of an escape
+sequence** except by timing: `0x1b` alone is Esc; `0x1b` followed closely by
+more bytes is a sequence. Writing `{0x1b, '\r'}` in a single write passed on
+Unix and failed on ConPTY, which began a sequence and swallowed the CR — the
+receiving process saw a complete line containing zero bytes.
+
+So **input frames are forwarded as they arrive and never batched**. Applying the
+output coalescer to input would merge a deliberate Esc with the next keystroke
+and synthesise an escape sequence nobody typed. It is also the cheaper
+direction: a person types a few bytes a second, not megabytes.
+
+Latency runs the same way. Coalescing output by 16–33 ms is invisible; doing it
+to input is 33 ms added to every keypress, which is felt.
+
 ### Caps worth having
 
 - **Per-session byte-rate cap on the relay**, so one runaway process cannot

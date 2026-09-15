@@ -78,6 +78,28 @@ quietly encoded one platform's convention. That is the class of thing this suite
 exists to find, and it would have surfaced as "the Enter key does nothing on
 Windows" months later otherwise.
 
+## Input must never be coalesced — which is the opposite of output
+
+The second thing the Windows job caught, and it changed the design rather than
+just the test.
+
+A terminal cannot distinguish a lone **Escape key** from the **start of an
+escape sequence** except by timing: `0x1b` alone is Esc, `0x1b` followed closely
+by more bytes is a sequence. Real terminals resolve it with a ~50ms gap.
+
+Writing `{0x1b, '\r'}` as one write passed on Unix and failed on Windows.
+ConPTY's input parser saw ESC, began a sequence, and consumed the CR as part of
+it — the child reported a complete line containing **zero bytes**. A human
+pressing Esc and then Enter supplies the gap; a single write manufactures an
+ambiguity that does not occur in practice.
+
+**The rule this gives the daemon:** output is batched on a timer (plan §10,
+because a progress bar redraws a hundred times a second). **Input is forwarded
+immediately and never batched.** Doing to input what we do to output would merge
+a deliberate Esc with the next keystroke and produce an escape sequence nobody
+typed — and "Esc does something strange in the editor, sometimes" is close to
+unfixable once it is in the field.
+
 ## What ConPTY sends before anything happens
 
 A Windows session opens with a burst of console setup that Unix does not send:
