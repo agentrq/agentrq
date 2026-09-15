@@ -19,6 +19,7 @@ import (
 type SessionController interface {
 	CreateSession(ctx context.Context, req entity.CreateSessionRequest) (*entity.CreateSessionResponse, error)
 	UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error
+	GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 }
@@ -83,6 +84,24 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 		return fmt.Errorf("invalid session id")
 	}
 	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt)
+}
+
+// GetSession reads one session, scoped to its owner.
+//
+// The scoping is in the query rather than a check after it: a session
+// belonging to somebody else is not found, which is also the right thing to
+// tell the caller.
+func (c *controller) GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	id := monoflake.IDFromBase62(req.SessionID).Int64()
+	if uid == 0 || id == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	s, err := c.repository.GetSession(ctx, id, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &entity.GetSessionResponse{Session: toSessionView(s)}, nil
 }
 
 func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error) {

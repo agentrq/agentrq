@@ -34,6 +34,7 @@ const int = (description) => ({ type: 'integer', description })
 
 const WORKSPACE_ID = str('The workspace ID (base62), as it appears in the URL.')
 const TASK_ID = str('The task ID (base62), as it appears in the URL.')
+const MACHINE_ID = str('The machine ID (base62), as it appears in the URL.')
 
 /**
  * Build a WebMCP tool descriptor.
@@ -486,6 +487,96 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description: 'Task statistics across every workspace the user can see.',
       readOnly: true,
       run: () => api.fetchGlobalTaskStats(),
+    }),
+
+    // ---- Machines ----------------------------------------------------------
+    //
+    // A machine is a computer running agentrqd. These mirror what the machines
+    // pages can do, with one deliberate omission: there is no tool that types
+    // into a terminal. That is a materially different grant from "anything the
+    // interface can do" and is exempted on purpose — see
+    // `test/webmcpTools.test.js`.
+    tool({
+      name: 'listMachines',
+      description:
+        'Computers enrolled against this account that can host agents, with whether each is online and what it has left.',
+      readOnly: true,
+      run: () => api.fetchMachines(),
+    }),
+    tool({
+      name: 'getMachine',
+      description: 'One machine: its state, and its memory, CPU and disk.',
+      properties: { machineId: MACHINE_ID },
+      required: ['machineId'],
+      readOnly: true,
+      run: ({ machineId }) => api.getMachine(machineId),
+    }),
+    tool({
+      name: 'listMachineSessions',
+      description: 'The agent sessions that have run on a machine, newest first.',
+      properties: { machineId: MACHINE_ID },
+      required: ['machineId'],
+      readOnly: true,
+      run: ({ machineId }) => api.fetchMachineSessions(machineId),
+    }),
+    tool({
+      name: 'renameMachine',
+      description: 'Rename a machine. The name is what the machines list and the launcher show.',
+      properties: { machineId: MACHINE_ID, name: str('The new name.') },
+      required: ['machineId', 'name'],
+      run: ({ machineId, name }) => api.updateMachine(machineId, { name }),
+    }),
+    tool({
+      name: 'setMachineEnabled',
+      description:
+        'Turn a machine on or off. Disabling is the kill switch: its connection is closed immediately and the next one is refused.',
+      properties: {
+        machineId: MACHINE_ID,
+        enabled: bool('False to disable the machine, true to allow it back.'),
+      },
+      required: ['machineId', 'enabled'],
+      destructive: true,
+      run: ({ machineId, enabled }) => api.updateMachine(machineId, { enabled }),
+    }),
+    tool({
+      name: 'deleteMachine',
+      description:
+        'Remove a machine. Its token stops working, so enrolling it again means running the enrolment command on the machine itself.',
+      properties: { machineId: MACHINE_ID },
+      required: ['machineId'],
+      destructive: true,
+      run: ({ machineId }) => api.deleteMachine(machineId),
+    }),
+    tool({
+      name: 'createEnrolmentCode',
+      description:
+        'Mint a single-use code for enrolling a new machine. It is shown once and is useless without access to the machine being enrolled.',
+      run: () => api.createEnrolmentCode(),
+    }),
+    tool({
+      name: 'launchAgent',
+      description:
+        'Start an agent for a workspace on a chosen machine. Answers before it has started: the session reports its own state.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        machineId: MACHINE_ID,
+        kind: str('Which agent to run: claude-code or acp-gateway.'),
+        model: str('The model, for acp-gateway.'),
+        agent: str('The agent, for acp-gateway.'),
+        cols: int('Terminal width in columns.'),
+        rows: int('Terminal height in rows.'),
+      },
+      required: ['workspaceId', 'machineId', 'kind'],
+      run: ({ workspaceId, machineId, kind, model = '', agent = '', cols = 0, rows = 0 }) =>
+        api.launchAgent(workspaceId, { machineId, kind, model, agent, cols, rows }),
+    }),
+    tool({
+      name: 'killSession',
+      description: 'Ask a machine to end an agent session. Anything the agent has not saved is lost.',
+      properties: { sessionId: str('The session ID (base62), as it appears in the URL.') },
+      required: ['sessionId'],
+      destructive: true,
+      run: ({ sessionId }) => api.killSession(sessionId),
     }),
 
     // ---- Events ------------------------------------------------------------

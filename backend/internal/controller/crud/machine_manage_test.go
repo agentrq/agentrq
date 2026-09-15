@@ -4,6 +4,7 @@
 package crud
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -30,6 +31,8 @@ func TestListMachinesDerivesOnlineFromTheLastHeartbeat(t *testing.T) {
 		{ID: 2, UserID: uid, Name: "gone", Enabled: true, LastSeenAt: &stale},
 		{ID: 3, UserID: uid, Name: "never", Enabled: true},
 	}, nil)
+	env.repo.EXPECT().CountLiveSessionsByUser(gomock.Any(), uid).
+		Return(map[int64]int{1: 2}, nil)
 
 	rs, err := env.controller.ListMachines(t.Context(), entity.ListMachinesRequest{UserID: testUserBase62})
 	if err != nil {
@@ -46,6 +49,35 @@ func TestListMachinesDerivesOnlineFromTheLastHeartbeat(t *testing.T) {
 		if m.ID == "" {
 			t.Errorf("%s has no base62 id", m.Name)
 		}
+	}
+
+	// Zero is a real answer for a machine with no agents on it, and the count
+	// comes from one query rather than one per machine.
+	counts := map[string]int{}
+	for _, m := range rs.Machines {
+		counts[m.Name] = m.Sessions
+	}
+	if counts["live"] != 2 || counts["gone"] != 0 || counts["never"] != 0 {
+		t.Errorf("session counts = %v", counts)
+	}
+}
+
+// A machine list with no numbers on it is still the page somebody asked for.
+func TestTheListSurvivesLosingItsCounts(t *testing.T) {
+	env := newTestController(t)
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+
+	env.repo.EXPECT().ListMachines(gomock.Any(), uid).
+		Return([]model.Machine{{ID: 1, UserID: uid, Name: "live", Enabled: true}}, nil)
+	env.repo.EXPECT().CountLiveSessionsByUser(gomock.Any(), uid).
+		Return(nil, errors.New("the counting query failed"))
+
+	rs, err := env.controller.ListMachines(t.Context(), entity.ListMachinesRequest{UserID: testUserBase62})
+	if err != nil {
+		t.Fatalf("a failed count lost the whole list: %v", err)
+	}
+	if len(rs.Machines) != 1 || rs.Machines[0].Sessions != 0 {
+		t.Errorf("machines = %+v", rs.Machines)
 	}
 }
 

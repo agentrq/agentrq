@@ -64,6 +64,7 @@ type Repository interface {
 	CreateSession(ctx context.Context, s model.Session) (model.Session, error)
 	GetSession(ctx context.Context, id, userID int64) (model.Session, error)
 	RecordMachineMetrics(ctx context.Context, m model.Machine) error
+	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
 	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
@@ -64,7 +65,7 @@ func TestSessionFramesReachTheViewers(t *testing.T) {
 	}
 	v.got = nil // the presence announcement; the terminal traffic is below
 
-	handle := daemonFrames(relay, &recordedState{})
+	handle := daemonFrames(relay, &recordedState{}, nil)
 	f, err := wire.SessionFrame(wire.TypeOutput, 9, []byte{0x1b, 0x5b, 0x41})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +93,7 @@ func controlFrame(t *testing.T, st wire.SessionState) wire.Frame {
 
 func TestSessionStateIsRecorded(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 	code := 130
 
 	if err := handle(context.Background(), &machine.Session{}, controlFrame(t, wire.SessionState{
@@ -119,7 +120,7 @@ func TestSessionStateIsRecorded(t *testing.T) {
 // every report would make each one look finished the moment it began.
 func TestARunningSessionHasNotEnded(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 
 	if err := handle(context.Background(), &machine.Session{}, controlFrame(t, wire.SessionState{
 		SessionID: 9, State: machine.SessionRunning,
@@ -135,7 +136,7 @@ func TestARunningSessionHasNotEnded(t *testing.T) {
 // other sessions are on it.
 func TestNoFrameEndsTheConnection(t *testing.T) {
 	rec := &recordedState{err: errors.New("database is down")}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 
 	unreadable := wire.Frame{Type: wire.TypeControl, Payload: []byte("{not json")}
 	unknownOp, err := wire.ControlFrame(wire.Control{Op: "somethingNewer"})
@@ -175,7 +176,7 @@ func heartbeatFrame(t *testing.T, hb wire.Heartbeat) wire.Frame {
 
 func TestAHeartbeatIsRecorded(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 	session := &machine.Session{Identity: machine.Identity{MachineID: 11}}
 
 	err := handle(context.Background(), session, heartbeatFrame(t, wire.Heartbeat{
@@ -209,7 +210,7 @@ func TestAHeartbeatIsRecorded(t *testing.T) {
 // honour.
 func TestAHeartbeatCanOnlyDescribeItsOwnMachine(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 	session := &machine.Session{Identity: machine.Identity{MachineID: 11}}
 
 	if err := handle(context.Background(), session, heartbeatFrame(t, wire.Heartbeat{MemTotal: 1})); err != nil {
@@ -224,7 +225,7 @@ func TestAHeartbeatCanOnlyDescribeItsOwnMachine(t *testing.T) {
 // average must arrive with none.
 func TestAMachineWithNoLoadAverageRecordsNone(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 
 	if err := handle(context.Background(), &machine.Session{}, heartbeatFrame(t, wire.Heartbeat{
 		MemTotal: 1, CPUPercent: 3,
@@ -240,7 +241,7 @@ func TestAMachineWithNoLoadAverageRecordsNone(t *testing.T) {
 // behind would otherwise sit as running forever.
 func TestWhatTheDaemonIsRunningReconcilesTheRows(t *testing.T) {
 	rec := &recordedState{}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 	session := &machine.Session{Identity: machine.Identity{MachineID: 11}}
 
 	hello, err := wire.ControlFrame(wire.Control{Op: wire.OpHello, Body: mustBytes(t, wire.Hello{
@@ -286,7 +287,7 @@ func mustBytes(t *testing.T, v any) []byte {
 // Nothing a daemon sends costs it its connection, metrics included.
 func TestABadHeartbeatDoesNotEndTheConnection(t *testing.T) {
 	rec := &recordedState{err: errors.New("database is down")}
-	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec)
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
 
 	bad, err := wire.ControlFrame(wire.Control{Op: wire.OpHeartbeat, Body: []byte(`"a string"`)})
 	if err != nil {
@@ -300,5 +301,89 @@ func TestABadHeartbeatDoesNotEndTheConnection(t *testing.T) {
 		if err := handle(context.Background(), &machine.Session{}, f); err != nil {
 			t.Errorf("a heartbeat ended the connection: %v", err)
 		}
+	}
+}
+
+type announced struct {
+	userID string
+	evt    eventbus.Event
+}
+
+func collectAnnouncements(got *[]announced) notifier {
+	return func(userID string, evt eventbus.Event) {
+		*got = append(*got, announced{userID: userID, evt: evt})
+	}
+}
+
+// A session that failed to start is exactly the moment somebody needs to be
+// told why, and the reason is not stored on the row — the event stream is how
+// it reaches them.
+func TestASessionChangeReachesTheBrowser(t *testing.T) {
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), &recordedState{},
+		collectAnnouncements(&sent))
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 3}}
+
+	err := handle(context.Background(), session, controlFrame(t, wire.SessionState{
+		SessionID: 9, State: machine.SessionFailed, Error: "working directory does not exist: /srv/app",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 {
+		t.Fatalf("announced %d times", len(sent))
+	}
+	if sent[0].userID != monoflake.ID(3).String() {
+		t.Errorf("announced to %q", sent[0].userID)
+	}
+	if sent[0].evt.Type != "session.updated" {
+		t.Errorf("event type = %q", sent[0].evt.Type)
+	}
+	payload := sent[0].evt.Payload.(map[string]any)
+	if payload["status"] != machine.SessionFailed {
+		t.Errorf("status = %v", payload["status"])
+	}
+	if payload["error"] != "working directory does not exist: /srv/app" {
+		t.Errorf("the reason did not travel: %v", payload["error"])
+	}
+}
+
+// The numbers that just arrived are the numbers; reading them back would be a
+// query per heartbeat per machine to learn what the handler already held.
+func TestAHeartbeatReachesTheBrowser(t *testing.T) {
+	var sent []announced
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), &recordedState{},
+		collectAnnouncements(&sent))
+	session := &machine.Session{Identity: machine.Identity{MachineID: 11, UserID: 3}}
+
+	if err := handle(context.Background(), session, heartbeatFrame(t, wire.Heartbeat{
+		MemTotal: 16 << 30, MemAvailable: 4 << 30, CPUPercent: 37.4,
+		Disks: []wire.Disk{{Mount: "/", Total: 100, Free: 40}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || sent[0].evt.Type != "machine.updated" {
+		t.Fatalf("announced %+v", sent)
+	}
+	payload := sent[0].evt.Payload.(map[string]any)
+	if payload["id"] != monoflake.ID(11).String() {
+		t.Errorf("machine id = %v", payload["id"])
+	}
+	m := payload["metrics"].(entity.MachineMetricsView)
+	if m.CPUPercent != 37.4 || len(m.Disks) != 1 {
+		t.Errorf("metrics = %+v", m)
+	}
+}
+
+// A backend with nowhere to send events still records everything.
+func TestNothingRequiresSomebodyToBeWatching(t *testing.T) {
+	rec := &recordedState{}
+	handle := daemonFrames(machine.NewRelay(machine.NewRegistry("pod-a")), rec, nil)
+
+	if err := handle(context.Background(), &machine.Session{}, heartbeatFrame(t, wire.Heartbeat{MemTotal: 1})); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.metrics) != 1 {
+		t.Error("metrics were lost when nobody was listening")
 	}
 }

@@ -31,7 +31,7 @@ type MachineManageController interface {
 
 // toMachineView renders a machine for the API, deriving online from the last
 // heartbeat rather than reading a stored flag.
-func toMachineView(m model.Machine, now time.Time) entity.MachineView {
+func toMachineView(m model.Machine, now time.Time, sessions int) entity.MachineView {
 	var lastSeen time.Time
 	if m.LastSeenAt != nil {
 		lastSeen = *m.LastSeenAt
@@ -48,6 +48,7 @@ func toMachineView(m model.Machine, now time.Time) entity.MachineView {
 		LastSeenAt:       m.LastSeenAt,
 		CreatedAt:        m.CreatedAt,
 		AvailableVersion: m.AvailableVersion,
+		Sessions:         sessions,
 		Metrics:          toMetricsView(m),
 	}
 }
@@ -128,10 +129,19 @@ func (c *controller) ListMachines(ctx context.Context, req entity.ListMachinesRe
 		return nil, err
 	}
 
+	// One query for every machine's count, not one per machine: a page with
+	// twenty machines should not be twenty-one queries. A failure here loses
+	// the counts and keeps the list — a machine list with no numbers on it is
+	// still the page somebody asked for.
+	counts, err := c.repository.CountLiveSessionsByUser(ctx, uid)
+	if err != nil {
+		counts = nil
+	}
+
 	now := time.Now()
 	out := make([]entity.MachineView, 0, len(rows))
 	for _, m := range rows {
-		out = append(out, toMachineView(m, now))
+		out = append(out, toMachineView(m, now, counts[m.ID]))
 	}
 	return &entity.ListMachinesResponse{Machines: out}, nil
 }
@@ -146,7 +156,11 @@ func (c *controller) GetMachine(ctx context.Context, req entity.GetMachineReques
 	if err != nil {
 		return nil, err
 	}
-	return &entity.GetMachineResponse{Machine: toMachineView(m, time.Now())}, nil
+	counts, err := c.repository.CountLiveSessionsByUser(ctx, uid)
+	if err != nil {
+		counts = nil
+	}
+	return &entity.GetMachineResponse{Machine: toMachineView(m, time.Now(), counts[m.ID])}, nil
 }
 
 // UpdateMachine renames a machine or flips its kill switch.
@@ -177,7 +191,9 @@ func (c *controller) UpdateMachine(ctx context.Context, req entity.UpdateMachine
 	if err != nil {
 		return nil, err
 	}
-	return &entity.UpdateMachineResponse{Machine: toMachineView(updated, time.Now())}, nil
+	// No count here: an update is a rename or a kill switch, and the caller
+	// has the list page's numbers already.
+	return &entity.UpdateMachineResponse{Machine: toMachineView(updated, time.Now(), 0)}, nil
 }
 
 // DeleteMachine removes a machine, which is how its token is revoked.
