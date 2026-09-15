@@ -132,6 +132,17 @@ func (c *Coalescer) Discard() int {
 	return n
 }
 
+// Elide records bytes lost outside this type.
+//
+// A batch that has already been Taken and then could not be sent is gone, and
+// the coalescer never saw it go — so it has to be told, or the count silently
+// under-reports exactly the loss it exists to surface.
+func (c *Coalescer) Elide(n int) {
+	if n > 0 {
+		c.elided += n
+	}
+}
+
 // Elided is how many bytes have been superseded by resyncs.
 //
 // Reported rather than hidden: a session that keeps resyncing is a process

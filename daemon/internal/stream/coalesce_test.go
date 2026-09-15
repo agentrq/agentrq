@@ -161,3 +161,27 @@ func TestDefaultsAreApplied(t *testing.T) {
 		t.Errorf("default window not applied: %v", got)
 	}
 }
+
+// A batch that has already been Taken and then could not be sent is gone, and
+// the coalescer never saw it go. Without being told, the count under-reports
+// exactly the loss it exists to surface — which is what a pump test caught.
+func TestElideCountsLossTheCoalescerNeverSaw(t *testing.T) {
+	c := NewCoalescer(Window, MaxBatch)
+	c.Add([]byte("taken and then undeliverable"), t0)
+	batch := c.Take()
+
+	if c.Elided() != 0 {
+		t.Fatalf("Take counted a loss: %d", c.Elided())
+	}
+	c.Elide(len(batch))
+	if c.Elided() != len(batch) {
+		t.Errorf("Elided() = %d, want %d", c.Elided(), len(batch))
+	}
+
+	// Nonsense counts are ignored rather than corrupting the total.
+	c.Elide(0)
+	c.Elide(-5)
+	if c.Elided() != len(batch) {
+		t.Errorf("Elided() = %d after no-op calls", c.Elided())
+	}
+}
