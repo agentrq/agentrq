@@ -1231,6 +1231,11 @@ type (
 
 		AvailableVersion string `json:"availableVersion,omitempty"`
 
+		// Sessions is how many are still running on this machine. Zero is a
+		// real answer here, unlike Metrics: a machine with no agents on it is
+		// exactly what "0" should say.
+		Sessions int `json:"sessions"`
+
 		// Metrics is the last snapshot the daemon reported, or nil if it has
 		// not reported one. Nil rather than a zeroed struct: a machine that
 		// has never said how much memory it has is a different thing from one
@@ -1293,6 +1298,14 @@ type (
 	ReconcileSessionsRequest struct {
 		MachineID int64
 		Running   []int64
+	}
+
+	GetSessionRequest struct {
+		UserID    string
+		SessionID string
+	}
+	GetSessionResponse struct {
+		Session SessionView `json:"session"`
 	}
 
 	ListMachinesRequest struct {

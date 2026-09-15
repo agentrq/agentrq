@@ -123,10 +123,16 @@ describe('the catalogue as a whole', () => {
       [
         'deleteEvent',
         'deleteEventTrigger',
+        'deleteMachine',
         'deleteTask',
         'deleteWorkflow',
         'deleteWorkflowStep',
         'deleteWorkspace',
+        // Not a delete, but it ends work in progress: disabling a machine
+        // closes its connection at once, and stopping a session loses whatever
+        // the agent had not saved.
+        'killSession',
+        'setMachineEnabled',
         'replaceWorkflowFromText',
       ].sort()
     );
@@ -170,6 +176,9 @@ describe('parity with the interface', () => {
     // decision somebody makes on purpose, not something acquired as a side
     // effect of a parity rule.
     terminalSocketUrl: 'raw keystrokes into a remote shell; a deliberate non-grant',
+    // Where the server is, for the two callers that have to address it from
+    // outside the renderer. Not an action.
+    serverOrigin: 'returns an address the page uses, not an action',
   };
 
   const apiFunctions = Object.entries(api)

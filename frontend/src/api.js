@@ -193,26 +193,139 @@ export async function archiveWorkspace(id) {
   return true;
 }
 
+// ── Machines ─────────────────────────────────────────────────────────────────
+//
+// A machine is a computer running agentrqd, enrolled against this account.
+// Machines belong to the account rather than to a workspace, which is why none
+// of these take a workspace id.
+
+export async function fetchMachines() {
+  const res = await apiFetch(`${API_BASE_URL}/machines`);
+  if (!res.ok) throw new Error('Failed to fetch machines');
+  return res.json();
+}
+
+export async function getMachine(id) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${id}`);
+  if (!res.ok) throw new Error('Failed to fetch machine');
+  return res.json();
+}
+
+/**
+ * Rename a machine, or turn it off.
+ *
+ * Only the fields passed are changed, which is why the caller sends one key
+ * rather than a whole machine: sending everything would mean a rename could
+ * silently re-enable a machine somebody had deliberately turned off.
+ */
+export async function updateMachine(id, changes) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes)
+  });
+  if (!res.ok) throw new Error('Failed to update machine');
+  return res.json();
+}
+
+export async function deleteMachine(id) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete machine');
+  return true;
+}
+
+/**
+ * Mint a short code to type on the machine being enrolled.
+ *
+ * Returned once and stored only as a hash, so it cannot be shown again — the
+ * caller has to keep it or ask for another.
+ */
+export async function createEnrolmentCode() {
+  const res = await apiFetch(`${API_BASE_URL}/machines/codes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  if (!res.ok) throw new Error('Failed to create an enrolment code');
+  return res.json();
+}
+
+export async function fetchMachineSessions(machineId) {
+  const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/sessions`);
+  if (!res.ok) throw new Error('Failed to fetch sessions');
+  return res.json();
+}
+
+/**
+ * Start an agent for a workspace on a chosen machine.
+ *
+ * Answers 202: the daemon has been asked, and the session's own state report —
+ * which arrives over the event stream — says whether it started. Callers must
+ * not treat this resolving as the agent running.
+ */
+export async function launchAgent(workspaceId, { machineId, kind, model = '', agent = '', cols = 0, rows = 0 }) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/agent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ machineId, kind, model, agent, cols, rows })
+  });
+  if (!res.ok) {
+    // The server says why it refused — the workspace already has an agent, the
+    // folder is not set, the machine is not connected — and that reason is
+    // worth more than "failed".
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message || body?.error || 'Failed to launch the agent');
+  }
+  return res.json();
+}
+
+/**
+ * Ask the daemon to end a session.
+ *
+ * Answers 202 for the same reason as launching: the daemon reports what
+ * actually happened, and a UI that marked the session dead on its own would be
+ * a kill switch that lies about having worked.
+ */
+export async function killSession(sessionId) {
+  const res = await apiFetch(`${API_BASE_URL}/sessions/${sessionId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message || body?.error || 'Failed to stop the session');
+  }
+  return true;
+}
+
+/**
+ * Where the server actually is.
+ *
+ * Almost nothing needs this — the API is addressed with same-origin relative
+ * URLs, which is what makes the desktop build work at all. The two callers
+ * that do need it need it for the same reason: they are producing something
+ * that has to reach the server from *outside* the renderer. The desktop app's
+ * page is served from `app://`, so its own origin is not an address anything
+ * else can use, and the shell is asked instead.
+ *
+ * Async because asking the shell is IPC.
+ */
+export async function serverOrigin() {
+  if (window.agentrq?.connection?.get) {
+    const { serverUrl } = (await window.agentrq.connection.get()) || {};
+    if (serverUrl) return new URL(serverUrl).origin;
+  }
+  return window.location.origin;
+}
+
 /**
  * The WebSocket a terminal session is watched over.
  *
- * This is the one place that builds an **absolute** URL, and it is a
- * deliberate exception to the rule in AGENTS.md rather than an oversight. The
- * desktop renderer is served from `app://`, and Electron's custom-protocol
- * handler — which is what forwards every other API call to the configured
- * server — does not intercept WebSockets. A relative URL would resolve to
- * `app://` and simply fail to open, so the shell is asked where the server is.
- * In the browser there is no such problem and the page's own origin is used.
- *
- * Async for the same reason: the shell is asked over IPC.
+ * This is one of the two **absolute** URLs in the frontend, and a deliberate
+ * exception to the rule in AGENTS.md rather than an oversight: Electron's
+ * custom-protocol handler — which forwards every other API call to the
+ * configured server — does not intercept WebSockets, so a relative URL would
+ * resolve to `app://` and simply fail to open.
  */
 export async function terminalSocketUrl(sessionId) {
-  let origin = window.location.origin;
-  if (window.agentrq?.connection?.get) {
-    const { serverUrl } = (await window.agentrq.connection.get()) || {};
-    if (serverUrl) origin = new URL(serverUrl).origin;
-  }
-  const url = new URL(`${API_BASE_URL}/sessions/${sessionId}/terminal`, origin);
+  const url = new URL(`${API_BASE_URL}/sessions/${sessionId}/terminal`, await serverOrigin());
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }

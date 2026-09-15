@@ -139,6 +139,7 @@ func New(p Params) (Handler, error) {
 	}
 	h.registerEventRoutes()
 	h.registerMachineRoutes()
+	h.registerSessionRoutes()
 	h.registerAgentLaunchRoutes()
 	h.registerWorkflowRoutes()
 	if err := h.registerTelemetryRoutes(); err != nil {

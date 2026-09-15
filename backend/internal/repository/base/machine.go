@@ -5,7 +5,10 @@ package base
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -80,9 +83,18 @@ func (r *repository) GetMachineByTokenHash(ctx context.Context, tokenHash string
 // Scoped by user id in the query rather than checked afterwards: a read that
 // fetches first and compares later is one early return away from leaking
 // another account's row.
+// GetMachine reads one machine belonging to a user.
+//
+// A miss is translated to [ErrNotFound] rather than passed on as gorm's own
+// error, which the HTTP mapper does not recognise and therefore renders as a
+// 500. "Not found" and "the server is broken" are different answers, and only
+// one of them is true when somebody follows a stale link.
 func (r *repository) GetMachine(ctx context.Context, id, userID int64) (model.Machine, error) {
 	var m model.Machine
 	if err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Machine{}, ErrNotFound
+		}
 		return model.Machine{}, err
 	}
 	return m, nil
@@ -144,9 +156,16 @@ func (r *repository) CreateSession(ctx context.Context, s model.Session) (model.
 }
 
 // GetSession reads one session belonging to a user.
+//
+// Scoped by the query rather than by a check after it, so a session belonging
+// to somebody else is simply not found — which is both the right answer and
+// the one that says least.
 func (r *repository) GetSession(ctx context.Context, id, userID int64) (model.Session, error) {
 	var s model.Session
 	if err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Session{}, ErrNotFound
+		}
 		return model.Session{}, err
 	}
 	return s, nil
@@ -235,4 +254,28 @@ func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, run
 		"ended_at":   at,
 		"updated_at": at,
 	}).Error
+}
+
+// CountLiveSessionsByUser counts the sessions still running, per machine.
+//
+// One query for every machine rather than one per machine: the list page shows
+// a count beside each row, and doing this in a loop is how a page with twenty
+// machines becomes twenty-one queries.
+func (r *repository) CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error) {
+	var rows []struct {
+		MachineID int64
+		N         int
+	}
+	err := r.conn(ctx).Model(&model.Session{}).
+		Select("machine_id, count(*) as n").
+		Where("user_id = ? AND status IN ?", userID, []string{"starting", "running"}).
+		Group("machine_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int, len(rows))
+	for _, row := range rows {
+		out[row.MachineID] = row.N
+	}
+	return out, nil
 }
