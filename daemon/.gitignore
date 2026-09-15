@@ -1,0 +1,4 @@
+
+# Copied in by the goreleaser before-hook so the archive can carry it; the one
+# real copy is docs/DAEMON.md.
+packaging/DAEMON.md

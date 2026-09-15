@@ -149,8 +149,20 @@ Three things the release job does that are worth keeping:
   published.
 
 `.github/workflows/daemon.yml` rehearses the whole signing and verifying path on
-every change with a throwaway key, so on release day the only new thing is the
-key itself.
+every change with a throwaway key, and runs `goreleaser check`, so on release
+day the only new thing is the key itself.
+
+`goreleaser check` validates the schema and cannot know whether the release
+would actually build — run a snapshot for that:
+
+```sh
+AGENTRQD_RELEASE_PUBKEY=deadbeef goreleaser release --snapshot --clean --skip=publish
+```
+
+That is what found the one thing `check` passed and the build did not: a
+goreleaser glob cannot climb out of the project directory, so the archive gets
+`docs/DAEMON.md` through a before-hook that copies it in rather than a
+`../` path it will not accept.
 
 Install paths — the systemd **user** unit and the macOS **LaunchAgent** — are in
 `packaging/`, and both are user-level on purpose: the daemon refuses to run as

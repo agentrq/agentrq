@@ -18,6 +18,12 @@ project_name: agentrqd
 before:
   hooks:
     - go mod tidy
+    # The user-facing guide lives in the repository's docs/, and a goreleaser
+    # glob cannot climb out of the project directory — "../docs/DAEMON.md" is
+    # not a path it will accept. Copied in rather than duplicated, so there is
+    # still exactly one of it. Found by running a snapshot release; `check`
+    # validates the schema and cannot know this.
+    - sh -c "cp ../docs/DAEMON.md packaging/DAEMON.md"
 
 builds:
   - id: agentrqd
@@ -51,7 +57,7 @@ archives:
         dst: com.agentrq.agentrqd.plist
       - src: packaging/INSTALL.md
         dst: INSTALL.md
-      - src: ../docs/DAEMON.md
+      - src: packaging/DAEMON.md
         dst: DAEMON.md
 
 # The bare binaries and the signed manifest, alongside the archives: the
@@ -70,7 +76,10 @@ release:
   extra_files:
     - glob: update/*
 
-checksums:
+# Singular. GoReleaser v2 renamed this, and `goreleaser check` is what caught
+# the plural — which is the whole reason that check runs on every change rather
+# than on release day.
+checksum:
   name_template: "checksums.txt"
 
 changelog:
