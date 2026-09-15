@@ -1168,3 +1168,96 @@ func (a Action) String() string {
 	}
 	return "unknown"
 }
+
+// ── Machines ────────────────────────────────────────────────────────────────
+
+type (
+	// CreateEnrolmentCodeRequest asks for a short code to type on a machine.
+	CreateEnrolmentCodeRequest struct {
+		UserID string
+	}
+
+	// CreateEnrolmentCodeResponse carries the code back exactly once. It is
+	// stored hashed, so this is the only moment it can be shown.
+	CreateEnrolmentCodeResponse struct {
+		Code      string    `json:"code"`
+		ExpiresAt time.Time `json:"expiresAt"`
+	}
+
+	// EnrolMachineRequest is what a daemon sends to trade a code for identity.
+	//
+	// There is no UserID: the caller is not authenticated, and the code is what
+	// decides whose machine this becomes. Taking an account from the request
+	// would let anyone enrol a machine into anyone's account.
+	EnrolMachineRequest struct {
+		Code     string
+		Name     string
+		Hostname string
+		OS       string
+		Arch     string
+		Version  string
+	}
+
+	// EnrolMachineResponse is returned once. The token is never recoverable.
+	EnrolMachineResponse struct {
+		MachineID    string `json:"machineId"`
+		MachineToken string `json:"machineToken"`
+	}
+)
+
+type (
+	// MachineView is one machine as the control panel sees it.
+	//
+	// Online is **derived** here rather than stored, from LastSeenAt against a
+	// threshold. A stored flag says "online" forever when a daemon is killed,
+	// which is exactly the moment somebody is looking at the screen to find out.
+	MachineView struct {
+		ID         string     `json:"id"`
+		Name       string     `json:"name"`
+		Hostname   string     `json:"hostname"`
+		OS         string     `json:"os"`
+		Arch       string     `json:"arch"`
+		Version    string     `json:"version"`
+		Enabled    bool       `json:"enabled"`
+		Online     bool       `json:"online"`
+		LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
+		CreatedAt  time.Time  `json:"createdAt"`
+
+		AvailableVersion string `json:"availableVersion,omitempty"`
+	}
+
+	ListMachinesRequest struct {
+		UserID string
+	}
+	ListMachinesResponse struct {
+		Machines []MachineView `json:"machines"`
+	}
+
+	GetMachineRequest struct {
+		UserID    string
+		MachineID string
+	}
+	GetMachineResponse struct {
+		Machine MachineView `json:"machine"`
+	}
+
+	// UpdateMachineRequest renames or enables/disables a machine.
+	//
+	// Both fields are pointers so "not mentioned" and "set to empty/false" are
+	// different requests. Without that, a rename would silently re-enable a
+	// machine somebody had deliberately turned off.
+	UpdateMachineRequest struct {
+		UserID    string
+		MachineID string
+		Name      *string
+		Enabled   *bool
+	}
+	UpdateMachineResponse struct {
+		Machine MachineView `json:"machine"`
+	}
+
+	DeleteMachineRequest struct {
+		UserID    string
+		MachineID string
+	}
+)

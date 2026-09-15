@@ -16,6 +16,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	pushctrl "github.com/agentrq/agentrq/backend/internal/controller/push"
 	slackctrl "github.com/agentrq/agentrq/backend/internal/controller/slack"
@@ -31,12 +32,17 @@ import (
 
 type (
 	Params struct {
-		Crud             crud.Controller
-		Auth             auth.Service
-		GithubAuth       auth.Service
-		GithubClientID   string
-		TokenSvc         auth.TokenService
-		MCPManager       *mcpctrl.Manager
+		Crud           crud.Controller
+		Auth           auth.Service
+		GithubAuth     auth.Service
+		GithubClientID string
+		TokenSvc       auth.TokenService
+		MCPManager     *mcpctrl.Manager
+		// MachineRegistry is the daemon sockets this process holds. Needed here
+		// because revoking a machine has to close its socket, and only the
+		// process holding it can do that — the database change alone leaves a
+		// connected daemon running until it next tries to authenticate.
+		MachineRegistry  *machinectrl.Registry
 		EventBus         *eventbus.Bus
 		BaseURL          string
 		MCPBaseURL       string
@@ -59,6 +65,7 @@ type (
 		githubClientID   string
 		tokenSvc         auth.TokenService
 		mcpManager       mcpManager
+		machineRegistry  *machinectrl.Registry
 		bus              *eventbus.Bus
 		baseURL          string
 		mcpBaseURL       string
@@ -99,6 +106,7 @@ func New(p Params) (Handler, error) {
 		githubClientID:   p.GithubClientID,
 		tokenSvc:         p.TokenSvc,
 		mcpManager:       liveMCPManager{p.MCPManager},
+		machineRegistry:  p.MachineRegistry,
 		bus:              p.EventBus,
 		baseURL:          p.BaseURL,
 		mcpBaseURL:       p.MCPBaseURL,
@@ -113,6 +121,10 @@ func New(p Params) (Handler, error) {
 	}
 
 	h.registerPublicAuthRoutes()
+	// Enrolment cannot be authenticated: a daemon enrolling for the first time
+	// has only its code. Registered here, before the middleware below, because
+	// registration order is what makes a route public.
+	h.registerPublicMachineRoutes()
 
 	// Protected routes
 	h.router.Use(h.authMiddleware())
@@ -126,6 +138,7 @@ func New(p Params) (Handler, error) {
 		return nil, err
 	}
 	h.registerEventRoutes()
+	h.registerMachineRoutes()
 	h.registerWorkflowRoutes()
 	if err := h.registerTelemetryRoutes(); err != nil {
 		return nil, err

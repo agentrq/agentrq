@@ -232,6 +232,113 @@ type (
 		CreatedAt time.Time
 	}
 
+	// Machine is one enrolled computer, as seen by one account.
+	//
+	// A physical box enrolled against two accounts is two rows, because the
+	// token is account-scoped. That is correct rather than a limitation:
+	// sharing one row would tell account B that account A's machine exists.
+	Machine struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		UserID    int64 `gorm:"index:idx_machines_user_id"`
+
+		// Reported by the daemon at enrolment. None of it is a secret; it is
+		// what the control panel shows so a person can tell one machine from
+		// another.
+		Name     string `gorm:"type:varchar(128)"`
+		Hostname string `gorm:"type:varchar(255)"`
+		OS       string `gorm:"type:varchar(32)"`
+		Arch     string `gorm:"type:varchar(32)"`
+		Version  string `gorm:"type:varchar(64)"`
+
+		// TokenHash is the SHA-256 of the machine token, hex encoded. The
+		// token itself is returned once at enrolment and never stored: a
+		// database that leaks must not hand over the ability to act as every
+		// enrolled machine. Indexed because every daemon request looks a
+		// machine up by it.
+		TokenHash string `gorm:"type:varchar(64);uniqueIndex:idx_machines_token_hash"`
+
+		// Enabled is the kill switch. Disabling closes the socket server-side
+		// and takes effect without the daemon's cooperation.
+		Enabled bool `gorm:"default:true"`
+
+		// LastSeenAt drives online/offline, which is **derived** and never
+		// stored: a stored flag says "online" forever when a daemon is killed,
+		// which is exactly when the answer matters.
+		LastSeenAt *time.Time
+
+		// InstanceID names the backend process currently holding this
+		// machine's socket, so an attach arriving at a different instance
+		// knows where to relay. Cleared on disconnect. Treated as a lease
+		// rather than a fact, because an instance killed outright never gets
+		// to clear it — LastSeenAt is what makes a stale row harmless.
+		InstanceID  string `gorm:"type:varchar(128);index:idx_machines_instance_id"`
+		ConnectedAt *time.Time
+
+		// AvailableVersion is set when the daemon reports an update it has
+		// found. Null means it is current.
+		AvailableVersion string `gorm:"type:varchar(64)"`
+
+		// The latest metrics snapshot, and only the latest. Storing every
+		// heartbeat would be a table that grows forever to power a widget
+		// nobody has asked for.
+		MemTotal     int64
+		MemAvailable int64
+		CPUPercent   float64
+		LoadAvg      string `gorm:"type:varchar(64)"` // JSON array; absent on Windows
+		UptimeSec    int64
+		Disks        datatypes.JSON `gorm:"type:text"` // per mount, never one number
+		MetricsAt    *time.Time
+	}
+
+	// EnrolmentCode is a short, single-use secret a person types on the
+	// machine being enrolled.
+	//
+	// Stored hashed like any other credential even though it lives for
+	// minutes: it is short enough to be guessable if the table ever leaks, and
+	// hashing it costs nothing.
+	EnrolmentCode struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UserID    int64  `gorm:"index:idx_enrolment_codes_user_id"`
+		CodeHash  string `gorm:"type:varchar(64);uniqueIndex:idx_enrolment_codes_hash"`
+		ExpiresAt time.Time
+		// UsedAt makes the code single-use. Kept rather than deleted so a
+		// second attempt can be told "already used" instead of "unknown",
+		// which is the difference between a person retrying and a person
+		// wondering whether they mistyped it.
+		UsedAt    *time.Time
+		MachineID int64
+	}
+
+	// Session is one agent process in one pseudo-terminal on one machine.
+	Session struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		MachineID int64 `gorm:"index:idx_sessions_machine_id"`
+		UserID    int64 `gorm:"index:idx_sessions_user_id"`
+
+		// Kind is claude-code or acp-gateway. Never a command line: the
+		// daemon resolves a kind to an executable from its own config, so a
+		// backend that has been taken over cannot ask for /bin/sh.
+		Kind        string `gorm:"type:varchar(32)"`
+		WorkspaceID int64  `gorm:"index:idx_sessions_workspace_id"`
+
+		Status   string `gorm:"type:varchar(16)"` // starting|running|exited|killed|failed
+		ExitCode *int
+		// Restored marks a session re-spawned after a daemon update. Surfaced
+		// in the UI so nobody wonders why their scrollback is empty: what is
+		// restored is the intent, not the state.
+		Restored bool `gorm:"default:false"`
+
+		Cols      int
+		Rows      int
+		StartedAt *time.Time
+		EndedAt   *time.Time
+	}
+
 	// User represents a human user
 	User struct {
 		ID        int64 `gorm:"primaryKey;autoIncrement:false"`

@@ -48,6 +48,13 @@ RUN apt-get update && \
   apt-get install -y gcc && \
   rm -rf /var/lib/apt/lists/*
 
+# The daemon module first: backend/go.mod requires it and replaces it with a
+# relative path, because the wire protocol has exactly one definition and both
+# sides import it rather than keeping a copy each. The backend is flattened
+# into /app here, so ../daemon is /daemon — put it there before anything tries
+# to resolve the module graph.
+COPY daemon /daemon
+
 COPY backend/go.mod backend/go.sum ./
 RUN GO111MODULE=on go mod download
 

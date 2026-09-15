@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/agentrq/agentrq/daemon v0.0.0-00010101000000-000000000000
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-acme/lego/v4 v4.35.2
@@ -11,6 +12,7 @@ require (
 	github.com/gofiber/fiber/v2 v2.52.15
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/mock v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/mustafaturan/monoflake v1.2.0
 	github.com/robfig/cron/v3 v3.0.1
@@ -37,7 +39,6 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
@@ -73,3 +74,5 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.53.0 // indirect
 )
+
+replace github.com/agentrq/agentrq/daemon => ../daemon
