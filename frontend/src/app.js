@@ -56,6 +56,11 @@ export const routes = [
   // the `ui` registry's owner scope already guarantees is unique.
   { path: '/extensions/:name/:pageId', component: () => import('./desktop/ExtensionPageView.vue') },
 
+  // A session's terminal. Addressed by session rather than by machine: a
+  // session is what a person is watching, and it outlives the page they
+  // reached it from.
+  { path: '/sessions/:id', component: () => import('./views/SessionTerminalView.vue') },
+
   { path: '/workflows', component: () => import('./views/WorkflowsView.vue') },
   { path: '/workflows/:id', component: () => import('./views/WorkflowDetailView.vue') },
 

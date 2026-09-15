@@ -20,14 +20,35 @@ type fakePTY struct {
 	closed   bool
 	exitCode int
 	waitErr  error
+	written  []byte
+	cols     uint16
+	rows     uint16
 	done     chan struct{}
 }
 
 func newFakePTY() *fakePTY { return &fakePTY{done: make(chan struct{})} }
 
-func (f *fakePTY) Read([]byte) (int, error)    { <-f.done; return 0, errors.New("closed") }
-func (f *fakePTY) Write(p []byte) (int, error) { return len(p), nil }
-func (f *fakePTY) Resize(uint16, uint16) error { return nil }
+func (f *fakePTY) Read([]byte) (int, error) { <-f.done; return 0, errors.New("closed") }
+
+func (f *fakePTY) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.written = append(f.written, p...)
+	return len(p), nil
+}
+
+func (f *fakePTY) Resize(cols, rows uint16) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cols, f.rows = cols, rows
+	return nil
+}
+
+func (f *fakePTY) size() (uint16, uint16) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cols, f.rows
+}
 
 func (f *fakePTY) Wait() (int, error) {
 	<-f.done

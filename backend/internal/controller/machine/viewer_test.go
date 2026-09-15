@@ -5,6 +5,7 @@ package machine
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,18 +14,19 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
 type fakeLookup struct {
-	machineID  int64
-	instanceID string
-	err        error
+	at  Attachment
+	err error
 }
 
-func (l fakeLookup) LookupSession(*http.Request, uint64) (int64, string, error) {
-	return l.machineID, l.instanceID, l.err
+func (l fakeLookup) LookupSession(*http.Request, uint64) (Attachment, error) {
+	return l.at, l.err
 }
 
 // viewerServer wires a relay to a real HTTP server, with a real daemon socket
@@ -38,12 +40,35 @@ func viewerServer(t *testing.T, sessionID uint64) (*httptest.Server, *Relay, *fa
 
 	h := &ViewerHandler{
 		Relay:     relay,
-		Lookup:    fakeLookup{machineID: 11, instanceID: "pod-a"},
+		Lookup:    fakeLookup{at: Attachment{MachineID: 11, InstanceID: "pod-a", UserID: 3, ViewerName: "Ada"}},
 		SessionID: func(*http.Request) uint64 { return sessionID },
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv, relay, daemon
+}
+
+// readSession reads the next frame that belongs to the session, skipping the
+// presence announcements that arrive on the same socket.
+func readSession(t *testing.T, ws *websocket.Conn, name string) wire.Frame {
+	t.Helper()
+	for {
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+		typ, data, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("%s: read: %v", name, err)
+		}
+		if typ != websocket.BinaryMessage {
+			t.Fatalf("%s: not a binary frame", name)
+		}
+		f, err := wire.Decode(data)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", name, err)
+		}
+		if f.Type != wire.TypeControl {
+			return f
+		}
+	}
 }
 
 func dialViewer(t *testing.T, srv *httptest.Server) *websocket.Conn {
@@ -82,18 +107,7 @@ func TestBytesSurviveARealSocketInBothDirections(t *testing.T) {
 			}
 			relay.FromDaemon(f)
 
-			_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
-			typ, data, err := ws.ReadMessage()
-			if err != nil {
-				t.Fatalf("%s: read: %v", name, err)
-			}
-			if typ != websocket.BinaryMessage {
-				t.Fatalf("%s: not a binary frame", name)
-			}
-			got, err := wire.Decode(data)
-			if err != nil {
-				t.Fatalf("%s: decode: %v", name, err)
-			}
+			got := readSession(t, ws, name)
 			if !bytes.Equal(got.Payload, payload) {
 				t.Errorf("%s changed:\n got %#v\nwant %#v", name, got.Payload, payload)
 			}
@@ -173,7 +187,7 @@ func TestAttachToAMachineHeldElsewhereIsRefusedBeforeUpgrading(t *testing.T) {
 	reg := NewRegistry("pod-a") // holds nothing
 	h := &ViewerHandler{
 		Relay:     NewRelay(reg),
-		Lookup:    fakeLookup{machineID: 11, instanceID: "pod-b"},
+		Lookup:    fakeLookup{at: Attachment{MachineID: 11, InstanceID: "pod-b"}},
 		SessionID: func(*http.Request) uint64 { return 7 },
 	}
 	srv := httptest.NewServer(h)
@@ -193,7 +207,7 @@ func TestViewerHandlerRefusesNonsense(t *testing.T) {
 	reg.Add(11, &fakeConn{})
 
 	t.Run("no session in the path", func(t *testing.T) {
-		h := &ViewerHandler{Relay: NewRelay(reg), Lookup: fakeLookup{machineID: 11},
+		h := &ViewerHandler{Relay: NewRelay(reg), Lookup: fakeLookup{at: Attachment{MachineID: 11}},
 			SessionID: func(*http.Request) uint64 { return 0 }}
 		srv := httptest.NewServer(h)
 		defer srv.Close()
@@ -226,4 +240,79 @@ func TestClosingTheBrowserDetaches(t *testing.T) {
 
 	_ = ws.Close()
 	waitFor(t, func() bool { return relay.Viewers(sessionID) == 0 }, "the viewer was never detached")
+}
+
+// The audit record is the attach, and only the attach.
+//
+// Keystrokes are credentials, tokens and file contents. Recording them would
+// build the most sensitive log in the system to answer a question nobody
+// asked; that somebody opened this session is the fact worth keeping.
+func TestTheAttachIsAuditedAndTheKeystrokesAreNot(t *testing.T) {
+	const sessionID = 7
+
+	var logged bytes.Buffer
+	previous := log.Logger
+	log.Logger = zerolog.New(&logged)
+	t.Cleanup(func() { log.Logger = previous })
+
+	srv, relay, _ := viewerServer(t, sessionID)
+	ws := dialViewer(t, srv)
+	waitFor(t, func() bool { return relay.Viewers(sessionID) == 1 }, "the viewer never attached")
+
+	secret := []byte("hunter2-my-actual-password\r")
+	f, err := wire.SessionFrame(wire.TypeInput, sessionID, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := f.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.WriteMessage(websocket.BinaryMessage, b); err != nil {
+		t.Fatal(err)
+	}
+	_ = ws.Close()
+	waitFor(t, func() bool { return relay.Viewers(sessionID) == 0 }, "the viewer never detached")
+
+	out := logged.String()
+	for _, want := range []string{"terminal attached", "terminal detached", `"user_id":3`, `"session_id":7`, `"machine_id":11`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the audit record does not mention %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("a keystroke reached the log:\n%s", out)
+	}
+}
+
+// Presence reaches the browser over the same socket as the terminal traffic.
+func TestPresenceReachesTheBrowser(t *testing.T) {
+	const sessionID = 7
+	srv, relay, _ := viewerServer(t, sessionID)
+	ws := dialViewer(t, srv)
+	waitFor(t, func() bool { return relay.Viewers(sessionID) == 1 }, "the viewer never attached")
+
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, data, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	frame, err := wire.Decode(data)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	c, err := wire.ParseControl(frame)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.Op != wire.OpPresence {
+		t.Fatalf("first frame was %s, want a presence announcement", c.Op)
+	}
+	var p wire.Presence
+	if err := json.Unmarshal(c.Body, &p); err != nil {
+		t.Fatalf("presence body: %v", err)
+	}
+	if p.SessionID != sessionID || len(p.Viewers) != 1 || p.Viewers[0] != "Ada" {
+		t.Errorf("presence = %+v", p)
+	}
 }
