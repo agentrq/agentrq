@@ -14,13 +14,26 @@ import (
 	"github.com/agentrq/agentrq/daemon/wire"
 )
 
+// Attachment is what an authorised attach resolves to.
+type Attachment struct {
+	// MachineID is the machine holding the session, and InstanceID the
+	// backend process that machine's socket is on.
+	MachineID  int64
+	InstanceID string
+	// UserID is who is attaching. It goes in the audit record, and nowhere
+	// else — the other viewers are shown ViewerName.
+	UserID int64
+	// ViewerName is the display name the other viewers see.
+	ViewerName string
+}
+
 // SessionLookup resolves a session to its machine, for the caller who owns the
 // database. Narrow so this package stays testable without one.
 type SessionLookup interface {
-	// LookupSession returns the machine holding a session, and the instance
-	// that machine's socket is on. An error means the caller may not see it —
-	// the reason is the caller's to decide, not this package's to leak.
-	LookupSession(r *http.Request, sessionID uint64) (machineID int64, instanceID string, err error)
+	// LookupSession authorises the request and describes the attach. An error
+	// means the caller may not see this session — the reason is the caller's
+	// to decide, not this package's to leak.
+	LookupSession(r *http.Request, sessionID uint64) (Attachment, error)
 }
 
 // viewerConn adapts a browser's WebSocket to [Viewer].
@@ -29,11 +42,15 @@ type SessionLookup interface {
 // one concurrent writer, and this socket is written by the relay and the
 // keepalive at once.
 type viewerConn struct {
-	ws *websocket.Conn
+	ws   *websocket.Conn
+	name string
 
 	mu     sync.Mutex
 	closed bool
 }
+
+// Name is what the other viewers of this session are shown.
+func (c *viewerConn) Name() string { return c.name }
 
 func (c *viewerConn) Send(f wire.Frame) error {
 	b, err := f.Encode()
@@ -75,7 +92,7 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	machineID, instanceID, err := h.Lookup.LookupSession(r, sessionID)
+	at, err := h.Lookup.LookupSession(r, sessionID)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -84,10 +101,10 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Refused with a reason rather than opening a socket that will never carry
 	// anything. A terminal panel that connects and then shows nothing is the
 	// worst version of this failure, because it looks like the agent is quiet.
-	if _, regErr := h.Relay.registry.Get(machineID); regErr != nil {
+	if _, regErr := h.Relay.registry.Get(at.MachineID); regErr != nil {
 		log.Info().
-			Int64("machine_id", machineID).
-			Str("held_by", instanceID).
+			Int64("machine_id", at.MachineID).
+			Str("held_by", at.InstanceID).
 			Str("this_instance", h.Relay.registry.InstanceID()).
 			Msg("[viewer] attach for a machine this instance does not hold")
 		http.Error(w, "that machine is connected to another server instance", http.StatusConflict)
@@ -98,15 +115,32 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	conn := &viewerConn{ws: ws}
+	conn := &viewerConn{ws: ws, name: at.ViewerName}
 
-	if err := h.Relay.Attach(sessionID, machineID, conn); err != nil {
+	if err := h.Relay.Attach(sessionID, at.MachineID, conn); err != nil {
 		_ = conn.Close()
 		return
 	}
+
+	// The audit record is the attach, and only the attach.
+	//
+	// Keystrokes are what somebody types into a shell: credentials, tokens,
+	// the contents of files. Recording them would build the most sensitive log
+	// in the system to answer a question nobody asked. That a person opened
+	// this session, and when they left, is the fact worth keeping.
+	log.Info().
+		Int64("user_id", at.UserID).
+		Uint64("session_id", sessionID).
+		Int64("machine_id", at.MachineID).
+		Msg("[audit] terminal attached")
 	defer func() {
 		h.Relay.Detach(sessionID, conn)
 		_ = conn.Close()
+		log.Info().
+			Int64("user_id", at.UserID).
+			Uint64("session_id", sessionID).
+			Int64("machine_id", at.MachineID).
+			Msg("[audit] terminal detached")
 	}()
 
 	ws.SetReadLimit(maxFrame)

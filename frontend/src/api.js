@@ -193,6 +193,30 @@ export async function archiveWorkspace(id) {
   return true;
 }
 
+/**
+ * The WebSocket a terminal session is watched over.
+ *
+ * This is the one place that builds an **absolute** URL, and it is a
+ * deliberate exception to the rule in AGENTS.md rather than an oversight. The
+ * desktop renderer is served from `app://`, and Electron's custom-protocol
+ * handler — which is what forwards every other API call to the configured
+ * server — does not intercept WebSockets. A relative URL would resolve to
+ * `app://` and simply fail to open, so the shell is asked where the server is.
+ * In the browser there is no such problem and the page's own origin is used.
+ *
+ * Async for the same reason: the shell is asked over IPC.
+ */
+export async function terminalSocketUrl(sessionId) {
+  let origin = window.location.origin;
+  if (window.agentrq?.connection?.get) {
+    const { serverUrl } = (await window.agentrq.connection.get()) || {};
+    if (serverUrl) origin = new URL(serverUrl).origin;
+  }
+  const url = new URL(`${API_BASE_URL}/sessions/${sessionId}/terminal`, origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
 export function getAttachmentUrl(workspaceId, taskId, attachmentId) {
   return `${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/attachments/${attachmentId}`;
 }

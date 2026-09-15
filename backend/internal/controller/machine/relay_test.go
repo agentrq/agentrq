@@ -5,6 +5,7 @@ package machine
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -13,11 +14,14 @@ import (
 )
 
 type fakeViewer struct {
+	who    string
 	mu     sync.Mutex
 	got    []wire.Frame
 	err    error
 	closed bool
 }
+
+func (v *fakeViewer) Name() string { return v.who }
 
 func (v *fakeViewer) Send(f wire.Frame) error {
 	v.mu.Lock()
@@ -36,10 +40,51 @@ func (v *fakeViewer) Close() error {
 	return nil
 }
 
+// frames is what reached the terminal. Control frames are presence
+// announcements rather than session traffic, and are asked for separately.
 func (v *fakeViewer) frames() []wire.Frame {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return append([]wire.Frame(nil), v.got...)
+	out := make([]wire.Frame, 0, len(v.got))
+	for _, f := range v.got {
+		if f.Type != wire.TypeControl {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// presence is the most recent list of viewers this one was told about, and
+// how many times it has been told.
+func (v *fakeViewer) presence(t *testing.T) ([]string, int) {
+	names, _, n := v.presenceWithSelf(t)
+	return names, n
+}
+
+// presenceWithSelf also returns where the viewer was told it sits in the list.
+func (v *fakeViewer) presenceWithSelf(t *testing.T) ([]string, int, int) {
+	t.Helper()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	var names []string
+	you, n := 0, 0
+	for _, f := range v.got {
+		if f.Type != wire.TypeControl {
+			continue
+		}
+		c, err := wire.ParseControl(f)
+		if err != nil || c.Op != wire.OpPresence {
+			continue
+		}
+		var p wire.Presence
+		if err := json.Unmarshal(c.Body, &p); err != nil {
+			t.Fatalf("presence body: %v", err)
+		}
+		names = p.Viewers
+		you = p.You
+		n++
+	}
+	return names, you, n
 }
 
 func (v *fakeViewer) isClosed() bool {
@@ -265,5 +310,102 @@ func TestTheRateCapIsPerSession(t *testing.T) {
 
 	if len(quiet.frames()) != 1 {
 		t.Error("a noisy session silenced a quiet one")
+	}
+}
+
+// Two people on one terminal is allowed. Being surprised by it is not: a
+// keystroke arriving from nowhere is indistinguishable from a machine that has
+// gone wrong, so every viewer is told who else is here.
+func TestViewersAreToldWhoElseIsWatching(t *testing.T) {
+	r, _, _ := relayWithMachine(t)
+	const session = 9
+
+	ada := &fakeViewer{who: "Ada"}
+	if err := r.Attach(session, 11, ada); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	if names, n := ada.presence(t); n != 1 || len(names) != 1 || names[0] != "Ada" {
+		t.Fatalf("first viewer was told %v after %d announcements", names, n)
+	}
+
+	grace := &fakeViewer{who: "Grace"}
+	if err := r.Attach(session, 11, grace); err != nil {
+		t.Fatalf("second attach: %v", err)
+	}
+
+	// Both of them, and sorted, so the UI does not reshuffle the names on
+	// every announcement.
+	want := []string{"Ada", "Grace"}
+	for _, v := range []*fakeViewer{ada, grace} {
+		names, _ := v.presence(t)
+		if len(names) != 2 || names[0] != want[0] || names[1] != want[1] {
+			t.Errorf("%s was told %v, want %v", v.who, names, want)
+		}
+	}
+
+	// And when one leaves, the other stops being told the terminal is shared.
+	r.Detach(session, grace)
+	if names, _ := ada.presence(t); len(names) != 1 || names[0] != "Ada" {
+		t.Errorf("after a viewer left, the remaining one was told %v", names)
+	}
+}
+
+// The same person in two tabs is two entries. That is the honest answer: it is
+// two terminals, and both of them can type.
+func TestTheSamePersonTwiceIsTwoViewers(t *testing.T) {
+	r, _, _ := relayWithMachine(t)
+	const session = 9
+
+	first := &fakeViewer{who: "Ada"}
+	second := &fakeViewer{who: "Ada"}
+	_ = r.Attach(session, 11, first)
+	_ = r.Attach(session, 11, second)
+
+	// Two identical names, and each tab is told which of the two it is —
+	// there is no way to work that out from the list alone.
+	firstNames, firstSelf, _ := first.presenceWithSelf(t)
+	_, secondSelf, _ := second.presenceWithSelf(t)
+	if len(firstNames) != 2 {
+		t.Errorf("two tabs were reported as %v", firstNames)
+	}
+	if firstSelf == secondSelf {
+		t.Errorf("both tabs were told they are viewer %d", firstSelf)
+	}
+}
+
+// The last viewer leaving is a detach, not an announcement to nobody.
+func TestTheLastViewerLeavingAnnouncesNothing(t *testing.T) {
+	r, _, daemon := relayWithMachine(t)
+	const session = 9
+
+	v := &fakeViewer{who: "Ada"}
+	_ = r.Attach(session, 11, v)
+	before, _ := v.presence(t)
+	r.Detach(session, v)
+
+	if _, n := v.presence(t); n != len(before) {
+		t.Errorf("a departed viewer was sent a presence update")
+	}
+	if got := daemon.lastFrame(); got.Type != wire.TypeControl {
+		t.Fatalf("the daemon was not told to detach")
+	}
+}
+
+// A viewer whose socket has already gone must not be reaped from inside an
+// announcement it provoked — that re-enters Detach from within Detach.
+func TestAnnouncingToADeadViewerDoesNotReapIt(t *testing.T) {
+	r, _, _ := relayWithMachine(t)
+	const session = 9
+
+	dead := &fakeViewer{who: "Gone", err: errors.New("socket closed")}
+	live := &fakeViewer{who: "Ada"}
+	_ = r.Attach(session, 11, dead)
+	_ = r.Attach(session, 11, live)
+
+	if r.Viewers(session) != 2 {
+		t.Fatalf("a failed announcement changed the viewer count")
+	}
+	if dead.isClosed() {
+		t.Errorf("a failed announcement closed the viewer")
 	}
 }

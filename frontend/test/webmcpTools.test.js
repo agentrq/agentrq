@@ -159,6 +159,17 @@ describe('parity with the interface', () => {
     // Builds a URL for an <img>/<a>; the bytes are fetched by the browser with
     // the session cookie, which an agent cannot replay outside the page.
     getAttachmentUrl: 'returns a URL the page renders, not an action',
+    // Exempted deliberately, and this is the reason.
+    //
+    // Every other exemption here is "not really an action". This one is an
+    // action, and a powerful one: the socket it addresses carries raw
+    // keystrokes to a shell on somebody's machine. Handing a browser agent
+    // that is a materially different grant from "anything the interface can
+    // do" — the interface puts a person at a keyboard in front of it, and the
+    // whole terminal is a person deciding what to type. It should be a
+    // decision somebody makes on purpose, not something acquired as a side
+    // effect of a parity rule.
+    terminalSocketUrl: 'raw keystrokes into a remote shell; a deliberate non-grant',
   };
 
   const apiFunctions = Object.entries(api)

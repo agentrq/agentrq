@@ -870,6 +870,7 @@ func New(cfg Config) (*App, error) {
 	// mount below because the API handler needs it too: revoking a machine has
 	// to close its socket, and only the process holding it can do that.
 	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
+	machineRelay := machine.NewRelay(machineRegistry)
 
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
@@ -961,6 +962,16 @@ func New(cfg Config) (*App, error) {
 		Registry: machineRegistry,
 		Auth:     machine.StoreAuthenticator{Store: repo},
 		DecodeID: func(s string) int64 { return monoflake.IDFromBase62(s).Int64() },
+		OnFrame:  daemonFrames(machineRelay, crudCtrl),
+	})
+
+	// The browser's terminal socket, on the mux for the same hijacking reason.
+	mux.Handle("/api/v1/sessions/{id}/terminal", &machine.ViewerHandler{
+		Relay:  machineRelay,
+		Lookup: sessionLookup{repo: repo, tokens: tokenSvc},
+		SessionID: func(r *http.Request) uint64 {
+			return uint64(monoflake.IDFromBase62(r.PathValue("id")).Int64())
+		},
 	})
 
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
@@ -1107,6 +1118,59 @@ func pubStatsHandler(ctrl pub.StatsController) http.Handler {
 			}
 		}
 	})
+}
+
+// sessionLookup answers "may this request watch this session, and as whom".
+//
+// It is the authorisation boundary for the terminal socket, and it is
+// deliberately not the relay's job: the relay copies bytes, and a component
+// that copies bytes should not also be the thing deciding who may see them.
+type sessionLookup struct {
+	repo   base.Repository
+	tokens auth.TokenService
+}
+
+func (l sessionLookup) LookupSession(r *http.Request, sessionID uint64) (machine.Attachment, error) {
+	cookie, err := r.Cookie("at")
+	if err != nil {
+		return machine.Attachment{}, err
+	}
+	claims, err := l.tokens.ValidateToken(cookie.Value)
+	if err != nil {
+		return machine.Attachment{}, err
+	}
+	userID := monoflake.IDFromBase62(claims.Subject).Int64()
+	if userID == 0 {
+		return machine.Attachment{}, fmt.Errorf("app: unreadable subject")
+	}
+
+	// Scoped to the user by the query itself rather than by a check after it.
+	// A session belonging to somebody else is not found, which is also the
+	// right thing to tell the caller.
+	sess, err := l.repo.GetSession(r.Context(), int64(sessionID), userID)
+	if err != nil {
+		return machine.Attachment{}, err
+	}
+	m, err := l.repo.GetMachine(r.Context(), sess.MachineID, userID)
+	if err != nil {
+		return machine.Attachment{}, err
+	}
+
+	// A display name, never the email address: presence answers "who else is
+	// typing", which does not require handing every viewer another person's
+	// contact details. A user with no name set is still someone, so they get
+	// a placeholder rather than an empty entry nobody can interpret.
+	name := "Someone"
+	if u, err := l.repo.SystemGetUser(r.Context(), userID); err == nil && u.Name != "" {
+		name = u.Name
+	}
+
+	return machine.Attachment{
+		MachineID:  m.ID,
+		InstanceID: m.InstanceID,
+		UserID:     userID,
+		ViewerName: name,
+	}, nil
 }
 
 func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenService) http.Handler {
