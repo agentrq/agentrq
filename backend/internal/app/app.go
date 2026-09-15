@@ -19,6 +19,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
+	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
 	"github.com/agentrq/agentrq/backend/internal/controller/pub"
@@ -929,6 +930,17 @@ func New(cfg Config) (*App, error) {
 	})
 
 	// ── Server Start ─────────────────────────────────────────────────
+	// The daemon's socket. On the stdlib mux beside the SSE routes, and for the
+	// same structural reason: Fiber is mounted here through an adaptor that
+	// synthesises a fasthttp context, and a WebSocket upgrade needs to hijack
+	// the real connection, which a synthesised context has none of.
+	machineRegistry := machine.NewRegistry(instanceID())
+	mux.Handle("/api/v1/daemon/connect", &machine.Handler{
+		Registry: machineRegistry,
+		Auth:     machine.StoreAuthenticator{Store: repo},
+		DecodeID: func(s string) int64 { return monoflake.IDFromBase62(s).Int64() },
+	})
+
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/api/v1/events/stream", eventsHandler(crudCtrl, bus, tokenSvc))
@@ -957,6 +969,25 @@ func New(cfg Config) (*App, error) {
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
+}
+
+// instanceID names this backend process for the (machineId, instanceId)
+// pairing, so an attach arriving at another instance knows where to relay.
+//
+// It has to be stable for the life of the process and unique across instances.
+// AGENTRQ_INSTANCE_ID is the way to say so explicitly — in Kubernetes that is
+// the pod name. The hostname is the fallback because it is right far more often
+// than it is wrong, and a random value would be worse: it changes on every
+// restart, leaving stale pairings that point at an instance id nothing will
+// ever answer to again.
+func instanceID() string {
+	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {
+		return v
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "unknown"
 }
 
 // taskEventPayload loads the task an SSE event is about, with the relations a
