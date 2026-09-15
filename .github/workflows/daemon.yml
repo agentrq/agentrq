@@ -1,0 +1,77 @@
+name: Daemon
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'daemon/**'
+      - '.github/workflows/daemon.yml'
+  pull_request:
+    paths:
+      - 'daemon/**'
+      - '.github/workflows/daemon.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test ${{ matrix.os }}
+    # All three, and this matrix is the point of the job rather than caution.
+    # The pseudo-terminal layer is the least portable code in the repository:
+    # Windows has ConPTY instead of openpty, no SIGWINCH, and different signal
+    # semantics. A mocked PTY proves nothing about any of that, so the real
+    # thing has to run on every platform we ship to.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      - name: Vet
+        working-directory: daemon
+        run: go vet ./...
+
+      - name: Test
+        working-directory: daemon
+        # A hung pseudo-terminal test is far worse than a failing one: it burns
+        # a runner for the job's whole timeout and reports nothing useful.
+        run: go test -timeout 5m ./...
+
+  build:
+    name: Cross-compile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      # The daemon ships as one static binary for six targets and uses no cgo,
+      # so every one of them can be checked from a single runner. Cheap, and it
+      # catches a platform-specific import long before a release does.
+      - name: Build every target
+        working-directory: daemon
+        run: |
+          set -eu
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            echo "▸ ${target}"
+            GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 go build ./...
+          done
