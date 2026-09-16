@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -13,6 +14,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -420,4 +422,26 @@ func (w *statusResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack hands the raw connection to a caller that needs it.
+//
+// Wrapping a ResponseWriter hides every optional interface the original
+// implemented, and net/http decides what a handler may do by type-asserting
+// for exactly those. Flush above is the same story: without it, every
+// streaming response buffers. Without this one, a WebSocket upgrade fails with
+// "response does not implement http.Hijacker" and the client sees a bare 500 —
+// which is how the daemon socket first behaved, with nothing in the log to say
+// why.
+//
+// The status is left as-is deliberately. Once the connection is hijacked this
+// wrapper is no longer in the path, and a hijacked request has no meaningful
+// status to record: the upgrade has already been written by whoever took the
+// connection.
+func (w *statusResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("server: the underlying ResponseWriter cannot be hijacked")
+	}
+	return h.Hijack()
 }
