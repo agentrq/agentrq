@@ -402,3 +402,38 @@ func TestStateTerminal(t *testing.T) {
 func realStarter(ctx context.Context, spec pty.Spec) (pty.Session, error) {
 	return pty.Start(ctx, spec)
 }
+
+// Running answers "what is this daemon actually supervising", which is what a
+// reconnecting backend needs in order to correct rows it believes are alive.
+func TestRunningListsOnlyLiveSessions(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	dir := t.TempDir()
+
+	for _, id := range []uint64{9, 3, 5} {
+		if _, err := s.Start(t.Context(), "work", Request{
+			ID: id, Kind: KindACPGateway, Dir: dir,
+			Params: Params{Model: "m", Agent: "a"},
+		}); err != nil {
+			t.Fatalf("start %d: %v", id, err)
+		}
+	}
+
+	// Sorted, so a backend comparing two hellos is comparing like with like.
+	if got := s.Running(); len(got) != 3 || got[0] != 3 || got[1] != 5 || got[2] != 9 {
+		t.Fatalf("Running = %v", got)
+	}
+
+	if err := s.Kill(5); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	got := s.Running()
+	for _, id := range got {
+		if id == 5 {
+			t.Errorf("a killed session is still reported as running: %v", got)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("Running = %v, want two survivors", got)
+	}
+}

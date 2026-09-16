@@ -129,6 +129,7 @@ func (c *controller) EnrolMachine(ctx context.Context, req entity.EnrolMachineRe
 
 	return &entity.EnrolMachineResponse{
 		MachineID:    monoflake.ID(created.ID).String(),
+		UserID:       monoflake.ID(created.UserID).String(),
 		MachineToken: token,
 	}, nil
 }

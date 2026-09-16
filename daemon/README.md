@@ -12,9 +12,9 @@ bound.
 
 ## Status
 
-Milestones **M0** (the spike) and **M1** (enrolment). A machine can enrol,
-and its identity survives a restart. Nothing talks to the backend socket yet —
-that is M1b, which needs the server side to exist.
+Connected. A machine enrols, `agentrqd serve` holds a socket to the backend,
+and an agent launched from the control panel runs in a pseudo-terminal on that
+machine with its keystrokes and output travelling both ways.
 
 | Package | What it is |
 |---|---|
@@ -24,7 +24,32 @@ that is M1b, which needs the server side to exist.
 | `internal/secret/` | Machine tokens, one 0600 file each |
 | `internal/enrol/` | Trading a one-time code for a machine token |
 | `internal/guard/` | The checks the daemon makes about itself before it runs |
-| `cmd/agentrqd/` | The CLI: enroll, status, disable, version |
+| `internal/supervisor/` | Starting, killing and writing to sessions |
+| `internal/stream/` | The headless screen, coalescing, and the output pump |
+| `internal/link/` | The connection: dial, reconnect, route frames |
+| `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, version |
+
+## Running it
+
+```sh
+agentrqd serve            # every enrolled profile
+agentrqd serve --profile work --verbose
+```
+
+It connects each profile and stays connected, retrying with a jittered backoff
+that starts at half a second and caps at a minute. Two things it deliberately
+does not do:
+
+- **It does not exit when the backend goes away.** A daemon that stopped when
+  the server restarted would need somebody to walk over to that machine, which
+  is the thing this exists to avoid.
+- **It does not kill agents when the connection drops.** The pumps stop, the
+  sessions keep running, and the next connection's `hello` tells the backend
+  what is still alive.
+
+One profile that cannot start — an unreadable token, an unusable server URL —
+is skipped with an error rather than taken as a reason to refuse the others. A
+machine enrolled with two accounts should still serve the one that still works.
 
 ## Enrolling
 

@@ -59,7 +59,11 @@ type Request struct {
 
 // Response is what the server returns.
 type Response struct {
-	MachineID    string `json:"machineId"`
+	MachineID string `json:"machineId"`
+	// UserID is the account this machine belongs to. Stored and sent on every
+	// later connection so the backend can refuse a daemon whose claim
+	// contradicts its token, rather than having to work out which it meant.
+	UserID       string `json:"userId"`
 	MachineToken string `json:"machineToken"`
 }
 

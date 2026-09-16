@@ -48,6 +48,10 @@ type Profile struct {
 	Label     string `json:"label"`
 	ServerURL string `json:"serverUrl"`
 	MachineID string `json:"machineId,omitempty"`
+	// UserID is the account this profile is enrolled with. Sent as a header on
+	// every connection, alongside the machine id; neither is trusted for
+	// authorisation, both are refused if they disagree with the token.
+	UserID string `json:"userId,omitempty"`
 	// Insecure records that this profile was enrolled against a plain-HTTP
 	// server with --insecure. Stored so that every later start can say so:
 	// a warning printed once, at enrolment, is not a safeguard.
@@ -179,4 +183,8 @@ func Migrate(raw File, legacy LegacyFields) File {
 type LegacyFields struct {
 	ServerURL string `json:"serverUrl,omitempty"`
 	MachineID string `json:"machineId,omitempty"`
+	// UserID is the account this profile is enrolled with. Sent as a header on
+	// every connection, alongside the machine id; neither is trusted for
+	// authorisation, both are refused if they disagree with the token.
+	UserID string `json:"userId,omitempty"`
 }
