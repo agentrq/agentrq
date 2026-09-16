@@ -88,3 +88,73 @@ func SessionFrame(t Type, sessionID uint64, payload []byte) (Frame, error) {
 	}
 	return f, nil
 }
+
+// ── Control payloads ────────────────────────────────────────────────────────
+//
+// These live here, beside the frame format, for the same reason it does: the
+// relay and the daemon must agree, and the only way to guarantee that is for
+// there to be one definition that both import.
+
+// StartSession asks the daemon to run an agent.
+//
+// It names a KIND and carries validated parameters. There is deliberately no
+// argv and no environment: the daemon resolves a kind to a command from its
+// own configuration, so a backend that has been taken over cannot ask for a
+// shell.
+type StartSession struct {
+	SessionID uint64 `json:"sessionId"`
+	Kind      string `json:"kind"`
+	// Dir is the workspace's folder on that machine. The daemon checks it
+	// exists and is writable before reporting the session started — the server
+	// cannot, because the agent runs somewhere else.
+	Dir string `json:"dir"`
+	// MCPURL points the agent at its workspace.
+	//
+	// The credential is a query parameter inside this URL, which is why it
+	// travels in a frame rather than an argv and must never be logged: a token
+	// on a command line is visible in `ps` to every user on that machine.
+	MCPURL string `json:"mcpUrl,omitempty"`
+	// ServerName is the entry the daemon writes into .mcp.json, and also what
+	// `server:<name>` refers to on the command line. One decision, not two.
+	ServerName string `json:"serverName,omitempty"`
+	// Workspace is what claude-code reports itself as.
+	Workspace string `json:"workspace,omitempty"`
+	// Model and Agent are the acp-gateway's selections.
+	Model string `json:"model,omitempty"`
+	Agent string `json:"agent,omitempty"`
+
+	Cols uint16 `json:"cols,omitempty"`
+	Rows uint16 `json:"rows,omitempty"`
+}
+
+// Redacted returns a copy safe to log.
+//
+// The MCP URL carries the workspace token, and start requests are exactly the
+// thing somebody turns logging up on when a launch is not working. Having to
+// remember to strip it at each log site is how it eventually reaches a log, so
+// the type carries its own redaction.
+func (s StartSession) Redacted() StartSession {
+	out := s
+	if out.MCPURL != "" {
+		out.MCPURL = "<redacted>"
+	}
+	return out
+}
+
+// KillSession asks the daemon to end one.
+type KillSession struct {
+	SessionID uint64 `json:"sessionId"`
+}
+
+// SessionState reports a session's lifecycle to the backend.
+type SessionState struct {
+	SessionID uint64 `json:"sessionId"`
+	State     string `json:"state"`
+	ExitCode  *int   `json:"exitCode,omitempty"`
+	// Error explains a failed start in terms the person can act on — a missing
+	// working directory naming the path, rather than "failed to start".
+	Error string `json:"error,omitempty"`
+	// Restored marks a session re-spawned after an update, so the UI can say
+	// why the scrollback is empty.
+	Restored bool `json:"restored,omitempty"`
+}

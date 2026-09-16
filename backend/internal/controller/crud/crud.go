@@ -36,6 +36,9 @@ type (
 		WorkflowStepController
 		WorkflowTextController
 		TelemetryController
+		MachineController
+		MachineManageController
+		SessionController
 	}
 
 	controller struct {

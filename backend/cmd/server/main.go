@@ -46,6 +46,9 @@ func main() {
 	if err := cfgSvc.Populate("storage", &cfg.Storage); err != nil {
 		zlog.Fatal().Err(err).Msg("config storage")
 	}
+	if err := cfgSvc.Populate("idgen", &cfg.Idgen); err != nil {
+		zlog.Fatal().Err(err).Msg("config idgen")
+	}
 
 	cfg.ConfigSvc = cfgSvc
 

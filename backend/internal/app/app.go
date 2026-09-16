@@ -19,6 +19,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
+	"github.com/agentrq/agentrq/backend/internal/controller/machine"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/controller/notification"
 	"github.com/agentrq/agentrq/backend/internal/controller/pub"
@@ -90,6 +91,15 @@ type (
 			RootLoginEnabled  bool   `yaml:"rootLoginEnabled"`
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
 		} `yaml:"auth"`
+		// Idgen's node id doubles as this process's instance id, because the
+		// two need exactly the same property: monoflake ids collide unless
+		// every node is distinct, so a deployment that runs more than one
+		// instance has already had to make this unique. Reusing it means one
+		// value to get right instead of two.
+		Idgen struct {
+			Node uint16 `yaml:"node"`
+		} `yaml:"idgen"`
+
 		SMTP    smtp.Config     `yaml:"smtp"`
 		Slack   slacksvc.Config `yaml:"slack"`
 		WebPush pushctrl.Config `yaml:"webPush"`
@@ -205,12 +215,23 @@ func New(cfg Config) (*App, error) {
 		&model.WorkflowStep{},
 		&model.ToolCall{},
 		&model.Memory{},
+		&model.Machine{},
+		&model.EnrolmentCode{},
+		&model.Session{},
 	); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
 	// ── Core Services ──────────────────────────────────────────────────────────
-	ids, err := idgen.New(uint16(1))
+	// Defaults to 1 rather than 0 only because that is what this was
+	// hardcoded to; changing it would change the node bits of every id a
+	// existing deployment generates from here on. Uniqueness is what matters,
+	// not the value.
+	idgenNode := cfg.Idgen.Node
+	if idgenNode == 0 {
+		idgenNode = 1
+	}
+	ids, err := idgen.New(idgenNode)
 	if err != nil {
 		return nil, fmt.Errorf("idgen: %w", err)
 	}
@@ -845,6 +866,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("mcp handler: %w", err)
 	}
 
+	// The daemon sockets this process holds. Created here rather than at the
+	// mount below because the API handler needs it too: revoking a machine has
+	// to close its socket, and only the process holding it can do that.
+	machineRegistry := machine.NewRegistry(instanceID(idgenNode))
+
 	// API Handler
 	apiGroup := fiberApp.Group("/api/v1")
 	if _, err := handlerapi.New(handlerapi.Params{
@@ -853,6 +879,7 @@ func New(cfg Config) (*App, error) {
 		GithubAuth:       githubAuthSvc,
 		TokenSvc:         tokenSvc,
 		MCPManager:       mcpManager,
+		MachineRegistry:  machineRegistry,
 		EventBus:         bus,
 		BaseURL:          cfg.App.BaseURL,
 		MCPBaseURL:       cfg.App.BaseURL,
@@ -926,6 +953,16 @@ func New(cfg Config) (*App, error) {
 	})
 
 	// ── Server Start ─────────────────────────────────────────────────
+	// The daemon's socket. On the stdlib mux beside the SSE routes, and for the
+	// same structural reason: Fiber is mounted here through an adaptor that
+	// synthesises a fasthttp context, and a WebSocket upgrade needs to hijack
+	// the real connection, which a synthesised context has none of.
+	mux.Handle("/api/v1/daemon/connect", &machine.Handler{
+		Registry: machineRegistry,
+		Auth:     machine.StoreAuthenticator{Store: repo},
+		DecodeID: func(s string) int64 { return monoflake.IDFromBase62(s).Int64() },
+	})
+
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/api/v1/events/stream", eventsHandler(crudCtrl, bus, tokenSvc))
@@ -954,6 +991,30 @@ func New(cfg Config) (*App, error) {
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
 	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, cancel: appCancel}, nil
+}
+
+// instanceID names this backend process for the (machineId, instanceId)
+// pairing, so an attach arriving at another instance knows where to relay.
+//
+// It has to be stable for the life of the process and unique across instances.
+// AGENTRQ_INSTANCE_ID is the way to say so explicitly — in Kubernetes that is
+// the pod name. The hostname is the fallback because it is right far more often
+// than it is wrong, and a random value would be worse: it changes on every
+// restart, leaving stale pairings that point at an instance id nothing will
+// ever answer to again.
+func instanceID(idgenNode uint16) string {
+	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {
+		return v
+	}
+	// The idgen node id, because it already has to be unique per instance:
+	// monoflake ids collide otherwise. A deployment running several instances
+	// has therefore already set it, and one that has not is running one
+	// instance, where the pairing does not matter anyway.
+	//
+	// Better than a hostname, which is only usually unique, and far better
+	// than a random value, which changes on every restart and leaves pairings
+	// pointing at an id nothing will ever answer to again.
+	return fmt.Sprintf("node-%d", idgenNode)
 }
 
 // taskEventPayload loads the task an SSE event is about, with the relations a
