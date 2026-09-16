@@ -1231,6 +1231,11 @@ type (
 
 		AvailableVersion string `json:"availableVersion,omitempty"`
 
+		// Sessions is how many are still running on this machine. Zero is a
+		// real answer here, unlike Metrics: a machine with no agents on it is
+		// exactly what "0" should say.
+		Sessions int `json:"sessions"`
+
 		// Metrics is the last snapshot the daemon reported, or nil if it has
 		// not reported one. Nil rather than a zeroed struct: a machine that
 		// has never said how much memory it has is a different thing from one
@@ -1290,9 +1295,48 @@ type (
 	//
 	// Running is what the daemon says it is supervising. Everything else this
 	// machine has marked live has ended without anybody being told.
+	// RecordAvailableVersionRequest stores a release a daemon has found.
+	//
+	// The machine id comes from the authenticated socket, never the payload:
+	// a daemon may only ever describe itself.
+	RecordAvailableVersionRequest struct {
+		MachineID int64
+		// Version is empty when the daemon is current again, which clears the
+		// offer rather than leaving a machine advertising an update it has
+		// already installed.
+		Version string
+	}
+
+	// ApproveMachineUpdateRequest is a person saying yes to losing their
+	// sessions on one machine, for one release.
+	ApproveMachineUpdateRequest struct {
+		UserID    string
+		MachineID string
+		Version   string
+	}
+	ApproveMachineUpdateResponse struct {
+		MachineID int64
+		Version   string
+	}
+
+	// RecordMachineVersionRequest is what a daemon says it is running, from
+	// its hello — the only message that knows.
+	RecordMachineVersionRequest struct {
+		MachineID int64
+		Version   string
+	}
+
 	ReconcileSessionsRequest struct {
 		MachineID int64
 		Running   []int64
+	}
+
+	GetSessionRequest struct {
+		UserID    string
+		SessionID string
+	}
+	GetSessionResponse struct {
+		Session SessionView `json:"session"`
 	}
 
 	ListMachinesRequest struct {
@@ -1369,6 +1413,9 @@ type (
 		// on the row today — it reaches the UI through the event stream — but
 		// carried here so the controller has it when that lands.
 		Error string
+		// Restored marks a session re-spawned after an update, so the UI can
+		// say why the scrollback is empty.
+		Restored bool
 	}
 
 	ListSessionsRequest struct {

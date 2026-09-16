@@ -1,0 +1,114 @@
+name: Daemon release
+
+on:
+  push:
+    tags:
+      - 'agentrqd-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the v (e.g. 0.7.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      # Checked before anything is built, because a release without it is a
+      # release of daemons that cannot ever update themselves — which fails
+      # silently, months later, on somebody else's machine.
+      - name: Require the release key
+        env:
+          PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
+          PRIVKEY: ${{ secrets.AGENTRQD_RELEASE_KEY }}
+        run: |
+          set -eu
+          if [ -z "${PUBKEY}" ] || [ -z "${PRIVKEY}" ]; then
+            echo "::error::AGENTRQD_RELEASE_PUBKEY and AGENTRQD_RELEASE_KEY must both be set."
+            echo "::error::Generate them with: go run ./cmd/agentrqd-release keygen"
+            exit 1
+          fi
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -eu
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#agentrqd-v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The bare binaries, named the way agentrqd-release reads the platform
+      # back out of them. The self-update path downloads one file and replaces
+      # one file, so it needs these rather than the archives.
+      - name: Build every target
+        working-directory: daemon
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
+        run: |
+          set -eu
+          # ./update, not ./dist: goreleaser runs with --clean and empties
+          # dist/, which would delete these before they were published.
+          mkdir -p update
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"; goarch="${target#*/}"
+            name="agentrqd_${goos}_${goarch}"
+            [ "$goos" = windows ] && name="${name}.exe"
+            echo "▸ ${name}"
+            GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION} -X github.com/agentrq/agentrq/daemon/internal/update.ReleaseKey=${AGENTRQD_RELEASE_PUBKEY}" \
+              -o "update/${name}" ./cmd/agentrqd
+          done
+
+      # The manifest the daemon verifies. Signed here and nowhere else: the
+      # private key exists only as a secret in this job.
+      - name: Sign the release manifest
+        working-directory: daemon
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          AGENTRQD_RELEASE_KEY: ${{ secrets.AGENTRQD_RELEASE_KEY }}
+        run: |
+          set -eu
+          go run ./cmd/agentrqd-release manifest \
+            --version "${VERSION}" \
+            --base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/agentrqd-v${VERSION}" \
+            update > update/agentrqd.json
+
+      # Proving the release is installable, not just that it built. A manifest
+      # that does not verify against the key in the binaries is a release every
+      # daemon will correctly refuse, and finding that out here costs minutes
+      # rather than a support thread.
+      - name: Verify the manifest against the shipped key
+        working-directory: daemon
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: go run ./cmd/agentrqd-release verify --version "${VERSION}" update
+
+      - name: Package the archives
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+          workdir: daemon
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: agentrqd-v${{ steps.version.outputs.version }}
+          AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}

@@ -1,0 +1,43 @@
+# Copyright 2026 Contextual, Inc. https://agentrq.com
+# This notice may not be modified or removed.
+#
+# A *user* unit, and that is the whole point: the daemon runs agents as the
+# person who installed it, and refuses to start as root. Installing this
+# system-wide and running it as root would work around a check that exists
+# because an agent has the powers of whoever started it.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp agentrqd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now agentrqd
+#
+# And so it keeps running when nobody is logged in:
+#   sudo loginctl enable-linger "$USER"
+
+[Unit]
+Description=AgentRQ machine daemon
+Documentation=https://agentrq.com/docs/daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/agentrqd serve
+Restart=on-failure
+RestartSec=5s
+
+# A self-update exits 0 and lets systemd start the replacement, which is why
+# this is on-failure rather than always: a deliberate stop should stay stopped.
+# systemd sets INVOCATION_ID, which is how the daemon knows to exit rather than
+# re-exec itself.
+
+# The agents it starts are the point, so this cannot be locked down the way a
+# single-purpose service can. These are the restrictions that do not conflict
+# with running somebody's development tools.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
+
+[Install]
+WantedBy=default.target

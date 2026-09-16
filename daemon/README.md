@@ -28,7 +28,11 @@ machine with its keystrokes and output travelling both ways.
 | `internal/stream/` | The headless screen, coalescing, and the output pump |
 | `internal/link/` | The connection: dial, reconnect, route frames |
 | `internal/metrics/` | What the machine has left: memory, CPU, disk |
-| `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, version |
+| `internal/update/` | Verifying, swapping and rolling back the binary |
+| `internal/restore/` | The note that survives the daemon replacing itself |
+| `internal/localstatus/` | What is running here, for the person at the keyboard |
+| `cmd/agentrqd/` | The CLI: enroll, serve, status, disable, rollback, version |
+| `cmd/agentrqd-release/` | Signing and verifying a release |
 
 ## Running it
 
@@ -51,6 +55,120 @@ does not do:
 One profile that cannot start — an unreadable token, an unusable server URL —
 is skipped with an error rather than taken as a reason to refuse the others. A
 machine enrolled with two accounts should still serve the one that still works.
+
+## Updating itself
+
+The daemon never updates on its own initiative. It reads the release feed,
+reports anything newer, and waits. An approval from the panel means *"kill
+every session on this machine and restart them"*, and only a person can mean
+that.
+
+```
+verify → download → test → *write the note* → kill → swap → restart
+```
+
+Everything before the note is reversible; everything after it is not. Four
+things hold this together:
+
+- **A build with no release key cannot update itself**, and says so. A
+  verification step that silently passes when it has nothing to verify against
+  is worse than no verification, because it looks like one. The key is set at
+  build time with `-ldflags "-X …update.ReleaseKey=<hex>"`.
+- **The manifest is signed as a whole** — version and platform table included,
+  because those decide *which* file gets run — and every artefact carries a
+  mandatory SHA-256 that is checked while downloading. There is no path to an
+  artefact that skips the signature check.
+- **The new binary is run before anything is replaced.** Once the swap has
+  happened and the old process has gone, nothing can observe the new one
+  failing, so the check has to happen while not installing it is still an
+  option. That is what makes "never auto-update on a failed start"
+  enforceable rather than aspirational.
+- **The previous binary is retained** as `agentrqd.old` and is *not* cleaned up
+  at startup — that would delete the only thing a rollback can roll back to, at
+  exactly the moment the new build has proved least. It is cleared at the start
+  of the next update instead, which is also when Windows will finally let go of
+  it.
+
+Replacing a running binary is two mechanisms. Unix renames over it and the
+running process keeps its inode. Windows cannot delete or overwrite a running
+`.exe` **but can rename one**, so the running binary goes aside first — there
+is a test that holds the file open and does exactly that, including asserting
+that deleting it still fails.
+
+Who restarts depends on how it was installed: under systemd or launchd it exits
+and the service manager starts the replacement, otherwise it re-executes
+itself. Which one is read from the environment the supervisor sets, and an
+uncertain answer is the one that leaves a daemon running.
+
+## What "restore the sessions" means
+
+**Intent, not state.** What comes back are new processes with new
+pseudo-terminals: same kind, same folder, same arguments. The scrollback is
+gone, whatever the agent was part-way through is gone, and anything half-typed
+is gone. Every restored session is marked restored, in the report and therefore
+in the panel, so nobody is left wondering why their terminal is empty.
+
+The note is written to disk **before** anything is killed, because the process
+holding it in memory is the process about to be replaced. It carries no
+credential: the MCP URL has the token inside it, and writing that to disk to
+survive a restart would turn a deliberate expiry into a file. A restored agent
+reads the `.mcp.json` that was already in its folder; if that has gone, the
+session fails with a reason rather than starting an agent that cannot reach its
+workspace and merely looks broken.
+
+## Releasing
+
+Six targets from one runner: no cgo, so there is nothing that can only be built
+on the machine it runs on. `.goreleaser.yaml` packages the archives;
+`.github/workflows/daemon-release.yml` also publishes the **bare binaries and a
+signed manifest**, because the self-update path downloads one file and replaces
+one file rather than unpacking a tarball.
+
+```sh
+go run ./cmd/agentrqd-release keygen     # once, ever
+go run ./cmd/agentrqd-release manifest --version 0.7.1 --base-url https://… update/
+go run ./cmd/agentrqd-release verify   --version 0.7.1 update/
+```
+
+The private key is read from `AGENTRQD_RELEASE_KEY` and never from a flag: an
+argument is visible in `ps` to every user on the build machine, and a CI log
+that echoes its own command line would print it. The public half is built in
+with `-ldflags`.
+
+Three things the release job does that are worth keeping:
+
+- **It refuses to start without both halves of the key.** A release without one
+  produces daemons that can never update themselves, and that failure is silent
+  until somebody presses the button months later.
+- **It verifies the manifest against the public key that was compiled into the
+  binaries** before publishing. A manifest signed with the wrong key is a
+  release every daemon correctly refuses; catching it here costs a minute rather
+  than a support thread.
+- **The update binaries are built into `update/`, not `dist/`.** `goreleaser
+  release --clean` empties `dist/`, which would delete them before they were
+  published.
+
+`.github/workflows/daemon.yml` rehearses the whole signing and verifying path on
+every change with a throwaway key, and runs `goreleaser check`, so on release
+day the only new thing is the key itself.
+
+`goreleaser check` validates the schema and cannot know whether the release
+would actually build — run a snapshot for that:
+
+```sh
+AGENTRQD_RELEASE_PUBKEY=deadbeef goreleaser release --snapshot --clean --skip=publish
+```
+
+That is what found the one thing `check` passed and the build did not: a
+goreleaser glob cannot climb out of the project directory, so the archive gets
+`docs/DAEMON.md` through a before-hook that copies it in rather than a
+`../` path it will not accept.
+
+Install paths — the systemd **user** unit and the macOS **LaunchAgent** — are in
+`packaging/`, and both are user-level on purpose: the daemon refuses to run as
+root, and an install that works around that has removed the only thing limiting
+an agent to what you can do. `docs/DAEMON.md` is the user-facing document and
+says so in those words.
 
 ## What the heartbeat says, and what it deliberately does not
 

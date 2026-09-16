@@ -56,6 +56,11 @@ export const routes = [
   // the `ui` registry's owner scope already guarantees is unique.
   { path: '/extensions/:name/:pageId', component: () => import('./desktop/ExtensionPageView.vue') },
 
+  // Machines belong to the account rather than to a workspace, which is why
+  // these sit beside /events rather than under /workspaces/:id.
+  { path: '/machines', component: () => import('./views/MachinesView.vue') },
+  { path: '/machines/:id', component: () => import('./views/MachineDetailView.vue') },
+
   // A session's terminal. Addressed by session rather than by machine: a
   // session is what a person is watching, and it outlives the page they
   // reached it from.

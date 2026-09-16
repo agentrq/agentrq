@@ -66,6 +66,25 @@ type Hello struct {
 	Sessions []uint64 `json:"sessions,omitempty"`
 }
 
+// UpdateAvailable is the daemon telling the panel there is a newer release.
+//
+// An offer and nothing more. The daemon never updates on its own initiative,
+// because approving one means "kill every session on this machine and restart
+// them", and only a person can mean that.
+type UpdateAvailable struct {
+	Version string `json:"version"`
+}
+
+// UpdateNow is the approval coming back.
+//
+// It carries the version that was approved, and the daemon installs that or
+// nothing: between the offer and the approval a newer release could appear,
+// and somebody who agreed to lose their sessions for 0.7.1 did not agree to
+// lose them for whatever landed since.
+type UpdateNow struct {
+	Version string `json:"version"`
+}
+
 // Disk is one filesystem's space.
 //
 // Per mount, never one number for the machine. A single "free space" figure is

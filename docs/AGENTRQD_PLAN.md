@@ -888,6 +888,35 @@ syscalls directly), so this stays a clean matrix build.
 M0 is not a formality. If Windows ConPTY needs real work, that is far better
 known in week one — and it is the likeliest place for these estimates to be wrong.
 
+### What was actually built
+
+All of it, in twelve stacked pull requests, plus one milestone that was not in
+this table:
+
+**The daemon's connect loop.** M1's deliverable reads "connect + heartbeat" and
+the connect half was never built — so three milestones were stacked on a socket
+nobody was dialling, and every piece on both sides of it was tested while
+nothing had ever been joined up. It is #563, between M4 and M5.
+
+Four things were found by *running* the system that a green test suite never
+showed, and each is worth more than the code that fixed it:
+
+- **A workspace called "Terminal probe" could not be launched at all.** The
+  parameter rule was written for identifiers and applied to a name a person had
+  chosen; it refused the space. It would have hit the first real workspace
+  anyone tried.
+- **Launching an agent twice into the same folder had never worked.** The rule
+  protecting somebody's own `.mcp.json` compared whole URLs, and the URL
+  contains the token — which is *meant* to change on every launch.
+- **A restored session failed with "no MCP URL"**, because the note that
+  survives a restart carries no credential by design. It now reuses the config
+  already in the folder.
+- **A session or machine that does not exist answered 500 rather than 404**, on
+  both the new surface and the pre-existing one.
+
+The discipline that produced all four: build it, then run it against a real
+backend with a real agent, and read what it actually says.
+
 ---
 
 ## 18. Decisions, and who made them

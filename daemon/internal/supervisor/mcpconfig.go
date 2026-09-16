@@ -45,9 +45,15 @@ var (
 //   - The URL is never logged, never put in an argv, and never returned in an
 //     error. A token in a command line is visible in `ps` to every user on the
 //     box, which would undo the file permission entirely.
-//   - An existing file is merged rather than replaced, and a conflicting entry
-//     under our own name is an error rather than an overwrite. A person's own
-//     .mcp.json is theirs.
+//   - An existing file is merged rather than replaced, and an entry under our
+//     own name that points somewhere else is an error rather than an
+//     overwrite. A person's own .mcp.json is theirs.
+//
+// "Points somewhere else" compares the endpoint and deliberately ignores the
+// query string, because the query string is the credential and it is *meant*
+// to change: every launch mints a fresh, short-lived token. Comparing whole
+// URLs made the first launch into a folder succeed and every launch after it
+// fail — found by launching an agent twice.
 func WriteMCPConfig(dir, serverName, mcpURL string) (string, error) {
 	if strings.TrimSpace(mcpURL) == "" {
 		return "", ErrNoMCPURL
@@ -71,9 +77,10 @@ func WriteMCPConfig(dir, serverName, mcpURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if existing, ok := cfg.Servers[serverName]; ok && existing.URL != mcpURL {
-		// Somebody else's entry under the same name. Overwriting it silently
-		// would break whatever they had it pointed at.
+	if existing, ok := cfg.Servers[serverName]; ok && !sameEndpoint(existing.URL, mcpURL) {
+		// Somebody else's entry under the same name, pointing at a different
+		// place. Overwriting it silently would break whatever they had it
+		// pointed at.
 		return "", fmt.Errorf("%w: %s already defines %q", ErrForeignConfig, path, serverName)
 	}
 
@@ -120,6 +127,24 @@ func WriteMCPConfig(dir, serverName, mcpURL string) (string, error) {
 	return path, nil
 }
 
+// HasMCPConfig reports whether a folder already has a usable entry for a
+// server.
+//
+// Asked when a session is being restored after an update. The note that
+// survives a restart deliberately carries no MCP URL — the credential is
+// inside it, and writing that to disk to survive a restart would turn a
+// short-lived token into a file — so a restored agent reads the config that
+// was already in its folder before the update, written when it was first
+// launched.
+func HasMCPConfig(dir, serverName string) bool {
+	cfg, existed, err := readMCPConfig(filepath.Join(dir, MCPConfigName))
+	if err != nil || !existed {
+		return false
+	}
+	entry, ok := cfg.Servers[serverName]
+	return ok && entry.URL != ""
+}
+
 // readMCPConfig loads an existing config, or an empty one.
 //
 // A file that exists but cannot be parsed is an error rather than something to
@@ -142,6 +167,25 @@ func readMCPConfig(path string) (MCPConfig, bool, error) {
 		cfg.Servers = map[string]MCPServer{}
 	}
 	return cfg, true, nil
+}
+
+// sameEndpoint reports whether two MCP URLs address the same thing.
+//
+// Scheme, host and path. Not the query, which is where the token lives and
+// which changes on every launch by design — a fresh credential is the point,
+// not a sign that somebody else wrote this entry.
+func sameEndpoint(a, b string) bool {
+	ua, err := url.Parse(a)
+	if err != nil {
+		return false
+	}
+	ub, err := url.Parse(b)
+	if err != nil {
+		return false
+	}
+	return ua.Scheme == ub.Scheme &&
+		strings.EqualFold(ua.Host, ub.Host) &&
+		strings.TrimSuffix(ua.Path, "/") == strings.TrimSuffix(ub.Path, "/")
 }
 
 func isLoopbackHost(host string) bool {

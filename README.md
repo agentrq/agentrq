@@ -199,6 +199,21 @@ your permissions and nothing more, and they are withdrawn when you sign out.
 Nothing to install or configure; a browser without WebMCP simply sees no tools.
 See the [WebMCP Guide](docs/WEBMCP.md).
 
+### 🖥️ Your own machines
+
+Install `agentrqd` on a computer, enrol it once, and you can start an agent for
+a workspace on it from the control panel — then watch its terminal and type into
+it, `Esc` included. The machines page shows what each box has left: memory, CPU
+and free space per filesystem, so you can tell whether it can take another
+agent.
+
+Enrolling a machine is a real grant, and the [Daemon
+Guide](docs/DAEMON.md) says so plainly: it lets anyone who can authenticate as
+that account run commands on the machine as the user who started the daemon.
+Read it before you enrol anything. It also covers the local kill switch, which
+works without the server's cooperation, and what the audit trail records —
+starts, kills and attaches, never keystrokes.
+
 ### ⌨️ Agent slash commands
 
 Agents connected through the ACP gateway advertise commands of their own —

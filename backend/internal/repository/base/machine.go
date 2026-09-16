@@ -5,7 +5,10 @@ package base
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -80,9 +83,18 @@ func (r *repository) GetMachineByTokenHash(ctx context.Context, tokenHash string
 // Scoped by user id in the query rather than checked afterwards: a read that
 // fetches first and compares later is one early return away from leaking
 // another account's row.
+// GetMachine reads one machine belonging to a user.
+//
+// A miss is translated to [ErrNotFound] rather than passed on as gorm's own
+// error, which the HTTP mapper does not recognise and therefore renders as a
+// 500. "Not found" and "the server is broken" are different answers, and only
+// one of them is true when somebody follows a stale link.
 func (r *repository) GetMachine(ctx context.Context, id, userID int64) (model.Machine, error) {
 	var m model.Machine
 	if err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&m).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Machine{}, ErrNotFound
+		}
 		return model.Machine{}, err
 	}
 	return m, nil
@@ -144,9 +156,16 @@ func (r *repository) CreateSession(ctx context.Context, s model.Session) (model.
 }
 
 // GetSession reads one session belonging to a user.
+//
+// Scoped by the query rather than by a check after it, so a session belonging
+// to somebody else is simply not found — which is both the right answer and
+// the one that says least.
 func (r *repository) GetSession(ctx context.Context, id, userID int64) (model.Session, error) {
 	var s model.Session
 	if err := r.conn(ctx).Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Session{}, ErrNotFound
+		}
 		return model.Session{}, err
 	}
 	return s, nil
@@ -181,7 +200,7 @@ func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID,
 // A narrow update rather than a full save: state reports arrive while a person
 // may be renaming things, and writing every column would overwrite whatever
 // landed in between.
-func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time) error {
+func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error {
 	fields := map[string]any{"status": status, "updated_at": time.Now()}
 	if exitCode != nil {
 		fields["exit_code"] = *exitCode
@@ -189,7 +208,35 @@ func (r *repository) UpdateSessionState(ctx context.Context, id int64, status st
 	if endedAt != nil {
 		fields["ended_at"] = *endedAt
 	}
+	// Set, never cleared. A restored session goes on to report running and
+	// then exiting like any other, and those later reports say nothing about
+	// how it started — writing false would erase the one fact that explains
+	// why somebody's scrollback is empty.
+	if restored {
+		fields["restored"] = true
+	}
 	return r.conn(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// RecordMachineVersion stores what a daemon says it is running, and clears an
+// offer it has caught up with.
+//
+// Called from the hello, which is the only message that says what version is
+// actually running. Without it a machine that has just updated keeps showing
+// the version it replaced and an offer it has already taken.
+func (r *repository) RecordMachineVersion(ctx context.Context, id int64, version string) error {
+	if version == "" {
+		return nil
+	}
+	return r.conn(ctx).Model(&model.Session{}).Session(&gorm.Session{}).
+		Table("machines").
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"version": version,
+			// Cleared only when it is the version now running: a machine that
+			// is still behind must keep showing what it could update to.
+			"available_version": gorm.Expr("CASE WHEN available_version = ? THEN '' ELSE available_version END", version),
+		}).Error
 }
 
 // RecordMachineMetrics stores the latest snapshot and nothing historical.
@@ -235,4 +282,39 @@ func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, run
 		"ended_at":   at,
 		"updated_at": at,
 	}).Error
+}
+
+// CountLiveSessionsByUser counts the sessions still running, per machine.
+//
+// One query for every machine rather than one per machine: the list page shows
+// a count beside each row, and doing this in a loop is how a page with twenty
+// machines becomes twenty-one queries.
+func (r *repository) CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error) {
+	var rows []struct {
+		MachineID int64
+		N         int
+	}
+	err := r.conn(ctx).Model(&model.Session{}).
+		Select("machine_id, count(*) as n").
+		Where("user_id = ? AND status IN ?", userID, []string{"starting", "running"}).
+		Group("machine_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int, len(rows))
+	for _, row := range rows {
+		out[row.MachineID] = row.N
+	}
+	return out, nil
+}
+
+// RecordAvailableVersion stores a release a daemon has found, or clears it.
+//
+// A narrow update, like the other daemon-driven writes: these arrive while a
+// person may be renaming or disabling the machine, and writing every column
+// would overwrite whatever landed in between.
+func (r *repository) RecordAvailableVersion(ctx context.Context, id int64, version string) error {
+	return r.conn(ctx).Model(&model.Machine{}).
+		Where("id = ?", id).
+		Update("available_version", version).Error
 }
