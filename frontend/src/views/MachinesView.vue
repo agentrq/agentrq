@@ -11,7 +11,7 @@
  * session count moves, what an absent reading means — is in
  * `useMachines` and `useMachineFormat`, where it is tested.
  */
-import { onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMachines } from '../composables/useMachines'
 import {
@@ -21,6 +21,13 @@ import {
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
+import {
+  detectPlatform,
+  platformLabel,
+  installGuide,
+  PLATFORMS,
+  DAEMON_DOCS_URL,
+} from '../composables/useDaemonInstall'
 import { writeClipboard } from '../composables/useMarkdownLinks'
 
 const router = useRouter()
@@ -39,6 +46,12 @@ const {
 
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
+// The browser's OS picks which tab opens and nothing else. You are usually
+// setting up a machine other than the one you are looking at — a build box, a
+// server, a spare laptop — so every platform stays one click away.
+const platform = ref(detectPlatform(navigator.userAgent))
+const guide = computed(() => installGuide(platform.value, enrolCommand.value))
+
 onMounted(() => {
   load()
   // onEvent rather than a watcher on the buffer: a machine going offline is a
@@ -48,18 +61,18 @@ onMounted(() => {
 })
 onUnmounted(disconnect)
 
-async function copyCommand() {
-  if (!enrolCommand.value) return
+async function copy(text, what) {
+  if (!text) return
   try {
     // The shell first: the browser's Clipboard API refuses to write from a
     // document that is not focused, which the desktop window often is not.
-    await writeClipboard(enrolCommand.value, {
+    await writeClipboard(text, {
       bridge: window.agentrq?.clipboard,
       clipboard: navigator.clipboard,
     })
-    notifySuccess('Enrolment command copied')
+    notifySuccess(`${what} copied`)
   } catch {
-    // A clipboard that refuses is not worth an error: the command is on screen.
+    // A clipboard that refuses is not worth an error: it is all on screen.
   }
 }
 </script>
@@ -84,31 +97,86 @@ async function copyCommand() {
     </div>
 
     <div class="px-4 space-y-6 pb-10">
-      <!-- The code is shown once; it is stored only as a hash. -->
+      <!-- Install, then enrol. The enrol command alone was the whole panel
+           once, which is a command you can only run if the thing it names is
+           already there — so it answered the second question and not the
+           first. The code is shown once; it is stored only as a hash. -->
       <div
         v-if="enrolmentCode"
-        class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 space-y-3"
+        class="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-5 space-y-4"
       >
-        <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Enrol a machine</h2>
-        <p class="text-xs text-gray-500 dark:text-zinc-400">
-          Run this on the machine itself. The code is single-use and expires shortly, and it is not
-          shown again.
-        </p>
-        <pre class="text-xs font-mono bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 overflow-x-auto">{{ enrolCommand }}</pre>
-        <div class="flex items-center gap-2">
-          <button
-            @click="copyCommand"
-            class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
-          >
-            Copy command
-          </button>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Add a machine</h2>
+            <p class="text-xs text-gray-500 dark:text-zinc-400 mt-1">
+              Run these on the machine itself. The code is single-use, expires shortly, and is not
+              shown again.
+            </p>
+          </div>
           <button
             @click="dismissCode"
-            class="px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95"
+            class="shrink-0 px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95"
           >
             Done
           </button>
         </div>
+
+        <!-- Before the commands, because enrolling is a grant rather than a
+             setup step, and this is the last moment it is easy to stop. -->
+        <p class="text-[11px] text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 rounded-lg px-3 py-2">
+          Enrolling lets anyone who can sign in to this AgentRQ account run commands on that
+          machine, as the user who starts the daemon.
+          <a :href="DAEMON_DOCS_URL" target="_blank" rel="noopener noreferrer" class="underline"
+            >What this means</a
+          >.
+        </p>
+
+        <div class="flex items-center gap-1">
+          <button
+            v-for="p in PLATFORMS"
+            :key="p"
+            @click="platform = p"
+            class="px-3 py-1.5 text-[11px] font-black uppercase tracking-widest rounded-lg transition-colors"
+            :class="
+              platform === p
+                ? 'bg-black dark:bg-white text-white dark:text-black'
+                : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-100 dark:hover:bg-zinc-800'
+            "
+          >
+            {{ platformLabel(p) }}
+          </button>
+        </div>
+
+        <ol class="space-y-3">
+          <li v-for="(step, i) in guide.steps" :key="step.title" class="flex gap-3">
+            <span
+              class="shrink-0 mt-0.5 h-5 w-5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 text-[11px] font-black grid place-items-center tabular-nums"
+              >{{ i + 1 }}</span
+            >
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-bold text-gray-800 dark:text-zinc-200">{{ step.title }}</p>
+              <a
+                v-if="step.link"
+                :href="step.link"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-gray-600 dark:text-zinc-400 underline break-all"
+                >Download agentrqd for {{ guide.label }}</a
+              >
+              <div v-if="step.lines.length" class="mt-1 flex items-start gap-2">
+                <pre
+                  class="flex-1 min-w-0 text-xs font-mono bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 overflow-x-auto"
+                >{{ step.lines.join('\n') }}</pre>
+                <button
+                  @click="copy(step.lines.join('\n'), step.title)"
+                  class="shrink-0 px-3 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </li>
+        </ol>
       </div>
 
       <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
@@ -121,7 +189,22 @@ async function copyCommand() {
       >
         <p class="text-sm font-bold text-gray-800 dark:text-zinc-200">No machines yet</p>
         <p class="text-xs text-gray-500 dark:text-zinc-400 mt-1">
-          Add a machine to run agents somewhere other than this browser.
+          A machine is a computer running <span class="font-mono">agentrqd</span>. Enrol one and you
+          can run agents on it, and watch their terminals from here.
+        </p>
+        <!-- The empty state is the other moment somebody needs to know where
+             the daemon comes from: they have arrived at this page and there is
+             nothing on it to explain what one even is. -->
+        <button
+          @click="requestCode"
+          class="mt-4 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95"
+        >
+          Add your first machine
+        </button>
+        <p class="text-[11px] text-gray-400 dark:text-zinc-500 mt-3">
+          <a :href="DAEMON_DOCS_URL" target="_blank" rel="noopener noreferrer" class="underline"
+            >What enrolling a machine means</a
+          >
         </p>
       </div>
 

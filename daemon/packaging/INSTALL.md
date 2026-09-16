@@ -11,16 +11,30 @@ that is not something to find out afterwards.
 
 **Linux and macOS**
 
+Pick the archive for your platform from the
+[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true),
+then:
+
 ```sh
-# Pick the archive for your platform from the release page, then:
-tar xzf agentrqd_*_linux_arm64.tar.gz
-install -m 0755 agentrqd ~/.local/bin/agentrqd     # Linux
-sudo install -m 0755 agentrqd /usr/local/bin/      # macOS
+# Linux
+tar xzf agentrqd_*_linux_*.tar.gz
+install -m 0755 agentrqd ~/.local/bin/
+
+# macOS
+tar xzf agentrqd_*_darwin_*.tar.gz
+sudo install -m 0755 agentrqd /usr/local/bin/
 ```
 
-**Windows**
+**Windows (PowerShell)**
 
-Unzip it and put `agentrqd.exe` somewhere on your `PATH`.
+```powershell
+Expand-Archive agentrqd_*_windows_*.zip -DestinationPath $env:LOCALAPPDATA\agentrqd
+
+# Windows has no user directory that is already on PATH, so add this one.
+# Takes effect in new shells.
+[Environment]::SetEnvironmentVariable("Path",
+  "$env:Path;$env:LOCALAPPDATA\agentrqd", "User")
+```
 
 **Do not install it as root or Administrator.** The daemon refuses to start
 that way, because an agent it runs would have those powers too. If an install

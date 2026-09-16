@@ -211,6 +211,27 @@ pseudo-terminals, and streams them to the browser.
   scrollback. Restored sessions are marked as such so nobody wonders why their
   terminal is empty. The note that survives the restart carries no credential.
 
+### Installation is answered in three places, and they must agree
+
+The enrol command is useless on its own — it names a binary that is not there
+yet — so the "Add machine" panel walks download → PATH → enrol → run, and the
+steps come from `frontend/src/composables/useDaemonInstall.js` where they are
+tested rather than from the template.
+
+The same steps appear in `docs/DAEMON.md` (for somebody who has not downloaded
+anything) and `daemon/packaging/INSTALL.md` (for somebody who has the archive
+and not the page). Change one, change all three.
+
+Two rules the tests enforce: **never a `curl … | sh` one-liner** — it asks
+somebody to run unseen code on the machine they are about to grant command
+access to — and **never `sudo` for running the daemon**, only for copying a
+file into `/usr/local/bin`. The daemon refuses to run as root, and an install
+guide that works around that has removed the only thing keeping an agent to
+what its user can already do.
+
+The detected platform picks which tab opens and nothing else: you are usually
+setting up a machine other than the one you are browsing from.
+
 The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
 
 ## Telemetry

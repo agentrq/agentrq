@@ -207,6 +207,11 @@ it, `Esc` included. The machines page shows what each box has left: memory, CPU
 and free space per filesystem, so you can tell whether it can take another
 agent.
 
+Install it from the
+[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true)
+(`agentrqd-v…` tags) — one static binary for Linux, macOS and Windows — then
+**Machines → Add machine** gives you a code to enrol it with.
+
 Enrolling a machine is a real grant, and the [Daemon
 Guide](docs/DAEMON.md) says so plainly: it lets anyone who can authenticate as
 that account run commands on the machine as the user who started the daemon.

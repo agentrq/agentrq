@@ -40,7 +40,11 @@ const usage = `agentrqd — the AgentRQ machine daemon
   agentrqd version
 
 Enrol a machine from the control panel: Machines → Add machine gives you a
-short code. Run enroll on the machine itself; there is no remote enrolment.
+short code, and the install steps. Run enroll on the machine itself; there is
+no remote enrolment.
+
+Enrolling lets anyone who can sign in to that AgentRQ account run commands on
+this machine, as you. https://agentrq.com/docs/daemon
 `
 
 func main() {

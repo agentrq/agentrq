@@ -36,6 +36,85 @@ isolation.
 
 ---
 
+## Installing it
+
+`agentrqd` is one static binary. Download it, put it on your `PATH`, enrol it,
+run it. There is no installer and nothing to configure first.
+
+Releases are on the
+[releases page](https://github.com/agentrq/agentrq/releases?q=agentrqd&expanded=true) —
+look for the `agentrqd-v…` tags, and pick the archive for the machine you are
+installing on, not the one you are reading this on.
+
+**Linux**
+
+```sh
+tar xzf agentrqd_*_linux_*.tar.gz
+install -m 0755 agentrqd ~/.local/bin/
+```
+
+**macOS**
+
+```sh
+tar xzf agentrqd_*_darwin_*.tar.gz
+sudo install -m 0755 agentrqd /usr/local/bin/
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Expand-Archive agentrqd_*_windows_*.zip -DestinationPath .
+Move-Item agentrqd.exe "$env:LOCALAPPDATA\Programs\agentrqd.exe"
+```
+
+That `sudo` on macOS copies a file into `/usr/local/bin` and nothing more.
+**Do not run the daemon itself as root or Administrator** — it refuses, because
+an agent it starts would inherit those powers. If an install guide anywhere
+tells you to work around that refusal, it is removing the only thing keeping an
+agent to what you can already do yourself.
+
+There is no `curl … | sh` one-liner on purpose. It is the shortest thing to
+print, and it asks you to run code you have not seen on the machine you are
+about to grant an AgentRQ account command access to — which is the wrong moment
+to be hiding what is happening.
+
+### Enrol it
+
+In the control panel: **Machines → Add machine** gives you a short code, and
+shows these same steps. On the machine itself:
+
+```sh
+agentrqd enroll --server https://your-agentrq-server --code ABCD-EFGH
+```
+
+There is no remote enrolment. Somebody has to be at the machine, which is what
+makes the code safe to display.
+
+### Run it
+
+```sh
+agentrqd serve
+```
+
+To keep it running after you log out, the release archive carries the service
+files:
+
+- **Linux** — copy `agentrqd.service` into `~/.config/systemd/user/`, then
+  `systemctl --user daemon-reload && systemctl --user enable --now agentrqd`.
+  Add `sudo loginctl enable-linger "$USER"` so it survives logout.
+- **macOS** — copy `com.agentrq.agentrqd.plist` into `~/Library/LaunchAgents/`,
+  then `launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist`.
+
+Both are **user**-level — a systemd user unit and a LaunchAgent, not a system
+service and not a LaunchDaemon — for the reason above. Under either, the daemon
+exits and lets the service manager restart it when it updates itself; run by
+hand, it re-executes. Both work.
+
+`INSTALL.md` in the archive is the same instructions, for when you have the
+archive and not this page.
+
+---
+
 ## A profile is a credential boundary, not an execution boundary
 
 One machine can be enrolled with several AgentRQ accounts. Each is a "profile",
@@ -189,5 +268,5 @@ agentrqd rollback
 agentrqd version
 ```
 
-Installation, including the systemd unit and the macOS LaunchAgent, is in
-`INSTALL.md` in the release archive.
+Installation is at the top of this page; the archive carries the same steps as
+`INSTALL.md`, plus the systemd unit and the macOS LaunchAgent themselves.
