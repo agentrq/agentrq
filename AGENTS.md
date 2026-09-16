@@ -211,6 +211,21 @@ pseudo-terminals, and streams them to the browser.
   scrollback. Restored sessions are marked as such so nobody wonders why their
   terminal is empty. The note that survives the restart carries no credential.
 
+### A background without a foreground is a bug in one theme
+
+Dark mode is a `.dark` class, and the main content area sets no colour of its
+own — so text inherits the document default, which is black whatever the
+theme. Any element that sets a background and no text colour is therefore
+readable in exactly one of the two, and light mode is the one you are looking
+at while writing it. `style.css` pairs them properly for `.md-body pre`; do the
+same for anything new.
+
+`color-scheme` is the other half, and it is not a Tailwind class. A class says
+nothing to the parts of a page the *browser* draws — a `<select>`'s dropdown, a
+caret, the autofill background, the default scrollbar — so without
+`color-scheme: dark` on `.dark` those keep the light system palette on a dark
+page, and no amount of styling from the page can reach them.
+
 ### Installation is answered in three places, and they must agree
 
 The enrol command is useless on its own — it names a binary that is not there

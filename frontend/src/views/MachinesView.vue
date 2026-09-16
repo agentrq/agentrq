@@ -164,8 +164,13 @@ async function copy(text, what) {
                 >Download agentrqd for {{ guide.label }}</a
               >
               <div v-if="step.lines.length" class="mt-1 flex items-start gap-2">
+                <!-- A foreground for every background. Without the text
+                     colours this inherits the document's, which is the browser
+                     default black — unreadable on the dark surface, and the
+                     one combination nobody sees while building in light mode.
+                     The pairing matches .md-body pre in style.css. -->
                 <pre
-                  class="flex-1 min-w-0 text-xs font-mono bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 overflow-x-auto"
+                  class="flex-1 min-w-0 text-xs font-mono text-gray-800 dark:text-zinc-200 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg p-3 overflow-x-auto"
                 >{{ step.lines.join('\n') }}</pre>
                 <button
                   @click="copy(step.lines.join('\n'), step.title)"

@@ -45,6 +45,25 @@
   --accent-bg: rgba(255, 255, 255, 0.1);
 }
 
+/*
+ * Tell the browser which palette its own widgets should use.
+ *
+ * Dark mode here is a class, and a class says nothing to the parts of a page
+ * the browser draws itself: a <select>'s dropdown, a text caret, the autofill
+ * background, the default scrollbar. Without this they keep the light system
+ * palette on a dark page — black-on-white lists dropping out of dark controls,
+ * and an autofilled field turning pale yellow — which reads as "the inputs
+ * have colour issues" and cannot be fixed with a Tailwind class, because none
+ * of it is styleable from the page.
+ */
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
 @theme {
   --font-inter: "Inter Variable", "Inter", sans-serif;
   --color-accent: var(--accent);
