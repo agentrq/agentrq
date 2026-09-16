@@ -6,6 +6,7 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,6 +28,9 @@ type MachineManageController interface {
 	// but it belongs here rather than in a handler reaching for the
 	// repository.
 	RecordMachineMetrics(ctx context.Context, req entity.RecordMachineMetricsRequest) error
+	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
+	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
+	ApproveMachineUpdate(ctx context.Context, req entity.ApproveMachineUpdateRequest) (*entity.ApproveMachineUpdateResponse, error)
 }
 
 // toMachineView renders a machine for the API, deriving online from the last
@@ -85,6 +89,55 @@ func toMetricsView(m model.Machine) *entity.MachineMetricsView {
 		}
 	}
 	return v
+}
+
+// RecordAvailableVersion stores a release a daemon has found, or clears it.
+func (c *controller) RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error {
+	if req.MachineID == 0 {
+		return fmt.Errorf("invalid machine id")
+	}
+	return c.repository.RecordAvailableVersion(ctx, req.MachineID, req.Version)
+}
+
+// ApproveMachineUpdate reads the machine an approval is for.
+//
+// It does not send anything — the socket lives in the handler — but it is what
+// decides whether the caller may ask, and it refuses an approval for a version
+// the machine has not actually offered. Somebody agreeing to lose their
+// sessions agreed to lose them for a particular release.
+func (c *controller) ApproveMachineUpdate(ctx context.Context, req entity.ApproveMachineUpdateRequest) (*entity.ApproveMachineUpdateResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	id := monoflake.IDFromBase62(req.MachineID).Int64()
+	if uid == 0 || id == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	m, err := c.repository.GetMachine(ctx, id, uid)
+	if err != nil {
+		return nil, err
+	}
+	if m.AvailableVersion == "" {
+		return nil, ErrNoUpdateOffered
+	}
+	if req.Version != "" && req.Version != m.AvailableVersion {
+		return nil, ErrNoUpdateOffered
+	}
+	return &entity.ApproveMachineUpdateResponse{MachineID: m.ID, Version: m.AvailableVersion}, nil
+}
+
+// ErrNoUpdateOffered covers both "there is nothing to install" and "that is
+// not what this machine offered".
+//
+// One error, because the caller does the same thing in either case: reload the
+// machine and look again. Telling them apart would only matter to somebody
+// guessing version numbers.
+var ErrNoUpdateOffered = errors.New("that machine has not offered that update")
+
+// RecordMachineVersion stores what a daemon says it is running.
+func (c *controller) RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error {
+	if req.MachineID == 0 {
+		return fmt.Errorf("invalid machine id")
+	}
+	return c.repository.RecordMachineVersion(ctx, req.MachineID, req.Version)
 }
 
 // RecordMachineMetrics stores the latest snapshot and nothing historical.

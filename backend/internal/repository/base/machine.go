@@ -200,7 +200,7 @@ func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID,
 // A narrow update rather than a full save: state reports arrive while a person
 // may be renaming things, and writing every column would overwrite whatever
 // landed in between.
-func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time) error {
+func (r *repository) UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error {
 	fields := map[string]any{"status": status, "updated_at": time.Now()}
 	if exitCode != nil {
 		fields["exit_code"] = *exitCode
@@ -208,7 +208,35 @@ func (r *repository) UpdateSessionState(ctx context.Context, id int64, status st
 	if endedAt != nil {
 		fields["ended_at"] = *endedAt
 	}
+	// Set, never cleared. A restored session goes on to report running and
+	// then exiting like any other, and those later reports say nothing about
+	// how it started — writing false would erase the one fact that explains
+	// why somebody's scrollback is empty.
+	if restored {
+		fields["restored"] = true
+	}
 	return r.conn(ctx).Model(&model.Session{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// RecordMachineVersion stores what a daemon says it is running, and clears an
+// offer it has caught up with.
+//
+// Called from the hello, which is the only message that says what version is
+// actually running. Without it a machine that has just updated keeps showing
+// the version it replaced and an offer it has already taken.
+func (r *repository) RecordMachineVersion(ctx context.Context, id int64, version string) error {
+	if version == "" {
+		return nil
+	}
+	return r.conn(ctx).Model(&model.Session{}).Session(&gorm.Session{}).
+		Table("machines").
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"version": version,
+			// Cleared only when it is the version now running: a machine that
+			// is still behind must keep showing what it could update to.
+			"available_version": gorm.Expr("CASE WHEN available_version = ? THEN '' ELSE available_version END", version),
+		}).Error
 }
 
 // RecordMachineMetrics stores the latest snapshot and nothing historical.
@@ -278,4 +306,15 @@ func (r *repository) CountLiveSessionsByUser(ctx context.Context, userID int64) 
 		out[row.MachineID] = row.N
 	}
 	return out, nil
+}
+
+// RecordAvailableVersion stores a release a daemon has found, or clears it.
+//
+// A narrow update, like the other daemon-driven writes: these arrive while a
+// person may be renaming or disabling the machine, and writing every column
+// would overwrite whatever landed in between.
+func (r *repository) RecordAvailableVersion(ctx context.Context, id int64, version string) error {
+	return r.conn(ctx).Model(&model.Machine{}).
+		Where("id = ?", id).
+		Update("available_version", version).Error
 }

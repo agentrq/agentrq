@@ -193,6 +193,24 @@ pseudo-terminals, and streams them to the browser.
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.
 
+### Self-update is the one place where getting it wrong is unrecoverable
+
+- **A build with no release key refuses to update itself**, and says so. The key
+  is a build-time `-ldflags` variable; empty is the default and the correct
+  behaviour for every build that is not an official release. A verification step
+  that silently passes when it has nothing to verify against is worse than none.
+- **The manifest is signed as a whole** — version and platform table included,
+  because those decide which file gets run — and every artefact's SHA-256 is
+  mandatory and checked while downloading. There is no path to an artefact that
+  skips the signature check.
+- **The new binary is executed before anything is replaced.** After the swap the
+  old process is gone and nothing can observe the new one failing; the previous
+  binary is retained for `agentrqd rollback` and is deliberately *not* tidied up
+  at startup.
+- **Restoration is intent, not state**: new processes, new terminals, no
+  scrollback. Restored sessions are marked as such so nobody wonders why their
+  terminal is empty. The note that survives the restart carries no credential.
+
 The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
 
 ## Telemetry

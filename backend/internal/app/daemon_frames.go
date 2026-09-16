@@ -24,6 +24,8 @@ import (
 type daemonRecorder interface {
 	UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error
 	RecordMachineMetrics(ctx context.Context, req entity.RecordMachineMetricsRequest) error
+	RecordAvailableVersion(ctx context.Context, req entity.RecordAvailableVersionRequest) error
+	RecordMachineVersion(ctx context.Context, req entity.RecordMachineVersionRequest) error
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 }
 
@@ -66,7 +68,25 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] unreadable hello")
 				return nil
 			}
+			// The hello is the only message that says what is actually
+			// running, which is how a machine that has just replaced itself
+			// stops showing the version it replaced and an offer it has taken.
+			if err := rec.RecordMachineVersion(ctx, entity.RecordMachineVersionRequest{
+				MachineID: s.Identity.MachineID,
+				Version:   hello.Version,
+			}); err != nil {
+				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] could not record the running version")
+			}
 			reconcile(ctx, rec, s.Identity.MachineID, hello.Sessions)
+			announceVersion(notify, s.Identity, hello.Version)
+			return nil
+		case wire.OpUpdateAvailable:
+			var offer wire.UpdateAvailable
+			if err := json.Unmarshal(c.Body, &offer); err != nil {
+				zlog.Warn().Err(err).Int64("machine_id", s.Identity.MachineID).Msg("[machine] unreadable update offer")
+				return nil
+			}
+			recordAvailable(ctx, rec, s.Identity, offer.Version, notify)
 			return nil
 		case wire.OpHeartbeat:
 			var hb wire.Heartbeat
@@ -94,6 +114,11 @@ func daemonFrames(relay *machine.Relay, rec daemonRecorder, notify notifier) fun
 			Status:    st.State,
 			ExitCode:  st.ExitCode,
 			Error:     st.Error,
+			// A restored session is a new process with a new terminal: same
+			// kind, same folder, same arguments, and none of the scrollback.
+			// Recorded so the panel can say so rather than leaving somebody
+			// wondering why their terminal is empty.
+			Restored: st.Restored,
 		}
 		// Only a terminal state ends a session. Writing an end time for
 		// "running" would make every session look finished the moment it
@@ -152,6 +177,45 @@ func reconcile(ctx context.Context, rec daemonRecorder, machineID int64, running
 	}); err != nil {
 		zlog.Warn().Err(err).Int64("machine_id", machineID).Msg("[machine] could not reconcile sessions")
 	}
+}
+
+// recordAvailable stores what a daemon says it could update to.
+//
+// An offer and nothing more: the panel shows it and somebody decides. Storing
+// it rather than only announcing it is what lets the machines page still say
+// "update available" when it is opened an hour later.
+func recordAvailable(ctx context.Context, rec daemonRecorder, id machine.Identity, version string, notify notifier) {
+	if err := rec.RecordAvailableVersion(ctx, entity.RecordAvailableVersionRequest{
+		MachineID: id.MachineID,
+		Version:   version,
+	}); err != nil {
+		zlog.Warn().Err(err).Int64("machine_id", id.MachineID).Msg("[machine] could not record the available version")
+		return
+	}
+	if notify == nil {
+		return
+	}
+	notify(monoflake.ID(id.UserID).String(), eventbus.Event{
+		Type: "machine.updated",
+		Payload: map[string]any{
+			"id":               monoflake.ID(id.MachineID).String(),
+			"availableVersion": version,
+		},
+	})
+}
+
+// announceVersion tells the browser what a machine is now running.
+func announceVersion(notify notifier, id machine.Identity, version string) {
+	if notify == nil || version == "" {
+		return
+	}
+	notify(monoflake.ID(id.UserID).String(), eventbus.Event{
+		Type: "machine.updated",
+		Payload: map[string]any{
+			"id":      monoflake.ID(id.MachineID).String(),
+			"version": version,
+		},
+	})
 }
 
 // announceSession tells the browser a session changed state.

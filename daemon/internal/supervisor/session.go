@@ -42,8 +42,17 @@ type Request struct {
 	Dir string
 	// MCPURL points the agent at its workspace. The credential is inside it.
 	MCPURL string
-	Cols   uint16
-	Rows   uint16
+	// ReuseMCPConfig says this session is being restored after the daemon
+	// replaced itself, and its config is already in the folder.
+	//
+	// The note that survives a restart carries no MCP URL on purpose — the
+	// credential is inside it — so a restored agent reads the file that was
+	// written when it was first launched. If that file is not there, the
+	// session fails with a reason rather than starting an agent that cannot
+	// reach its workspace and looks merely broken.
+	ReuseMCPConfig bool
+	Cols           uint16
+	Rows           uint16
 }
 
 // Session is one running agent.
@@ -53,6 +62,16 @@ type Session struct {
 	// Dir is the workspace folder this session runs in. Kept so the machine
 	// can report the free space on the filesystem that actually matters.
 	Dir string
+	// Params are the validated arguments this session was started with, kept
+	// so it can be started again after the daemon replaces itself.
+	//
+	// The MCP URL is deliberately *not* kept: the credential is inside it, and
+	// holding it for the life of a session so it could be written to a file
+	// later would turn a short-lived, scoped token into a long-lived one. The
+	// backend issues a fresh one when it asks for the session again.
+	Params Params
+	Cols   uint16
+	Rows   uint16
 
 	mu       sync.RWMutex
 	state    State
@@ -80,6 +99,10 @@ var (
 	ErrAtCapacity    = errors.New("supervisor: too many sessions running")
 	ErrNoSuchSession = errors.New("supervisor: no such session")
 	ErrAlreadyExists = errors.New("supervisor: session already exists")
+	// ErrNoMCPConfig means a restored session's folder no longer has the
+	// config it was going to read. Relaunching it from the panel writes a
+	// fresh one; this cannot, because it has no credential to write.
+	ErrNoMCPConfig = errors.New("supervisor: the config a restored session needs is not there")
 )
 
 // KillGrace is how long a process gets to leave politely.
@@ -138,7 +161,11 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	// Reserved before the slow work below, so two concurrent starts cannot
 	// both pass the capacity check.
-	sess := &Session{ID: req.ID, Kind: req.Kind, Dir: req.Dir, state: StateStarting, ended: make(chan struct{})}
+	sess := &Session{
+		ID: req.ID, Kind: req.Kind, Dir: req.Dir,
+		Params: req.Params, Cols: req.Cols, Rows: req.Rows,
+		state: StateStarting, ended: make(chan struct{}),
+	}
 	s.sessions[req.ID] = sess
 	s.profiles[req.ID] = profile
 	s.mu.Unlock()
@@ -152,9 +179,18 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 
 	if cmd.NeedsMCPConfig {
-		if _, err := WriteMCPConfig(req.Dir, req.Params.ServerName, req.MCPURL); err != nil {
-			release()
-			return nil, err
+		switch {
+		case req.ReuseMCPConfig:
+			if !HasMCPConfig(req.Dir, req.Params.ServerName) {
+				release()
+				return nil, fmt.Errorf("%w: %s has no %s entry for %q", ErrNoMCPConfig,
+					req.Dir, MCPConfigName, req.Params.ServerName)
+			}
+		default:
+			if _, err := WriteMCPConfig(req.Dir, req.Params.ServerName, req.MCPURL); err != nil {
+				release()
+				return nil, err
+			}
 		}
 	}
 
@@ -314,6 +350,31 @@ func (s *Supervisor) Running() []uint64 {
 
 // Ended closes once the session has finished and its outcome is recorded.
 func (sess *Session) Ended() <-chan struct{} { return sess.ended }
+
+// Live lists the sessions still running, with what they were started with.
+//
+// Used to write the note that survives a restart. It carries intent — kind,
+// folder, arguments — and nothing about the state of the terminal, because
+// none of that survives a new process anyway.
+func (s *Supervisor) Live() []*Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Session, 0, len(s.sessions))
+	for _, sess := range s.sessions {
+		if state, _, _ := sess.State(); !state.Terminal() {
+			out = append(out, sess)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// Profile is the profile a session belongs to.
+func (s *Supervisor) Profile(id uint64) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.profiles[id]
+}
 
 // Dirs are the working directories of the sessions still running.
 //
