@@ -190,6 +190,9 @@ func (r *repository) ActiveSessionForWorkspace(ctx context.Context, workspaceID,
 		Where("workspace_id = ? AND user_id = ? AND status IN ?", workspaceID, userID, []string{"starting", "running"}).
 		Order("created_at DESC").First(&s).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return model.Session{}, ErrNotFound
+		}
 		return model.Session{}, err
 	}
 	return s, nil

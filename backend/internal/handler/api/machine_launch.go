@@ -74,13 +74,37 @@ func (h *handler) launchAgent() fiber.Handler {
 			return c.Send(e)
 		}
 
-		// The gate. Checked here rather than only in the UI because two people
-		// can press the button at the same moment, and only the server-side
-		// check makes that race come out with one agent.
+		// The gate, and it is two questions rather than one.
+		//
+		// Checked here rather than only in the UI because two people can press
+		// the button at the same moment, and only the server-side check makes
+		// that race come out with one agent.
+		//
+		// The live connection answers "is an agent talking to this workspace
+		// right now". It does not answer "has one been started and not
+		// finished connecting yet", and that window is seconds long — easily
+		// long enough to press the button twice, which is how two agents end
+		// up sharing one .mcp.json and racing each other for the same tasks.
+		// The session row answers that half, and survives a backend restart
+		// into the bargain.
 		if h.mcpManager.IsAgentConnected(workspaceID) {
 			c.Status(http.StatusConflict)
 			return c.Send(mapper.FromMessageToHTTPResponse(
 				"this workspace already has an agent connected", http.StatusConflict))
+		}
+		active, err := h.crud.ActiveSessionForWorkspace(ctx, entity.ActiveSessionRequest{
+			UserID:      userID,
+			WorkspaceID: c.Params("id"),
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		if active != nil {
+			c.Status(http.StatusConflict)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"this workspace already has an agent "+active.Status+" on a machine", http.StatusConflict))
 		}
 
 		// The folder. Empty means the person has to choose one — never guessed,

@@ -29,6 +29,7 @@ import {
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import DeleteModal from '../components/DeleteModal.vue'
+import { useAgentLaunch, KINDS } from '../composables/useAgentLaunch'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +46,21 @@ const draftName = ref('')
 const showDelete = ref(false)
 const showUpdate = ref(false)
 
+// Destructured because refs keep their reactivity through it, and the
+// alternative — reaching through `launcher.x.value` in every binding — is
+// where a missing `.value` hides.
+const launcher = useAgentLaunch({ machine, sessions })
+const {
+  workspaces: launchWorkspaces,
+  workspaceId: launchWorkspace,
+  kind: launchKind,
+  params: launchParams,
+  blockers: launchBlockers,
+  canLaunch,
+  launching,
+  error: launchError,
+} = launcher
+
 const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
 const deleteText = computed(() => deleteConsequence(machine.value, liveCount.value))
@@ -58,6 +74,7 @@ const TONES = {
 
 onMounted(() => {
   detail.load()
+  launcher.load()
   onEvent(detail.handleEvent)
   connect()
 })
@@ -101,6 +118,28 @@ async function confirmUpdate() {
   } else {
     notifyError(error.value)
   }
+}
+
+async function startAgent() {
+  const session = await launcher.launch()
+  if (!session) {
+    notifyError(launchError.value)
+    return
+  }
+  // Asked, not running: the daemon reports its own state over the event
+  // stream, and the session list is already listening for it.
+  notifySuccess('Asked the machine to start the agent')
+  // Added to the list straight away rather than waiting for the event: the
+  // daemon's own report is what makes it accurate, and this is what makes it
+  // visible. The two merge, because an unknown session is added and a known
+  // one is updated in place.
+  detail.handleEvent({
+    type: 'session.updated',
+    payload: { ...session, machineId: machine.value?.id },
+  })
+  // Cleared so the form does not sit there inviting the same launch again,
+  // which the server would now refuse.
+  launchWorkspace.value = ''
 }
 
 async function stopSession(id) {
@@ -226,6 +265,112 @@ async function stopSession(id) {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Run an agent here.
+             Every reason a launch would be refused is worked out before
+             anything is sent and shown next to the button: the backend has
+             five of them, and a form that fired and reported whichever it hit
+             would make you press the button to find out whether you could
+             press the button. -->
+        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4">
+          <div>
+            <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Run an agent here</h2>
+            <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
+              Starts it in the workspace's folder on this machine.
+            </p>
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label
+                for="launch-workspace"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+                >Workspace</label
+              >
+              <select
+                id="launch-workspace"
+                v-model="launchWorkspace"
+                class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              >
+                <option value="">Choose a workspace…</option>
+                <option v-for="w in launchWorkspaces" :key="w.id" :value="w.id">
+                  {{ w.name }}
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label
+                for="launch-kind"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+                >What to run</label
+              >
+              <select
+                id="launch-kind"
+                v-model="launchKind"
+                class="w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              >
+                <option v-for="k in KINDS" :key="k.id" :value="k.id">{{ k.label }}</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Only the gateway needs these, and it needs both. -->
+          <div v-if="launchKind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label
+                for="launch-model"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+                >Model</label
+              >
+              <input
+                id="launch-model"
+                v-model="launchParams.model"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocorrect="off"
+                class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              />
+            </div>
+            <div>
+              <label
+                for="launch-agent"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+                >Agent</label
+              >
+              <input
+                id="launch-agent"
+                v-model="launchParams.agent"
+                type="text"
+                spellcheck="false"
+                autocapitalize="off"
+                autocorrect="off"
+                class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              />
+            </div>
+          </div>
+
+          <!-- Said before the button rather than after it is pressed. -->
+          <ul v-if="launchBlockers.length" class="space-y-1">
+            <li
+              v-for="b in launchBlockers"
+              :key="b.reason"
+              class="text-[11px] text-gray-500 dark:text-zinc-400"
+            >
+              {{ b.reason }}
+              <router-link v-if="b.fix" :to="b.fix.to" class="underline">{{ b.fix.label }}</router-link>
+            </li>
+          </ul>
+
+          <button
+            :disabled="!canLaunch"
+            @click="startAgent"
+            class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {{ launching ? 'Starting…' : 'Start agent' }}
+          </button>
         </div>
 
         <!-- Sessions -->

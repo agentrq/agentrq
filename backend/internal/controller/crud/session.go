@@ -5,6 +5,7 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	machinerules "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 )
 
 // SessionController records agent sessions.
@@ -22,6 +24,7 @@ type SessionController interface {
 	GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
+	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
 }
 
 func toSessionView(s model.Session) entity.SessionView {
@@ -119,6 +122,33 @@ func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRe
 		out = append(out, toSessionView(s))
 	}
 	return &entity.ListSessionsResponse{Sessions: out}, nil
+}
+
+// ActiveSessionForWorkspace returns the session already running for a
+// workspace, or nil.
+//
+// This is the half of "does this workspace already have an agent?" that the
+// database answers. The other half is the live MCP connection, and both are
+// needed: a session that has been started but has not connected yet is
+// invisible to the connection check, and that window is exactly long enough
+// for somebody to press the button twice.
+func (c *controller) ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	wid := monoflake.IDFromBase62(req.WorkspaceID).Int64()
+	if uid == 0 || wid == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	s, err := c.repository.ActiveSessionForWorkspace(ctx, wid, uid)
+	if err != nil {
+		if errors.Is(err, base.ErrNotFound) {
+			// No agent is the ordinary answer, and not an error: every first
+			// launch for a workspace passes through here.
+			return nil, nil
+		}
+		return nil, err
+	}
+	v := toSessionView(s)
+	return &v, nil
 }
 
 // ReconcileSessions ends the sessions a machine is no longer running.

@@ -232,6 +232,22 @@ what its user can already do.
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.
 
+### "Does this workspace already have an agent?" is two questions
+
+The launch gate checks both, and needs both. `IsAgentConnected` answers "is an
+agent talking to this workspace right now" — it says nothing about one that has
+been started and has not finished connecting, and that window is seconds long,
+easily enough to press the button twice and end up with two agents sharing one
+`.mcp.json` and racing for the same tasks. `ActiveSessionForWorkspace` answers
+that half from the database, and survives a backend restart into the bargain.
+It was written for this and went uncalled until the interface gained a button.
+
+The interface pre-empts what it can — `useAgentLaunch` works out every reason a
+launch would be refused *before* anything is sent, because a form that fired
+and reported whichever of the five refusals it hit would make somebody press
+the button to find out whether they could press the button. It is never the
+authority: two people can press at once, and only the server sees both.
+
 The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
 
 ## Telemetry

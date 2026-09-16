@@ -1331,6 +1331,13 @@ type (
 		Running   []int64
 	}
 
+	// ActiveSessionRequest asks whether a workspace already has an agent
+	// running, from the database rather than from a live connection.
+	ActiveSessionRequest struct {
+		UserID      string
+		WorkspaceID string
+	}
+
 	GetSessionRequest struct {
 		UserID    string
 		SessionID string
