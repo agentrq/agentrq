@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+
+  A LaunchAgent, not a LaunchDaemon, and the difference matters: a LaunchAgent
+  runs as the logged-in user, which is what the daemon requires. A LaunchDaemon
+  runs as root, which it refuses.
+
+    cp com.agentrq.agentrqd.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist
+
+  launchctl sets XPC_SERVICE_NAME, which is how the daemon knows to exit and be
+  restarted rather than re-exec itself after an update.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.agentrq.agentrqd</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/agentrqd</string>
+    <string>serve</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <!-- Restarted when it fails, left alone when it stops on purpose — which
+         is what a self-update does. -->
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/agentrqd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/agentrqd.log</string>
+</dict>
+</plist>
