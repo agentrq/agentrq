@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/agentrq/agentrq/daemon/internal/restore"
 	"github.com/agentrq/agentrq/daemon/internal/supervisor"
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -44,24 +45,43 @@ type Link struct {
 
 	// Rand is the jitter source, injected so backoff can be tested.
 	Rand func() float64
-	// OnConnect is called with the live connection, for what has to be set up
-	// per connection — the heartbeat, and later the metrics that ride on it.
-	OnConnect func(ctx context.Context, c *Conn)
 
-	streams *streams
+	// Updater replaces this daemon's binary when somebody approves it. Nil in
+	// a build that cannot update itself, which then simply refuses.
+	Updater *Updater
+
+	// Pending are sessions an update stopped, to be started again on the first
+	// connection. Each link takes only its own profile's.
+	Pending []restore.Session
+
+	// Metrics is the machine's last measurement, and whether there has been
+	// one. Read rather than measured: a heartbeat that waited on a disk that
+	// had gone away would stop being a heartbeat at exactly the moment it was
+	// most informative.
+	Metrics func() (wire.Heartbeat, bool)
+	// HeartbeatEvery is how often one is sent. Well under the backend's
+	// threshold for calling a machine offline, so a machine has to miss
+	// several beats before anybody is told it is gone.
+	HeartbeatEvery time.Duration
+
+	streams  *streams
+	viewers  *viewerCount
+	restored bool
 }
 
 // New builds a link.
 func New(profile, url string, id Identity, d Dialer, s *supervisor.Supervisor, log *slog.Logger) *Link {
 	return &Link{
-		Profile:    profile,
-		URL:        url,
-		Identity:   id,
-		Dialer:     d,
-		Supervisor: s,
-		Log:        log,
-		Rand:       rand.Float64,
-		streams:    newStreams(),
+		Profile:        profile,
+		URL:            url,
+		Identity:       id,
+		Dialer:         d,
+		Supervisor:     s,
+		Log:            log,
+		Rand:           rand.Float64,
+		HeartbeatEvery: DefaultHeartbeat,
+		streams:        newStreams(),
+		viewers:        newViewerCount(),
 	}
 }
 
@@ -142,12 +162,79 @@ func (l *Link) once(ctx context.Context) error {
 	}
 	l.Log.Info("connected to the backend")
 
-	if l.OnConnect != nil {
-		l.OnConnect(connCtx, conn)
+	go l.heartbeat(connCtx, conn)
+	if l.Updater != nil {
+		go l.Updater.Watch(connCtx, conn)
+	}
+
+	// Once, on the first connection that works. A reconnect is not a restart,
+	// and restoring again would start a second copy of everything.
+	if !l.restored {
+		l.restored = true
+		for _, s := range l.Pending {
+			l.Restore(connCtx, conn, s)
+		}
+		l.Pending = nil
 	}
 
 	return l.serve(connCtx, ws, conn)
 }
+
+// DefaultHeartbeat is how often the machine reports itself.
+const DefaultHeartbeat = 15 * time.Second
+
+// heartbeat reports the machine until the connection ends.
+//
+// Nothing is sent until there is a measurement to send. An empty heartbeat
+// would land on the row as a snapshot of zero memory and an idle CPU, which is
+// a confident lie where "we have not heard yet" is the truth — and it would
+// defeat the nullable field that exists to tell those apart.
+//
+// Liveness does not depend on this. The connection's own ping and pong is what
+// keeps a machine online, and the backend counts every pong.
+func (l *Link) heartbeat(ctx context.Context, conn *Conn) {
+	every := l.HeartbeatEvery
+	if every <= 0 {
+		every = DefaultHeartbeat
+	}
+	send := func() bool {
+		if l.Metrics == nil {
+			return false
+		}
+		hb, ok := l.Metrics()
+		if !ok {
+			return false
+		}
+		hb.Sessions = l.Supervisor.Running()
+		if err := conn.Control(wire.Control{Op: wire.OpHeartbeat, Body: mustJSON(hb)}); err != nil {
+			l.Log.Debug("heartbeat not sent", "error", err)
+		}
+		return true
+	}
+
+	// Connecting and taking the first measurement race, and connecting
+	// usually wins. Looking again shortly rather than waiting out a whole
+	// interval is what stops a machine showing no metrics at all for the first
+	// quarter of a minute after it appears.
+	next := time.NewTimer(0)
+	defer next.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-next.C:
+			if send() {
+				next.Reset(every)
+			} else {
+				next.Reset(WaitingForMetrics)
+			}
+		}
+	}
+}
+
+// WaitingForMetrics is how often the heartbeat looks again while the first
+// measurement is still being taken.
+const WaitingForMetrics = 500 * time.Millisecond
 
 // serve reads frames until the connection ends.
 func (l *Link) serve(ctx context.Context, ws *websocket.Conn, conn *Conn) error {
@@ -196,6 +283,8 @@ func (l *Link) dispatch(ctx context.Context, conn *Conn, f wire.Frame) {
 		// Handled by the supervisor, and then wired to a pump — the supervisor
 		// knows about processes, and this knows about the connection.
 		l.start(ctx, conn, c)
+	case wire.OpUpdateNow:
+		l.updateNow(ctx, conn, c)
 	default:
 		if err := l.Supervisor.Handle(ctx, l.Profile, c, conn); err != nil {
 			l.Log.Warn("control message failed", "op", string(c.Op), "error", err)
@@ -229,6 +318,40 @@ func (r *capturingReporter) reason() string {
 	return r.last
 }
 
+// updateNow acts on an approval.
+//
+// Run on its own goroutine, because it ends with this process being replaced
+// and the frame loop is what would otherwise be waiting for it.
+func (l *Link) updateNow(ctx context.Context, conn *Conn, c wire.Control) {
+	var req wire.UpdateNow
+	if err := json.Unmarshal(c.Body, &req); err != nil {
+		l.Log.Warn("unreadable update approval", "error", err)
+		return
+	}
+	if l.Updater == nil {
+		// A build that cannot update itself says so rather than ignoring the
+		// request: somebody is watching a button they just pressed.
+		l.report(conn, c.ID, "this build cannot update itself")
+		return
+	}
+
+	go func() {
+		if err := l.Updater.Apply(ctx, req.Version); err != nil {
+			l.Log.Error("update refused", "approved", req.Version, "error", err)
+			l.report(conn, c.ID, err.Error())
+		}
+	}()
+}
+
+// report sends an error back, correlated with whatever provoked it.
+func (l *Link) report(conn *Conn, id, message string) {
+	_ = conn.Control(wire.Control{
+		ID:   id,
+		Op:   wire.OpError,
+		Body: mustJSON(map[string]string{"error": message}),
+	})
+}
+
 func (l *Link) attach(c wire.Control) {
 	var req wire.KillSession // the attach payload is just a session id
 	if err := json.Unmarshal(c.Body, &req); err != nil {
@@ -243,10 +366,19 @@ func (l *Link) attach(c wire.Control) {
 		l.Log.Debug("attach for a session with no stream", "session", req.SessionID)
 		return
 	}
+	// Logged on the machine, not only on the server. Somebody at this keyboard
+	// must be able to find out that a terminal here is being watched, without
+	// having to ask the account that is watching it — which is the whole point
+	// of a local record. The keystrokes are not logged: those carry secrets,
+	// and the fact of the attach is what belongs in the record.
 	if c.Op == wire.OpDetach {
 		p.Detach()
+		l.Log.Info("a viewer stopped watching a terminal on this machine", "session", req.SessionID)
+		l.viewers.leave(req.SessionID)
 		return
 	}
+	l.Log.Warn("a viewer is watching a terminal on this machine", "session", req.SessionID)
+	l.viewers.join(req.SessionID)
 	if err := p.Attach(); err != nil {
 		l.Log.Warn("could not send the screen to a new viewer", "session", req.SessionID, "error", err)
 	}

@@ -19,7 +19,9 @@ import (
 type SessionController interface {
 	CreateSession(ctx context.Context, req entity.CreateSessionRequest) (*entity.CreateSessionResponse, error)
 	UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error
+	GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
+	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 }
 
 func toSessionView(s model.Session) entity.SessionView {
@@ -81,7 +83,25 @@ func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSe
 	if id == 0 {
 		return fmt.Errorf("invalid session id")
 	}
-	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt)
+	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored)
+}
+
+// GetSession reads one session, scoped to its owner.
+//
+// The scoping is in the query rather than a check after it: a session
+// belonging to somebody else is not found, which is also the right thing to
+// tell the caller.
+func (c *controller) GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	id := monoflake.IDFromBase62(req.SessionID).Int64()
+	if uid == 0 || id == 0 {
+		return nil, fmt.Errorf("invalid id")
+	}
+	s, err := c.repository.GetSession(ctx, id, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &entity.GetSessionResponse{Session: toSessionView(s)}, nil
 }
 
 func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error) {
@@ -99,4 +119,18 @@ func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRe
 		out = append(out, toSessionView(s))
 	}
 	return &entity.ListSessionsResponse{Sessions: out}, nil
+}
+
+// ReconcileSessions ends the sessions a machine is no longer running.
+//
+// The daemon is the authority on what is alive on its own machine: it says
+// what it is supervising, and anything else still marked live has ended
+// without anybody being told. Most often that is a daemon that restarted,
+// which comes back supervising nothing — and those rows would otherwise sit as
+// "running" forever and block the workspace's next launch.
+func (c *controller) ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error {
+	if req.MachineID == 0 {
+		return fmt.Errorf("invalid machine id")
+	}
+	return c.repository.ReconcileSessions(ctx, req.MachineID, req.Running, time.Now())
 }

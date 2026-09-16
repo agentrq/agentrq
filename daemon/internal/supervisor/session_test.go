@@ -437,3 +437,35 @@ func TestRunningListsOnlyLiveSessions(t *testing.T) {
 		t.Errorf("Running = %v, want two survivors", got)
 	}
 }
+
+// The mount a workspace sits on is the one that fills up, and it is not always
+// the root filesystem — so the machine reports free space for the folders its
+// agents are actually working in.
+func TestDirsAreTheFoldersOfLiveSessions(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	one, two := t.TempDir(), t.TempDir()
+
+	// Two sessions in the same folder are one filesystem, not two entries.
+	for id, dir := range map[uint64]string{9: one, 5: one, 3: two} {
+		if _, err := s.Start(t.Context(), "work", Request{
+			ID: id, Kind: KindACPGateway, Dir: dir,
+			Params: Params{Model: "m", Agent: "a"},
+		}); err != nil {
+			t.Fatalf("start %d: %v", id, err)
+		}
+	}
+
+	got := s.Dirs()
+	if len(got) != 2 {
+		t.Fatalf("Dirs = %v, want one entry per folder", got)
+	}
+
+	// A session that has ended is not working anywhere.
+	if err := s.Kill(3); err != nil {
+		t.Fatalf("kill: %v", err)
+	}
+	if got := s.Dirs(); len(got) != 1 || got[0] != one {
+		t.Errorf("Dirs = %v after the second folder's session ended", got)
+	}
+}

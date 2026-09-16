@@ -63,9 +63,14 @@ type Repository interface {
 	ReleaseMachine(ctx context.Context, id int64, instanceID string) error
 	CreateSession(ctx context.Context, s model.Session) (model.Session, error)
 	GetSession(ctx context.Context, id, userID int64) (model.Session, error)
+	RecordMachineMetrics(ctx context.Context, m model.Machine) error
+	RecordAvailableVersion(ctx context.Context, id int64, version string) error
+	RecordMachineVersion(ctx context.Context, id int64, version string) error
+	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
+	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
-	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time) error
+	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)

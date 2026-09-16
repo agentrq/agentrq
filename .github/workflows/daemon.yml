@@ -75,3 +75,57 @@ jobs:
             echo "▸ ${target}"
             GOOS="${target%/*}" GOARCH="${target#*/}" CGO_ENABLED=0 go build ./...
           done
+
+  release-config:
+    name: Release config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      # A release config that has drifted is found on release day, when it is
+      # least convenient and most tempting to fix by hand. Checked on every
+      # change instead.
+      - name: Check the goreleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check
+          workdir: daemon
+        env:
+          AGENTRQD_RELEASE_PUBKEY: ''
+
+      # The release job signs a manifest and then verifies it against the key
+      # built into the binaries. Rehearsing that here — with a throwaway key and
+      # stand-in binaries — means the day a real release is cut, the only new
+      # thing is the key.
+      - name: Rehearse signing and verifying a release
+        working-directory: daemon
+        run: |
+          set -eu
+          keys="$(go run ./cmd/agentrqd-release keygen)"
+          export AGENTRQD_RELEASE_PUBKEY="$(echo "$keys" | awk '/^public/{print $NF}')"
+          export AGENTRQD_RELEASE_KEY="$(echo "$keys" | awk '/^private/{print $NF}')"
+
+          mkdir -p /tmp/rehearsal
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"; goarch="${target#*/}"
+            name="agentrqd_${goos}_${goarch}"
+            [ "$goos" = windows ] && name="${name}.exe"
+            printf 'stand-in for %s\n' "$target" > "/tmp/rehearsal/${name}"
+          done
+
+          go run ./cmd/agentrqd-release manifest \
+            --version 0.0.0 \
+            --base-url https://releases.example/v0.0.0 \
+            /tmp/rehearsal > /tmp/rehearsal/agentrqd.json
+
+          go run ./cmd/agentrqd-release verify --version 0.0.0 /tmp/rehearsal
