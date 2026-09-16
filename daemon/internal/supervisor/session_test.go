@@ -375,3 +375,9 @@ func TestStateTerminal(t *testing.T) {
 		}
 	}
 }
+
+// realStarter is pty.Start, for the tests that need the genuine working
+// directory check rather than a stand-in.
+func realStarter(ctx context.Context, spec pty.Spec) (pty.Session, error) {
+	return pty.Start(ctx, spec)
+}

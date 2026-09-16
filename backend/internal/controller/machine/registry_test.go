@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agentrq/agentrq/daemon/wire"
 )
@@ -209,4 +210,27 @@ func TestRegistryIsSafeUnderConcurrentUse(t *testing.T) {
 		go func() { defer wg.Done(); _ = r.Count(); _ = r.Machines() }()
 	}
 	wg.Wait()
+}
+
+// lastFrame is what the daemon most recently received.
+func (c *fakeConn) lastFrame() wire.Frame {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.sent) == 0 {
+		return wire.Frame{}
+	}
+	return c.sent[len(c.sent)-1]
+}
+
+// waitFor polls until cond holds, for the tests that drive real sockets.
+func waitFor(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal(msg)
 }
