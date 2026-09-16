@@ -163,6 +163,56 @@ registered on sign-in and withdrawn on sign-out.
 - User-facing documentation is `docs/WEBMCP.md`; `cd desktop && npm run
   verify:webmcp` drives the whole path in a real browser with no backend.
 
+## Machines and the daemon (`daemon/`, `/machines`)
+
+A machine is somebody's computer running `agentrqd`, enrolled against an
+account. It holds a WebSocket to the backend, runs agents in real
+pseudo-terminals, and streams them to the browser.
+
+- **`daemon/` is a separate Go module**, wired in with a `replace` directive
+  rather than a `go.work` (which is deliberately absent — it is not checked in,
+  and builds must work without it). `daemon/wire` is the *only* definition of
+  the frame format and is imported by the backend; there is no second copy to
+  drift.
+- **Two sockets, both on the stdlib `mux` in `app.go`, never on Fiber.** Fiber
+  is mounted through an adaptor that synthesises a fasthttp context, and a
+  WebSocket upgrade has to hijack a real connection, which a synthesised
+  context does not have.
+- **`terminalSocketUrl` and `serverOrigin` are the only absolute URLs in the
+  frontend**, and they are a deliberate exception to the rule above rather than
+  an oversight: Electron's custom-protocol handler forwards `/api` but does not
+  intercept WebSockets, so a relative URL would resolve to `app://` and never
+  open. Both ask the shell where the server is. Nothing else should.
+- **Terminal input is exempt from the WebMCP parity rule on purpose**, with the
+  reason written into the exemption in `frontend/test/webmcpTools.test.js`:
+  raw keystroke access to a remote shell is a materially different grant from
+  "anything the interface can do".
+- **The attach is audited; the keystrokes are not.** A test types a password
+  into a terminal and asserts it appears nowhere in the log.
+- Machine and session events ride the **user's global** stream
+  (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
+  to a workspace, and the person watching the machines page may have none open.
+
+### Self-update is the one place where getting it wrong is unrecoverable
+
+- **A build with no release key refuses to update itself**, and says so. The key
+  is a build-time `-ldflags` variable; empty is the default and the correct
+  behaviour for every build that is not an official release. A verification step
+  that silently passes when it has nothing to verify against is worse than none.
+- **The manifest is signed as a whole** — version and platform table included,
+  because those decide which file gets run — and every artefact's SHA-256 is
+  mandatory and checked while downloading. There is no path to an artefact that
+  skips the signature check.
+- **The new binary is executed before anything is replaced.** After the swap the
+  old process is gone and nothing can observe the new one failing; the previous
+  binary is retained for `agentrqd rollback` and is deliberately *not* tidied up
+  at startup.
+- **Restoration is intent, not state**: new processes, new terminals, no
+  scrollback. Restored sessions are marked as such so nobody wonders why their
+  terminal is empty. The note that survives the restart carries no credential.
+
+The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
+
 ## Telemetry
 
 Most actions are emitted by the backend right after it does the work, which

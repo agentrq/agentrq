@@ -597,3 +597,75 @@ func TestAnUndecodableFrameEndsTheConnection(t *testing.T) {
 
 	waitFor(t, func() bool { return b.connections() > before }, "the daemon kept a connection carrying frames it cannot read")
 }
+
+// An empty heartbeat would land on the machine's row as a snapshot of zero
+// memory and an idle CPU, which is a confident lie where "we have not heard
+// yet" is the truth. Liveness comes from the connection's ping, not from this.
+func TestNoHeartbeatUntilThereIsSomethingToSay(t *testing.T) {
+	b := newBackend(t)
+
+	measured := false
+	sup := supervisor.New(starter(newTTY()), 0, 0)
+	l := New("work", b.url(), Identity{Token: "tkn", Version: "test"}, realDialer{}, sup,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	l.HeartbeatEvery = 20 * time.Millisecond
+	l.Metrics = func() (wire.Heartbeat, bool) {
+		if !measured {
+			return wire.Heartbeat{}, false
+		}
+		return wire.Heartbeat{MemTotal: 16 << 30, CPUPercent: 4.4}, true
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = l.Run(ctx) }()
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpHello)) > 0 }, "never connected")
+
+	time.Sleep(100 * time.Millisecond)
+	if n := len(b.controls(t, wire.OpHeartbeat)); n != 0 {
+		t.Fatalf("sent %d heartbeats before measuring anything", n)
+	}
+
+	measured = true
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpHeartbeat)) > 0 }, "never reported once it had")
+
+	var hb wire.Heartbeat
+	if err := json.Unmarshal(b.controls(t, wire.OpHeartbeat)[0].Body, &hb); err != nil {
+		t.Fatal(err)
+	}
+	if hb.MemTotal != 16<<30 || hb.CPUPercent != 4.4 {
+		t.Errorf("heartbeat = %+v", hb)
+	}
+}
+
+// The heartbeat also carries what this daemon is supervising, which is how a
+// backend that restarted corrects rows it believes are running.
+func TestTheHeartbeatSaysWhatIsRunning(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+	h.link.HeartbeatEvery = 20 * time.Millisecond
+	h.link.Metrics = func() (wire.Heartbeat, bool) { return wire.Heartbeat{MemTotal: 1}, true }
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	// The link was started before Metrics was set, so a new connection is the
+	// simplest way to get a heartbeat loop that reports.
+	b.mu.Lock()
+	ws := b.sockets[len(b.sockets)-1]
+	b.mu.Unlock()
+	_ = ws.Close()
+
+	waitFor(t, func() bool {
+		for _, c := range b.controls(t, wire.OpHeartbeat) {
+			var hb wire.Heartbeat
+			_ = json.Unmarshal(c.Body, &hb)
+			if len(hb.Sessions) == 1 && hb.Sessions[0] == 7 {
+				return true
+			}
+		}
+		return false
+	}, "no heartbeat named the running session")
+}

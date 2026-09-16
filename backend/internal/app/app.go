@@ -962,7 +962,11 @@ func New(cfg Config) (*App, error) {
 		Registry: machineRegistry,
 		Auth:     machine.StoreAuthenticator{Store: repo},
 		DecodeID: func(s string) int64 { return monoflake.IDFromBase62(s).Int64() },
-		OnFrame:  daemonFrames(machineRelay, crudCtrl),
+		OnFrame: daemonFrames(machineRelay, crudCtrl, func(userID string, evt eventbus.Event) {
+			// Workspace 0: a machine belongs to an account, not a workspace,
+			// and the person watching the machines page may have none open.
+			bus.Publish(0, userID, evt)
+		}),
 	})
 
 	// The browser's terminal socket, on the mux for the same hijacking reason.

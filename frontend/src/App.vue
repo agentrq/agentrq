@@ -222,6 +222,19 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Events</span>
           </router-link>
 
+          <router-link to="/machines"
+              @mouseenter="showTooltip($event, 'Machines')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/machines') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 17.25v-.228a4.5 4.5 0 00-.12-1.03l-2.268-9.64a3.375 3.375 0 00-3.285-2.602H7.923a3.375 3.375 0 00-3.285 2.602l-2.268 9.64a4.5 4.5 0 00-.12 1.03v.228m19.5 0a3 3 0 01-3 3H5.25a3 3 0 01-3-3m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m16.5 0h.008v.008h-.008v-.008zm-3 0h.008v.008h-.008v-.008z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
+          </router-link>
+
           <router-link to="/workflows"
               @mouseenter="showTooltip($event, 'Workflows')" @mouseleave="hideTooltip"
               class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
@@ -985,6 +998,8 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path === '/login') document.title = 'Login | AgentRQ';
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';
+  else if (path.startsWith('/machines')) document.title = 'Machines | AgentRQ';
+  else if (path.startsWith('/sessions/')) document.title = 'Terminal | AgentRQ';
   else if (path.startsWith('/tasks/')) {
     const filter = route.params.filter || '';
     const title = filter ? filter.charAt(0).toUpperCase() + filter.slice(1) : 'All';

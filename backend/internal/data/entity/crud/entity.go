@@ -1230,6 +1230,113 @@ type (
 		CreatedAt  time.Time  `json:"createdAt"`
 
 		AvailableVersion string `json:"availableVersion,omitempty"`
+
+		// Sessions is how many are still running on this machine. Zero is a
+		// real answer here, unlike Metrics: a machine with no agents on it is
+		// exactly what "0" should say.
+		Sessions int `json:"sessions"`
+
+		// Metrics is the last snapshot the daemon reported, or nil if it has
+		// not reported one. Nil rather than a zeroed struct: a machine that
+		// has never said how much memory it has is a different thing from one
+		// that has none.
+		Metrics *MachineMetricsView `json:"metrics,omitempty"`
+	}
+
+	// MachineMetricsView is what a machine last said about itself.
+	MachineMetricsView struct {
+		// MemAvailable is what a new process could get, not what is unused —
+		// on Linux "free" excludes the page cache and reads alarmingly low on
+		// a perfectly healthy machine.
+		MemTotal     int64 `json:"memTotal"`
+		MemAvailable int64 `json:"memAvailable"`
+
+		CPUPercent float64 `json:"cpuPercent"`
+
+		// LoadAvg is absent on Windows, and must render as absent rather than
+		// as three zeroes — which would read as a perfectly idle machine.
+		LoadAvg []float64 `json:"loadAvg,omitempty"`
+
+		UptimeSec int64 `json:"uptimeSec"`
+
+		// Disks is per mount, never one number: a machine can be 2% full and
+		// still fail to check out a repository, because the full filesystem is
+		// the one that matters.
+		Disks []MachineDiskView `json:"disks,omitempty"`
+
+		// ReportedAt is when the machine measured this, so a stale snapshot
+		// can be shown as stale rather than as current.
+		ReportedAt time.Time `json:"reportedAt"`
+	}
+
+	// MachineDiskView is one filesystem's space.
+	MachineDiskView struct {
+		Mount string `json:"mount"`
+		Total int64  `json:"total"`
+		Free  int64  `json:"free"`
+	}
+
+	// RecordMachineMetricsRequest is a daemon's report about its own machine.
+	//
+	// The machine id comes from the authenticated socket, never from the
+	// payload: a daemon may only ever describe itself.
+	RecordMachineMetricsRequest struct {
+		MachineID    int64
+		MemTotal     int64
+		MemAvailable int64
+		CPUPercent   float64
+		LoadAvg      []float64
+		UptimeSec    int64
+		Disks        []MachineDiskView
+		ReportedAt   time.Time
+	}
+
+	// ReconcileSessionsRequest ends the sessions a machine is not running.
+	//
+	// Running is what the daemon says it is supervising. Everything else this
+	// machine has marked live has ended without anybody being told.
+	// RecordAvailableVersionRequest stores a release a daemon has found.
+	//
+	// The machine id comes from the authenticated socket, never the payload:
+	// a daemon may only ever describe itself.
+	RecordAvailableVersionRequest struct {
+		MachineID int64
+		// Version is empty when the daemon is current again, which clears the
+		// offer rather than leaving a machine advertising an update it has
+		// already installed.
+		Version string
+	}
+
+	// ApproveMachineUpdateRequest is a person saying yes to losing their
+	// sessions on one machine, for one release.
+	ApproveMachineUpdateRequest struct {
+		UserID    string
+		MachineID string
+		Version   string
+	}
+	ApproveMachineUpdateResponse struct {
+		MachineID int64
+		Version   string
+	}
+
+	// RecordMachineVersionRequest is what a daemon says it is running, from
+	// its hello — the only message that knows.
+	RecordMachineVersionRequest struct {
+		MachineID int64
+		Version   string
+	}
+
+	ReconcileSessionsRequest struct {
+		MachineID int64
+		Running   []int64
+	}
+
+	GetSessionRequest struct {
+		UserID    string
+		SessionID string
+	}
+	GetSessionResponse struct {
+		Session SessionView `json:"session"`
 	}
 
 	ListMachinesRequest struct {
@@ -1306,6 +1413,9 @@ type (
 		// on the row today — it reaches the UI through the event stream — but
 		// carried here so the controller has it when that lands.
 		Error string
+		// Restored marks a session re-spawned after an update, so the UI can
+		// say why the scrollback is empty.
+		Restored bool
 	}
 
 	ListSessionsRequest struct {
