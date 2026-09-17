@@ -154,21 +154,24 @@ func (h *handler) launchAgent() fiber.Handler {
 			Rows:       payload.Rows,
 		}
 
-		// The credential is minted only once everything else has passed, and
-		// only for the kind that reads it. A token created and then discarded
-		// by a later refusal is a token that existed for no reason.
-		if payload.Kind == kindClaudeCode {
-			token, err := h.tokenSvc.CreateMCPToken(userID, c.Params("id"), "access")
-			if err != nil {
-				zlog.Error().Err(err).Msg("[launch] mint workspace token")
-				e, status := mapper.FromErrorToHTTPResponse(err)
-				c.Status(status)
-				return c.Send(e)
-			}
-			// The token is a query parameter in the URL, which is why this
-			// value travels in a frame and never in an argv or a log line.
-			start.MCPURL = h.mcpURL(workspaceID) + "?token=" + token
+		// The credential is minted only once everything else has passed: a
+		// token created and then discarded by a later refusal is a token that
+		// existed for no reason.
+		//
+		// Both kinds read it. That is easy to get wrong — the gateway takes
+		// its model and agent on the command line, so it looks self-contained
+		// — and getting it wrong is not subtle from the outside: the gateway
+		// starts, says it cannot find its config, and dies.
+		token, err := h.tokenSvc.CreateMCPToken(userID, c.Params("id"), "access")
+		if err != nil {
+			zlog.Error().Err(err).Msg("[launch] mint workspace token")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
 		}
+		// The token is a query parameter in the URL, which is why this value
+		// travels in a frame and never in an argv or a log line.
+		start.MCPURL = h.mcpURL(workspaceID) + "?token=" + token
 
 		session, err := h.crud.CreateSession(ctx, entity.CreateSessionRequest{
 			UserID:      userID,
@@ -202,8 +205,6 @@ func (h *handler) launchAgent() fiber.Handler {
 		return c.JSON(session)
 	}
 }
-
-const kindClaudeCode = "claude-code"
 
 // sendStart delivers the start request to the daemon.
 func (h *handler) sendStart(machineID int64, start wire.StartSession) error {

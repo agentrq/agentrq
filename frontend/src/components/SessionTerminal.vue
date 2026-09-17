@@ -26,7 +26,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { useTerminalSession } from '../composables/useTerminalSession'
+import { useTerminalSession, VIEWER_SESSION } from '../composables/useTerminalSession'
 import { TERMINAL_OPTIONS, TERMINAL_THEME } from '../composables/useTerminalView'
 import { terminalSocketUrl } from '../api'
 
@@ -87,7 +87,10 @@ onMounted(async () => {
   }
 
   session = useTerminalSession({
-    sessionId: props.sessionId,
+    // Not props.sessionId: that is a base62 string, and the frame header wants
+    // a number the browser has no way to produce. The backend decides which
+    // session this socket may drive and overwrites it.
+    sessionId: VIEWER_SESSION,
     connect: () => new WebSocket(url),
     onOutput: (bytes) => term.write(bytes),
     onReplay: () => term.reset(),

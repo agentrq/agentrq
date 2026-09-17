@@ -247,6 +247,31 @@ what its user can already do.
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.
 
+### A viewer names no session, and must not
+
+A browser holds base62 ids; the frame header wants a 64-bit number. It has no
+way to produce one and does not need to — the backend decides which session an
+attached socket may drive and overwrites whatever arrives, which is what stops
+a browser typing into another session by changing a number. So viewer frames
+carry a zero session and `wire.DecodeFromViewer` expects that.
+
+Asking the browser for the id instead is what broke the terminal: `BigInt` of a
+base62 string throws, inside a keystroke handler where nothing was watching, so
+output kept arriving and the keyboard did nothing. Every unit test passed a
+number; the application passes a string. Fixtures that do not match the shape
+the caller actually uses are how a bug like that survives a full green suite.
+
+### Both agent kinds read `.mcp.json`
+
+It is easy to assume only claude-code does — the gateway takes its model and
+agent on the command line, so it looks self-contained — and `make remote-agy`
+reinforces that, because it happens to run from the repository root, which has
+one. It does not: the gateway reads the workspace from the same file, and
+without it prints "Could not find .mcp.json" and dies a second after starting.
+
+So the backend mints an MCP token for both kinds and the daemon writes a config
+for both.
+
 ### The terminal must never size itself
 
 The fit addon reads the host element's box and sets the terminal's rows to

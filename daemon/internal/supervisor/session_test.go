@@ -368,19 +368,25 @@ func TestMCPConfigIsWrittenBeforeTheProcessStarts(t *testing.T) {
 
 // The gateway does not read .mcp.json, so writing one would leave a file — and
 // a credential — in a directory for no reason.
-func TestNoMCPConfigIsWrittenForTheGateway(t *testing.T) {
+// The gateway gets a config too, and it was the absence of this that made a
+// launched gateway die a second after starting with "Could not find
+// .mcp.json". This test used to assert the opposite.
+func TestTheGatewayGetsItsMCPConfigToo(t *testing.T) {
 	st := &recordingStarter{}
 	s := New(st.start, 0, 0)
 	req := Request{
 		ID: 1, Kind: KindACPGateway,
-		Params: Params{Model: "gemini-3.8-flash-high", Agent: "antigravity-acp"},
-		Dir:    t.TempDir(), MCPURL: testURL,
+		Params: Params{
+			Model: "gemini-3.8-flash-high", Agent: "antigravity-acp",
+			ServerName: "agentrq-workspace",
+		},
+		Dir: t.TempDir(), MCPURL: testURL,
 	}
 	if _, err := s.Start(t.Context(), "work", req); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readMCPConfigExists(req.Dir); err == nil {
-		t.Error("an MCP config was written for a kind that does not read one")
+	if _, err := readMCPConfigExists(req.Dir); err != nil {
+		t.Errorf("no MCP config was written for the gateway: %v", err)
 	}
 }
 
@@ -412,8 +418,8 @@ func TestRunningListsOnlyLiveSessions(t *testing.T) {
 
 	for _, id := range []uint64{9, 3, 5} {
 		if _, err := s.Start(t.Context(), "work", Request{
-			ID: id, Kind: KindACPGateway, Dir: dir,
-			Params: Params{Model: "m", Agent: "a"},
+			ID: id, Kind: KindACPGateway, Dir: dir, MCPURL: "https://agentrq.example/mcp/ws?token=test",
+			Params: Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
 		}); err != nil {
 			t.Fatalf("start %d: %v", id, err)
 		}
@@ -449,8 +455,8 @@ func TestDirsAreTheFoldersOfLiveSessions(t *testing.T) {
 	// Two sessions in the same folder are one filesystem, not two entries.
 	for id, dir := range map[uint64]string{9: one, 5: one, 3: two} {
 		if _, err := s.Start(t.Context(), "work", Request{
-			ID: id, Kind: KindACPGateway, Dir: dir,
-			Params: Params{Model: "m", Agent: "a"},
+			ID: id, Kind: KindACPGateway, Dir: dir, MCPURL: "https://agentrq.example/mcp/ws?token=test",
+			Params: Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
 		}); err != nil {
 			t.Fatalf("start %d: %v", id, err)
 		}

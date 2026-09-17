@@ -101,6 +101,11 @@ type Command struct {
 	// NeedsMCPConfig reports whether this kind reads .mcp.json from its
 	// working directory, and therefore whether the daemon has to write one
 	// before starting it.
+	//
+	// Both kinds do. That is worth saying because it is easy to assume only
+	// claude-code cares — the gateway takes its model and agent on the command
+	// line, so it looks self-contained — and it is not: it reads the workspace
+	// from the same file.
 	NeedsMCPConfig bool
 }
 
@@ -146,11 +151,19 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if err := checkParam("agent", p.Agent); err != nil {
 			return Command{}, err
 		}
-		return Command{Argv: []string{
-			"npx", "@agentrq/acp-gateway@latest",
-			"--model", p.Model,
-			"--agent", p.Agent,
-		}}, nil
+		// The gateway reads .mcp.json from its working directory, exactly as
+		// claude-code does — `make remote-agy` works only because it is run
+		// from the repository root, which has one. Without it the gateway
+		// starts, prints "Could not find .mcp.json" and dies, which is a
+		// launch that looks like it worked for about a second.
+		return Command{
+			Argv: []string{
+				"npx", "@agentrq/acp-gateway@latest",
+				"--model", p.Model,
+				"--agent", p.Agent,
+			},
+			NeedsMCPConfig: true,
+		}, nil
 
 	default:
 		return Command{}, fmt.Errorf("%w: %q", ErrUnknownKind, kind)

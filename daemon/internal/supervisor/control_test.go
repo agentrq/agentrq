@@ -194,6 +194,9 @@ func TestAnExitIsReportedWithoutBeingAsked(t *testing.T) {
 	c := control(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: string(KindACPGateway),
 		Dir: t.TempDir(), Model: "m", Agent: "a",
+		// The gateway reads .mcp.json like claude-code does, so a start that
+		// carries no URL is one the daemon correctly refuses.
+		MCPURL: testURL, ServerName: "agentrq-workspace",
 	})
 	if err := s.Handle(t.Context(), "work", c, rep); err != nil {
 		t.Fatal(err)

@@ -78,9 +78,17 @@ func TestARestoredSessionSaysItWasRestored(t *testing.T) {
 	h := start(t, b)
 	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
 
+	// Both kinds read .mcp.json from their folder, so a restored gateway needs
+	// the one that was written when it was first launched, exactly as
+	// claude-code does.
+	dir := t.TempDir()
+	if _, err := supervisor.WriteMCPConfig(dir, "agentrq-workspace", "https://agentrq.example/mcp/ws?token=test"); err != nil {
+		t.Fatal(err)
+	}
+
 	h.link.Restore(context.Background(), conn, restore.Session{
 		ID: 9, Profile: "work", Kind: string(supervisor.KindACPGateway),
-		Dir: t.TempDir(), Model: "m", Agent: "a", Cols: 120, Rows: 40,
+		Dir: dir, ServerName: "agentrq-workspace", Model: "m", Agent: "a", Cols: 120, Rows: 40,
 	})
 
 	var st wire.SessionState
@@ -257,6 +265,7 @@ func TestAnAttachIsLoggedOnTheMachine(t *testing.T) {
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 
@@ -294,6 +303,7 @@ func TestTheViewerCountTracksBothOfThem(t *testing.T) {
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 

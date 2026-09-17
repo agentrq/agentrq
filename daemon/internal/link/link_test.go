@@ -283,7 +283,7 @@ func TestAKeystrokeReachesTheTerminalAndOutputComesBack(t *testing.T) {
 
 	dir := t.TempDir()
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: dir, Model: "m", Agent: "a", Cols: 80, Rows: 24,
+		SessionID: 7, Kind: "acp-gateway", Dir: dir, Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace", Cols: 80, Rows: 24,
 	}))
 	waitFor(t, func() bool {
 		for _, c := range b.controls(t, wire.OpSessionState) {
@@ -331,7 +331,7 @@ func TestResizeReachesTheTerminal(t *testing.T) {
 	h := start(t, b)
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", Cols: 80, Rows: 24,
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace", Cols: 80, Rows: 24,
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 
@@ -429,7 +429,7 @@ func TestBadMessagesDoNotDropTheConnection(t *testing.T) {
 
 	// Still the same connection, and still able to do the ordinary thing.
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the connection did not survive")
 	if b.connections() != before {
@@ -444,7 +444,7 @@ func TestARefusedStartIsReported(t *testing.T) {
 	start(t, b)
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: "/definitely/not/a/directory", Model: "m", Agent: "a",
+		SessionID: 7, Kind: "acp-gateway", Dir: "/definitely/not/a/directory", Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 
 	waitFor(t, func() bool {
@@ -482,7 +482,7 @@ func TestDetachStopsTheOutputButNotTheSession(t *testing.T) {
 	h := start(t, b)
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", Cols: 80, Rows: 24,
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace", Cols: 80, Rows: 24,
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 
@@ -647,7 +647,7 @@ func TestTheHeartbeatSaysWhatIsRunning(t *testing.T) {
 	h.link.Metrics = func() (wire.Heartbeat, bool) { return wire.Heartbeat{MemTotal: 1}, true }
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 

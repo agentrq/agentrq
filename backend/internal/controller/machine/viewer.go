@@ -162,7 +162,11 @@ func (h *ViewerHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if typ != websocket.BinaryMessage {
 			return
 		}
-		f, err := wire.Decode(data)
+		// Decoded with the session check relaxed, because this is the side
+		// that decides the session: a browser holds base62 ids and cannot name
+		// one on the wire, and whatever it sent would be overwritten in the
+		// next line anyway.
+		f, err := wire.DecodeFromViewer(data)
 		if err != nil {
 			return
 		}

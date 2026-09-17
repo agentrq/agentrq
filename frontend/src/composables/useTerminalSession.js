@@ -52,11 +52,31 @@ export const RECONNECT_BASE_MS = 500
 export const RECONNECT_MAX_MS = 15000
 
 /**
+ * The session id a viewer puts in its frames, which is none.
+ *
+ * A browser holds base62 ids — "0is9t9UOwO9" — and the frame header wants a
+ * 64-bit number. It has no way to produce one, and does not need to: the
+ * backend decides which session an attached viewer may drive and overwrites
+ * whatever arrives, because anything else would let a browser type into
+ * another session by changing a number.
+ *
+ * This is not a tidy-up. The first version asked the caller for the id and ran
+ * it through BigInt, which throws on a base62 string — so every keystroke threw
+ * while output kept arriving, and the terminal looked like it was ignoring the
+ * keyboard. The unit tests passed numbers and never saw it.
+ */
+export const VIEWER_SESSION = 0
+
+/**
  * Encode a frame.
  *
  * Binary rather than JSON: terminal traffic is arbitrary bytes at volume, and
  * base64 would cost a third more on every frame while raising questions about
  * how `0x1b` or invalid UTF-8 survives. As bytes, they simply do.
+ *
+ * The session id must be a number or a numeric string. Anything else is a
+ * caller that does not have one, which for a viewer is the normal case — pass
+ * [VIEWER_SESSION].
  */
 export function encodeFrame(type, sessionId, payload = new Uint8Array()) {
   // Tested for string rather than `instanceof Uint8Array`: a typed array that
@@ -68,9 +88,25 @@ export function encodeFrame(type, sessionId, payload = new Uint8Array()) {
   // A session id is 64-bit, and JavaScript numbers are not — so it is written
   // through BigInt rather than bit-shifted, which would silently lose the high
   // bits for ids above 2^32 and deliver input to the wrong session.
-  new DataView(out.buffer).setBigUint64(1, BigInt(sessionId), false)
+  new DataView(out.buffer).setBigUint64(1, toSessionBits(sessionId), false)
   out.set(body, HEADER_SIZE)
   return out
+}
+
+/**
+ * The session id as the header wants it.
+ *
+ * A value that is not a number is a caller that does not have one — a viewer —
+ * and is written as zero rather than thrown over. Throwing here is what broke
+ * the terminal: it happened inside a keystroke handler, where nothing was
+ * watching, so the only symptom was a keyboard that did nothing.
+ */
+function toSessionBits(sessionId) {
+  try {
+    return BigInt(sessionId ?? 0)
+  } catch {
+    return 0n
+  }
 }
 
 /** Decode a frame, or null if it is too short to be one. */

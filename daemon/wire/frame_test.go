@@ -294,3 +294,78 @@ func TestStartSessionRedactsItsCredential(t *testing.T) {
 		t.Errorf("an absent URL became %q", got.MCPURL)
 	}
 }
+
+// A browser holds base62 ids and cannot name a session on the wire. It does
+// not need to: the backend decides which session an attached viewer may drive
+// and overwrites whatever arrives.
+func TestDecodeFromViewerAcceptsAFrameWithNoSession(t *testing.T) {
+	raw := make([]byte, HeaderSize+1)
+	raw[0] = byte(TypeInput)
+	raw[HeaderSize] = 'y'
+
+	f, err := DecodeFromViewer(raw)
+	if err != nil {
+		t.Fatalf("DecodeFromViewer: %v", err)
+	}
+	if f.Type != TypeInput || f.SessionID != 0 || string(f.Payload) != "y" {
+		t.Errorf("decoded %+v", f)
+	}
+
+	// And the ordinary decoder still refuses it, because a daemon naming no
+	// session is a daemon with a bug.
+	if _, err := Decode(raw); !errors.Is(err, ErrNoSession) {
+		t.Errorf("Decode = %v, want ErrNoSession", err)
+	}
+}
+
+// Everything else is still checked: a viewer that does not name a session is
+// expected, one that sends nonsense is not.
+func TestDecodeFromViewerStillChecksTheRest(t *testing.T) {
+	t.Run("an unknown type", func(t *testing.T) {
+		raw := make([]byte, HeaderSize+1)
+		raw[0] = 0x7f
+		if _, err := DecodeFromViewer(raw); !errors.Is(err, ErrUnknownType) {
+			t.Errorf("error = %v, want ErrUnknownType", err)
+		}
+	})
+
+	t.Run("a session on a control frame", func(t *testing.T) {
+		raw := make([]byte, HeaderSize+1)
+		raw[0] = byte(TypeControl)
+		raw[8] = 9
+		if _, err := DecodeFromViewer(raw); !errors.Is(err, ErrSessionOnCtrl) {
+			t.Errorf("error = %v, want ErrSessionOnCtrl", err)
+		}
+	})
+
+	t.Run("too short to be a frame", func(t *testing.T) {
+		if _, err := DecodeFromViewer(make([]byte, HeaderSize-1)); !errors.Is(err, ErrShortFrame) {
+			t.Errorf("error = %v, want ErrShortFrame", err)
+		}
+	})
+
+	t.Run("an absurd payload", func(t *testing.T) {
+		raw := make([]byte, HeaderSize+MaxPayload+1)
+		raw[0] = byte(TypeInput)
+		if _, err := DecodeFromViewer(raw); !errors.Is(err, ErrPayloadTooBig) {
+			t.Errorf("error = %v, want ErrPayloadTooBig", err)
+		}
+	})
+}
+
+// The payload is copied, like Decode's: a WebSocket read buffer is reused, and
+// a payload that pointed into it would be overwritten by the next message.
+func TestDecodeFromViewerCopiesThePayload(t *testing.T) {
+	raw := make([]byte, HeaderSize+1)
+	raw[0] = byte(TypeInput)
+	raw[HeaderSize] = 'y'
+
+	f, err := DecodeFromViewer(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw[HeaderSize] = 'n'
+	if string(f.Payload) != "y" {
+		t.Errorf("the payload followed the buffer: %q", f.Payload)
+	}
+}

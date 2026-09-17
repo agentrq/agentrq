@@ -164,6 +164,41 @@ func Decode(b []byte) (Frame, error) {
 	return f, nil
 }
 
+// DecodeFromViewer reads a frame from a browser, which does not name a session.
+//
+// It cannot, and must not. The session a viewer may drive is decided by the
+// socket it attached to and is overwritten on arrival — that is what stops an
+// attached browser typing into another session by changing a number. Requiring
+// it to send one anyway asks for information it does not have, and that is not
+// a hypothetical: the browser holds base62 ids, so the first version of this
+// made every keystroke throw while output kept arriving, which looks exactly
+// like a terminal that ignores the keyboard.
+//
+// So a zero session is expected here, and everything else is checked as
+// normal.
+func DecodeFromViewer(b []byte) (Frame, error) {
+	if len(b) < HeaderSize {
+		return Frame{}, fmt.Errorf("%w: got %d bytes, need %d", ErrShortFrame, len(b), HeaderSize)
+	}
+	payload := b[HeaderSize:]
+	if len(payload) > MaxPayload {
+		return Frame{}, fmt.Errorf("%w: %d > %d", ErrPayloadTooBig, len(payload), MaxPayload)
+	}
+
+	f := Frame{
+		Type:      Type(b[0]),
+		SessionID: binary.BigEndian.Uint64(b[1:HeaderSize]),
+		Payload:   append([]byte(nil), payload...),
+	}
+	if !f.Type.known() {
+		return Frame{}, fmt.Errorf("%w: 0x%02x", ErrUnknownType, byte(f.Type))
+	}
+	if f.Type == TypeControl && f.SessionID != 0 {
+		return Frame{}, fmt.Errorf("%w: got %d", ErrSessionOnCtrl, f.SessionID)
+	}
+	return f, nil
+}
+
 // validate holds the invariants that make the format self-checking: an unknown
 // type, or a session id that contradicts the type, is caught at the boundary
 // instead of becoming a confusing failure further in.

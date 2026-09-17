@@ -4,6 +4,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   useTerminalSession,
+  VIEWER_SESSION,
   encodeFrame,
   decodeFrame,
   reconnectDelay,
@@ -124,6 +125,54 @@ describe('framing', () => {
     const { payload } = decodeFrame(frame)
     frame[HEADER_SIZE] = 0x7a
     expect(text(payload)).toBe('a')
+  })
+})
+
+// The bug this file did not catch, kept as a test because the reason it got
+// through is that every fixture here passed a number and the application
+// passes a base62 string.
+describe('a session id the browser actually holds', () => {
+  const REAL_ID = '0is9t9UOwO9'
+
+  it('does not throw on one', () => {
+    expect(() => encodeFrame(FrameType.INPUT, REAL_ID, 'y')).not.toThrow()
+  })
+
+  // Thrown over, this happened inside a keystroke handler where nothing was
+  // watching: output kept arriving and the keyboard did nothing.
+  it('sends every keystroke rather than throwing on each one', () => {
+    const h = harness({ sessionId: REAL_ID })
+    h.session.open()
+    expect(h.session.sendInput('y')).toBe(true)
+    expect(h.session.sendInput('\r')).toBe(true)
+    expect(text(decodeFrame(h.last().sent[0]).payload)).toBe('y')
+  })
+
+  it('resizes rather than throwing', () => {
+    const h = harness({ sessionId: REAL_ID })
+    h.session.open()
+    h.session.sendResize(80, 24)
+    h.fire()
+    expect(h.last().sent).toHaveLength(1)
+  })
+
+  // A viewer names no session, because the backend decides which one this
+  // socket may drive and overwrites whatever arrives.
+  it('writes no session for a viewer', () => {
+    expect(VIEWER_SESSION).toBe(0)
+    expect(decodeFrame(encodeFrame(FrameType.INPUT, VIEWER_SESSION, 'y')).sessionId).toBe(0n)
+  })
+
+  it('still writes a real number when it is given one', () => {
+    expect(decodeFrame(encodeFrame(FrameType.INPUT, 9007199254740881n, 'y')).sessionId).toBe(
+      9007199254740881n
+    )
+    expect(decodeFrame(encodeFrame(FrameType.INPUT, '42', 'y')).sessionId).toBe(42n)
+  })
+
+  it('treats a missing id as none rather than as a crash', () => {
+    expect(decodeFrame(encodeFrame(FrameType.INPUT, undefined, 'y')).sessionId).toBe(0n)
+    expect(decodeFrame(encodeFrame(FrameType.INPUT, null, 'y')).sessionId).toBe(0n)
   })
 })
 

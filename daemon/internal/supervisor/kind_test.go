@@ -33,8 +33,11 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
-	if g.NeedsMCPConfig {
-		t.Error("acp-gateway does not read .mcp.json")
+	// Both kinds read it. `make remote-agy` works only because it is run from
+	// the repository root, which has a .mcp.json — which is exactly why this
+	// was easy to get wrong.
+	if !g.NeedsMCPConfig {
+		t.Error("acp-gateway does not ask for .mcp.json, and dies without one")
 	}
 }
 

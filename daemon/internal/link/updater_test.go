@@ -152,8 +152,8 @@ func newUpdater(t *testing.T, f *feed, current string) *updaterHarness {
 func (h *updaterHarness) startSession(t *testing.T, id uint64) {
 	t.Helper()
 	if _, err := h.u.Supervisor.Start(context.Background(), "work", supervisor.Request{
-		ID: id, Kind: supervisor.KindACPGateway, Dir: t.TempDir(),
-		Params: supervisor.Params{Model: "m", Agent: "a"},
+		ID: id, Kind: supervisor.KindACPGateway, Dir: t.TempDir(), MCPURL: "https://agentrq.example/mcp/ws?token=test",
+		Params: supervisor.Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
 		Cols:   120, Rows: 40,
 	}); err != nil {
 		t.Fatalf("start: %v", err)
@@ -417,7 +417,7 @@ func TestAnUnreadableApprovalDoesNotDropTheConnection(t *testing.T) {
 	b.send(t, frame)
 
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the connection did not survive")
 	if b.connections() != before {
