@@ -610,8 +610,8 @@
             @keydown.ctrl.enter="submitReply"
             @keydown="onComposerKeydown"
             rows="1"
-            :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-            :placeholder="offline ? 'Offline — reconnect to reply' : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
+            :disabled="offline || composerLocked || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+            :placeholder="offline ? 'Offline — reconnect to reply' : composerLocked ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
             class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
           ></textarea>
 
@@ -620,7 +620,7 @@
             <!-- Left actions (Attachment paperclip & Mode info badge) -->
             <div class="flex items-center gap-2">
               <button type="button" @click="$refs.fileInput.click()"
-                      :disabled="(!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+                      :disabled="composerLocked || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
                       class="h-6 w-6 rounded-sm text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-105 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center disabled:opacity-30"
                       title="Attach files">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -629,7 +629,7 @@
               </button>
               <!-- Speech-to-Text Mic -->
               <button v-if="sttSupported" type="button" @click="sttToggle"
-                      :disabled="sttTranscribing || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+                      :disabled="composerLocked || sttTranscribing || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
                       @mouseenter="tooltipStore.show($event, sttRecording ? 'Stop recording' : sttTranscribing ? (sttModelLoading ? `Loading model... ${sttProgress}%` : 'Transcribing...') : 'Voice input', 'top')"
                       @mouseleave="tooltipStore.hide()"
                       :class="[
@@ -676,32 +676,38 @@
               </div>
             </div>
 
-            <!-- Right actions: stop, then send -->
+            <!-- Right action: one button, which is Stop while the agent is
+                 working and Send the rest of the time.
+
+                 One rather than two, because they are not both useful at once.
+                 The ACP gateway does not interrupt — a message sent mid-turn is
+                 queued behind it rather than reaching the agent — so a Send
+                 offered here would look like a way to redirect the agent and be
+                 a way to talk to it after it has finished. The stop is the only
+                 thing that acts now, so it is the only thing offered.
+
+                 Stopping travels over a notification only the ACP gateway acts
+                 on, which is why this never appears for Claude Code speaking
+                 MCP directly: there, Send keeps working, because there is
+                 nothing to stop and taking it away would leave no way to say
+                 anything at all.
+
+                 type="button" on the stop is load-bearing — this sits inside
+                 the reply form, and a button without it submits the form. -->
             <div class="flex items-center gap-2 shrink-0">
-              <!-- Stop sits beside Send because that is where a reply is
-                   composed, which is the moment someone decides the agent has
-                   gone the wrong way.
-
-                   Shown only while the agent is working, and only when what is
-                   connected can actually be stopped. Not every agent can be:
-                   stopping travels over a notification only the ACP gateway
-                   acts on, so offering it to Claude Code speaking MCP directly
-                   would be a button that reports success and changes nothing.
-
-                   type="button" is load-bearing — this sits inside the reply
-                   form, and a button without it submits the form on click. -->
-              <button v-if="task.status === 'ongoing' && workspace?.agentSupportsStop"
+              <button v-if="agentWorking"
                       type="button"
                       @click.stop="stopRunningTask"
                       @mouseenter="tooltipStore.show($event, 'Stop the agent working on this task', 'top')"
                       @mouseleave="tooltipStore.hide()"
-                      class="h-6 w-6 rounded-sm border border-transparent dark:bg-zinc-700/50 text-gray-400 dark:text-zinc-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-800 transition-all flex items-center justify-center"
+                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-all flex items-center justify-center shrink-0 shadow-sm"
                       title="Stop the agent working on this task">
-                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect></svg>
               </button>
 
               <!-- Right circular send button -->
-              <button type="submit"
+              <button v-else
+                      type="submit"
                       :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
                       class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm"
                       title="Send Message">
@@ -717,6 +723,14 @@
         <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex items-center gap-3 mt-2 px-3 py-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-sm">
              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
              <p class="text-[10px] text-red-700 dark:text-red-400 font-bold">Agent Offline. Messages cannot be delivered.</p>
+        </div>
+
+        <!-- Said rather than left to the greyed-out box: an input that stops
+             accepting text without explaining itself reads as a broken page,
+             and the explanation is also the instruction. -->
+        <div v-else-if="agentWorking" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
+             <span class="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-zinc-500 animate-pulse shrink-0"></span>
+             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Anything sent now waits until it finishes — press stop to interrupt it.</p>
         </div>
 
         <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex items-center gap-3 mt-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm">
@@ -804,6 +818,7 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread } from '../composables/useTrajectory';
+import { agentIsWorking, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
@@ -1080,6 +1095,21 @@ const sortedMessages = computed(() => {
 // answer came about rather than part of it, and are read in the trajectory —
 // see belongsInThread.
 const threadMessages = computed(() => sortedMessages.value.filter(belongsInThread));
+
+// Whether the agent is mid-turn, which is what decides between Send and Stop.
+//
+// The ACP gateway does not interrupt: a message sent now is queued behind the
+// turn rather than reaching the agent, so offering Send would be offering
+// something that does not do what it looks like it does.
+const agentWorking = computed(() => agentIsWorking({
+  task: task.value,
+  workspace: workspace.value,
+  messages: sortedMessages.value,
+}));
+
+// One expression, used by every control in the composer: while the agent is
+// working there is nothing any of them can usefully do.
+const composerLocked = computed(() => agentWorking.value);
 
 // The session's context and cost as they stand, or null until an agent reports
 // them. Only a connected ACP gateway sends these.
@@ -1390,6 +1420,10 @@ async function submitReply() {
   // The keyboard shortcuts reach this without touching the disabled textarea,
   // so the guard lives here too rather than only in the markup.
   if (offline.value) return;
+  // Cmd+Enter does not go through the button, so the one thing that makes the
+  // swap mean anything has to be checked here as well: a message sent now is
+  // queued behind the turn rather than read by the agent.
+  if (composerLocked.value) return;
   if (!replyText.value.trim() && replyAttachments.value.length === 0) return;
   const text = replyText.value;
   const atts = [...replyAttachments.value];
