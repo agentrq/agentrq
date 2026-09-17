@@ -159,8 +159,6 @@ func TestAViewerCannotTypeIntoAnotherSession(t *testing.T) {
 	ws := dialViewer(t, srv)
 	waitFor(t, func() bool { return relay.Viewers(mine) == 1 }, "never attached")
 
-	before := daemon.count()
-
 	// Claim a different session in the frame.
 	f, err := wire.SessionFrame(wire.TypeInput, 999, []byte("rm -rf /\r"))
 	if err != nil {
@@ -174,8 +172,16 @@ func TestAViewerCannotTypeIntoAnotherSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitFor(t, func() bool { return daemon.count() > before }, "nothing reached the daemon")
-	if got := daemon.lastFrame(); got.SessionID != mine {
+	// Waited on by type, not by count: attaching makes the relay send the
+	// daemon a control frame first, so "any frame has arrived" is satisfied
+	// before the keystroke has gone anywhere near it.
+	waitFor(t, func() bool {
+		_, ok := daemon.firstOfType(wire.TypeInput)
+		return ok
+	}, "the keystroke never reached the daemon")
+
+	got, _ := daemon.firstOfType(wire.TypeInput)
+	if got.SessionID != mine {
 		t.Errorf("input was delivered to session %d, want %d — a viewer escaped its session",
 			got.SessionID, mine)
 	}
