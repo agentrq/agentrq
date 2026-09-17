@@ -45,6 +45,22 @@ func (c *fakeConn) count() int {
 	return len(c.sent)
 }
 
+// firstOfType is the first frame of a kind the daemon was sent.
+//
+// Not lastFrame: a viewer attaching makes the relay send a control frame
+// first, so a test that waits for "any frame" and then reads the last one is
+// reading the attach and calling it the keystroke.
+func (c *fakeConn) firstOfType(t wire.Type) (wire.Frame, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, f := range c.sent {
+		if f.Type == t {
+			return f, true
+		}
+	}
+	return wire.Frame{}, false
+}
+
 func (c *fakeConn) isClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

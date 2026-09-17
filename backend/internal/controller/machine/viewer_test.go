@@ -272,9 +272,16 @@ func TestTheAttachIsAuditedAndTheKeystrokesAreNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = ws.Close()
-	waitFor(t, func() bool { return relay.Viewers(sessionID) == 0 }, "the viewer never detached")
+	// Waited on by what is being asserted. The relay's own count drops when
+	// the viewer detaches, and the audit line is written after that — so
+	// waiting for the count and then reading the log is testing an effect that
+	// has not necessarily happened yet.
+	var out string
+	waitFor(t, func() bool {
+		out = logged.String()
+		return strings.Contains(out, "terminal detached")
+	}, "the detach was never audited")
 
-	out := logged.String()
 	for _, want := range []string{"terminal attached", "terminal detached", `"user_id":3`, `"session_id":7`, `"machine_id":11`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the audit record does not mention %s:\n%s", want, out)
@@ -339,9 +346,15 @@ func TestAViewerNeedNotNameItsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitFor(t, func() bool { return daemon.count() > 0 }, "the keystroke never reached the daemon")
+	// Waited on by type, not by count: attaching makes the relay send the
+	// daemon a control frame first, so "any frame has arrived" is satisfied
+	// before the keystroke has gone anywhere near it.
+	waitFor(t, func() bool {
+		_, ok := daemon.firstOfType(wire.TypeInput)
+		return ok
+	}, "the keystroke never reached the daemon")
 
-	got := daemon.lastFrame()
+	got, _ := daemon.firstOfType(wire.TypeInput)
 	if string(got.Payload) != "y" {
 		t.Errorf("the daemon got %q", got.Payload)
 	}
