@@ -25,6 +25,8 @@ import {
   memoryUsedPercent,
   isSessionLive,
   sessionTone,
+  sessionLabel,
+  sessionSummary,
 } from '../composables/useMachineFormat'
 import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
@@ -199,74 +201,6 @@ async function stopSession(id) {
           </button>
         </div>
 
-        <!-- What the machine has left -->
-        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
-          <div class="flex items-baseline justify-between gap-3 mb-4">
-            <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Resources</h2>
-            <p v-if="machine.metrics" class="text-[11px] text-gray-400 dark:text-zinc-500">
-              measured {{ formatAge(machine.metrics.reportedAt) }}
-            </p>
-          </div>
-
-          <p v-if="!machine.metrics" class="text-xs text-gray-400 dark:text-zinc-500">
-            This machine has not reported any readings yet.
-          </p>
-
-          <div v-else class="space-y-4">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">CPU</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
-                  {{ formatPercent(machine.metrics.cpuPercent) }}
-                </p>
-              </div>
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Memory</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
-                  {{ formatBytes(machine.metrics.memAvailable) }}
-                </p>
-                <p class="text-[11px] text-gray-400 dark:text-zinc-500">
-                  free of {{ formatBytes(machine.metrics.memTotal) }}
-                </p>
-              </div>
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Uptime</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
-                  {{ formatUptime(machine.metrics.uptimeSec) }}
-                </p>
-              </div>
-              <!-- Windows has no load average. Nothing is shown rather than
-                   three zeroes, which would read as a perfectly idle machine. -->
-              <div v-if="formatLoadAvg(machine.metrics.loadAvg)">
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Load</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
-                  {{ formatLoadAvg(machine.metrics.loadAvg) }}
-                </p>
-              </div>
-            </div>
-
-            <div v-if="machine.metrics.disks?.length" class="space-y-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
-              <!-- Per mount, never one number: a box can be 2% full and still
-                   fail to check out a repository. -->
-              <div v-for="disk in machine.metrics.disks" :key="disk.mount" class="space-y-1">
-                <div class="flex items-baseline justify-between gap-3 text-[11px]">
-                  <span class="font-mono text-gray-600 dark:text-zinc-300 truncate">{{ disk.mount }}</span>
-                  <span class="text-gray-400 dark:text-zinc-500 tabular-nums shrink-0">
-                    {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
-                  </span>
-                </div>
-                <div v-if="diskUsedPercent(disk) !== null" class="h-1.5 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden">
-                  <div
-                    class="h-full rounded-full"
-                    :class="diskUsedPercent(disk) > 90 ? 'bg-red-500' : 'bg-gray-800 dark:bg-zinc-300'"
-                    :style="{ width: `${diskUsedPercent(disk)}%` }"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <!-- Run an agent here.
              Every reason a launch would be refused is worked out before
              anything is sent and shown next to the button: the backend has
@@ -387,13 +321,13 @@ async function stopSession(id) {
           <div v-else class="divide-y divide-gray-100 dark:divide-zinc-800">
             <div v-for="s in sessions" :key="s.id" class="py-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
-                <p class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">{{ s.kind || 'agent' }}</p>
-                <p class="text-[11px] mt-0.5" :class="TONES[sessionTone(s.status)]">
-                  {{ s.status }}
-                  <span v-if="s.exitCode !== null && s.exitCode !== undefined" class="tabular-nums"
-                    >· exit {{ s.exitCode }}</span
-                  >
-                  <span v-if="s.restored"> · restored</span>
+                <!-- The workspace is the heading, because it is what tells one
+                     row from the next: the kind is the same on most of them. -->
+                <p class="text-sm font-bold text-gray-900 dark:text-zinc-100 truncate">
+                  {{ sessionLabel(s) }}
+                </p>
+                <p class="text-[11px] mt-0.5 tabular-nums" :class="TONES[sessionTone(s.status)]">
+                  {{ sessionSummary(s) }}
                 </p>
                 <p v-if="s.error" class="text-[11px] text-red-500 mt-0.5">{{ s.error }}</p>
               </div>
@@ -413,6 +347,74 @@ async function stopSession(id) {
                 >
                   Stop
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- What the machine has left -->
+        <div class="border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900">
+          <div class="flex items-baseline justify-between gap-3 mb-4">
+            <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Resources</h2>
+            <p v-if="machine.metrics" class="text-[11px] text-gray-400 dark:text-zinc-500">
+              measured {{ formatAge(machine.metrics.reportedAt) }}
+            </p>
+          </div>
+
+          <p v-if="!machine.metrics" class="text-xs text-gray-400 dark:text-zinc-500">
+            This machine has not reported any readings yet.
+          </p>
+
+          <div v-else class="space-y-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">CPU</p>
+                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+                  {{ formatPercent(machine.metrics.cpuPercent) }}
+                </p>
+              </div>
+              <div>
+                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Memory</p>
+                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+                  {{ formatBytes(machine.metrics.memAvailable) }}
+                </p>
+                <p class="text-[11px] text-gray-400 dark:text-zinc-500">
+                  free of {{ formatBytes(machine.metrics.memTotal) }}
+                </p>
+              </div>
+              <div>
+                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Uptime</p>
+                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+                  {{ formatUptime(machine.metrics.uptimeSec) }}
+                </p>
+              </div>
+              <!-- Windows has no load average. Nothing is shown rather than
+                   three zeroes, which would read as a perfectly idle machine. -->
+              <div v-if="formatLoadAvg(machine.metrics.loadAvg)">
+                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Load</p>
+                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+                  {{ formatLoadAvg(machine.metrics.loadAvg) }}
+                </p>
+              </div>
+            </div>
+
+            <div v-if="machine.metrics.disks?.length" class="space-y-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+              <!-- Per mount, never one number: a box can be 2% full and still
+                   fail to check out a repository. -->
+              <div v-for="disk in machine.metrics.disks" :key="disk.mount" class="space-y-1">
+                <div class="flex items-baseline justify-between gap-3 text-[11px]">
+                  <span class="font-mono text-gray-600 dark:text-zinc-300 truncate">{{ disk.mount }}</span>
+                  <span class="text-gray-400 dark:text-zinc-500 tabular-nums shrink-0">
+                    {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
+                  </span>
+                </div>
+                <div v-if="diskUsedPercent(disk) !== null" class="h-1.5 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden">
+                  <div
+                    class="h-full rounded-full"
+                    :class="diskUsedPercent(disk) > 90 ? 'bg-red-500' : 'bg-gray-800 dark:bg-zinc-300'"
+                    :style="{ width: `${diskUsedPercent(disk)}%` }"
+                  />
+                </div>
               </div>
             </div>
           </div>

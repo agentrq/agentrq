@@ -179,6 +179,37 @@ func (r *repository) ListSessionsByMachine(ctx context.Context, machineID, userI
 	return out, err
 }
 
+// WorkspaceNamesByID resolves a set of workspace ids to their names.
+//
+// One query for the whole set rather than one per session: a machine's list is
+// mostly sessions for a handful of workspaces, and asking per row is how a
+// page with ten sessions becomes eleven queries.
+//
+// Scoped to the user, like every other read here. A name is not a secret worth
+// much, but a query that would return somebody else's is a query that will be
+// reused somewhere it matters.
+func (r *repository) WorkspaceNamesByID(ctx context.Context, ids []int64, userID int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID   int64
+		Name string
+	}
+	err := r.conn(ctx).Model(&model.Workspace{}).
+		Select("id, name").
+		Where("id IN ? AND user_id = ?", ids, userID).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ID] = row.Name
+	}
+	return out, nil
+}
+
 // ActiveSessionForWorkspace finds a session that has not finished.
 //
 // Used to answer "does this workspace already have an agent?" from the

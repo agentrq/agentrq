@@ -128,3 +128,37 @@ export function sessionTone(status) {
   if (status === 'failed') return 'bad'
   return 'muted'
 }
+
+/**
+ * What a session's row is called.
+ *
+ * The workspace, because that is the thing that tells one row from the next. A
+ * machine runs agents for several workspaces at once and most of them are the
+ * same kind, so a list headed "claude-code" three times answers none of the
+ * questions somebody opened the page with: which of these is mine, which one
+ * is the migration, which one can I stop.
+ *
+ * A session whose workspace has been deleted, or one recorded before the name
+ * was carried, falls back to the kind — never to the id, which is not an
+ * answer to anybody.
+ */
+export function sessionLabel(session) {
+  const name = (session?.workspaceName ?? '').trim()
+  return name || session?.kind || 'agent'
+}
+
+/**
+ * The line underneath: what is running, and how it is doing.
+ *
+ * The kind is included only when it is not already the heading, so a session
+ * with no workspace name does not say "claude-code · claude-code".
+ */
+export function sessionSummary(session) {
+  const kind = session?.kind || 'agent'
+  const parts = []
+  if (sessionLabel(session) !== kind) parts.push(kind)
+  parts.push(session?.status || 'unknown')
+  if (Number.isInteger(session?.exitCode)) parts.push(`exit ${session.exitCode}`)
+  if (session?.restored) parts.push('restored')
+  return parts.join(' · ')
+}

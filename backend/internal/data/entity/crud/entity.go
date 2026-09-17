@@ -1385,18 +1385,24 @@ type (
 type (
 	// SessionView is one agent session as the control panel sees it.
 	SessionView struct {
-		ID          string     `json:"id"`
-		MachineID   string     `json:"machineId"`
-		WorkspaceID string     `json:"workspaceId,omitempty"`
-		Kind        string     `json:"kind"`
-		Status      string     `json:"status"`
-		ExitCode    *int       `json:"exitCode,omitempty"`
-		Restored    bool       `json:"restored,omitempty"`
-		Cols        int        `json:"cols,omitempty"`
-		Rows        int        `json:"rows,omitempty"`
-		StartedAt   *time.Time `json:"startedAt,omitempty"`
-		EndedAt     *time.Time `json:"endedAt,omitempty"`
-		CreatedAt   time.Time  `json:"createdAt"`
+		ID          string `json:"id"`
+		MachineID   string `json:"machineId"`
+		WorkspaceID string `json:"workspaceId,omitempty"`
+		// WorkspaceName is which workspace this agent is working in.
+		//
+		// Carried beside the id because the id is not an answer to anybody:
+		// a machine runs agents for several workspaces at once, and a list of
+		// sessions that says only "claude-code" three times cannot be read.
+		WorkspaceName string     `json:"workspaceName,omitempty"`
+		Kind          string     `json:"kind"`
+		Status        string     `json:"status"`
+		ExitCode      *int       `json:"exitCode,omitempty"`
+		Restored      bool       `json:"restored,omitempty"`
+		Cols          int        `json:"cols,omitempty"`
+		Rows          int        `json:"rows,omitempty"`
+		StartedAt     *time.Time `json:"startedAt,omitempty"`
+		EndedAt       *time.Time `json:"endedAt,omitempty"`
+		CreatedAt     time.Time  `json:"createdAt"`
 	}
 
 	CreateSessionRequest struct {

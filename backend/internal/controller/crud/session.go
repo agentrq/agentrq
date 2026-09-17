@@ -121,7 +121,43 @@ func (c *controller) GetSession(ctx context.Context, req entity.GetSessionReques
 	if err != nil {
 		return nil, err
 	}
-	return &entity.GetSessionResponse{Session: toSessionView(s)}, nil
+	v := toSessionView(s)
+	c.nameWorkspaces(ctx, uid, []*entity.SessionView{&v})
+	return &entity.GetSessionResponse{Session: v}, nil
+}
+
+// nameWorkspaces fills in which workspace each session is working in.
+//
+// Best effort, and deliberately so: the sessions are the answer to the
+// question that was asked, and a workspace that has been renamed out from
+// under a row, or a lookup that fails, must not turn "what is running here"
+// into an error page. A session with no name shows its kind, as it did before.
+func (c *controller) nameWorkspaces(ctx context.Context, userID int64, views []*entity.SessionView) {
+	ids := make([]int64, 0, len(views))
+	seen := map[int64]struct{}{}
+	for _, v := range views {
+		id := monoflake.IDFromBase62(v.WorkspaceID).Int64()
+		if id == 0 {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	names, err := c.repository.WorkspaceNamesByID(ctx, ids, userID)
+	if err != nil {
+		return
+	}
+	for _, v := range views {
+		if name, ok := names[monoflake.IDFromBase62(v.WorkspaceID).Int64()]; ok {
+			v.WorkspaceName = name
+		}
+	}
 }
 
 func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error) {
@@ -138,6 +174,11 @@ func (c *controller) ListSessions(ctx context.Context, req entity.ListSessionsRe
 	for _, s := range rows {
 		out = append(out, toSessionView(s))
 	}
+	refs := make([]*entity.SessionView, len(out))
+	for i := range out {
+		refs[i] = &out[i]
+	}
+	c.nameWorkspaces(ctx, uid, refs)
 	return &entity.ListSessionsResponse{Sessions: out}, nil
 }
 

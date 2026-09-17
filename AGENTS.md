@@ -335,6 +335,21 @@ xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
 a dark background, and leaving the palette to a default that has never seen
 this surface is where unreadable output comes from.
 
+### A session is named by its workspace, and the name is filled in one place
+
+A machine runs agents for several workspaces at once and most of them are the
+same kind, so a session identified only by its kind is a row nobody can read —
+three lines saying "claude-code" answer none of the questions somebody opened
+the page with. `SessionView` therefore carries `WorkspaceName` beside the id,
+and `nameWorkspaces` in the session controller fills it for every endpoint that
+returns one. Add another and call it, or the page silently loses the name with
+no error anywhere.
+
+It is one query for the whole set, not one per row, and it is deliberately
+best-effort: a lookup that fails leaves the sessions unnamed rather than
+turning "what is running here" into an error page. The interface falls back to
+the kind, which is what it showed before.
+
 ### Sessions are operational state, not history
 
 A session row answers "what is running on this machine". When one finishes the

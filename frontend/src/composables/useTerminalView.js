@@ -150,6 +150,9 @@ export function useTerminalView(deps = {}) {
    * matching on name: the same person in two tabs is two identical names, and
    * the list alone cannot tell them apart.
    */
+  /** The workspace this agent is working in, when the server named one. */
+  const workspaceName = computed(() => (session.value?.workspaceName ?? '').trim())
+
   const others = computed(() => viewers.value.filter((_, i) => i !== self.value))
 
   const ended = computed(() => !loading.value && hasEnded(session.value))
@@ -157,7 +160,26 @@ export function useTerminalView(deps = {}) {
   /** The status the page shows, which an ended session overrides. */
   const shownStatus = computed(() => (ended.value ? 'ended' : status.value))
 
-  const title = computed(() => session.value?.kind || 'Terminal')
+  /**
+   * What the page is called.
+   *
+   * The workspace, for the same reason the machine's list uses it: "claude-code"
+   * names the kind of agent and not which one you are looking at, and somebody
+   * arriving here from a link deserves to see what it is working on.
+   */
+  const title = computed(() => workspaceName.value || session.value?.kind || 'Terminal')
+
+  /**
+   * The kind, said underneath when the heading is the workspace.
+   *
+   * No optional chaining on the session: a workspace name can only have come
+   * from one, so reaching here with nothing is not a case, and writing it as
+   * though it were leaves a branch no test can reach.
+   */
+  const subtitle = computed(() => {
+    if (!workspaceName.value) return ''
+    return session.value.kind || ''
+  })
 
   async function load() {
     loading.value = true
@@ -204,6 +226,7 @@ export function useTerminalView(deps = {}) {
     ended,
     shownStatus,
     title,
+    subtitle,
     load,
     handleEvent,
     handleControl,

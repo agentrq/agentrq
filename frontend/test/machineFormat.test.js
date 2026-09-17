@@ -12,6 +12,8 @@ import {
   formatAge,
   isSessionLive,
   sessionTone,
+  sessionLabel,
+  sessionSummary,
 } from '../src/composables/useMachineFormat.js'
 
 describe('formatBytes', () => {
@@ -147,5 +149,52 @@ describe('session status', () => {
     expect(sessionTone('starting')).toBe('pending')
     expect(sessionTone('failed')).toBe('bad')
     expect(sessionTone('exited')).toBe('muted')
+  })
+})
+
+describe('what a session row is called', () => {
+  // A machine runs agents for several workspaces at once, and most of them are
+  // the same kind. A list headed "claude-code" three times answers none of the
+  // questions somebody opened the page with.
+  it('names the workspace, not the kind', () => {
+    expect(sessionLabel({ workspaceName: 'Q3 migration', kind: 'claude-code' })).toBe('Q3 migration')
+  })
+
+  // A session whose workspace has been deleted, or one recorded before the
+  // name was carried, still has to say something.
+  it('falls back to the kind when there is no workspace name', () => {
+    expect(sessionLabel({ kind: 'acp-gateway' })).toBe('acp-gateway')
+    expect(sessionLabel({ workspaceName: '   ', kind: 'acp-gateway' })).toBe('acp-gateway')
+    expect(sessionLabel(null)).toBe('agent')
+  })
+
+  it('puts the kind and the state underneath', () => {
+    expect(sessionSummary({ workspaceName: 'Q3 migration', kind: 'claude-code', status: 'running' }))
+      .toBe('claude-code · running')
+  })
+
+  // Without this a session with no workspace name reads "claude-code ·
+  // claude-code", which looks like a bug because it is one.
+  it('does not repeat the kind it is already headed by', () => {
+    expect(sessionSummary({ kind: 'claude-code', status: 'running' })).toBe('running')
+  })
+
+  it('says how a session ended, and whether it came back', () => {
+    expect(sessionSummary({ workspaceName: 'W', kind: 'claude-code', status: 'exited', exitCode: 0 }))
+      .toBe('claude-code · exited · exit 0')
+    expect(sessionSummary({ workspaceName: 'W', kind: 'claude-code', status: 'failed', exitCode: 137 }))
+      .toBe('claude-code · failed · exit 137')
+    expect(sessionSummary({ workspaceName: 'W', kind: 'claude-code', status: 'running', restored: true }))
+      .toBe('claude-code · running · restored')
+  })
+
+  // exit 0 is a real exit code and the falsy one, which is exactly the value a
+  // truthiness check would drop.
+  it('shows a zero exit code', () => {
+    expect(sessionSummary({ kind: 'claude-code', status: 'exited', exitCode: 0 })).toContain('exit 0')
+  })
+
+  it('says something for a session it knows nothing about', () => {
+    expect(sessionSummary({})).toBe('unknown')
   })
 })

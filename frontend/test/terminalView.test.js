@@ -154,6 +154,42 @@ describe('loading the session', () => {
     const h = harness({ getSession: vi.fn().mockResolvedValue({ session: { id: 's1' } }) })
     await h.v.load()
     expect(h.v.title.value).toBe('Terminal')
+    expect(h.v.subtitle.value).toBe('')
+  })
+
+  // "claude-code" names the kind of agent, not which one you are looking at.
+  // Somebody arriving from a link deserves to see what it is working on.
+  it('is headed by the workspace, with the kind underneath', async () => {
+    const h = harness({
+      getSession: vi
+        .fn()
+        .mockResolvedValue({ session: { id: 's1', kind: 'claude-code', workspaceName: 'Q3 migration' } }),
+    })
+    await h.v.load()
+    expect(h.v.title.value).toBe('Q3 migration')
+    expect(h.v.subtitle.value).toBe('claude-code')
+  })
+
+  // A session the server named but could not classify: the heading is still
+  // the workspace, and there is nothing to say underneath.
+  it('says nothing underneath when there is no kind to say', async () => {
+    const h = harness({
+      getSession: vi.fn().mockResolvedValue({ session: { id: 's1', workspaceName: 'Q3 migration' } }),
+    })
+    await h.v.load()
+    expect(h.v.title.value).toBe('Q3 migration')
+    expect(h.v.subtitle.value).toBe('')
+  })
+
+  // A session whose workspace has gone, or one recorded before the name was
+  // carried, keeps the heading it always had rather than losing one.
+  it('keeps the kind as the heading when no workspace is named', async () => {
+    const h = harness({
+      getSession: vi.fn().mockResolvedValue({ session: { id: 's1', kind: 'acp-gateway', workspaceName: '  ' } }),
+    })
+    await h.v.load()
+    expect(h.v.title.value).toBe('acp-gateway')
+    expect(h.v.subtitle.value).toBe('')
   })
 })
 

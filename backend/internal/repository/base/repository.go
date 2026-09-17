@@ -71,6 +71,7 @@ type Repository interface {
 	DeleteFinishedSession(ctx context.Context, id int64) error
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
+	WorkspaceNamesByID(ctx context.Context, ids []int64, userID int64) (map[int64]string, error)
 	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
 
 	// ToolCall

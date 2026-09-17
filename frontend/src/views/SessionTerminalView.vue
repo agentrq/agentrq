@@ -30,7 +30,7 @@ const { notifySuccess, notifyError } = useToasts()
 
 const sessionId = String(route.params.id ?? '')
 const view = useTerminalView({ sessionId })
-const { session, loading, others, ended, shownStatus, title } = view
+const { session, loading, others, ended, shownStatus, title, subtitle } = view
 
 // An explicit setter rather than an inline assignment in the template: `status`
 // here is a ref destructured out of a composable, and the compiler cannot know
@@ -86,6 +86,9 @@ async function stop() {
         >
           {{ title }}
         </h1>
+        <p v-if="subtitle" class="text-[11px] text-gray-500 dark:text-zinc-400 truncate">
+          {{ subtitle }}
+        </p>
       </div>
 
       <button
