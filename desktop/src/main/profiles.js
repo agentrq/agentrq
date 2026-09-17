@@ -20,6 +20,8 @@
  * ids and turns partitions into real sessions.
  */
 
+import { accountKey, describeIdentity } from './identity.js'
+
 /** Shown when a profile has no name of its own. */
 export const DEFAULT_PROFILE_LABEL = 'Default'
 
@@ -82,7 +84,84 @@ export function makeProfile(raw) {
     partition: typeof raw.partition === 'string' && raw.partition !== '' ? raw.partition : partitionFor(raw.id),
     serverUrl: typeof raw.serverUrl === 'string' ? raw.serverUrl : '',
     mutedWorkspaces: cleanMuted(raw.mutedWorkspaces),
+    // Who this profile belongs to, as last seen. Stored, not looked up, so a
+    // server that is slow, unreachable, or has expired the session cannot make
+    // a profile anonymous — see [rememberAccount].
+    account: describeIdentity(raw.account),
   }
+}
+
+/**
+ * A name for a new profile that is not the name every other one already has.
+ *
+ * "Default" for all of them is how a switcher becomes unreadable the moment it
+ * cannot reach the server: every row falls back to its label and they are all
+ * the same word. The first profile keeps the name it has always had; the ones
+ * after it are numbered, and the number skips anything already taken so
+ * renaming one to "Profile 3" does not produce a second.
+ */
+export function nextProfileLabel(state) {
+  const profiles = Array.isArray(state?.profiles) ? state.profiles : []
+  if (profiles.length === 0) return DEFAULT_PROFILE_LABEL
+
+  // Every stored profile has a string label: makeProfile guarantees it.
+  const taken = new Set(profiles.map((p) => p.label))
+  let n = profiles.length + 1
+  while (taken.has(`Profile ${n}`)) n += 1
+  return `Profile ${n}`
+}
+
+/**
+ * Record who a profile is signed in as.
+ *
+ * The rule that matters is what it does with nothing: a lookup that failed
+ * leaves the profile as it was. Overwriting the account with "could not say"
+ * is how every profile in the switcher turned back into its label — the
+ * session is good for a day, the lookup gives up after four seconds, and the
+ * app has no memory across a restart, so all three ordinary conditions ended
+ * with a list of profiles called "Default".
+ *
+ * What is remembered is who a profile *belongs to*, which does not stop being
+ * true when the session expires. Whether it is signed in right now is a
+ * separate question, asked live and answered in the subtitle.
+ */
+export function rememberAccount(state, id, identity) {
+  const account = describeIdentity(identity)
+  if (!account) return state
+  if (!state.profiles.some((p) => p.id === id)) return state
+  return {
+    ...state,
+    profiles: state.profiles.map((p) => (p.id === id ? { ...p, account } : p)),
+  }
+}
+
+/**
+ * The profile that already holds this one's account, if any.
+ *
+ * Two profiles signed into the same account are two windows onto one thing:
+ * the same tasks, the same workspaces, the same notifications twice. Nothing
+ * can stop it at the moment a profile is added — it has no account yet, and
+ * the sign-in happens on a web page the shell does not drive — so it is caught
+ * when the account becomes known, and said out loud where the profiles are
+ * listed.
+ *
+ * The *earlier* profile wins, always: whichever was added first is the
+ * original, and the answer does not change depending on which one you ask
+ * about.
+ *
+ * @returns {string} the other profile's id, or '' when this one is not a
+ *          duplicate
+ */
+export function duplicateOf(state, id) {
+  const profiles = Array.isArray(state?.profiles) ? state.profiles : []
+  const self = profiles.find((p) => p.id === id)
+  const key = accountKey(self?.account)
+  if (!key) return ''
+
+  // Only what was added before this one, which is what makes the answer
+  // stable: asked about either half of a pair, it names the same original.
+  const earlier = profiles.slice(0, profiles.indexOf(self))
+  return earlier.find((p) => accountKey(p.account) === key)?.id ?? ''
 }
 
 /**
@@ -138,7 +217,12 @@ export function activeProfile(state) {
 export function addProfile(state, { id, label, serverUrl = '' }) {
   // Always its own jar: a second profile sharing the first's session would be
   // the same signed-in account under a different name.
-  const profile = makeProfile({ id, label, serverUrl, partition: partitionFor(id) })
+  //
+  // An unnamed profile is numbered rather than called "Default" like the first
+  // one: until it has signed in, its label is the only thing distinguishing it
+  // in the switcher, and two identical labels distinguish nothing.
+  const named = typeof label === 'string' && label.trim() !== '' ? label : nextProfileLabel(state)
+  const profile = makeProfile({ id, label: named, serverUrl, partition: partitionFor(id) })
   if (!profile) return state
   if (state.profiles.some((p) => p.id === profile.id)) return state
 

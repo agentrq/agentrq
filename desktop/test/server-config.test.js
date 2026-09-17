@@ -202,6 +202,49 @@ describe('createServerConfigStore', () => {
   const legacy = (extra = {}) =>
     JSON.stringify({ version: 2, serverUrl: 'https://example.com', ...extra })
 
+  // Written to disk rather than held in memory: the session lasts a day, the
+  // lookup gives up after four seconds, and every start begins knowing
+  // nothing — so a switcher that only knew what it had just been told spent
+  // most of its life showing labels instead of accounts.
+  it('writes down who a profile is signed in as', async () => {
+    const { store, writeFile } = makeStore(null)
+    const { profiles } = await store.load()
+
+    const next = await store.rememberAccount(profiles[0].id, {
+      name: 'Sam Rivera',
+      email: 'sam@example.com',
+      picture: '',
+    })
+
+    expect(next.profiles[0].account).toEqual({ name: 'Sam Rivera', email: 'sam@example.com', picture: '' })
+    expect(writeFile).toHaveBeenCalled()
+    expect(JSON.parse(writeFile.mock.calls.at(-1)[0]).profiles[0].account.email).toBe('sam@example.com')
+  })
+
+  // A lookup that failed must not cost a write, nor the account.
+  it('does not touch the file when the lookup could not answer', async () => {
+    const { store } = makeStore(null)
+    const { profiles } = await store.load()
+    await store.rememberAccount(profiles[0].id, { name: 'Sam', email: 'sam@example.com' })
+
+    const { writeFile } = { writeFile: null }
+    void writeFile
+    const before = await store.load()
+    const after = await store.rememberAccount(profiles[0].id, null)
+
+    expect(after.profiles[0].account).toEqual(before.profiles[0].account)
+  })
+
+  it('leaves a profile it does not have alone', async () => {
+    const { store, writeFile } = makeStore(null)
+    await store.load()
+    const calls = writeFile.mock.calls.length
+
+    await store.rememberAccount('nobody', { email: 'sam@example.com' })
+
+    expect(writeFile.mock.calls).toHaveLength(calls)
+  })
+
   it('reads a missing file as not configured — the first run', async () => {
     const { store } = makeStore(null)
     const config = await store.load()

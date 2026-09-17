@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  accountKey,
   IDENTITY_TIMEOUT_MS,
   USER_PATH,
   describeIdentity,
@@ -88,6 +89,24 @@ describe('describeIdentity', () => {
     // Indistinguishable from signed out, as far as anyone can see.
     for (const user of [null, undefined, 'a string', 42, {}, { name: '  ', email: '' }, { name: 7, email: {} }]) {
       expect(describeIdentity(user)).toBeNull()
+    }
+  })
+})
+
+describe('accountKey', () => {
+  // The email, because it is the one thing an account cannot have two of:
+  // names collide between colleagues and change when somebody marries, and
+  // the picture is a URL that rotates.
+  it('is the address, however it was typed', () => {
+    expect(accountKey({ email: '  Sam@Example.COM ' })).toBe('sam@example.com')
+    expect(accountKey({ name: 'Sam', email: 'sam@example.com' })).toBe('sam@example.com')
+  })
+
+  // Two profiles nobody can identify are not the same account — only equally
+  // unidentified — so this must never return something that compares equal.
+  it('is nothing when there is no address', () => {
+    for (const nothing of [null, undefined, {}, { name: 'Sam' }, { email: '   ' }, { email: 42 }]) {
+      expect(accountKey(nothing)).toBe('')
     }
   })
 })

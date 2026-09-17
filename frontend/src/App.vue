@@ -318,6 +318,10 @@
                 <p class="text-xs font-bold text-gray-700 dark:text-zinc-200 truncate mt-0.5" :title="user?.email">{{ user?.name || user?.email || 'Loading...' }}</p>
                 <p v-if="user?.name && user?.email" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="user.email">{{ user.email }}</p>
                 <p v-if="activeProfile?.serverUrl" class="text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate mt-0.5" :title="activeProfile.serverUrl">{{ activeProfile.serverUrl }}</p>
+                <!-- The profile you have just signed in on is the one that
+                     turns out to be the duplicate, so this belongs here as
+                     well as in the list below. -->
+                <p v-if="activeProfile && profileDuplicate(activeProfile)" class="text-[10px] font-bold text-amber-600 dark:text-amber-500 truncate mt-0.5">{{ profileDuplicate(activeProfile) }}</p>
               </div>
 
               <!-- Other profiles. Desktop only: each is a separate session, which
@@ -325,18 +329,28 @@
               <div v-if="showProfiles" class="px-3 py-2 border-b border-gray-50 dark:border-zinc-800/50 mb-1">
                 <p class="text-[10px] font-black text-gray-500 dark:text-zinc-500 mb-2">Other Profiles</p>
                 <div v-if="otherProfiles.length" class="space-y-1 mb-1">
-                  <button v-for="p in otherProfiles" :key="p.id" type="button"
-                          @click="switchToProfile(p.id)" :disabled="switchingProfile"
-                          class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                    <span class="w-6 h-6 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-gray-600 dark:text-zinc-300 overflow-hidden">
-                      <img v-if="p.identity?.picture" :src="p.identity.picture" class="w-full h-full object-cover" alt="" />
-                      <template v-else>{{ profileInitial(p) }}</template>
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <span class="block text-xs font-bold text-gray-700 dark:text-zinc-200 truncate">{{ profileTitle(p) }}</span>
-                      <span class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate" :title="profileSubtitle(p)">{{ profileSubtitle(p) }}</span>
-                    </span>
-                  </button>
+                  <div v-for="p in otherProfiles" :key="p.id" class="group relative flex items-center">
+                    <button type="button"
+                            @click="switchToProfile(p.id)" :disabled="switchingProfile"
+                            class="min-w-0 flex-1 flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                      <span class="w-6 h-6 shrink-0 rounded-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-[10px] font-black text-gray-600 dark:text-zinc-300 overflow-hidden">
+                        <img v-if="p.identity?.picture || p.account?.picture" :src="p.identity?.picture || p.account?.picture" class="w-full h-full object-cover" alt="" />
+                        <template v-else>{{ profileInitial(p) }}</template>
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block text-xs font-bold text-gray-700 dark:text-zinc-200 truncate">{{ profileTitle(p) }}</span>
+                        <span class="block text-[10px] font-medium text-gray-400 dark:text-zinc-500 truncate" :title="profileSubtitle(p)">{{ profileSubtitle(p) }}</span>
+                        <!-- Said where the profiles are listed, beside the one
+                             thing that fixes it. -->
+                        <span v-if="profileDuplicate(p)" class="block text-[10px] font-bold text-amber-600 dark:text-amber-500 truncate" :title="profileDuplicate(p)">{{ profileDuplicate(p) }}</span>
+                      </span>
+                    </button>
+                    <button type="button" @click.stop="removeProfile(p.id)" :disabled="switchingProfile"
+                            title="Remove this profile"
+                            class="shrink-0 ml-1 p-1.5 rounded-sm text-gray-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
                 </div>
                 <button type="button" @click="addProfile" :disabled="switchingProfile"
                         class="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-xs font-bold text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -433,6 +447,14 @@
     <ExtensionViewPanel v-if="extensionPanel" :view="extensionPanel" :values="extensionSurfaces.values"
                         @action="onExtensionPanelAction" @input="extensionSurfaces.setValue"
                         @submit="extensionSurfaces.submit" @close="extensionSurfaces.dismiss" />
+
+    <!-- Removing a profile throws away its session, so it names the account it
+         is about to sign out before it does. -->
+    <DeleteModal :show="!!profileToRemove"
+                 title="Remove profile"
+                 :taskTitle="profileToRemove ? profileTitle(profileToRemove) : ''"
+                 message="This signs that account out on this computer and forgets its session. Nothing on the server is deleted."
+                 @close="profileToRemove = null" @confirm="confirmRemoveProfile" />
   </div>
 </template>
 
@@ -446,7 +468,7 @@ import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_LINK, TELEM
 import * as api from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
-import { profileDisplay } from './composables/useProfileDisplay'
+import { duplicateNotice, profileDisplay } from './composables/useProfileDisplay'
 import { connectWebMCP } from './composables/useWebMCP'
 import { recordUiAction } from './composables/useUiTelemetry'
 import { usePlatformStore } from './stores/platformStore'
@@ -464,6 +486,7 @@ import { useFormat } from './composables/useFormat'
 import { usePushNotifications } from './composables/usePushNotifications'
 import { toastFor } from './composables/useStreamToasts'
 import Toast from './components/Toast.vue'
+import DeleteModal from './components/DeleteModal.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
 import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheRetention'
@@ -548,6 +571,9 @@ async function onMarkdownLinkActivate(event) {
 // Signed-in profiles. Each is its own session in the desktop shell, so the
 // browser build has nothing to show and the section stays hidden there.
 const profiles = ref([])
+// The profile a removal is being confirmed for. Removing one throws away its
+// session, so it is never a single click.
+const profileToRemove = ref(null)
 const switchingProfile = ref(false)
 const showProfiles = computed(() => platformStore.isDesktop && profiles.value.length > 0)
 
@@ -559,6 +585,10 @@ const otherProfiles = computed(() => profiles.value.filter((p) => !p.active))
 const profileInitial = (p) => profileDisplay(p).initial
 const profileTitle = (p) => profileDisplay(p).title
 const profileSubtitle = (p) => profileDisplay(p).subtitle
+// Two profiles on one account are two windows onto the same thing. Nothing can
+// refuse it at the moment a profile is added — it has no account yet — so it
+// is said here, next to the one thing that fixes it.
+const profileDuplicate = (p) => duplicateNotice(p, profiles.value)
 
 async function loadProfiles() {
   if (!platformStore.isDesktop || !window.agentrq?.profiles) return
@@ -583,6 +613,35 @@ async function switchToProfile(id) {
   } catch (err) {
     switchingProfile.value = false
     notifyError('Could not switch profile: ' + err.message)
+  }
+}
+
+/**
+ * Forget a profile and its session.
+ *
+ * Offered in the switcher because until now there was nowhere to do it: a
+ * profile added by accident, or a second one signed into an account another
+ * already holds, could be created and never removed.
+ */
+async function removeProfile(id) {
+  if (switchingProfile.value) return
+  const p = profiles.value.find((x) => x.id === id)
+  if (!p) return
+  profileToRemove.value = p
+}
+
+async function confirmRemoveProfile() {
+  const p = profileToRemove.value
+  profileToRemove.value = null
+  if (!p) return
+  switchingProfile.value = true
+  try {
+    const state = await window.agentrq.profiles.remove(p.id)
+    profiles.value = state?.profiles ?? []
+    switchingProfile.value = false
+  } catch (err) {
+    switchingProfile.value = false
+    notifyError('Could not remove that profile: ' + err.message)
   }
 }
 

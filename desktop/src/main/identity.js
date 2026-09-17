@@ -56,6 +56,23 @@ export async function fetchProfileIdentity({ fetchImpl, serverUrl, timeout }) {
 }
 
 /**
+ * The key two profiles are the same account under.
+ *
+ * The email, because it is the one thing an account cannot have two of and a
+ * person cannot have two spellings of: names collide between colleagues and
+ * change when somebody marries, and the picture is a URL that rotates.
+ * Lowercased and trimmed, so a profile signed in as `Sam@example.com` is
+ * recognised as the one already signed in as `sam@example.com`.
+ *
+ * @returns {string} '' when there is no email, which is never equal to
+ *          anything — two profiles we cannot identify are not a duplicate.
+ */
+export function accountKey(account) {
+  const email = typeof account?.email === 'string' ? account.email.trim().toLowerCase() : ''
+  return email
+}
+
+/**
  * Reduce a user payload to what the switcher shows.
  *
  * @returns {{name: string, email: string, picture: string} | null} null when

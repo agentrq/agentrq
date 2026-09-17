@@ -48,6 +48,28 @@ Consequences worth knowing before changing anything here:
   `writeClipboard` prefers `window.agentrq.clipboard` and falls back to the
   browser API only where there is no shell.
 
+### A profile is named by its account, and the account has to be remembered
+
+The switcher shows who a profile is signed in as, because a list of profiles
+called "Default" and "Work" does not say which account you are about to switch
+to. That answer is fetched live, and the live answer is absent constantly: the
+session is good for a day, the lookup gives up after four seconds, and the app
+starts each time knowing nothing.
+
+So there are two accounts on a profile and the difference is the point.
+`identity` is the live one — signed in *right now* — and `account` is the
+stored one, who the profile belongs to. `rememberAccount` writes the second
+whenever a lookup succeeds and, crucially, **does nothing when a lookup fails**.
+Writing "could not say" into the record is what turned the switcher into a list
+of profiles all reading "Default": every row fell back to its label, and every
+label was the same word. For the same reason an unnamed new profile is numbered
+rather than being called "Default" like the first one.
+
+Two profiles on one account cannot be refused when a profile is added — it has
+no account yet, and the sign-in happens on a web page the shell does not drive
+— so `duplicateOf` catches it once the account is known and the switcher says
+so, beside the action that fixes it.
+
 ### Four traps that are invisible in source
 
 - **Tailwind scans from the build root.** The desktop build's Vite root is

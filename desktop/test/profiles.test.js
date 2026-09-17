@@ -9,10 +9,13 @@ import {
   activeProfile,
   addProfile,
   canDiscardActiveProfile,
+  duplicateOf,
   isValidProfileId,
   makeProfile,
   migrateProfiles,
+  nextProfileLabel,
   partitionFor,
+  rememberAccount,
   removeProfile,
   renameProfile,
   updateProfile,
@@ -146,8 +149,41 @@ describe('addProfile', () => {
     }
   })
 
+  // Not "Default" like the first one: until a profile has signed in, its label
+  // is the only thing distinguishing it in the switcher, and a list of
+  // identical labels distinguishes nothing.
   it('names an unnamed profile rather than leaving it blank', () => {
-    expect(addProfile(base(), { id: 'x1', label: '   ' }).profiles[1].label).toBe(DEFAULT_PROFILE_LABEL)
+    const state = addProfile(base(), { id: 'x1', label: '   ' })
+    expect(state.profiles[1].label).toBe('Profile 2')
+    expect(state.profiles[1].label).not.toBe(state.profiles[0].label)
+  })
+
+  it('keeps a name that was given', () => {
+    expect(addProfile(base(), { id: 'x1', label: 'Work' }).profiles[1].label).toBe('Work')
+  })
+})
+
+describe('nextProfileLabel', () => {
+  it('is the first name when there are no profiles at all', () => {
+    expect(nextProfileLabel({ profiles: [] })).toBe(DEFAULT_PROFILE_LABEL)
+    expect(nextProfileLabel(null)).toBe(DEFAULT_PROFILE_LABEL)
+  })
+
+  it('numbers from the count, so the second profile is Profile 2', () => {
+    expect(nextProfileLabel(base())).toBe('Profile 2')
+  })
+
+  // Otherwise renaming a profile to "Profile 3" by hand would produce a second
+  // one with the same name, which is the problem this exists to avoid.
+  it('skips a number somebody has already used', () => {
+    const state = {
+      profiles: [
+        { id: 'a', label: DEFAULT_PROFILE_LABEL },
+        { id: 'b', label: 'Profile 3' },
+      ],
+      activeProfileId: 'a',
+    }
+    expect(nextProfileLabel(state)).toBe('Profile 4')
   })
 })
 
@@ -361,5 +397,91 @@ describe('edges the caller can reach', () => {
     const state = updateProfile(base(), base().profiles[0].id, { serverUrl: 'https://x.test' })
 
     expect(state.profiles[0].label).toBe(DEFAULT_PROFILE_LABEL)
+  })
+})
+
+describe('rememberAccount', () => {
+  const sam = { name: 'Sam', email: 'sam@example.com', picture: '' }
+
+  it('records who a profile is signed in as', () => {
+    const state = rememberAccount(base(), base().profiles[0].id, sam)
+    expect(state.profiles[0].account).toEqual(sam)
+  })
+
+  // The rule this whole thing exists for. The session is good for a day, the
+  // lookup gives up after four seconds, and every start begins knowing
+  // nothing — so "could not say" arrives constantly, and writing it down
+  // turned the switcher back into a list of profiles called "Default".
+  it('keeps what it knows when a lookup could not answer', () => {
+    const known = rememberAccount(base(), base().profiles[0].id, sam)
+
+    for (const nothing of [null, undefined, {}, { name: '', email: '' }, 'sam@example.com']) {
+      expect(rememberAccount(known, known.profiles[0].id, nothing)).toBe(known)
+    }
+    expect(known.profiles[0].account).toEqual(sam)
+  })
+
+  it('leaves a profile it does not have alone', () => {
+    const state = base()
+    expect(rememberAccount(state, 'nobody', sam)).toBe(state)
+  })
+
+  it('survives being stored and read back', () => {
+    const state = rememberAccount(base(), base().profiles[0].id, sam)
+    const reloaded = migrateProfiles(JSON.parse(JSON.stringify(state)))
+    expect(reloaded.profiles[0].account).toEqual(sam)
+  })
+})
+
+describe('duplicateOf', () => {
+  const twoProfiles = () => {
+    let state = base()
+    const first = state.profiles[0].id
+    state = addProfile(state, { id: 'second', label: 'Work' })
+    state = rememberAccount(state, first, { name: 'Sam', email: 'sam@example.com', picture: '' })
+    return { state, first }
+  }
+
+  // Two profiles signed into one account are two windows onto the same thing:
+  // the same tasks, the same workspaces, every notification twice.
+  it('names the profile that already holds this account', () => {
+    const { state, first } = twoProfiles()
+    const withDupe = rememberAccount(state, 'second', { name: 'Sam', email: 'sam@example.com' })
+
+    expect(duplicateOf(withDupe, 'second')).toBe(first)
+  })
+
+  // A person types their address however they please, and the account is the
+  // same one either way.
+  it('does not care how the address was typed', () => {
+    const { state, first } = twoProfiles()
+    const withDupe = rememberAccount(state, 'second', { email: '  Sam@Example.COM ' })
+
+    expect(duplicateOf(withDupe, 'second')).toBe(first)
+  })
+
+  // Whichever was added first is the original, and the answer must not depend
+  // on which of the two you ask about.
+  it('points at the earlier profile, not the later one', () => {
+    const { state, first } = twoProfiles()
+    const withDupe = rememberAccount(state, 'second', { email: 'sam@example.com' })
+
+    expect(duplicateOf(withDupe, first)).toBe('')
+  })
+
+  it('is nothing for a profile on its own account', () => {
+    const { state } = twoProfiles()
+    const other = rememberAccount(state, 'second', { email: 'alex@example.com' })
+
+    expect(duplicateOf(other, 'second')).toBe('')
+  })
+
+  // Two profiles nobody can identify are not a duplicate: we do not know that
+  // they are the same, only that we cannot tell.
+  it('is nothing when there is no account to compare', () => {
+    const { state } = twoProfiles()
+    expect(duplicateOf(state, 'second')).toBe('')
+    expect(duplicateOf(state, 'nobody')).toBe('')
+    expect(duplicateOf(null, 'second')).toBe('')
   })
 })

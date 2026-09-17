@@ -28,7 +28,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from './protocol.js'
 import { createAttachmentStore } from './attachment-store.js'
-import { activeProfile, canDiscardActiveProfile, partitionFor } from './profiles.js'
+import { activeProfile, canDiscardActiveProfile, duplicateOf, partitionFor } from './profiles.js'
 import { fetchProfileIdentity } from './identity.js'
 import {
   CONFIG_FILENAME,
@@ -711,7 +711,7 @@ const profileIdentities = new Map()
  */
 async function refreshProfileIdentities() {
   if (!profileState) return
-  await Promise.all(
+  const learned = await Promise.all(
     profileState.profiles.map(async (profile) => {
       const ses = session.fromPartition(profile.partition)
       const identity = await fetchProfileIdentity({
@@ -719,9 +719,18 @@ async function refreshProfileIdentities() {
         serverUrl: profile.serverUrl,
         timeout: (ms) => AbortSignal.timeout(ms),
       })
+      // The live answer: whether this profile is signed in *now*.
       profileIdentities.set(profile.id, identity)
+      return [profile.id, identity]
     })
   )
+
+  // And the lasting one: who it belongs to. Written down so an expired
+  // session, a server that is down, or simply having just started cannot make
+  // a profile anonymous — a lookup that failed leaves the record alone.
+  for (const [id, identity] of learned) {
+    profileState = await configStore.rememberAccount(id, identity)
+  }
 }
 
 /** What the renderer needs to draw the switcher: names, not sessions. */
@@ -729,13 +738,19 @@ function profilesPayload() {
   const state = profileState ?? { profiles: [], activeProfileId: '' }
   return {
     activeProfileId: state.activeProfileId,
-    profiles: state.profiles.map(({ id, label, serverUrl: url }) => ({
+    profiles: state.profiles.map(({ id, label, serverUrl: url, account }) => ({
       id,
       label,
       serverUrl: url,
       active: id === state.activeProfileId,
       // null when that profile is signed out or its server cannot answer.
       identity: profileIdentities.get(id) ?? null,
+      // Who it belongs to, as last seen. Outlives the session, so the switcher
+      // can still name a profile it cannot reach.
+      account: account ?? null,
+      // The profile that already holds this account, when this one is a second
+      // window onto it. '' for all the ordinary ones.
+      duplicateOf: duplicateOf(state, id),
     })),
   }
 }

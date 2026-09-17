@@ -19,6 +19,7 @@ import {
   activateProfile as activateProfileInState,
   migrateProfiles,
   removeProfile as removeProfileFromState,
+  rememberAccount as rememberAccountInState,
   renameProfile as renameProfileInState,
   updateProfile,
 } from './profiles.js'
@@ -258,6 +259,24 @@ export function createServerConfigStore({ readFile, writeFile, newProfileId = ra
     /** Rename a profile. A blank name keeps the old one. */
     async renameProfile(id, label) {
       const next = renameProfileInState(await this.load(), id, label)
+      await write(next)
+      return next
+    },
+
+    /**
+     * Record who a profile is signed in as, so it can still be named when the
+     * server cannot be asked.
+     *
+     * Written to disk rather than held in memory: the session lasts a day, the
+     * lookup gives up after four seconds, and every start begins knowing
+     * nothing — so a switcher that only knew what it had just been told spent
+     * most of its life showing labels instead of accounts. A lookup that
+     * failed changes nothing and does not touch the file.
+     */
+    async rememberAccount(id, identity) {
+      const current = await this.load()
+      const next = rememberAccountInState(current, id, identity)
+      if (next === current) return current
       await write(next)
       return next
     },
