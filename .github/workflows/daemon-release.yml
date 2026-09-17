@@ -100,6 +100,7 @@ jobs:
         working-directory: daemon
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          AGENTRQD_RELEASE_PUBKEY: ${{ secrets.AGENTRQD_RELEASE_PUBKEY }}
         run: go run ./cmd/agentrqd-release verify --version "${VERSION}" update
 
       - name: Package the archives
