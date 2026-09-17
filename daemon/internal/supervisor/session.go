@@ -351,6 +351,46 @@ func (s *Supervisor) Running() []uint64 {
 // Ended closes once the session has finished and its outcome is recorded.
 func (sess *Session) Ended() <-chan struct{} { return sess.ended }
 
+// StopAll ends every running session and waits for them to go.
+//
+// Called when the daemon is shutting down. Leaving them is not an option, and
+// the reason is not that they would keep running — closing a pseudo-terminal
+// hangs up on its foreground process group, so most of them die anyway. The
+// reason is that "most" and "anyway" are not a design: a process that ignores
+// SIGHUP, or a grandchild in its own process group, survives. And a surviving
+// agent cannot be reached by anything afterwards — nothing lists it, nothing
+// can stop it, and the next daemon does not adopt it. It starts believing
+// nothing is running, says so, and the row disappears while the process keeps
+// working against the workspace with the credential still in its folder.
+//
+// An agent nobody can see and nobody can stop is the outcome this design
+// exists to prevent, so shutdown stops them on purpose rather than hoping.
+//
+// Bounded, because a shutdown that waits for ever is a machine somebody has to
+// go and find. Whatever has not gone by then is left to the hang-up that
+// follows when this process exits.
+func (s *Supervisor) StopAll(ctx context.Context, wait time.Duration) []uint64 {
+	live := s.Live()
+	stopped := make([]uint64, 0, len(live))
+	for _, sess := range live {
+		if err := s.Kill(sess.ID); err == nil {
+			stopped = append(stopped, sess.ID)
+		}
+	}
+
+	deadline := time.After(wait)
+	for _, sess := range live {
+		select {
+		case <-sess.Ended():
+		case <-deadline:
+			return stopped
+		case <-ctx.Done():
+			return stopped
+		}
+	}
+	return stopped
+}
+
 // Live lists the sessions still running, with what they were started with.
 //
 // Used to write the note that survives a restart. It carries intent — kind,

@@ -24,6 +24,7 @@ type fakePTY struct {
 	cols     uint16
 	rows     uint16
 	done     chan struct{}
+	stuck    chan struct{}
 }
 
 func newFakePTY() *fakePTY { return &fakePTY{done: make(chan struct{})} }
@@ -53,8 +54,27 @@ func (f *fakePTY) size() (uint16, uint16) {
 func (f *fakePTY) Wait() (int, error) {
 	<-f.done
 	f.mu.Lock()
+	stuck := f.stuck
+	f.mu.Unlock()
+	if stuck != nil {
+		<-stuck
+	}
+	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.exitCode, f.waitErr
+}
+
+// blockWait makes this terminal's process refuse to go: closing the terminal
+// no longer ends it, and Wait does not return. Real processes do this — one
+// ignoring the hang-up while it finishes a write, or wedged in a syscall — and
+// a shutdown that waits for them has to give up rather than hold the machine.
+func (f *fakePTY) blockWait(t *testing.T) {
+	t.Helper()
+	f.mu.Lock()
+	f.stuck = make(chan struct{})
+	stuck := f.stuck
+	f.mu.Unlock()
+	t.Cleanup(func() { close(stuck) })
 }
 
 func (f *fakePTY) Close() error {
@@ -473,5 +493,98 @@ func TestDirsAreTheFoldersOfLiveSessions(t *testing.T) {
 	}
 	if got := s.Dirs(); len(got) != 1 || got[0] != one {
 		t.Errorf("Dirs = %v after the second folder's session ended", got)
+	}
+}
+
+// An agent that outlives its daemon is one nothing can reach: not listed, not
+// stoppable, and not adopted by the next daemon — which starts believing
+// nothing is running and says so, while the process keeps working against the
+// workspace.
+func TestStopAllEndsEverySession(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	dir := t.TempDir()
+
+	for _, id := range []uint64{9, 3, 5} {
+		if _, err := s.Start(t.Context(), "work", Request{
+			ID: id, Kind: KindACPGateway, Dir: dir, MCPURL: testURL,
+			Params: Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
+		}); err != nil {
+			t.Fatalf("start %d: %v", id, err)
+		}
+	}
+
+	stopped := s.StopAll(t.Context(), 5*time.Second)
+	if len(stopped) != 3 {
+		t.Fatalf("stopped %v, want all three", stopped)
+	}
+	if live := s.Live(); len(live) != 0 {
+		t.Errorf("%d sessions are still running", len(live))
+	}
+	for _, id := range []uint64{9, 3, 5} {
+		sess, err := s.Get(id)
+		if err != nil {
+			t.Fatalf("session %d: %v", id, err)
+		}
+		if state, _, _ := sess.State(); state != StateKilled {
+			t.Errorf("session %d is %q, want killed", id, state)
+		}
+	}
+}
+
+// Shutting down with nothing running is the ordinary case and must not wait.
+func TestStopAllWithNothingRunning(t *testing.T) {
+	s := New((&recordingStarter{}).start, 0, 0)
+	start := time.Now()
+	if stopped := s.StopAll(t.Context(), 5*time.Second); len(stopped) != 0 {
+		t.Errorf("stopped %v", stopped)
+	}
+	if time.Since(start) > time.Second {
+		t.Error("stopping nothing took a noticeable amount of time")
+	}
+}
+
+// A shutdown that waits for ever is a machine somebody has to go and find.
+func TestStopAllGivesUpRatherThanHanging(t *testing.T) {
+	stubborn := &recordingStarter{}
+	s := New(stubborn.start, 0, 0)
+	if _, err := s.Start(t.Context(), "work", Request{
+		ID: 9, Kind: KindACPGateway, Dir: t.TempDir(), MCPURL: testURL,
+		Params: Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A process that never finishes: Wait blocks until the test ends.
+	_, p := stubborn.last()
+	p.blockWait(t)
+
+	start := time.Now()
+	s.StopAll(t.Context(), 150*time.Millisecond)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("StopAll waited %v for a process that was never going to go", elapsed)
+	}
+}
+
+// A shutdown that is itself cut short stops waiting.
+func TestStopAllStopsWhenItsContextDoes(t *testing.T) {
+	stubborn := &recordingStarter{}
+	s := New(stubborn.start, 0, 0)
+	if _, err := s.Start(t.Context(), "work", Request{
+		ID: 9, Kind: KindACPGateway, Dir: t.TempDir(), MCPURL: testURL,
+		Params: Params{Model: "m", Agent: "a", ServerName: "agentrq-workspace"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, p := stubborn.last()
+	p.blockWait(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	s.StopAll(ctx, time.Minute)
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("StopAll ignored its cancelled context for %v", elapsed)
 	}
 }

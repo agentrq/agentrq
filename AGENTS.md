@@ -193,6 +193,28 @@ pseudo-terminals, and streams them to the browser.
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.
 
+### The agents go when the daemon goes
+
+Stopping `agentrqd` stops every session it is running, explicitly, before the
+connections close.
+
+They would mostly go anyway — closing a pseudo-terminal hangs up on the process
+using it — but "mostly" is not a design, and the failure it hides is total: an
+agent that outlives its daemon is unreachable. Nothing lists it, nothing can
+stop it, and the next daemon does not adopt it, so the panel shows an idle
+machine while a process keeps working against the workspace with the
+credential still sitting in its folder.
+
+Two details in `cmdServe` are load-bearing and easy to undo:
+
+- **The connections get their own context, not the signal's.** Sessions are
+  killed and their exits reported while the sockets are still up; sharing the
+  signal's context closes them first and the backend never hears what happened
+  to the agents, which then linger in the panel as running.
+- **The wait is bounded.** A process that ignores the hang-up must not hold the
+  machine's shutdown open, so `StopAll` gives up after `shutdownGrace` and says
+  how many it stopped.
+
 ### Self-update is the one place where getting it wrong is unrecoverable
 
 - **A build with no release key refuses to update itself**, and says so. The key

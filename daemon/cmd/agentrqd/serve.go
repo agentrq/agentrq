@@ -38,6 +38,16 @@ const (
 // dialTimeout bounds one connection attempt.
 const dialTimeout = 30 * time.Second
 
+// shutdownGrace is how long the daemon waits for its agents to go.
+//
+// Long enough for a process that handles the hang-up to write out whatever it
+// was doing, short enough that stopping the service does not feel broken.
+const shutdownGrace = 5 * time.Second
+
+// reportGrace is how long the connections are held open afterwards, so the
+// backend hears that the sessions ended rather than only that the machine went.
+const reportGrace = 300 * time.Millisecond
+
 // cmdServe connects every enrolled profile and stays connected.
 //
 // One supervisor across all of them, deliberately: the machine-wide cap is a
@@ -94,6 +104,13 @@ func cmdServe(ctx context.Context, args []string) error {
 	// every subsequent start, forever.
 	pending := link.Restored(ctx, st.dir, sup, log)
 
+	// The connections get a context of their own so the sessions can be
+	// stopped, and their exits reported, while the sockets are still up. Using
+	// the signal's context for both would close the connections first and the
+	// backend would never hear what happened to the agents.
+	linkCtx, stopLinks := context.WithCancel(context.Background())
+	defer stopLinks()
+
 	var wg sync.WaitGroup
 	links := make([]*link.Link, 0, len(profiles))
 	started := 0
@@ -133,7 +150,7 @@ func cmdServe(ctx context.Context, args []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = l.Run(ctx)
+			_ = l.Run(linkCtx)
 		}()
 	}
 
@@ -147,9 +164,28 @@ func cmdServe(ctx context.Context, args []string) error {
 	go reportStatus(ctx, st.dir, sup, links, log)
 
 	<-ctx.Done()
-	// The sessions are left alone. Stopping the daemon is not a reason to kill
-	// somebody's agent mid-task; the next start reconnects and the backend
-	// learns what is still running from the hello.
+
+	// The agents go with the daemon, on purpose.
+	//
+	// They would mostly go anyway: closing a pseudo-terminal hangs up on the
+	// process using it. But "mostly" is not a design, and an agent that
+	// survives is one nothing can reach afterwards — it is not listed, it
+	// cannot be stopped, and the next daemon does not adopt it, so the panel
+	// shows an idle machine while a process keeps working against the
+	// workspace with the credential still in its folder.
+	//
+	// Done before the connections close, so the backend hears about each of
+	// them and the sessions do not linger in the panel as running.
+	if stopped := sup.StopAll(context.Background(), shutdownGrace); len(stopped) > 0 {
+		log.Warn("stopped the agents running on this machine", "count", len(stopped))
+		// A moment for the state reports to reach the backend. They are on
+		// their way already; this is only the difference between the panel
+		// being right immediately and being right when the daemon next
+		// connects.
+		time.Sleep(reportGrace)
+	}
+
+	stopLinks()
 	wg.Wait()
 	log.Info("agentrqd stopped")
 	return nil
