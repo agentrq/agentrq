@@ -199,6 +199,14 @@ func TestConnectionRegistersAndReleases(t *testing.T) {
 	_ = ws.Close()
 
 	// And gone once the daemon disconnects.
+	//
+	// Waited on separately, because closing is two steps in this order: the
+	// registry entry goes first, and only then — and only if this connection
+	// was still the holder — is the stored pairing cleared. Waiting for the
+	// count to drop and then asserting the release reads the earlier effect
+	// and tests the later one, which fails whenever the goroutine is
+	// descheduled in between. That is roughly one run in three on a loaded
+	// machine, and was a flake on every pull request until it was this one's.
 	deadline = time.Now().Add(3 * time.Second)
 	for r.Count() != 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
@@ -206,7 +214,16 @@ func TestConnectionRegistersAndReleases(t *testing.T) {
 	if r.Count() != 0 {
 		t.Error("the connection was not released after the socket closed")
 	}
-	if _, released := auth.counts(); released == 0 {
+
+	deadline = time.Now().Add(3 * time.Second)
+	released := 0
+	for time.Now().Before(deadline) {
+		if _, released = auth.counts(); released > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if released == 0 {
 		t.Error("the stored pairing was not cleared")
 	}
 }
