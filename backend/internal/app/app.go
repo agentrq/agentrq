@@ -222,6 +222,17 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
 
+	// Sessions that have finished are removed as they finish, but rows written
+	// before that was true are still here — and they are what turns a machine
+	// page into a list of everything that has ever run on it. A session row is
+	// operational state, "what is running here", so a finished one has no
+	// reader; the record of what happened is the audit log.
+	//
+	// Safe to repeat, and it only ever matches rows whose process is over.
+	_ = db.Conn(context.Background()).
+		Where("status IN ?", []string{"exited", "killed", "failed"}).
+		Delete(&model.Session{}).Error
+
 	// ── Core Services ──────────────────────────────────────────────────────────
 	// Defaults to 1 rather than 0 only because that is what this was
 	// hardcoded to; changing it would change the node bits of every id a

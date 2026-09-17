@@ -270,17 +270,39 @@ describe('live updates', () => {
     expect(h.d.machine.value.metrics.cpuPercent).toBe(4)
   })
 
-  it('updates a session in place', async () => {
+  it('updates a live session in place', async () => {
     const h = harness()
     await h.d.load()
     h.d.handleEvent({
       type: 'session.updated',
-      payload: { id: 's1', machineId: 'm1', status: 'exited', exitCode: 0 },
+      payload: { id: 's1', machineId: 'm1', status: 'starting' },
     })
-    expect(h.d.sessions.value[0].status).toBe('exited')
+    expect(h.d.sessions.value[0].status).toBe('starting')
     // The fields the event does not carry are the ones the page already had.
     expect(h.d.sessions.value[0].kind).toBe('claude-code')
-    expect(h.d.liveSessions.value).toHaveLength(0)
+  })
+
+  // The row behind it has gone too: this page answers "what is running on this
+  // machine", and a finished agent is not an answer to that.
+  it('drops a session that has ended', async () => {
+    for (const status of ['exited', 'killed', 'failed']) {
+      const h = harness()
+      await h.d.load()
+      h.d.handleEvent({ type: 'session.updated', payload: { id: 's1', machineId: 'm1', status } })
+      expect(h.d.sessions.value.find((s) => s.id === 's1'), status).toBeUndefined()
+    }
+  })
+
+  // One that ended before the page loaded is not added just to be removed.
+  it('never adds a session that has already ended', async () => {
+    const h = harness()
+    await h.d.load()
+    const before = h.d.sessions.value.length
+    h.d.handleEvent({
+      type: 'session.updated',
+      payload: { id: 'new', machineId: 'm1', status: 'exited' },
+    })
+    expect(h.d.sessions.value).toHaveLength(before)
   })
 
   it('shows a session that started while somebody was watching', async () => {

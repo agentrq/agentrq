@@ -266,6 +266,21 @@ func (r *repository) RecordMachineMetrics(ctx context.Context, m model.Machine) 
 		}).Error
 }
 
+// DeleteFinishedSession removes a session that has ended.
+//
+// A session row is operational state — "what is running here" — rather than a
+// record of what happened, and the record is the audit log. Keeping the rows
+// turns the machine page into a list of everything that has ever run and the
+// table into one that grows forever.
+//
+// Scoped to a terminal status so a live session can never be deleted by a
+// mistimed report.
+func (r *repository) DeleteFinishedSession(ctx context.Context, id int64) error {
+	return r.conn(ctx).
+		Where("id = ? AND status IN ?", id, []string{"exited", "killed", "failed"}).
+		Delete(&model.Session{}).Error
+}
+
 // ReconcileSessions ends the sessions a machine is no longer running.
 //
 // The daemon says what it is supervising; anything this machine still has
@@ -275,16 +290,15 @@ func (r *repository) RecordMachineMetrics(ctx context.Context, m model.Machine) 
 //
 // Scoped to one machine, so a daemon can only ever correct its own rows.
 func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error {
-	q := r.conn(ctx).Model(&model.Session{}).
+	q := r.conn(ctx).
 		Where("machine_id = ? AND status IN ?", machineID, []string{"starting", "running"})
 	if len(running) > 0 {
 		q = q.Where("id NOT IN ?", running)
 	}
-	return q.Updates(map[string]any{
-		"status":     "exited",
-		"ended_at":   at,
-		"updated_at": at,
-	}).Error
+	// Deleted rather than marked exited, for the same reason a session is
+	// removed when it ends: these are rows for agents that are definitely not
+	// running, on a page whose question is "what is running here".
+	return q.Delete(&model.Session{}).Error
 }
 
 // CountLiveSessionsByUser counts the sessions still running, per machine.

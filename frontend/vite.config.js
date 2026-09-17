@@ -63,7 +63,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3000',
+      // ws: true is what makes the terminal work in dev, and its absence is
+      // invisible: every ordinary API call proxies fine, so the configuration
+      // looks correct right up until something asks for an upgrade. Without
+      // it the terminal socket is never proxied at all — the browser sits on
+      // "connecting" forever, with no error, because nothing ever answers the
+      // handshake.
+      '/api': { target: 'http://localhost:3000', ws: true },
       '/mcp': 'http://localhost:3000',
     }
   }

@@ -191,6 +191,18 @@ export function useMachineDetail(deps = {}) {
     const payload = event.payload
     if (!payload?.id) return
     const index = sessions.value.findIndex((s) => s.id === payload.id)
+
+    // A session that has ended leaves the list, because the row behind it has
+    // gone too: this page answers "what is running on this machine", and a
+    // finished agent is not an answer to that. Reloading would show the same
+    // thing; this just shows it immediately.
+    if (isSessionLive(payload.status) === false && payload.status) {
+      if (index !== -1) {
+        sessions.value = sessions.value.filter((s) => s.id !== payload.id)
+      }
+      return
+    }
+
     if (index === -1) {
       // A session this page has never seen. Only added when it belongs here,
       // and only ever as what the event carries: a row built from a fragment

@@ -81,12 +81,29 @@ func (c *controller) CreateSession(ctx context.Context, req entity.CreateSession
 }
 
 // UpdateSessionState records what the daemon reported.
+//
+// A session that has finished is written and then removed. Written first so
+// nothing is lost between the two — the update is what the event stream
+// carries to whoever is watching, and it is that event, not the row, which
+// tells somebody their agent failed and why. What the row is for is "what is
+// running on this machine", and a finished session is not an answer to that.
 func (c *controller) UpdateSessionState(ctx context.Context, req entity.UpdateSessionStateRequest) error {
 	id := monoflake.IDFromBase62(req.SessionID).Int64()
 	if id == 0 {
 		return fmt.Errorf("invalid session id")
 	}
-	return c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored)
+	if err := c.repository.UpdateSessionState(ctx, id, req.Status, req.ExitCode, req.EndedAt, req.Restored); err != nil {
+		return err
+	}
+	if !machinerules.SessionTerminal(req.Status) {
+		return nil
+	}
+	// Best effort: a row that outlives its session is untidy, and failing the
+	// state report over it would lose the event that matters.
+	if err := c.repository.DeleteFinishedSession(ctx, id); err != nil {
+		return nil
+	}
+	return nil
 }
 
 // GetSession reads one session, scoped to its owner.

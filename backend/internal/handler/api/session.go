@@ -24,7 +24,33 @@ const (
 
 func (h *handler) registerSessionRoutes() {
 	h.router.Get(_routePathMachineSessions, h.listSessions())
+	h.router.Get(_routePathSession, h.getSession())
 	h.router.Delete(_routePathSession, h.killSession())
+}
+
+// getSession returns one session.
+//
+// The terminal page reads this so it can say what it is showing — which agent,
+// in which workspace, and whether it is still running. Without it the page can
+// only show a rectangle and hope, and a session that has ended is
+// indistinguishable from one that is quiet.
+func (h *handler) getSession() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		rs, err := h.crud.GetSession(ctx, entity.GetSessionRequest{
+			UserID:    c.Locals("user_id").(string),
+			SessionID: c.Params("id"),
+		})
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		return c.JSON(rs)
+	}
 }
 
 // listSessions returns a machine's sessions, newest first.

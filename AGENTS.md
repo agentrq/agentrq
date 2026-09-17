@@ -247,6 +247,42 @@ what its user can already do.
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.
 
+### The terminal must never size itself
+
+The fit addon reads the host element's box and sets the terminal's rows to
+match. If that box is content-sized, fitting makes it taller, which makes the
+box taller, which fits again — the terminal grows until it has pushed the page
+off the bottom of the screen. That is what this page did.
+
+So the host is a flex child with `min-h-0` all the way up, which gives it a
+height that does not depend on its content, and the resize handler refuses to
+act on a measurement that has not changed. Either alone is enough on a good
+day; both is what makes it hard to reintroduce.
+
+xterm's theme is also set explicitly, all sixteen colours. Agent output assumes
+a dark background, and leaving the palette to a default that has never seen
+this surface is where unreadable output comes from.
+
+### Sessions are operational state, not history
+
+A session row answers "what is running on this machine". When one finishes the
+row is deleted — by the state report, by the reconcile on a daemon's hello, and
+once at startup for rows written before that was true. The record of what
+happened is the audit log; the rows are not it, and keeping them turns the
+machine page into a list of everything that has ever run and the table into one
+that grows forever.
+
+The consequence to keep in mind: a failure is visible in the moment, over the
+event stream, and not afterwards. If that needs to change, add a retention
+window rather than keeping every row indefinitely.
+
+### `ws: true` is what makes the terminal work in dev
+
+`vite.config.js` proxies `/api` to the backend, and a proxy without `ws: true`
+does not proxy upgrades — so every ordinary API call works and the terminal
+socket is never proxied at all. The browser sits on "connecting" forever with
+no error, because nothing ever answers the handshake.
+
 ### "Does this workspace already have an agent?" is two questions
 
 The launch gate checks both, and needs both. `IsAgentConnected` answers "is an

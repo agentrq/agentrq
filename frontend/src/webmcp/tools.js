@@ -512,6 +512,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ machineId }) => api.getMachine(machineId),
     }),
     tool({
+      name: 'getSession',
+      description: 'One agent session: which machine and workspace it belongs to, and whether it is still running.',
+      properties: { sessionId: str('The session ID (base62), as it appears in the URL.') },
+      required: ['sessionId'],
+      readOnly: true,
+      run: ({ sessionId }) => api.getSession(sessionId),
+    }),
+    tool({
       name: 'listMachineSessions',
       description: 'The agent sessions that have run on a machine, newest first.',
       properties: { machineId: MACHINE_ID },

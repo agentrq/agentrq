@@ -76,3 +76,87 @@ func TestActiveSessionRefusesAnUnusableID(t *testing.T) {
 		t.Error("an empty request was accepted")
 	}
 }
+
+// A finished session is written and then removed. Written first so nothing is
+// lost between the two: the update is what the event stream carries, and it is
+// that event — not the row — which tells somebody their agent failed and why.
+func TestAFinishedSessionIsRemoved(t *testing.T) {
+	for _, status := range []string{"exited", "killed", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			env := newTestController(t)
+			env.repo.EXPECT().
+				UpdateSessionState(gomock.Any(), int64(9), status, gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(nil)
+			env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).Return(nil)
+
+			if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
+				SessionID: monoflake.ID(9).String(), Status: status,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// A session that is still going is never removed, whatever else happens.
+func TestALiveSessionIsKept(t *testing.T) {
+	for _, status := range []string{"starting", "running"} {
+		t.Run(status, func(t *testing.T) {
+			env := newTestController(t)
+			env.repo.EXPECT().
+				UpdateSessionState(gomock.Any(), int64(9), status, gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(nil)
+			// No DeleteFinishedSession expectation: gomock fails the test if
+			// one is called, which is the assertion.
+
+			if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
+				SessionID: monoflake.ID(9).String(), Status: status,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// A row that outlives its session is untidy; failing the state report over it
+// would lose the event that actually matters to somebody.
+func TestAFailedCleanupDoesNotFailTheReport(t *testing.T) {
+	env := newTestController(t)
+	env.repo.EXPECT().
+		UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil)
+	env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).
+		Return(errors.New("database is busy"))
+
+	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
+		SessionID: monoflake.ID(9).String(), Status: "exited",
+	}); err != nil {
+		t.Errorf("a failed cleanup failed the state report: %v", err)
+	}
+}
+
+// The write comes first, so the event the stream carries is the finished state
+// rather than whatever was there before.
+func TestTheStateIsWrittenBeforeTheRowGoes(t *testing.T) {
+	env := newTestController(t)
+	written := false
+	env.repo.EXPECT().
+		UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ any, _ int64, _ string, _ *int, _ any, _ bool) error {
+			written = true
+			return nil
+		})
+	env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).
+		DoAndReturn(func(_ any, _ int64) error {
+			if !written {
+				t.Error("the row was removed before its final state was recorded")
+			}
+			return nil
+		})
+
+	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
+		SessionID: monoflake.ID(9).String(), Status: "exited",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

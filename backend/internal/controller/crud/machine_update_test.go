@@ -142,6 +142,9 @@ func TestRestoredIsStickyAcrossLaterReports(t *testing.T) {
 
 	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), "running", gomock.Any(), gomock.Any(), true).Return(nil)
 	env.repo.EXPECT().UpdateSessionState(gomock.Any(), int64(9), "exited", gomock.Any(), gomock.Any(), false).Return(nil)
+	// The exit is written and then the row is removed: what is running here is
+	// the question the row answers, and a finished session is not an answer.
+	env.repo.EXPECT().DeleteFinishedSession(gomock.Any(), int64(9)).Return(nil)
 
 	if err := env.controller.UpdateSessionState(t.Context(), entity.UpdateSessionStateRequest{
 		SessionID: id, Status: "running", Restored: true,

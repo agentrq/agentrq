@@ -90,6 +90,7 @@ export default defineConfig({
         'src/composables/useMachineDetail.js',
         'src/composables/useDaemonInstall.js',
         'src/composables/useAgentLaunch.js',
+        'src/composables/useTerminalView.js',
         'src/utils/markdown.js',
         'src/webmcp/*.js',
       ],

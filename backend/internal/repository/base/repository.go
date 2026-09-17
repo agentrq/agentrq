@@ -68,6 +68,7 @@ type Repository interface {
 	RecordMachineVersion(ctx context.Context, id int64, version string) error
 	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
 	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
+	DeleteFinishedSession(ctx context.Context, id int64) error
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
 	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error

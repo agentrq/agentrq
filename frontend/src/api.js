@@ -275,6 +275,20 @@ export async function approveMachineUpdate(machineId, version) {
   return true;
 }
 
+/**
+ * One agent session.
+ *
+ * The terminal page reads this so it can say what it is showing and whether it
+ * is still running. A finished session is removed, so a 404 here is the
+ * ordinary way a page learns its agent has ended rather than a failure.
+ */
+export async function getSession(sessionId) {
+  const res = await apiFetch(`${API_BASE_URL}/sessions/${sessionId}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to fetch the session');
+  return res.json();
+}
+
 export async function fetchMachineSessions(machineId) {
   const res = await apiFetch(`${API_BASE_URL}/machines/${machineId}/sessions`);
   if (!res.ok) throw new Error('Failed to fetch sessions');
