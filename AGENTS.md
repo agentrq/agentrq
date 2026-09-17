@@ -193,6 +193,31 @@ pseudo-terminals, and streams them to the browser.
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.
 
+### A reconnect is not a restart, and the sessions have to be told so
+
+The daemon reconnects rather than exiting, and two things have to survive that
+gap or reconnecting achieves nothing.
+
+- **The agent must not be bound to the connection's context.** The pty layer
+  kills the process whose context is done, and the context reaching
+  `Supervisor.Start` is the daemon's socket to the backend — cancelled on every
+  reconnect. Passing it straight through killed every agent on the machine
+  whenever the backend restarted or the network blinked. `Start` therefore
+  hands the process a `context.WithoutCancel` of it: what ends a session is
+  `Kill`, the process itself, or `StopAll` at shutdown, never a dropped socket.
+- **The pump belongs to the session, not to the socket.** It holds the screen,
+  which has to survive the gap or the next viewer gets a blank terminal it can
+  never get back, and it is blocked reading a pseudo-terminal nothing has
+  closed — so a second pump would not replace the first, it would race it for
+  every byte. On a lost connection the viewers are forgotten and the pumps
+  stay; on the new one `streams.rebind` moves them across and repaints
+  whatever somebody is still watching. The browser's own socket never dropped,
+  so nobody is going to ask to attach again on its behalf.
+
+Both were found by disabling a machine while an agent was running on it, which
+closes the daemon's socket from the server's side — the cheapest way to make a
+reconnect happen on demand.
+
 ### The agents go when the daemon goes
 
 Stopping `agentrqd` stops every session it is running, explicitly, before the

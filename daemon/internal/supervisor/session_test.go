@@ -101,20 +101,30 @@ func (f *fakePTY) exit(code int, err error) {
 type recordingStarter struct {
 	mu    sync.Mutex
 	specs []pty.Spec
+	ctxs  []context.Context
 	ptys  []*fakePTY
 	err   error
 }
 
-func (r *recordingStarter) start(_ context.Context, spec pty.Spec) (pty.Session, error) {
+func (r *recordingStarter) start(ctx context.Context, spec pty.Spec) (pty.Session, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.err != nil {
 		return nil, r.err
 	}
 	r.specs = append(r.specs, spec)
+	r.ctxs = append(r.ctxs, ctx)
 	p := newFakePTY()
 	r.ptys = append(r.ptys, p)
 	return p, nil
+}
+
+// lastCtx is the context the process was actually started with, which decides
+// how long it lives: the pty layer kills what it is given when that is done.
+func (r *recordingStarter) lastCtx() context.Context {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ctxs[len(r.ctxs)-1]
 }
 
 func (r *recordingStarter) last() (pty.Spec, *fakePTY) {
@@ -586,5 +596,53 @@ func TestStopAllStopsWhenItsContextDoes(t *testing.T) {
 	s.StopAll(ctx, time.Minute)
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Errorf("StopAll ignored its cancelled context for %v", elapsed)
+	}
+}
+
+// The request that starts an agent must not own it.
+//
+// The context reaching Start is the daemon's connection to the backend, and
+// that is cancelled every time the socket drops — a deploy, a network blink, a
+// machine disabled and re-enabled. The pty layer kills the process bound to a
+// cancelled context, so handing this one straight down killed every agent on
+// the machine whenever the daemon reconnected.
+func TestTheConnectionDroppingDoesNotKillTheAgents(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+
+	connCtx, drop := context.WithCancel(context.Background())
+	sess, err := s.Start(connCtx, "work", claudeRequest(t, 9))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// The socket goes, as it does on every reconnect.
+	drop()
+
+	if err := st.lastCtx().Err(); err != nil {
+		t.Fatalf("the process was started on a context that is now %v, so the pty layer will kill it", err)
+	}
+	if state, _, _ := sess.State(); state != StateRunning {
+		t.Errorf("session is %q after a reconnect, want running", state)
+	}
+	if len(s.Live()) != 1 {
+		t.Error("the session is no longer live after the connection dropped")
+	}
+}
+
+// Whatever the connection carried is still there; only the cancellation is
+// dropped. Using context.Background() instead would silently discard a logger
+// or a trace the caller put in.
+func TestTheStartContextKeepsItsValues(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+
+	type key struct{}
+	ctx := context.WithValue(context.Background(), key{}, "carried")
+	if _, err := s.Start(ctx, "work", claudeRequest(t, 9)); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := st.lastCtx().Value(key{}); got != "carried" {
+		t.Errorf("the process context carries %v, want the caller's value", got)
 	}
 }

@@ -85,18 +85,64 @@ func (s *streams) remove(id uint64) {
 	}
 }
 
-// closeAll ends every pump, which is what a lost connection does.
+// detachAll forgets the viewers, which is what a lost connection means.
 //
-// The sessions themselves keep running. A daemon that killed its agents every
-// time the network blinked would be worse than no daemon at all.
-func (s *streams) closeAll() {
+// The pumps stay, and so do the sessions. A pump belongs to a session rather
+// than to a socket for two reasons: it holds the screen, which has to survive
+// a reconnect or the next viewer sees a blank terminal it will never get back;
+// and it is blocked reading a pseudo-terminal that nothing has closed, so a
+// second pump on the same session would not replace the first, it would race
+// it for every byte the agent produced.
+func (s *streams) detachAll() {
+	for _, p := range s.all() {
+		p.Detach()
+	}
+}
+
+// rebind points every pump at the new connection.
+//
+// This is the other half of surviving a reconnect. The sessions kept running
+// across the gap — that is what reconnecting is for — but their output was
+// going to a socket that has gone, so without this a surviving agent's
+// terminal goes silent for good: nothing reaches the backend and an attach
+// finds a stream that cannot answer.
+//
+// `watched` says which sessions somebody is still looking at, and those are
+// repainted: the browser's own socket is unaffected by the daemon's
+// reconnecting, so the person watching never asked to attach again and the
+// backend has no reason to ask on their behalf.
+func (s *streams) rebind(sender stream.Sender, watched func(uint64) bool) []error {
+	var errs []error
+	for id, p := range s.snapshot() {
+		p.Rebind(sender)
+		if watched == nil || !watched(id) {
+			continue
+		}
+		if err := p.Attach(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+// all is the pumps, copied so a caller can work without the lock.
+func (s *streams) all() []*stream.Pump {
 	s.mu.Lock()
-	ids := make([]uint64, 0, len(s.pumps))
-	for id := range s.pumps {
-		ids = append(ids, id)
+	defer s.mu.Unlock()
+	out := make([]*stream.Pump, 0, len(s.pumps))
+	for _, p := range s.pumps {
+		out = append(out, p)
 	}
-	s.mu.Unlock()
-	for _, id := range ids {
-		s.remove(id)
+	return out
+}
+
+// snapshot is the pumps with their session ids, copied for the same reason.
+func (s *streams) snapshot() map[uint64]*stream.Pump {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[uint64]*stream.Pump, len(s.pumps))
+	for id, p := range s.pumps {
+		out[id] = p
 	}
+	return out
 }

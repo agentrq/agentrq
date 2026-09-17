@@ -21,5 +21,5 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 )

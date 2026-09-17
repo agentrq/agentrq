@@ -291,3 +291,85 @@ func TestRunShipsEverythingBeforeItReturns(t *testing.T) {
 		t.Errorf("frames = %+v, want the final batch", outs)
 	}
 }
+
+// A session outlives the socket its output was going to.
+//
+// The pump is what carries a terminal across a reconnect: the old connection's
+// writes fail, and a pump left pointing at it leaves the agent running and its
+// terminal silent for ever.
+func TestRebindMovesTheOutputToTheNewConnection(t *testing.T) {
+	p, old, _ := newTestPump(t)
+	if err := p.Attach(); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	fresh := &fakeSender{}
+	p.Rebind(fresh)
+
+	// The viewer is forgotten with the socket, so the caller repaints for one
+	// that is still there — a redraw of the screen now, not the fragment of
+	// history that was queued for a connection that has gone.
+	if err := p.Attach(); err != nil {
+		t.Fatalf("Attach after Rebind: %v", err)
+	}
+	if err := p.Feed([]byte("after the gap\r\n")); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if err := p.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	if !sentContains(fresh, "after the gap") {
+		t.Error("output written after the reconnect never reached the new connection")
+	}
+	if sentContains(old, "after the gap") {
+		t.Error("output was still being written to the connection that had gone")
+	}
+}
+
+// Rebinding forgets the viewer: whoever was watching was watching through the
+// socket that just went.
+func TestRebindForgetsTheViewer(t *testing.T) {
+	p, _, _ := newTestPump(t)
+	if err := p.Attach(); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	fresh := &fakeSender{}
+	p.Rebind(fresh)
+
+	if err := p.Feed([]byte("nobody is watching this\r\n")); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if err := p.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if len(fresh.all()) != 0 {
+		t.Error("output was sent over the new connection with nobody attached")
+	}
+}
+
+// A pump with nowhere to send is not a crash. Rebind takes whatever the caller
+// has, and a nil sender is what "not connected" looks like.
+func TestAPumpWithNoConnectionKeepsTheScreen(t *testing.T) {
+	p, _, _ := newTestPump(t)
+	p.Rebind(nil)
+	if err := p.Attach(); err != nil {
+		t.Fatalf("Attach with no connection: %v", err)
+	}
+	if err := p.Feed([]byte("still recorded\r\n")); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+	if !strings.Contains(string(p.Screen.Redraw()), "still recorded") {
+		t.Error("the screen stopped being fed when there was nowhere to send")
+	}
+}
+
+func sentContains(s *fakeSender, want string) bool {
+	for _, f := range s.all() {
+		if strings.Contains(string(f.Payload), want) {
+			return true
+		}
+	}
+	return false
+}

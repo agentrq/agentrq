@@ -194,7 +194,22 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		}
 	}
 
-	tty, err := s.start(ctx, pty.Spec{
+	// The agent outlives the request that asked for it, so the context that
+	// asked must not own it.
+	//
+	// `ctx` here is the daemon's *connection* to the backend, cancelled every
+	// time that socket drops — a backend deploy, a network blink, a machine
+	// disabled and re-enabled. The pty layer binds the process to the context
+	// it is given, so passing this one straight through meant every agent on
+	// the machine was killed whenever the daemon reconnected, which is the
+	// opposite of what reconnecting is for. Measured, not theorised: an agent
+	// started from the panel died the moment its daemon's socket was closed,
+	// while the daemon itself carried on retrying.
+	//
+	// WithoutCancel rather than Background so anything carried in the context
+	// — a logger, a trace — survives; only the cancellation is dropped. What
+	// ends a session is Kill, the process itself, or StopAll at shutdown.
+	tty, err := s.start(context.WithoutCancel(ctx), pty.Spec{
 		Argv: cmd.Argv,
 		Dir:  req.Dir,
 		Cols: req.Cols,

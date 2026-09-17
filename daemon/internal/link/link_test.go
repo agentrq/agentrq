@@ -126,6 +126,18 @@ func (b *fakeBackend) send(t *testing.T, f wire.Frame) {
 	}
 }
 
+// dropSocket closes the connection from the server's side, which is what a
+// backend restart or a network blink looks like to the daemon.
+func (b *fakeBackend) dropSocket(t *testing.T) {
+	t.Helper()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.sockets) == 0 {
+		t.Fatal("nothing is connected")
+	}
+	_ = b.sockets[len(b.sockets)-1].Close()
+}
+
 func (b *fakeBackend) connections() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -668,4 +680,41 @@ func TestTheHeartbeatSaysWhatIsRunning(t *testing.T) {
 		}
 		return false
 	}, "no heartbeat named the running session")
+}
+
+// A daemon that reconnects has to bring its terminals with it.
+//
+// The sessions keep running across the gap — that is the whole point of
+// reconnecting — but their output was going to a socket that has gone. Without
+// the pumps being moved onto the new one, the agent carries on working and its
+// terminal is silent for ever, which reads as a hung agent rather than as a
+// daemon that lost its connection for a second.
+func TestTheTerminalsSurviveAReconnect(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Model: "m", Agent: "a",
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
+		Cols: 80, Rows: 24,
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	if _, err := h.tty.outW.Write([]byte("before the gap")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return outputContains(b, "before the gap") }, "output never arrived")
+
+	b.dropSocket(t)
+	waitFor(t, func() bool { return len(b.controls(t, wire.OpHello)) >= 2 }, "the daemon never reconnected")
+
+	if state, _, _ := mustSession(t, h).State(); state != "running" {
+		t.Fatalf("the session is %q after a reconnect, want running", state)
+	}
+	if _, err := h.tty.outW.Write([]byte("after the gap")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return outputContains(b, "after the gap") },
+		"the terminal went silent after the daemon reconnected")
 }

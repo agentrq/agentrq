@@ -79,6 +79,26 @@ func (p *Pump) Attach() error {
 	return p.sendFrame(wire.TypeReplay, p.Screen.Redraw())
 }
 
+// Rebind points the pump at a new connection.
+//
+// A session outlives the socket its output was going to — that is what
+// reconnecting is for — but the pump is holding the old one, whose writes now
+// fail. Without this the agent keeps running and its terminal is silent for
+// ever.
+//
+// The viewer is forgotten at the same time, deliberately: whoever was watching
+// was watching through the socket that just went, and anything pending was on
+// its way there. The caller repaints for a viewer that is still there, which
+// is a redraw of the current screen rather than the fragment of history that
+// was queued.
+func (p *Pump) Rebind(s Sender) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Sender = s
+	p.attached = false
+	p.coalescer.Discard()
+}
+
 // Detach marks the viewer as gone.
 //
 // The screen keeps being fed. Stopping would mean the next attach shows
@@ -213,5 +233,14 @@ func (p *Pump) sendFrame(t wire.Type, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	return p.Sender.Send(f)
+	// Read under the lock: [Pump.Rebind] replaces it on every reconnect, on
+	// the goroutine that owns the connection, while this one is reading a
+	// terminal that never stopped.
+	p.mu.Lock()
+	sender := p.Sender
+	p.mu.Unlock()
+	if sender == nil {
+		return nil
+	}
+	return sender.Send(f)
 }

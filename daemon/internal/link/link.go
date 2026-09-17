@@ -128,9 +128,12 @@ func (l *Link) once(ctx context.Context) error {
 	conn := NewConn(ws)
 	defer func() {
 		_ = conn.Close()
-		// The pumps go; the sessions do not. A daemon that killed its agents
-		// every time the network blinked would be worse than no daemon.
-		l.streams.closeAll()
+		// The viewers go; the pumps and the sessions do not. A daemon that
+		// killed its agents every time the network blinked would be worse than
+		// no daemon — and a pump is not the connection's to throw away either:
+		// it holds the screen, and it is reading a terminal that is still
+		// running.
+		l.streams.detachAll()
 	}()
 
 	ws.SetReadLimit(maxFrame)
@@ -161,6 +164,14 @@ func (l *Link) once(ctx context.Context) error {
 		return fmt.Errorf("hello: %w", err)
 	}
 	l.Log.Info("connected to the backend")
+
+	// The sessions that lived through the gap have pumps pointing at the
+	// socket that went. They are moved onto this one, and anything somebody is
+	// still watching is repainted — the browser never disconnected, so nobody
+	// is going to ask to attach again on its behalf.
+	for _, err := range l.streams.rebind(conn, func(id uint64) bool { return l.viewers.get(id) > 0 }) {
+		l.Log.Warn("could not repaint a terminal after reconnecting", "error", err)
+	}
 
 	go l.heartbeat(connCtx, conn)
 	if l.Updater != nil {
