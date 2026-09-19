@@ -16,6 +16,19 @@ import { createRouter } from 'vue-router'
 
 import './style.css'
 import '@fontsource-variable/inter'
+/*
+ * The terminal's font, self-hosted rather than linked: the desktop build serves
+ * from app:// under `font-src 'self' data:`, so an external font URL works in
+ * the browser and is blocked there. Both weights, because xterm renders bold.
+ *
+ * Imported here rather than from `style.css` on purpose. These are *subpath*
+ * exports, and an `@import` in the stylesheet is resolved by Tailwind rather
+ * than by Vite — which failed to resolve them on a machine where Vite has no
+ * trouble. Nothing else in this repo asks Tailwind's resolver for a subpath,
+ * so this does not either.
+ */
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/700.css'
 
 import App from './App.vue'
 import { fetchUser } from './api'

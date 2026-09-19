@@ -17,18 +17,6 @@
 @import '@fontsource-variable/inter';
 
 /*
- * The terminal's font, self-hosted rather than linked: the desktop build serves
- * from app:// under `font-src 'self' data:`, so an external font URL works in
- * the browser and fails there. Both weights, because xterm renders bold text.
- *
- * These carry Google's subset `unicode-range`s, which stop short of box drawing
- * (U+2500-257F) — those glyphs still come from the system fallback. See the
- * terminal section of docs/agents/machines-and-daemon.md.
- */
-@import '@fontsource/jetbrains-mono/400.css';
-@import '@fontsource/jetbrains-mono/700.css';
-
-/*
  * Window dragging, for the desktop app on macOS.
  *
  * The shell hides the title bar there so the app can fill the window, and a
