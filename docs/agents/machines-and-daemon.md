@@ -246,45 +246,43 @@ this surface is where unreadable output comes from.
 
 ## ...and a fit that did nothing looks exactly like one that worked
 
-The opposite failure, and the one that shipped: `FitAddon.fit()` is a **no-op
-that reports nothing** until the renderer has measured a character cell. It
-asks `proposeDimensions()` first, which answers `undefined` while
-`dimensions.css.cell.width === 0` — the normal state for a frame or two after
-`open()` — and returns. Read `term.cols` back afterwards and you get 80×24,
-xterm's default, with nothing to say it is not a measurement.
+The opposite hazard: `FitAddon.fit()` is a **no-op that reports nothing** until
+the renderer has measured a character cell. It asks `proposeDimensions()`
+first, which answers `undefined` while `dimensions.css.cell.width === 0`, and
+returns. Read `term.cols` back afterwards and you get 80×24, xterm's default,
+with nothing to say it is not a measurement.
 
-That default was then **sent to the machine**, so the agent painted its opening
-screen for eighty columns while the box was far wider. Resizing afterwards
-re-flows what xterm holds and does not re-wrap output a program has already
-written, which is why the symptom was mangled text rather than a small
-terminal.
-
-**Nothing retried, and nothing was going to.** The only other thing that fits
-is the resize observer, and an observer fires when the box *changes* — a box
-mis-measured once and then left alone never changes. Collapsing the sidebar
-was the workaround people found, and it was the whole bug report.
-
-So `useTerminalFit` treats a fit as an attempt that can fail: it asks
+`useTerminalFit` therefore treats a fit as an attempt that can fail: it asks
 `proposeDimensions()` *before* fitting, because that is the only thing that
-distinguishes "not ready" from a real size, and retries on the following
-frames instead of recording a default as a measurement. Three things about it
-are decisions rather than details:
+distinguishes "not ready" from a real size, and retries on the following frames
+instead of recording a default as a measurement. Three things about it are
+decisions rather than details:
 
 - **The retry is bounded** (`FIT_ATTEMPTS`). A terminal in a panel nobody has
   opened measures zero every frame, and spinning a render-frame loop forever
   to discover that is worse than waiting — when it is shown, the observer
   fires.
-- **The opening attempt is synchronous.** The first size goes to the machine
-  on the next line, and a size that arrives a frame later is the default going
-  out in its place.
+- **The opening attempt is synchronous**, so the first size handed to the
+  session is a measurement rather than the default.
 - **Both rules above survive it.** A size that has not changed is still never
   reported, or the fit → taller box → fit loop comes straight back.
 
-Two orderings in `SessionTerminal.vue` are load-bearing for the same bug and
-read as arbitrary: the observer is attached **before anything is awaited**
-(layout that settles during an await is layout nothing will ever correct — and
-this page's header grows when the session loads), and the terminal is fitted
-**before** its size is sent.
+**Read this part before you cite the above as the cause of anything.** The
+no-op path is quoted from the addon's source and is real. It was *not*
+demonstrated to happen here: measured in headless Chromium against this app's
+own `TERMINAL_OPTIONS`, `proposeDimensions()` answered a real size
+synchronously in the same tick as `open()`, every time — with a normal box,
+with a zero-height box, and with `xterm.css` applied late. The ordering change
+is likewise insurance rather than a traced fix, because `sendResize` keeps the
+last size in `pendingSize` and re-sends it when the socket opens, which is
+always more than a frame after mount.
+
+So the terminal-sizing path is now hardened against a documented hazard, and
+the report it was written for — *text mis-shaped on first open, better after
+the sidebar is collapsed* — **is not explained by it**. The shape of the real
+cause is a measurement that is wrong but plausible, since every guard here
+passes such a number straight through. Do not let this section persuade the
+next person that the question is closed.
 
 ## A launch ends at the terminal, from either end
 

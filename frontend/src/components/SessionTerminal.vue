@@ -22,25 +22,22 @@
  * that does not depend on its content, and `useTerminalFit` refuses to act on
  * a measurement that has not actually changed.
  *
- * ## The order in here is the fix for the second bug this page had
+ * ## The terminal is fitted before its size is sent
  *
- * Text arrived mis-shaped on first open and came right the moment somebody
- * collapsed the sidebar. `fit()` is a no-op until the renderer has measured a
- * character cell, so the opening fit did nothing, the terminal stayed at
- * xterm's default 80×24 in a much wider box, and **that** was the width sent
- * to the machine — so the agent painted its first screen for a terminal
- * nobody was looking at. Resizing afterwards does not re-wrap output a
- * program has already written, which is why it looked broken rather than
- * merely small. `useTerminalFit` carries the retry that fixes it, and the
- * reasoning.
+ * This used to run the other way round: the fit was deferred to an animation
+ * frame, and the size was handed to the session in the same tick as `open()`
+ * — so the first size to reach `sendResize` was xterm's default 80×24, and
+ * the real one arrived a frame later.
  *
- * Two things here are load-bearing for the same reason:
+ * In practice that was almost certainly harmless, and it is worth knowing why
+ * before anybody "simplifies" this back: `sendResize` keeps the last size in
+ * `pendingSize` and re-sends it when the socket opens, and the socket cannot
+ * open for at least a ticket fetch and a handshake — far longer than one
+ * frame. So the machine got the corrected size anyway.
  *
- * - **The box is watched before anything is awaited.** Layout that settles
- *   during an await is layout nobody observed, and on this page the header
- *   grows once the session loads — the subtitle and the Stop button appear.
- * - **The terminal is fitted before its size is sent.** Sending first means
- *   sending the default.
+ * It is ordered this way now because a correct first value should not depend
+ * on losing a race, not because a bug was traced to it. The same goes for the
+ * observer being attached before the session is built.
  */
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Terminal } from '@xterm/xterm'
@@ -89,15 +86,15 @@ onMounted(async () => {
     onSize: (cols, rows) => session?.sendResize(cols, rows),
   })
 
-  // Before the session, and before anything is awaited: an unobserved layout
-  // change is one nothing will ever correct, because what fits after mount is
-  // this observer and only this observer.
+  // Before the session is built, so that what fits after mount is in place
+  // before anything can yield. Nothing in this body awaits today; the point is
+  // that adding an await later should not be able to lose a layout change.
   observer = new ResizeObserver(refit)
   observer.observe(host.value)
   window.addEventListener('resize', refit)
 
-  // Now, synchronously where it can be, so the size sent below is a
-  // measurement rather than xterm's default.
+  // Synchronously where it can be, so the size sent below is a measurement
+  // rather than xterm's default.
   fitter.settle()
 
   session = useTerminalSession({

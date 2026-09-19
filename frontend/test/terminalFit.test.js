@@ -4,13 +4,17 @@
 /**
  * When a terminal is sized to its box.
  *
- * The bug behind this file: text arrived mis-shaped on first open and came
- * right when somebody collapsed the sidebar. `FitAddon.fit()` does nothing at
- * all until the renderer has measured a character cell, and it says nothing
- * about having done nothing — so the opening fit left the terminal at xterm's
- * default 80×24, that width was sent to the machine, and nothing ever tried
- * again, because the only other thing that fits is an observer that fires on a
- * box *change*.
+ * The hazard behind this file: `FitAddon.fit()` does nothing at all until the
+ * renderer has measured a character cell, and it says nothing about having
+ * done nothing — so a fit can leave the terminal at xterm's default 80×24 and
+ * the caller cannot tell. Nothing would try again either, because the only
+ * other thing that fits is an observer that fires on a box *change*.
+ *
+ * These tests drive that state deliberately, through the fake below. Worth
+ * knowing: in a real browser it was never observed — headless Chromium had a
+ * usable proposal synchronously after `open()` every time it was measured. So
+ * these cover a documented failure mode of the addon, not a reproduction of
+ * the report that prompted them.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { useTerminalFit, usableProposal, FIT_ATTEMPTS, MIN_BOX } from '../src/composables/useTerminalFit.js'

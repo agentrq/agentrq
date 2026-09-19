@@ -13,26 +13,29 @@
  * `FitAddon.fit()` returns nothing and throws nothing. Read its source: it asks
  * `proposeDimensions()` first, and that answers `undefined` whenever the
  * renderer has not measured a character cell yet —
- * `dimensions.css.cell.width === 0` — which is the normal state for the first
- * frame or two after `open()`. `fit()` then returns having done nothing at all.
- *
- * A caller that just calls `fit()` and reads `term.cols` back gets **80×24**,
- * xterm's default, and has no way to know it is not a measurement. That is the
- * bug this file exists for: the terminal stayed at 80 columns in a much wider
- * box, that width was sent to the machine, and the agent painted its first
- * screen for a terminal nobody was looking at. Since a program's output is not
- * re-wrapped when the terminal is resized later, it stayed wrong on screen.
+ * `dimensions.css.cell.width === 0`. `fit()` then returns having done nothing
+ * at all, and a caller that reads `term.cols` back gets **80×24**, xterm's
+ * default, with no way to know it is not a measurement.
  *
  * So a fit is *attempted*, the attempt can fail, and a failed attempt is
  * retried on the next frame rather than recorded as a size.
  *
+ * **How far that is actually established.** The no-op path is real and is
+ * quoted from the addon's source. What is *not* established is that it happens
+ * here: measured in headless Chromium against this app's own
+ * `TERMINAL_OPTIONS`, `proposeDimensions()` answered a real size synchronously,
+ * in the same tick as `open()`, on every attempt. So treat this file as a
+ * guard against a documented hazard, not as the proven cure for a reported
+ * symptom. If you are here because terminals are still mis-shaped on first
+ * open, this is probably not where the cause lives — look for a
+ * wrong-but-plausible measurement, which every guard in here would let past.
+ *
  * ## Nothing else was going to retry
  *
  * The only other thing that fits is the resize observer, and an observer fires
- * when the box *changes*. A box that was mis-measured once and then left alone
- * never changes, so the terminal stayed wrong until somebody resized something
- * by hand — collapsing the sidebar was the discovered workaround, and it is
- * the whole bug report.
+ * when the box *changes*. A box mis-measured once and then left alone never
+ * changes, so a bad measurement would survive until somebody resized something
+ * by hand.
  *
  * Retries are bounded all the same. A terminal in a panel nobody has opened
  * measures zero every frame, and spinning a render-frame loop forever to
