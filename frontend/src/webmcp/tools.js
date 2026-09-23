@@ -230,20 +230,25 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
     }),
     tool({
-      name: 'listWorkspaceSkills',
+      name: 'searchWorkspaceSkills',
       description:
-        'The skills a workspace\'s agents can load: its own and those other workspaces of the account ' +
-        'share into it, with description, size and source. A shared-in skill carries ' +
-        'sharedFromWorkspaceId and is read-only there. File contents are not included.',
-      properties: { workspaceId: WORKSPACE_ID },
+        'Find the skills a workspace\'s agents can load: its own and those other workspaces of the account ' +
+        'share into it, with description, size and source, plus how many match in all. A shared-in skill ' +
+        'carries sharedFromWorkspaceId and is read-only there. File contents are not included.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        q: str('Text to find in a skill\'s name or description, ignoring case; at least 3 characters. Leave it out to list every skill.'),
+        limit: int('How many skills to return, at most 100. Leave it out to return every match.'),
+        offset: int('How many matches to skip, for the next page.'),
+      },
       required: ['workspaceId'],
       readOnly: true,
-      run: ({ workspaceId }) => api.fetchWorkspaceSkills(workspaceId),
+      run: ({ workspaceId, q, limit, offset }) => api.searchWorkspaceSkills(workspaceId, { q, limit, offset }),
     }),
     tool({
       name: 'getWorkspaceSkill',
       description: 'One skill of a workspace, with the paths and sizes of its files but not their content.',
-      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name, as listWorkspaceSkills reports it.') },
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name, as searchWorkspaceSkills reports it.') },
       required: ['workspaceId', 'name'],
       readOnly: true,
       run: ({ workspaceId, name }) => api.getWorkspaceSkill(workspaceId, name),

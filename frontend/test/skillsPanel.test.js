@@ -31,7 +31,7 @@ const CONTENT = {
 
 const api = vi.hoisted(() => ({
   fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ id: 'ws1', name: 'Home' }, { id: 'ws2', name: 'Platform' }, { id: 'ws3', name: 'Ops' }] })),
-  fetchWorkspaceSkills: vi.fn(() =>
+  searchWorkspaceSkills: vi.fn(() =>
     Promise.resolve({
       skills: [
         { name: 'systematic-debugging', description: 'Use when debugging.', totalBytes: 8252, sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: 'abcdef1234', locallyModified: true },
@@ -163,7 +163,7 @@ describe('the Skills tab', () => {
     expect(report).toContain('Imported 1 skill from obra/superpowers@0123456');
     expect(report).toContain('skills/brainstorming — SKILL.md is 17548 bytes');
     // The list is fetched again, so what arrived shows up.
-    expect(api.fetchWorkspaceSkills).toHaveBeenCalledTimes(2);
+    expect(api.searchWorkspaceSkills).toHaveBeenCalledTimes(2);
   });
 
   it('offers delete and share only on the workspace\'s own skills', async () => {

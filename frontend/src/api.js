@@ -667,8 +667,15 @@ async function skillError(res, fallback) {
   return Object.assign(new Error(body?.error?.message || fallback), { status: res.status });
 }
 
-export async function fetchWorkspaceSkills(workspaceId) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills`);
+// q (at least 3 characters) matches a skill's name or description; with no
+// limit every match comes back. The answer carries `total` either way.
+export async function searchWorkspaceSkills(workspaceId, { q, limit, offset } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (limit) params.set('limit', limit);
+  if (offset) params.set('offset', offset);
+  const query = params.toString();
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills${query ? `?${query}` : ''}`);
   if (!res.ok) throw await skillError(res, 'Failed to fetch workspace skills');
   return res.json();
 }

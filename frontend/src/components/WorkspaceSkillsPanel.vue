@@ -15,7 +15,7 @@
         Playbooks agents load when a task matches one: a
         <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{ SKILL_FILE }}</code>
         and the files it points to. Agents find them with
-        <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">listSkills</code>
+        <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">searchSkills</code>
         and read them with
         <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">loadSkill</code>.
       </p>
@@ -178,10 +178,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import {
   deleteWorkspaceSkill,
   fetchWorkspaceSkillShares,
-  fetchWorkspaceSkills,
   getWorkspaceSkill,
   getWorkspaceSkillFile,
   importWorkspaceSkills,
+  searchWorkspaceSkills,
   shareWorkspaceSkill,
   unshareWorkspaceSkill,
 } from '../api';
@@ -218,7 +218,7 @@ async function loadSkills() {
   loading.value = true;
   error.value = null;
   try {
-    const res = await fetchWorkspaceSkills(props.workspaceId);
+    const res = await searchWorkspaceSkills(props.workspaceId);
     skills.value = res.skills || [];
   } catch (err) {
     error.value = err;
