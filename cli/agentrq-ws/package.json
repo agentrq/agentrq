@@ -1,6 +1,6 @@
 {
   "name": "@agentrq/agentrq-ws",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "AgentRQ workspace client \u2014 drive an AgentRQ workspace from the command line, using the workspace's own .mcp.json",
   "keywords": [
     "agentrq",
