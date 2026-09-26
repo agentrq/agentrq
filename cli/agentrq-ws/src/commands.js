@@ -165,7 +165,7 @@ export const COMMANDS = [
     options: {
       body: { type: 'string', short: 'b', description: 'Task details (@file or - for stdin)' },
       assignee: { type: 'string', description: "'human' or 'agent' (default agent)" },
-      cron: { type: 'string', description: "5-field cron schedule, e.g. '30 * * * *'" },
+      cron: { type: 'string', description: "5-field cron schedule in UTC, e.g. '30 * * * *'; prefix CRON_TZ=<zone> for another" },
       event: { type: 'string', description: 'Event id to publish when the task completes' },
       'clear-context': {
         type: 'boolean',

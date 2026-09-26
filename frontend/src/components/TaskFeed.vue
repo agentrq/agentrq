@@ -154,7 +154,7 @@ import MoveTaskModal from './MoveTaskModal.vue';
 import ContextMenu from './ContextMenu.vue';
 import { useToasts } from '../composables/useToasts';
 
-const { formatCron, getNextRunLabel, getNextRunDate } = useCron();
+const { formatCron, getNextRunLabel, getNextRunDate, splitSchedule } = useCron();
 
 const counts = ref({
   ongoing: 0,
@@ -500,7 +500,9 @@ const displayGroups = computed(() => {
     const handledIds = new Set();
 
     categories.forEach(cat => {
-      const matched = cronTasks.filter(t => cat.values.includes(t.cronSchedule));
+      // Matched on the fields alone: the same schedule may or may not carry the
+      // zone it is written in.
+      const matched = cronTasks.filter(t => cat.values.includes(splitSchedule(t.cronSchedule).spec));
       if (matched.length > 0) {
         grps.push({ title: cat.label, tasks: matched, hasMore: false });
         matched.forEach(t => handledIds.add(t.id));

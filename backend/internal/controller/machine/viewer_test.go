@@ -90,6 +90,12 @@ func TestBytesSurviveARealSocketInBothDirections(t *testing.T) {
 	ws := dialViewer(t, srv)
 
 	waitFor(t, func() bool { return relay.Viewers(sessionID) == 1 }, "the viewer never attached")
+	// The attach reaches the daemon after the viewer is counted. Arriving late,
+	// it is the frame "browser to daemon" takes for its first keystroke.
+	waitFor(t, func() bool {
+		_, ok := daemon.firstOfType(wire.TypeControl)
+		return ok
+	}, "the daemon was never asked to attach")
 
 	payloads := map[string][]byte{
 		"escape":       {0x1b},

@@ -4,11 +4,10 @@
 -->
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEvent, updateEvent, deleteEvent, fetchEvents, fetchEventTriggers, createEventTrigger, updateEventTrigger, deleteEventTrigger, fetchEventTasks } from '../api'
 import { useToasts } from '../composables/useToasts'
-import { useCron } from '../composables/useCron'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useTooltipStore } from '../stores/tooltipStore'
 import { triggerWorkspaceTooltip, workspaceLabel } from '../composables/useWorkflowLabels'
@@ -18,7 +17,6 @@ import LoadingState from '../components/LoadingState.vue'
 const route = useRoute()
 const router = useRouter()
 const { notifyError, notifySuccess } = useToasts()
-const { getNextRunLabel, daysOptions } = useCron()
 const workspaceStore = useWorkspaceStore()
 const tooltipStore = useTooltipStore()
 
@@ -107,59 +105,6 @@ async function loadAllEvents() {
   } catch (_) {}
 }
 
-// trigger cron UI
-const triggerScheduleType = ref('none')
-const triggerOneTimeDate = ref('')
-const triggerRepeatPreset = ref('daily')
-const triggerRepeatTime = ref('09:00')
-const triggerSelectedDays = ref([1, 2, 3, 4, 5])
-
-const triggerNextRunPreview = computed(() => {
-  if (triggerScheduleType.value === 'none' || !triggerForm.value.cronSchedule) return ''
-  return getNextRunLabel(triggerForm.value.cronSchedule)
-})
-
-watch([triggerScheduleType, triggerOneTimeDate, triggerRepeatPreset, triggerRepeatTime, triggerSelectedDays], () => {
-  if (triggerScheduleType.value === 'none') { triggerForm.value.cronSchedule = ''; return }
-  if (triggerScheduleType.value === 'onetime') {
-    if (!triggerOneTimeDate.value) { triggerForm.value.cronSchedule = ''; return }
-    const d = new Date(triggerOneTimeDate.value)
-    triggerForm.value.cronSchedule = `${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`
-    return
-  }
-  const [lh, lm] = triggerRepeatTime.value.split(':').map(Number)
-  const d = new Date(); d.setHours(lh, lm, 0, 0)
-  const minutes = d.getUTCMinutes()
-  const hours = d.getUTCHours()
-  const p = triggerRepeatPreset.value
-  if (p === '15min') triggerForm.value.cronSchedule = '*/15 * * * *'
-  else if (p === '30min') triggerForm.value.cronSchedule = '*/30 * * * *'
-  else if (p === 'hourly') triggerForm.value.cronSchedule = '0 * * * *'
-  else if (p === '2hour') triggerForm.value.cronSchedule = '0 */2 * * *'
-  else if (p === '12hour') {
-    const h2 = new Date(d); h2.setHours(h2.getHours() + 12)
-    const hrs = [d.getUTCHours(), h2.getUTCHours()].sort((a, b) => a - b).join(',')
-    triggerForm.value.cronSchedule = `${minutes} ${hrs} * * *`
-  } else if (p === 'daily') triggerForm.value.cronSchedule = `${minutes} ${hours} * * *`
-  else if (p === 'weekly') { const utcDay = d.getUTCDay(); triggerForm.value.cronSchedule = `${minutes} ${hours} * * ${utcDay}` }
-  else if (p === 'monthly') { const dd = new Date(); dd.setHours(lh, lm, 0, 0); dd.setDate(1); triggerForm.value.cronSchedule = `${minutes} ${hours} ${dd.getUTCDate()} * *` }
-  else if (p === 'custom') {
-    const utcDays = new Set()
-    triggerSelectedDays.value.forEach(day => {
-      const dd = new Date(); dd.setHours(lh, lm, 0, 0)
-      dd.setDate(dd.getDate() + (day - dd.getDay()))
-      utcDays.add(dd.getUTCDay())
-    })
-    triggerForm.value.cronSchedule = `${minutes} ${hours} * * ${[...utcDays].sort().join(',')}`
-  }
-}, { deep: true })
-
-function toggleTriggerDay(day) {
-  const idx = triggerSelectedDays.value.indexOf(day)
-  if (idx === -1) triggerSelectedDays.value.push(day)
-  else if (triggerSelectedDays.value.length > 1) triggerSelectedDays.value.splice(idx, 1)
-}
-
 function insertTemplate(token) {
   const body = triggerForm.value.body
   triggerForm.value.body = body ? body + ' ' + token : token
@@ -167,11 +112,6 @@ function insertTemplate(token) {
 
 function resetTriggerForm() {
   triggerForm.value = { workspaceId: '', title: '', body: '', assignee: 'agent', allowAllCommands: false, cronSchedule: '', emitEventId: '' }
-  triggerScheduleType.value = 'none'
-  triggerOneTimeDate.value = ''
-  triggerRepeatPreset.value = 'daily'
-  triggerRepeatTime.value = '09:00'
-  triggerSelectedDays.value = [1, 2, 3, 4, 5]
   showTriggerForm.value = false
   editingTriggerId.value = null
 }
@@ -195,10 +135,6 @@ function startEditTrigger(t) {
     cronSchedule: t.cronSchedule ?? '',
     emitEventId: t.emitEventId ?? '',
   }
-  // Leave the friendly cron picker untouched (default 'none') so the
-  // existing cronSchedule string above isn't overwritten by its watcher —
-  // it only fires when the user actually interacts with the picker.
-  triggerScheduleType.value = 'none'
   editingTriggerId.value = t.id
   showTriggerForm.value = true
 }

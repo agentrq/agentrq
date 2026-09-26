@@ -4,6 +4,8 @@
 
 - `server.go` — all tool handlers (`handleCreateTask`, `handleReply`, etc.) and the `WorkspaceServer` struct
 - Cron validation: `validateCronGranularity` enforces hourly-minimum granularity. Minute field must be a single fixed integer (0-59); wildcards/steps/ranges/comma-lists are rejected.
+- A schedule may open with `CRON_TZ=<zone> `; **without one it means UTC**. Read it with
+  `schedule.Parse` and `schedule.Fields` — robfig alone uses the host's zone, and panics on a bare prefix.
 - Creating a task with `cron_schedule` sets `status="cron"` on the model.
 
 ## A tool on the server is a tool in four other places

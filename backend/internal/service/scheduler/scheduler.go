@@ -5,7 +5,6 @@ package scheduler
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
@@ -18,8 +17,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/schedule"
 	"github.com/mustafaturan/monoflake"
-	"github.com/robfig/cron/v3"
 )
 
 type Service interface {
@@ -60,7 +59,6 @@ func (s *scheduler) tick(ctx context.Context) {
 		return
 	}
 
-	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	now := time.Now().UTC().Truncate(time.Minute)
 
 	for _, c := range crons {
@@ -68,7 +66,7 @@ func (s *scheduler) tick(ctx context.Context) {
 			continue
 		}
 
-		sched, err := parser.Parse(c.CronSchedule)
+		sched, err := schedule.Parse(c.CronSchedule)
 		if err != nil {
 			zlog.Warn().Err(err).Int64("task_id", c.ID).Str("schedule", c.CronSchedule).Msg("scheduler: invalid cron schedule")
 			continue
@@ -184,7 +182,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 	// "0 9 1 1 *"), matching the frontend contract (useCron.js and the task-form
 	// generators). A fixed month with a wildcard day-of-month (e.g. "0 9 * 6 *" —
 	// every day in June) is recurring and must keep its parent template.
-	parts := strings.Fields(parent.CronSchedule)
+	parts := schedule.Fields(parent.CronSchedule)
 	if len(parts) == 5 && parts[2] != "*" && parts[3] != "*" {
 		err := s.repo.DeleteTask(ctx, parent.WorkspaceID, parent.ID, parent.UserID)
 		if err != nil {

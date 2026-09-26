@@ -74,7 +74,22 @@ describe('nodeTooltip', () => {
       kind: 'step',
       label: 'agentrq-code',
       step: { title: 'Sweep the queue', cronSchedule: '30 * * * *' },
-    })).toBe('agentrq-code\nWorkspace · creates "Sweep the queue"\nRuns on schedule 30 * * * *')
+    })).toBe('agentrq-code\nWorkspace · creates "Sweep the queue"\nRuns on schedule 30 * * * * (UTC)')
+  })
+
+  // A bare schedule is UTC, so a zoned one shown without its zone names a
+  // different hour.
+  it('keeps the zone a schedule names', () => {
+    expect(nodeTooltip({
+      kind: 'step',
+      label: 'agentrq-code',
+      step: { title: 'Sweep the queue', cronSchedule: 'CRON_TZ=Europe/Berlin 0 9 * * *' },
+    })).toBe('agentrq-code\nWorkspace · creates "Sweep the queue"\nRuns on schedule 0 9 * * * (Europe/Berlin)')
+    expect(nodeTooltip({
+      kind: 'global',
+      label: 'agentrq-docs',
+      trigger: { title: 'Update the changelog', cronSchedule: 'TZ=America/New_York 30 8 * * 1' },
+    })).toContain('Runs on schedule 30 8 * * 1 (America/New_York)')
   })
 
   it('still names the workspace when the step carries no title', () => {
@@ -94,7 +109,7 @@ describe('nodeTooltip', () => {
     })).toBe([
       'agentrq-docs',
       'Workspace · creates "Update the changelog"',
-      'Runs on schedule 0 9 * * *',
+      'Runs on schedule 0 9 * * * (UTC)',
       'Global subscriber · always runs on this event',
     ].join('\n'))
   })

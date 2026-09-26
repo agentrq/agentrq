@@ -19,6 +19,8 @@
  * harness.
  */
 
+import { splitSchedule } from './useCron';
+
 /** The name a workspace goes by, or a marker when it is no longer there. */
 export function workspaceLabel(workspacesById, workspaceId) {
   return workspacesById?.[workspaceId]?.name ?? '(deleted workspace)';
@@ -71,9 +73,13 @@ function taskLine(target) {
   return title ? `Workspace · creates "${title}"` : 'Workspace';
 }
 
+// The zone is named even when the schedule leaves it out: a bare schedule is
+// UTC, and without saying so the fields read as the reader's own time.
 function scheduleLine(target) {
   const cron = target?.cronSchedule?.trim();
-  return cron ? `Runs on schedule ${cron}` : '';
+  if (!cron) return '';
+  const { tz, spec } = splitSchedule(cron);
+  return `Runs on schedule ${spec} (${tz})`;
 }
 
 /**

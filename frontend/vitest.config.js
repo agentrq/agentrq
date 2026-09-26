@@ -42,6 +42,7 @@ export default defineConfig({
         'src/stores/workspaceStore.js',
         'src/desktop/*.js',
         'src/composables/useChatScroll.js',
+        'src/composables/useCron.js',
         'src/composables/useStreamToasts.js',
         'src/composables/useDrawerFrame.js',
         'src/composables/useTaskGroups.js',

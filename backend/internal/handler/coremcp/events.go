@@ -53,7 +53,7 @@ type CreateEventTriggerParams struct {
 	Title            string `json:"title" jsonschema:"Task title, used exactly as written: placeholders are not substituted here"`
 	Body             string `json:"body,omitempty" jsonschema:"Task body. {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} are replaced with what the publisher sent"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
-	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task. Hourly granularity at most: the minute field must be a single fixed number"`
+	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task. Hourly granularity at most: the minute field must be a single fixed number. Fields are read as UTC unless the schedule names a zone, as 'CRON_TZ=Europe/Berlin 30 8 * * *'"`
 	AllowAllCommands bool   `json:"allowAllCommands,omitempty" jsonschema:"Let the spawned task run commands without asking for permission"`
 	EmitEventID      string `json:"emitEventId,omitempty" jsonschema:"Event to publish when the spawned task completes. This is how one system hands off to the next"`
 }
@@ -72,7 +72,7 @@ type UpdateEventTriggerParams struct {
 	Title            string `json:"title"`
 	Body             string `json:"body,omitempty"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
-	CronSchedule     string `json:"cronSchedule,omitempty"`
+	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task. Fields are read as UTC unless the schedule names a zone, as 'CRON_TZ=Europe/Berlin 30 8 * * *'"`
 	AllowAllCommands bool   `json:"allowAllCommands,omitempty"`
 	EmitEventID      string `json:"emitEventId,omitempty"`
 }

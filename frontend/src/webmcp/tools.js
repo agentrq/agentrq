@@ -35,6 +35,8 @@ const int = (description) => ({ type: 'integer', description })
 const WORKSPACE_ID = str('The workspace ID (base62), as it appears in the URL.')
 const TASK_ID = str('The task ID (base62), as it appears in the URL.')
 const MACHINE_ID = str('The machine ID (base62), as it appears in the URL.')
+const cron = (description) =>
+  str(`${description} Fields are read as UTC unless it names a zone, as "CRON_TZ=Europe/Berlin 30 8 * * *".`)
 
 /**
  * Build a WebMCP tool descriptor.
@@ -379,7 +381,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         body: str('The task itself, in markdown.'),
         assignee: str('"agent" or "human". Defaults to "agent".'),
         status: str('Initial status. Defaults to "notstarted".'),
-        cronSchedule: str('Optional cron expression, making this a recurring task.'),
+        cronSchedule: cron('Optional cron expression, making this a recurring task.'),
         allowAllCommands: bool('Let the agent run commands without asking each time.'),
         eventId: str('Optional event this task publishes when it completes.'),
         workflowId: str('Optional workflow this task belongs to.'),
@@ -578,7 +580,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         title: str('New title.'),
         body: str('New body.'),
         assignee: str('"agent" or "human".'),
-        cronSchedule: str('New cron expression.'),
+        cronSchedule: cron('New cron expression.'),
         allowAllCommands: bool('Whether runs may execute commands unprompted.'),
       },
       required: ['workspaceId', 'taskId', 'title', 'body', 'assignee', 'cronSchedule'],
@@ -804,7 +806,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         title: str('Task title. Substitutions are not applied here.'),
         body: str('Task body, which may use {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}.'),
         assignee: str('"agent" or "human". Defaults to "agent".'),
-        cronSchedule: str('Optional cron expression.'),
+        cronSchedule: cron('Optional cron expression.'),
         allowAllCommands: bool('Let the created task run commands unprompted.'),
         emitEventId: str('Optional second event published when the created task completes.'),
       },
@@ -821,7 +823,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         title: str('Task title.'),
         body: str('Task body.'),
         assignee: str('"agent" or "human".'),
-        cronSchedule: str('Optional cron expression.'),
+        cronSchedule: cron('Optional cron expression.'),
         allowAllCommands: bool('Let the created task run commands unprompted.'),
         emitEventId: str('Optional second event published on completion.'),
       },

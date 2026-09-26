@@ -9,3 +9,7 @@
 *.js diff
 *.mjs diff
 *.cjs diff
+
+# Shell scripts run under bash, which reads a CR as part of each command. A
+# CRLF checkout (core.autocrlf=true, Git for Windows' default) breaks them.
+*.sh text eol=lf

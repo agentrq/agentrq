@@ -209,7 +209,7 @@ type CreateTaskParams struct {
 	Title        string `json:"title"`
 	Body         string `json:"body,omitempty"`
 	Assignee     string `json:"assignee,omitempty" jsonschema:"enum: human, agent"`
-	CronSchedule string `json:"cronSchedule,omitempty"`
+	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"Optional 5-field cron schedule. Fields are read as UTC unless the schedule names a zone, as 'CRON_TZ=Europe/Berlin 30 8 * * *'"`
 	ParentID     string `json:"parentId,omitempty"`
 	ClearContext bool   `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the target workspace has no running Claude Code session. Defaults to the target workspace's own setting."`
 }
@@ -264,7 +264,7 @@ type UpdateScheduledTaskParams struct {
 	TaskID       string `json:"taskId"`
 	Title        string `json:"title,omitempty"`
 	Body         string `json:"body,omitempty"`
-	CronSchedule string `json:"cronSchedule,omitempty"`
+	CronSchedule string `json:"cronSchedule,omitempty" jsonschema:"New 5-field cron schedule. Fields are read as UTC unless the schedule names a zone, as 'CRON_TZ=Europe/Berlin 30 8 * * *'"`
 	IsOneTime    bool   `json:"isOneTime,omitempty"`
 }
 

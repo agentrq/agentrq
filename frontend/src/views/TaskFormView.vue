@@ -153,7 +153,7 @@
 
                 <!-- Schedule / Cron Dropdown (Popover) -->
                 <div class="relative" v-click-outside="() => showScheduleMenu = false">
-                   <button type="button" @click="showScheduleMenu = !showScheduleMenu; showEventMenu = false; tooltipStore.hide()"
+                   <button type="button" aria-label="Set schedule" @click="showScheduleMenu = !showScheduleMenu; showEventMenu = false; tooltipStore.hide()"
                            @mouseenter="tooltipStore.show($event, scheduleType === 'none' ? 'Set Schedule' : (newTask.cronSchedule || 'Schedule Active'), 'top')"
                            @mouseleave="tooltipStore.hide()"
                            :class="scheduleType !== 'none' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
@@ -209,6 +209,14 @@
                              </div>
                            </div>
 
+                           <div v-if="repeatPreset === 'monthly'" class="flex flex-col gap-1.5">
+                              <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Day of Month</label>
+                              <select v-model.number="monthDay" aria-label="Day of month"
+                                      class="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-700 rounded-sm px-2 py-2 text-[10px] font-semibold text-gray-900 dark:text-zinc-50 outline-none w-[90px]">
+                                <option v-for="d in 31" :key="d" :value="d">{{ d }}</option>
+                              </select>
+                           </div>
+
                            <div v-if="repeatPreset === 'custom'" class="flex flex-col gap-1.5">
                               <label class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">Active Days</label>
                               <div class="flex flex-wrap gap-1">
@@ -222,6 +230,13 @@
                          </div>
                        </div>
                        
+                       <p v-if="scheduleUnparsed" class="mt-3 text-[9px] font-semibold text-amber-600 dark:text-amber-500 leading-relaxed">
+                         Set outside this form — these controls cannot show it. Changing any of them replaces the schedule below.
+                       </p>
+                       <p v-else-if="savedZone && savedZone !== localZone()" class="mt-3 text-[9px] font-semibold text-gray-500 dark:text-zinc-400">
+                         Times are in {{ savedZone }}
+                       </p>
+
                        <div v-if="scheduleType !== 'none'" class="mt-4 pt-3 border-t border-gray-100 dark:border-zinc-800 flex items-center justify-between">
                           <code class="text-[9px] font-mono text-gray-600 dark:text-zinc-400">{{ newTask.cronSchedule || '----' }}</code>
                           <span class="text-[9px] font-bold text-sky-600 dark:text-sky-400 truncate max-w-[120px]">{{ nextRunPreview }}</span>
@@ -326,7 +341,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useClearContext, clearContextTooltip } from '../composables/useClearContext';
 import AgentModelPicker from '../components/AgentModelPicker.vue';
 
-const { getNextRunLabel, daysOptions } = useCron();
+const { getNextRunLabel, cronFromSchedule, scheduleFromCron, splitSchedule, localZone, daysOptions } = useCron();
 const route = useRoute();
 const router = useRouter();
 const { notifyError, notifySuccess } = useToasts();
@@ -433,6 +448,13 @@ const oneTimeDate = ref('');
 const repeatPreset = ref('daily');
 const repeatTime = ref('09:00');
 const selectedDays = ref([1, 2, 3, 4, 5]); // Mon-Fri
+// Which day of the month a monthly schedule fires on.
+const monthDay = ref(1);
+// The zone every field above is written in. A stored schedule keeps the zone it
+// was written in; a new one takes this browser's.
+const scheduleZone = ref(localZone());
+// A stored schedule none of these controls can express.
+const scheduleUnparsed = ref(false);
 const showScheduleMenu = ref(false);
 
 const isDragging = ref(false);
@@ -489,65 +511,56 @@ onMounted(async () => {
   }
 });
 
+// What the picker last wrote, or was loaded with. The watcher compares against
+// it rather than running on a timer: while the picker still says what it was
+// loaded with there is nothing to write, so a stored schedule the picker has no
+// controls for is left exactly as it is.
+let pickerCron = '';
+
+/** What the schedule popover is currently showing. */
+function pickedSchedule() {
+  return {
+    type: scheduleType.value,
+    preset: repeatPreset.value,
+    oneTimeDate: oneTimeDate.value,
+    time: repeatTime.value,
+    days: selectedDays.value,
+    monthDay: monthDay.value,
+    zone: scheduleZone.value,
+  };
+}
+
 function parseCronToUI(cron) {
-  const parts = cron.split(' ');
-  if (parts.length === 5 && parts[2] !== '*' && parts[3] !== '*') {
-    scheduleType.value = 'onetime';
-    const [min, hour, dom, month] = parts;
-    const currentYear = new Date().getFullYear();
-    const utcDate = new Date(Date.UTC(currentYear, month - 1, dom, hour, min));
-    const year = utcDate.getFullYear();
-    const mon = String(utcDate.getMonth() + 1).padStart(2, '0');
-    const day = String(utcDate.getDate()).padStart(2, '0');
-    const hh = String(utcDate.getHours()).padStart(2, '0');
-    const mm = String(utcDate.getMinutes()).padStart(2, '0');
-    oneTimeDate.value = `${year}-${mon}-${day}T${hh}:${mm}`;
-  } else {
+  const picked = scheduleFromCron(cron);
+  scheduleUnparsed.value = picked === null;
+
+  if (picked === null) {
+    // Valid, and nothing here can say it. Say so rather than show a schedule
+    // that is not the stored one.
     scheduleType.value = 'repeated';
-    if (cron === '*/15 * * * *') {
-      repeatPreset.value = '15min';
-    } else if (cron === '*/30 * * * *') {
-      repeatPreset.value = '30min';
-    } else if (cron === '0 * * * *') {
-      repeatPreset.value = 'hourly';
-    } else if (cron === '0 */2 * * *') {
-      repeatPreset.value = '2hour';
-    } else {
-      const [min, hour, dom, month, dow] = parts;
-      const firstHour = Number(hour.split(',')[0]);
-      const now = new Date();
-      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), firstHour, min));
-      repeatTime.value = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      
-      if (dom === '*' && month === '*' && dow === '*') {
-        const hoursArr = hour.split(',').map(Number);
-        if (hoursArr.length === 2 && Math.abs(hoursArr[1] - hoursArr[0]) === 12) {
-          repeatPreset.value = '12hour';
-        } else {
-          repeatPreset.value = 'daily';
-        }
-      } else if (dow !== '*' && dom === '*' && month === '*') {
-        const now = new Date();
-        const utcDays = dow.split(',').map(Number);
-        const localDays = utcDays.map(ud => {
-           const base = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-           const currentUTCDay = base.getUTCDay();
-           const offset = ud - currentUTCDay;
-           const temp = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + offset, firstHour, min));
-           return temp.getDay();
-        });
-        selectedDays.value = localDays;
-        repeatPreset.value = (localDays.length === 1 && localDays[0] === 0) ? 'weekly' : 'custom';
-      } else {
-        repeatPreset.value = 'custom';
-      }
-    }
+  } else {
+    scheduleType.value = picked.type;
+    scheduleZone.value = picked.zone;
+    if (picked.oneTimeDate) oneTimeDate.value = picked.oneTimeDate;
+    if (picked.preset) repeatPreset.value = picked.preset;
+    if (picked.time) repeatTime.value = picked.time;
+    if (picked.days) selectedDays.value = picked.days;
+    if (picked.monthDay) monthDay.value = picked.monthDay;
   }
+
+  pickerCron = cronFromSchedule(pickedSchedule());
 }
 
 const nextRunPreview = computed(() => {
   if (scheduleType.value === 'none' || !newTask.value.cronSchedule) return '';
   return getNextRunLabel(newTask.value.cronSchedule);
+});
+
+// The zone the schedule being saved is read in. Taken from the cron, not the
+// picker: a one-time date is always in this browser's zone, a sub-hourly preset in UTC.
+const savedZone = computed(() => {
+  if (scheduleType.value === 'none' || !newTask.value.cronSchedule) return '';
+  return splitSchedule(newTask.value.cronSchedule).tz;
 });
 
 
@@ -557,59 +570,12 @@ function toggleDay(day) {
   else if (selectedDays.value.length > 1) selectedDays.value.splice(idx, 1);
 }
 
-watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays], () => {
-  if (scheduleType.value === 'none') { newTask.value.cronSchedule = ''; return; }
-
-  if (scheduleType.value === 'onetime') {
-    if (!oneTimeDate.value) { newTask.value.cronSchedule = ''; return; }
-    const d = new Date(oneTimeDate.value);
-    newTask.value.cronSchedule = `${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`;
-    return;
-  }
-
-  const [localHours, localMinutes] = repeatTime.value.split(':').map(Number);
-  const d = new Date();
-  d.setHours(localHours, localMinutes, 0, 0);
-  const minutes = d.getUTCMinutes();
-  const hours = d.getUTCHours();
-
-  if (repeatPreset.value === '15min') {
-    newTask.value.cronSchedule = '*/15 * * * *';
-  } else if (repeatPreset.value === '30min') {
-    newTask.value.cronSchedule = '*/30 * * * *';
-  } else if (repeatPreset.value === 'hourly') {
-    newTask.value.cronSchedule = `0 * * * *`;
-  } else if (repeatPreset.value === '2hour') {
-    newTask.value.cronSchedule = `0 */2 * * *`;
-  } else if (repeatPreset.value === '12hour') {
-    const h1 = d.getUTCHours();
-    const tempD = new Date(d);
-    tempD.setHours(tempD.getHours() + 12);
-    const h2 = tempD.getUTCHours();
-    const hoursStr = [h1, h2].sort((a,b)=>a-b).join(',');
-    newTask.value.cronSchedule = `${minutes} ${hoursStr} * * *`;
-  } else if (repeatPreset.value === 'daily') {
-    newTask.value.cronSchedule = `${minutes} ${hours} * * *`;
-  } else if (repeatPreset.value === 'weekly') {
-    const utcDay = d.getUTCDay();
-    newTask.value.cronSchedule = `${minutes} ${hours} * * ${utcDay}`;
-  } else if (repeatPreset.value === 'monthly') {
-    const dd = new Date();
-    dd.setHours(localHours, localMinutes, 0, 0);
-    dd.setDate(1);
-    newTask.value.cronSchedule = `${minutes} ${hours} ${dd.getUTCDate()} * *`;
-  } else if (repeatPreset.value === 'custom') {
-    const utcDays = new Set();
-    selectedDays.value.forEach(day => {
-      const dd = new Date();
-      dd.setHours(localHours, localMinutes, 0, 0);
-      const currentDay = dd.getDay();
-      dd.setDate(dd.getDate() + (day - currentDay));
-      utcDays.add(dd.getUTCDay());
-    });
-    const days = [...utcDays].sort().join(',');
-    newTask.value.cronSchedule = `${minutes} ${hours} * * ${days}`;
-  }
+watch([scheduleType, oneTimeDate, repeatPreset, repeatTime, selectedDays, monthDay], () => {
+  const next = cronFromSchedule(pickedSchedule());
+  if (next === pickerCron) return;
+  pickerCron = next;
+  scheduleUnparsed.value = false;
+  newTask.value.cronSchedule = next;
 }, { deep: true });
 
 function handleFileUpload(event) {

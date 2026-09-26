@@ -158,6 +158,15 @@ describe('looksSchedulable', () => {
     expect(looksSchedulable('')).toBe(false)
     expect(looksSchedulable(undefined)).toBe(false)
   })
+
+  // The server accepts a zone prefix, so counting it as a sixth field would
+  // refuse schedules it takes.
+  it('reads the fields past a zone prefix', () => {
+    expect(looksSchedulable('CRON_TZ=Europe/Berlin 0 9 * * *')).toBe(true)
+    expect(looksSchedulable('TZ=America/New_York 30 6 * * 1')).toBe(true)
+    expect(looksSchedulable('CRON_TZ=Europe/Berlin */5 * * * *')).toBe(false)
+    expect(looksSchedulable('CRON_TZ=Europe/Berlin')).toBe(false)
+  })
 })
 
 describe('validateSchedule', () => {

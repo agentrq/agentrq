@@ -16,6 +16,10 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/app"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
+
+	// Schedules name IANA zones, which time.LoadLocation cannot resolve on a
+	// host with no tz database — every container image without tzdata.
+	_ "time/tzdata"
 )
 
 func main() {

@@ -53,7 +53,7 @@ type (
 		Messages    []Message  `gorm:"foreignKey:TaskID"`
 		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
 
-		CronSchedule     string  `gorm:"type:varchar(64)"`
+		CronSchedule     string  `gorm:"type:varchar(64)"` // schedule.MaxLength
 		ParentID         int64   `gorm:"index:idx_tasks_parent_id"`
 		SortOrder        float64 `gorm:"type:real;default:0"`
 		AllowAllCommands bool    `gorm:"default:false"`
@@ -129,7 +129,7 @@ type (
 		Title            string `gorm:"type:varchar(255)"`
 		Body             string `gorm:"type:text"`
 		Assignee         string `gorm:"type:varchar(16)"`
-		CronSchedule     string `gorm:"type:varchar(64)"`
+		CronSchedule     string `gorm:"type:varchar(64)"` // schedule.MaxLength
 		AllowAllCommands bool   `gorm:"default:false"`
 		EmitEventID      int64  `gorm:"index:idx_event_triggers_emit_event_id"` // event this trigger's task emits on completion
 	}
