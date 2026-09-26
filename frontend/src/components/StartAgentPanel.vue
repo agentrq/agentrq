@@ -112,11 +112,12 @@ async function start() {
         <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Start an agent</h2>
         <!-- Says where it will run and on what. With one machine there is
              nothing to pick, so naming it here is the whole answer; with
-             several, the picker below is. -->
+             several, the picker below is. `break-all` because a path has no
+             spaces to wrap at, so a long one otherwise overflows the card. -->
         <p class="text-[11px] text-gray-500 dark:text-zinc-400 mt-0.5">
           <template v-if="workspace?.workingDirectory">
             Runs in
-            <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{
+            <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white break-all">{{
               workspace.workingDirectory
             }}</code>
           </template>
