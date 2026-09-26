@@ -57,7 +57,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
-	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/telemetryaggregator"
 	"github.com/gofiber/contrib/fiberzerolog"
 	"github.com/gofiber/fiber/v2"
@@ -264,7 +263,7 @@ func New(cfg Config) (*App, error) {
 	bus := eventbus.New()
 
 	cfg.Storage.StorageDir = storageDir(cfg.Storage)
-	storageSvc, err := storage.New(cfg.Storage.StorageDir)
+	storageSvc, err := newAttachmentStorage(cfg.ConfigSvc, cfg.Storage.StorageDir)
 	if err != nil {
 		return nil, fmt.Errorf("storage: %w", err)
 	}
@@ -508,13 +507,7 @@ func New(cfg Config) (*App, error) {
 				}
 				taskID := id.Int64()
 
-				for i := range attachments {
-					if attachments[i].Data != "" {
-						attachments[i].ID = monoflake.ID(ids.NextID()).String()
-						_ = storageSvc.Save(attachments[i].ID, attachments[i].Data)
-						attachments[i].Data = ""
-					}
-				}
+				crud.SaveAttachments(storageSvc, ids, attachments)
 
 				var attsData []byte
 				if len(attachments) > 0 {

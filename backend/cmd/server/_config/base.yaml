@@ -82,6 +82,12 @@ storage:
 skills:
   storage: ${AGENTRQ_SKILLS_STORAGE:local}
 
+# Where attachments are kept: "local" (the storage dir) or "s3", which uses the s3
+# block below and gives each attachment a public link. The bucket must allow public
+# reads under attachments/.
+attachments:
+  storage: ${AGENTRQ_ATTACHMENTS_STORAGE:local}
+
 # Any S3-compatible store. Objects are addressed path-style.
 s3:
   endpoint: "${AGENTRQ_S3_ENDPOINT:}"
@@ -89,6 +95,8 @@ s3:
   secretAccessKey: "${AGENTRQ_S3_SECRET_ACCESS_KEY:}"
   region: "${AGENTRQ_S3_REGION:us-east-1}"
   bucket: "${AGENTRQ_S3_BUCKET:}"
+  # Base of public attachment links, such as a CDN. Unset, it is <endpoint>/<bucket>.
+  publicUrl: "${AGENTRQ_S3_PUBLIC_URL:}"
 
 
 # The node id must be unique across running instances: monoflake ids collide

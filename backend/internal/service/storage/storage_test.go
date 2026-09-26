@@ -147,3 +147,17 @@ func TestFlatStorageRefusesNestedID(t *testing.T) {
 		t.Error("flat store saved a nested id")
 	}
 }
+
+func TestSaveAttachmentLocalHasNoLink(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, err := SaveAttachment(s, "a1", base64.StdEncoding.EncodeToString([]byte("hi")), "text/plain")
+	if err != nil || link != "" {
+		t.Fatalf("got %q, %v", link, err)
+	}
+	if raw, err := s.LoadRaw("a1"); err != nil || string(raw) != "hi" {
+		t.Fatalf("load: %q, %v", raw, err)
+	}
+}

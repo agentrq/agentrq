@@ -5,7 +5,7 @@
 > the Skills tab (`frontend/src/composables/useSkills.js`). Read before changing any of them.
 
 - **The database holds metadata only; file content is in `service/storage`.** Write the blob before the row and delete it if the row fails. Purge a replaced blob only after the commit, or a crash leaves a row pointing at nothing.
-- **Skill blobs go through the controller's `skillStorage`, never `storage`.** `AGENTRQ_SKILLS_STORAGE=s3` points only that one at a bucket; attachments stay on disk. A blob is keyed `w-<workspace>/skill-<skill>/<blob>` on both. Locally that is under `<storage.dir>/skills/` (`AGENTRQ_STORAGE_DIR`), a directory attachment cleanup never enters; a flat file there would be deleted after the retention period.
+- **Skill blobs go through the controller's `skillStorage`, never `storage`.** `AGENTRQ_SKILLS_STORAGE=s3` points only that one at a bucket; attachments have their own switch, `AGENTRQ_ATTACHMENTS_STORAGE`, and are public there while skills stay private. A blob is keyed `w-<workspace>/skill-<skill>/<blob>` on both. Locally that is under `<storage.dir>/skills/` (`AGENTRQ_STORAGE_DIR`), a directory attachment cleanup never enters; a flat file there would be deleted after the retention period.
 - **The file is exactly `SKILL.md`.** It is capped at 96 KiB and every other file at 64 KiB. An oversized file is refused, never truncated, so a caller can decide what to cut.
 - **Names are canonicalised at the boundary, and uniqueness counts shared-in skills.** A share that would give the target two skills with one name is refused, or `skill://<name>` would be ambiguous there.
 - **A share is a live reference, read-only in the target.** Only the owning workspace writes; the refusal names it so an agent knows where to go.

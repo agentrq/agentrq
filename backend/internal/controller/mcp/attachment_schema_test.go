@@ -15,6 +15,7 @@ import (
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -69,26 +70,50 @@ func TestCreateTaskAttachmentSchema(t *testing.T) {
 			t.Errorf("attachment field %s must have a string schema", field)
 		}
 	}
+	// Only the server makes an attachment's link.
+	if _, ok := items.Properties["url"]; ok {
+		t.Error("createTask offers an attachment url")
+	}
 }
 
-func TestCreateTaskPreservesAttachments(t *testing.T) {
-	for _, input := range []string{
-		`{"title":"test","body":"test"}`,
-		`{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+// TestCreateTaskStoresAttachments checks createTask files an attachment's
+// content in storage, as reply does, rather than in the task row, and keeps
+// the link a public store gives it.
+func TestCreateTaskStoresAttachments(t *testing.T) {
+	for name, tc := range map[string]struct {
+		input string
+		link  string
+		want  []entity.Attachment
+	}{
+		"none": {input: `{"title":"test","body":"test"}`},
+		"local": {
+			input: `{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+			want:  []entity.Attachment{{ID: "0000000001z", Filename: "hello.txt", MimeType: "text/plain"}},
+		},
+		"public": {
+			input: `{"title":"test","body":"test","attachments":[{"id":"att-1","filename":"hello.txt","mimeType":"text/plain","data":"aGVsbG8K"}]}`,
+			link:  "https://cdn.example.com/attachments/0000000001z",
+			want:  []entity.Attachment{{ID: "0000000001z", Filename: "hello.txt", MimeType: "text/plain", URL: "https://cdn.example.com/attachments/0000000001z"}},
+		},
 	} {
-		t.Run(input, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			var params CreateTaskParams
-			if err := json.Unmarshal([]byte(input), &params); err != nil {
+			if err := json.Unmarshal([]byte(tc.input), &params); err != nil {
 				t.Fatal(err)
 			}
 			ctrl := gomock.NewController(t)
 			ids := mock_idgen.NewMockService(ctrl)
-			ids.EXPECT().NextID().Return(int64(123))
+			ids.EXPECT().NextID().Return(int64(123)).AnyTimes()
 			psub := mock_pubsub.NewMockService(ctrl)
 			psub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil)
+			local, err := storage.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &linkingStore{Service: local, link: tc.link}
 			var stored model.Task
 			ps := &WorkspaceServer{
-				idgen: ids, bus: eventbus.New(), pubsub: psub,
+				idgen: ids, bus: eventbus.New(), pubsub: psub, storage: store,
 				createTask: func(_ context.Context, task model.Task) (model.Task, error) {
 					stored = task
 					return task, nil
@@ -104,9 +129,25 @@ func TestCreateTaskPreservesAttachments(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if !reflect.DeepEqual(got, params.Attachments) {
-				t.Fatalf("stored attachments = %#v, want %#v", got, params.Attachments)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("stored attachments = %#v, want %#v", got, tc.want)
+			}
+			for _, a := range got {
+				if raw, err := local.LoadRaw(a.ID); err != nil || string(raw) != "hello\n" {
+					t.Errorf("stored file %s = %q, %v", a.ID, raw, err)
+				}
 			}
 		})
 	}
+}
+
+// linkingStore is a local store that also hands out a link, when it has one,
+// the way the public S3 store does.
+type linkingStore struct {
+	storage.Service
+	link string
+}
+
+func (s *linkingStore) SavePublic(id, dataBase64, _ string) (string, error) {
+	return s.link, s.Save(id, dataBase64)
 }

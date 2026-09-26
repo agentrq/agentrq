@@ -6,6 +6,8 @@ package s3
 import (
 	"bytes"
 	"context"
+	"net/url"
+	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -22,6 +24,8 @@ type (
 		PutPrivate(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error)
 		Get(ctx context.Context, namespace, key string) ([]byte, error)
 		Delete(ctx context.Context, namespace, key string) error
+		// PublicURL is where anyone can read an object, if the bucket lets them.
+		PublicURL(ctx context.Context, namespace, key string) string
 	}
 	S3API interface {
 		PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
@@ -29,8 +33,9 @@ type (
 		DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 	}
 	service struct {
-		client S3API
-		bucket string
+		client    S3API
+		bucket    string
+		publicURL string
 	}
 	s3Config struct {
 		Enabled         bool   `yaml:"enabled"`
@@ -39,6 +44,9 @@ type (
 		SecretAccessKey string `yaml:"secretAccessKey"`
 		Region          string `yaml:"region"`
 		Bucket          string `yaml:"bucket"`
+		// PublicURL is the base public links are made from, such as a CDN.
+		// Unset, it is the endpoint and bucket, path-style.
+		PublicURL string `yaml:"publicUrl"`
 	}
 )
 
@@ -71,8 +79,9 @@ func New(p Params) (Service, error) {
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	return &service{
-		client: client,
-		bucket: cfg.Bucket,
+		client:    client,
+		bucket:    cfg.Bucket,
+		publicURL: publicBase(cfg),
 	}, nil
 }
 
@@ -127,6 +136,25 @@ func (s *service) Delete(ctx context.Context, namespace, key string) error {
 		zlog.Error().Err(err).Str("bucket", s.bucket).Str("key", actualKey).Msg("S3 Delete failed")
 	}
 	return err
+}
+
+// PublicURL is the object's address under the public base, each path
+// segment escaped.
+func (s *service) PublicURL(_ context.Context, namespace, key string) string {
+	segs := strings.Split(namespace+"/"+key, "/")
+	for i, seg := range segs {
+		segs[i] = url.PathEscape(seg)
+	}
+	return s.publicURL + "/" + strings.Join(segs, "/")
+}
+
+// publicBase is publicUrl, or the endpoint and bucket, path-style, without a
+// trailing slash.
+func publicBase(cfg s3Config) string {
+	if base := strings.TrimSpace(cfg.PublicURL); base != "" {
+		return strings.TrimRight(base, "/")
+	}
+	return strings.TrimRight(strings.TrimSpace(cfg.Endpoint), "/") + "/" + url.PathEscape(cfg.Bucket)
 }
 
 func newCredentialsProvider(accessKey, secretKey string) aws.CredentialsProviderFunc {

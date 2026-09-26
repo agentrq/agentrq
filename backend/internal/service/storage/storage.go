@@ -18,6 +18,21 @@ type Service interface {
 	Delete(id string) error
 }
 
+// Publisher is a Service whose blobs anyone can also read, at a public URL.
+type Publisher interface {
+	// SavePublic saves a blob served with contentType and returns its URL.
+	SavePublic(id, dataBase64, contentType string) (string, error)
+}
+
+// SaveAttachment saves an attachment and returns its public URL, or "" when
+// svc keeps blobs to be read through the server only.
+func SaveAttachment(svc Service, id, dataBase64, contentType string) (string, error) {
+	if p, ok := svc.(Publisher); ok {
+		return p.SavePublic(id, dataBase64, contentType)
+	}
+	return "", svc.Save(id, dataBase64)
+}
+
 type service struct {
 	baseDir string
 	nested  bool

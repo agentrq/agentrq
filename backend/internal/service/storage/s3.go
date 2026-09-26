@@ -26,7 +26,33 @@ func NewS3(client s3.Service, namespace string) Service {
 	return &s3Service{client: client, namespace: namespace}
 }
 
+// NewS3Public is NewS3 for blobs read straight from the bucket, such as
+// attachments: each one is stored with its own content type and has a public
+// URL. The bucket must allow anonymous reads under namespace; no object ACL is
+// set, since many buckets and S3-compatible stores refuse them.
+func NewS3Public(client s3.Service, namespace string) Service {
+	return &publicS3Service{s3Service{client: client, namespace: namespace}}
+}
+
+type publicS3Service struct{ s3Service }
+
+func (s *publicS3Service) SavePublic(id, dataBase64, contentType string) (string, error) {
+	if contentType == "" {
+		contentType = _octetStream
+	}
+	if err := s.put(id, dataBase64, contentType); err != nil {
+		return "", err
+	}
+	return s.client.PublicURL(context.Background(), s.namespace, id), nil
+}
+
+const _octetStream = "application/octet-stream"
+
 func (s *s3Service) Save(id string, dataBase64 string) error {
+	return s.put(id, dataBase64, _octetStream)
+}
+
+func (s *s3Service) put(id, dataBase64, contentType string) error {
 	data, err := base64.StdEncoding.DecodeString(dataBase64)
 	if err != nil {
 		return fmt.Errorf("decode base64: %w", err)
@@ -36,7 +62,7 @@ func (s *s3Service) Save(id string, dataBase64 string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), _s3Timeout)
 	defer cancel()
-	_, err = s.client.PutPrivate(ctx, s.namespace, id, data, "application/octet-stream")
+	_, err = s.client.PutPrivate(ctx, s.namespace, id, data, contentType)
 	return err
 }
 

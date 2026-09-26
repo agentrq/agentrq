@@ -20,6 +20,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -222,13 +223,13 @@ func (ps *WorkspaceServer) Close() {
 
 // CreateTaskParams is the input to the create_task tool.
 type CreateTaskParams struct {
-	Title        string              `json:"title" jsonschema:"Short title of the task"`
-	Body         string              `json:"body" jsonschema:"Detailed description of the task or action needed"`
-	Assignee     string              `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
-	Attachments  []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments"`
-	CronSchedule string              `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
-	EventID      string              `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
-	ClearContext bool                `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
+	Title        string            `json:"title" jsonschema:"Short title of the task"`
+	Body         string            `json:"body" jsonschema:"Detailed description of the task or action needed"`
+	Assignee     string            `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
+	Attachments  []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	CronSchedule string            `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
+	EventID      string            `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
+	ClearContext bool              `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
 }
 
 // PublishEventParams is the input to the publishEvent tool.
@@ -257,9 +258,29 @@ type UpdateTaskStatusParams struct {
 
 // ReplyParams is the input to the reply tool.
 type ReplyParams struct {
-	ChatID      string              `json:"chatId" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
-	Text        string              `json:"text" jsonschema:"The message text to send"`
-	Attachments []entity.Attachment `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
+	ChatID      string            `json:"chatId" jsonschema:"The conversation to reply in (from the chat_id tag field)"`
+	Text        string            `json:"text" jsonschema:"The message text to send"`
+	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
+}
+
+// AttachmentParam is an attachment as a tool receives it. It is not
+// entity.Attachment, whose url only the server sets and a tool must not offer.
+type AttachmentParam struct {
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"` // base64
+}
+
+func toEntityAttachments(in []AttachmentParam) []entity.Attachment {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]entity.Attachment, len(in))
+	for i, a := range in {
+		out[i] = entity.Attachment{ID: a.ID, Filename: a.Filename, MimeType: a.MimeType, Data: a.Data}
+	}
+	return out
 }
 
 // DownloadAttachmentParams is the input to the download_attachment tool.
@@ -1347,8 +1368,9 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 	}
 
 	var attachmentsJSON string
-	if len(params.Attachments) > 0 {
-		if b, err := json.Marshal(params.Attachments); err == nil {
+	if atts := toEntityAttachments(params.Attachments); len(atts) > 0 {
+		crud.SaveAttachments(ps.storage, ps.idgen, atts)
+		if b, err := json.Marshal(atts); err == nil {
 			attachmentsJSON = string(b)
 		}
 	}
@@ -1497,7 +1519,7 @@ func (ps *WorkspaceServer) handleReply(ctx context.Context, req *mcp.CallToolReq
 		}, nil, nil
 	}
 
-	if _, err := ps.reply(ctx, params.ChatID, params.Text, params.Attachments, nil); err != nil {
+	if _, err := ps.reply(ctx, params.ChatID, params.Text, toEntityAttachments(params.Attachments), nil); err != nil {
 		return &mcp.CallToolResult{
 			IsError: true,
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to deliver reply: %v", err)}},
@@ -1968,6 +1990,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 			ID       string `json:"id"`
 			Filename string `json:"filename"`
 			MimeType string `json:"mimeType"`
+			URL      string `json:"url,omitempty"`
 		}
 		var attachments []attMeta
 		if len(m.Attachments) > 0 {
@@ -1979,6 +2002,7 @@ func buildConversationJSON(task model.Task, cursor, limit int) string {
 							ID:       a.ID,
 							Filename: a.Filename,
 							MimeType: a.MimeType,
+							URL:      a.URL,
 						})
 					}
 				}
@@ -2881,7 +2905,11 @@ func formatModelAttachments(raw []byte) string {
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {
-			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
+			part := fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType)
+			if a.URL != "" {
+				part += " url=" + a.URL
+			}
+			parts = append(parts, part)
 		}
 	}
 	if len(parts) == 0 {
