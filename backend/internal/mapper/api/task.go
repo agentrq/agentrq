@@ -409,6 +409,7 @@ func fromEntityAttachmentsToView(atts []entity.Attachment) []view.Attachment {
 			Filename: a.Filename,
 			MimeType: a.MimeType,
 			Data:     a.Data,
+			URL:      a.URL,
 		}
 	}
 	return res

@@ -146,6 +146,8 @@ type (
 		Filename string `json:"filename"`
 		MimeType string `json:"mimeType"`
 		Data     string `json:"data"` // base64
+		// URL is the file's public link, when attachments are kept in S3.
+		URL string `json:"url,omitempty"`
 	}
 
 	Message struct {

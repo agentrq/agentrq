@@ -15,7 +15,9 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
+	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/datatypes"
 )
@@ -814,12 +816,20 @@ func (c *controller) GetAttachment(ctx context.Context, req entity.GetAttachment
 }
 
 func (c *controller) saveAttachments(atts []entity.Attachment) {
+	SaveAttachments(c.storage, c.idgen, atts)
+}
+
+// SaveAttachments stores each attachment that carries data, and records its
+// public link when the store makes one. A url the caller sent is dropped:
+// only the store makes links, so nobody can plant one.
+func SaveAttachments(store storage.Service, ids idgen.Service, atts []entity.Attachment) {
 	for i := range atts {
+		atts[i].URL = ""
 		if atts[i].Data != "" {
 			// Always generate a server-controlled ID; never trust caller-provided IDs.
 			// This prevents slug-keyed files that break the download path.
-			atts[i].ID = monoflake.ID(c.idgen.NextID()).String()
-			_ = c.storage.Save(atts[i].ID, atts[i].Data)
+			atts[i].ID = monoflake.ID(ids.NextID()).String()
+			atts[i].URL, _ = storage.SaveAttachment(store, atts[i].ID, atts[i].Data, atts[i].MimeType)
 			atts[i].Data = "" // clear from metadata
 		}
 	}

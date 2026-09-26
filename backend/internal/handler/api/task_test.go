@@ -214,6 +214,17 @@ func TestReplyChannelContent(t *testing.T) {
 		}
 	})
 
+	t.Run("lists an attachment's link when it has one", func(t *testing.T) {
+		got := formatAttachments([]entity.Attachment{
+			{ID: "att-1", Filename: "log.txt", MimeType: "text/plain"},
+			{ID: "att-2", Filename: "a.png", MimeType: "image/png", URL: "https://cdn/attachments/att-2"},
+		})
+		want := "Attachments:\n  - id=att-1 name=log.txt type=text/plain\n  - id=att-2 name=a.png type=image/png url=https://cdn/attachments/att-2"
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
 	t.Run("lists attachments after the message in both branches", func(t *testing.T) {
 		atts := []entity.Attachment{{ID: "att-1", Filename: "log.txt", MimeType: "text/plain"}}
 		listed := formatAttachments(atts)

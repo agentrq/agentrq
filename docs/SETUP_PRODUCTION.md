@@ -191,8 +191,29 @@ Skill file content is kept in the `skills/` directory under `AGENTRQ_STORAGE_DIR
 | `AGENTRQ_S3_SECRET_ACCESS_KEY` | | Secret access key. |
 | `AGENTRQ_S3_REGION` | `us-east-1` | Bucket region. |
 | `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
+| `AGENTRQ_S3_PUBLIC_URL` | `<endpoint>/<bucket>` | Base of public attachment links, e.g. a CDN in front of the bucket. |
 
 Switching an existing deployment does not move skills already saved, so copy the `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket first, or re-import them.
+
+### Attachment Storage
+
+Attachments are kept in `AGENTRQ_STORAGE_DIR` by default. Set `AGENTRQ_ATTACHMENTS_STORAGE=s3` to keep them in the bucket above instead, at `attachments/<attachment id>`, each with its own content type. Every attachment then gets a public link, `<AGENTRQ_S3_PUBLIC_URL>/attachments/<attachment id>`, which the web app offers to copy and which agents are given alongside the attachment's id. The server refuses to start on any value other than `local` or `s3`.
+
+Anyone holding a link can read the file, so the bucket must allow anonymous reads of `attachments/*`, and nothing else. No object ACL is set, since new AWS buckets and several S3-compatible stores refuse them; use a bucket policy instead (AWS example):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": "*",
+    "Action": "s3:GetObject",
+    "Resource": "arn:aws:s3:::<bucket>/attachments/*"
+  }]
+}
+```
+
+The daily retention cleanup only reaches the local directory. With S3, add a lifecycle rule that expires `attachments/` after the same period. Switching does not move attachments already saved; they stay readable only while local storage is in use.
 
 ## Reverse Proxy Setup (Nginx Example)
 

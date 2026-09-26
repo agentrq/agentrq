@@ -15,6 +15,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
@@ -144,12 +145,13 @@ func (c *controller) copyAttachments(raw datatypes.JSON) (datatypes.JSON, []stri
 			continue
 		}
 		id := monoflake.ID(c.idgen.NextID()).String()
-		if err := c.storage.Save(id, base64.StdEncoding.EncodeToString(data)); err != nil {
+		link, err := storage.SaveAttachment(c.storage, id, base64.StdEncoding.EncodeToString(data), a.MimeType)
+		if err != nil {
 			zlog.Warn().Err(err).Str("attachmentID", a.ID).Msg("fork: attachment copy failed, skipped")
 			continue
 		}
 		ids = append(ids, id)
-		out = append(out, entity.Attachment{ID: id, Filename: a.Filename, MimeType: a.MimeType})
+		out = append(out, entity.Attachment{ID: id, Filename: a.Filename, MimeType: a.MimeType, URL: link})
 	}
 	if len(out) == 0 {
 		return nil, ids

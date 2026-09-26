@@ -109,6 +109,24 @@ func TestS3(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("PublicURL", func(t *testing.T) {
+		mockConfig.EXPECT().Populate("s3", gomock.Any()).DoAndReturn(func(_ string, v any) error {
+			*v.(*s3Config) = s3Config{Endpoint: "https://s3.example.com/", Bucket: "my bucket"}
+			return nil
+		})
+		svc, err := New(Params{Config: mockConfig})
+		assert.NoError(t, err)
+		assert.Equal(t, "https://s3.example.com/my%20bucket/attachments/a%3Fb", svc.PublicURL(context.Background(), "attachments", "a?b"))
+
+		mockConfig.EXPECT().Populate("s3", gomock.Any()).DoAndReturn(func(_ string, v any) error {
+			*v.(*s3Config) = s3Config{Endpoint: "https://s3.example.com", Bucket: "b", PublicURL: " https://cdn.example.com/files/ "}
+			return nil
+		})
+		svc, err = New(Params{Config: mockConfig})
+		assert.NoError(t, err)
+		assert.Equal(t, "https://cdn.example.com/files/attachments/x/y", svc.PublicURL(context.Background(), "attachments", "x/y"))
+	})
+
 	t.Run("NewCredentialsProvider", func(t *testing.T) {
 		fn := newCredentialsProvider("ak", "sk")
 		creds, err := fn(context.Background())

@@ -2580,6 +2580,14 @@ components:
             Base64 on the way in only. Cleared before the metadata is stored,
             so it is absent from every response; use the attachment download
             route to get the bytes back.
+        url:
+          type: string
+          format: uri
+          readOnly: true
+          description: |
+            Public link to the file, present only when attachments are kept in
+            S3 (`AGENTRQ_ATTACHMENTS_STORAGE=s3`). Set by the server; ignored
+            on the way in. The download route works either way.
 
     Event:
       type: object

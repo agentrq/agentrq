@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -237,12 +238,14 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
+	var got []entity.Attachment
 	mockPS := mock_pubsub.NewMockService(ctrl)
 	ps := &WorkspaceServer{
 		workspaceID: 100,
 		userID:      monoflake.ID(15264777).String(),
 		pubsub:      mockPS,
 		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			got = attachments
 			return 1, nil
 		},
 	}
@@ -250,8 +253,9 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := ReplyParams{
-		ChatID: monoflake.ID(42).String(),
-		Text:   "hello",
+		ChatID:      monoflake.ID(42).String(),
+		Text:        "hello",
+		Attachments: []AttachmentParam{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}},
 	}
 	res, _, err := ps.handleReply(context.Background(), nil, params)
 	if err != nil {
@@ -259,6 +263,10 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	}
 	if res.IsError {
 		t.Fatal("expected no error")
+	}
+	want := []entity.Attachment{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("reply got attachments %#v", got)
 	}
 }
 
@@ -677,13 +685,13 @@ func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 			ID:          43,
 			Title:       "Task with Attachments",
 			Body:        "Body",
-			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"}]`),
+			Attachments: []byte(`[{"id":"att-1","filename":"file.txt"},{"id":"att-2","filename":"s3.png","url":"https://cdn/attachments/att-2"}]`),
 		}, nil
 	}
 	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{})
 	text = res.Content[0].(*mcp.TextContent).Text
-	if !contains(text, "file.txt") {
-		t.Errorf("expected attachments to be formatted, got: %s", text)
+	if !contains(text, "id=att-1 name=file.txt type=\n") || !contains(text, "id=att-2 name=s3.png type= url=https://cdn/attachments/att-2") {
+		t.Errorf("expected attachments, with a link only where there is one, got: %s", text)
 	}
 
 	// Case 2: Not Found
@@ -728,7 +736,8 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 				Body:   "Specific Body",
 				Status: "ongoing",
 				Messages: []model.Message{
-					{ID: 1001, Sender: "human", Text: "hi"},
+					{ID: 1001, Sender: "human", Text: "hi",
+						Attachments: []byte(`[{"id":"att-1","filename":"a.png","mimeType":"image/png","url":"https://cdn/attachments/att-1"}]`)},
 				},
 			}, nil
 		},
@@ -755,6 +764,9 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 	// Case 2: fetch by id, with conversation
 	res, _, _ = ps.handleGetTask(context.Background(), nil, GetTaskParams{TaskID: monoflake.ID(42).String(), IncludeConversation: true})
 	text = res.Content[0].(*mcp.TextContent).Text
+	if !contains(text, `"url":"https://cdn/attachments/att-1"`) {
+		t.Errorf("expected the attachment's link in the conversation: %s", text)
+	}
 	if !contains(text, "Conversation:") || !contains(text, `"text":"hi"`) || !contains(text, `"total":1`) {
 		t.Errorf("expected conversation in content: %s", text)
 	}

@@ -990,7 +990,11 @@ func formatAttachments(atts []entity.Attachment) string {
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {
-			parts = append(parts, fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType))
+			part := fmt.Sprintf("  - id=%s name=%s type=%s", a.ID, a.Filename, a.MimeType)
+			if a.URL != "" {
+				part += " url=" + a.URL
+			}
+			parts = append(parts, part)
 		}
 	}
 	if len(parts) == 0 {
