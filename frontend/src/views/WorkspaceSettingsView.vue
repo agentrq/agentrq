@@ -228,7 +228,9 @@
                     @no-machine="noMachine = $event"
                   />
 
-                  <div class="flex gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4">
+                  <!-- Wraps: six tabs are wider than a phone, and the last one
+                       ran off the card. -->
+                  <div class="flex flex-wrap gap-x-4 gap-y-2 border-b border-gray-100 dark:border-zinc-800 pb-4">
                     <!-- First, and open, when there is no machine to run an agent on:
                          enrolling one once is less work than wiring up any
                          of the agents after it by hand, every time. -->
