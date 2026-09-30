@@ -185,6 +185,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUITrajectoryView
 	case entity.ActionUICopyCode:
 		action = model.ActionIDUICopyCode
+	case entity.ActionUIDictationEnd:
+		action = model.ActionIDUIDictationEnd
 	case entity.ActionAgentModelSelect:
 		action = model.ActionIDAgentModelSelect
 	case entity.ActionMachineAdd:

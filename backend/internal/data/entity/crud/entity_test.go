@@ -49,6 +49,7 @@ func TestActionString(t *testing.T) {
 		{ActionUICopyMarkdown, "ui_copy_markdown"},
 		{ActionUITrajectoryView, "ui_trajectory_view"},
 		{ActionUICopyCode, "ui_copy_code"},
+		{ActionUIDictationEnd, "ui_dictation_end"},
 		{ActionMachineAdd, "machine_add"},
 		{ActionMachineRemove, "machine_remove"},
 		{ActionMachineDisable, "machine_disable"},

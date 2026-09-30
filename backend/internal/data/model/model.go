@@ -630,6 +630,9 @@ const (
 	// A machine's daemon restarted, or updated, from the panel.
 	ActionIDMachineRestart
 	ActionIDMachineUpdate
+	// A dictation done by a phone's own speech recognition, as distinct
+	// from ActionIDLocalAIRecordingEnd, which is the local Whisper model.
+	ActionIDUIDictationEnd
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

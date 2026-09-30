@@ -14,9 +14,12 @@ vi.mock('../src/workers/whisperWorker.js?worker', () => ({
   },
 }))
 
+const telemetry = []
+
 vi.mock('../src/api', () => ({
-  recordTelemetry: () => {},
+  recordTelemetry: (action) => { telemetry.push(action) },
   TELEMETRY_LOCAL_AI_RECORDING_END: 'local_ai_recording_end',
+  TELEMETRY_UI_DICTATION_END: 'ui_dictation_end',
 }))
 
 const { useSpeechToText } = await import('../src/composables/useSpeechToText')
@@ -60,6 +63,7 @@ const dictate = async (body, input, transcript) => {
 
 beforeEach(() => {
   workers.length = 0
+  telemetry.length = 0
   vi.stubGlobal('navigator', {
     ...navigator,
     mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [] }) },
@@ -98,5 +102,84 @@ describe('useSpeechToText', () => {
     const body = ref('fix')
     await dictate(body, undefined, 'login')
     expect(body.value).toBe('fix login')
+  })
+})
+
+describe('useSpeechToText on an iPhone', () => {
+  const recognitions = []
+  class FakeRecognition {
+    constructor() { recognitions.push(this) }
+    start() {}
+    stop() { this.onend() }
+    abort() {}
+  }
+
+  const mount = (body) => {
+    let stt
+    const app = createApp({ setup() { stt = useSpeechToText(body, 'ws1'); return () => h('div') } })
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    return stt
+  }
+
+  beforeEach(() => {
+    recognitions.length = 0
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+      language: 'en-GB',
+      mediaDevices: { getUserMedia: () => Promise.resolve({ getTracks: () => [] }) },
+    })
+    vi.stubGlobal('webkitSpeechRecognition', FakeRecognition)
+    localStorage.removeItem('stt_lang_ws1')
+  })
+
+  it('dictates with the device, not Whisper, and counts it as a dictation', async () => {
+    localStorage.setItem('stt_lang_ws1', 'tr')
+    const body = ref('fix')
+    const stt = mount(body)
+    expect(stt.isSupported).toBe(true)
+
+    stt.toggleRecording()
+    expect(stt.isRecording.value).toBe(true)
+    expect(recognitions[0].lang).toBe('tr')
+    recognitions[0].onresult({ results: [[{ transcript: 'login' }]] })
+    expect(body.value).toBe('fix login')
+
+    stt.toggleRecording()
+    expect(stt.isRecording.value).toBe(false)
+    expect(workers).toHaveLength(0)
+    expect(telemetry).toEqual(['ui_dictation_end'])
+  })
+
+  it('shows what went wrong', async () => {
+    const stt = mount(ref(''))
+    stt.toggleRecording()
+    recognitions[0].onerror({ error: 'not-allowed' })
+    expect(stt.error.value).toBe('Microphone permission denied')
+    recognitions[0].onend()
+    // A second go clears the last error, so the same one can show again.
+    stt.toggleRecording()
+    expect(stt.error.value).toBe('')
+  })
+
+  it('counts a dictation cut short by leaving the view', () => {
+    const stt = mount(ref(''))
+    stt.toggleRecording()
+    apps.splice(0).forEach((app) => app.unmount())
+    expect(telemetry).toEqual(['ui_dictation_end'])
+  })
+
+  it('falls back to Whisper when the device refuses dictation', async () => {
+    const stt = mount(ref(''))
+    stt.toggleRecording()
+    recognitions[0].onerror({ error: 'service-not-allowed' })
+    recognitions[0].onend()
+
+    stt.toggleRecording()
+    await vi.waitFor(() => expect(stt.isRecording.value).toBe(true))
+    expect(recognitions).toHaveLength(1)
+    stt.toggleRecording()
+    await vi.waitFor(() => expect(workers.length).toBe(1))
   })
 })

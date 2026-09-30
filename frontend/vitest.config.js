@@ -124,6 +124,7 @@ export default defineConfig({
         'src/composables/useAutoTitle.js',
         'src/utils/markdown.js',
         'src/utils/insertAtCursor.js',
+        'src/composables/useNativeDictation.js',
         'src/utils/workspaceForm.js',
         'src/utils/missionTemplates.js',
         'src/composables/useMissionPicker.js',

@@ -1448,6 +1448,11 @@ const (
 	ActionUICopyMarkdown   Action = 54
 	ActionUITrajectoryView Action = 55
 	ActionUICopyCode       Action = 56
+	// A dictation finished with a phone's own speech recognition (an iPhone's,
+	// an iPad's or an Android's) rather than the local Whisper model, which is
+	// ActionLocalAIRecordingEnd. Browser-reported: the audio never leaves the
+	// phone's recogniser for us to see.
+	ActionUIDictationEnd Action = 57
 	// Machines and the agents run on them, all emitted by the backend right
 	// after it does the work — an enrolment, a delete, a kill switch, a
 	// session row, a terminal socket. None of them is browser-reported and
@@ -1561,6 +1566,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUITrajectoryView, true
 	case "ui_copy_code":
 		return ActionUICopyCode, true
+	case "ui_dictation_end":
+		return ActionUIDictationEnd, true
 	case "ui_spin_up":
 		return ActionUISpinUp, true
 	}
@@ -1629,6 +1636,8 @@ func (a Action) String() string {
 		return "ui_trajectory_view"
 	case ActionUICopyCode:
 		return "ui_copy_code"
+	case ActionUIDictationEnd:
+		return "ui_dictation_end"
 	case ActionMachineAdd:
 		return "machine_add"
 	case ActionMachineRemove:
