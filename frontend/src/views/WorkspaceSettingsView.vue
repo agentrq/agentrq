@@ -228,8 +228,9 @@
                     @no-machine="noMachine = $event"
                   />
 
-                  <!-- Wraps: six tabs are wider than a phone, and the last one
-                       ran off the card. -->
+                  <!-- Six tabs are wider than a phone, so there Antigravity is
+                       "Agy" and DeepSeek Harness, a terminal-only setup, is left
+                       out. Wrapping stays for screens narrower still. -->
                   <div class="flex flex-wrap gap-x-4 gap-y-2 border-b border-gray-100 dark:border-zinc-800 pb-4">
                     <!-- First, and open, when there is no machine to run an agent on:
                          enrolling one once is less work than wiring up any
@@ -237,9 +238,9 @@
                     <button v-if="noMachine" type="button" data-test="machine-tab" @click="activeConnectionTab = 'machine'" :class="activeConnectionTab === 'machine' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Machine</button>
                     <button type="button" @click="activeConnectionTab = 'claude'" :class="activeConnectionTab === 'claude' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Claude</button>
                     <button type="button" @click="activeConnectionTab = 'acp'" :class="activeConnectionTab === 'acp' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">ACP</button>
-                    <button type="button" @click="activeConnectionTab = 'antigravity'" :class="activeConnectionTab === 'antigravity' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Antigravity</button>
+                    <button type="button" @click="activeConnectionTab = 'antigravity'" :class="activeConnectionTab === 'antigravity' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all"><span class="md:hidden">Agy</span><span class="hidden md:inline">Antigravity</span></button>
                     <button type="button" @click="activeConnectionTab = 'codex'" :class="activeConnectionTab === 'codex' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Codex</button>
-                    <button type="button" @click="activeConnectionTab = 'deepseek'" :class="activeConnectionTab === 'deepseek' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">DeepSeek Harness</button>
+                    <button type="button" @click="activeConnectionTab = 'deepseek'" :class="activeConnectionTab === 'deepseek' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="hidden md:block pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">DeepSeek Harness</button>
                   </div>
 
                   <section v-if="activeConnectionTab === 'machine'" data-test="machine-setup" class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
