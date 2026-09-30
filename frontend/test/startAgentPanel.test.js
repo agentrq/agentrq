@@ -52,9 +52,14 @@ async function mount(props, list, workspaces = []) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const availability = []
+  const noMachine = []
   const app = createApp({
     render: () =>
-      h(StartAgentPanel, { ...props, onAvailability: (v) => availability.push(v) }),
+      h(StartAgentPanel, {
+        ...props,
+        onAvailability: (v) => availability.push(v),
+        onNoMachine: (v) => noMachine.push(v),
+      }),
   })
   // Blockers render their fix as a link; the real router is mocked away.
   app.use(pinia)
@@ -69,18 +74,19 @@ async function mount(props, list, workspaces = []) {
     el.querySelector('button').click()
     await settle()
   }
-  return { el, text, open, availability }
+  return { el, text, open, availability, noMachine }
 }
 
 describe('StartAgentPanel', () => {
   it('renders nothing, and says so, when no machine is online', async () => {
     // The setup guide is still the honest answer here, so the page must be
     // able to keep it as its primary action.
-    const { el, availability } = await mount({ workspace: WORKSPACE }, [
+    const { el, availability, noMachine } = await mount({ workspace: WORKSPACE }, [
       { id: 'x', name: 'off', enabled: true, online: false },
     ])
     expect(el.textContent.trim()).toBe('')
     expect(availability.at(-1)).toBe(false)
+    expect(noMachine.at(-1)).toBe(true)
   })
 
   it('offers one folded action naming where it will run', async () => {
@@ -88,6 +94,11 @@ describe('StartAgentPanel', () => {
     expect(text()).toBe('Start an agent on workshop-pi')
     expect(el.querySelectorAll('select')).toHaveLength(0)
     expect(availability.at(-1)).toBe(true)
+  })
+
+  it('does not say there is no machine when one is online', async () => {
+    const { noMachine } = await mount({ workspace: WORKSPACE }, [ONLINE])
+    expect(noMachine).toEqual([false])
   })
 
   it('does not ask which machine when there is only one', async () => {

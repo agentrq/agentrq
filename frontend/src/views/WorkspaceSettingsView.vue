@@ -225,9 +225,14 @@
                     :workspace="workspace"
                     variant="card"
                     @availability="canStartAgent = $event"
+                    @no-machine="noMachine = $event"
                   />
 
                   <div class="flex gap-4 border-b border-gray-100 dark:border-zinc-800 pb-4">
+                    <!-- First, and open, when there is no machine to run an agent on:
+                         enrolling one once is less work than wiring up any
+                         of the agents after it by hand, every time. -->
+                    <button v-if="noMachine" type="button" data-test="machine-tab" @click="activeConnectionTab = 'machine'" :class="activeConnectionTab === 'machine' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Machine</button>
                     <button type="button" @click="activeConnectionTab = 'claude'" :class="activeConnectionTab === 'claude' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Claude</button>
                     <button type="button" @click="activeConnectionTab = 'acp'" :class="activeConnectionTab === 'acp' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">ACP</button>
                     <button type="button" @click="activeConnectionTab = 'antigravity'" :class="activeConnectionTab === 'antigravity' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">Antigravity</button>
@@ -235,7 +240,18 @@
                     <button type="button" @click="activeConnectionTab = 'deepseek'" :class="activeConnectionTab === 'deepseek' ? 'text-black dark:text-white border-black dark:border-white' : 'text-gray-400 border-transparent hover:text-gray-600 dark:hover:text-zinc-300'" class="pb-2 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-all">DeepSeek Harness</button>
                   </div>
 
-                  <section v-if="activeConnectionTab !== 'deepseek'" class="space-y-4 min-w-0 w-full overflow-hidden">
+                  <section v-if="activeConnectionTab === 'machine'" data-test="machine-setup" class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Set up a machine</h3>
+                    <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">
+                      No machine is online to run an agent on. A machine is a computer running
+                      <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrqd</code>.
+                      Enrol one and you can start this workspace's agent from here, with nothing to copy.
+                      The other tabs are for connecting an agent yourself.
+                    </p>
+                    <router-link to="/machines" class="inline-block px-6 py-2.5 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold hover:opacity-80 transition-all shadow-sm rounded-sm uppercase tracking-widest whitespace-nowrap">Set up a machine</router-link>
+                  </section>
+
+                  <section v-if="activeConnectionTab !== 'deepseek' && activeConnectionTab !== 'machine'" class="space-y-4 min-w-0 w-full overflow-hidden">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">1. Configuration</h3>
                     <div class="bg-gray-50 dark:bg-zinc-800/50 rounded-sm p-5 relative group border border-gray-200 dark:border-zinc-800 w-full max-w-full overflow-hidden">
                       <div class="flex justify-between items-center mb-4">
@@ -308,7 +324,7 @@
                     </div>
                   </section>
 
-                  <section class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
+                  <section v-if="activeConnectionTab !== 'machine'" class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
                     <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                       {{ setupCardTitle }}
@@ -996,6 +1012,15 @@ const iconError = ref('');
 const showArchiveConfirm = ref(false);
 const showDeleteConfirm = ref(false);
 const activeConnectionTab = ref('claude');
+// Machines are known only once the start-an-agent panel has loaded them, so
+// the Machine tab arrives after the page does: it takes over only while the
+// page is still on its default, Claude, and hands it back when a machine comes
+// online.
+const noMachine = ref(false);
+watch(noMachine, (none) => {
+  if (none && activeConnectionTab.value === 'claude') activeConnectionTab.value = 'machine';
+  else if (!none && activeConnectionTab.value === 'machine') activeConnectionTab.value = 'claude';
+});
 const token = ref('');
 const slackConfig = ref(null);
 

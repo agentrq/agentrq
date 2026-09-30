@@ -131,6 +131,15 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   )
 
   /**
+   * Whether there is no machine to run on at all, once the list is known.
+   *
+   * Not the opposite of `offered`: that one is also false while an agent is
+   * connected, and a page that points somebody at setting up a machine should
+   * do so only when they have none.
+   */
+  const noMachine = computed(() => loaded.value && available.value.length === 0)
+
+  /**
    * Every reason this launch would be refused, worst first.
    *
    * The machine leads: nothing runs on a machine that is off, whatever the
@@ -214,6 +223,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     kind,
     params,
     offered,
+    noMachine,
     blockers,
     canLaunch,
     acpAgents,

@@ -194,6 +194,31 @@ describe('useWorkspaceAgentLaunch: whether to offer it at all', () => {
   })
 })
 
+describe('useWorkspaceAgentLaunch: whether there is no machine at all', () => {
+  it('says nothing while the machines are still arriving', () => {
+    const { l } = harness({ machines: [] })
+    expect(l.noMachine.value).toBe(false)
+  })
+
+  it('says so when none is online and enabled', async () => {
+    const { l } = harness({
+      machines: [
+        { id: 'off', enabled: true, online: false },
+        { id: 'disabled', enabled: false, online: true },
+      ],
+    })
+    await l.load()
+    expect(l.noMachine.value).toBe(true)
+  })
+
+  it('does not, when one can run, even with an agent already connected', async () => {
+    // Unlike the offer: a connected agent is no reason to set up a machine.
+    const { l } = harness({ workspace: { ...OFFLINE_WORKSPACE, agentConnected: true } })
+    await l.load()
+    expect(l.noMachine.value).toBe(false)
+  })
+})
+
 describe('useWorkspaceAgentLaunch: blockers', () => {
   it('has none when everything is ready', async () => {
     const { l } = harness()

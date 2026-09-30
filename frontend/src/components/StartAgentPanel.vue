@@ -33,7 +33,7 @@ const props = defineProps({
   variant: { type: String, default: 'hero' },
 })
 
-const emit = defineEmits(['started', 'availability'])
+const emit = defineEmits(['started', 'availability', 'no-machine'])
 
 const router = useRouter()
 const workspace = computed(() => props.workspace)
@@ -55,6 +55,7 @@ const {
   kind,
   params,
   offered,
+  noMachine,
   blockers,
   canLaunch,
   acpAgents,
@@ -71,6 +72,9 @@ onMounted(launcher.load)
 // Two primary buttons side by side ask somebody to choose before they know the
 // difference.
 watch(offered, (value) => emit('availability', value), { immediate: true })
+// And when there is nowhere to run at all, setting up a machine is what the
+// setup page should lead with.
+watch(noMachine, (value) => emit('no-machine', value), { immediate: true })
 
 /** The machine that will run it, when there is no choice to make. */
 const onlyMachine = computed(() => (available.value.length === 1 ? available.value[0] : null))
