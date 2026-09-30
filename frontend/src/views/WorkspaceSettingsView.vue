@@ -244,12 +244,15 @@
                   </div>
 
                   <section v-if="activeConnectionTab === 'machine'" data-test="machine-setup" class="space-y-4 bg-gray-50 dark:bg-zinc-800/30 p-6 rounded-sm border border-gray-100 dark:border-zinc-800">
-                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">Set up a machine</h3>
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest">The simplest way to spin up agents</h3>
                     <p class="text-[11px] text-gray-600 dark:text-zinc-400 font-medium">
-                      No machine is online to run an agent on. A machine is a computer running
-                      <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrqd</code>.
-                      Enrol one and you can start this workspace's agent from here, with nothing to copy.
-                      The other tabs are for connecting an agent yourself.
+                      Set up a machine once — any computer running
+                      <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">agentrqd</code> —
+                      and you can start this workspace's agent, or any other's, from here in one click.
+                      Nothing to copy, nothing to configure.
+                    </p>
+                    <p class="text-[11px] text-gray-500 dark:text-zinc-400 font-medium">
+                      Rather connect an agent yourself? The other tabs show how.
                     </p>
                     <router-link to="/machines" class="inline-block px-6 py-2.5 bg-black dark:bg-white text-white dark:text-black text-[10px] font-bold hover:opacity-80 transition-all shadow-sm rounded-sm uppercase tracking-widest whitespace-nowrap">Set up a machine</router-link>
                   </section>

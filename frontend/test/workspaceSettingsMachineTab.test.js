@@ -68,7 +68,7 @@ describe('the setup tab, by whether there is a machine', () => {
     expect(machineTab).not.toBeNull()
     expect(machineTab.nextElementSibling).toBe(tab('claude'))
     const panel = el.querySelector('[data-test="machine-setup"]')
-    expect(text(panel)).toContain('No machine is online')
+    expect(text(panel)).toContain('The simplest way to spin up agents')
     expect(panel.querySelector('a').getAttribute('href')).toBe('/machines')
     // The manual steps belong to the other tabs.
     expect(text(el)).not.toContain('1. Configuration')
