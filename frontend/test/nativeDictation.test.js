@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, nextTick } from 'vue'
-import { dictationPlatform, dictationLanguage, useNativeDictation } from '../src/composables/useNativeDictation'
+import { dictationPlatform, isMobileDevice, dictationLanguage, useNativeDictation } from '../src/composables/useNativeDictation'
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 
@@ -63,6 +63,27 @@ describe('dictationPlatform', () => {
   it('is null with no navigator at all', () => {
     vi.stubGlobal('navigator', undefined)
     expect(dictationPlatform()).toBe(null)
+  })
+})
+
+describe('isMobileDevice', () => {
+  it('counts the phones with dictation', () => {
+    expect(isMobileDevice({ userAgent: IPHONE })).toBe(true)
+    expect(isMobileDevice({ userAgent: ANDROID })).toBe(true)
+  })
+
+  it('counts an older phone with none', () => {
+    expect(isMobileDevice({ userAgent: 'Opera/9.80 (J2ME/MIDP; Opera Mini/9.80)' })).toBe(true)
+  })
+
+  it('does not count a computer', () => {
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/130' })).toBe(false)
+  })
+
+  it('reads the real navigator, and copes with none', () => {
+    expect(isMobileDevice()).toBe(true)
+    vi.stubGlobal('navigator', undefined)
+    expect(isMobileDevice()).toBe(false)
   })
 })
 

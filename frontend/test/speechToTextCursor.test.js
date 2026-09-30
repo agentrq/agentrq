@@ -138,7 +138,7 @@ describe('useSpeechToText on an iPhone', () => {
     localStorage.setItem('stt_lang_ws1', 'tr')
     const body = ref('fix')
     const stt = mount(body)
-    expect(stt.isSupported).toBe(true)
+    expect(stt.isSupported.value).toBe(true)
 
     stt.toggleRecording()
     expect(stt.isRecording.value).toBe(true)
@@ -170,16 +170,33 @@ describe('useSpeechToText on an iPhone', () => {
     expect(telemetry).toEqual(['ui_dictation_end'])
   })
 
-  it('falls back to Whisper when the device refuses dictation', async () => {
+  it('hides the mic, and says why, when the phone refuses dictation', () => {
     const stt = mount(ref(''))
     stt.toggleRecording()
     recognitions[0].onerror({ error: 'service-not-allowed' })
     recognitions[0].onend()
+    expect(stt.isSupported.value).toBe(false)
+    expect(stt.error.value).toMatch(/Dictation isn't available here/)
 
+    // Never Whisper on a phone, even if the button were somehow pressed.
     stt.toggleRecording()
-    await vi.waitFor(() => expect(stt.isRecording.value).toBe(true))
     expect(recognitions).toHaveLength(1)
-    stt.toggleRecording()
-    await vi.waitFor(() => expect(workers.length).toBe(1))
+    expect(stt.isRecording.value).toBe(false)
+  })
+
+  it('offers no mic on a phone without dictation', () => {
+    vi.stubGlobal('webkitSpeechRecognition', undefined)
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Android 14; Mobile; rv:131.0) Gecko/131.0 Firefox/131.0' })
+    expect(mount(ref('')).isSupported.value).toBe(false)
+  })
+})
+
+describe('useSpeechToText on a computer', () => {
+  it('offers Whisper', () => {
+    let stt
+    const app = createApp({ setup() { stt = useSpeechToText(ref(''), 'ws1'); return () => h('div') } })
+    app.mount(document.createElement('div'))
+    apps.push(app)
+    expect(stt.isSupported.value).toBe(true)
   })
 })

@@ -7,10 +7,8 @@ import { insertAtCursor } from '../utils/insertAtCursor';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 import WhisperWorker from '../workers/whisperWorker.js?worker';
 import { useToasts } from './useToasts';
-import { useNativeDictation, dictationLanguage } from './useNativeDictation';
+import { useNativeDictation, dictationLanguage, isMobileDevice } from './useNativeDictation';
 import { recordTelemetry, TELEMETRY_LOCAL_AI_RECORDING_END, TELEMETRY_UI_DICTATION_END } from '../api';
-
-let hasShownMobileToast = false;
 
 /**
  * Composable for browser-based speech-to-text using local Whisper AI.
@@ -20,7 +18,8 @@ let hasShownMobileToast = false;
  * Uses the same model as whisperweb.dev (onnx-community/whisper-base).
  *
  * On a phone or tablet its own dictation is used instead; see
- * useNativeDictation. Whisper is the fallback there when the phone refuses it.
+ * useNativeDictation. Whisper is never run there — it crashes a phone — so a
+ * phone without dictation, or one that refuses it, has no voice input at all.
  *
  * @param {import('vue').Ref<string>} targetRef - Reactive string ref the transcribed text goes into
  * @param {string|import('vue').ComputedRef<string>} workspaceId - Workspace identifier for settings lookup
@@ -33,7 +32,7 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
   const isModelLoading = ref(false);
   const modelProgress = ref(0);
   const error = ref('');
-  const { notifyError, notifyInfo } = useToasts();
+  const { notifyError } = useToasts();
 
 
   watch(error, (newVal) => {
@@ -50,9 +49,9 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     return typeof workspaceId === 'function' ? workspaceId() : (workspaceId?.value ?? workspaceId);
   }
 
-  // Set once the device has refused its own dictation, for as long as this
-  // view lives; the mic then records for Whisper instead.
-  let nativeUnavailable = false;
+  // Set once the phone has refused its own dictation, for as long as this view
+  // lives; the mic is then hidden.
+  const nativeUnavailable = ref(false);
   const native = useNativeDictation(targetRef, inputRef, {
     language: () => {
       const wsId = resolveWorkspaceId();
@@ -61,18 +60,19 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     onError: (message) => { error.value = message; },
     onEnd: () => recordTelemetry(TELEMETRY_UI_DICTATION_END, resolveWorkspaceId()),
     onUnavailable: () => {
-      nativeUnavailable = true;
-      notifyInfo("This phone's dictation isn't available here, so the mic uses the on-device model instead. Tap it again to record.", 'Speech to Text');
+      nativeUnavailable.value = true;
+      error.value = "Dictation isn't available here. Check it is turned on in your phone's keyboard settings.";
     },
   });
-  const usesNative = () => native.isSupported && !nativeUnavailable;
 
   const isRecording = computed(() => recording.value || native.isListening.value);
 
-  const isSupported = native.isSupported || (typeof window !== 'undefined'
+  const whisperSupported = !isMobileDevice()
     && !!navigator.mediaDevices?.getUserMedia
     && typeof Worker !== 'undefined'
-    && typeof MediaRecorder !== 'undefined');
+    && typeof MediaRecorder !== 'undefined';
+
+  const isSupported = computed(() => native.isSupported ? !nativeUnavailable.value : whisperSupported);
 
   function getResolvedLanguage() {
     if (typeof window === 'undefined') return 'en';
@@ -212,12 +212,6 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
     error.value = '';
     audioChunks = [];
 
-    const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    if (isMobile && !hasShownMobileToast) {
-      notifyInfo('Voice transcription on mobile currently supports English only.', 'English Only');
-      hasShownMobileToast = true;
-    }
-
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -303,10 +297,11 @@ export function useSpeechToText(targetRef, workspaceId, inputRef) {
   }
 
   function toggleRecording() {
-    if (usesNative()) {
+    if (native.isSupported) {
+      if (nativeUnavailable.value) return;
       if (native.isListening.value) {
         native.stop();
-      } else if (!isTranscribing.value) {
+      } else {
         error.value = '';
         native.start();
       }

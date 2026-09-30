@@ -21,6 +21,14 @@ export function dictationPlatform(nav = typeof navigator !== 'undefined' ? navig
 }
 
 /**
+ * Whether this is a phone or tablet of any kind — one of dictationPlatform's,
+ * or one of the older ones that has no dictation for a page to use.
+ */
+export function isMobileDevice(nav = typeof navigator !== 'undefined' ? navigator : undefined) {
+  return !!dictationPlatform(nav) || /webOS|BlackBerry|IEMobile|Opera Mini/i.test(nav?.userAgent || '');
+}
+
+/**
  * The language to ask the recogniser for. The workspace setting holds a bare
  * code ("de"); the browser's tag keeps its region ("de-AT"), so it wins when
  * the two agree.
@@ -48,7 +56,8 @@ const ERRORS = {
  *
  * Offered on iPhones, iPads and Android only. A computer keeps the local
  * Whisper model, which it can afford to run, rather than send the audio to a
- * browser vendor; see useSpeechToText.
+ * browser vendor; a phone never runs Whisper, which crashes it. See
+ * useSpeechToText.
  *
  * The words appear as they are recognised, at the cursor as it was when
  * dictation started. On Android it is one phrase per start, ending at a
@@ -61,7 +70,7 @@ const ERRORS = {
  * @param {() => string} opts.language - asked on every start
  * @param {(message: string) => void} opts.onError
  * @param {() => void} opts.onEnd - once per dictation that started, however it ended
- * @param {() => void} opts.onUnavailable - the device refused the service:
+ * @param {() => void} opts.onUnavailable - the phone refused the service:
  *   dictation turned off, or a home-screen app on an iOS that withholds it
  */
 export function useNativeDictation(targetRef, inputRef, { language, onError, onEnd, onUnavailable }) {
