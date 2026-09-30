@@ -68,11 +68,12 @@ a tool that writes is worse than no hint at all.
 regex the Go source for it — the frontend allow-list parity test and two plugin
 doc checks — and all three stop seeing a tool if anything precedes its name.
 
-## The server instructions must stay under 2048 characters
+## The server instructions must stay under 1024 characters
 
-Claude Code keeps only the first 2048 characters of a server's instructions. The
-rest is cut without warning, and the skills rule used to fall past that point.
-The instruction test enforces the cap.
+Claude Code keeps only the first 2048 characters of a server's instructions and
+cuts the rest without warning; the skills rule once fell past that point. The
+instruction test holds the text to 1024, so a new rule still fits: shorten an
+old one rather than raise the cap.
 
 ## Workspace memory
 
