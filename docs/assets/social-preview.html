@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- Source of social-preview.png, the repository's GitHub social preview (1280×640),
+     uploaded by hand in Settings → General → Social preview. Re-render after editing
+     (the font comes from frontend/node_modules, so run `npm ci` there first):
+     chrome --headless --hide-scrollbars --allow-file-access-from-files --window-size=1280,640 \
+       --screenshot=social-preview.png file://$PWD/social-preview.html -->
+
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AgentRQ social preview</title>
+<style>
+  @font-face {
+    font-family: "Inter Variable";
+    src: url("../../frontend/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 900;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: "Inter Variable", sans-serif;
+    color: #fafafa;
+    background:
+      radial-gradient(900px 500px at 0% 0%, rgba(255,255,255,0.07), transparent 60%),
+      radial-gradient(700px 420px at 100% 100%, rgba(255,255,255,0.05), transparent 60%),
+      #09090b;
+    position: relative;
+  }
+  body::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at 30% 30%, #000 20%, transparent 75%);
+  }
+  .wrap { position: relative; height: 100%; padding: 56px 64px 48px; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 22px; }
+  .logo { width: 76px; height: 76px; flex: none; }
+  .name { font-size: 60px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; }
+  .tag { margin-top: 8px; font-size: 24px; font-weight: 500; color: #a1a1aa; letter-spacing: -0.01em; }
+  .pills { margin-left: auto; display: flex; gap: 10px; align-self: flex-start; margin-top: 6px; }
+  .pill {
+    font-size: 15px; font-weight: 600; color: #e4e4e7;
+    border: 1px solid #3f3f46; background: rgba(24,24,27,0.8);
+    padding: 7px 14px; border-radius: 999px;
+  }
+
+  .lead { margin-top: 30px; font-size: 22px; line-height: 1.45; color: #d4d4d8; max-width: 1080px; }
+  .lead b { color: #fff; font-weight: 700; }
+
+  .grid {
+    margin-top: 30px; flex: 1;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  }
+  .f {
+    display: flex; align-items: center; gap: 14px;
+    border: 1px solid #27272a; background: rgba(24,24,27,0.72);
+    border-radius: 14px; padding: 0 16px;
+  }
+  .f svg {
+    width: 36px; height: 36px; flex: none; padding: 7px;
+    border-radius: 9px; background: #27272a;
+    stroke: #fafafa; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .f div { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.2; }
+  .f small { display: block; font-size: 13.5px; font-weight: 450; color: #a1a1aa; margin-top: 3px; letter-spacing: 0; }
+
+  footer {
+    margin-top: 24px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 17px; color: #a1a1aa;
+  }
+  footer .url { color: #fafafa; font-weight: 700; font-size: 19px; }
+  footer .dot { color: #52525b; margin: 0 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="#fafafa"/>
+      <g transform="translate(4, 4)" fill="none" stroke="#09090b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        <path d="M12 7l-3.5 8"/><path d="M12 7l3.5 8"/><path d="M9.5 12h5"/>
+      </g>
+    </svg>
+    <div>
+      <div class="name">AgentRQ</div>
+      <div class="tag">The agent–human collaboration platform</div>
+    </div>
+    <div class="pills">
+      <span class="pill">Open source</span>
+      <span class="pill">MCP native</span>
+      <span class="pill">Self-hostable</span>
+    </div>
+  </header>
+
+  <p class="lead">Delegate tasks to your AI coding agents and work alongside them. Agents pull work, ask for
+    permission and report back over <b>MCP</b>, live on every device — running on <b>your own machines</b>.</p>
+
+  <section class="grid">
+    <div class="f">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></svg>
+      <div>Visual task board<small>List and Kanban, live</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <div>Task scheduling<small>One-off and recurring cron</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+      <div>Events<small>Cross-workspace triggers</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h4a2 2 0 0 1 2 2v7"/></svg>
+      <div>Workflows<small>Chain agents in a node graph</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/></svg>
+      <div>Machines<small>Agents on your hardware</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="m5 8 5 4-5 4M12 17h7"/></svg>
+      <div>Live terminals<small>Attach to any agent session</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9"/></svg>
+      <div>Workspace forks<small>Run agents in parallel</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
+      <div>Skills and memory<small>Shared, imported from GitHub</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg>
+      <div>Tool call history<small>Every step of the trajectory</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>
+      <div>Speech to text<small>Dictate replies on any device</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><path d="m12 3 2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg>
+      <div>Supervisor<small>Oversees every workspace</small></div>
+    </div>
+    <div class="f">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg>
+      <div>Desktop, web &amp; CLI<small>Chrome, Slack, ACP gateway</small></div>
+    </div>
+  </section>
+
+  <footer>
+    <span class="url">github.com/agentrq/agentrq</span>
+    <span>Works with any MCP or ACP agent<span class="dot">•</span>agentrq.com</span>
+  </footer>
+</div>
+</body>
+</html>
