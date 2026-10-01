@@ -77,6 +77,35 @@ func TestScheduler(t *testing.T) {
 		s.(*scheduler).tick(context.Background())
 	})
 
+	t.Run("TickCatchesUpSkippedMinutes", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockRepo := mock_repo.NewMockRepository(ctrl)
+		mockIdgen := mock_idgen.NewMockService(ctrl)
+		mockPubSub := mock_pubsub.NewMockService(ctrl)
+		s := New(mockRepo, mockIdgen, bus, mockPubSub).(*scheduler)
+
+		task := model.Task{
+			ID:           1,
+			CronSchedule: "* * * * *",
+			WorkspaceID:  10,
+			UserID:       1,
+		}
+		mockRepo.EXPECT().SystemListTasksByStatus(gomock.Any(), "cron").Return([]model.Task{task}, nil)
+
+		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "notstarted").Return(false, nil).Times(2)
+		mockRepo.EXPECT().SystemCheckTaskExists(gomock.Any(), int64(10), int64(1), "ongoing").Return(false, nil).Times(2)
+		mockIdgen.EXPECT().NextID().Return(int64(2)).Times(2)
+		mockRepo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).Return(model.Task{ID: 2}, nil).Times(2)
+		mockPubSub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).Times(2)
+
+		s.now = func() time.Time {
+			return time.Date(2026, time.October, 1, 12, 2, 30, 0, time.UTC)
+		}
+		s.lastMinute = time.Date(2026, time.October, 1, 12, 0, 0, 0, time.UTC)
+		s.tick(context.Background())
+	})
+
 	t.Run("TickWithInvalidCron", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()

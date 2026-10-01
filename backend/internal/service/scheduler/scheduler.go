@@ -6,6 +6,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/mustafaturan/monoflake"
 	"github.com/robfig/cron/v3"
+	"gorm.io/gorm"
 )
 
 type Service interface {
@@ -28,19 +30,23 @@ type Service interface {
 }
 
 type scheduler struct {
-	repo   base.Repository
-	idgen  idgen.Service
-	bus    *eventbus.Bus
-	pubsub pubsub.Service
+	repo       base.Repository
+	idgen      idgen.Service
+	bus        *eventbus.Bus
+	pubsub     pubsub.Service
+	now        func() time.Time
+	lastMinute time.Time
 }
 
 func New(repo base.Repository, idgen idgen.Service, bus *eventbus.Bus, ps pubsub.Service) Service {
-	return &scheduler{repo: repo, idgen: idgen, bus: bus, pubsub: ps}
+	return &scheduler{repo: repo, idgen: idgen, bus: bus, pubsub: ps, now: time.Now}
 }
 
 func (s *scheduler) Start(ctx context.Context) {
+	s.lastMinute = s.now().UTC().Truncate(time.Minute)
 	ticker := time.NewTicker(1 * time.Minute)
 	go func() {
+		defer ticker.Stop()
 		zlog.Info().Msg("scheduler: background poller started (interval: 1m)")
 		for {
 			select {
@@ -62,8 +68,19 @@ func (s *scheduler) tick(ctx context.Context) {
 	}
 
 	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-	now := time.Now().UTC().Truncate(time.Minute)
+	now := s.now().UTC().Truncate(time.Minute)
+	lastMinute := s.lastMinute
+	if lastMinute.IsZero() {
+		// Direct tick calls (and a scheduler that never entered Start) process
+		// the current minute, matching the previous behavior.
+		lastMinute = now.Add(-time.Minute)
+	}
 
+	type parsedCron struct {
+		task     model.Task
+		schedule cron.Schedule
+	}
+	schedules := make([]parsedCron, 0, len(crons))
 	for _, c := range crons {
 		if c.CronSchedule == "" {
 			continue
@@ -75,14 +92,23 @@ func (s *scheduler) tick(ctx context.Context) {
 			continue
 		}
 
-		// Calculate the next run time from the last minute
-		// If the next calculated run time is EXACTLY this minute, we spawn.
-		next := sched.Next(now.Add(-1 * time.Second))
+		schedules = append(schedules, parsedCron{task: c, schedule: sched})
+	}
 
-		if next.Equal(now) {
-			s.spawn(ctx, c)
+	// Ticker deliveries can be delayed or coalesced by a busy process. Walk
+	// every whole minute since the previous tick so a delayed tick does not
+	// silently skip the minute in between.
+	for minute := lastMinute.Add(time.Minute); !minute.After(now); minute = minute.Add(time.Minute) {
+		for _, scheduled := range schedules {
+			// Calculate the next run time from the previous minute. If the next
+			// calculated run time is exactly this minute, we spawn.
+			if scheduled.schedule.Next(minute.Add(-1 * time.Second)).Equal(minute) {
+				s.spawn(ctx, scheduled.task)
+			}
 		}
 	}
+
+	s.lastMinute = now
 }
 
 func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
@@ -154,6 +180,12 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 
 	created, err := s.repo.CreateTask(ctx, child)
 	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			// The existence check passed, but another writer inserted an active
+			// child before this insert. The partial unique index rejected this
+			// insert; that is the duplicate-spawn guard doing its job.
+			return
+		}
 		zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to spawn task")
 		return
 	}

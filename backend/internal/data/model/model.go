@@ -58,7 +58,10 @@ type (
 		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
 
 		CronSchedule string `gorm:"type:varchar(64)"`
-		ParentID     int64  `gorm:"index:idx_tasks_parent_id"`
+		// idx_tasks_active_parent is a partial unique index: a parent template
+		// may have at most one child that is notstarted or ongoing. Completed or
+		// rejected children do not block the next scheduled run.
+		ParentID int64 `gorm:"index:idx_tasks_parent_id;uniqueIndex:idx_tasks_active_parent,where:parent_id <> 0 AND (status = 'notstarted' OR status = 'ongoing')"`
 		// Never `type:real`: on Postgres that is a 4-byte float, which rounds a
 		// Unix-seconds order to 128 s and puts a dragged card back where it was.
 		SortOrder        float64 `gorm:"default:0"`
