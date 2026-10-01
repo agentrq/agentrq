@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // These need Unix permissions, symlinks a user can make, or a FIFO.
@@ -27,7 +28,7 @@ func TestAWorktreeThatGitRefusesSaysWhy(t *testing.T) {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
 	// No commit, so there is no HEAD to check out.
-	_, _, err := PrepareForkDir(t.TempDir(), root, forkID)
+	_, err := PrepareForkDir(t.Context(), t.TempDir(), root, forkID, nil)
 	if err == nil || !strings.Contains(err.Error(), "git worktree add") {
 		t.Fatalf("err = %v, want git's own reason", err)
 	}
@@ -46,7 +47,7 @@ func TestAWorktreeThatGitRefusesSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(forks, 0o700) })
-	_, _, err = PrepareForkDir(home, root, forkID)
+	_, err = PrepareForkDir(t.Context(), home, root, forkID, nil)
 	if err == nil || !strings.Contains(err.Error(), "git worktree add") {
 		t.Fatalf("err = %v, want git's own reason", err)
 	}
@@ -70,7 +71,7 @@ func TestACopyKeepsModesAndSymlinks(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(filepath.Join(from, "src"), 0o755) })
 
-	dir, _, err := PrepareForkDir(t.TempDir(), from, forkID)
+	dir, err := PrepareForkDir(t.Context(), t.TempDir(), from, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestAForkFromASymlinkedFolderCopiesItsContent(t *testing.T) {
 	if err := os.Symlink(real, from); err != nil {
 		t.Fatal(err)
 	}
-	dir, _, err := PrepareForkDir(t.TempDir(), from, forkID)
+	dir, err := PrepareForkDir(t.Context(), t.TempDir(), from, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestACopyThatFailsLeavesNothingToReuse(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = os.Chmod(filepath.Join(from, name), 0o700) })
 			home := t.TempDir()
-			if _, _, err := PrepareForkDir(home, from, forkID); err == nil {
+			if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err == nil {
 				t.Fatal("an unreadable " + name + " was copied")
 			}
 			entries, _ := os.ReadDir(filepath.Join(home, ".agentrq", "forks"))
@@ -144,7 +145,7 @@ func TestAForkWithNowhereToGoIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(forks, 0o700) })
-	if _, _, err := PrepareForkDir(home, t.TempDir(), forkID); err == nil {
+	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a copy was made in a folder that cannot be written")
 	}
 
@@ -153,7 +154,7 @@ func TestAForkWithNowhereToGoIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
-	if _, _, err := PrepareForkDir(home, t.TempDir(), forkID); err == nil {
+	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a forks folder was made where nothing can be written")
 	}
 }
@@ -171,7 +172,7 @@ func TestAForkThatExistsButCannotBeReadIsRefused(t *testing.T) {
 	if _, err := os.ReadDir(forks); err == nil {
 		t.Skip("running as a user who can read anything")
 	}
-	if _, _, err := PrepareForkDir(home, t.TempDir(), forkID); err == nil {
+	if _, err := PrepareForkDir(t.Context(), home, t.TempDir(), forkID, nil); err == nil {
 		t.Fatal("a fork folder that cannot be looked at was taken as missing")
 	}
 }
@@ -187,7 +188,7 @@ func TestTheForksFolderIsLeftOutWhenNamedThroughASymlink(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(real, "keep"), "k")
 	home := filepath.Join(via, "users", "me")
-	dir, _, err := PrepareForkDir(home, via, forkID)
+	dir, err := PrepareForkDir(t.Context(), home, via, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -196,5 +197,88 @@ func TestTheForksFolderIsLeftOutWhenNamedThroughASymlink(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "users", "me", ".agentrq")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("the daemon's own folder was copied into a fork")
+	}
+}
+
+// slowRepo is a repository whose checkout takes a while: its file goes
+// through a filter that sleeps, as an LFS download would. The filter outlives
+// a killed git and holds its output open, so the wait for it is cut short.
+func slowRepo(t *testing.T) string {
+	t.Helper()
+	root := gitRepo(t, map[string]string{"a": "1", ".gitattributes": "a filter=slow\n"})
+	if out, err := runGit(root, "config", "filter.slow.smudge", "sleep 10; cat"); err != nil {
+		t.Fatal(out)
+	}
+	was := gitWaitDelay
+	gitWaitDelay = 100 * time.Millisecond
+	t.Cleanup(func() { gitWaitDelay = was })
+	return root
+}
+
+// A checkout that runs out of time leaves no folder and no worktree behind,
+// so the next launch makes the fork afresh instead of reusing half of one.
+func TestACheckoutThatTakesTooLongLeavesNothingBehind(t *testing.T) {
+	root := slowRepo(t)
+	home := t.TempDir()
+	defer func(was time.Duration) { checkoutTimeout = was }(checkoutTimeout)
+	checkoutTimeout = 200 * time.Millisecond
+
+	_, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	if err == nil || !strings.Contains(err.Error(), "took longer than 200ms") {
+		t.Fatalf("err = %v, want the checkout's time limit named", err)
+	}
+	target := filepath.Join(home, ".agentrq", "forks", forkID)
+	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the unfinished folder was left behind: %v", err)
+	}
+	if out, _ := runGit(root, "worktree", "list", "--porcelain"); strings.Contains(out, target) {
+		t.Errorf("git still lists the unfinished worktree:\n%s", out)
+	}
+
+	if out, err := runGit(root, "config", "--unset", "filter.slow.smudge"); err != nil {
+		t.Fatal(out)
+	}
+	checkoutTimeout = time.Minute
+	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
+	if err != nil {
+		t.Fatalf("the relaunch: %v", err)
+	}
+	if readFile(t, filepath.Join(dir, "a")) != "1" {
+		t.Error("the relaunch did not check the fork out")
+	}
+}
+
+// Stopping a fork while its folder is made stops git too, rather than leaving
+// a checkout running for a session that is gone.
+func TestAForkKilledWhileItChecksOutStopsTheCheckout(t *testing.T) {
+	root := slowRepo(t)
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	shown := &recordingProgress{}
+	req := forkRequest(t, 1, root)
+	req.Progress = shown
+
+	errc := make(chan error, 1)
+	began := time.Now()
+	go func() {
+		_, err := s.Start(t.Context(), "work", req)
+		errc <- err
+	}()
+	waitFor(t, func() bool { return len(shown.noticed()) == 2 }, "the checkout never began")
+	if err := s.Kill(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errc; err == nil {
+		t.Fatal("the fork started after its kill")
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("the start took %s to give up, so the checkout ran on", took)
+	}
+	if _, err := os.Lstat(filepath.Join(s.Home, ".agentrq", "forks", forkID)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the stopped checkout's folder was left behind: %v", err)
+	}
+	if len(st.specs) != 0 || s.Count() != 0 {
+		t.Errorf("specs %d, count %d: the stopped start left something behind", len(st.specs), s.Count())
 	}
 }

@@ -66,6 +66,10 @@ type Request struct {
 	// Fork runs a workspace fork in a folder of its own, made from Fork.From;
 	// Dir is ignored then. Nil for every other workspace.
 	Fork *wire.ForkSpec
+	// Progress shows the launch's notices as they happen, and what making a
+	// fork's folder prints, before the agent has a terminal. Nil keeps the
+	// notices for [Session.Notices] only.
+	Progress Progress
 	// Resume picks a restored claude-code session's conversation back up,
 	// when there is one saved.
 	Resume bool
@@ -106,6 +110,12 @@ type Session struct {
 	// already shows. A notice never carries a URL, since one of them holds a
 	// token.
 	notices []string
+	// progress is where a notice is also shown as it is added; nil for none.
+	// Set when the session is made and never changed.
+	progress Progress
+	// cancelPrepare stops a fork's folder being made, for a kill that
+	// arrives meanwhile.
+	cancelPrepare context.CancelFunc
 	// endedAt is when this session reached a terminal state, and is zero
 	// until it does. Kept so a finished session can be dropped once nobody
 	// is going to ask about it.
@@ -185,7 +195,7 @@ type Supervisor struct {
 	RemoveDir func(home, forkID string) error
 	// PrepareDir makes a fork's folder; nil is [PrepareForkDir]. A field for
 	// the same reason.
-	PrepareDir func(home, from, forkID string) (dir, step string, err error)
+	PrepareDir func(ctx context.Context, home, from, forkID string, out Progress) (dir string, err error)
 	// ClaudeDir is where claude-code keeps its conversations; empty means
 	// $CLAUDE_CONFIG_DIR, or ~/.claude.
 	ClaudeDir string
@@ -316,10 +326,15 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 	}
 	// Reserved before the slow work below, so two concurrent starts cannot
 	// both pass the capacity check.
+	//
+	// The folder outlives the socket that asked for it, as the agent does.
+	prepCtx, cancelPrepare := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelPrepare()
 	sess := &Session{
 		ID: req.ID, Kind: req.Kind, Dir: req.Dir,
 		Params: req.Params, Cols: req.Cols, Rows: req.Rows,
 		state: StateStarting, ended: make(chan struct{}),
+		progress: req.Progress, cancelPrepare: cancelPrepare,
 	}
 	s.sessions[req.ID] = sess
 	s.profiles[req.ID] = profile
@@ -339,7 +354,7 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		if prepare == nil {
 			prepare = PrepareForkDir
 		}
-		dir, step, err := prepare(home, req.Fork.From, req.Fork.ID)
+		dir, err := prepare(prepCtx, home, req.Fork.From, req.Fork.ID, launchProgress{sess})
 		if err == nil {
 			dir, err = workspaceDir(dir)
 		}
@@ -355,10 +370,6 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		sess.Dir = dir
 		s.mu.Unlock()
 		req.Dir = dir
-		if step == "" {
-			step = "reusing this fork's folder " + quoteArg(dir)
-		}
-		sess.addNotice(step)
 	}
 
 	servers := []MCPEntry{{Name: req.Params.ServerName, URL: req.MCPURL}}
@@ -570,7 +581,12 @@ func (s *Supervisor) Kill(id uint64) error {
 	}
 	sess.state = StateKilled
 	tty := sess.tty
+	cancelPrepare := sess.cancelPrepare
 	sess.mu.Unlock()
+
+	if cancelPrepare != nil {
+		cancelPrepare()
+	}
 
 	if tty == nil {
 		return nil
@@ -831,8 +847,24 @@ func (sess *Session) PTY() pty.Session {
 // addNotice records something the person needs told about this launch.
 func (sess *Session) addNotice(text string) {
 	sess.mu.Lock()
-	defer sess.mu.Unlock()
 	sess.notices = append(sess.notices, text)
+	sess.mu.Unlock()
+	if sess.progress != nil {
+		sess.progress.Notice(text)
+	}
+}
+
+// launchProgress is what a fork's folder is made with: its steps are the
+// session's notices, and what git prints goes wherever the launch is watched.
+type launchProgress struct{ sess *Session }
+
+func (p launchProgress) Notice(text string) { p.sess.addNotice(text) }
+
+func (p launchProgress) Write(b []byte) (int, error) {
+	if p.sess.progress == nil {
+		return len(b), nil
+	}
+	return p.sess.progress.Write(b)
 }
 
 // Notices are what the launch did and decided, for the streaming layer to put at the top of the terminal.

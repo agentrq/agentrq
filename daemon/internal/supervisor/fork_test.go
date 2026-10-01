@@ -5,11 +5,15 @@
 package supervisor
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/agentrq/agentrq/daemon/wire"
@@ -40,6 +44,37 @@ func gitRepo(t *testing.T, files map[string]string) string {
 	return root
 }
 
+// recordingProgress keeps what a launch showed.
+type recordingProgress struct {
+	mu      sync.Mutex
+	notices []string
+	out     bytes.Buffer
+}
+
+func (p *recordingProgress) Notice(text string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.notices = append(p.notices, text)
+}
+
+func (p *recordingProgress) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.out.Write(b)
+}
+
+func (p *recordingProgress) noticed() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.notices)
+}
+
+func (p *recordingProgress) printed() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.out.String()
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -63,7 +98,8 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 	root := gitRepo(t, map[string]string{"app/main.go": "package main\n", "README": "hi\n"})
 	home := t.TempDir()
 
-	dir, step, err := PrepareForkDir(home, filepath.Join(root, "app"), forkID)
+	var shown recordingProgress
+	dir, err := PrepareForkDir(t.Context(), home, filepath.Join(root, "app"), forkID, &shown)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -71,8 +107,17 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 	if dir != filepath.Join(target, "app") {
 		t.Errorf("dir = %q, want the same subfolder of the worktree", dir)
 	}
-	if want := CommandLine(root, []string{"git", "worktree", "add", "-b", ForkBranch(forkID), "--", target, "HEAD"}); step != want {
-		t.Errorf("step = %q, want %q", step, want)
+	if got, want := shown.noticed(), []string{
+		CommandLine(root, []string{"git", "worktree", "add", "--no-checkout", "-b", ForkBranch(forkID), "--", target, "HEAD"}),
+		CommandLine(target, []string{"git", "checkout", "--progress", "-f", ForkBranch(forkID)}),
+	}; !slices.Equal(got, want) {
+		t.Errorf("notices = %q, want %q", got, want)
+	}
+	if !strings.Contains(shown.printed(), "Preparing worktree") {
+		t.Errorf("what git printed was not shown: %q", shown.printed())
+	}
+	if out, err := runGit(target, "status", "--porcelain"); err != nil || out != "" {
+		t.Errorf("status = %q (%v), want a clean checkout", out, err)
 	}
 	if got := readFile(t, filepath.Join(dir, "main.go")); got != "package main\n" {
 		t.Errorf("main.go = %q", got)
@@ -86,15 +131,19 @@ func TestAForkOfARepositoryIsAWorktreeOnItsOwnBranch(t *testing.T) {
 func TestAnExistingForkFolderIsReused(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	first, _, err := PrepareForkDir(home, root, forkID)
+	first, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(first, "work-in-progress"), "keep me")
 
-	again, step, err := PrepareForkDir(home, root, forkID)
-	if err != nil || step != "" || again != first {
-		t.Fatalf("relaunch = %q step=%q err=%v, want the same folder, reused", again, step, err)
+	var shown recordingProgress
+	again, err := PrepareForkDir(t.Context(), home, root, forkID, &shown)
+	if err != nil || again != first {
+		t.Fatalf("relaunch = %q err=%v, want the same folder, reused", again, err)
+	}
+	if got, want := shown.noticed(), []string{"reusing this fork's folder " + quoteArg(first)}; !slices.Equal(got, want) {
+		t.Errorf("notices = %q, want %q", got, want)
 	}
 	if readFile(t, filepath.Join(again, "work-in-progress")) != "keep me" {
 		t.Error("a relaunch lost the fork's work")
@@ -105,7 +154,7 @@ func TestAnExistingForkFolderIsReused(t *testing.T) {
 func TestAForkWhoseBranchIsLeftOverChecksItOutAgain(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	dir, _, err := PrepareForkDir(home, root, forkID)
+	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +162,14 @@ func TestAForkWhoseBranchIsLeftOverChecksItOutAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	again, step, err := PrepareForkDir(home, root, forkID)
+	var shown recordingProgress
+	again, err := PrepareForkDir(t.Context(), home, root, forkID, &shown)
 	target := filepath.Join(home, ".agentrq", "forks", forkID)
-	if err != nil || step != CommandLine(root, []string{"git", "worktree", "add", "-f", "--", target, ForkBranch(forkID)}) {
-		t.Fatalf("PrepareForkDir after the folder went: step=%q err=%v", step, err)
+	if err != nil {
+		t.Fatalf("PrepareForkDir after the folder went: %v", err)
+	}
+	if got := shown.noticed(); len(got) == 0 || got[0] != CommandLine(root, []string{"git", "worktree", "add", "--no-checkout", "-f", "--", target, ForkBranch(forkID)}) {
+		t.Errorf("notices = %q, want the leftover branch checked out with -f", got)
 	}
 	if readFile(t, filepath.Join(again, "a")) != "1" {
 		t.Error("the leftover branch was not checked out")
@@ -133,7 +186,7 @@ func TestAForkIsRefusedWhenItsNamesAreNotAcceptable(t *testing.T) {
 		"missing from":    {t.TempDir(), "/no/such/folder", forkID},
 		"from with ..":    {t.TempDir(), dotDotDir(t), forkID},
 	} {
-		if _, _, err := PrepareForkDir(c.home, c.from, c.id); err == nil {
+		if _, err := PrepareForkDir(t.Context(), c.home, c.from, c.id, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
@@ -269,15 +322,16 @@ func TestAForkOfAPlainFolderIsACopy(t *testing.T) {
 	writeFile(t, filepath.Join(from, ".agentrq", "forks", "x", "f"), "no")
 	home := t.TempDir()
 
-	dir, step, err := PrepareForkDir(home, from, forkID)
+	var shown recordingProgress
+	dir, err := PrepareForkDir(t.Context(), home, from, forkID, &shown)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
 	if dir != filepath.Join(home, ".agentrq", "forks", forkID) {
 		t.Errorf("dir = %q", dir)
 	}
-	if want := "copied " + quoteArg(from) + " to " + quoteArg(dir) + ", which is not in a git repository"; step != want {
-		t.Errorf("step = %q, want %q", step, want)
+	if got, want := shown.noticed(), []string{"copying " + quoteArg(from) + " to " + quoteArg(dir) + ", which is not in a git repository"}; !slices.Equal(got, want) {
+		t.Errorf("notices = %q, want %q", got, want)
 	}
 	if readFile(t, filepath.Join(dir, "src", "main.go")) != "package main\n" {
 		t.Error("the file was not copied")
@@ -298,7 +352,7 @@ func TestAForkOfTheHomeFolderLeavesTheForksOut(t *testing.T) {
 	home := t.TempDir()
 	writeFile(t, filepath.Join(home, "notes"), "n")
 	writeFile(t, filepath.Join(home, ".agentrq", "forks", "old", "f"), "no")
-	dir, _, err := PrepareForkDir(home, home, forkID)
+	dir, err := PrepareForkDir(t.Context(), home, home, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -316,7 +370,7 @@ func TestAForkOfAnAncestorOfHomeLeavesTheForksOut(t *testing.T) {
 	home := filepath.Join(from, "users", "me")
 	writeFile(t, filepath.Join(home, ".agentrq", "forks", "old", "f"), "no")
 	writeFile(t, filepath.Join(from, "keep"), "k")
-	dir, _, err := PrepareForkDir(home, from, forkID)
+	dir, err := PrepareForkDir(t.Context(), home, from, forkID, nil)
 	if err != nil {
 		t.Fatalf("PrepareForkDir: %v", err)
 	}
@@ -378,7 +432,7 @@ func TestConfigPointsElsewhere(t *testing.T) {
 func TestRemovingAForkOfARepositoryKeepsItsBranch(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	dir, _, err := PrepareForkDir(home, root, forkID)
+	dir, err := PrepareForkDir(t.Context(), home, root, forkID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +456,7 @@ func TestRemovingACopyDeletesIt(t *testing.T) {
 	from := t.TempDir()
 	writeFile(t, filepath.Join(from, "a"), "1")
 	home := t.TempDir()
-	if _, _, err := PrepareForkDir(home, from, forkID); err != nil {
+	if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := RemoveForkDir(home, forkID); err != nil {
@@ -421,7 +475,7 @@ func TestRemovingACopyInsideARepositoryLeavesTheRepositoryAlone(t *testing.T) {
 	home := gitRepo(t, map[string]string{"dotfile": "x"})
 	from := t.TempDir()
 	writeFile(t, filepath.Join(from, "a"), "1")
-	if _, _, err := PrepareForkDir(home, from, forkID); err != nil {
+	if _, err := PrepareForkDir(t.Context(), home, from, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := RemoveForkDir(home, forkID); err != nil {
@@ -441,7 +495,7 @@ func TestRemovingAForkWhoseFolderIsGoneIsDone(t *testing.T) {
 func TestRemovingAWorktreeGitCannotRemoveFallsBackToDeletingIt(t *testing.T) {
 	root := gitRepo(t, map[string]string{"a": "1"})
 	home := t.TempDir()
-	if _, _, err := PrepareForkDir(home, root, forkID); err != nil {
+	if _, err := PrepareForkDir(t.Context(), home, root, forkID, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A locked worktree is refused by `git worktree remove --force`.
@@ -477,10 +531,10 @@ func TestAForkKilledWhileItsFolderIsMadeNeverStarts(t *testing.T) {
 	s.Home = t.TempDir()
 	made := t.TempDir()
 	preparing, release := make(chan struct{}), make(chan struct{})
-	s.PrepareDir = func(string, string, string) (string, string, error) {
+	s.PrepareDir = func(context.Context, string, string, string, Progress) (string, error) {
 		close(preparing)
 		<-release
-		return made, "made", nil
+		return made, nil
 	}
 
 	errc := make(chan error, 1)
@@ -510,13 +564,51 @@ func TestAForkWhoseFolderIsUnusableIsRefused(t *testing.T) {
 	st := &recordingStarter{}
 	s := New(st.start, 0, 0)
 	s.Home = t.TempDir()
-	s.PrepareDir = func(string, string, string) (string, string, error) {
-		return filepath.Join(s.Home, "never-made"), "made", nil
+	s.PrepareDir = func(context.Context, string, string, string, Progress) (string, error) {
+		return filepath.Join(s.Home, "never-made"), nil
 	}
 	if _, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir())); err == nil {
 		t.Fatal("a fork started in a folder that does not exist")
 	}
 	if len(st.specs) != 0 || s.Count() != 0 {
 		t.Errorf("specs %d, count %d: the refused start left something behind", len(st.specs), s.Count())
+	}
+}
+
+// progressReporter is a reporter that also shows a launch's progress.
+type progressReporter struct {
+	recordingReporter
+	shown *recordingProgress
+}
+
+func (r *progressReporter) Progress() Progress { return r.shown }
+
+// A launch watched from the start sees each notice as it is added, before
+// the agent runs, and what making the folder printed.
+func TestAForkShowsItsProgressAsItHappens(t *testing.T) {
+	root := gitRepo(t, map[string]string{"a": "1"})
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	rep := &progressReporter{shown: &recordingProgress{}}
+
+	c := control(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: string(KindClaudeCode), Dir: root, MCPURL: testURL,
+		ServerName: "agentrq-workspace", Workspace: "fork",
+		Fork: &wire.ForkSpec{ID: forkID, From: root},
+	})
+	if err := s.Handle(t.Context(), "work", c, rep); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	rep.waitFor(t, string(StateRunning))
+	sess, err := s.Get(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rep.shown.noticed(), sess.Notices(); !slices.Equal(got, want) || len(got) != 3 {
+		t.Errorf("shown %q, want the session's notices %q: two git commands and the agent's", got, want)
+	}
+	if !strings.Contains(rep.shown.printed(), "Preparing worktree") {
+		t.Errorf("what git printed was not shown: %q", rep.shown.printed())
 	}
 }

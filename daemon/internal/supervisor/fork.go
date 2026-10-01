@@ -34,8 +34,31 @@ var (
 // name, so nothing else gets through.
 var forkIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,24}$`)
 
-// gitTimeout bounds each git command. A variable so a test need not wait.
+// gitTimeout bounds each quick git query. A variable so a test need not wait.
 var gitTimeout = 60 * time.Second
+
+// checkoutTimeout bounds making a fork's worktree, which writes out every file
+// of the repository: a large one takes far longer than gitTimeout, and being
+// cut off half way is what left a fork that could never start.
+var checkoutTimeout = 30 * time.Minute
+
+// gitWaitDelay is how long a killed git's output is waited for.
+var gitWaitDelay = 5 * time.Second
+
+// Progress is where a launch says what it is doing before its agent has a
+// terminal: a fork's folder can take minutes to check out, and the person
+// watching would otherwise see nothing until it was done.
+type Progress interface {
+	// Notice is a line from the daemon itself.
+	Notice(text string)
+	// Write takes what a command the launch runs prints.
+	io.Writer
+}
+
+type discardProgress struct{}
+
+func (discardProgress) Notice(string)               {}
+func (discardProgress) Write(b []byte) (int, error) { return len(b), nil }
 
 // ForkBranch is the branch a fork's worktree is checked out on.
 func ForkBranch(id string) string { return "agentrq/fork-" + id }
@@ -47,23 +70,27 @@ func ForkBranch(id string) string { return "agentrq/fork-" + id }
 // is then the same subfolder of it that from is of its repository), a copy of
 // from otherwise. An existing folder is reused as it is, which is a relaunch.
 //
-// step says what was done to make the folder, for the person watching the
-// terminal: the git command run, or the copy. Empty when it was reused.
-func PrepareForkDir(home, from, id string) (dir, step string, err error) {
+// Each step is a notice on out before it runs, and what git prints goes to out
+// as it prints it. Cancelling ctx stops the checkout; a worktree that was not
+// finished is removed, so a relaunch does not take it for a finished fork.
+func PrepareForkDir(ctx context.Context, home, from, id string, out Progress) (dir string, err error) {
+	if out == nil {
+		out = discardProgress{}
+	}
 	if !forkIDPattern.MatchString(id) {
-		return "", "", fmt.Errorf("%w: id=%q", ErrBadFork, id)
+		return "", fmt.Errorf("%w: id=%q", ErrBadFork, id)
 	}
 	if !filepath.IsAbs(home) {
-		return "", "", fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
+		return "", fmt.Errorf("%w: home=%q is not an absolute path", ErrBadFork, home)
 	}
 	from, err = workspaceDir(from)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	// Already absolute and clean; refusing ".." outright is what lets a
 	// path from the server be walked and copied without a second look.
 	if strings.Contains(from, "..") {
-		return "", "", fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
+		return "", fmt.Errorf("%w: from=%q contains \"..\"", ErrBadFork, from)
 	}
 
 	target := filepath.Join(home, ".agentrq", "forks", id)
@@ -75,26 +102,25 @@ func PrepareForkDir(home, from, id string) (dir, step string, err error) {
 	dir = filepath.Join(target, rel)
 
 	if _, err := os.Lstat(target); err == nil {
-		return dir, "", nil
+		out.Notice("reusing this fork's folder " + quoteArg(dir))
+		return dir, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", "", fmt.Errorf("supervisor: fork folder %s: %w", target, err)
+		return "", fmt.Errorf("supervisor: fork folder %s: %w", target, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return "", "", fmt.Errorf("supervisor: fork folder: %w", err)
+		return "", fmt.Errorf("supervisor: fork folder: %w", err)
 	}
 
 	if inRepo {
-		var argv []string
-		argv, err = addWorktree(root, target, id)
-		step = CommandLine(root, argv)
+		err = addWorktree(ctx, root, target, id, out)
 	} else {
+		out.Notice("copying " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository")
 		err = copyTree(from, target, filepath.Join(home, ".agentrq"))
-		step = "copied " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository"
 	}
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
-	return dir, step, nil
+	return dir, nil
 }
 
 // RemoveForkDir deletes the folder PrepareForkDir made for a fork, and nothing
@@ -146,23 +172,49 @@ func sameFolder(a, b string) bool {
 // addWorktree checks out HEAD of the repository at root into target on the
 // fork's branch. A branch left by an earlier fork of the same id is checked
 // out again rather than refused; -f covers its worktree still being
-// registered after somebody deleted the folder. It returns the command that
-// made the worktree.
-func addWorktree(root, target, id string) ([]string, error) {
+// registered after somebody deleted the folder.
+//
+// Two commands, because `git worktree add` has no --progress and shows none
+// when it is not writing to a terminal: the checkout is what takes the time,
+// and it is the step the person needs to see moving.
+func addWorktree(ctx context.Context, root, target, id string, out Progress) error {
+	ctx, cancel := context.WithTimeout(ctx, checkoutTimeout)
+	defer cancel()
+
 	branch := ForkBranch(id)
-	args := []string{"worktree", "add", "-b", branch, "--", target, "HEAD"}
-	out, err := runGit(root, args...)
-	if err == nil {
-		return append([]string{"git"}, args...), nil
+	add := []string{"worktree", "add", "--no-checkout", "-b", branch, "--", target, "HEAD"}
+	if _, err := runGit(root, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		add = []string{"worktree", "add", "--no-checkout", "-f", "--", target, branch}
 	}
-	if !strings.Contains(out, "already exists") {
-		return nil, fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+	steps := []struct {
+		name, dir string
+		args      []string
+	}{
+		{"worktree add", root, add},
+		{"checkout", target, []string{"checkout", "--progress", "-f", branch}},
 	}
-	args = []string{"worktree", "add", "-f", "--", target, branch}
-	if out, err := runGit(root, args...); err != nil {
-		return nil, fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
+	for _, step := range steps {
+		out.Notice(CommandLine(step.dir, append([]string{"git"}, step.args...)))
+		if text, err := runGitTo(ctx, step.dir, out, step.args...); err != nil {
+			discardWorktree(root, target)
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				err = fmt.Errorf("took longer than %s", checkoutTimeout)
+			}
+			return fmt.Errorf("supervisor: git %s in %s: %w: %s", step.name, step.dir, err, strings.TrimSpace(text))
+		}
 	}
-	return append([]string{"git"}, args...), nil
+	return nil
+}
+
+// discardWorktree removes a worktree that was not finished, with git's own
+// record of it. Twice forced, because git locks a worktree while it is being
+// added and a checkout that was killed leaves the lock behind.
+func discardWorktree(root, target string) {
+	if _, err := runGit(root, "worktree", "remove", "-f", "-f", "--", target); err == nil {
+		return
+	}
+	_ = os.RemoveAll(target)
+	_, _ = runGit(root, "worktree", "prune")
 }
 
 // configPointsElsewhere reports whether the config at path names serverName
@@ -176,19 +228,28 @@ func configPointsElsewhere(path, serverName, want string) bool {
 		got.Scheme != w.Scheme || got.Host != w.Host || got.Path != w.Path
 }
 
-// runGit runs git in dir with a fixed argv and no shell, returning what it
-// printed. dir is the working directory, never an argument, so a folder the
-// server named cannot be read as a git option.
+// runGit runs a quick git query in dir with a fixed argv and no shell,
+// returning what it printed. dir is the working directory, never an argument,
+// so a folder the server named cannot be read as a git option.
 func runGit(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
-	var out bytes.Buffer
+	return runGitTo(ctx, dir, io.Discard, args...)
+}
+
+// runGitTo is [runGit] for a command that takes as long as ctx allows, with
+// what it prints copied to out as it prints it.
+func runGitTo(ctx context.Context, dir string, out io.Writer, args ...string) (string, error) {
+	var text bytes.Buffer
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	cmd.Stdout = io.MultiWriter(&text, out)
+	cmd.Stderr = cmd.Stdout
+	// A filter git runs, LFS's for one, can hold the output open after git
+	// itself is killed; without this the wait would last as long as it does.
+	cmd.WaitDelay = gitWaitDelay
 	err := cmd.Run()
-	return out.String(), err
+	return text.String(), err
 }
 
 // copyTree copies from into target, keeping modes and copying symlinks as

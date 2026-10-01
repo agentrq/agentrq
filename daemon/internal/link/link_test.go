@@ -568,9 +568,9 @@ func TestAForkLaunchDoesNotBlockTheSocket(t *testing.T) {
 	made := t.TempDir()
 	release := make(chan struct{})
 	h.sup.Home = t.TempDir()
-	h.sup.PrepareDir = func(string, string, string) (string, string, error) {
+	h.sup.PrepareDir = func(context.Context, string, string, string, supervisor.Progress) (string, error) {
 		<-release
-		return made, "", nil
+		return made, nil
 	}
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: "acp-gateway", Model: "m", Agent: "a", MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",

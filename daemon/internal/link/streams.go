@@ -37,6 +37,15 @@ func newStreams() *streams {
 
 // add starts pumping a session's terminal to the backend.
 func (s *streams) add(id uint64, cols, rows uint16, r io.Reader, sender stream.Sender) *stream.Pump {
+	p := s.open(id, cols, rows, sender)
+	s.run(id, p, r)
+	return p
+}
+
+// open makes a session's stream before it has a terminal to read, so what a
+// launch does first can be fed into it and watched; [streams.run] reads the
+// terminal once there is one. A session that never gets one is [streams.remove]d.
+func (s *streams) open(id uint64, cols, rows uint16, sender stream.Sender) *stream.Pump {
 	screen := stream.NewScreen(int(cols), int(rows))
 	p := stream.NewPump(id, screen, sender)
 
@@ -46,12 +55,16 @@ func (s *streams) add(id uint64, cols, rows uint16, r io.Reader, sender stream.S
 	s.stop[id] = done
 	s.mu.Unlock()
 
+	go s.flush(p, done)
+	return p
+}
+
+// run pumps r, a session's terminal, into the stream [streams.open] made.
+func (s *streams) run(id uint64, p *stream.Pump, r io.Reader) {
 	go func() {
 		_ = p.Run(r)
 		s.remove(id)
 	}()
-	go s.flush(p, done)
-	return p
 }
 
 // flush sends a batch that came due while the terminal was quiet.
