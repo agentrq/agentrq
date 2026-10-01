@@ -271,3 +271,33 @@ func TestThePermissionsFileIsNotExcluded(t *testing.T) {
 		t.Errorf("the settings file was excluded:\n%s", body)
 	}
 }
+
+// A tracked file is kept out of commits in its own checkout; an untracked one,
+// or one outside any repository, is left to the .gitignore.
+func TestKeepOutOfCommits(t *testing.T) {
+	root := gitRepo(t, map[string]string{MCPConfigName: "{}", "a": "1"})
+	if hidden, err := KeepOutOfCommits(root, MCPConfigName); err != nil || !hidden {
+		t.Fatalf("tracked: hidden=%v err=%v, want hidden", hidden, err)
+	}
+	writeFile(t, filepath.Join(root, MCPConfigName), `{"mcpServers":{}}`)
+	if out, err := runGit(root, "status", "--porcelain"); err != nil || out != "" {
+		t.Errorf("status = %q (%v), want the change left out", out, err)
+	}
+	if hidden, err := KeepOutOfCommits(root, "not-tracked"); err != nil || hidden {
+		t.Errorf("untracked: hidden=%v err=%v, want nothing done", hidden, err)
+	}
+	if hidden, err := KeepOutOfCommits(t.TempDir(), MCPConfigName); err != nil || hidden {
+		t.Errorf("no repository: hidden=%v err=%v, want nothing done", hidden, err)
+	}
+}
+
+// Git refusing is a refused launch, never a token left committable.
+func TestKeepOutOfCommitsSaysWhyGitRefused(t *testing.T) {
+	root := gitRepo(t, map[string]string{MCPConfigName: "{}"})
+	// Somebody else's git is mid-write, so the index cannot be updated.
+	writeFile(t, filepath.Join(root, ".git", "index.lock"), "")
+	_, err := KeepOutOfCommits(root, MCPConfigName)
+	if err == nil || !strings.Contains(err.Error(), "index.lock") {
+		t.Fatalf("err = %v, want git's own reason", err)
+	}
+}

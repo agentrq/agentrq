@@ -387,16 +387,32 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 				release()
 				return nil, err
 			}
-			path, kept, err := WriteMCPConfig(req.Dir, servers...)
+			var path string
+			var kept, replaced []string
+			var hidden bool
+			if req.Fork != nil {
+				// Before the token is written too, for the same reason: a
+				// repository that commits its .mcp.json tracks the file, and
+				// no .gitignore keeps a tracked file's change out of a commit.
+				if hidden, err = KeepOutOfCommits(req.Dir, MCPConfigName); err == nil {
+					path, kept, replaced, err = WriteForkMCPConfig(req.Dir, servers...)
+				}
+			} else {
+				path, kept, err = WriteMCPConfig(req.Dir, servers...)
+			}
 			if err != nil {
 				release()
 				return nil, err
 			}
-			if req.Fork != nil && slices.Contains(kept, req.Params.ServerName) &&
-				configPointsElsewhere(path, req.Params.ServerName, req.MCPURL) {
-				release()
-				return nil, fmt.Errorf("%w: %s already has a %q entry, which would connect this fork as its parent workspace; remove it from %s",
-					ErrForkConfigCollision, path, req.Params.ServerName, MCPConfigName)
+			if len(replaced) > 0 {
+				notice := fmt.Sprintf("%s named %s at another endpoint — replaced in this fork's folder, so the agent connects as this fork.",
+					MCPConfigName, strings.Join(replaced, " and "))
+				if hidden {
+					notice += " git leaves the change out of this fork's commits."
+				}
+				s.log().Info("replaced the MCP servers a fork's folder pointed elsewhere",
+					"session", req.ID, "file", path, "servers", strings.Join(replaced, ", "))
+				sess.addNotice(notice)
 			}
 			if len(kept) > 0 {
 				// Said out loud rather than assumed: the agent is about to

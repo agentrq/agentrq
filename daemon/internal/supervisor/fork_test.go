@@ -183,25 +183,60 @@ func TestAForkStartsInItsOwnFolder(t *testing.T) {
 	}
 }
 
-// A worktree of a repository that commits its .mcp.json: the kept entry
-// would connect the fork as the parent.
-func TestAForkWhoseFolderAlreadyConfiguresTheServerIsRefused(t *testing.T) {
-	root := gitRepo(t, map[string]string{
-		MCPConfigName: `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://parent.example.com/mcp"}}}`,
-	})
+// A worktree of a repository that commits its .mcp.json: the entry it carries
+// would connect the fork as the parent, so it is replaced in the fork's folder,
+// and git is told to leave the token out of the fork's commits.
+func TestAForkReplacesAnEntryThatPointsElsewhere(t *testing.T) {
+	committed := `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://parent.example.com/mcp"},` +
+		`"tools":{"command":"run-tools","args":["--fast"]}},"inputs":[1]}`
+	root := gitRepo(t, map[string]string{MCPConfigName: committed})
 	st := &recordingStarter{}
 	s := New(st.start, 0, 0)
 	s.Home = t.TempDir()
 
-	_, err := s.Start(t.Context(), "work", forkRequest(t, 1, root))
-	if !errors.Is(err, ErrForkConfigCollision) || !strings.Contains(err.Error(), MCPConfigName) {
-		t.Fatalf("err = %v, want a collision naming the file", err)
+	sess, err := s.Start(t.Context(), "work", forkRequest(t, 1, root))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-	if len(st.specs) != 0 {
-		t.Error("a process was started anyway")
+	cfg := readFile(t, filepath.Join(sess.Dir, MCPConfigName))
+	if strings.Contains(cfg, "parent.example.com") || !strings.Contains(cfg, testURL) {
+		t.Errorf("the fork's config still points at the parent: %s", cfg)
 	}
-	if s.Count() != 0 {
-		t.Error("the refused start kept its slot")
+	for _, kept := range []string{`"command": "run-tools"`, `"--fast"`, `"inputs"`} {
+		if !strings.Contains(cfg, kept) {
+			t.Errorf("the rest of the file was not kept: %s missing from %s", kept, cfg)
+		}
+	}
+	if n := noticeWith(sess, "replaced in this fork's folder"); !strings.Contains(n, "out of this fork's commits") {
+		t.Errorf("notices = %q, want the replacement and the git exclusion said", sess.Notices())
+	}
+	if out, err := runGit(sess.Dir, "diff", "--name-only"); err != nil || strings.Contains(out, MCPConfigName) {
+		t.Errorf("git diff = %q (%v): the token is one commit away", out, err)
+	}
+	if readFile(t, filepath.Join(root, MCPConfigName)) != committed {
+		t.Error("the parent's own .mcp.json was touched")
+	}
+	if out, _ := runGit(root, "ls-files", "-v", "--", MCPConfigName); !strings.HasPrefix(out, "H ") {
+		t.Errorf("ls-files -v in the parent = %q: its index was changed", out)
+	}
+}
+
+// Outside a repository there is nothing for git to leave out, and the notice
+// does not claim it did.
+func TestAForkOfAPlainFolderReplacesAnEntryWithoutGit(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	target := filepath.Join(s.Home, ".agentrq", "forks", forkID)
+	// Made by hand, as a relaunch would find it.
+	writeFile(t, filepath.Join(target, MCPConfigName), `{"mcpServers":{"agentrq-workspace":{"type":"http","url":"https://elsewhere.example.com/mcp"}}}`)
+
+	sess, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir()))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if n := noticeWith(sess, "replaced"); n == "" || strings.Contains(n, "commits") {
+		t.Errorf("notices = %q, want the replacement said without a git claim", sess.Notices())
 	}
 }
 
@@ -350,28 +385,31 @@ func TestARelaunchedForkKeepsItsOwnEntry(t *testing.T) {
 	}
 }
 
-func TestConfigPointsElsewhere(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, MCPConfigName)
-	writeFile(t, path, `{"mcpServers":{"s":{"type":"http","url":"https://a.example.com/mcp/1?token=old"}}}`)
-	for want, elsewhere := range map[string]bool{
+// noticeWith is the session's notice that says text, or "".
+func noticeWith(sess *Session, text string) string {
+	for _, n := range sess.Notices() {
+		if strings.Contains(n, text) {
+			return n
+		}
+	}
+	return ""
+}
+
+func TestEndpointDiffers(t *testing.T) {
+	const got = "https://a.example.com/mcp/1?token=old"
+	for want, differs := range map[string]bool{
 		"https://a.example.com/mcp/1?token=new": false,
 		"https://a.example.com/mcp/2?token=new": true,
 		"https://b.example.com/mcp/1?token=new": true,
 		"http://a.example.com/mcp/1":            true,
 		"://bad":                                true,
 	} {
-		if got := configPointsElsewhere(path, "s", want); got != elsewhere {
-			t.Errorf("%s: elsewhere = %v, want %v", want, got, elsewhere)
+		if endpointDiffers(got, want) != differs {
+			t.Errorf("%s: differs = %v, want %v", want, !differs, differs)
 		}
 	}
-	writeFile(t, path, `{"mcpServers":{"s":{"type":"http","url":"://bad"}}}`)
-	if !configPointsElsewhere(path, "s", "https://a.example.com/mcp/1") {
-		t.Error("an unreadable URL was taken for this fork's")
-	}
-	writeFile(t, path, `not json`)
-	if !configPointsElsewhere(path, "s", "https://a.example.com/mcp/1") {
-		t.Error("an unreadable file was taken for this fork's")
+	if !endpointDiffers("://bad", "https://a.example.com/mcp/1") {
+		t.Error("an unreadable URL was taken for the same endpoint")
 	}
 }
 

@@ -64,6 +64,7 @@ var (
 //     points at, and its name comes back in `kept` so the daemon can say so.
 //     A person's own .mcp.json is theirs, and a folder that already names
 //     these servers has been set up by somebody who meant it.
+//     A fork's folder is the exception: see [WriteForkMCPConfig].
 //
 // The cost of that rule, and it is worth knowing before changing it back: a
 // relaunch into a folder that already has an entry reuses the token that entry
@@ -71,40 +72,61 @@ var (
 // for a year, so in practice the old one keeps working — but a workspace whose
 // entry was written against a different deployment stays pointed there, and
 // the way to move it is to delete the entry.
+//
+// Everything else in the file is written back as it was read: the other
+// servers with all their fields, and any other key at the top.
 func WriteMCPConfig(dir string, entries ...MCPEntry) (path string, kept []string, err error) {
+	path, kept, _, err = writeMCPConfig(dir, false, entries)
+	return path, kept, err
+}
+
+// WriteForkMCPConfig is [WriteMCPConfig] for a fork's own folder, where an
+// entry that points at another endpoint is replaced rather than kept, and its
+// name comes back in replaced. The folder is the daemon's and not somebody's
+// setup, and an entry from a repository that commits its .mcp.json would
+// connect the fork as the workspace it was forked from. An entry at this
+// launch's own endpoint is an earlier launch's, and is kept like any other.
+func WriteForkMCPConfig(dir string, entries ...MCPEntry) (path string, kept, replaced []string, err error) {
+	return writeMCPConfig(dir, true, entries)
+}
+
+func writeMCPConfig(dir string, replaceElsewhere bool, entries []MCPEntry) (path string, kept, replaced []string, err error) {
 	if len(entries) == 0 {
-		return "", nil, ErrNoMCPURL
+		return "", nil, nil, ErrNoMCPURL
 	}
 
 	path = filepath.Join(dir, MCPConfigName)
-	cfg, _, err := readMCPConfig(path)
+	cfg, raw, _, err := loadMCPConfig(path)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	var added int
 	for _, e := range entries {
 		if strings.TrimSpace(e.URL) == "" {
-			return "", nil, ErrNoMCPURL
+			return "", nil, nil, ErrNoMCPURL
 		}
 		u, parseErr := url.Parse(e.URL)
 		if parseErr != nil {
 			// Deliberately not including the URL: it holds the token.
-			return "", nil, fmt.Errorf("supervisor: MCP URL is not usable")
+			return "", nil, nil, fmt.Errorf("supervisor: MCP URL is not usable")
 		}
 		if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
 			// The token is in the query string, so plain HTTP puts it on the
 			// wire in clear. Loopback has no wire to be on.
-			return "", nil, fmt.Errorf("%w: %s is not https", ErrInsecureMCP, u.Hostname())
+			return "", nil, nil, fmt.Errorf("%w: %s is not https", ErrInsecureMCP, u.Hostname())
 		}
 		if checkErr := checkParam("serverName", e.Name); checkErr != nil {
-			return "", nil, checkErr
+			return "", nil, nil, checkErr
 		}
 		if existing, ok := cfg.Servers[e.Name]; ok && existing.URL != "" {
-			kept = append(kept, e.Name)
-			continue
+			if !replaceElsewhere || !endpointDiffers(existing.URL, e.URL) {
+				kept = append(kept, e.Name)
+				continue
+			}
+			replaced = append(replaced, e.Name)
 		}
-		cfg.Servers[e.Name] = MCPServer{Type: "http", URL: e.URL}
+		raw.servers[e.Name], _ = json.Marshal(MCPServer{Type: "http", URL: e.URL}) // two strings: cannot fail
 		added++
 	}
 
@@ -112,19 +134,34 @@ func WriteMCPConfig(dir string, entries ...MCPEntry) (path string, kept []string
 	// already holds still changes its timestamp, and on a folder somebody is
 	// watching with a file watcher that is a change they have to explain.
 	if added == 0 {
-		return path, kept, nil
+		return path, kept, replaced, nil
 	}
 
-	body, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return "", nil, fmt.Errorf("supervisor: encode %s: %w", MCPConfigName, err)
+	// Neither can fail: every value is JSON that was just read or encoded.
+	raw.top["mcpServers"], _ = json.Marshal(raw.servers)
+	body, _ := json.MarshalIndent(raw.top, "", "  ")
+	if err := writePrivate(dir, path, ".mcp-*.json", append(body, '\n')); err != nil {
+		return "", nil, nil, err
 	}
-	body = append(body, '\n')
+	return path, kept, replaced, nil
+}
 
-	if err := writePrivate(dir, path, ".mcp-*.json", body); err != nil {
-		return "", nil, err
-	}
-	return path, kept, nil
+// rawMCPConfig is the file as it was read, every field of it, so writing our
+// entries back does not drop what this daemon has no struct for: a stdio
+// server's command and args, a server's headers, a key besides mcpServers.
+type rawMCPConfig struct {
+	top     map[string]json.RawMessage
+	servers map[string]json.RawMessage
+}
+
+// endpointDiffers reports whether two MCP URLs name different endpoints. The
+// query, which holds the token, is not compared: an entry an earlier launch
+// wrote with an older token is still this workspace's.
+func endpointDiffers(got, want string) bool {
+	g, gotErr := url.Parse(got)
+	w, wantErr := url.Parse(want)
+	return gotErr != nil || wantErr != nil ||
+		g.Scheme != w.Scheme || g.Host != w.Host || g.Path != w.Path
 }
 
 // writePrivate replaces a file with content only its owner can read.
@@ -189,22 +226,37 @@ func HasMCPConfig(dir, serverName string) bool {
 // overwrite: it is somebody's configuration and it is not ours to discard
 // because we could not read it.
 func readMCPConfig(path string) (MCPConfig, bool, error) {
+	cfg, _, existed, err := loadMCPConfig(path)
+	return cfg, existed, err
+}
+
+// loadMCPConfig is [readMCPConfig], with the file as it was read besides.
+func loadMCPConfig(path string) (MCPConfig, rawMCPConfig, bool, error) {
 	cfg := MCPConfig{Servers: map[string]MCPServer{}}
+	raw := rawMCPConfig{top: map[string]json.RawMessage{}, servers: map[string]json.RawMessage{}}
 
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, false, nil
+		return cfg, raw, false, nil
 	}
 	if err != nil {
-		return cfg, false, fmt.Errorf("supervisor: read %s: %w", path, err)
+		return cfg, raw, false, fmt.Errorf("supervisor: read %s: %w", path, err)
 	}
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return cfg, true, fmt.Errorf("%w: %s is not valid JSON", ErrForeignConfig, path)
+	if json.Unmarshal(b, &cfg) != nil || json.Unmarshal(b, &raw.top) != nil {
+		return cfg, raw, true, fmt.Errorf("%w: %s is not valid JSON", ErrForeignConfig, path)
 	}
+	// Accepted already, as the typed read's servers.
+	_ = json.Unmarshal(raw.top["mcpServers"], &raw.servers)
 	if cfg.Servers == nil {
 		cfg.Servers = map[string]MCPServer{}
 	}
-	return cfg, true, nil
+	if raw.top == nil { // the file said null
+		raw.top = map[string]json.RawMessage{}
+	}
+	if raw.servers == nil {
+		raw.servers = map[string]json.RawMessage{}
+	}
+	return cfg, raw, true, nil
 }
 
 func isLoopbackHost(host string) bool {

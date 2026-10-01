@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,15 +19,8 @@ import (
 	"time"
 )
 
-// Errors from preparing a workspace fork's folder.
-var (
-	ErrBadFork = errors.New("supervisor: fork is not acceptable")
-	// ErrForkConfigCollision means the fork's own folder already names the
-	// workspace server at another endpoint — a worktree of a repository that
-	// commits its .mcp.json. Keeping that entry, as any other launch would,
-	// points the fork's agent at the parent.
-	ErrForkConfigCollision = errors.New("supervisor: the fork's folder already configures the workspace server")
-)
+// ErrBadFork is a fork whose folder cannot be prepared from what was sent.
+var ErrBadFork = errors.New("supervisor: fork is not acceptable")
 
 // forkIDPattern is a base62 workspace id. It becomes a folder and a branch
 // name, so nothing else gets through.
@@ -163,17 +155,6 @@ func addWorktree(root, target, id string) ([]string, error) {
 		return nil, fmt.Errorf("supervisor: git worktree add in %s: %w: %s", root, err, strings.TrimSpace(out))
 	}
 	return append([]string{"git"}, args...), nil
-}
-
-// configPointsElsewhere reports whether the config at path names serverName
-// at an endpoint other than want's. The query, which holds the token, is not
-// compared: an entry an earlier launch of this fork wrote is the fork's own.
-func configPointsElsewhere(path, serverName, want string) bool {
-	cfg, _, err := readMCPConfig(path)
-	got, gotErr := url.Parse(cfg.Servers[serverName].URL)
-	w, wantErr := url.Parse(want)
-	return err != nil || gotErr != nil || wantErr != nil ||
-		got.Scheme != w.Scheme || got.Host != w.Host || got.Path != w.Path
 }
 
 // runGit runs git in dir with a fixed argv and no shell, returning what it

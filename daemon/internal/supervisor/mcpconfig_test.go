@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -355,5 +356,93 @@ func TestHasMCPConfig(t *testing.T) {
 	}
 	if HasMCPConfig(bad, "agentrq-workspace") {
 		t.Error("unreadable JSON claimed to be a config")
+	}
+}
+
+// Adding our entry keeps everything else in the file: a stdio server's
+// command, args and env, a server's headers, and keys besides mcpServers.
+// Rewriting it through a struct with only type and url used to drop them all.
+func TestWriteMCPConfigKeepsWhatItHasNoFieldFor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, MCPConfigName)
+	writeFile(t, path, `{"inputs":[{"id":"key"}],"mcpServers":{`+
+		`"tools":{"command":"run-tools","args":["--fast"],"env":{"A":"1"}},`+
+		`"api":{"type":"http","url":"https://api.example.com/mcp","headers":{"X-Key":"k"}}}}`)
+
+	if _, _, err := WriteMCPConfig(dir, ws(testURL)); err != nil {
+		t.Fatalf("WriteMCPConfig: %v", err)
+	}
+	var got struct {
+		Inputs  []map[string]string        `json:"inputs"`
+		Servers map[string]json.RawMessage `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, path)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Inputs) != 1 || got.Inputs[0]["id"] != "key" {
+		t.Errorf("inputs = %v, want them kept", got.Inputs)
+	}
+	for name, want := range map[string]string{
+		"tools": `{"args":["--fast"],"command":"run-tools","env":{"A":"1"}}`,
+		"api":   `{"headers":{"X-Key":"k"},"type":"http","url":"https://api.example.com/mcp"}`,
+	} {
+		if compact(t, got.Servers[name]) != want {
+			t.Errorf("%s = %s, want %s", name, got.Servers[name], want)
+		}
+	}
+	if readConfig(t, path).Servers["agentrq-workspace"].URL != testURL {
+		t.Error("our entry was not added")
+	}
+}
+
+// compact is b re-encoded with its keys sorted, for comparing JSON values.
+func compact(t *testing.T, b []byte) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	out, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// A file that says null, or has null servers, is an empty config.
+func TestWriteMCPConfigOverNulls(t *testing.T) {
+	for _, body := range []string{`null`, `{"mcpServers":null}`} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, MCPConfigName)
+		writeFile(t, path, body)
+		if _, _, err := WriteMCPConfig(dir, ws(testURL)); err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if readConfig(t, path).Servers["agentrq-workspace"].URL != testURL {
+			t.Errorf("%s: our entry was not written", body)
+		}
+	}
+}
+
+// A fork's folder replaces an entry at another endpoint, keeps one at its own
+// (an earlier launch's, older token), and names only the first.
+func TestWriteForkMCPConfigReplacesOnlyWhatPointsElsewhere(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, MCPConfigName)
+	writeFile(t, path, `{"mcpServers":{`+
+		`"agentrq-workspace":{"type":"http","url":"https://parent.example.com/mcp"},`+
+		`"agentrq":{"type":"http","url":"https://mcp.agentrq.com/mcp?token=old"}}}`)
+
+	_, kept, replaced, err := WriteForkMCPConfig(dir, ws(testURL),
+		MCPEntry{Name: "agentrq", URL: "https://mcp.agentrq.com/mcp?token=new"})
+	if err != nil {
+		t.Fatalf("WriteForkMCPConfig: %v", err)
+	}
+	if !slices.Equal(replaced, []string{"agentrq-workspace"}) || !slices.Equal(kept, []string{"agentrq"}) {
+		t.Errorf("replaced %v kept %v, want the parent's entry replaced and our own kept", replaced, kept)
+	}
+	cfg := readConfig(t, path)
+	if cfg.Servers["agentrq-workspace"].URL != testURL || cfg.Servers["agentrq"].URL != "https://mcp.agentrq.com/mcp?token=old" {
+		t.Errorf("servers = %v", cfg.Servers)
 	}
 }

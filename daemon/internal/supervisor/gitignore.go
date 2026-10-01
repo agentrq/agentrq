@@ -100,6 +100,27 @@ func EnsureGitIgnored(dir string, paths ...string) (bool, error) {
 	return true, nil
 }
 
+// KeepOutOfCommits stops git committing changes to name, a file in dir that
+// the repository already tracks, and reports whether it had to. A .gitignore
+// does nothing for a tracked file, so a fork of a repository that commits its
+// .mcp.json would otherwise have its token in the next `git commit -a`.
+//
+// skip-worktree rather than assume-unchanged, which git may drop on its own;
+// and it is set in the index of dir's own checkout, which for a fork is its
+// worktree, so the repository it was forked from is not touched.
+func KeepOutOfCommits(dir, name string) (bool, error) {
+	if _, ok := gitRoot(dir); !ok {
+		return false, nil
+	}
+	if _, err := runGit(dir, "ls-files", "--error-unmatch", "--", name); err != nil {
+		return false, nil // not tracked, so a .gitignore covers it
+	}
+	if out, err := runGit(dir, "update-index", "--skip-worktree", "--", name); err != nil {
+		return false, fmt.Errorf("supervisor: keep %s in %s out of commits: %w: %s", name, dir, err, strings.TrimSpace(out))
+	}
+	return true, nil
+}
+
 // gitRoot finds the repository a folder is in, or reports that it is in none.
 //
 // Walks up because a workspace folder is often a directory inside a checkout
