@@ -117,11 +117,14 @@ describe('a fork\'s settings page', () => {
     expect(sent).toMatchObject({ name: 'ops-try', selfLearningLoopNote: 'parent note', inputSendDelaySeconds: 5 })
   })
 
-  it('locks the send delay, automations and notifications tabs, with no Save', async () => {
-    const d = await mount({ tab: 'delay' })
-    expect(d.el.querySelector('[data-test=send-delay]').disabled).toBe(true)
-    expect([...d.el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
-    app.unmount()
+  it('locks the send delay but keeps the voice language and Save on the input tab', async () => {
+    const { el } = await mount({ tab: 'input' })
+    expect(el.querySelector('[data-test=send-delay]').disabled).toBe(true)
+    expect(el.querySelector('[data-test=voice-language] select').disabled).toBe(false)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
+  })
+
+  it('locks the automations and notifications tabs, with no Save', async () => {
     const { el } = await mount({ tab: 'automations' })
     expect(el.querySelector('[data-test=automations]').disabled).toBe(true)
     expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
@@ -166,12 +169,14 @@ describe('a parent\'s settings page', () => {
 })
 
 describe('a workspace\'s settings tabs', () => {
-  it('keeps the send delay and local storage off General, each on a tab of its own', async () => {
+  it('puts the name beside the folder, and keeps input and local storage off General, each on a tab of its own', async () => {
     const { el, tabButton } = await mount({ workspace: PARENT, list: [PARENT] })
-    expect(el.querySelector('[data-test=send-delay]')).toBe(null)
-    expect(el.querySelector('[data-test=local-storage]')).toBe(null)
-    tabButton('send delay').click()
+    const row = el.querySelector('#workingDirectory').closest('.md\\:grid-cols-4')
+    expect(row.querySelector('input[placeholder="e.g. project-redstone"]')).not.toBe(null)
+    for (const section of ['voice-language', 'send-delay', 'local-storage']) expect(el.querySelector(`[data-test=${section}]`)).toBe(null)
+    tabButton('input').click()
     await settle()
+    expect(text(el.querySelector('[data-test=voice-language]'))).toMatch(/^Voice Input Language/)
     expect(text(el.querySelector('[data-test=send-delay]'))).toMatch(/^Message Send Delay/)
     expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
     tabButton('local storage').click()

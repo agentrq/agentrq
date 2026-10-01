@@ -123,8 +123,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         'open one beside it, then "/instances" for a scheduled task\'s runs.\n' +
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
-        '"/edit". "/settings" takes "?tab=" general, delay, storage, setup, automations, notifications, ' +
-        'memories, skills, slack or danger.\n' +
+        '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
+        'skills, slack, input, storage or danger.\n' +
         '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>".\n' +
         '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +

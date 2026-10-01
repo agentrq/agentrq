@@ -20,7 +20,7 @@
  */
 export const EDITABLE_SETTINGS_TABS = Object.freeze([
   'general',
-  'delay',
+  'input',
   'automations',
   'notifications',
 ]);
@@ -48,8 +48,8 @@ export function isReadOnlySettingsTab(tab) {
  * should be displayed.
  *
  * The action bar is shown only for editable tabs. Read-only tabs (setup,
- * memories), tabs that act at once (storage, slack, danger), and archived workspaces omit
- * it.
+ * memories), tabs that act at once (storage, slack, danger), and archived
+ * workspaces omit it.
  *
  * @param {string} tab The ID of the currently active tab.
  * @param {{ archivedAt?: string | null } | boolean | null} [workspaceOrArchived] Workspace object or boolean archive flag.
@@ -65,7 +65,7 @@ export function shouldShowSettingsActionBar(tab, workspaceOrArchived = null) {
   if (workspaceOrArchived && Boolean(workspaceOrArchived.archivedAt)) {
     return false;
   }
-  // Everything on these tabs is inherited by a fork, so there is nothing
+  // Everything on these two tabs is inherited by a fork, so there is nothing
   // on them a fork can save.
   if (workspaceOrArchived?.forkOfId && FORK_INHERITED_TABS.includes(tab)) {
     return false;
@@ -74,7 +74,7 @@ export function shouldShowSettingsActionBar(tab, workspaceOrArchived = null) {
 }
 
 /** The tabs whose every field a fork takes from its parent. */
-export const FORK_INHERITED_TABS = Object.freeze(['delay', 'automations', 'notifications']);
+export const FORK_INHERITED_TABS = Object.freeze(['automations', 'notifications']);
 
 /**
  * The fields a fork takes from its parent, as the server's
