@@ -52,6 +52,12 @@ func EnsureGitIgnored(dir string, paths ...string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
+	// dir is absolute and clean (workspaceDir), so ".." can only be part of a
+	// name; refusing it outright is what lets every folder from root down to
+	// dir be read and written without a second look, as a fork's source is.
+	if strings.Contains(dir, "..") || strings.Contains(root, "..") {
+		return false, fmt.Errorf("%w: dir=%q contains \"..\"", ErrBadParameter, dir)
+	}
 
 	var missing []string
 	var existing []byte // dir's own .gitignore, read last on the way down

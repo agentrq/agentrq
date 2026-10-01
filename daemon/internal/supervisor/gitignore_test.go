@@ -5,6 +5,7 @@
 package supervisor
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -326,5 +327,22 @@ func TestOnlyTheUncoveredPathIsAdded(t *testing.T) {
 	body := readIgnore(t, dir)
 	if !strings.HasPrefix(body, "node_modules\n") || !strings.Contains(body, "\na\n") || strings.Contains(body, "\nb\n") {
 		t.Errorf("the folder's .gitignore is\n%s\nwant its own line kept, a added, b left to the top", body)
+	}
+}
+
+// A folder whose path holds ".." is refused rather than walked: it can only be
+// part of a name in a clean path, and refusing it is what keeps the walk from
+// root to the folder inside the repository.
+func TestAFolderWithDotDotInItsPathIsRefused(t *testing.T) {
+	root := repo(t)
+	dir := filepath.Join(root, "my..project")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EnsureGitIgnored(dir, MCPConfigName); !errors.Is(err, ErrBadParameter) {
+		t.Fatalf("err = %v, want ErrBadParameter", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, GitIgnoreName)); !os.IsNotExist(err) {
+		t.Error("a .gitignore was written anyway")
 	}
 }
