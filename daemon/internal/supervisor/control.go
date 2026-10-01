@@ -18,6 +18,13 @@ type Reporter interface {
 	ReportSessionState(wire.SessionState) error
 }
 
+// ProgressReporter is a Reporter that can also show a launch's progress
+// before its agent has a terminal; see [Request.Progress].
+type ProgressReporter interface {
+	Reporter
+	Progress() Progress
+}
+
 // Handle acts on a control message from the backend.
 //
 // Every outcome is reported, including refusals. A start that is rejected and
@@ -101,6 +108,7 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 		MCPURL:     req.MCPURL,
 		CoreMCPURL: req.CoreMCPURL,
 		Fork:       req.Fork,
+		Progress:   progressOf(r),
 		Cols:       req.Cols,
 		Rows:       req.Rows,
 	})
@@ -142,4 +150,12 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 // five, and only on a machine slow enough to lose the race.
 func (s *Supervisor) awaitEnd(sess *Session) {
 	<-sess.Ended()
+}
+
+// progressOf is r's [ProgressReporter.Progress], or nil when it has none.
+func progressOf(r Reporter) Progress {
+	if pr, ok := r.(ProgressReporter); ok {
+		return pr.Progress()
+	}
+	return nil
 }

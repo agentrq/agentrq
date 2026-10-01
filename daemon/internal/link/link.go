@@ -5,6 +5,7 @@
 package link
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -344,7 +345,12 @@ type capturingReporter struct {
 	// beforeRunning runs just before "running" is sent, so a viewer the
 	// backend lets in on hearing it finds the terminal's stream there.
 	beforeRunning func()
+	// progress shows the launch in its terminal before the agent is running;
+	// nil when its stream is made only once it is.
+	progress supervisor.Progress
 }
+
+func (r *capturingReporter) Progress() supervisor.Progress { return r.progress }
 
 func (r *capturingReporter) ReportSessionState(st wire.SessionState) error {
 	if st.Error != "" {
@@ -543,7 +549,18 @@ func (l *Link) launch(ctx context.Context, conn *Conn, c wire.Control, req wire.
 	rep := &capturingReporter{to: conn}
 	var once sync.Once
 	rep.beforeRunning = func() { once.Do(func() { l.stream(conn, req) }) }
-	if err := l.Supervisor.Handle(ctx, l.Profile, c, rep); err != nil {
+	if req.Fork != nil {
+		// Streamed from the start: making a fork's folder can take minutes,
+		// and a viewer let in while it is "starting" watches the checkout
+		// rather than a blank terminal.
+		cols, rows := terminalSize(req)
+		rep.progress = &terminalProgress{pump: l.streams.open(req.SessionID, cols, rows, conn), log: l.Log}
+	}
+	err := l.Supervisor.Handle(ctx, l.Profile, c, rep)
+	if _, getErr := l.Supervisor.Get(req.SessionID); getErr != nil && rep.progress != nil {
+		l.streams.remove(req.SessionID)
+	}
+	if err != nil {
 		l.Log.Warn("start failed", "session", req.SessionID, "error", err)
 		return
 	}
@@ -570,18 +587,51 @@ func (l *Link) stream(conn *Conn, req wire.StartSession) {
 		return
 	}
 	tty := sess.PTY()
+	opened, isOpen := l.streams.get(req.SessionID)
 	if tty == nil {
 		l.Log.Warn("a session started without a terminal", "session", req.SessionID)
+		if isOpen {
+			l.streams.remove(req.SessionID)
+		}
 		return
 	}
-	cols, rows := req.Cols, req.Rows
-	if cols == 0 || rows == 0 {
-		// A terminal with no size renders as one column, which looks like the
-		// agent is broken rather than like nobody said how big the window is.
-		cols, rows = 80, 24
+	if isOpen {
+		// Its notices are on the screen already, put there as they happened.
+		l.streams.run(req.SessionID, opened, tty)
+		return
 	}
+	cols, rows := terminalSize(req)
 	pump := l.streams.add(req.SessionID, cols, rows, tty, conn)
 	announce(pump, sess.Notices(), l.Log)
+}
+
+// terminalSize is the size a session's screen is made at.
+func terminalSize(req wire.StartSession) (cols, rows uint16) {
+	if req.Cols == 0 || req.Rows == 0 {
+		// A terminal with no size renders as one column, which looks like the
+		// agent is broken rather than like nobody said how big the window is.
+		return 80, 24
+	}
+	return req.Cols, req.Rows
+}
+
+// terminalProgress shows a launch in its terminal before the agent runs.
+type terminalProgress struct {
+	pump *stream.Pump
+	log  *slog.Logger
+}
+
+func (t *terminalProgress) Notice(text string) { announce(t.pump, []string{text}, t.log) }
+
+// Write feeds what git prints into the screen. Never an error: a terminal
+// that cannot be drawn must not fail the checkout it is drawing.
+func (t *terminalProgress) Write(b []byte) (int, error) {
+	// git ends a line with a bare \n, which in a terminal leaves the next one
+	// indented; its progress redraws with a bare \r, which is kept.
+	if err := t.pump.Feed(bytes.ReplaceAll(b, []byte("\n"), []byte("\r\n"))); err != nil {
+		t.log.Warn("could not put a launch's progress in the terminal", "error", err)
+	}
+	return len(b), nil
 }
 
 // announce puts a launch's notices at the top of its terminal.

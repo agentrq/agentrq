@@ -47,7 +47,7 @@ func TestAForkNamesHowItsFolderWasMade(t *testing.T) {
 	}
 	spec, _ := st.last()
 	want := []string{
-		"copied " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository",
+		"copying " + quoteArg(from) + " to " + quoteArg(target) + ", which is not in a git repository",
 		CommandLine(target, spec.Argv),
 	}
 	if got := sess.Notices(); !slices.Equal(got, want) {
