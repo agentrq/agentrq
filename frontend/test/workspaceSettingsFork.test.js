@@ -7,6 +7,7 @@
  * does not let them be edited, shows the folder the machine made, and offers
  * Merge where a workspace offers Archive and Purge. The payload rule is
  * `workspaceForkSettings.test.js`'s; this is that the page sends it.
+ * Last, which tab a workspace's settings live on.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -95,7 +96,7 @@ describe('a fork\'s settings page', () => {
     expect(dir.readOnly).toBe(true)
     expect(dir.value).toBe('/home/me/.agentrq/forks/f1')
     const locked = [...el.querySelectorAll('fieldset')].map((f) => f.disabled)
-    expect(locked).toEqual([true, true])
+    expect(locked).toEqual([true])
     expect(el.querySelector('input[type=text]').disabled).toBe(false)
   })
 
@@ -116,7 +117,11 @@ describe('a fork\'s settings page', () => {
     expect(sent).toMatchObject({ name: 'ops-try', selfLearningLoopNote: 'parent note', inputSendDelaySeconds: 5 })
   })
 
-  it('locks the automations and notifications tabs, with no Save', async () => {
+  it('locks the send delay, automations and notifications tabs, with no Save', async () => {
+    const d = await mount({ tab: 'delay' })
+    expect(d.el.querySelector('[data-test=send-delay]').disabled).toBe(true)
+    expect([...d.el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
+    app.unmount()
     const { el } = await mount({ tab: 'automations' })
     expect(el.querySelector('[data-test=automations]').disabled).toBe(true)
     expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
@@ -157,5 +162,22 @@ describe('a parent\'s settings page', () => {
     app.unmount()
     const two = await mount({ workspace: PARENT, list: [PARENT, fork, { ...fork, id: 'f2' }], tab: 'danger' })
     expect(text(two.el.querySelector('[data-test=has-forks]'))).toBe('This workspace has 2 forks. Merge them back before archiving or purging it.')
+  })
+})
+
+describe('a workspace\'s settings tabs', () => {
+  it('keeps the send delay and local storage off General, each on a tab of its own', async () => {
+    const { el, tabButton } = await mount({ workspace: PARENT, list: [PARENT] })
+    expect(el.querySelector('[data-test=send-delay]')).toBe(null)
+    expect(el.querySelector('[data-test=local-storage]')).toBe(null)
+    tabButton('send delay').click()
+    await settle()
+    expect(text(el.querySelector('[data-test=send-delay]'))).toMatch(/^Message Send Delay/)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
+    tabButton('local storage').click()
+    await settle()
+    expect(text(el.querySelector('[data-test=local-storage]'))).toMatch(/^Keep a copy on this device/)
+    expect(el.querySelector('[data-test=send-delay]')).toBe(null)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
   })
 })

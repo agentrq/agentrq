@@ -123,8 +123,11 @@
                     </select>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
                   </div>
+                </div>
 
-                  <fieldset :disabled="isFork" class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50 disabled:opacity-60">
+                <!-- Send Delay -->
+                <div v-if="activeTab === 'delay'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <fieldset :disabled="isFork" data-test="send-delay" class="space-y-2 disabled:opacity-60">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message Send Delay</label>
                     <div class="flex flex-wrap gap-1.5 mt-1">
                       <label v-for="opt in INPUT_SEND_DELAY_OPTIONS" :key="opt.value"
@@ -145,13 +148,16 @@
                     </div>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Hold sent messages for a countdown before delivery, with a chance to cancel.</p>
                   </fieldset>
+                </div>
 
+                <!-- Local Storage -->
+                <div v-if="activeTab === 'storage'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <!-- Local data.
-                       Set apart from everything above it on purpose: those
-                       settings follow the account, and this one does not. A
-                       toggle that looks like its neighbours would be flipped
-                       here and expected to take effect on another machine. -->
-                  <div class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 space-y-4 bg-gray-50/40 dark:bg-zinc-800/20">
+                       Drawn apart from every other tab's settings on purpose:
+                       those follow the account, and this one does not. A
+                       toggle that looks like theirs would be flipped here and
+                       expected to take effect on another machine. -->
+                  <div data-test="local-storage" class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 space-y-4 bg-gray-50/40 dark:bg-zinc-800/20">
                     <div class="flex items-start justify-between gap-6">
                       <div class="min-w-0">
                         <div class="flex items-center gap-2 flex-wrap">
@@ -1310,6 +1316,8 @@ function copyToClipboard(text, key) {
 
 const navItems = [
   { id: 'general', label: 'General', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+  { id: 'delay', label: 'Send Delay', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+  { id: 'storage', label: 'Local Storage', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' },
   { id: 'setup', label: 'Setup', icon: `<svg viewBox="0 0 16 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1.62524 8.11636L7.6712 2.07042C8.50598 1.23564 9.85941 1.23564 10.6941 2.07042C11.5289 2.90518 11.5289 4.25861 10.6941 5.09339L6.12821 9.65934" stroke="currentColor"></path><path d="M6.19116 9.59684L10.6941 5.09385C11.5289 4.25908 12.8823 4.25908 13.7171 5.09385L13.7486 5.12534C14.5834 5.96011 14.5834 7.31354 13.7486 8.14831L8.28059 13.6164C8.00233 13.8946 8.00233 14.3457 8.28059 14.6239L9.40336 15.7468" stroke="currentColor"></path><path d="M9.18266 3.58203L4.71116 8.05351C3.87639 8.88826 3.87639 10.2417 4.71116 11.0765C5.54593 11.9112 6.89936 11.9112 7.73414 11.0765L12.2056 6.605" stroke="currentColor"></path></svg>` },
   { id: 'automations', label: 'Automations', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
