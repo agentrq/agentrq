@@ -17,7 +17,7 @@ import {
 describe('useWorkspaceSettings', () => {
   describe('tab classification constants', () => {
     it('defines editable tabs that persist form state', () => {
-      expect(EDITABLE_SETTINGS_TABS).toEqual(['general', 'automations', 'notifications']);
+      expect(EDITABLE_SETTINGS_TABS).toEqual(['general', 'input', 'automations', 'notifications']);
     });
 
     it('defines read-only tabs that only display information', () => {

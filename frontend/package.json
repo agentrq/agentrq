@@ -1,7 +1,7 @@
 {
   "name": "agentrq-frontend",
   "private": true,
-  "version": "0.9.5",
+  "version": "0.9.6",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

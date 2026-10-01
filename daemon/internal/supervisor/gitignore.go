@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -34,47 +35,48 @@ const gitIgnoreBanner = "# Added by agentrqd: written per launch, and it holds t
 // a list of servers to trust, and whether to check that in is the repository's
 // decision rather than this daemon's.
 //
-// A folder that is not in a repository is left alone, and so is one whose
-// .gitignore already names the path. Matching here is deliberately literal: a
-// line equal to the path, or to a directory above it, counts as covered, and
-// the full gitignore grammar — negations, globs, patterns in parent
-// directories — is not interpreted. The cost of reading it too narrowly is a
-// duplicate line that changes nothing; the cost of reading it too broadly is a
-// token in a commit.
+// The line goes in the .gitignore of dir itself, the folder the agent runs
+// in, and not the repository's top: a project in a subfolder of a repository
+// keeps the change in its own folder, where whoever owns that folder sees it.
+//
+// A folder that is not in a repository is left alone, and so is one already
+// excluded by a .gitignore anywhere from the repository's top down to dir —
+// the one an earlier agentrqd wrote at the top included. Matching here is
+// deliberately literal: a line equal to the path, or to a directory above it,
+// counts as covered, and the full gitignore grammar — negations, globs — is
+// not interpreted. The cost of reading it too narrowly is a duplicate line
+// that changes nothing; the cost of reading it too broadly is a token in a
+// commit.
 func EnsureGitIgnored(dir string, paths ...string) (bool, error) {
 	root, ok := gitRoot(dir)
 	if !ok {
 		return false, nil
 	}
-
-	// Relative to the repository root, because that is what a .gitignore there
-	// addresses: a workspace folder three directories down inside a checkout
-	// needs "three/down/.mcp.json", not ".mcp.json".
-	rel, err := filepath.Rel(root, dir)
-	if err != nil {
-		return false, fmt.Errorf("supervisor: locate %s inside %s: %w", dir, root, err)
-	}
-	prefix := ""
-	if rel != "." {
-		prefix = filepath.ToSlash(rel) + "/"
-	}
-
-	path := filepath.Join(root, GitIgnoreName)
-	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("supervisor: read %s: %w", path, err)
+	// dir is absolute and clean (workspaceDir), so ".." can only be part of a
+	// name; refusing it outright is what lets every folder from root down to
+	// dir be read and written without a second look, as a fork's source is.
+	if strings.Contains(dir, "..") || strings.Contains(root, "..") {
+		return false, fmt.Errorf("%w: dir=%q contains \"..\"", ErrBadParameter, dir)
 	}
 
 	var missing []string
+	var existing []byte // dir's own .gitignore, read last on the way down
 	for _, p := range paths {
-		entry := prefix + filepath.ToSlash(p)
-		if !gitIgnoreCovers(existing, entry) {
+		entry := filepath.ToSlash(p)
+		covered, own, err := ignoredOnTheWay(root, dir, entry)
+		if err != nil {
+			return false, err
+		}
+		if !covered {
+			existing = own
 			missing = append(missing, entry)
 		}
 	}
 	if len(missing) == 0 {
 		return false, nil
 	}
+
+	path := filepath.Join(dir, GitIgnoreName)
 
 	var out bytes.Buffer
 	out.Write(existing)
@@ -121,11 +123,46 @@ func KeepOutOfCommits(dir, name string) (bool, error) {
 	return true, nil
 }
 
+// ignoredOnTheWay reports whether entry, a path relative to dir, is excluded
+// by the .gitignore of root or of any folder between it and dir. Each one is
+// read with entry spelled relative to the folder it is in: the top's needs
+// "three/down/.mcp.json", dir's own just ".mcp.json". own is dir's own
+// .gitignore, read when the entry was not excluded above it.
+func ignoredOnTheWay(root, dir, entry string) (covered bool, own []byte, err error) {
+	rel, _ := filepath.Rel(root, dir) // root is dir or above it
+	var below []string
+	if rel != "." {
+		below = strings.Split(filepath.ToSlash(rel), "/")
+	}
+	folder := root
+	for i := 0; ; i++ {
+		content, err := readGitIgnore(filepath.Join(folder, GitIgnoreName))
+		if err != nil {
+			return false, nil, err
+		}
+		if gitIgnoreCovers(content, strings.Join(append(slices.Clone(below[i:]), entry), "/")) {
+			return true, nil, nil
+		}
+		if i == len(below) {
+			return false, content, nil
+		}
+		folder = filepath.Join(folder, below[i])
+	}
+}
+
+// readGitIgnore is a .gitignore's content, or none when there is no file.
+func readGitIgnore(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("supervisor: read %s: %w", path, err)
+	}
+	return b, nil
+}
+
 // gitRoot finds the repository a folder is in, or reports that it is in none.
 //
 // Walks up because a workspace folder is often a directory inside a checkout
-// rather than the checkout itself, and the .gitignore that governs it lives at
-// the top. `.git` is a directory in an ordinary clone and a file in a worktree
+// rather than the checkout itself. `.git` is a directory in an ordinary clone and a file in a worktree
 // or a submodule; both count.
 func gitRoot(dir string) (string, bool) {
 	for {

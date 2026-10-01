@@ -358,13 +358,15 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		if err == nil {
 			dir, err = workspaceDir(dir)
 		}
-		if err != nil {
-			release()
-			return nil, err
-		}
+		// Asked first: the kill cancels the checkout, and the git it kills
+		// fails, which would otherwise be reported as the reason.
 		if state, _, _ := sess.State(); state == StateKilled {
 			release()
 			return nil, ErrStoppedWhileStarting
+		}
+		if err != nil {
+			release()
+			return nil, err
 		}
 		s.mu.Lock()
 		sess.Dir = dir

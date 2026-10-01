@@ -20,6 +20,7 @@
  */
 export const EDITABLE_SETTINGS_TABS = Object.freeze([
   'general',
+  'input',
   'automations',
   'notifications',
 ]);
@@ -47,8 +48,8 @@ export function isReadOnlySettingsTab(tab) {
  * should be displayed.
  *
  * The action bar is shown only for editable tabs. Read-only tabs (setup,
- * memories), custom-action tabs (slack, danger), and archived workspaces omit
- * it.
+ * memories), tabs that act at once (storage, slack, danger), and archived
+ * workspaces omit it.
  *
  * @param {string} tab The ID of the currently active tab.
  * @param {{ archivedAt?: string | null } | boolean | null} [workspaceOrArchived] Workspace object or boolean archive flag.

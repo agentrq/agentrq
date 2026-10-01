@@ -7,6 +7,7 @@
  * does not let them be edited, shows the folder the machine made, and offers
  * Merge where a workspace offers Archive and Purge. The payload rule is
  * `workspaceForkSettings.test.js`'s; this is that the page sends it.
+ * Last, which tab a workspace's settings live on.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -95,7 +96,7 @@ describe('a fork\'s settings page', () => {
     expect(dir.readOnly).toBe(true)
     expect(dir.value).toBe('/home/me/.agentrq/forks/f1')
     const locked = [...el.querySelectorAll('fieldset')].map((f) => f.disabled)
-    expect(locked).toEqual([true, true])
+    expect(locked).toEqual([true])
     expect(el.querySelector('input[type=text]').disabled).toBe(false)
   })
 
@@ -114,6 +115,13 @@ describe('a fork\'s settings page', () => {
     expect(sent.notificationSettings).toEqual({ taskCreated: true })
     expect(sent).not.toHaveProperty('autoAllowedTools')
     expect(sent).toMatchObject({ name: 'ops-try', selfLearningLoopNote: 'parent note', inputSendDelaySeconds: 5 })
+  })
+
+  it('locks the send delay but keeps the voice language and Save on the input tab', async () => {
+    const { el } = await mount({ tab: 'input' })
+    expect(el.querySelector('[data-test=send-delay]').disabled).toBe(true)
+    expect(el.querySelector('[data-test=voice-language] select').disabled).toBe(false)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
   })
 
   it('locks the automations and notifications tabs, with no Save', async () => {
@@ -157,5 +165,24 @@ describe('a parent\'s settings page', () => {
     app.unmount()
     const two = await mount({ workspace: PARENT, list: [PARENT, fork, { ...fork, id: 'f2' }], tab: 'danger' })
     expect(text(two.el.querySelector('[data-test=has-forks]'))).toBe('This workspace has 2 forks. Merge them back before archiving or purging it.')
+  })
+})
+
+describe('a workspace\'s settings tabs', () => {
+  it('puts the name beside the folder, and keeps input and local storage off General, each on a tab of its own', async () => {
+    const { el, tabButton } = await mount({ workspace: PARENT, list: [PARENT] })
+    const row = el.querySelector('#workingDirectory').closest('.md\\:grid-cols-4')
+    expect(row.querySelector('input[placeholder="e.g. project-redstone"]')).not.toBe(null)
+    for (const section of ['voice-language', 'send-delay', 'local-storage']) expect(el.querySelector(`[data-test=${section}]`)).toBe(null)
+    tabButton('input').click()
+    await settle()
+    expect(text(el.querySelector('[data-test=voice-language]'))).toMatch(/^Voice Input Language/)
+    expect(text(el.querySelector('[data-test=send-delay]'))).toMatch(/^Message Send Delay/)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
+    tabButton('local storage').click()
+    await settle()
+    expect(text(el.querySelector('[data-test=local-storage]'))).toMatch(/^Keep a copy on this device/)
+    expect(el.querySelector('[data-test=send-delay]')).toBe(null)
+    expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(false)
   })
 })

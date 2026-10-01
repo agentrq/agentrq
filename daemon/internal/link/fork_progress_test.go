@@ -124,3 +124,48 @@ func TestProgressThatCannotBeShownIsNotAnError(t *testing.T) {
 		t.Errorf("Write = %d, %v; want all of it taken and no error", n, err)
 	}
 }
+
+// A second start for a fork that is already starting is refused, and keeps
+// the stream its first launch feeds: replacing it would leave viewers on a
+// screen nothing writes to.
+func TestASecondForkStartKeepsTheFirstStream(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	made := t.TempDir()
+	preparing, release := make(chan struct{}), make(chan struct{})
+	h.sup.Home = t.TempDir()
+	h.sup.PrepareDir = func(_ context.Context, _, _, _ string, out supervisor.Progress) (string, error) {
+		out.Notice("checking out")
+		close(preparing)
+		<-release
+		return made, nil
+	}
+	b.send(t, forkStart(t))
+	<-preparing
+	first, ok := h.link.streams.get(7)
+	if !ok {
+		t.Fatal("no stream was opened for the fork's launch")
+	}
+
+	b.send(t, forkStart(t))
+	waitFor(t, func() bool {
+		for _, c := range b.controls(t, wire.OpSessionState) {
+			var st wire.SessionState
+			_ = json.Unmarshal(c.Body, &st)
+			if st.SessionID == 7 && strings.Contains(st.Error, "already") {
+				return true
+			}
+		}
+		return false
+	}, "the second start was never refused")
+	if now, ok := h.link.streams.get(7); !ok || now != first {
+		t.Fatal("the second start replaced the first launch's stream")
+	}
+
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool { return outputContains(b, "agentrqd: checking out") }, "the viewer never saw the first launch")
+	close(release)
+	waitFor(t, func() bool { return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest") },
+		"the first launch's stream stopped being fed")
+}

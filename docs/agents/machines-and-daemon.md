@@ -286,6 +286,9 @@ assumed from the pattern above.
 `.mcp.json`, `.claude/settings.local.json` (claude-code only — the gateway asks
 over ACP and never reads it), and a `.gitignore` line for **the config alone**
 when the folder is in a checkout, written *before* it because it holds a token.
+That line goes in the agent's own folder's `.gitignore`, never the repository's
+top: in a monorepo every agent would otherwise edit one shared file. A rule in
+any `.gitignore` from the top down to the folder already counts.
 The permissions file is deliberately not excluded: no secret in it, so whether
 it is checked in belongs to the repository.
 

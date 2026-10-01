@@ -75,35 +75,38 @@
                 <!-- General Settings -->
                 <div v-if="activeTab === 'general'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div class="space-y-6">
-                    <div class="space-y-2">
-                      <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Workspace Name</label>
-                      <input v-model="form.name" @blur="form.name = toKebabCase(form.name)" type="text" required class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-bold text-gray-900 dark:text-zinc-100 transition-all shadow-sm" placeholder="e.g. project-redstone" />
+                    <!-- Side by side, a quarter and three quarters: a name is short, a path is not. -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      <div class="space-y-2 min-w-0">
+                        <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Workspace Name</label>
+                        <input v-model="form.name" @blur="form.name = toKebabCase(form.name)" type="text" required class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-bold text-gray-900 dark:text-zinc-100 transition-all shadow-sm" placeholder="e.g. project-redstone" />
+                      </div>
+                      <div class="space-y-2 min-w-0 md:col-span-3">
+                        <label for="workingDirectory" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Working Directory</label>
+                        <!-- A fork's folder is made by the machine on its first
+                             launch, and reported back; it is not chosen here. -->
+                        <template v-if="isFork">
+                          <input id="workingDirectory" :value="workspace.workingDirectory || ''" type="text" readonly
+                                 class="w-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm outline-none font-mono text-gray-700 dark:text-zinc-300 shadow-sm cursor-default"
+                                 :placeholder="forkFolderPlaceholder" />
+                          <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Made by the machine for this fork. Merging leaves it where it is.</p>
+                        </template>
+                        <div v-else class="flex items-stretch gap-2">
+                          <input id="workingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
+                                 class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all shadow-sm"
+                                 :placeholder="workingDirectoryPlaceholder" />
+                          <button v-if="canBrowseDirectories" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
+                                  class="shrink-0 px-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-zinc-100 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                            {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
+                          </button>
+                        </div>
+                        <p v-if="!isFork" class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.<span v-if="!canBrowseDirectories"> Browse for it in the desktop app.</span></p>
+                      </div>
                     </div>
                     <div class="space-y-2">
                       <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Mission Description</label>
                       <MissionTemplatePicker v-model="form.description" class="ml-1 pb-1" />
                       <textarea v-model="form.description" rows="8" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="What are we building together?"></textarea>
-                    </div>
-                    <div class="space-y-2">
-                      <label for="workingDirectory" class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Working Directory</label>
-                      <!-- A fork's folder is made by the machine on its first
-                           launch, and reported back; it is not chosen here. -->
-                      <template v-if="isFork">
-                        <input id="workingDirectory" :value="workspace.workingDirectory || ''" type="text" readonly
-                               class="w-full bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm outline-none font-mono text-gray-700 dark:text-zinc-300 shadow-sm cursor-default"
-                               :placeholder="forkFolderPlaceholder" />
-                        <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Made by the machine for this fork. Merging leaves it where it is.</p>
-                      </template>
-                      <div v-else class="flex items-stretch gap-2">
-                        <input id="workingDirectory" v-model="form.workingDirectory" type="text" spellcheck="false" autocapitalize="off" autocorrect="off"
-                               class="min-w-0 flex-1 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all shadow-sm"
-                               :placeholder="workingDirectoryPlaceholder" />
-                        <button v-if="canBrowseDirectories" type="button" @click="chooseWorkingDirectory" :disabled="isChoosingDirectory"
-                                class="shrink-0 px-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-sm text-[10px] font-bold uppercase tracking-widest text-gray-900 dark:text-zinc-100 hover:border-gray-900 dark:hover:border-white transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                          {{ isChoosingDirectory ? 'Choosing' : 'Browse' }}
-                        </button>
-                      </div>
-                      <p v-if="!isFork" class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Optional. Absolute path the agent should work in.<span v-if="!canBrowseDirectories"> Browse for it in the desktop app.</span></p>
                     </div>
                   </div>
 
@@ -112,8 +115,11 @@
                     <textarea v-model="form.selfLearningLoopNote" rows="6" class="w-full bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-4 py-3 text-sm focus:border-gray-900 dark:focus:border-white focus:ring-0 outline-none font-medium text-gray-800 dark:text-zinc-200 transition-all resize-none shadow-sm" placeholder="Extract successful workarounds and record them in skills md files..."></textarea>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-2">Guidance for the agent to optimize its strategy over time.</p>
                   </fieldset>
+                </div>
 
-                  <div class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50">
+                <!-- Input -->
+                <div v-if="activeTab === 'input'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div data-test="voice-language" class="space-y-2">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Voice Input Language</label>
                     <select v-model="voiceLanguage" class="bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-sm px-3 py-2 text-xs font-semibold text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white focus:ring-0 transition-all shadow-sm w-full max-w-xs">
                       <option value="auto">{{ browserLanguageLabel }}</option>
@@ -124,7 +130,7 @@
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
                   </div>
 
-                  <fieldset :disabled="isFork" class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50 disabled:opacity-60">
+                  <fieldset :disabled="isFork" data-test="send-delay" class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50 disabled:opacity-60">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message Send Delay</label>
                     <div class="flex flex-wrap gap-1.5 mt-1">
                       <label v-for="opt in INPUT_SEND_DELAY_OPTIONS" :key="opt.value"
@@ -145,13 +151,16 @@
                     </div>
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Hold sent messages for a countdown before delivery, with a chance to cancel.</p>
                   </fieldset>
+                </div>
 
+                <!-- Local Storage -->
+                <div v-if="activeTab === 'storage'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <!-- Local data.
-                       Set apart from everything above it on purpose: those
-                       settings follow the account, and this one does not. A
-                       toggle that looks like its neighbours would be flipped
-                       here and expected to take effect on another machine. -->
-                  <div class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 space-y-4 bg-gray-50/40 dark:bg-zinc-800/20">
+                       Drawn apart from every other tab's settings on purpose:
+                       those follow the account, and this one does not. A
+                       toggle that looks like theirs would be flipped here and
+                       expected to take effect on another machine. -->
+                  <div data-test="local-storage" class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 space-y-4 bg-gray-50/40 dark:bg-zinc-800/20">
                     <div class="flex items-start justify-between gap-6">
                       <div class="min-w-0">
                         <div class="flex items-center gap-2 flex-wrap">
@@ -1315,7 +1324,9 @@ const navItems = [
   { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
   { id: 'memories', label: 'Memories', icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
   { id: 'skills', label: 'Skills', icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
-  { id: 'slack', label: 'Slack', icon: `<svg viewBox="0 0 127 127" fill="currentColor"><path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80z"/></svg>` }
+  { id: 'slack', label: 'Slack', icon: `<svg viewBox="0 0 127 127" fill="currentColor"><path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80z"/></svg>` },
+  { id: 'input', label: 'Input', icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+  { id: 'storage', label: 'Local Storage', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' }
 ];
 
 const eventTypes = [

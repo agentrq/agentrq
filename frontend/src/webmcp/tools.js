@@ -115,7 +115,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Take the user to an AgentRQ page. Pass the in-app path (no origin), ' +
+        'Take the user to an AgentRQ page. Pass the in-app path, ' +
         'optionally ?query; IDs are base62, from getCurrentPage or list tools. Pages:\n' +
         '- "/" every workspace, "/workspaces/new" creates one.\n' +
         '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
@@ -124,11 +124,11 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
-        'skills, slack or danger.\n' +
+        'skills, slack, input, storage or danger.\n' +
         '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>".\n' +
         '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
-        'Other paths are refused. Returns the page reached.',
+        'Others are refused. Returns the page reached.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],
       run: async ({ path }) => {
