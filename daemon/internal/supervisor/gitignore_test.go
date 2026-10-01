@@ -65,8 +65,9 @@ func TestAFolderOutsideARepositoryIsLeftAlone(t *testing.T) {
 }
 
 // A workspace folder is often a directory inside a checkout rather than the
-// checkout itself, and the .gitignore that governs it is at the top.
-func TestASubdirectoryIsExcludedByPathFromTheRoot(t *testing.T) {
+// checkout itself. Its own folder gets the .gitignore, and the top is not
+// touched.
+func TestASubdirectoryIsExcludedInItsOwnFolder(t *testing.T) {
 	root := repo(t)
 	dir := filepath.Join(root, "services", "api")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -76,11 +77,50 @@ func TestASubdirectoryIsExcludedByPathFromTheRoot(t *testing.T) {
 	if _, err := EnsureGitIgnored(dir, MCPConfigName); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, GitIgnoreName)); !os.IsNotExist(err) {
-		t.Error("a second .gitignore was written in the subdirectory")
+	if _, err := os.Stat(filepath.Join(root, GitIgnoreName)); !os.IsNotExist(err) {
+		t.Error("a .gitignore was written at the top of the repository")
 	}
-	if body := readIgnore(t, root); !strings.Contains(body, "services/api/.mcp.json") {
-		t.Errorf("the entry is not relative to the repository root:\n%s", body)
+	if body := readIgnore(t, dir); !strings.Contains(body, "\n.mcp.json\n") {
+		t.Errorf("the entry is not relative to the workspace folder:\n%s", body)
+	}
+}
+
+// A rule in any .gitignore from the top down to the folder counts, each
+// spelled relative to where it is — the one an earlier agentrqd wrote at the
+// top among them, so upgrading does not add a second.
+func TestARuleAboveTheFolderCounts(t *testing.T) {
+	for name, c := range map[string]struct{ at, rule string }{
+		"at the top, as agentrqd used to write it": {".", "services/api/.mcp.json"},
+		"a directory, at the top":                  {".", "services/"},
+		"in a folder in between":                   {"services", "api/.mcp.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := repo(t)
+			dir := filepath.Join(root, "services", "api")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(root, c.at, GitIgnoreName), c.rule+"\n")
+			changed, err := EnsureGitIgnored(dir, MCPConfigName)
+			if err != nil || changed {
+				t.Errorf("changed=%v err=%v, want %q read as already excluding the file", changed, err, c.rule)
+			}
+		})
+	}
+}
+
+// A .gitignore above the folder that cannot be read fails the launch, as the
+// folder's own does: it may be the one that excludes the token.
+func TestAnUnreadableGitIgnoreAboveTheFolderIsReported(t *testing.T) {
+	root := repo(t)
+	dir := filepath.Join(root, "services")
+	writeFile(t, filepath.Join(root, GitIgnoreName), "node_modules\n")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreadable(t, filepath.Join(root, GitIgnoreName))
+	if _, err := EnsureGitIgnored(dir, MCPConfigName); err == nil {
+		t.Error("an unreadable .gitignore at the top reported success")
 	}
 }
 
@@ -269,5 +309,22 @@ func TestThePermissionsFileIsNotExcluded(t *testing.T) {
 	}
 	if body := readIgnore(t, dir); strings.Contains(body, ClaudeSettingsName) {
 		t.Errorf("the settings file was excluded:\n%s", body)
+	}
+}
+
+// Of two paths, one already excluded above the folder: only the other is
+// added, and the folder's own .gitignore keeps what it had.
+func TestOnlyTheUncoveredPathIsAdded(t *testing.T) {
+	root := repo(t)
+	dir := filepath.Join(root, "app")
+	writeFile(t, filepath.Join(dir, GitIgnoreName), "node_modules\n")
+	writeFile(t, filepath.Join(root, GitIgnoreName), "app/b\n")
+
+	if _, err := EnsureGitIgnored(dir, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	body := readIgnore(t, dir)
+	if !strings.HasPrefix(body, "node_modules\n") || !strings.Contains(body, "\na\n") || strings.Contains(body, "\nb\n") {
+		t.Errorf("the folder's .gitignore is\n%s\nwant its own line kept, a added, b left to the top", body)
 	}
 }
