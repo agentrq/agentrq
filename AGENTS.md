@@ -99,6 +99,9 @@ area they belong to — while adding a route, or a single API call.
   a cross-origin request with no cookie. `terminalSocketUrl` and `serverOrigin`
   are the only exceptions, for a reason given in
   [the daemon note](docs/agents/machines-and-daemon.md).
+- **A new dependency starts at its latest release**, and its range floor is
+  that release (`^x.y.z`, not an older one). An older pin arrives with its
+  advisories already open, and the floor lets a lockfile fall back to them.
 - **Never relax backend CORS to accommodate the desktop app.** It does not need
   it — see [the desktop note](docs/agents/desktop.md) — and doing so widens the
   attack surface of every deployment.
