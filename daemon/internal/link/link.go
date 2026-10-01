@@ -554,7 +554,9 @@ func (l *Link) launch(ctx context.Context, conn *Conn, c wire.Control, req wire.
 		// and a viewer let in while it is "starting" watches the checkout
 		// rather than a blank terminal.
 		cols, rows := terminalSize(req)
-		rep.progress = &terminalProgress{pump: l.streams.open(req.SessionID, cols, rows, conn), log: l.Log}
+		if p, ok := l.streams.openNew(req.SessionID, cols, rows, conn); ok {
+			rep.progress = &terminalProgress{pump: p, log: l.Log}
+		}
 	}
 	err := l.Supervisor.Handle(ctx, l.Profile, c, rep)
 	if _, getErr := l.Supervisor.Get(req.SessionID); getErr != nil && rep.progress != nil {

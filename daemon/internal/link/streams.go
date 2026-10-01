@@ -46,17 +46,33 @@ func (s *streams) add(id uint64, cols, rows uint16, r io.Reader, sender stream.S
 // launch does first can be fed into it and watched; [streams.run] reads the
 // terminal once there is one. A session that never gets one is [streams.remove]d.
 func (s *streams) open(id uint64, cols, rows uint16, sender stream.Sender) *stream.Pump {
+	p, _ := s.place(id, cols, rows, sender, true)
+	return p
+}
+
+// openNew is [streams.open] for a session that has no stream yet, and
+// reports false, leaving the stream alone, for one that has: a second start
+// for a running session must not replace the stream its terminal feeds.
+func (s *streams) openNew(id uint64, cols, rows uint16, sender stream.Sender) (*stream.Pump, bool) {
+	return s.place(id, cols, rows, sender, false)
+}
+
+func (s *streams) place(id uint64, cols, rows uint16, sender stream.Sender, replace bool) (*stream.Pump, bool) {
 	screen := stream.NewScreen(int(cols), int(rows))
 	p := stream.NewPump(id, screen, sender)
 
 	done := make(chan struct{})
 	s.mu.Lock()
+	if _, taken := s.pumps[id]; taken && !replace {
+		s.mu.Unlock()
+		return nil, false
+	}
 	s.pumps[id] = p
 	s.stop[id] = done
 	s.mu.Unlock()
 
 	go s.flush(p, done)
-	return p
+	return p, true
 }
 
 // run pumps r, a session's terminal, into the stream [streams.open] made.

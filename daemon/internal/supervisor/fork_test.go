@@ -558,6 +558,36 @@ func TestAForkKilledWhileItsFolderIsMadeNeverStarts(t *testing.T) {
 	}
 }
 
+// A kill cancels the checkout, and the git it kills fails: what is reported
+// is the kill, not that failure.
+func TestAForkKilledMidCheckoutIsStoppedNotFailed(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	s.Home = t.TempDir()
+	preparing := make(chan struct{})
+	s.PrepareDir = func(ctx context.Context, _, _, _ string, _ Progress) (string, error) {
+		close(preparing)
+		<-ctx.Done()
+		return "", errors.New("supervisor: git checkout: signal: killed")
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := s.Start(t.Context(), "work", forkRequest(t, 1, t.TempDir()))
+		errc <- err
+	}()
+	<-preparing
+	if err := s.Kill(1); err != nil {
+		t.Fatalf("Kill mid-checkout: %v", err)
+	}
+	if err := <-errc; !errors.Is(err, ErrStoppedWhileStarting) {
+		t.Fatalf("err = %v, want ErrStoppedWhileStarting", err)
+	}
+	if len(st.specs) != 0 || s.Count() != 0 {
+		t.Errorf("specs %d, count %d: the stopped start left something behind", len(st.specs), s.Count())
+	}
+}
+
 // A folder that was made but cannot be worked in is refused, and the slot is
 // given back.
 func TestAForkWhoseFolderIsUnusableIsRefused(t *testing.T) {
