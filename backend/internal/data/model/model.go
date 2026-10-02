@@ -635,6 +635,8 @@ const (
 	ActionIDUIDictationEnd
 	// The desktop side panel opened.
 	ActionIDUISidePanelOpen
+	// A link opened in the desktop side panel.
+	ActionIDUISidePanelLink
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

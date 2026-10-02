@@ -1539,6 +1539,9 @@ const (
 	// The desktop app's side panel opening, reported by the browser: it is
 	// a layout change in the window, which nothing on the server sees.
 	ActionUISidePanelOpen Action = 85
+	// A link in a task or message opened in that side panel instead of the
+	// system browser. Browser-reported for the same reason.
+	ActionUISidePanelLink Action = 86
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1575,6 +1578,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUISpinUp, true
 	case "ui_side_panel_open":
 		return ActionUISidePanelOpen, true
+	case "ui_side_panel_link":
+		return ActionUISidePanelLink, true
 	}
 	return 0, false
 }
@@ -1695,6 +1700,8 @@ func (a Action) String() string {
 		return "machine_update"
 	case ActionUISidePanelOpen:
 		return "ui_side_panel_open"
+	case ActionUISidePanelLink:
+		return "ui_side_panel_link"
 	}
 	return "unknown"
 }

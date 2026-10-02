@@ -50,6 +50,8 @@ protocol.registerSchemesAsPrivileged([
 
 const USER = { id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com' }
 const WORKSPACE = { id: 'w1', name: 'agentrq-code', agentConnected: true, agentSupportsStop: true }
+/** Set once the server is listening, so a message can link to its pages. */
+let ORIGIN = ''
 const TASK = () => ({
   id: 't1',
   workspaceId: 'w1',
@@ -60,7 +62,7 @@ const TASK = () => ({
   createdAt: '2026-10-02T03:00:00Z',
   messages: [
     { id: 'm1', sender: 'human', text: 'Draft them, and keep the release page open beside this task.', createdAt: '2026-10-02T03:00:00Z' },
-    { id: 'm2', sender: 'agent', text: 'Drafted. The page is open in the side panel for checking.', createdAt: '2026-10-02T03:05:00Z' },
+    { id: 'm2', sender: 'agent', text: `Drafted. Check them against the [release page](${ORIGIN}/second).`, createdAt: '2026-10-02T03:05:00Z' },
   ],
   toolCalls: [],
 })
@@ -133,6 +135,7 @@ setTimeout(() => {
 app.whenReady().then(async () => {
   const server = await startServer()
   const origin = `http://127.0.0.1:${server.address().port}`
+  ORIGIN = origin
 
   ipcMain.handle('agentrq:connection:get', () => ({ configured: true, serverUrl: origin, locked: true }))
   ipcMain.handle('agentrq:update:get', () => ({ status: 'idle', detail: '', version: '', enabled: false }))
@@ -175,7 +178,11 @@ app.whenReady().then(async () => {
       webviewTag: true,
     },
   })
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // Mirrors index.js: a link the app does not keep goes to the shell.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    routed.push(url)
+    return { action: 'deny' }
+  })
   wireSidePanel(win, {
     partition: () => PANEL_PARTITION,
     preload: PANEL_PRELOAD,
@@ -292,6 +299,22 @@ app.whenReady().then(async () => {
   await js(`${taskButton}.click()`)
   const reopened = await until(() => js("!!document.querySelector('[data-side-panel]')"))
   record('which opens it again', Boolean(reopened))
+
+  // A link in a message: a plain click opens it in the panel, even closed.
+  await js("document.querySelector('[data-side-panel-close]').click()")
+  await until(() => js("!document.querySelector('[data-side-panel]')"))
+  const messageLink = `document.querySelector('.md-body a[href="${origin}/second"]')`
+  await until(() => js(`!!${messageLink}`))
+  await js(`${messageLink}.click()`)
+  const linked = await until(() => js("!!document.querySelector('[data-side-panel]')"))
+  await until(() => guest && guest.getURL() === `${origin}/second`)
+  record('a plain click on a link in a message opens it in the panel', Boolean(linked) && guest.getURL() === `${origin}/second`, guest?.getURL())
+
+  // Cmd/Ctrl-click: the shell, which opens the system browser.
+  const routedBefore = routed.length
+  await js(`${messageLink}.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true, metaKey: true }))`)
+  await until(() => routed.length > routedBefore, { timeout: 3000 })
+  record('a Cmd/Ctrl-click on it goes to the system browser instead', routed.at(-1) === `${origin}/second`, JSON.stringify(routed.slice(routedBefore)))
   await until(() => guest && !guest.isDestroyed() && guest.getURL().startsWith(origin))
   record('back on the page it was showing', guest?.getURL() === `${origin}/second`, guest?.getURL())
 

@@ -241,6 +241,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUISpinUp
 	case entity.ActionUISidePanelOpen:
 		action = model.ActionIDUISidePanelOpen
+	case entity.ActionUISidePanelLink:
+		action = model.ActionIDUISidePanelLink
 	default:
 		return
 	}

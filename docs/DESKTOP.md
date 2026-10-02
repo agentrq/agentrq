@@ -134,10 +134,13 @@ agentrq://workflows
 
 Useful in a Slack message, a calendar invite, or a script.
 
-**Web links.** A link to the web — the docs, a URL an agent put in a message —
-opens in your own browser, where your extensions, bookmarks and signed-in tabs
-already are. Signing in to AgentRQ is the exception and stays in the app: the
-session it earns has to belong to the app to be any use.
+**Web links.** A web link in a task or a message — a URL an agent put there —
+opens in the side panel, next to the task it came from. Hold `Cmd` (macOS) or
+`Ctrl` while clicking, or middle-click, to open it in your own browser instead,
+where your extensions, bookmarks and signed-in tabs already are; the links the
+app itself draws, like the docs, always go there. Signing in to AgentRQ is the
+exception to both and stays in the app: the session it earns has to belong to
+the app to be any use.
 
 **Side panel.** A browser beside the app, on the right of the window, so a page
 can sit next to the task it belongs to. Open and close it with

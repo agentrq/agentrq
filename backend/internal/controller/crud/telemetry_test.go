@@ -35,6 +35,7 @@ var clientReportable = map[string]entity.Action{
 	"ui_dictation_end":        entity.ActionUIDictationEnd,
 	"ui_spin_up":              entity.ActionUISpinUp,
 	"ui_side_panel_open":      entity.ActionUISidePanelOpen,
+	"ui_side_panel_link":      entity.ActionUISidePanelLink,
 }
 
 func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {

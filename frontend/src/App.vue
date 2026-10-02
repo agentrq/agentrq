@@ -503,7 +503,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
 import { withUpdateProgress } from './composables/usePwaUpdateProgress'
-import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_SIDE_PANEL_OPEN } from './api'
+import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_SIDE_PANEL_OPEN, TELEMETRY_UI_SIDE_PANEL_LINK } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
 import * as api from './api'
@@ -520,6 +520,7 @@ import {
   copyTargetFromEvent,
   isCodeCopyEvent,
   fileLinkFromEvent,
+  panelLinkFromEvent,
   followFileLink,
   writeClipboard,
 } from './composables/useMarkdownLinks'
@@ -618,6 +619,17 @@ async function onMarkdownLinkActivate(event) {
     // Only a copy that worked: a refused clipboard is a failure to count, not
     // a use of the feature.
     if (copied.tone !== 'error') recordUiAction(code ? TELEMETRY_UI_COPY_CODE : TELEMETRY_UI_COPY_LINK, route)
+    return
+  }
+
+  // A web link in a task or message opens beside it, in the desktop side
+  // panel. Cmd/Ctrl-click and the rest are not this, and still reach the
+  // system browser through the shell.
+  const panelUrl = platformStore.isDesktop ? panelLinkFromEvent(event) : ''
+  if (panelUrl) {
+    event.preventDefault()
+    sidePanel.open(panelUrl)
+    recordUiAction(TELEMETRY_UI_SIDE_PANEL_LINK, route)
     return
   }
 

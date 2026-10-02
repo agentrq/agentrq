@@ -1032,6 +1032,8 @@ export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';
 // The desktop side panel opening, from wherever it was opened.
 export const TELEMETRY_UI_SIDE_PANEL_OPEN = 'ui_side_panel_open';
+// A link in a task or message opened in the side panel rather than a browser.
+export const TELEMETRY_UI_SIDE_PANEL_LINK = 'ui_side_panel_link';
 
 // Records one local-AI feature use. Never throws and never blocks the caller:
 // a metric is not worth failing a user's click over, so a rejected or

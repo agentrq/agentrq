@@ -226,3 +226,43 @@ export async function followFileLink(rawUrl, { isDesktop, bridge, copyText }) {
     return { tone: 'info', message: `${preamble} The file is at ${path}` };
   }
 }
+
+/** Rendered message content: every view that injects markdown wraps it in this. */
+export const MESSAGE_CONTENT_SELECTOR = '.md-body';
+
+/** AgentRQ's own sign-in, which has to land in the profile's session, not the panel's. */
+const SIGN_IN_PATH = '/api/v1/auth/';
+
+/**
+ * The web address a click on a link in a task or message asked to open beside
+ * the app, or '' when the click is not one for the desktop side panel.
+ *
+ * Only a plain primary click: Cmd/Ctrl, Shift or Alt with it is somebody
+ * asking for the page *elsewhere*, and is left to reach the shell, which opens
+ * the system browser exactly as before. Only `http(s)` links inside rendered
+ * content — a link the app draws itself is not one a person reads in a
+ * message. And never AgentRQ's own sign-in: the panel keeps its own cookies,
+ * so signing in there would leave the app signed out.
+ *
+ * @param {MouseEvent} event
+ * @returns {string}
+ */
+export function panelLinkFromEvent(event) {
+  if (event?.type !== 'click' || event.defaultPrevented) return '';
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return '';
+
+  const anchor = event.target?.closest?.('a[href]');
+  if (!anchor || anchor.hasAttribute('download') || !anchor.closest(MESSAGE_CONTENT_SELECTOR)) return '';
+
+  let url;
+  try {
+    url = new URL(anchor.getAttribute('href'), globalThis.location?.href);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+  // A relative link is the app itself, which the router already handles.
+  if (url.origin === globalThis.location?.origin) return '';
+  if (url.pathname.startsWith(SIGN_IN_PATH)) return '';
+  return url.href;
+}
