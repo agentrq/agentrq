@@ -5,23 +5,27 @@
 -->
 
 <template>
-  <div class="h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-900" v-if="task && workspace"
+  <!-- Laid out by its own width, not the window's: beside the desktop side
+       panel the task gets a phone's width, and should look like it does on a
+       phone. `@min-[40rem]:` and `@min-[48rem]:` are `sm:` and `md:` measured
+       against this element. -->
+  <div class="@container h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-900" v-if="task && workspace"
        @dragenter="onDragEnter"
        @dragover="onDragOver"
        @dragleave="onDragLeave"
        @drop="onDrop">
 
     <!-- Main Header Section (Matching KeywordInbox Design) -->
-    <div class="px-1.5 md:px-4 pt-1 pb-1 shrink-0">
+    <div class="px-1.5 @min-[48rem]:px-4 pt-1 pb-1 shrink-0">
       <div class="flex flex-col gap-1">
         <!-- Title & Status Row -->
         <div class="flex items-start justify-between gap-2">
           <div class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
-            <button @click="router.back()" class="md:hidden h-7 w-7 -ml-1.5 text-gray-500 hover:text-black dark:hover:text-white transition-colors flex items-center justify-center" title="Go Back">
+            <button @click="router.back()" class="@min-[48rem]:hidden h-7 w-7 -ml-1.5 text-gray-500 hover:text-black dark:hover:text-white transition-colors flex items-center justify-center" title="Go Back">
               <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
             </button>
             <!-- Removed workspace name on mobile per user request -->
-            <h1 class="text-lg md:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
+            <h1 class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
               {{ task.title }}
             </h1>
           </div>
@@ -34,16 +38,16 @@
                       @mouseleave="tooltipStore.hide()"
                       :class="task.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
-                <span class="hidden sm:inline">Agent</span>
-                <svg class="sm:hidden w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+                <span class="hidden @min-[40rem]:inline">Agent</span>
+                <svg class="@min-[40rem]:hidden w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
               </button>
               <button @click.stop="updateAssignee('human')"
                       @mouseenter="tooltipStore.show($event, 'Assign to Human (Stop Agent)', 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       :class="task.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
-                <span class="hidden sm:inline">Human</span>
-                <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                <span class="hidden @min-[40rem]:inline">Human</span>
+                <svg class="@min-[40rem]:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
               </button>
             </div>
 
@@ -52,20 +56,20 @@
               <button @click.stop="isStatusMenuOpen = !isStatusMenuOpen"
                       @mouseenter="tooltipStore.show($event, 'Change Task Status', 'bottom')"
                       @mouseleave="tooltipStore.hide()"
-                      class="px-2 md:px-4 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg border border-transparent hover:border-black/10 transition-all flex items-center gap-1.5 shadow-sm uppercase tracking-tighter h-7">
+                      class="px-2 @min-[48rem]:px-4 text-[8px] font-black text-gray-700 dark:text-zinc-200 bg-gray-100 dark:bg-zinc-800 rounded-lg border border-transparent hover:border-black/10 transition-all flex items-center gap-1.5 shadow-sm uppercase tracking-tighter h-7">
                 <div class="w-1.5 h-1.5 rounded-full" :class="taskDotClass(task.status)"></div>
-                <span class="hidden md:inline">{{ task.status }}</span>
+                <span class="hidden @min-[48rem]:inline">{{ task.status }}</span>
                 <svg class="w-2.5 h-2.5 transition-transform" :class="isStatusMenuOpen ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
               </button>
               <!-- Status Menu -->
               <div v-if="isStatusMenuOpen" v-click-outside="() => isStatusMenuOpen = false"
-                   class="absolute right-0 top-full mt-2 w-12 md:w-40 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-1 md:p-2 animate-in fade-in slide-in-from-top-2">
+                   class="absolute right-0 top-full mt-2 w-12 @min-[48rem]:w-40 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-2xl shadow-xl z-50 p-1 @min-[48rem]:p-2 animate-in fade-in slide-in-from-top-2">
                 <button v-for="s in ['notstarted', 'ongoing', 'completed', 'rejected']" :key="s"
                         @click="updateStatus(s); isStatusMenuOpen = false"
-                        class="w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:py-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+                        class="w-full flex items-center justify-center @min-[48rem]:justify-start gap-3 px-3 py-3 @min-[48rem]:py-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-zinc-100 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
                         :title="s">
                   <div class="w-2 h-2 rounded-full shrink-0" :class="taskDotClass(s)"></div>
-                  <span class="hidden md:inline text-gray-900 dark:text-zinc-100">{{ s }}</span>
+                  <span class="hidden @min-[48rem]:inline text-gray-900 dark:text-zinc-100">{{ s }}</span>
                 </button>
               </div>
             </div>
@@ -77,19 +81,32 @@
                       @mouseleave="tooltipStore.hide()"
                       :class="activeView === 'chat' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center justify-center">
-                <span class="hidden sm:inline">Chat</span>
-                <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.463L3 21l1.51-4.532A7.965 7.965 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                <span class="hidden @min-[40rem]:inline">Chat</span>
+                <svg class="@min-[40rem]:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.06 0-2.077-.163-3.02-.463L3 21l1.51-4.532A7.965 7.965 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
               </button>
               <button @click.stop="showTrajectory()"
                       @mouseenter="tooltipStore.show($event, `Tool call trajectory  ${viewShortcut('trajectory-view')}`, 'bottom')"
                       @mouseleave="tooltipStore.hide()"
                       :class="activeView === 'trajectory' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center gap-1 justify-center">
-                <span class="hidden sm:inline">Trajectory</span>
-                <svg class="sm:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 1021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.929a2.548 2.548 0 00-3.586-3.586l-6.837 5.63m5.108-.929l-4.655 5.653" /></svg>
+                <span class="hidden @min-[40rem]:inline">Trajectory</span>
+                <svg class="@min-[40rem]:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 1021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.929a2.548 2.548 0 00-3.586-3.586l-6.837 5.63m5.108-.929l-4.655 5.653" /></svg>
                 <span v-if="sortedToolCalls.length > 0" class="min-w-[13px] h-3 px-1 rounded-full bg-gray-900 dark:bg-white text-white dark:text-black text-[7px] flex items-center justify-center font-black">{{ sortedToolCalls.length }}</span>
               </button>
             </div>
+
+            <!-- The desktop side panel, beside the task: a page next to the
+                 conversation it came from. -->
+            <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click.stop="sidePanel.toggle()"
+                    :aria-pressed="sidePanel.state.open" aria-label="Side panel"
+                    @mouseenter="tooltipStore.show($event, `Side panel  ${usesCommandKey(platformStore.$state) ? '⌘\\' : 'Ctrl+\\'}`, 'bottom')"
+                    @mouseleave="tooltipStore.hide()"
+                    :class="sidePanel.state.open ? 'bg-white dark:bg-zinc-700 text-black dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                    class="w-7 h-7 rounded-lg border border-gray-200 dark:border-zinc-700/50 transition-all flex items-center justify-center">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -132,8 +149,8 @@
           
           <!-- Status timeline: every state the task has been in, and for how long -->
           <div v-if="stateTransitions.length" class="mb-1">
-            <TaskTimeline class="hidden md:flex" :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
-            <TaskTimeline class="md:hidden" compact :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
+            <TaskTimeline class="hidden @min-[48rem]:flex" :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
+            <TaskTimeline class="@min-[48rem]:hidden" compact :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
           </div>
 
           <!-- Attachments -->
@@ -153,7 +170,7 @@
     </div>
 
     <!-- Scrollable chat area -->
-    <div v-if="activeView === 'chat'" ref="scrollContainer" class="flex-1 overflow-y-auto px-1 sm:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
+    <div v-if="activeView === 'chat'" ref="scrollContainer" class="flex-1 overflow-y-auto px-1 @min-[40rem]:px-4 pt-0 pb-6 flex flex-col gap-4 scroll-smooth custom-scrollbar overflow-x-hidden relative" style="overscroll-behavior-y: contain;">
 
       <!-- Drag & Drop Overlay -->
       <div v-if="isDragging" class="absolute inset-0 bg-white/95 dark:bg-zinc-900/95 z-50 flex flex-col items-center justify-center border-4 border-dashed border-gray-300 dark:border-zinc-700 m-4 rounded-xl transition-all duration-200 animate-in fade-in zoom-in-95">
@@ -222,7 +239,7 @@
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">Agent · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1.5 shrink-0">
-                   <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
                      <button type="button" @click.stop="toggleMessageRender(m.id)"
                              :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                              class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -249,7 +266,7 @@
                      <svg class="w-3.5 h-3.5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                      <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Authorization Required</span>
                    </div>
-                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ permMeta(m).requestId }}</span>
+                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden @min-[40rem]:block">{{ permMeta(m).requestId }}</span>
                  </div>
                  <div class="p-3 flex flex-col gap-3 min-w-0">
                    <template v-if="m.metadata.status === 'pending'">
@@ -348,7 +365,7 @@
                      <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                      <span class="text-[10px] font-semibold text-gray-800 dark:text-zinc-200">Input Requested</span>
                    </div>
-                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden sm:block">{{ m.metadata.requestId }}</span>
+                   <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden @min-[40rem]:block">{{ m.metadata.requestId }}</span>
                  </div>
                  <div class="p-3 flex flex-col gap-3 min-w-0">
                    <template v-if="m.metadata.status === 'pending'">
@@ -472,13 +489,13 @@
         </div>
 
         <!-- Slack message — right aligned -->
-        <div v-else-if="m.sender === 'slack'" class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] md:max-w-[80%]">
+        <div v-else-if="m.sender === 'slack'" class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%]">
           <div class="flex flex-col items-end min-w-0 max-w-full">
              <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800/70 dark:text-zinc-100 rounded-2xl rounded-br-md px-3.5 py-2.5 min-w-0 max-w-full">
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1.5 shrink-0">
-                   <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
                      <button type="button" @click.stop="toggleMessageRender(m.id)"
                              :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                              class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -511,7 +528,7 @@
         </div>
 
         <!-- Human message — right aligned -->
-        <div v-else class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] md:max-w-[80%]" :class="m._pending || m._queued ? 'opacity-80' : ''">
+        <div v-else class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%]" :class="m._pending || m._queued ? 'opacity-80' : ''">
           <div class="flex flex-col items-end min-w-0 max-w-full">
              <div class="text-gray-900 dark:text-zinc-100 rounded-2xl rounded-br-md px-3.5 py-2.5 min-w-0 max-w-full"
                   :class="m._pending || m._queued ? 'bg-gray-50 dark:bg-zinc-800/40 border border-dashed border-gray-300 dark:border-zinc-600' : 'bg-gray-100 dark:bg-zinc-800/70'">
@@ -530,7 +547,7 @@
                  <div class="flex items-center gap-1.5 shrink-0">
                    <!-- MD and copy work on a message not yet sent too; forking
                         from one does not, as there is nothing on the server to fork. -->
-                   <div class="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
                      <button type="button" @click.stop="toggleMessageRender(m.id)"
                              :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                              class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
@@ -554,7 +571,7 @@
                          v-model="editingQueuedText"
                          rows="3"
                          dir="auto"
-                         class="w-full sm:min-w-[340px] text-[13px] font-medium leading-relaxed bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white resize-none custom-scrollbar"></textarea>
+                         class="w-full @min-[40rem]:min-w-[340px] text-[13px] font-medium leading-relaxed bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-600 rounded-sm px-2 py-1.5 text-gray-900 dark:text-zinc-100 outline-none focus:border-gray-900 dark:focus:border-white resize-none custom-scrollbar"></textarea>
                <MarkdownBody v-else-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else dir="auto" class="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
                <!-- Cancel / Send Now controls on the pending message -->
@@ -594,7 +611,7 @@
     <TrajectoryPanel v-else :messages="sortedMessages" :tool-calls="sortedToolCalls" />
 
     <!-- Reply Box -->
-    <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 sm:px-4 py-2 sm:py-4 md:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
+    <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
 
       <!-- Offline. The composer stays visible but inert: a box that silently
            accepts a reply with nowhere to send it is worse than one that says
@@ -801,14 +818,14 @@
             <audio controls autoplay :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[min(400px,70vw)]" />
           </div>
           <iframe v-else-if="selectedAtt.mimeType?.includes('pdf')" :src="getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" class="w-[80vw] h-[75vh]" frameborder="0"></iframe>
-          <div v-else class="p-8 sm:p-20 flex flex-col items-center gap-4 min-w-0">
+          <div v-else class="p-8 @min-[40rem]:p-20 flex flex-col items-center gap-4 min-w-0">
             <svg class="w-24 h-24 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
             <p class="text-white font-bold text-sm text-center break-all">{{ selectedAtt.filename }}</p>
           </div>
         </div>
-        <div class="flex items-center gap-3 sm:gap-4 max-w-full px-4 sm:px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-sm shadow-xl">
+        <div class="flex items-center gap-3 @min-[40rem]:gap-4 max-w-full px-4 @min-[40rem]:px-6 py-3 bg-zinc-900 border border-zinc-800 rounded-sm shadow-xl">
           <div class="flex flex-col min-w-0">
-            <p class="text-xs font-semibold text-white truncate sm:max-w-[250px]" :title="selectedAtt.filename">{{ selectedAtt.filename }}</p>
+            <p class="text-xs font-semibold text-white truncate @min-[40rem]:max-w-[250px]" :title="selectedAtt.filename">{{ selectedAtt.filename }}</p>
             <p class="text-[9px] font-semibold text-zinc-400 truncate">{{ selectedAtt.mimeType }}</p>
           </div>
           <div class="w-px h-8 bg-zinc-700 shrink-0"></div>
@@ -818,17 +835,17 @@
           <a :href="selectedAtt.url || getAttachmentUrl(workspaceId, taskId, selectedAtt.id)" :download="selectedAtt.filename"
              :target="selectedAtt.url ? '_blank' : undefined" :rel="selectedAtt.url ? 'noopener noreferrer' : undefined" @click.prevent="downloadSelected"
              title="Download" aria-label="Download"
-             class="shrink-0 flex items-center gap-2 px-3 sm:px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
+             class="shrink-0 flex items-center gap-2 px-3 @min-[40rem]:px-4 py-2 rounded-sm bg-white text-black text-[10px] font-semibold hover:bg-gray-100 transition-all">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-            <span class="hidden sm:inline">Download</span>
+            <span class="hidden @min-[40rem]:inline">Download</span>
           </a>
           <!-- Only a public link is worth sharing: the signed-in route opens for nobody else. -->
           <button v-if="selectedAtt.url" type="button" @click="copyAttachmentLink(selectedAtt)"
                   :title="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'" :aria-label="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'"
-                  class="shrink-0 flex items-center justify-center gap-2 sm:min-w-[7.5rem] px-3 sm:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
+                  class="shrink-0 flex items-center justify-center gap-2 @min-[40rem]:min-w-[7.5rem] px-3 @min-[40rem]:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
             <svg v-if="!copiedMessages.has('att-' + selectedAtt.id)" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
             <svg v-else class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>
-            <span class="hidden sm:inline">{{ copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link' }}</span>
+            <span class="hidden @min-[40rem]:inline">{{ copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link' }}</span>
           </button>
         </div>
       </div>
@@ -894,12 +911,14 @@ import {
   usesCommandKey,
 } from '../composables/useKeyboardShortcuts';
 import { usePlatformStore } from '../stores/platformStore';
+import { useSidePanel } from '../composables/useSidePanel';
 import { cacheTask, cacheTaskUpdate, sharedCache } from '../composables/useCachedTasks';
 import { OFFLINE_NOTICE, readCachedTask, useOffline } from '../composables/useCachedReads';
 
 const { notifyError, notifySuccess } = useToasts();
 const tooltipStore = useTooltipStore();
 const platformStore = usePlatformStore();
+const sidePanel = useSidePanel();
 const { offline } = useOffline();
 const route = useRoute();
 const router = useRouter();

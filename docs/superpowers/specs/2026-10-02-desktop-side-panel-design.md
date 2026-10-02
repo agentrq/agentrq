@@ -49,19 +49,30 @@ apply to a guest — and `ipcMain` sees the guest's `event.senderFrame.url`.
   `https://`), *Pages* (a menu of the installed Extensions' panel pages), *Open
   in browser*, close. The title of an Extension page is followed by the
   Extension's name, as every other Extension surface is.
-- **Resize** by dragging the panel's left edge (a 6px handle with a 1px visible
-  line, `cursor: col-resize`). Width default 440px, minimum 320px, and the main
-  column always keeps at least 480px; the width is clamped again when the
-  window shrinks. While dragging, the webview gets `pointer-events: none`,
-  otherwise the guest swallows the pointer the moment it crosses into it and
-  the drag stalls. Double-clicking the handle restores the default width.
+- **Width.** Unresized, the panel takes all the room except 480px — a phone's
+  width — for the main column. Views with a list-and-detail split (a
+  workspace's tasks, the task inbox) and the task view lay themselves out by
+  their own width (`useNarrowLayout` plus Tailwind container variants), so
+  beside the panel a task looks as it does on a phone, and returns to the
+  desktop layout when the panel closes.
+- **Resize** by dragging the panel's left edge (a 16px handle with an
+  always-visible grip, `cursor: col-resize`). Minimum 320px, and the main
+  column keeps at least 480px when there is room for both; a dragged width is
+  clamped to the room at draw time and kept as chosen. While dragging, the
+  webview gets `pointer-events: none`, otherwise the guest swallows the
+  pointer the moment it crosses into it and the drag stalls. Double-clicking
+  the handle goes back to filling the room.
+- **Expand** (beside close) gives the panel everything beside the sidebar; the
+  main column is hidden, not unmounted, so the page is as it was on
+  *Collapse*.
 - **Remembered** per device in `localStorage` (`agentrq:side-panel`: open,
-  width, last URL), read inside try/catch. Only an `http(s):` or
+  full, width — `null` for "fill" — and last URL), read inside try/catch. Only an `http(s):` or
   `agentrq-ext:` URL is restored. It is a layout preference, so it is not
   account state.
 - **Toggle**: `CmdOrCtrl+\` from a *View → Side Panel* menu item (every
-  platform, works whatever has focus), a button in the macOS title bar beside
-  the window menu, and a sidebar footer button on every desktop platform. The
+  platform, works whatever has focus), a button in the task view's header, a
+  button in the macOS title bar beside the window menu, and a sidebar footer
+  button on every desktop platform. The
   menu item sends `agentrq:side-panel:toggle` to the renderer.
 - Empty state (opened with nothing loaded): a short line, the address field
   focused, and the Pages list if any Extension provides one.
@@ -97,8 +108,11 @@ the element asked for:
   profile's own partition, so no page in the panel can ever carry the `at`
   cookie. Forgetting a profile clears its panel partition too.
 - `nodeIntegration: false`, `nodeIntegrationInSubFrames: false`,
-  `contextIsolation: true`, `sandbox: true`, `webSecurity: true`,
-  `allowpopups` removed.
+  `contextIsolation: true`, `sandbox: true`, `webSecurity: true`, no Blink or
+  experimental features. Popups are *enabled* (`disablePopups: false`): a guest
+  with them disabled drops `window.open` and `target=_blank` before the
+  window-open handler is asked, so the link does nothing; enabled, the handler
+  refuses every window and loads the page in the panel instead.
 - `preload` → the panel preload, always (a guest that navigates keeps the
   preload it started with). The preload exposes its bridge **only** when
   `location.protocol === 'agentrq-ext:'`, and the main process checks the

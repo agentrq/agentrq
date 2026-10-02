@@ -42,6 +42,16 @@ Consequences worth knowing before changing anything here:
 - Desktop-only capabilities reach the renderer through the narrow `window.agentrq`
   bridge in `desktop/src/preload/`. Components branch on `usePlatformStore()`,
   never on user-agent sniffing or probing for `window.agentrq`.
+- **The side panel is a `<webview>`, and `will-attach-webview` is its boundary.**
+  `desktop/src/main/side-panel/` overwrites every guest's preferences there —
+  own partition (`persist:panel-<profile>`, never the profile's, so no guest
+  ever carries the `at` cookie), sandbox, no Node, our preload — whatever the
+  element asked for. Not a `WebContentsView`: a native view is drawn over the
+  page, so the app's dialogs, menus and bottom-right toasts would vanish
+  behind it. While the resize handle is dragged the webview needs
+  `pointer-events: none`, or the guest swallows the pointer and the drag stalls.
+  Popups stay *enabled* in the guest: disabled, `target=_blank` never reaches the
+  window-open handler that refuses it, and the link silently does nothing.
 - **Links leave for the real browser; the AgentRQ sign-in may not.** `classifyLink`
   keeps auth URLs on the configured server in-app because the `at` cookie has to
   land in this profile's jar — sent out, sign-in "succeeds" and the app stays

@@ -1536,6 +1536,9 @@ const (
 	// hello is what says whether it came back.
 	ActionMachineRestart Action = 83
 	ActionMachineUpdate  Action = 84
+	// The desktop app's side panel opening, reported by the browser: it is
+	// a layout change in the window, which nothing on the server sees.
+	ActionUISidePanelOpen Action = 85
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1570,6 +1573,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIDictationEnd, true
 	case "ui_spin_up":
 		return ActionUISpinUp, true
+	case "ui_side_panel_open":
+		return ActionUISidePanelOpen, true
 	}
 	return 0, false
 }
@@ -1688,6 +1693,8 @@ func (a Action) String() string {
 		return "machine_restart"
 	case ActionMachineUpdate:
 		return "machine_update"
+	case ActionUISidePanelOpen:
+		return "ui_side_panel_open"
 	}
 	return "unknown"
 }

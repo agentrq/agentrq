@@ -21,7 +21,9 @@
                      :title="windowTitle" :user="isLoginPage ? null : user"
                      :profiles="profiles" :disabled="switchingProfile"
                      :path="route.fullPath" :version="appVersion" :copy-text="copyText"
-                     @switch="switchToProfile" @remove="removeProfile" @add="addProfile" />
+                     :side-panel-open="sidePanel.state.open"
+                     @switch="switchToProfile" @remove="removeProfile" @add="addProfile"
+                     @toggle-side-panel="sidePanel.toggle()" />
 
     <!-- PWA Update Banner. It is the progress bar while a new version
          downloads, and stays up once "Update now" is clicked until it lands. -->
@@ -316,17 +318,27 @@
           <!-- App Version & Docs -->
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-3 flex items-center justify-between gap-2">
             <span class="text-[10px] text-gray-400 dark:text-zinc-600 font-mono">v{{ appVersion }}</span>
-            <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
-               class="flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
-              <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-              </svg>
-              Docs
-            </a>
+            <div class="flex items-center gap-3">
+              <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
+                 class="flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
+                <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+                Docs
+              </a>
+              <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click="sidePanel.toggle()"
+                      :aria-pressed="sidePanel.state.open" title="Side panel (Ctrl/⌘ + \)"
+                      class="flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
+                <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
+                </svg>
+                Panel
+              </button>
+            </div>
           </div>
 
           <!-- Docs (collapsed) -->
-          <div v-else class="mb-3 flex justify-center">
+          <div v-else class="mb-3 flex flex-col items-center gap-1">
             <a href="https://agentrq.com/docs" target="_blank" rel="noopener noreferrer"
                @mouseenter="showTooltip($event, 'Docs')" @mouseleave="hideTooltip"
                class="flex items-center justify-center size-8 rounded-md text-gray-400 dark:text-zinc-600 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-zinc-800 transition-all duration-150">
@@ -334,6 +346,14 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
               </svg>
             </a>
+            <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click="sidePanel.toggle()"
+                    :aria-pressed="sidePanel.state.open" aria-label="Side panel"
+                    @mouseenter="showTooltip($event, 'Side panel')" @mouseleave="hideTooltip"
+                    class="flex items-center justify-center size-8 rounded-md text-gray-400 dark:text-zinc-600 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-zinc-800 transition-all duration-150">
+              <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
+              </svg>
+            </button>
           </div>
 
           <!-- User Profile -->
@@ -423,7 +443,9 @@
     </main>
 
     <!-- App Content View -->
-    <main v-else class="grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex flex-col relative bg-zinc-100 dark:bg-zinc-950">
+    <!-- Hidden, not unmounted, while the side panel takes the whole window:
+         the page is still there, scrolled where it was, when it collapses. -->
+    <main v-else :class="['grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex-col relative bg-zinc-100 dark:bg-zinc-950', showSidePanel && sidePanel.state.full ? 'hidden' : 'flex']">
       <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth bg-white dark:bg-zinc-900 md:border border-gray-200 dark:border-zinc-800 no-scrollbar">
         <!-- Never unmounted by a route change — router-view is swapped inside
              it — so its size is also the size a page navigated to next is
@@ -436,6 +458,9 @@
         </div>
       </div>
     </main>
+
+    <!-- The desktop side panel: a page beside the app, resized from its left edge. -->
+    <SidePanel v-if="showSidePanel" />
 
     <!-- Global Tooltip -->
     <!-- whitespace-pre, not nowrap: a tooltip may carry more than one line
@@ -478,7 +503,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 import { progressLabel } from './desktop/useDesktopUpdates'
 import { withUpdateProgress } from './composables/usePwaUpdateProgress'
-import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE } from './api'
+import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_SIDE_PANEL_OPEN } from './api'
 // The whole module, because the WebMCP catalogue mirrors it function for
 // function — naming each one here would be a second list to keep in step.
 import * as api from './api'
@@ -508,6 +533,8 @@ import Toast from './components/Toast.vue'
 import DeleteModal from './components/DeleteModal.vue'
 import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
+import SidePanel from './components/SidePanel.vue'
+import { useSidePanel } from './composables/useSidePanel'
 import ProfileList from './components/ProfileList.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
@@ -560,6 +587,12 @@ const user = ref(null)
 const isUserMenuOpen = ref(false)
 
 const platformStore = usePlatformStore()
+
+// The desktop app's side panel. The menu's Cmd/Ctrl+\ reaches it through the
+// shell; the title bar and the sidebar call it directly.
+const sidePanel = useSidePanel({ onOpen: () => recordUiAction(TELEMETRY_UI_SIDE_PANEL_OPEN, route) })
+const showSidePanel = computed(() => platformStore.isDesktop && !isLoginPage.value && sidePanel.state.open)
+const stopSidePanelToggle = window.agentrq?.sidePanel?.onToggle?.(() => sidePanel.toggle())
 
 /** The clipboard, through the shell where there is one. */
 const copyText = (text) =>
@@ -1086,6 +1119,7 @@ const handleClickOutside = (e) => {
 
 
 onUnmounted(() => {
+  stopSidePanelToggle?.()
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
   window.removeEventListener('keydown', onExtensionKey, true)

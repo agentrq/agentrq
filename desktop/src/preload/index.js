@@ -295,6 +295,21 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
   },
 
+  sidePanel: {
+    /**
+     * The View menu's Side Panel item, and its Cmd/Ctrl+\ accelerator.
+     *
+     * @returns {() => void} unsubscribe
+     */
+    onToggle: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('agentrq:side-panel:toggle', listener)
+      return () => ipcRenderer.off('agentrq:side-panel:toggle', listener)
+    },
+    /** "Open in browser": the ordinary link rule decides what leaves. */
+    openExternal: (url) => ipcRenderer.invoke('agentrq:side-panel:open-external', url),
+  },
+
   view: {
     /**
      * Zoom and full screen, for the title bar's window menu on macOS.

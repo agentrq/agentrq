@@ -24,6 +24,15 @@
 export const QUICK_CREATE_ACCELERATOR = 'CommandOrControl+Shift+N'
 
 /**
+ * Opens and closes the side panel.
+ *
+ * A menu accelerator rather than a key the page listens for, so it works
+ * whatever has focus — including the page in the panel, which is a different
+ * web contents and never sees the app's own key handlers.
+ */
+export const SIDE_PANEL_ACCELERATOR = 'CommandOrControl+\\'
+
+/**
  * @param {object} options
  * @param {string} options.platform  `process.platform`
  * @param {string} options.appName
@@ -103,6 +112,14 @@ export function buildMenuTemplate({ platform, appName = 'AgentRQ', actions = {} 
       { role: 'reload' },
       { role: 'forceReload' },
       { role: 'toggleDevTools' },
+      { type: 'separator' },
+      {
+        id: 'toggle-side-panel',
+        label: 'Side Panel',
+        accelerator: SIDE_PANEL_ACCELERATOR,
+        enabled: Boolean(actions.toggleSidePanel),
+        click: actions.toggleSidePanel,
+      },
       { type: 'separator' },
       { role: 'resetZoom' },
       { role: 'zoomIn' },

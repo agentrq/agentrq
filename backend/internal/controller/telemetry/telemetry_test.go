@@ -459,6 +459,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionWorkspaceForkCreate, model.ActionIDWorkspaceForkCreate, "workspace fork create"},
 		{entity.ActionWorkspaceForkMerge, model.ActionIDWorkspaceForkMerge, "workspace fork merge"},
 		{entity.ActionUISpinUp, model.ActionIDUISpinUp, "spin up"},
+		{entity.ActionUISidePanelOpen, model.ActionIDUISidePanelOpen, "side panel open"},
 	}
 
 	for _, tc := range cases {

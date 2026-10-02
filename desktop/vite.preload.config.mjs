@@ -15,11 +15,15 @@ export default defineConfig({
     target: 'node20',
     minify: false,
     lib: {
-      entry: resolvePath('./src/preload/index.js'),
+      // The app's own preload, and the one every side panel guest gets.
+      entry: {
+        index: resolvePath('./src/preload/index.js'),
+        panel: resolvePath('./src/preload/panel.js'),
+      },
       // Sandboxed preload scripts are loaded as CommonJS — an ES module preload
       // simply will not run with `sandbox: true`.
       formats: ['cjs'],
-      fileName: () => 'index.cjs',
+      fileName: (_format, entryName) => `${entryName}.cjs`,
     },
     rollupOptions: {
       external: ['electron', ...builtinModules, ...builtinModules.map((m) => `node:${m}`)],

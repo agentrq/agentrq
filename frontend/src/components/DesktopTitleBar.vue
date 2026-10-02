@@ -43,6 +43,14 @@
       </div>
     </div>
 
+    <!-- The side panel, which the menu also opens with Cmd+\. -->
+    <button type="button" data-side-panel-toggle @click="emit('toggle-side-panel')" :aria-pressed="sidePanelOpen"
+            title="Side panel (⌘\)" aria-label="Side panel"
+            class="app-no-drag shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white transition-colors outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
+      </svg>
+    </button>
     <WindowMenu :server-url="activeProfile?.serverUrl || ''" :path="path" :version="version" :copy-text="copyText" />
   </div>
 </template>
@@ -64,8 +72,10 @@ const props = defineProps({
   path: { type: String, default: '/' },
   version: { type: String, default: '' },
   copyText: { type: Function, default: async () => {} },
+  /** Whether the side panel is showing, for its button's pressed state. */
+  sidePanelOpen: { type: Boolean, default: false },
 })
-const emit = defineEmits(['switch', 'remove', 'add'])
+const emit = defineEmits(['switch', 'remove', 'add', 'toggle-side-panel'])
 
 const open = ref(false)
 const menuRef = ref(null)

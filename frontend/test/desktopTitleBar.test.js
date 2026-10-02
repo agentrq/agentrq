@@ -23,7 +23,7 @@ let app
 let el
 
 function mount(props = {}) {
-  const handlers = { onSwitch: vi.fn(), onRemove: vi.fn(), onAdd: vi.fn() }
+  const handlers = { onSwitch: vi.fn(), onRemove: vi.fn(), onAdd: vi.fn(), onToggleSidePanel: vi.fn() }
   const state = reactive({
     title: 'agentrq-static',
     user: { name: 'Ada', email: 'ada@example.com' },
@@ -64,6 +64,20 @@ describe('DesktopTitleBar', () => {
   it('keeps the profile button clickable inside the drag region', () => {
     mount()
     expect(avatar().closest('.app-no-drag')).not.toBeNull()
+  })
+
+  it('opens and closes the side panel from a button the drag region lets through', async () => {
+    const { state, onToggleSidePanel } = mount()
+    const toggle = el.querySelector('[data-side-panel-toggle]')
+    expect(toggle.classList.contains('app-no-drag')).toBe(true)
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+
+    toggle.click()
+    expect(onToggleSidePanel).toHaveBeenCalledOnce()
+
+    state.sidePanelOpen = true
+    await tick()
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('has no profile button before anyone is signed in', () => {

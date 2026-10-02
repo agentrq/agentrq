@@ -633,6 +633,8 @@ const (
 	// A dictation done by a phone's own speech recognition, as distinct
 	// from ActionIDLocalAIRecordingEnd, which is the local Whisper model.
 	ActionIDUIDictationEnd
+	// The desktop side panel opened.
+	ActionIDUISidePanelOpen
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

@@ -5,7 +5,11 @@
 -->
 
 <template>
-  <div class="flex flex-col h-full w-full bg-transparent">
+  <!-- Laid out by its own width, not the window's (useNarrowLayout): beside
+       the desktop side panel it is a phone's width, and shows what a phone
+       does. `@min-[40rem]:`, `@min-[48rem]:` and `@min-[64rem]:` are `sm:`,
+       `md:` and `lg:` measured against this element. -->
+  <div ref="layoutRef" class="@container flex flex-col h-full w-full bg-transparent">
     <DeleteModal
       :show="!!taskToDelete"
       :taskTitle="taskToDelete?.title || ''"
@@ -37,9 +41,9 @@
 
     <!-- Global Header -->
     <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-row items-start justify-between gap-4"
-         :class="{'hidden sm:flex': selectedTaskId}">
+         :class="{'hidden @min-[40rem]:flex': selectedTaskId}">
       <div class="flex flex-col min-w-0 flex-1">
-        <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ title }}</h1>
+        <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">{{ title }}</h1>
       </div>
 
 
@@ -49,7 +53,7 @@
         
         <!-- Mobile Search Button -->
         <button @click="openSearch" 
-                class="md:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
+                class="@min-[48rem]:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
                 title="Search Tasks">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -58,7 +62,7 @@
 
         <!-- Filters Toggle (Mobile) -->
         <button @click="showMobileFilters = !showMobileFilters" 
-                class="md:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
+                class="@min-[48rem]:hidden p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
                 :class="{'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white': showMobileFilters}"
                 title="Filters">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
@@ -66,7 +70,7 @@
 
         <div v-if="showMobileFilters || !isMobile" 
              class="p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner flex overflow-x-auto no-scrollbar"
-             :class="[showMobileFilters ? 'fixed top-[70px] right-4 z-50 flex shadow-xl border-gray-900 dark:border-white animate-in fade-in slide-in-from-top-2' : 'hidden md:flex']">
+             :class="[showMobileFilters ? 'fixed top-[70px] right-4 z-50 flex shadow-xl border-gray-900 dark:border-white animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex']">
           <button v-for="f in filters" :key="f.id"
                   @click="router.push(`/tasks/${f.id}`); isMobile && (showMobileFilters = false)"
                   @mouseenter="tooltipStore.show($event, f.label, 'bottom')"
@@ -83,17 +87,17 @@
 
 
     <!-- Content Area (Split Pane) -->
-    <div class="flex flex-col md:flex-row flex-1 min-h-0 w-full bg-transparent">
+    <div class="flex flex-col @min-[48rem]:flex-row flex-1 min-h-0 w-full bg-transparent">
       <!-- Tasks Sidebar (Left Pane) -->
-      <div v-show="!selectedTaskId || !isMobile" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
+      <div v-show="!selectedTaskId || !isMobile" class="w-full @min-[48rem]:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent @min-[48rem]:border-r border-gray-100 dark:border-zinc-800">
         
         <!-- Task List -->
         <div v-if="loading" class="flex-1 overflow-y-auto custom-scrollbar min-h-0 px-2 pb-20 relative flex items-center justify-center">
           <LoadingState label="Loading tasks..." />
         </div>
         
-        <div v-else class="space-y-6 pb-20 md:pb-0 overflow-y-auto custom-scrollbar px-4">
-          <div v-for="grp in displayGroups" :key="grp.title" class="mb-4 md:last:mb-0">
+        <div v-else class="space-y-6 pb-20 @min-[48rem]:pb-0 overflow-y-auto custom-scrollbar px-4">
+          <div v-for="grp in displayGroups" :key="grp.title" class="mb-4 @min-[48rem]:last:mb-0">
             <div class="mb-3 flex items-center gap-3">
               <h3 class="text-[10px] font-semibold text-gray-500 dark:text-zinc-400 uppercase tracking-widest">{{ grp.title }}</h3>
               <span class="text-[9px] font-bold text-gray-500 dark:text-zinc-500 bg-gray-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded-sm">{{ grp.tasks.length }}</span>
@@ -121,7 +125,7 @@
                     </div>
                     <div class="flex items-center gap-2 relative">
                        <!-- Action Menu (Visible on mobile, hover on desktop), as in a workspace's list -->
-                       <div class="opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
+                       <div class="opacity-100 @min-[48rem]:opacity-0 @min-[48rem]:group-hover:opacity-100 flex items-center gap-1 mr-2 transition-opacity duration-150">
                           <template v-if="filterType === 'notstarted' && !isArchived(task)">
                             <button @click.stop="reorderTask(grp.tasks, task, -1)" class="text-gray-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-700 p-1 rounded-sm transition-all" title="Move Up">
                               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
@@ -216,6 +220,7 @@ import { taskDotClass } from '../composables/useTaskStatusStyle';
 import { useEventBus } from '../useEventBus';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useViewport } from '../composables/useViewport';
+import { useNarrowLayout } from '../composables/useNarrowLayout';
 import LoadingState from '../components/LoadingState.vue';
 import LoadMoreButton from '../components/LoadMoreButton.vue';
 import DeleteModal from '../components/DeleteModal.vue';
@@ -232,7 +237,11 @@ const { getNextRunLabel, getNextRunDateTime, getNextRunDate } = useCron();
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
-const { isMobile } = useViewport();
+// A phone's layout on a phone, and beside the desktop side panel.
+const { isMobile: isMobileWindow } = useViewport();
+const layoutRef = ref(null);
+const isNarrow = useNarrowLayout(layoutRef);
+const isMobile = computed(() => isMobileWindow.value || isNarrow.value);
 
 const tasks = ref([]);
 // Read, never written: the shell keeps the store's agentConnected current from

@@ -31,6 +31,8 @@ import { createAppProtocolHandler } from './protocol.js'
 import { createAttachmentStore } from './attachment-store.js'
 import { activeProfile, canDiscardActiveProfile, duplicateOf, partitionFor } from './profiles.js'
 import { fetchProfileIdentity } from './identity.js'
+import { panelPartitionFor } from './side-panel/guest.js'
+import { wireSidePanel } from './side-panel/wire.js'
 import {
   CONFIG_FILENAME,
   createServerConfigStore,
@@ -93,6 +95,8 @@ const APP_ORIGIN = `app://${APP_HOST}`
 
 const RENDERER_ROOT = join(__dirname, '../renderer')
 const PRELOAD = join(__dirname, '../preload/index.cjs')
+/** The side panel's guests get this one, and only this one. */
+const PANEL_PRELOAD = join(__dirname, '../preload/panel.cjs')
 const PROJECT_ROOT = join(__dirname, '../..')
 
 /**
@@ -256,6 +260,11 @@ function sessionFor(partition) {
  */
 function currentPartition() {
   return profileState ? activeProfile(profileState).partition : partitionFor('default')
+}
+
+/** The side panel's cookie jar for the active profile. Never the profile's own. */
+function currentPanelPartition() {
+  return panelPartitionFor(profileState ? activeProfile(profileState).id : 'default')
 }
 
 /** Fetch through the active profile's session, so its cookies go with it. */
@@ -575,7 +584,17 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The side panel. Every guest's preferences are overwritten in
+      // `will-attach-webview` (side-panel/wire.js) — that is the boundary.
+      webviewTag: true,
     },
+  })
+
+  wireSidePanel(win, {
+    partition: currentPanelPartition,
+    preload: PANEL_PRELOAD,
+    serverUrl: () => serverUrl,
+    routeLink: (url) => routeLink(url, win),
   })
 
   win.once('ready-to-show', () => {
@@ -644,6 +663,7 @@ function installMenu(getWindow) {
     appName: app.getName(),
     actions: {
       newTask: () => navigate(newTaskRoute()),
+      toggleSidePanel: () => getWindow()?.webContents.send('agentrq:side-panel:toggle'),
       checkForUpdates: () => updater?.checkNow(),
       switchServer: async () => {
         if (isConnectionLocked) return
@@ -778,6 +798,8 @@ async function forgetProfile(id, fallbackId = '') {
   profileState = await configStore.removeProfile(id, fallbackId)
   // Its cookies would otherwise outlive it on disk, still signed in.
   await session.fromPartition(partitionFor(id)).clearStorageData()
+  // The side panel's browsing belonged to the profile too.
+  await session.fromPartition(panelPartitionFor(id)).clearStorageData()
   profileIdentities.delete(id)
   return wasActive ? switchProfileToActive() : profilesPayload()
 }
@@ -868,6 +890,12 @@ function registerIpc(getWindow) {
     if (failure) return { ok: false, error: failure }
     return { ok: true, revealed: false }
   })
+
+  // "Open in browser" from the side panel's toolbar. The ordinary link rule, so
+  // only what a link could open reaches the operating system.
+  ipcMain.handle('agentrq:side-panel:open-external', (event, url) =>
+    routeLink(String(url ?? ''), BrowserWindow.fromWebContents(event.sender)),
+  )
 
   // Copying a link's target out of a message body.
   //

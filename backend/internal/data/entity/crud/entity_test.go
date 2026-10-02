@@ -75,6 +75,7 @@ func TestActionString(t *testing.T) {
 		{ActionUISpinUp, "ui_spin_up"},
 		{ActionMachineRestart, "machine_restart"},
 		{ActionMachineUpdate, "machine_update"},
+		{ActionUISidePanelOpen, "ui_side_panel_open"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

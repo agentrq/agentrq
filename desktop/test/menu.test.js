@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 
-import { QUICK_CREATE_ACCELERATOR, buildMenuTemplate, findMenuItems } from '../src/main/menu.js'
+import { QUICK_CREATE_ACCELERATOR, SIDE_PANEL_ACCELERATOR, buildMenuTemplate, findMenuItems } from '../src/main/menu.js'
 
 const actions = { switchServer: vi.fn(), logOut: vi.fn(), newTask: vi.fn(), checkForUpdates: vi.fn() }
 
@@ -110,6 +110,24 @@ describe('buildMenuTemplate — AgentRQ actions', () => {
 
     expect(newTask).toHaveBeenCalledOnce()
     expect(checkForUpdates).toHaveBeenCalledOnce()
+  })
+
+  it('offers the side panel under View on every platform, on Cmd/Ctrl+backslash', () => {
+    const toggleSidePanel = vi.fn()
+    for (const platform of ['darwin', 'win32', 'linux']) {
+      const template = buildMenuTemplate({ platform, actions: { toggleSidePanel } })
+      const view = template.find((item) => item.label === 'View')
+      const [item] = findMenuItems(view.submenu, 'toggle-side-panel')
+      expect(item, platform).toMatchObject({ label: 'Side Panel', accelerator: 'CommandOrControl+\\', enabled: true })
+      item.click()
+    }
+    expect(SIDE_PANEL_ACCELERATOR).toBe('CommandOrControl+\\')
+    expect(toggleSidePanel).toHaveBeenCalledTimes(3)
+  })
+
+  it('disables the side panel item when nothing can open it', () => {
+    const [item] = findMenuItems(buildMenuTemplate({ platform: 'linux', actions: {} }), 'toggle-side-panel')
+    expect(item.enabled).toBe(false)
   })
 
   it('gives Windows and Linux a Help menu, which macOS gets for free', () => {

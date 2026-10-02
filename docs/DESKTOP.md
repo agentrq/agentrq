@@ -139,6 +139,25 @@ opens in your own browser, where your extensions, bookmarks and signed-in tabs
 already are. Signing in to AgentRQ is the exception and stays in the app: the
 session it earns has to belong to the app to be any use.
 
+**Side panel.** A browser beside the app, on the right of the window, so a page
+can sit next to the task it belongs to. Open and close it with
+`Cmd/Ctrl+\` (**View → Side Panel**), the panel button in a task's header, the
+**Panel** button at the bottom of the sidebar, or — on macOS — the panel button
+in the title bar. It has back, forward, reload, an address field, **Open in
+browser** and **Expand**, which gives it the whole window beside the sidebar
+until you collapse it again.
+
+Opened, it takes all the room except a phone's width for the page beside it,
+and a task there is shown the way it is on a phone. Drag the panel's left edge
+to share the window differently; double-click the edge to go back.
+
+The panel keeps its own cookies, one set per profile, separate from the app's:
+a site you sign in to there never sees your AgentRQ session, and AgentRQ's own
+sign-in links always go back to the main window. Its width, whether it is open
+or expanded, and the last page it showed are remembered on this computer only — nothing
+about the panel is sent to the server or synced to another machine. Removing a
+profile clears its panel's cookies too.
+
 **Local file links.** A `file:///…` link in a task or a message is clickable
 here. Documents, images, source files and media open in whatever application you
 normally use for them. Anything that would *run* — a script, a `.app`, an `.exe`,

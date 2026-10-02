@@ -1030,6 +1030,8 @@ export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';
+// The desktop side panel opening, from wherever it was opened.
+export const TELEMETRY_UI_SIDE_PANEL_OPEN = 'ui_side_panel_open';
 
 // Records one local-AI feature use. Never throws and never blocks the caller:
 // a metric is not worth failing a user's click over, so a rejected or

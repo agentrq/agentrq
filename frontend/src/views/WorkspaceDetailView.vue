@@ -5,7 +5,11 @@
 -->
 
 <template>
-  <div class="flex flex-col h-full w-full bg-transparent">
+  <!-- Laid out by its own width, not the window's (useNarrowLayout): beside
+       the desktop side panel it is a phone's width, and shows what a phone
+       does. `@min-[40rem]:`, `@min-[48rem]:` and `@min-[64rem]:` are `sm:`,
+       `md:` and `lg:` measured against this element. -->
+  <div ref="layoutRef" class="@container flex flex-col h-full w-full bg-transparent">
     
     <div v-if="loading" class="flex-1 flex items-center justify-center py-20">
       <LoadingState label="Loading workspace context..." />
@@ -18,8 +22,8 @@
     <template v-else>
       <!-- Global Header -->
       <!-- Global Header -->
-      <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4"
-           :class="{'hidden sm:flex': selectedTaskId}">
+      <div class="w-full px-4 py-2 mb-6 shrink-0 flex flex-col @min-[40rem]:flex-row @min-[40rem]:items-start justify-between gap-3 @min-[40rem]:gap-4"
+           :class="{'hidden @min-[40rem]:flex': selectedTaskId}">
         
         <!-- Title Row -->
         <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -28,13 +32,13 @@
                @mouseenter="tooltipStore.show($event, isAgentConnected ? 'Agent Online' : 'Agent Offline', 'bottom')"
                @mouseleave="tooltipStore.hide()">
             <div :class="isAgentConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]'" 
-                 class="w-2 h-2 md:w-2.5 md:h-2.5 rounded-full z-10 border border-white dark:border-zinc-900 transition-colors duration-500"></div>
+                 class="w-2 h-2 @min-[48rem]:w-2.5 @min-[48rem]:h-2.5 rounded-full z-10 border border-white dark:border-zinc-900 transition-colors duration-500"></div>
             <div v-if="isAgentConnected"
-                 class="absolute w-2 md:w-2.5 md:h-2.5 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                 class="absolute w-2 @min-[48rem]:w-2.5 @min-[48rem]:h-2.5 rounded-full bg-green-500 animate-ping opacity-75"></div>
           </div>
 
           <div class="flex flex-col min-w-0 flex-1">
-            <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
+            <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate">
               <span v-if="isFullPane" class="opacity-50 cursor-pointer hover:opacity-100" @click="router.push(`/workspaces/${workspaceId}`)">{{ toKebabCase(workspace?.name) }}</span>
               <span v-else>{{ toKebabCase(workspace?.name) || 'Workspace' }}</span>
               <template v-if="isFullPane">
@@ -46,7 +50,7 @@
         </div>
         
         <!-- Stats & Actions Row -->
-        <div class="flex items-center gap-4 shrink-0 justify-between sm:justify-end">
+        <div class="flex items-center gap-4 shrink-0 justify-between @min-[40rem]:justify-end">
           <div class="flex items-center gap-2">
             <!-- How to reach the finder.
                  Beside the controls because that is where someone looks when
@@ -55,7 +59,7 @@
                  tight at that width, and a hint is the first thing that should
                  give up its space. Not a button — it says which key to press,
                  and pressing it is the thing being taught. -->
-            <span v-if="findTaskHint" class="hidden lg:flex items-center gap-1.5 mr-1 text-gray-400 dark:text-zinc-500 select-none">
+            <span v-if="findTaskHint" class="hidden @min-[64rem]:flex items-center gap-1.5 mr-1 text-gray-400 dark:text-zinc-500 select-none">
               <kbd class="font-sans text-[9px] font-black uppercase tracking-widest border border-gray-200 dark:border-zinc-700 rounded px-1.5 py-0.5 bg-white dark:bg-zinc-900">{{ findTaskHint.keys }}</kbd>
               <span class="text-[10px] font-medium">{{ findTaskHint.label }}</span>
             </span>
@@ -64,7 +68,7 @@
             <div class="relative flex items-center">
               <!-- Mobile Search Button -->
               <button @click="openSearch" 
-                      class="md:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0 mr-1" 
+                      class="@min-[48rem]:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0 mr-1" 
                       title="Search Tasks">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -72,7 +76,7 @@
               </button>
 
               <button @click="showMobileFilters = !showMobileFilters" 
-                      class="md:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
+                      class="@min-[48rem]:hidden h-8 w-8 text-gray-500 hover:bg-gray-100 dark:hover:bg-zinc-800 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg transition-all shadow-sm flex items-center justify-center shrink-0" 
                       :class="{'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white': showMobileFilters}"
                       title="Filters">
                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
@@ -81,7 +85,7 @@
               <!-- Filters Segment Control (Top Right) -->
               <div v-if="showMobileFilters || !isMobile" 
                    class="h-8 p-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md border border-gray-200 dark:border-zinc-700/50 shadow-inner mr-2 overflow-x-auto no-scrollbar transition-all duration-300"
-                   :class="[showMobileFilters ? 'absolute top-10 left-0 z-50 flex shadow-2xl border-gray-900 dark:border-white w-max animate-in fade-in slide-in-from-top-2' : 'hidden md:flex items-center']">
+                   :class="[showMobileFilters ? 'absolute top-10 left-0 z-50 flex shadow-2xl border-gray-900 dark:border-white w-max animate-in fade-in slide-in-from-top-2' : 'hidden @min-[48rem]:flex items-center']">
                 <button v-for="f in filters" :key="f.id"
                         @click="selectFilter(f.id)"
                         @mouseenter="tooltipStore.show($event, f.label, 'bottom')"
@@ -96,7 +100,7 @@
             </div>
 
             <button @click="router.push(isBoard ? `/workspaces/${workspaceId}` : `/workspaces/${workspaceId}/board`)"
-                    class="h-8 w-8 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 border rounded-lg transition-all shadow-sm hidden md:flex items-center justify-center"
+                    class="h-8 w-8 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-800 border rounded-lg transition-all shadow-sm hidden @min-[48rem]:flex items-center justify-center"
                     :class="isBoard ? 'bg-gray-100 dark:bg-zinc-800 text-black dark:text-white border-black dark:border-white' : 'text-gray-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 border-gray-100 dark:border-zinc-800'"
                     :title="isBoard ? 'List view' : 'Kanban board'">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h3a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM15 5a1 1 0 011-1h3a1 1 0 011 1v9a1 1 0 01-1 1h-3a1 1 0 01-1-1V5z" /></svg>
@@ -143,16 +147,16 @@
                     class="group flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-zinc-900 px-3 h-8 rounded-sm text-[10px] font-bold shadow-sm transition-all hover:bg-gray-800 dark:hover:bg-zinc-100 uppercase tracking-widest"
                     title="New Task">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-              <span class="hidden sm:inline">New Task</span>
+              <span class="hidden @min-[40rem]:inline">New Task</span>
            </button>
           </div>
         </div>
       </div>
 
       <!-- Content Area (Split Pane) -->
-      <div class="flex flex-col md:flex-row flex-1 min-h-0 w-full bg-transparent">
+      <div class="flex flex-col @min-[48rem]:flex-row flex-1 min-h-0 w-full bg-transparent">
         <!-- Tasks Sidebar (Left Pane) -->
-        <div v-show="!isFullPane && (!selectedTaskId || !isMobile)" class="w-full md:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent md:border-r border-gray-100 dark:border-zinc-800">
+        <div v-show="!isFullPane && (!selectedTaskId || !isMobile)" class="w-full @min-[48rem]:w-96 shrink-0 h-full flex flex-col min-h-0 bg-transparent @min-[48rem]:border-r border-gray-100 dark:border-zinc-800">
           
           <!-- Task Feed Area -->
           <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -250,6 +254,7 @@ import { useEventBus } from '../useEventBus';
 import { useToasts } from '../composables/useToasts';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useViewport } from '../composables/useViewport';
+import { useNarrowLayout } from '../composables/useNarrowLayout';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { shortcutHint, usesCommandKey } from '../composables/useKeyboardShortcuts';
@@ -267,7 +272,12 @@ const { toKebabCase } = useFormat();
 const route = useRoute();
 const router = useRouter();
 const { notifySuccess, notifyError } = useToasts();
-const { isMobile } = useViewport();
+// A phone's layout on a phone, and beside the desktop side panel. The board
+// only follows the window: it is a page of its own, not a squeezed one.
+const { isMobile: isMobileWindow } = useViewport();
+const layoutRef = ref(null);
+const isNarrow = useNarrowLayout(layoutRef);
+const isMobile = computed(() => isMobileWindow.value || isNarrow.value);
 
 const platformStore = usePlatformStore();
 // Which modifier this keyboard has is a per-machine fact, so the hint is
@@ -415,7 +425,7 @@ watch(() => route.query.filter, (newFilter) => {
 
 // The kanban board is desktop-only; if a narrow viewport lands on /board
 // (direct link or window resize), fall back to the list view.
-watch([isMobile, isBoard], ([mobile, board]) => {
+watch([isMobileWindow, isBoard], ([mobile, board]) => {
   if (mobile && board) router.replace(`/workspaces/${workspaceId.value}`);
 }, { immediate: true });
 
