@@ -106,10 +106,32 @@ the element asked for:
 - A `src` that is not `http(s):`, `agentrq-ext:` or `about:blank` is refused
   (`event.preventDefault()`).
 
-Permission requests from the panel partition (camera, notifications,
-geolocation…) are denied by a handler on that session; clipboard-sanitized
-write stays allowed. Downloads go to the default Downloads folder with
-Electron's own prompt.
+### Asking before a page uses the camera, location and the rest
+
+A page in the panel that asks for a permission (camera, microphone,
+notifications, geolocation, MIDI, screen capture…) **asks the user**, the way a
+browser does, instead of being silently allowed or refused:
+
+- The panel session's `setPermissionRequestHandler` holds the request and sends
+  it to the renderer, which shows a bar at the top of the panel, under the
+  toolbar: *"example.com wants to use your camera"* with **Allow** and
+  **Block**. The site named is the requesting frame's origin, and an Extension
+  page is named by its Extension.
+- The answer is remembered for that origin and permission **until the app
+  quits**, so a page reloading does not ask again, and nothing outlives the run
+  without a settings screen to take it back. `setPermissionCheckHandler`
+  answers from the same record, so a page that only checks sees the same
+  decision.
+- Navigating away, closing the panel, or a second request replacing the bar
+  answers the pending one with Block. A request nobody answers within 60
+  seconds is blocked — the main process never waits without a deadline.
+- Unknown permission names are blocked without asking, so a new Chromium
+  permission is not granted by default. `clipboard-sanitized-write` is allowed
+  without asking, as browsers do.
+- On macOS the operating system asks for camera and microphone access the first
+  time as well; that dialog is the OS's and is not replaced.
+
+Downloads go to the default Downloads folder with Electron's own prompt.
 
 ## Extensions
 
@@ -202,6 +224,7 @@ Two interface actions, reported through `recordUiAction` like the copy actions
 | `desktop/src/main/side-panel/guest.js` | `will-attach-webview` hardening, guest navigation/window-open rules (pure, tested) |
 | `desktop/src/main/side-panel/ext-scheme.js` | the `agentrq-ext:` handler and its path guard |
 | `desktop/src/main/side-panel/bridge.js` | routing page ↔ Extension by sender origin |
+| `desktop/src/main/side-panel/permissions.js` | holding a permission request, the per-run decisions, the deadline |
 | `desktop/src/preload/panel.js` | the guest preload (built by `vite.preload.config.mjs`) |
 | `desktop/src/main/extensions/manifest.js`, `host.js`, `runtime.js` | `provides.panels`, the `panel` registry |
 | `frontend/src/components/SidePanel.vue` | toolbar, webview, resize handle |
@@ -213,10 +236,11 @@ Two interface actions, reported through `recordUiAction` like the copy actions
 - Desktop (vitest, coverage gate): manifest validation, guest hardening and
   URL rules, the scheme handler's path guard (traversal, symlink, undeclared
   directory, uninstalled Extension), bridge routing (wrong scheme, wrong host,
-  no handler, throwing handler, size limit), `ctx.panel` open/post/unload, the
-  menu item.
+  no handler, throwing handler, size limit), permission requests (allow, block,
+  remembered, superseded, timed out, unknown name, check handler), `ctx.panel`
+  open/post/unload, the menu item.
 - Frontend (vitest): `useSidePanel` clamping and persistence (storage
-  throwing), `SidePanel.vue` toolbar and resize, `App.vue` link interception
+  throwing), `SidePanel.vue` toolbar, resize and permission bar, `App.vue` link interception
   with and without modifiers, web build unaffected.
 - Backend: the two actions through the telemetry allowlist and mapping tests.
 - A headless Electron run of the real window (`offscreen: true`) loading a web
