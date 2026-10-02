@@ -421,4 +421,143 @@ describe('SidePanel', () => {
     expect(window.agentrq.sidePanel.openExternal).toHaveBeenCalledWith('https://example.com/')
     delete window.agentrq
   })
+
+  describe('asking before a page uses something', () => {
+    /** The shell's side of the permission bridge, driven by the test. */
+    function permissionBridge(initialSites = []) {
+      let sites = initialSites
+      const listeners = { request: null, settled: null }
+      const bridge = {
+        openExternal: vi.fn(),
+        onPermissionRequest: vi.fn((cb) => { listeners.request = cb; return vi.fn() }),
+        onPermissionSettled: vi.fn((cb) => { listeners.settled = cb; return vi.fn() }),
+        answerPermission: vi.fn(async () => true),
+        permissions: vi.fn(async () => sites),
+        removePermission: vi.fn(async (origin, permission) => {
+          sites = sites
+            .map((site) => site.origin !== origin ? site : { ...site, permissions: permission ? site.permissions.filter((p) => p.permission !== permission) : [] })
+            .filter((site) => site.permissions.length)
+          return sites
+        }),
+        setSites: (next) => { sites = next },
+      }
+      return { bridge, listeners }
+    }
+
+    const settle = () => new Promise((r) => setTimeout(r, 0))
+
+    it('shows the question under the toolbar, and sends the answer', async () => {
+      const { bridge, listeners } = permissionBridge()
+      mount({ url: 'https://meet.example/room', bridge })
+      listeners.request({ id: 3, guestId: 1, origin: 'https://meet.example', permissions: ['camera', 'microphone'] })
+      await nextTick()
+
+      const bar = $('[data-side-panel-permission]')
+      expect(bar.textContent).toContain('meet.example wants to use your camera and microphone')
+      expect(bar.getAttribute('aria-label')).toBe('meet.example wants to use your camera and microphone')
+
+      bridge.setSites([{ origin: 'https://meet.example', permissions: [{ permission: 'camera', decision: 'allow' }] }])
+      await click('[data-side-panel-permission-allow]')
+      await settle()
+      expect(bridge.answerPermission).toHaveBeenCalledWith(3, 'allow')
+      expect($('[data-side-panel-permission]')).toBeNull()
+      // The shield lights for a site that now has something remembered.
+      expect($('[data-side-panel-permissions-toggle]').title).toBe('Site permissions · this site has some')
+    })
+
+    it('sends a Block', async () => {
+      const { bridge, listeners } = permissionBridge()
+      mount({ url: 'https://maps.example/', bridge })
+      listeners.request({ id: 4, guestId: 1, origin: 'https://maps.example', permissions: ['geolocation'] })
+      await nextTick()
+      await click('[data-side-panel-permission-block]')
+      expect(bridge.answerPermission).toHaveBeenCalledWith(4, 'block')
+    })
+
+    it('takes the bar down when the shell settles the question without it', async () => {
+      const { bridge, listeners } = permissionBridge()
+      mount({ url: 'https://meet.example/', bridge })
+      listeners.request({ id: 5, guestId: 1, origin: 'https://meet.example', permissions: ['notifications'] })
+      await nextTick()
+
+      listeners.settled(99)
+      await nextTick()
+      expect($('[data-side-panel-permission]')).not.toBeNull()
+
+      listeners.settled(5)
+      await nextTick()
+      expect($('[data-side-panel-permission]')).toBeNull()
+    })
+
+    it('lists what every site was answered, and takes a decision back', async () => {
+      const { bridge } = permissionBridge([
+        { origin: 'https://meet.example', permissions: [{ permission: 'camera', decision: 'allow' }, { permission: 'microphone', decision: 'block' }] },
+        { origin: 'agentrq-ext://notes', permissions: [{ permission: 'notifications', decision: 'allow' }] },
+      ])
+      mount({ url: 'https://elsewhere.example/', bridge })
+      await settle()
+      expect($('[data-side-panel-permissions-toggle]').title).toBe('Site permissions')
+
+      await click('[data-side-panel-permissions-toggle]')
+      await settle()
+      const list = $('[data-site-permissions]')
+      expect([...list.querySelectorAll('[data-site] p')].map((p) => p.textContent.trim())).toEqual(['meet.example', 'The notes extension'])
+      expect(list.querySelector('[data-site-permission]').textContent).toContain('Camera')
+      expect(list.querySelector('[data-site-permission]').textContent).toContain('Allowed')
+      expect(list.querySelectorAll('[data-site-permission]')[1].textContent).toContain('Blocked')
+
+      list.querySelector('[data-site-remove]').click()
+      await settle()
+      expect(bridge.removePermission).toHaveBeenCalledWith('https://meet.example', 'camera')
+      expect($('[data-site-permissions]').querySelectorAll('[data-site-permission]')).toHaveLength(2)
+
+      $('[data-site-remove-all]').click()
+      await settle()
+      expect(bridge.removePermission).toHaveBeenLastCalledWith('https://meet.example', undefined)
+
+      $('[data-site-remove-all]').click()
+      await settle()
+      expect($('[data-site-permissions-empty]').textContent).toContain('No site has asked for anything yet.')
+
+      await click('[data-site-permissions-close]')
+      expect($('[data-site-permissions]')).toBeNull()
+    })
+
+    it('opens and closes the list from the shield', async () => {
+      const { bridge } = permissionBridge()
+      mount({ bridge })
+      await click('[data-side-panel-permissions-toggle]')
+      expect($('[data-site-permissions]')).not.toBeNull()
+      await click('[data-side-panel-permissions-toggle]')
+      expect($('[data-site-permissions]')).toBeNull()
+    })
+
+    it('stops listening when it closes', async () => {
+      const { bridge } = permissionBridge()
+      mount({ bridge })
+      const stopRequest = bridge.onPermissionRequest.mock.results[0].value
+      const stopSettled = bridge.onPermissionSettled.mock.results[0].value
+      app.unmount()
+      app = null
+      expect(stopRequest).toHaveBeenCalled()
+      expect(stopSettled).toHaveBeenCalled()
+    })
+
+    it('copes with a shell that has no permissions bridge', async () => {
+      mount({ bridge: {}, url: 'https://meet.example/' })
+      await settle()
+      await click('[data-side-panel-permissions-toggle]')
+      await settle()
+      expect($('[data-site-permissions-empty]')).not.toBeNull()
+      $('[data-site-remove-all]')?.click()
+    })
+
+    it('copes with no bridge at all', async () => {
+      mount({ bridge: null })
+      await settle()
+      await click('[data-side-panel-permissions-toggle]')
+      expect($('[data-site-permissions-empty]')).not.toBeNull()
+    })
+  })
 })
+

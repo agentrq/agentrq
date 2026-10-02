@@ -17,9 +17,12 @@ import { PanelTarget, hardenGuest, navigationTarget, openTarget } from './guest.
  * @param {string} options.preload          absolute path of the guest preload
  * @param {() => string} options.serverUrl
  * @param {(url: string) => void} options.routeLink  the main window's own link rule
+ * @param {{ cancelFor: (guestId: number) => void }} [options.permissions]
+ *   the permission broker, told when a page goes away so a question it left
+ *   waiting is answered
  * @param {{ warn: Function }} [options.logger]
  */
-export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, logger = console }) {
+export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, permissions, logger = console }) {
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     const hardened = hardenGuest(webPreferences, params, { partition: partition(), preload })
     if (hardened.ok) return
@@ -29,6 +32,14 @@ export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, l
 
   win.webContents.on('did-attach-webview', (_event, guest) => {
     const options = () => ({ serverUrl: serverUrl() })
+
+    // A question about a page that has gone is about nothing: a new document,
+    // or the panel closing, answers it with a Block. Moving within the same
+    // document — a hash, a pushState — is still the page that asked.
+    guest.on('did-start-navigation', (details) => {
+      if (details?.isMainFrame !== false && !details?.isSameDocument) permissions?.cancelFor(guest.id)
+    })
+    guest.once('destroyed', () => permissions?.cancelFor(guest.id))
 
     // Never a second window. A page that asks for one gets the panel, or the
     // browser when somebody Cmd/Ctrl-clicked.
@@ -49,4 +60,22 @@ export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, l
       if (target !== PanelTarget.Blocked) routeLink(url)
     })
   })
+}
+
+/**
+ * Route a panel session's permission requests and checks through the broker.
+ *
+ * Set on the panel's partition only. The app's own session never asks: it is
+ * this app's code, and the requests it makes are not a stranger's.
+ *
+ * @param {import('electron').Session} panelSession
+ * @param {ReturnType<import('./permissions.js').createPermissionBroker>} broker
+ */
+export function wirePanelPermissions(panelSession, broker) {
+  panelSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    broker.request(contents, permission, callback, details)
+  })
+  panelSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) =>
+    broker.check(contents, permission, requestingOrigin, details),
+  )
 }

@@ -32,7 +32,11 @@ import { fileURLToPath } from 'node:url'
 
 import { createAppProtocolHandler } from '../src/main/protocol.js'
 import { panelPartitionFor } from '../src/main/side-panel/guest.js'
-import { wireSidePanel } from '../src/main/side-panel/wire.js'
+import { wirePanelPermissions, wireSidePanel } from '../src/main/side-panel/wire.js'
+import { createPermissionStore } from '../src/main/side-panel/permission-store.js'
+import { createPermissionBroker } from '../src/main/side-panel/permissions.js'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const RENDERER_ROOT = join(__dirname, '../dist/renderer')
@@ -91,6 +95,10 @@ function startServer() {
       res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': 'site=panel; Path=/' })
       return res.end(PAGE('Release notes', '<p><a id="popup" href="/second" target="_blank">Open the next page</a></p>'))
     }
+    if (url.pathname === '/ask') {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      return res.end(PAGE('Asks for notifications'))
+    }
     if (url.pathname === '/second') {
       res.writeHead(200, { 'content-type': 'text/html' })
       return res.end(PAGE('Second page'))
@@ -98,7 +106,7 @@ function startServer() {
     res.writeHead(404)
     res.end()
   })
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)))
+  return new Promise((resolve) => server.listen(0, '::', () => resolve(server)))
 }
 
 function json(res, body) {
@@ -130,7 +138,7 @@ async function until(check, { timeout = 10000, every = 100 } = {}) {
 setTimeout(() => {
   console.error('✗ verification timed out')
   app.exit(3)
-}, 120000)
+}, 240000)
 
 app.whenReady().then(async () => {
   const server = await startServer()
@@ -183,11 +191,26 @@ app.whenReady().then(async () => {
     routed.push(url)
     return { action: 'deny' }
   })
+  // Mirrors index.js: the panel session asks through the broker, the answer
+  // is remembered in a file, and only the app window can give it.
+  const userData = await mkdtemp(join(tmpdir(), 'agentrq-verify-permissions-'))
+  const permissionStore = createPermissionStore({ dir: userData, profileId: 'verify' })
+  const broker = createPermissionBroker({
+    store: permissionStore,
+    ask: (question) => win.webContents.send('agentrq:side-panel:permission-request', question),
+    settled: (id) => win.webContents.send('agentrq:side-panel:permission-settled', id),
+  })
+  wirePanelPermissions(session.fromPartition(PANEL_PARTITION), broker)
+  ipcMain.handle('agentrq:side-panel:permission-answer', (_e, id, decision) => broker.answer(Number(id), decision))
+  ipcMain.handle('agentrq:side-panel:permissions', async () => { await permissionStore.load(); return permissionStore.list() })
+  ipcMain.handle('agentrq:side-panel:permission-remove', async (_e, o, p) => { await permissionStore.remove(o, p); return permissionStore.list() })
+
   wireSidePanel(win, {
     partition: () => PANEL_PARTITION,
     preload: PANEL_PRELOAD,
     serverUrl: () => origin,
     routeLink: (url) => routed.push(url),
+    permissions: broker,
   })
 
   // Offscreen windows paint into frames rather than onto a screen, and
@@ -210,7 +233,10 @@ app.whenReady().then(async () => {
   await until(() => win.webContents.executeJavaScript("!!document.querySelector('[data-side-panel-toggle]')"))
 
   const results = []
-  const record = (name, pass, detail = '') => results.push({ name, pass, detail })
+  const record = (name, pass, detail = '') => {
+    results.push({ name, pass, detail })
+    if (process.env.VERBOSE) console.log(`… ${pass ? 'ok' : 'FAIL'} ${name} ${detail}`)
+  }
   const js = (code) => win.webContents.executeJavaScript(code)
 
   record('the panel starts closed', (await js("!document.querySelector('[data-side-panel]')")) === true)
@@ -317,6 +343,62 @@ app.whenReady().then(async () => {
   record('a Cmd/Ctrl-click on it goes to the system browser instead', routed.at(-1) === `${origin}/second`, JSON.stringify(routed.slice(routedBefore)))
   await until(() => guest && !guest.isDestroyed() && guest.getURL().startsWith(origin))
   record('back on the page it was showing', guest?.getURL() === `${origin}/second`, guest?.getURL())
+
+  // A page asking for a permission: the bar, the answer, and remembering it.
+  const askPermission = () => guest.executeJavaScript('Notification.requestPermission().then((r) => { document.title = r; return r })', true)
+  await guest.loadURL(`${origin}/ask`)
+  await until(() => !guest.isLoading())
+  const asking = askPermission()
+  const bar = await until(() => js("document.querySelector('[data-side-panel-permission]')?.textContent?.trim()"))
+  record('a page asking for notifications shows the question under the toolbar', Boolean(bar) && bar.includes(`127.0.0.1:${server.address().port} wants to show notifications`), bar)
+  await js("document.querySelector('[data-side-panel-permission-allow]').click()")
+  record('Allow gives the page its permission', (await asking) === 'granted')
+  await wait(300)
+  record('and the bar goes away', (await js("!document.querySelector('[data-side-panel-permission]')")) === true)
+
+  await guest.reload()
+  await until(() => !guest.isLoading())
+  record('the next time, the page has it without asking', (await askPermission()) === 'granted' && (await js("!document.querySelector('[data-side-panel-permission]')")))
+  const savedFile = JSON.parse(await readFile(join(userData, 'side-panel-permissions', 'verify.json'), 'utf8'))
+  record('the answer is saved on this machine', savedFile.origins?.[origin]?.notifications === 'allow', JSON.stringify(savedFile))
+
+  // The shield opens the list, and removing the decision means it asks again.
+  await js("document.querySelector('[data-side-panel-permissions-toggle]').click()")
+  const listed = await until(() => js("document.querySelector('[data-site-permissions] [data-site]')?.textContent"))
+  record('the Site permissions list shows the site', Boolean(listed) && listed.includes('Notifications') && listed.includes('Allowed'), listed?.replace(/\s+/g, ' ').trim())
+  if (process.env.SHOTS) {
+    await wait(500)
+    await writeFile(join(process.env.SHOTS, `side-panel-permissions-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+  await js("document.querySelector('[data-site-remove]').click()")
+  await until(() => js("!!document.querySelector('[data-site-permissions-empty]')"))
+  await js("document.querySelector('[data-site-permissions-close]').click()")
+
+  // Chromium answers a page from its own cache once a permission is granted, so
+  // a fresh page on another origin shows the asking again from scratch.
+  const other = origin.replace('127.0.0.1', 'localhost')
+  await guest.loadURL(`${other}/ask`)
+  await until(() => !guest.isLoading())
+  const again = askPermission()
+  await until(() => js("!!document.querySelector('[data-side-panel-permission]')"))
+  if (process.env.SHOTS) {
+    await wait(500)
+    await writeFile(join(process.env.SHOTS, `side-panel-asking-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+  await js("document.querySelector('[data-side-panel-permission-block]').click()")
+  record('Block refuses it', (await again) === 'denied')
+
+  // Navigating away while asked answers it, and takes the bar down.
+  await permissionStore.remove(other)
+  await guest.loadURL(`${origin.replace('127.0.0.1', '[::1]')}/ask`).catch(() => {})
+  await until(() => !guest.isLoading())
+  const abandoned = guest.executeJavaScript('Notification.requestPermission()', true)
+  const barShown = await until(() => js("!!document.querySelector('[data-side-panel-permission]')"))
+  await guest.loadURL(`${origin}/page`)
+  await until(() => !guest.isLoading())
+  const gone = await until(() => js("!document.querySelector('[data-side-panel-permission]')"), { timeout: 3000 })
+  record('leaving the page answers what it asked and takes the bar down', Boolean(barShown) && Boolean(gone))
+  abandoned.catch(() => {})
 
   // Beside the panel the task view lays itself out as it does on a phone.
   await js("document.querySelector('[data-side-panel-handle]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")

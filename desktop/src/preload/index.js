@@ -308,6 +308,29 @@ contextBridge.exposeInMainWorld('agentrq', {
     },
     /** "Open in browser": the ordinary link rule decides what leaves. */
     openExternal: (url) => ipcRenderer.invoke('agentrq:side-panel:open-external', url),
+    /**
+     * A page in the panel asking for a permission.
+     *
+     * @param {(question: { id: number, guestId: number, origin: string, permissions: string[] }) => void} callback
+     * @returns {() => void} unsubscribe
+     */
+    onPermissionRequest: (callback) => {
+      const listener = (_event, question) => callback(question)
+      ipcRenderer.on('agentrq:side-panel:permission-request', listener)
+      return () => ipcRenderer.off('agentrq:side-panel:permission-request', listener)
+    },
+    /** A question stopped waiting — answered, timed out, or its page went away. */
+    onPermissionSettled: (callback) => {
+      const listener = (_event, id) => callback(id)
+      ipcRenderer.on('agentrq:side-panel:permission-settled', listener)
+      return () => ipcRenderer.off('agentrq:side-panel:permission-settled', listener)
+    },
+    /** @param {'allow'|'block'} decision */
+    answerPermission: (id, decision) => ipcRenderer.invoke('agentrq:side-panel:permission-answer', id, decision),
+    /** @returns {Promise<Array<{ origin: string, permissions: Array<{ permission: string, decision: 'allow'|'block' }> }>>} */
+    permissions: () => ipcRenderer.invoke('agentrq:side-panel:permissions'),
+    /** Remove one decision, or every decision of a site; answers with the list after. */
+    removePermission: (origin, permission) => ipcRenderer.invoke('agentrq:side-panel:permission-remove', origin, permission),
   },
 
   view: {

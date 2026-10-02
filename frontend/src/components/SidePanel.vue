@@ -43,6 +43,11 @@
                  :class="['w-full h-7 px-2.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-xs text-gray-800 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-500 outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600', invalid ? 'ring-2 ring-red-300 dark:ring-red-800' : '']" />
         </form>
 
+        <button type="button" data-side-panel-permissions-toggle :aria-pressed="showPermissions"
+                :title="siteDecided ? 'Site permissions · this site has some' : 'Site permissions'"
+                @click="togglePermissions" :class="[iconButton, siteDecided || showPermissions ? 'text-gray-900 dark:text-white' : '']">
+          <svg class="w-4 h-4" :fill="siteDecided ? 'currentColor' : 'none'" :fill-opacity="siteDecided ? 0.15 : 1" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" /></svg>
+        </button>
         <button type="button" data-side-panel-external title="Open in browser" :disabled="!isWebPage" @click="openExternal" :class="iconButton">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
         </button>
@@ -56,11 +61,24 @@
         </button>
       </div>
 
+      <!-- A page asking for a permission. Under the toolbar, where the page it
+           came from is named, so it cannot be mistaken for the page itself. -->
+      <div v-if="question" data-side-panel-permission role="alertdialog" :aria-label="questionText"
+           class="shrink-0 flex items-center gap-3 px-3 py-2 border-b border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30">
+        <svg class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" /></svg>
+        <p class="flex-1 min-w-0 text-[11px] font-medium text-gray-800 dark:text-zinc-100">{{ questionText }}</p>
+        <button type="button" data-side-panel-permission-block @click="answer('block')" :class="textButton">Block</button>
+        <button type="button" data-side-panel-permission-allow @click="answer('allow')"
+                class="px-3 py-1.5 rounded-md bg-black dark:bg-white text-[11px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-zinc-200 transition-colors">Allow</button>
+      </div>
+
       <!-- The page. The element is created in script rather than declared
            here: its `src` has to be set before it is attached, and a
            `<webview>` is not an element the template compiler knows. -->
       <div class="relative flex-1 min-h-0">
         <div ref="hostRef" :class="['absolute inset-0', hasPage && !failure ? '' : 'invisible', dragging ? 'pointer-events-none' : '']"></div>
+
+        <SidePanelPermissions v-if="showPermissions" :sites="sites" @remove="removeDecision" @close="showPermissions = false" />
 
         <div v-if="!hasPage" data-side-panel-empty class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-8 text-center">
           <p class="text-xs font-semibold text-gray-700 dark:text-zinc-200">Nothing open</p>
@@ -91,6 +109,8 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { isPanelUrl, normaliseAddress, panelWidth, useSidePanel } from '../composables/useSidePanel'
+import { describeQuestion, hasDecisions } from '../composables/useSitePermissions'
+import SidePanelPermissions from './SidePanelPermissions.vue'
 
 const props = defineProps({
   /** Test seam: what makes the guest element. */
@@ -119,6 +139,36 @@ let guest = null
 const current = ref(panel.state.url)
 
 const hasPage = computed(() => Boolean(current.value))
+
+// Permissions: the question a page is asking, and what every site has been
+// answered — which also lights the shield for a site that has something.
+const question = ref(null)
+const questionText = computed(() => (question.value ? describeQuestion(question.value) : ''))
+const sites = ref([])
+const showPermissions = ref(false)
+const siteDecided = computed(() => hasDecisions(sites.value, current.value))
+
+async function refreshSites() {
+  sites.value = (await props.bridge?.permissions?.()) ?? []
+}
+
+async function answer(decision) {
+  const asked = question.value
+  question.value = null
+  await props.bridge?.answerPermission?.(asked.id, decision)
+  await refreshSites()
+}
+
+async function removeDecision(origin, permission) {
+  sites.value = (await props.bridge?.removePermission?.(origin, permission)) ?? []
+}
+
+function togglePermissions() {
+  showPermissions.value = !showPermissions.value
+  if (showPermissions.value) refreshSites()
+}
+
+const stops = []
 const isWebPage = computed(() => /^https?:/i.test(current.value))
 
 /**
@@ -250,6 +300,13 @@ let observer = null
 
 onMounted(() => {
   room.value = measure()
+  const bridge = props.bridge
+  stops.push(bridge?.onPermissionRequest?.((asked) => { question.value = asked }))
+  stops.push(bridge?.onPermissionSettled?.((id) => {
+    if (question.value?.id === id) question.value = null
+    refreshSites()
+  }))
+  refreshSites()
   if (globalThis.ResizeObserver && asideRef.value?.previousElementSibling) {
     observer = new ResizeObserver(onWindowResize)
     observer.observe(asideRef.value.previousElementSibling)
@@ -261,6 +318,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   endDrag()
+  for (const stop of stops) stop?.()
   observer?.disconnect()
   globalThis.removeEventListener('resize', onWindowResize)
 })

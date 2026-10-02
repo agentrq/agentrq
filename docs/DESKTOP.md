@@ -154,10 +154,19 @@ Opened, it takes all the room except a phone's width for the page beside it,
 and a task there is shown the way it is on a phone. Drag the panel's left edge
 to share the window differently; double-click the edge to go back.
 
+When a page in the panel asks to use your camera, microphone, location,
+notifications or the like, a bar under its toolbar names the site and asks:
+**Allow** or **Block**. Your answer is remembered for that site, so it does not
+ask again; the shield button in the toolbar lists every site's answers and
+removes any of them, after which that site asks again. Unanswered, a question is
+a Block after a minute, or as soon as you leave the page. Anything newer than
+this list is blocked without asking.
+
 The panel keeps its own cookies, one set per profile, separate from the app's:
 a site you sign in to there never sees your AgentRQ session, and AgentRQ's own
 sign-in links always go back to the main window. Its width, whether it is open
-or expanded, and the last page it showed are remembered on this computer only — nothing
+or expanded, the last page it showed and every site's permissions are remembered
+on this computer only — nothing
 about the panel is sent to the server or synced to another machine. Removing a
 profile clears its panel's cookies too.
 

@@ -32,7 +32,9 @@ import { createAttachmentStore } from './attachment-store.js'
 import { activeProfile, canDiscardActiveProfile, duplicateOf, partitionFor } from './profiles.js'
 import { fetchProfileIdentity } from './identity.js'
 import { panelPartitionFor } from './side-panel/guest.js'
-import { wireSidePanel } from './side-panel/wire.js'
+import { wirePanelPermissions, wireSidePanel } from './side-panel/wire.js'
+import { createPermissionStore } from './side-panel/permission-store.js'
+import { createPermissionBroker } from './side-panel/permissions.js'
 import {
   CONFIG_FILENAME,
   createServerConfigStore,
@@ -266,6 +268,21 @@ function currentPartition() {
 function currentPanelPartition() {
   return panelPartitionFor(profileState ? activeProfile(profileState).id : 'default')
 }
+
+/** What a profile's side panel was allowed and refused, on this machine only. */
+function panelPermissionStoreFor(profileId) {
+  return createPermissionStore({ dir: app.getPath('userData'), profileId })
+}
+
+/** The active profile's side panel permissions; replaced with the window. */
+let panelPermissions = null
+
+/**
+ * Whether an IPC call came from the app's own window. A side panel guest is
+ * not owned by a window, so this is what keeps a page in the panel from
+ * answering its own permission prompt.
+ */
+const fromAppWindow = (event) => Boolean(BrowserWindow.fromWebContents(event.sender))
 
 /** Fetch through the active profile's session, so its cookies go with it. */
 const profileFetch = (input, init) => (profileSession ?? session.defaultSession).fetch(input, init)
@@ -590,11 +607,23 @@ function createWindow() {
     },
   })
 
+  // Pages in the panel ask before they use the camera, a location and the rest;
+  // the question is a bar in this window, and the answer is remembered.
+  const permissionStore = panelPermissionStoreFor(profileState ? activeProfile(profileState).id : 'default')
+  const permissionBroker = createPermissionBroker({
+    store: permissionStore,
+    ask: (question) => !win.isDestroyed() && win.webContents.send('agentrq:side-panel:permission-request', question),
+    settled: (id) => !win.isDestroyed() && win.webContents.send('agentrq:side-panel:permission-settled', id),
+  })
+  panelPermissions = { store: permissionStore, broker: permissionBroker }
+  wirePanelPermissions(session.fromPartition(currentPanelPartition()), permissionBroker)
+
   wireSidePanel(win, {
     partition: currentPanelPartition,
     preload: PANEL_PRELOAD,
     serverUrl: () => serverUrl,
     routeLink: (url) => routeLink(url, win),
+    permissions: permissionBroker,
   })
 
   win.once('ready-to-show', () => {
@@ -798,8 +827,10 @@ async function forgetProfile(id, fallbackId = '') {
   profileState = await configStore.removeProfile(id, fallbackId)
   // Its cookies would otherwise outlive it on disk, still signed in.
   await session.fromPartition(partitionFor(id)).clearStorageData()
-  // The side panel's browsing belonged to the profile too.
+  // The side panel's browsing belonged to the profile too, and so did what
+  // its sites were allowed to use.
   await session.fromPartition(panelPartitionFor(id)).clearStorageData()
+  await panelPermissionStoreFor(id).forget()
   profileIdentities.delete(id)
   return wasActive ? switchProfileToActive() : profilesPayload()
 }
@@ -896,6 +927,22 @@ function registerIpc(getWindow) {
   ipcMain.handle('agentrq:side-panel:open-external', (event, url) =>
     routeLink(String(url ?? ''), BrowserWindow.fromWebContents(event.sender)),
   )
+
+  // The side panel's permission bar and its Site permissions list.
+  ipcMain.handle('agentrq:side-panel:permission-answer', (event, id, decision) =>
+    fromAppWindow(event) ? (panelPermissions?.broker.answer(Number(id), decision === 'allow' ? 'allow' : 'block') ?? false) : false,
+  )
+  ipcMain.handle('agentrq:side-panel:permissions', async (event) => {
+    if (!fromAppWindow(event) || !panelPermissions) return []
+    await panelPermissions.store.load()
+    return panelPermissions.store.list()
+  })
+  ipcMain.handle('agentrq:side-panel:permission-remove', async (event, origin, permission) => {
+    if (!fromAppWindow(event) || !panelPermissions) return []
+    await panelPermissions.store.load()
+    await panelPermissions.store.remove(String(origin ?? ''), permission ? String(permission) : undefined)
+    return panelPermissions.store.list()
+  })
 
   // Copying a link's target out of a message body.
   //

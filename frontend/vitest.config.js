@@ -80,6 +80,7 @@ export default defineConfig({
         'src/composables/useWindowMenu.js',
         'src/composables/useSidePanel.js',
         'src/composables/useNarrowLayout.js',
+        'src/composables/useSitePermissions.js',
         'src/composables/useAuthedFetch.js',
         'src/composables/useKeyboardShortcuts.js',
         'src/composables/useTaskFinder.js',
