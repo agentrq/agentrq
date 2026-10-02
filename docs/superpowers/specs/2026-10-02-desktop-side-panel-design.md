@@ -117,11 +117,20 @@ browser does, instead of being silently allowed or refused:
   toolbar: *"example.com wants to use your camera"* with **Allow** and
   **Block**. The site named is the requesting frame's origin, and an Extension
   page is named by its Extension.
-- The answer is remembered for that origin and permission **until the app
-  quits**, so a page reloading does not ask again, and nothing outlives the run
-  without a settings screen to take it back. `setPermissionCheckHandler`
-  answers from the same record, so a page that only checks sees the same
-  decision.
+- The answer — Allow or Block — is **remembered for that origin and
+  permission, on this machine only**: a JSON file per profile in the app's
+  user-data folder (`side-panel-permissions/<profileId>.json`), written
+  atomically, never sent to the server. Forgetting a profile deletes its file.
+  `setPermissionCheckHandler` answers from the same record, so a page that only
+  checks sees the same decision. A file that cannot be read is treated as
+  empty (everything asks again), and a failed write is logged and keeps the
+  decision for the run.
+- **Site permissions** — the list that takes a decision back. Reached from the
+  toolbar's *⋯* menu, and from a shield icon in the address field whenever the
+  current site has a decision. It is drawn in the panel itself by the app (not
+  a page in the guest, and not a new route), grouped by site: each row is the
+  permission with *Allowed* or *Blocked* and a **Remove** button, and each site
+  has *Remove all*. Removing a decision means the next request asks again.
 - Navigating away, closing the panel, or a second request replacing the bar
   answers the pending one with Block. A request nobody answers within 60
   seconds is blocked — the main process never waits without a deadline.
@@ -217,6 +226,13 @@ Two interface actions, reported through `recordUiAction` like the copy actions
   workspace in context, as every UI action is).
 - `ui_side_panel_link` — a link from a task or message opened in the panel.
 
+## Everything stays on this machine
+
+The panel adds no server state. Width, open state and the last page are in
+the renderer's `localStorage`; cookies and site storage are in the panel's own
+partition; permission decisions are in the user-data file above. None of it is
+synced, and signing in on another computer starts with an empty panel.
+
 ## Where things live
 
 | | |
@@ -224,10 +240,11 @@ Two interface actions, reported through `recordUiAction` like the copy actions
 | `desktop/src/main/side-panel/guest.js` | `will-attach-webview` hardening, guest navigation/window-open rules (pure, tested) |
 | `desktop/src/main/side-panel/ext-scheme.js` | the `agentrq-ext:` handler and its path guard |
 | `desktop/src/main/side-panel/bridge.js` | routing page ↔ Extension by sender origin |
-| `desktop/src/main/side-panel/permissions.js` | holding a permission request, the per-run decisions, the deadline |
+| `desktop/src/main/side-panel/permissions.js` | holding a permission request, the saved decisions, the deadline |
 | `desktop/src/preload/panel.js` | the guest preload (built by `vite.preload.config.mjs`) |
 | `desktop/src/main/extensions/manifest.js`, `host.js`, `runtime.js` | `provides.panels`, the `panel` registry |
-| `frontend/src/components/SidePanel.vue` | toolbar, webview, resize handle |
+| `frontend/src/components/SidePanel.vue` | toolbar, webview, resize handle, permission bar |
+| `frontend/src/components/SidePanelPermissions.vue` | the site permissions list |
 | `frontend/src/composables/useSidePanel.js` | open/width/URL state, persistence, clamping |
 | `examples/extensions/panel-notes/` | an example: a page that lists workspace tasks via its Extension's MCP calls |
 
@@ -237,10 +254,12 @@ Two interface actions, reported through `recordUiAction` like the copy actions
   URL rules, the scheme handler's path guard (traversal, symlink, undeclared
   directory, uninstalled Extension), bridge routing (wrong scheme, wrong host,
   no handler, throwing handler, size limit), permission requests (allow, block,
-  remembered, superseded, timed out, unknown name, check handler), `ctx.panel`
+  saved and reloaded, unreadable file, failed write, removed, superseded, timed
+  out, unknown name, check handler, profile forgotten), `ctx.panel`
   open/post/unload, the menu item.
 - Frontend (vitest): `useSidePanel` clamping and persistence (storage
-  throwing), `SidePanel.vue` toolbar, resize and permission bar, `App.vue` link interception
+  throwing), `SidePanel.vue` toolbar, resize and permission bar, the site permissions
+  list, `App.vue` link interception
   with and without modifiers, web build unaffected.
 - Backend: the two actions through the telemetry allowlist and mapping tests.
 - A headless Electron run of the real window (`offscreen: true`) loading a web
