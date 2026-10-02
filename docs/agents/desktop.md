@@ -52,6 +52,9 @@ Consequences worth knowing before changing anything here:
   `pointer-events: none`, or the guest swallows the pointer and the drag stalls.
   Popups stay *enabled* in the guest: disabled, `target=_blank` never reaches the
   window-open handler that refuses it, and the link silently does nothing.
+  An Extension's panel page (`agentrq-ext://<name>/…`) is served from its declared
+  folder only, and its bridge is routed by `event.senderFrame.url` — never by the
+  message — or one Extension's page could reach another.
 - **Links leave for the real browser; the AgentRQ sign-in may not.** `classifyLink`
   keeps auth URLs on the configured server in-app because the `at` cookie has to
   land in this profile's jar — sent out, sign-in "succeeds" and the app stays

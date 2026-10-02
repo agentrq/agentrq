@@ -559,5 +559,46 @@ describe('SidePanel', () => {
       expect($('[data-site-permissions-empty]')).not.toBeNull()
     })
   })
+
+  describe('extension pages', () => {
+    const PAGES = [
+      { owner: 'notes', extension: 'Notes', id: 'board', label: 'Board', url: 'agentrq-ext://notes/panel/index.html' },
+      { owner: 'digest', extension: 'Digest', id: 'today', label: 'Today', url: 'agentrq-ext://digest/panel/today.html' },
+    ]
+    const settle = () => new Promise((r) => setTimeout(r, 0))
+
+    it('lists the installed extensions’ pages and opens one', async () => {
+      mount({ bridge: { pages: async () => PAGES } })
+      await settle()
+      await click('[data-side-panel-pages-toggle]')
+      const items = [...el.querySelectorAll('[data-side-panel-page]')]
+      expect(items.map((item) => [...item.querySelectorAll('span')].map((span) => span.textContent.trim()))).toEqual([['Board', 'Notes'], ['Today', 'Digest']])
+
+      items[1].click()
+      await nextTick()
+      expect(guests[0].getAttribute('src')).toBe('agentrq-ext://digest/panel/today.html')
+      expect($('[data-side-panel-pages]')).toBeNull()
+      // Named beside the address, by the name it was installed as.
+      expect($('[data-side-panel-extension]').textContent.trim()).toBe('Digest')
+    })
+
+    it('offers no menu when nothing installed has a page', async () => {
+      mount({ bridge: { pages: async () => [] } })
+      await settle()
+      expect($('[data-side-panel-pages-toggle]')).toBeNull()
+    })
+
+    it('names an extension page even when its extension is not in the list', async () => {
+      mount({ url: 'agentrq-ext://gone/panel/index.html', bridge: {} })
+      await settle()
+      expect($('[data-side-panel-extension]').textContent.trim()).toBe('gone')
+    })
+
+    it('names nothing for a web page', async () => {
+      mount({ url: 'https://example.com/', bridge: { pages: async () => PAGES } })
+      await settle()
+      expect($('[data-side-panel-extension]')).toBeNull()
+    })
+  })
 })
 

@@ -253,6 +253,49 @@ describe('buildContext', () => {
   })
 })
 
+describe('capabilities', () => {
+  it('hands an extension a capability it asked for, built for it by name', () => {
+    const panelFor = vi.fn((name) => ({ owner: name }))
+    const { ctx } = buildContext({
+      name: 'notes',
+      registries: createRegistries(),
+      capabilities: { panel: panelFor },
+      inject: ['ui', 'panel'],
+      config: {},
+      logger: console,
+    })
+    expect(ctx.panel).toEqual({ owner: 'notes' })
+    expect(panelFor).toHaveBeenCalledWith('notes')
+  })
+
+  it('does not hand one over that was not asked for', () => {
+    const panelFor = vi.fn()
+    const { ctx } = buildContext({ name: 'notes', registries: createRegistries(), capabilities: { panel: panelFor }, inject: [], config: {}, logger: console })
+    expect(ctx.panel).toBeUndefined()
+    expect(panelFor).not.toHaveBeenCalled()
+  })
+
+  it('refuses a capability the host was not given', () => {
+    const { ok, reason } = buildContext({ name: 'notes', registries: createRegistries(), inject: ['panel'], config: {}, logger: console })
+    expect(ok).toBe(false)
+    expect(reason).toContain('panel')
+  })
+
+  it('gives a loaded extension its capability, and says when it is unloaded', async () => {
+    const onRetract = vi.fn()
+    let seen
+    const { host } = build({
+      module: moduleWith((ctx) => { seen = ctx.panel }, { inject: ['panel'] }),
+      capabilities: { panel: (name) => ({ owner: name }) },
+      onRetract,
+    })
+    expect((await host.start(installation())).ok).toBe(true)
+    expect(seen).toEqual({ owner: 'linear' })
+    host.stop('linear')
+    expect(onRetract).toHaveBeenCalledWith('linear')
+  })
+})
+
 describe('createHost', () => {
   it('loads an extension and keeps what it registered', async () => {
     const { host } = build({

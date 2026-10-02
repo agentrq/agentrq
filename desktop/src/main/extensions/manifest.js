@@ -105,6 +105,65 @@ export function parseDrawerEntry(value) {
 }
 
 /**
+ * A panel page's file, relative to the package, or '' when it is not one.
+ *
+ * The same rules as a drawer's entry — relative, ordinary segments, no
+ * backslashes — ending in `.html`, and **in a folder of its own**. That folder
+ * is what the side panel serves (`side-panel/ext-scheme.js`), so the page's
+ * scripts and styles sit beside it; a page at the package root would make the
+ * root that folder, and serve the extension's Node code and its manifest too.
+ */
+export function parsePanelEntry(value) {
+  const path = String(value ?? '')
+  if (!path || path.length > 200) return ''
+  if (path.includes('\\') || path.startsWith('/')) return ''
+
+  const segments = path.split('/')
+  if (segments.length < 2) return ''
+  if (!segments.every((segment) => SEGMENT_RE.test(segment))) return ''
+  if (!/\.html$/.test(segments[segments.length - 1])) return ''
+  return path
+}
+
+/** Same shape as a name: what the page is addressed by, `{ page: 'board' }`. */
+const PANEL_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+/**
+ * The side panel pages a manifest declares, or why they are not declared
+ * properly. Refused at install like a bad drawer, for the same reason: a
+ * page that never opens is an author left guessing.
+ */
+export function parsePanels(provides) {
+  const raw = provides?.panels
+  if (raw === undefined) return { ok: true, panels: [] }
+  if (!Array.isArray(raw)) return { ok: false, reason: '"provides.panels" must be an array.' }
+
+  const panels = []
+  const claimed = new Set()
+  for (const item of raw) {
+    const id = String(item?.id ?? '')
+    if (!PANEL_ID_RE.test(id)) {
+      return { ok: false, reason: `"${item?.id ?? '(none)'}" is not a panel page id: lowercase words joined by hyphens, like "board".` }
+    }
+    if (claimed.has(id)) return { ok: false, reason: `This manifest declares the panel page "${id}" twice.` }
+
+    const label = String(item?.label ?? '').trim()
+    if (!label || label.length > 60) {
+      return { ok: false, reason: `The panel page "${id}" needs a "label" of 1 to 60 characters.` }
+    }
+
+    const entry = parsePanelEntry(item?.entry)
+    if (!entry) {
+      return { ok: false, reason: `The panel page "${id}" needs an "entry": an .html file in a folder of its own inside the package, like "panel/index.html".` }
+    }
+
+    claimed.add(id)
+    panels.push({ id, label, entry })
+  }
+  return { ok: true, panels }
+}
+
+/**
  * The drawers a manifest declares, or the reason it declares none properly.
  *
  * A drawer is how an extension draws its own format: the host hands the file to
@@ -488,6 +547,9 @@ export function parseManifest(source) {
   const drawers = parseDrawers(raw.provides)
   if (!drawers.ok) return drawers
 
+  const panels = parsePanels(raw.provides)
+  if (!panels.ok) return panels
+
   return {
     ok: true,
     manifest: {
@@ -501,11 +563,13 @@ export function parseManifest(source) {
       hooks: hooks.hooks,
       net: net.net,
       config: config.config,
-      // Passed through as the author wrote it, except `drawers`, which names
-      // files this app will read and run — so that half is the parsed copy.
+      // Passed through as the author wrote it, except `drawers` and `panels`,
+      // which name files this app will read and run — so those are the parsed
+      // copies.
       provides: {
         ...(raw.provides && typeof raw.provides === 'object' ? raw.provides : {}),
         drawers: drawers.drawers,
+        panels: panels.panels,
       },
       shortcuts: Array.isArray(raw.shortcuts) ? raw.shortcuts : [],
       artifact: artifact.artifact,

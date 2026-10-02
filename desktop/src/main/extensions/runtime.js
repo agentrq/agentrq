@@ -445,6 +445,43 @@ export function createRuntime({
       return fail(`Nothing installed draws "${wanted}".`)
     },
 
+    /**
+     * What is installed, with each one's directory and manifest — for the side
+     * panel's `agentrq-ext:` handler, which serves a page's folder and needs
+     * to know where it is and what was declared.
+     */
+    async installations() {
+      return installer.list()
+    },
+
+    /**
+     * Every side panel page that installed, enabled extensions declared, for
+     * the panel's Pages menu. Addresses, not paths: the renderer opens them.
+     */
+    async panelPages() {
+      const pages = []
+      for (const installation of await installer.list()) {
+        if (installation.enabled === false) continue
+        for (const panel of installation.manifest?.provides?.panels ?? []) {
+          pages.push({
+            owner: installation.name,
+            extension: installation.manifest?.displayName ?? installation.name,
+            id: panel.id,
+            label: panel.label,
+            url: `agentrq-ext://${installation.name}/${panel.entry}`,
+          })
+        }
+      }
+      return pages
+    },
+
+    /** The panel pages one extension declared, or none when it is not installed and on. */
+    async panelPagesFor(name) {
+      const installation = (await installer.list()).find((candidate) => candidate.name === name)
+      if (!installation || installation.enabled === false) return []
+      return installation.manifest?.provides?.panels ?? []
+    },
+
     async drawerFor(format) {
       const wanted = String(format ?? '').toLowerCase()
       if (!wanted) return fail('No format was named.')

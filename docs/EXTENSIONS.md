@@ -46,7 +46,7 @@ tidy up.
 They live in [`examples/extensions/`](../examples/extensions/). The first three
 go from smallest to largest; the fourth is the odd one out, and deliberately so
 — everything else contributes something the app draws, and it gets asked a
-question instead.
+question instead. The fifth draws for itself, in the side panel.
 
 | | Asks for | Shows |
 |---|---|---|
@@ -54,6 +54,7 @@ question instead.
 | [`standup`](../examples/extensions/standup/) | three workspace tools | A page, a task menu item, a keyboard shortcut, a config field, brokered MCP calls |
 | [`digest`](../examples/extensions/digest/) | the supervisor | Three surfaces, a secret, a declared host, and standing work on a schedule |
 | [`guardrail`](../examples/extensions/guardrail/) | to be *asked* | The one registry that answers back: it reviews an agent's permission prompt and refuses the commands that cannot be undone |
+| [`panel-notes`](../examples/extensions/panel-notes/) | nothing at all | A page of its own HTML, CSS and JS in the desktop side panel, talking to its extension — the page draws, the extension keeps the data |
 
 Read the first two together: `task-stats` describes the task it was handed and
 says out loud that it cannot see the conversation; `standup` asks for `getTask`
@@ -278,6 +279,9 @@ than merely discouraged.
 
 Five registries, reached through `inject`. Four of them are contributions the
 app draws; `hooks` is the one that gets asked a question.
+
+One more thing `inject` can name is not a registry either: [`panel`](#panel--a-page-of-your-own-in-the-side-panel),
+which opens the side panel and talks to the page in it.
 
 Two things are **not** registries and are always on `ctx` whatever you inject:
 [`ctx.mcp`](#the-credential-never-reaches-the-extension), which is how you reach
@@ -587,6 +591,63 @@ a submit with a fresh view does not wipe a draft.
 Inputs work in any view: a settings tab, a sidebar page, a task panel. They are
 part of the one vocabulary, not a feature of one surface.
 
+### `panel` — a page of your own in the side panel
+
+```json
+"provides": {
+  "panels": [{ "id": "notes", "label": "Notes", "entry": "panel/index.html" }]
+}
+```
+
+```js
+export const inject = ['panel']
+
+export function apply(ctx) {
+  ctx.panel.onMessage(async (message) => ({ text: await ctx.storage.get('text') }))
+  ctx.panel.post({ type: 'changed', text })        // to your open page
+  await ctx.panel.open({ page: 'notes' })          // or { url: 'https://…' }
+}
+```
+
+```js
+// in panel/app.js, the page
+const { text } = await window.agentrq.panel.send({ type: 'load' })
+window.agentrq.panel.onMessage((message) => { … })
+```
+
+Everywhere else an extension *describes* and AgentRQ draws ([below](#drawing-a-page)).
+The desktop side panel is the one place an extension draws for itself: the
+page is your own HTML, CSS and JS, shipped in your package, and it can look
+like anything. The panel's Pages menu lists it, and its toolbar names your
+extension beside the address, so it is never mistaken for a website or for
+AgentRQ.
+
+**It is served from its own folder, and only from there.** `entry` must be an
+`.html` file in a folder of its own — `panel/index.html`, never `index.html` —
+and that folder is all that is served, at `agentrq-ext://<your-name>/…`. The
+rest of the package, your `index.js` included, is a 404. Each extension is its
+own origin, so its `localStorage` is its own.
+
+**The page reaches nothing but you.** It runs in the panel with no Node, no
+AgentRQ session, no MCP and no access to the app: `window.agentrq.panel` is
+all it has, a line to this extension. Which extension a message reaches is
+decided by the address of the page that sent it — not by anything in the
+message — so a website in the panel has no bridge at all and one extension's
+page cannot reach another extension. The page asks; your `onMessage` decides.
+
+- `send(message)` resolves with what `onMessage` returned, or rejects with a
+  reason carrying your name — no handler, a handler that threw.
+- Messages are plain data, at most 1 MB each way.
+- `post(message)` reaches your pages that are open, and is dropped when none
+  is: keep state in your extension and have the page load it when it opens,
+  as `panel-notes` does.
+- `open({ page })` names one of your declared pages; `open({ url })` takes an
+  `http(s)` address. Anything else is refused with your name on it.
+- A page asking for the camera, a location and the rest is asked about like
+  any site, named by your extension.
+
+Desktop only, like everything here. In the browser there is no side panel.
+
 ---
 
 ## Drawing a page
@@ -848,3 +909,4 @@ pattern:
 | Extensions' own settings storage | `desktop/src/main/extensions/storage.js` |
 | The grant screen's rules | `frontend/src/composables/useExtensionGrant.js` |
 | The view vocabulary | `frontend/src/composables/useExtensionView.js` |
+| Side panel pages: serving, and the page's bridge | `desktop/src/main/side-panel/ext-scheme.js`, `bridge.js`, `desktop/src/preload/panel.js` |

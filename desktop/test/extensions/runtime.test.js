@@ -575,6 +575,51 @@ describe('installFromCatalogue', () => {
   })
 })
 
+describe('side panel pages', () => {
+  const withPanels = (panels, over = {}) => ({ ...manifest(), provides: { panels }, ...over })
+
+  it('lists every enabled extension’s pages as addresses the panel can open', async () => {
+    const { runtime } = build({
+      installations: [
+        installation({ manifest: withPanels([{ id: 'board', label: 'Board', entry: 'panel/index.html' }]) }),
+        installation({ name: 'off', enabled: false, manifest: withPanels([{ id: 'x', label: 'X', entry: 'panel/x.html' }]) }),
+        installation({ name: 'plain', manifest: manifest({ name: 'plain', displayName: undefined }) }),
+        installation({ name: 'bare', manifest: undefined }),
+      ],
+    })
+    expect(await runtime.panelPages()).toEqual([
+      { owner: 'standup', extension: 'Standup', id: 'board', label: 'Board', url: 'agentrq-ext://standup/panel/index.html' },
+    ])
+  })
+
+  it('names an extension with no display name by its name', async () => {
+    const { runtime } = build({
+      installations: [installation({ manifest: withPanels([{ id: 'board', label: 'Board', entry: 'panel/index.html' }], { displayName: undefined }) })],
+    })
+    expect((await runtime.panelPages())[0].extension).toBe('standup')
+  })
+
+  it('gives one extension’s pages, and none for one that is off or gone', async () => {
+    const panels = [{ id: 'board', label: 'Board', entry: 'panel/index.html' }]
+    const { runtime } = build({
+      installations: [
+        installation({ manifest: withPanels(panels) }),
+        installation({ name: 'off', enabled: false, manifest: withPanels(panels) }),
+        installation({ name: 'plain' }),
+      ],
+    })
+    expect(await runtime.panelPagesFor('standup')).toEqual(panels)
+    expect(await runtime.panelPagesFor('off')).toEqual([])
+    expect(await runtime.panelPagesFor('plain')).toEqual([])
+    expect(await runtime.panelPagesFor('gone')).toEqual([])
+  })
+
+  it('hands the scheme handler what is installed', async () => {
+    const { runtime } = build({ installations: [installation({ dir: '/ext/standup' })] })
+    expect((await runtime.installations())[0]).toMatchObject({ name: 'standup', dir: '/ext/standup' })
+  })
+})
+
 describe('drawerFor', () => {
   const drawing = (over = {}) => ({
     ...manifest(),

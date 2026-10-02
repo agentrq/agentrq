@@ -35,6 +35,8 @@ import { panelPartitionFor } from './side-panel/guest.js'
 import { wirePanelPermissions, wireSidePanel } from './side-panel/wire.js'
 import { createPermissionStore } from './side-panel/permission-store.js'
 import { createPermissionBroker } from './side-panel/permissions.js'
+import { createExtSchemeHandler } from './side-panel/ext-scheme.js'
+import { createPanelHub, deliverTo } from './side-panel/bridge.js'
 import {
   CONFIG_FILENAME,
   createServerConfigStore,
@@ -124,6 +126,9 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'app',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
   },
+  // An Extension's own side panel pages. `standard` gives each Extension a real
+  // origin of its own — its own storage, and none of another's.
+  { scheme: 'agentrq-ext', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 
 /**
@@ -276,6 +281,23 @@ function panelPermissionStoreFor(profileId) {
 
 /** The active profile's side panel permissions; replaced with the window. */
 let panelPermissions = null
+
+/** Every page open in a side panel, so an Extension's `post` can find its own. */
+const panelGuests = new Set()
+
+/** Panel sessions already serving Extension pages: a handler is registered once per session. */
+const extSchemeSessions = new WeakSet()
+
+/**
+ * Extensions and their pages in the side panel (side-panel/bridge.js). Opening
+ * the panel is a request to the window; a message to a page goes to every
+ * guest whose address names the Extension, and to no other.
+ */
+const panelHub = createPanelHub({
+  show: (url) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())?.webContents.send('agentrq:side-panel:open', url),
+  deliver: (owner, message) => deliverTo(panelGuests, owner, 'agentrq:panel:message', message),
+  pagesFor: async (owner) => (await extensions?.panelPagesFor(owner)) ?? [],
+})
 
 /**
  * Whether an IPC call came from the app's own window. A side panel guest is
@@ -616,7 +638,19 @@ function createWindow() {
     settled: (id) => !win.isDestroyed() && win.webContents.send('agentrq:side-panel:permission-settled', id),
   })
   panelPermissions = { store: permissionStore, broker: permissionBroker }
-  wirePanelPermissions(session.fromPartition(currentPanelPartition()), permissionBroker)
+  const panelSession = session.fromPartition(currentPanelPartition())
+  wirePanelPermissions(panelSession, permissionBroker)
+  if (!extSchemeSessions.has(panelSession)) {
+    panelSession.protocol.handle(
+      'agentrq-ext',
+      createExtSchemeHandler({ installations: async () => (await extensions?.installations()) ?? [] }),
+    )
+    extSchemeSessions.add(panelSession)
+  }
+  win.webContents.on('did-attach-webview', (_event, guest) => {
+    panelGuests.add(guest)
+    guest.once('destroyed', () => panelGuests.delete(guest))
+  })
 
   wireSidePanel(win, {
     partition: currentPanelPartition,
@@ -926,6 +960,14 @@ function registerIpc(getWindow) {
   // only what a link could open reaches the operating system.
   ipcMain.handle('agentrq:side-panel:open-external', (event, url) =>
     routeLink(String(url ?? ''), BrowserWindow.fromWebContents(event.sender)),
+  )
+
+  // A side panel page talking to its own Extension. Routed by the address of
+  // the page that sent it, never by anything the message says.
+  ipcMain.handle('agentrq:panel:send', (event, message) => panelHub.handleSend(event.senderFrame?.url ?? '', message))
+  // The panel's Pages menu.
+  ipcMain.handle('agentrq:side-panel:pages', async (event) =>
+    fromAppWindow(event) ? ((await extensions?.panelPages()) ?? []) : [],
   )
 
   // The side panel's permission bar and its Site permissions list.
@@ -1416,6 +1458,9 @@ function buildExtensionRuntime() {
     readConfig: (name) => configStore.resolve(name),
     clientFor: (name) => broker.clientFor(name),
     storageFor: (name) => storageStore.for(name),
+    // `inject: ['panel']`: open the side panel at its own pages, and talk to them.
+    capabilities: { panel: (name) => panelHub.capabilityFor(name) },
+    onRetract: (name) => panelHub.retract(name),
     onDisabled: async (name, reason) => {
       await installer.setEnabled(name, false)
       // Told, not just recorded. Nothing about this involves a navigation — an

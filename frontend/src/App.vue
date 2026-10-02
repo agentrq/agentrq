@@ -594,6 +594,8 @@ const platformStore = usePlatformStore()
 const sidePanel = useSidePanel({ onOpen: () => recordUiAction(TELEMETRY_UI_SIDE_PANEL_OPEN, route) })
 const showSidePanel = computed(() => platformStore.isDesktop && !isLoginPage.value && sidePanel.state.open)
 const stopSidePanelToggle = window.agentrq?.sidePanel?.onToggle?.(() => sidePanel.toggle())
+// An Extension's `ctx.panel.open`: one of its pages, or a web page.
+const stopSidePanelOpen = window.agentrq?.sidePanel?.onOpen?.((url) => sidePanel.open(url))
 
 /** The clipboard, through the shell where there is one. */
 const copyText = (text) =>
@@ -1132,6 +1134,7 @@ const handleClickOutside = (e) => {
 
 onUnmounted(() => {
   stopSidePanelToggle?.()
+  stopSidePanelOpen?.()
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', closeOverlaysOnEscape)
   window.removeEventListener('keydown', onExtensionKey, true)

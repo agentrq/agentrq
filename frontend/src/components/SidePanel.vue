@@ -36,6 +36,30 @@
           <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         </button>
 
+        <!-- The installed Extensions' own pages. -->
+        <div v-if="pages.length" class="relative shrink-0">
+          <button type="button" data-side-panel-pages-toggle title="Extension pages" :aria-expanded="showPages" aria-haspopup="menu"
+                  @click="showPages = !showPages" :class="iconButton">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z" /></svg>
+          </button>
+          <div v-if="showPages" data-side-panel-pages role="menu"
+               class="absolute left-0 top-full mt-1 z-20 w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md shadow-2xl py-1.5 text-xs">
+            <button v-for="page in pages" :key="page.url" type="button" role="menuitem" data-side-panel-page
+                    @click="openPage(page)"
+                    class="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+              <span class="min-w-0 truncate font-semibold">{{ page.label }}</span>
+              <span class="shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">{{ page.extension }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Named, always, as every Extension surface is: a page an Extension
+             drew must not pass for a website, or for AgentRQ. -->
+        <span v-if="extensionName" data-side-panel-extension :title="`A page of the ${extensionName} extension`"
+              class="shrink-0 max-w-28 truncate px-1.5 py-0.5 rounded bg-gray-100 dark:bg-zinc-800 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400">
+          {{ extensionName }}
+        </span>
+
         <form class="flex-1 min-w-0" @submit.prevent="go">
           <input ref="addressRef" v-model="address" data-side-panel-address type="text" spellcheck="false" autocomplete="off"
                  aria-label="Address" placeholder="Search or enter an address"
@@ -166,6 +190,24 @@ async function removeDecision(origin, permission) {
 function togglePermissions() {
   showPermissions.value = !showPermissions.value
   if (showPermissions.value) refreshSites()
+}
+
+// Extension pages: the menu, and the name shown beside one that is open.
+const pages = ref([])
+const showPages = ref(false)
+const extensionName = computed(() => {
+  const host = /^agentrq-ext:\/\/([^/]+)/i.exec(current.value)?.[1]
+  if (!host) return ''
+  return pages.value.find((page) => page.owner === host)?.extension ?? host
+})
+
+async function refreshPages() {
+  pages.value = (await props.bridge?.pages?.()) ?? []
+}
+
+function openPage(page) {
+  showPages.value = false
+  show(page.url)
 }
 
 const stops = []
@@ -307,6 +349,7 @@ onMounted(() => {
     refreshSites()
   }))
   refreshSites()
+  refreshPages()
   if (globalThis.ResizeObserver && asideRef.value?.previousElementSibling) {
     observer = new ResizeObserver(onWindowResize)
     observer.observe(asideRef.value.previousElementSibling)

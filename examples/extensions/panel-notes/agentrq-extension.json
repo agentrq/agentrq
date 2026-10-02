@@ -1,0 +1,17 @@
+{
+  "name": "panel-notes",
+  "displayName": "Notes",
+  "version": "1.0.0",
+  "description": "A scratchpad in the desktop side panel, beside whatever task you are on. Right-click a task to add it to your notes.",
+  "license": "MIT",
+  "engines": { "agentrq": ">=0.9" },
+  "provides": {
+    "ui": ["task-menu"],
+    "panels": [{ "id": "notes", "label": "Notes", "entry": "panel/index.html" }]
+  },
+  "artifact": {
+    "release": "v1.0.0",
+    "asset": "panel-notes-1.0.0.tgz",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

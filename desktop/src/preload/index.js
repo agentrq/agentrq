@@ -306,6 +306,18 @@ contextBridge.exposeInMainWorld('agentrq', {
       ipcRenderer.on('agentrq:side-panel:toggle', listener)
       return () => ipcRenderer.off('agentrq:side-panel:toggle', listener)
     },
+    /**
+     * An Extension asking for the panel to show one of its pages, or a web page.
+     *
+     * @returns {() => void} unsubscribe
+     */
+    onOpen: (callback) => {
+      const listener = (_event, url) => callback(url)
+      ipcRenderer.on('agentrq:side-panel:open', listener)
+      return () => ipcRenderer.off('agentrq:side-panel:open', listener)
+    },
+    /** @returns {Promise<Array<{ owner: string, extension: string, id: string, label: string, url: string }>>} */
+    pages: () => ipcRenderer.invoke('agentrq:side-panel:pages'),
     /** "Open in browser": the ordinary link rule decides what leaves. */
     openExternal: (url) => ipcRenderer.invoke('agentrq:side-panel:open-external', url),
     /**

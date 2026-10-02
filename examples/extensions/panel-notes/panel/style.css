@@ -1,0 +1,14 @@
+/*
+  Copyright 2026 Contextual, Inc. https://agentrq.com
+  This notice may not be modified or removed.
+*/
+:root { color-scheme: light dark; --ink: #18181b; --muted: #71717a; --line: #e4e4e7; --bg: #ffffff; }
+@media (prefers-color-scheme: dark) { :root { --ink: #f4f4f5; --muted: #a1a1aa; --line: #27272a; --bg: #18181b; } }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 13px/1.5 system-ui, -apple-system, sans-serif; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 16px 20px 8px; }
+h1 { margin: 0; font-size: 16px; }
+#status { margin: 0; color: var(--muted); font-size: 11px; }
+textarea { flex: 1; margin: 0 20px 20px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; resize: none; outline: none; }
+textarea:focus { border-color: var(--muted); }

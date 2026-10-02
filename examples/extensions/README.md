@@ -1,6 +1,6 @@
 # Example extensions
 
-Four working extensions. They exist to be read — every file is commented as an
+Five working extensions. They exist to be read — every file is commented as an
 explanation rather than as a demo — and they are what
 [`docs/EXTENSIONS.md`](../../docs/EXTENSIONS.md) teaches from.
 
@@ -33,7 +33,7 @@ Two more turned up once these were actually used:
   ask for, and `standup` — which does ask — counts it properly. The pair is now
   the clearest statement in the repo of what a permission buys.
 
-## The four
+## The five
 
 | | Asks for | What it shows |
 |---|---|---|
@@ -41,6 +41,7 @@ Two more turned up once these were actually used:
 | [`standup`](standup/) | `getWorkspace`, `loadMemory`, `getTask` | A sidebar page, a task menu item, <kbd>x</kbd> <kbd>s</kbd> to open it, one config field, and brokered workspace calls that answer with a refusal rather than throwing |
 | [`digest`](digest/) | the **supervisor** | The full case: a page, a header action, a conditional task menu item, a secret in the keychain, a declared host, and standing work reconciled onto the server so it runs while the app is closed |
 | [`guardrail`](guardrail/) | to be **asked** | The odd one out. It reviews the permission prompt an agent raises and refuses the commands that cannot be undone — its manifest asks only to *refuse*, so the install screen never offers the rung where it could approve one. It is also the example for a **settings tab of its own**: rules typed per workspace, in a shape it invented, kept in `ctx.storage` |
+| [`panel-notes`](panel-notes/) | **nothing** | The one that draws for itself: a page of its own HTML, CSS and JS in the desktop side panel. The page holds no data and has no session — it asks its extension over `window.agentrq.panel`, and the extension, which keeps the notes in `ctx.storage`, answers. A task menu item adds a task to the notes and opens the page beside it |
 
 ## Running them
 

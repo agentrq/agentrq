@@ -74,14 +74,14 @@ export function validateModule(module, expectedName) {
  * make `inject` decorative, and the declaration is what lets the install screen
  * say what an extension touches before it is ever run.
  */
-export function buildContext({ name, registries, inject, config, logger, mcp, storage }) {
+export function buildContext({ name, registries, capabilities = {}, inject, config, logger, mcp, storage }) {
   // `hasOwn` rather than `in`: every object inherits `toString`, `constructor`
   // and `__proto__`, so `in` answers yes for all three. An extension declaring
   // one of those would pass this check and then find `registry.add` undefined
   // inside its own `apply` — a TypeError from the host instead of the sentence
   // this function exists to give it — and `__proto__` would reassign the
   // context's prototype on the way past.
-  const missing = inject.filter((key) => !Object.hasOwn(registries, key))
+  const missing = inject.filter((key) => !Object.hasOwn(registries, key) && !Object.hasOwn(capabilities, key))
   if (missing.length > 0) {
     return fail(`This extension asks for something that does not exist: ${missing.join(', ')}.`)
   }
@@ -124,6 +124,13 @@ export function buildContext({ name, registries, inject, config, logger, mcp, st
   }
 
   for (const key of inject) {
+    // A capability is something the extension *does* rather than contributes
+    // — `panel` opens pages and talks to them — so it is handed over as it is,
+    // closed over this extension's name, instead of as a registry's `add`.
+    if (!Object.hasOwn(registries, key)) {
+      ctx[key] = capabilities[key](name)
+      continue
+    }
     const registry = registries[key]
     ctx[key] = {
       /**
@@ -188,6 +195,9 @@ const nowhere = () => {
  * @param {(name: string) => Promise<object>} deps.readConfig
  * @param {(name: string) => object} [deps.clientFor]  The broker's client, by extension name.
  * @param {(name: string) => object} [deps.storageFor]  The extension's own settings store.
+ * @param {Record<string, (name: string) => object>} [deps.capabilities]
+ *   what `inject` may name besides the registries, each built for one extension
+ * @param {(name: string) => void} [deps.onRetract]  an extension was unloaded
  * @param {(name: string) => Promise<void>} [deps.onDisabled]
  * @param {{info: Function, warn: Function}} [deps.logger]
  */
@@ -196,6 +206,8 @@ export function createHost({
   readConfig,
   clientFor = refuseEverything,
   storageFor = nowhere,
+  capabilities = {},
+  onRetract = () => {},
   onDisabled = async () => {},
   logger = console,
 }) {
@@ -223,6 +235,9 @@ export function createHost({
     let removed = 0
     for (const registry of Object.values(registries)) removed += registry.removeOwner(name)
     loaded.delete(name)
+    // What a capability holds for it — the side panel's message handler — goes
+    // with it, the same as its registry entries.
+    onRetract(name)
     return removed
   }
 
@@ -270,6 +285,7 @@ export function createHost({
       const context = buildContext({
         name,
         registries,
+        capabilities,
         inject: shape.inject,
         config,
         logger,

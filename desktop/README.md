@@ -85,6 +85,7 @@ AGENTRQ_SERVER_URL=http://localhost:3999 \
 AGENTRQ_ROOT_TOKEN=... npx electron scripts/verify-e2e.mjs
 npm run build && npx electron scripts/verify-markdown-links.mjs  # needs no backend
 npm run verify:extensions                                        # needs no backend
+npm run verify:side-panel                                        # needs no backend
 AGENTRQ_SERVER_URL=http://localhost:3997 AGENTRQ_QA_DB=… \
 AGENTRQ_QA_WORKSPACE=… npx electron scripts/verify-ui-telemetry.mjs
 ```
@@ -117,6 +118,15 @@ run, that a missing file said which one, and that the copy button put the path
 on the real clipboard. The `shell.openPath` / `showItemInFolder` calls are
 recorded rather than made — a passing run would otherwise launch an editor and a
 Finder window on whoever ran it — and the clipboard is put back afterwards.
+
+`verify:side-panel` starts its own stand-in server and drives the side panel in
+a real window: a guest is on the panel's partition, sandboxed, with no bridge
+and no sight of the `at` cookie; a `target=_blank` stays in the panel and no
+window is created; resizing, expanding and the task view's phone layout; links
+in a message; a real `Notification.requestPermission()` asked, remembered on
+disk and removed; and the `panel-notes` example's page served from its folder
+and talking to its extension, and to nothing else. Headless, it needs
+`OFFSCREEN=1` and `--ozone-platform=headless --ozone-override-screen-size=1600,1000`.
 
 `verify:ui-telemetry` drives the real interface against a scratch backend and
 checks that a keypress, a copy, a search and a view switch each report exactly

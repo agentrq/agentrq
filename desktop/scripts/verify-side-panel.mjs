@@ -36,6 +36,10 @@ import { wirePanelPermissions, wireSidePanel } from '../src/main/side-panel/wire
 import { createPermissionStore } from '../src/main/side-panel/permission-store.js'
 import { createPermissionBroker } from '../src/main/side-panel/permissions.js'
 import { mkdtemp } from 'node:fs/promises'
+import { createExtSchemeHandler } from '../src/main/side-panel/ext-scheme.js'
+import { createPanelHub, deliverTo } from '../src/main/side-panel/bridge.js'
+import { parseManifest } from '../src/main/extensions/manifest.js'
+import * as notesExtension from '../../examples/extensions/panel-notes/index.js'
 import { tmpdir } from 'node:os'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -50,7 +54,10 @@ protocol.registerSchemesAsPrivileged([
     scheme: 'app',
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
   },
+  { scheme: 'agentrq-ext', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
+
+const NOTES_DIR = join(__dirname, '../../examples/extensions/panel-notes')
 
 const USER = { id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com' }
 const WORKSPACE = { id: 'w1', name: 'agentrq-code', agentConnected: true, agentSupportsStop: true }
@@ -204,6 +211,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('agentrq:side-panel:permission-answer', (_e, id, decision) => broker.answer(Number(id), decision))
   ipcMain.handle('agentrq:side-panel:permissions', async () => { await permissionStore.load(); return permissionStore.list() })
   ipcMain.handle('agentrq:side-panel:permission-remove', async (_e, o, p) => { await permissionStore.remove(o, p); return permissionStore.list() })
+
+  // Mirrors index.js: the example extension installed, its pages served from
+  // its own folder, and its page talking to it through the hub.
+  const notesManifest = parseManifest(JSON.parse(await readFile(join(NOTES_DIR, 'agentrq-extension.json'), 'utf8'))).manifest
+  const notesInstallation = { name: 'panel-notes', dir: NOTES_DIR, enabled: true, manifest: notesManifest }
+  session.fromPartition(PANEL_PARTITION).protocol.handle('agentrq-ext', createExtSchemeHandler({ installations: async () => [notesInstallation] }))
+  const panelGuests = new Set()
+  win.webContents.on('did-attach-webview', (_e, g) => { panelGuests.add(g); g.once('destroyed', () => panelGuests.delete(g)) })
+  const hub = createPanelHub({
+    show: (url) => win.webContents.send('agentrq:side-panel:open', url),
+    deliver: (owner, message) => deliverTo(panelGuests, owner, 'agentrq:panel:message', message),
+    pagesFor: async (owner) => (owner === 'panel-notes' ? notesManifest.provides.panels : []),
+  })
+  ipcMain.handle('agentrq:panel:send', (event, message) => hub.handleSend(event.senderFrame?.url ?? '', message))
+  ipcMain.handle('agentrq:side-panel:pages', () => notesManifest.provides.panels.map((panel) => ({
+    owner: 'panel-notes', extension: notesManifest.displayName, id: panel.id, label: panel.label, url: `agentrq-ext://panel-notes/${panel.entry}`,
+  })))
+  const notesStorage = new Map([['text', '- Kept from last time']])
+  const notesCtx = {
+    panel: hub.capabilityFor('panel-notes'),
+    storage: { get: async (k) => notesStorage.get(k), set: async (k, v) => { notesStorage.set(k, v); return { ok: true } } },
+    ui: { add: () => {} },
+  }
+  notesExtension.apply(notesCtx)
 
   wireSidePanel(win, {
     partition: () => PANEL_PARTITION,
@@ -399,6 +430,39 @@ app.whenReady().then(async () => {
   const gone = await until(() => js("!document.querySelector('[data-side-panel-permission]')"), { timeout: 3000 })
   record('leaving the page answers what it asked and takes the bar down', Boolean(barShown) && Boolean(gone))
   abandoned.catch(() => {})
+
+  // An Extension's own page: opened by the extension, served from its folder,
+  // and talking to it — and to nothing else.
+  const webBridge = await guest.executeJavaScript('typeof window.agentrq')
+  record('a web page has no extension bridge', webBridge === 'undefined', webBridge)
+  await notesCtx.panel.open({ page: 'notes' })
+  const notesUrl = 'agentrq-ext://panel-notes/panel/index.html'
+  await until(() => guest.getURL() === notesUrl && !guest.isLoading())
+  record('ctx.panel.open shows the extension’s page', guest.getURL() === notesUrl, guest.getURL())
+  const loadedText = await until(() => guest.executeJavaScript("document.getElementById('notes').value"))
+  record('the page asked its extension for its data and got it', loadedText === '- Kept from last time', JSON.stringify(loadedText))
+  const insideExt = await guest.executeJavaScript('({ bridge: typeof window.agentrq?.panel?.send, keys: Object.keys(window.agentrq ?? {}), require: typeof require, origin: location.origin })')
+  record('its page has the panel bridge and nothing else', insideExt.bridge === 'function' && insideExt.keys.join() === 'panel' && insideExt.require === 'undefined', JSON.stringify(insideExt))
+  await guest.executeJavaScript("(() => { const n = document.getElementById('notes'); n.value = '- Typed in the panel'; n.dispatchEvent(new Event('input')) })()")
+  await until(() => notesStorage.get('text') === '- Typed in the panel', { timeout: 3000 })
+  record('what is typed reaches the extension', notesStorage.get('text') === '- Typed in the panel', notesStorage.get('text'))
+  notesCtx.panel.post({ type: 'changed', text: '- Posted by the extension' })
+  await until(() => guest.executeJavaScript("document.getElementById('notes').value === '- Posted by the extension'"), { timeout: 3000 })
+  record('what the extension posts reaches its open page', (await guest.executeJavaScript("document.getElementById('notes').value")) === '- Posted by the extension')
+  const chip = await until(() => js("document.querySelector('[data-side-panel-extension]')?.textContent?.trim()"))
+  record('the page is named by its extension beside the address', chip === 'Notes', chip)
+  const code = await guest.executeJavaScript("fetch('agentrq-ext://panel-notes/index.js').then((r) => r.status)")
+  record('the extension’s own code is never served', code === 404, String(code))
+  const forged = await guest.executeJavaScript("window.agentrq.panel.send({ type: 'load', to: 'other' }).then((r) => typeof r.text)")
+  record('a message cannot choose another recipient', forged === 'string')
+  if (process.env.SHOTS) {
+    await wait(500)
+    await writeFile(join(process.env.SHOTS, `side-panel-extension-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+  await js("document.querySelector('[data-side-panel-pages-toggle]').click()")
+  const menu = await until(() => js("document.querySelector('[data-side-panel-pages]')?.textContent?.replace(/\\s+/g, ' ').trim()"))
+  record('the Pages menu lists the extension’s page', Boolean(menu) && menu.includes('Notes'), menu)
+  await js("document.querySelector('[data-side-panel-pages-toggle]').click()")
 
   // Beside the panel the task view lays itself out as it does on a phone.
   await js("document.querySelector('[data-side-panel-handle]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))")

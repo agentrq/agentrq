@@ -8,6 +8,8 @@ import {
   SPDX_IDENTIFIERS,
   parseDrawerEntry,
   parseDrawers,
+  parsePanelEntry,
+  parsePanels,
   checkCompatibility,
   parseManifest,
   satisfiesRange,
@@ -140,6 +142,74 @@ describe('parseDrawers', () => {
 
   it('refuses a drawers field that is not a list', () => {
     expect(parseDrawers({ drawers: 'mermaid' }).reason).toContain('must be an array')
+  })
+})
+
+describe('parsePanels', () => {
+  it('reads the side panel pages an extension ships', () => {
+    expect(parsePanels({ panels: [{ id: 'board', label: ' Board ', entry: 'panel/index.html' }] })).toEqual({
+      ok: true,
+      panels: [{ id: 'board', label: 'Board', entry: 'panel/index.html' }],
+    })
+  })
+
+  it('declaring none is not an error', () => {
+    expect(parsePanels(undefined)).toEqual({ ok: true, panels: [] })
+    expect(parsePanels({ panels: [] })).toEqual({ ok: true, panels: [] })
+  })
+
+  it('refuses a panels field that is not a list', () => {
+    expect(parsePanels({ panels: 'board' }).reason).toBe('"provides.panels" must be an array.')
+  })
+
+  it('refuses an id that is not one, and names it', () => {
+    expect(parsePanels({ panels: [{ id: 'Board Page', label: 'B', entry: 'panel/p.html' }] }).reason).toContain('"Board Page" is not a panel page id')
+    expect(parsePanels({ panels: [{ label: 'B', entry: 'panel/p.html' }] }).reason).toContain('"(none)"')
+    expect(parsePanels({ panels: [null] }).reason).toContain('"(none)"')
+  })
+
+  it('refuses the same page declared twice', () => {
+    const panels = [{ id: 'board', label: 'A', entry: 'panel/a.html' }, { id: 'board', label: 'B', entry: 'panel/b.html' }]
+    expect(parsePanels({ panels }).reason).toBe('This manifest declares the panel page "board" twice.')
+  })
+
+  it('needs a label a menu can show', () => {
+    expect(parsePanels({ panels: [{ id: 'board', entry: 'panel/a.html' }] }).reason).toBe('The panel page "board" needs a "label" of 1 to 60 characters.')
+    expect(parsePanels({ panels: [{ id: 'board', label: 'x'.repeat(61), entry: 'panel/a.html' }] }).ok).toBe(false)
+  })
+
+  it('refuses a page it will not serve, and says which', () => {
+    const { ok, reason } = parsePanels({ panels: [{ id: 'board', label: 'Board', entry: '../index.html' }] })
+    expect(ok).toBe(false)
+    expect(reason).toBe('The panel page "board" needs an "entry": an .html file in a folder of its own inside the package, like "panel/index.html".')
+  })
+
+  it('is refused at install with the rest of the manifest', () => {
+    const { ok, reason } = parseManifest({ ...valid(), provides: { panels: [{ id: 'board', label: 'Board', entry: 'board.js' }] } })
+    expect(ok).toBe(false)
+    expect(reason).toContain('an .html file in a folder of its own')
+  })
+
+  it('is kept, parsed, on the manifest', () => {
+    const { manifest } = parseManifest({ ...valid(), provides: { panels: [{ id: 'board', label: 'Board', entry: 'panel/index.html' }] } })
+    expect(manifest.provides.panels).toEqual([{ id: 'board', label: 'Board', entry: 'panel/index.html' }])
+  })
+})
+
+describe('parsePanelEntry', () => {
+  it('accepts an html file inside the package', () => {
+    expect(parsePanelEntry('panel/index.html')).toBe('panel/index.html')
+    expect(parsePanelEntry('ui/panel/board.html')).toBe('ui/panel/board.html')
+  })
+
+  it('refuses a page at the package root, whose folder is the extension’s own code', () => {
+    expect(parsePanelEntry('index.html')).toBe('')
+  })
+
+  it('refuses anything that could name a file outside it, or is not a page', () => {
+    for (const entry of ['', undefined, '/abs/index.html', '..\\index.html', '../index.html', 'panel/../x.html', '.hidden/x.html', 'panel/index.js', `${'a/'.repeat(100)}x.html`]) {
+      expect(parsePanelEntry(entry), String(entry)).toBe('')
+    }
   })
 })
 
@@ -442,7 +512,7 @@ describe('parseManifest', () => {
 
     expect(ok).toBe(true)
     expect(manifest.config).toEqual([])
-    expect(manifest.provides).toEqual({ drawers: [] })
+    expect(manifest.provides).toEqual({ drawers: [], panels: [] })
     expect(manifest.shortcuts).toEqual([])
   })
 
@@ -458,7 +528,7 @@ describe('parseManifest', () => {
   it('ignores optional fields of the wrong shape rather than adopting them', () => {
     const { manifest } = parseManifest({ ...valid(), provides: 'everything', shortcuts: 'x' })
 
-    expect(manifest.provides).toEqual({ drawers: [] })
+    expect(manifest.provides).toEqual({ drawers: [], panels: [] })
     expect(manifest.shortcuts).toEqual([])
   })
 
