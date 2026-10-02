@@ -280,16 +280,18 @@ app.whenReady().then(async () => {
   await wait(200)
   record('Open in browser hands the page to the shell', routed.at(-1) === `${origin}/second`, routed.at(-1))
 
-  // The task view's own button, beside a real task.
+  // The task view's own button, beside a real task: there while the panel is
+  // closed, gone while it is open.
   await js("history.pushState({}, '', '/workspaces/w1/tasks/t1'); dispatchEvent(new PopStateEvent('popstate'))")
-  const onTask = await until(() => js("!!document.querySelector('[data-side-panel-toggle][aria-label=\"Side panel\"].w-7')"))
-  record('the task view has a side panel button', Boolean(onTask))
-  await js("document.querySelector('[data-side-panel-toggle].w-7').click()")
-  await wait(200)
-  record('which closes the panel', (await js("!document.querySelector('[data-side-panel]')")) === true)
-  await js("document.querySelector('[data-side-panel-toggle].w-7').click()")
+  await until(() => js("!!document.querySelector('button[title=\"Go Back\"]')"))
+  const taskButton = "document.querySelector('[data-side-panel-toggle].w-7')"
+  record('the task view hides its panel button while the panel is open', (await js(`!${taskButton}`)) === true)
+  await js("document.querySelector('[data-side-panel-close]').click()")
+  const shown = await until(() => js(`!!${taskButton}`))
+  record('and shows it once the panel is closed', Boolean(shown))
+  await js(`${taskButton}.click()`)
   const reopened = await until(() => js("!!document.querySelector('[data-side-panel]')"))
-  record('and opens it again', Boolean(reopened))
+  record('which opens it again', Boolean(reopened))
   await until(() => guest && !guest.isDestroyed() && guest.getURL().startsWith(origin))
   record('back on the page it was showing', guest?.getURL() === `${origin}/second`, guest?.getURL())
 

@@ -95,14 +95,13 @@
               </button>
             </div>
 
-            <!-- The desktop side panel, beside the task: a page next to the
-                 conversation it came from. -->
-            <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click.stop="sidePanel.toggle()"
-                    :aria-pressed="sidePanel.state.open" aria-label="Side panel"
-                    @mouseenter="tooltipStore.show($event, `Side panel  ${usesCommandKey(platformStore.$state) ? '⌘\\' : 'Ctrl+\\'}`, 'bottom')"
+            <!-- Opens the desktop side panel beside the task. Gone while it is
+                 open: the panel has its own close button, right there. -->
+            <button v-if="platformStore.isDesktop && !sidePanel.state.open" type="button" data-side-panel-toggle @click.stop="sidePanel.open()"
+                    aria-label="Side panel"
+                    @mouseenter="tooltipStore.show($event, `Open side panel  ${usesCommandKey(platformStore.$state) ? '⌘\\' : 'Ctrl+\\'}`, 'bottom')"
                     @mouseleave="tooltipStore.hide()"
-                    :class="sidePanel.state.open ? 'bg-white dark:bg-zinc-700 text-black dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
-                    class="w-7 h-7 rounded-lg border border-gray-200 dark:border-zinc-700/50 transition-all flex items-center justify-center">
+                    class="w-7 h-7 rounded-lg border border-gray-200 dark:border-zinc-700/50 bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-all flex items-center justify-center">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
               </svg>

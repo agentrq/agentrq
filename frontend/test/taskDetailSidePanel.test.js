@@ -114,18 +114,18 @@ describe('the side panel button on a task', () => {
     expect(toggle()).toBeNull()
   })
 
-  it('opens and closes the shared panel on the desktop', async () => {
+  it('opens the shared panel on the desktop, and is gone while it is open', async () => {
     const { toggle } = await mount('desktop')
     const panel = useSidePanel()
-    expect(toggle().getAttribute('aria-pressed')).toBe('false')
 
     toggle().click()
     await settle()
     expect(panel.state.open).toBe(true)
-    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+    // The panel's own close button is the way back; a second one here is noise.
+    expect(toggle()).toBeNull()
 
-    toggle().click()
+    panel.close()
     await settle()
-    expect(panel.state.open).toBe(false)
+    expect(toggle()).not.toBeNull()
   })
 })
