@@ -634,7 +634,7 @@
     <TrajectoryPanel v-else :messages="sortedMessages" :tool-calls="sortedToolCalls" />
 
     <!-- Reply Box -->
-    <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-gray-50/50 dark:bg-zinc-900/50">
+    <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-white dark:bg-zinc-900/50">
 
       <!-- Offline. The composer stays visible but inert: a box that silently
            accepts a reply with nowhere to send it is worse than one that says
