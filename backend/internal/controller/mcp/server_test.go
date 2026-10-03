@@ -1145,6 +1145,10 @@ func TestWorkspaceServer_HandleElicit_FormAccept(t *testing.T) {
 	if meta["type"] != "elicitation_request" || meta["mode"] != "form" || meta["status"] != "pending" {
 		t.Errorf("unexpected metadata: %+v", meta)
 	}
+	expiresAt, err := time.Parse(time.RFC3339, fmt.Sprint(meta["expiresAt"]))
+	if err != nil || expiresAt.Before(time.Now().Add(50*time.Second)) || expiresAt.After(time.Now().Add(61*time.Second)) {
+		t.Errorf("expected expiresAt about 60s from now, got %v", meta["expiresAt"])
+	}
 
 	// The resolved message's metadata must carry the submitted answer too, not
 	// just the resolved status — otherwise the answer is lost once resolved.
@@ -1259,6 +1263,7 @@ func TestWorkspaceServer_HandleElicit_Timeout(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockIdgen.EXPECT().NextID().Return(int64(321))
 
+	var closed any
 	ps := &WorkspaceServer{
 		pubsub: mockPS,
 		idgen:  mockIdgen,
@@ -1266,6 +1271,7 @@ func TestWorkspaceServer_HandleElicit_Timeout(t *testing.T) {
 			return 222, nil
 		},
 		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			closed = metadata
 			return nil
 		},
 	}
@@ -1289,6 +1295,9 @@ func TestWorkspaceServer_HandleElicit_Timeout(t *testing.T) {
 	if !contains(res.Content[0].(*mcp.TextContent).Text, `"action":"cancel"`) {
 		t.Errorf("unexpected content: %s", res.Content[0].(*mcp.TextContent).Text)
 	}
+	if m, _ := closed.(map[string]any); m["status"] != "cancel" {
+		t.Errorf("expected the question closed as cancel, got %+v", closed)
+	}
 }
 
 func TestWorkspaceServer_HandleElicit_ContextCancelled(t *testing.T) {
@@ -1300,11 +1309,21 @@ func TestWorkspaceServer_HandleElicit_ContextCancelled(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 	mockIdgen.EXPECT().NextID().Return(int64(654))
 
+	var closedMsgID int64
+	var closed any
 	ps := &WorkspaceServer{
 		pubsub: mockPS,
 		idgen:  mockIdgen,
 		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
 			return 333, nil
+		},
+		updateMessageMetadata: func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
+			// The agent's own context is gone; the close must not use it.
+			if ctx.Err() != nil {
+				t.Error("question closed with a cancelled context")
+			}
+			closedMsgID, closed = messageID, metadata
+			return nil
 		},
 	}
 
@@ -1330,6 +1349,31 @@ func TestWorkspaceServer_HandleElicit_ContextCancelled(t *testing.T) {
 	}
 	if !contains(res.Content[0].(*mcp.TextContent).Text, "cancelled") {
 		t.Errorf("unexpected content: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	// Nobody waits for the answer any more, so the question must not stay
+	// pending: it could never be answered, and the task would need input forever.
+	if m, _ := closed.(map[string]any); closedMsgID != 333 || m["status"] != "cancel" {
+		t.Errorf("expected message 333 closed as cancel, got %d %+v", closedMsgID, closed)
+	}
+}
+
+func TestWorkspaceServer_HandleElicit_ContextCancelledWithoutMetadataUpdater(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockIdgen.EXPECT().NextID().Return(int64(655))
+	ps := &WorkspaceServer{
+		idgen: mockIdgen,
+		reply: func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
+			return 334, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, _, _ := ps.handleElicit(ctx, nil, ElicitParams{TaskID: monoflake.ID(1).String(), Message: "q?", Mode: "url", URL: "https://example.com"})
+	if !res.IsError {
+		t.Fatal("expected IsError=true on context cancellation")
 	}
 }
 

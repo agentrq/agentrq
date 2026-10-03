@@ -1828,6 +1828,9 @@ var errAskCancelled = errors.New("request cancelled")
 func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message string, metadata map[string]any, timeout time.Duration) (elicitationResponse, error) {
 	requestID := monoflake.ID(ps.idgen.NextID()).String()
 	metadata["requestId"] = requestID
+	// Any instance can read the deadline, so the one the human's answer lands
+	// on can close a question nobody is waiting for any more.
+	metadata["expiresAt"] = time.Now().Add(timeout).UTC().Format(time.RFC3339)
 
 	ch := make(chan elicitationResponse, 1)
 	ps.elicitationsMu.Lock()
@@ -1863,12 +1866,21 @@ func (ps *WorkspaceServer) askHuman(ctx context.Context, taskID int64, message s
 	case <-time.After(timeout):
 		// The human simply didn't respond in time — matching ACP's model where
 		// "cancel" is a legitimate response action (not a protocol error).
-		if msgID != 0 {
-			_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, map[string]any{"status": "cancel"})
-		}
+		ps.closeQuestion(taskID, msgID)
 		return elicitationResponse{Action: "cancel"}, nil
 	case <-ctx.Done():
+		// The agent stopped waiting (its own tool-call timeout, or it was
+		// stopped). Left pending, the question could never be answered or
+		// dismissed, and the task would show as needing input for good.
+		ps.closeQuestion(taskID, msgID)
 		return elicitationResponse{}, errAskCancelled
+	}
+}
+
+// closeQuestion marks an elicitation nobody is waiting on as cancelled.
+func (ps *WorkspaceServer) closeQuestion(taskID, msgID int64) {
+	if msgID != 0 && ps.updateMessageMetadata != nil {
+		_ = ps.updateMessageMetadata(context.Background(), taskID, msgID, map[string]any{"status": "cancel"})
 	}
 }
 

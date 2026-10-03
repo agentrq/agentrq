@@ -24,3 +24,17 @@ export function elicitAnswerSummary(m) {
     .map(([key, value]) => `${elicitAnswerLabel(m, key)}: ${formatElicitAnswerValue(value)}`)
     .join(' · ');
 }
+
+// The longest the server waits for an answer. Questions asked before they
+// carried an expiresAt are past their deadline once this has passed.
+export const ELICIT_MAX_WAIT_MS = 60 * 60 * 1000;
+
+// A question still pending after its deadline has nobody waiting for its
+// answer: the server closes it, but one it could not close (a restart) would
+// otherwise offer buttons that can only fail.
+export function isElicitExpired(m, now) {
+  if (m.metadata?.status !== 'pending') return false;
+  const expiresAt = Date.parse(m.metadata.expiresAt);
+  const deadline = Number.isNaN(expiresAt) ? Date.parse(m.createdAt) + ELICIT_MAX_WAIT_MS : expiresAt;
+  return now >= deadline;
+}

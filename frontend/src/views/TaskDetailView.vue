@@ -367,7 +367,16 @@
                    <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-500 hidden @min-[40rem]:block">{{ m.metadata.requestId }}</span>
                  </div>
                  <div class="p-3 flex flex-col gap-3 min-w-0">
-                   <template v-if="m.metadata.status === 'pending'">
+                   <template v-if="m.metadata.status === 'pending' && isElicitExpired(m, elicitNow)">
+                     <p class="text-[11px] text-gray-600 dark:text-zinc-400">The agent stopped waiting for this answer. It has to ask again.</p>
+                     <div class="flex flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
+                        <button @click="submitElicitation(m, 'cancel')" :disabled="!!workspace.archivedAt"
+                                class="px-3 py-1.5 rounded-sm bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 text-[10px] font-semibold transition-all disabled:opacity-50 shadow-sm">
+                          Dismiss
+                        </button>
+                     </div>
+                   </template>
+                   <template v-else-if="m.metadata.status === 'pending'">
                      <template v-if="m.metadata.mode === 'form'">
                        <div v-for="field in schemaFields(m)" :key="field.name" class="min-w-0">
                          <label class="text-[10px] font-semibold text-gray-700 dark:text-zinc-300">
@@ -899,7 +908,7 @@ import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
-import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary } from '../composables/useElicitAnswer';
+import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElicitExpired } from '../composables/useElicitAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import TaskTimeline from '../components/TaskTimeline.vue';
@@ -1455,6 +1464,10 @@ function elicitInputType(field) {
 }
 
 const elicitFormValues = ref({});
+// Ticks so a question flips to expired at its deadline without a reload.
+const elicitNow = ref(Date.now());
+const elicitClock = setInterval(() => { elicitNow.value = Date.now(); }, 15000);
+onUnmounted(() => clearInterval(elicitClock));
 function getElicitFormValue(m, field) {
   return (elicitFormValues.value[m.id] || {})[field];
 }
@@ -1478,7 +1491,9 @@ async function submitElicitation(m, action) {
     await respondToElicitation(workspaceId.value, taskId.value, requestId, action, content);
     notifySuccess(action === 'accept' ? 'Response sent' : action === 'decline' ? 'Declined' : 'Cancelled');
   } catch (err) {
-    notifyError('Failed to send response: ' + err.message);
+    // Dismissing a question nobody waits for any more is done once it is closed.
+    if (err.closed && action === 'cancel') notifySuccess('Dismissed');
+    else notifyError('Failed to send response: ' + err.message);
   }
 }
 

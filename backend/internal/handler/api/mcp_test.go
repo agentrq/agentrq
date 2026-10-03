@@ -76,6 +76,9 @@ type fakeWorkspaceServer struct {
 
 	stopOutcome mcpctrl.StopOutcome
 
+	// elicitErr is RespondToElicitation's answer: nobody waiting, when set.
+	elicitErr error
+
 	// calls records, in order, which of ClearContextForTask/
 	// SendChannelNotification the handler made — a test asserting a push order
 	// needs to see the sequence, not just a count of each.
@@ -122,7 +125,7 @@ func (f *fakeWorkspaceServer) SendPermissionVerdictFrom(ctx context.Context, tas
 }
 
 func (f *fakeWorkspaceServer) RespondToElicitation(requestID, action string, content map[string]any) error {
-	return nil
+	return f.elicitErr
 }
 
 func (f *fakeWorkspaceServer) UpdateArchivedAt(at *time.Time)                {}

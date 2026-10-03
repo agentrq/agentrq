@@ -946,6 +946,20 @@ func (h *handler) respondToElicitation() fiber.Handler {
 		}
 
 		if err := srv.RespondToElicitation(rq.RequestID, rq.Action, rq.Content); err != nil {
+			taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+			rs, err := h.crud.CloseExpiredElicitation(ctx, entity.CloseExpiredElicitationRequest{
+				WorkspaceID: workspaceID,
+				TaskID:      taskID,
+				UserID:      userID,
+				RequestID:   rq.RequestID,
+			})
+			if err == nil && rs.Closed {
+				h.bus.Publish(workspaceID, userID, eventbus.Event{
+					Type:    "task.updated",
+					Payload: mapper.FromEntityTaskToView(rs.Task),
+				})
+				return c.Status(http.StatusGone).JSON(fiber.Map{"error": "The agent stopped waiting for this answer, so the question is closed now. The agent must ask again.", "closed": true})
+			}
 			return c.Status(http.StatusGone).JSON(fiber.Map{"error": "This request has expired (the agent stopped waiting, or the server restarted). The agent must ask again."})
 		}
 

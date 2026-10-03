@@ -148,6 +148,11 @@ through those, never with a column `Update`, or the change leaves no history.
 questions in `CreateMessage`/`UpdateMessageMetadata`; never make it a task
 status, since the poller and every count read the status.
 
+**A question nobody waits for must not stay pending**, or its buttons can only
+fail and the task needs input for good. `askHuman` closes it however the wait
+ends. An answer that finds no waiter closes it only past its `expiresAt`, since
+until then the agent may be waiting on another instance.
+
 
 ## OAuth: being signed in is not consent
 

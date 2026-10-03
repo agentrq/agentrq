@@ -616,7 +616,16 @@ export async function respondToElicitation(workspaceId, taskId, requestId, actio
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requestId, action, content })
   });
-  if (!res.ok) throw new Error('Failed to send response');
+  if (!res.ok) {
+    // The server says why — most usefully that nobody is waiting for the
+    // answer any more — and that reason is worth more than "failed".
+    const body = await res.json().catch(() => null);
+    const err = new Error(body?.error || 'Failed to send response');
+    // Nobody was waiting, and the question was past its deadline: the server
+    // closed it instead.
+    err.closed = !!body?.closed;
+    throw err;
+  }
   return res;
 }
 export async function updateScheduledTask(workspaceId, taskId, title, body, assignee, cronSchedule, allowAllCommands, clearContext = false) {

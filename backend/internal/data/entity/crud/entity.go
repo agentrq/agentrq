@@ -502,6 +502,22 @@ type (
 		UserID      string
 	}
 
+	// CloseExpiredElicitationRequest names a question to the human by the
+	// requestId in its metadata.
+	CloseExpiredElicitationRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		UserID      string
+		RequestID   string
+	}
+
+	CloseExpiredElicitationResponse struct {
+		// Closed is false when no pending question has that requestId, or
+		// its deadline has not passed yet.
+		Closed bool
+		Task   Task
+	}
+
 	// GetPublicFileRequest names a file by its public link: Kind is
 	// PublicFileArtifacts (attachments) or PublicFileSkills, and Key the rest of the path.
 	GetPublicFileRequest struct {
