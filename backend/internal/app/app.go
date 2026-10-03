@@ -141,6 +141,10 @@ type (
 )
 
 func New(cfg Config) (*App, error) {
+	if cfg.Auth.JWTSecret == "" {
+		return nil, errors.New("auth: JWT secret must be configured")
+	}
+
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
 	if cfg.App.BaseURL == "" {
 		cfg.App.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.App.Port)

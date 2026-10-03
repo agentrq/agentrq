@@ -27,6 +27,12 @@ import (
 
 const testJWTSecret = "test-secret-for-events-handler"
 
+func TestNewRequiresJWTSecretBeforeInitialization(t *testing.T) {
+	if _, err := New(Config{}); err == nil {
+		t.Fatal("expected an error when the JWT secret is missing")
+	}
+}
+
 func newTestTokenService(t *testing.T) auth.TokenService {
 	t.Helper()
 	return auth.NewTokenService(auth.TokenConfig{JWTSecret: testJWTSecret})

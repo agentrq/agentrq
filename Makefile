@@ -15,7 +15,16 @@ dev:
 backend:
 	@echo "Starting Backend..."
 	-@lsof -ti:3000,3001 | xargs kill -9 2>/dev/null || true
-	@cd backend/cmd/server && mkdir -p _storage && go build -o agentrq_binary main.go && ./agentrq_binary
+	@set -eu; cd backend/cmd/server; mkdir -p _storage; \
+		if [ "$${ENV:-development}" = development ] && [ -z "$${AGENTRQ_AUTH_JWT_SECRET:-}" ]; then \
+			if [ ! -s .env.jwt-secret ]; then \
+				(umask 077 && openssl rand -base64 32 > .env.jwt-secret); \
+			fi; \
+			chmod 600 .env.jwt-secret; \
+			AGENTRQ_AUTH_JWT_SECRET="$$(cat .env.jwt-secret)"; \
+			export AGENTRQ_AUTH_JWT_SECRET; \
+		fi; \
+		go build -o agentrq_binary main.go; ./agentrq_binary
 
 # Start the frontend dev server
 frontend:

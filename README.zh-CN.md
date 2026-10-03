@@ -198,8 +198,9 @@ AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_SECRET=your-client-secret
 
 源码开发需要：
 
-- Go 1.21+
+- Go 1.27.1+
 - Node.js 18+ 和 npm
+- OpenSSL（`make dev` 首次生成本地 JWT 密钥时需要）
 - Google OAuth2 Client ID / Client Secret
 
 安装依赖：
@@ -208,7 +209,7 @@ AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_SECRET=your-client-secret
 make install
 ```
 
-启动完整开发环境：
+启动完整开发环境。在默认开发模式下，未设置 `AGENTRQ_AUTH_JWT_SECRET` 时，`make dev` 会生成并复用本地密钥：
 
 ```bash
 make dev
@@ -227,6 +228,12 @@ Windows 提示：当前 `Makefile` 使用了 `lsof`、`xargs`、`kill` 等 Unix 
 ```powershell
 cd backend/cmd/server
 New-Item -ItemType Directory -Force _storage
+if (!(Test-Path .env.jwt-secret) -or (Get-Item .env.jwt-secret).Length -eq 0) {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    [Convert]::ToBase64String($bytes) | Set-Content .env.jwt-secret -Encoding Ascii -NoNewline
+}
+$env:AGENTRQ_AUTH_JWT_SECRET = (Get-Content .env.jwt-secret -Encoding Ascii -Raw).TrimEnd()
 go build -o agentrq_binary.exe main.go
 .\agentrq_binary.exe
 ```

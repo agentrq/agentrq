@@ -347,20 +347,23 @@ make desktop       # build installers into desktop/release/
 ## 🛠 Getting Started
 
 ### Prerequisites
-- **Go** 1.21+
+- **Go** 1.27.1+
 - **Node.js** 18+ (with npm)
+- **OpenSSL** if `make dev` needs to generate a local JWT secret
 - **Google Cloud Console**: An OAuth2 Client ID and Secret.
 
 ### Configuration
-1. Create a `_config/base.yaml` (or `development.yaml`) in the `backend` directory.
+1. Edit `backend/cmd/server/_config/base.yaml` (or `development.yaml`).
 2. Fill in your Google OAuth2 credentials:
 
 ```yaml
 auth:
   google:
-    client_id: "your-google-client-id"
-    client_secret: "your-google-client-secret"
+    clientId: "your-google-client-id"
+    clientSecret: "your-google-client-secret"
 ```
+
+3. Set `AGENTRQ_AUTH_JWT_SECRET` to a stable random value (at least 32 characters) when starting the backend directly. In the default development mode, `make dev` generates and reuses a local value if the variable is absent.
 
 ### Running Locally
 Use the provided `Makefile` to start the full stack:

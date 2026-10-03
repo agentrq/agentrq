@@ -6,8 +6,57 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestBundledJWTSecretRequiresConfiguration(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(filepath.Join("..", "..", "..", "cmd", "server")); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origWd)
+
+	previous, wasSet := os.LookupEnv("AGENTRQ_AUTH_JWT_SECRET")
+	defer func() {
+		if wasSet {
+			_ = os.Setenv("AGENTRQ_AUTH_JWT_SECRET", previous)
+		} else {
+			_ = os.Unsetenv("AGENTRQ_AUTH_JWT_SECRET")
+		}
+	}()
+	if err := os.Unsetenv("AGENTRQ_AUTH_JWT_SECRET"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ENV", "production")
+
+	loadSecret := func() string {
+		svc, err := New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			JWTSecret string `yaml:"jwtSecret"`
+		}
+		if err := svc.Populate("auth", &cfg); err != nil {
+			t.Fatal(err)
+		}
+		return cfg.JWTSecret
+	}
+
+	if got := loadSecret(); got != "" {
+		t.Fatalf("unset JWT secret resolved to a non-empty value")
+	}
+	if err := os.Setenv("AGENTRQ_AUTH_JWT_SECRET", "configured-test-secret"); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadSecret(); got != "configured-test-secret" {
+		t.Fatalf("configured JWT secret = %q, want configured-test-secret", got)
+	}
+}
 
 func TestConfig(t *testing.T) {
 	// Create temporary _config directory

@@ -27,7 +27,7 @@ postgres:
   maxConnLifetime: 1h
 
 auth:
-  jwtSecret: ${AGENTRQ_AUTH_JWT_SECRET:agentrq-secret-change-me}
+  jwtSecret: ${AGENTRQ_AUTH_JWT_SECRET}
   rootAccessToken: ${AGENTRQ_AUTH_ROOT_ACCESS_TOKEN:agentrq}
   rootLoginEnabled: ${AGENTRQ_AUTH_ROOT_LOGIN_ENABLED:false}
   workspaceTokenKey: ${AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY:agentrq-token-key-change-me-32by}
