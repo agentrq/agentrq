@@ -461,6 +461,8 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionUISpinUp, model.ActionIDUISpinUp, "spin up"},
 		{entity.ActionUISidePanelOpen, model.ActionIDUISidePanelOpen, "side panel open"},
 		{entity.ActionUISidePanelLink, model.ActionIDUISidePanelLink, "side panel link"},
+		{entity.ActionOAuthConsentAllow, model.ActionIDOAuthConsentAllow, "oauth consent allow"},
+		{entity.ActionOAuthConsentDeny, model.ActionIDOAuthConsentDeny, "oauth consent deny"},
 	}
 
 	for _, tc := range cases {

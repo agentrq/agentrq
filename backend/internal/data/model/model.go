@@ -637,6 +637,9 @@ const (
 	ActionIDUISidePanelOpen
 	// A link opened in the desktop side panel.
 	ActionIDUISidePanelLink
+	// An app allowed, or denied, on the OAuth consent page.
+	ActionIDOAuthConsentAllow
+	ActionIDOAuthConsentDeny
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

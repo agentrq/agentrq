@@ -48,7 +48,8 @@ Each line says what the note will stop you getting wrong.
 - **[The MCP server, and tasks](docs/agents/mcp-and-tasks.md)** — adding or
   renaming a tool on the server is a change in four other places, and only one
   of them is guarded by a test that really compares the two.
-  Also cron granularity, valid task statuses, and how workspace memory is keyed.
+  Also cron granularity, valid task statuses, how workspace memory is keyed,
+  and why OAuth authorize must always show the consent page.
 - **[CoreMCP, and the supervisor workspace](docs/agents/coremcp-and-supervisor.md)**
   — `backend/internal/handler/coremcp/`, the account-wide server every account's
   auto-created "supervisor" workspace talks to. A new tool there is a change in

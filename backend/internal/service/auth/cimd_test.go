@@ -162,6 +162,32 @@ func TestResolve_ValidDocument(t *testing.T) {
 	if metadata.TokenEndpointAuthMethod != "none" {
 		t.Errorf("TokenEndpointAuthMethod = %q, want none", metadata.TokenEndpointAuthMethod)
 	}
+	if metadata.ClientName != "Test Client" {
+		t.Errorf("ClientName = %q, want Test Client", metadata.ClientName)
+	}
+}
+
+// The consent page shows a metadata document's client_name, so the document
+// is held to the same rule as a registration.
+func TestResolve_UnsafeClientNameRejected(t *testing.T) {
+	for name, clientName := range map[string]string{
+		"a right-to-left override": `"moc.elgoog\u202e"`,
+		"a newline":                `"Claude Code\nAllowed by your administrator"`,
+		"a number":                 `42`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var clientIDURL string
+			ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"client_id": %q, "client_name": %s}`, clientIDURL, clientName)
+			}))
+			defer ts.Close()
+			clientIDURL = ts.URL + "/client"
+
+			if metadata, err := newTestResolver(ts).Resolve(context.Background(), clientIDURL); err == nil {
+				t.Errorf("a document whose client_name has %s resolved as %+v, want it refused", name, metadata)
+			}
+		})
+	}
 }
 
 // The draft requires the document's client_id to match the URL it was

@@ -14,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent/oauthconsenttest"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -50,8 +53,19 @@ func (authorizeTokenSvc) ValidateBrowserTicket(tokenStr string) (*auth.Claims, e
 func (authorizeTokenSvc) CreateOAuthStateToken(redirectURL, provider string) (string, error) {
 	return "", nil
 }
-func (authorizeTokenSvc) CreateClientRegistrationToken(redirectURIs []string) (string, error) {
+func (authorizeTokenSvc) CreateClientRegistrationToken(redirectURIs []string, clientName string) (string, error) {
 	return "", nil
+}
+
+// consentTokens signs consent tokens for real, so the tests exercise the
+// binding between the page and the request it was shown for.
+var consentTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "consent-test-secret"})
+
+func (authorizeTokenSvc) CreateOAuthConsentToken(userID string, consent auth.OAuthConsent) (string, error) {
+	return consentTokens.CreateOAuthConsentToken(userID, consent)
+}
+func (authorizeTokenSvc) ValidateOAuthConsentToken(tokenStr, userID string, consent auth.OAuthConsent) error {
+	return consentTokens.ValidateOAuthConsentToken(tokenStr, userID, consent)
 }
 func (authorizeTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	if tokenStr == "valid-auth-cookie" {
@@ -63,7 +77,20 @@ func (authorizeTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (str
 	return "", nil
 }
 func (authorizeTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth.ClientRegistrationClaims, error) {
+	if tokenStr == "registered-client" {
+		return &auth.ClientRegistrationClaims{RedirectURIs: []string{"http://localhost/callback"}, ClientName: "Cursor"}, nil
+	}
 	return nil, jwt.ErrSignatureInvalid
+}
+
+// consentRecorder is the one controller call the authorize handler makes.
+type consentRecorder struct {
+	crud.Controller
+	consents []entity.RecordOAuthConsentRequest
+}
+
+func (c *consentRecorder) RecordOAuthConsent(ctx context.Context, req entity.RecordOAuthConsentRequest) {
+	c.consents = append(c.consents, req)
 }
 
 // stubCIMD resolves client_id metadata documents without any network access.
@@ -92,9 +119,8 @@ func (s *stubCIMD) Resolve(ctx context.Context, clientID string) (*auth.ClientMe
 // request time, so exact string matching can never match. RFC 8252 §7.3
 // requires allowing any port for loopback redirect URIs.
 func TestAuthorize_LoopbackRedirectURIIgnoresPort(t *testing.T) {
-	const claudeCodeClientID = "https://claude.ai/oauth/claude-code-client-metadata"
-
 	h := &handler{
+		crud:     &consentRecorder{},
 		tokenSvc: authorizeTokenSvc{},
 		baseURL:  "https://mcp.agentrq.com",
 		// Verbatim from https://claude.ai/oauth/claude-code-client-metadata.
@@ -121,9 +147,7 @@ func TestAuthorize_LoopbackRedirectURIIgnoresPort(t *testing.T) {
 		req.Header.Set("X-Forwarded-Proto", "https")
 		req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
 
-		w := httptest.NewRecorder()
-		h.oauthAuthorizeHandler().ServeHTTP(w, req)
-		return w
+		return oauthconsenttest.Allow(h.oauthAuthorizeHandler(), req)
 	}
 
 	t.Run("the exact redirect_uri from the bug report is accepted", func(t *testing.T) {

@@ -40,7 +40,16 @@ const (
 	// BrowserTicketAudience marks a credential for the Chrome extension's
 	// browser socket. The extension's origin never receives the `at` cookie.
 	BrowserTicketAudience = "browser_ticket"
+
+	// OAuthConsentAudience marks the token the OAuth consent page posts back
+	// when the person approves an app. Only a page rendered for that person
+	// holds one, which is what stops another site submitting the approval.
+	OAuthConsentAudience = "oauth_consent"
 )
+
+// OAuthConsentTTL is how long the consent page can stay open before Allow
+// stops working and the app has to start over.
+const OAuthConsentTTL = 10 * time.Minute
 
 // BrowserTicketTTL is short for the terminal ticket's reason: it travels in a
 // URL, and every connect mints a new one.
@@ -91,6 +100,25 @@ const DynamicClientAudience = "dynamic_client"
 type ClientRegistrationClaims struct {
 	jwt.RegisteredClaims
 	RedirectURIs []string `json:"redirect_uris,omitempty"`
+	// ClientName is what the client called itself when it registered. Nobody
+	// checks it, so the consent page labels it as unverified.
+	ClientName string `json:"client_name,omitempty"`
+}
+
+// OAuthConsent is the authorization request a consent token approves. Every
+// field must match when Allow is posted, so an approval for one app, redirect
+// or workspace cannot be spent on another.
+type OAuthConsent struct {
+	// Resource is the base62 workspace ID, or "coremcp" for the supervisor.
+	Resource    string `json:"res"`
+	ClientID    string `json:"cid"`
+	RedirectURI string `json:"ruri"`
+	State       string `json:"st"`
+}
+
+type OAuthConsentClaims struct {
+	jwt.RegisteredClaims
+	OAuthConsent
 }
 
 type TokenService interface {
@@ -104,7 +132,9 @@ type TokenService interface {
 	CreateBrowserTicket(userID string) (string, error)
 	ValidateBrowserTicket(tokenStr string) (*Claims, error)
 	CreateOAuthStateToken(redirectURL, provider string) (string, error)
-	CreateClientRegistrationToken(redirectURIs []string) (string, error)
+	CreateClientRegistrationToken(redirectURIs []string, clientName string) (string, error)
+	CreateOAuthConsentToken(userID string, consent OAuthConsent) (string, error)
+	ValidateOAuthConsentToken(tokenStr, userID string, consent OAuthConsent) error
 	ValidateToken(tokenStr string) (*Claims, error)
 	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
 	ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error)
@@ -221,7 +251,7 @@ func ContextHasAudience(ctx context.Context, audience string) bool {
 // redirect_uris, so /oauth2/authorize can later validate a redirect_uri
 // against the specific client that registered it without persisting
 // anything server-side.
-func (s *tokenService) CreateClientRegistrationToken(redirectURIs []string) (string, error) {
+func (s *tokenService) CreateClientRegistrationToken(redirectURIs []string, clientName string) (string, error) {
 	claims := ClientRegistrationClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   "dynamic_client",
@@ -229,6 +259,7 @@ func (s *tokenService) CreateClientRegistrationToken(redirectURIs []string) (str
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * 365 * 24 * time.Hour)), // effectively long-lived
 		},
 		RedirectURIs: redirectURIs,
+		ClientName:   clientName,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -256,6 +287,41 @@ func (s *tokenService) ValidateClientRegistrationToken(tokenStr string) (*Client
 		return nil, errors.New("invalid client registration token")
 	}
 	return claims, nil
+}
+
+// CreateOAuthConsentToken mints the token the consent page posts back with
+// Allow, bound to the person it was shown to and to the request it describes.
+func (s *tokenService) CreateOAuthConsentToken(userID string, consent OAuthConsent) (string, error) {
+	claims := OAuthConsentClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			Audience:  jwt.ClaimStrings{OAuthConsentAudience},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(OAuthConsentTTL)),
+		},
+		OAuthConsent: consent,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// ValidateOAuthConsentToken accepts only a token minted by
+// CreateOAuthConsentToken for this person and exactly this request.
+func (s *tokenService) ValidateOAuthConsentToken(tokenStr, userID string, consent OAuthConsent) error {
+	token, err := jwt.ParseWithClaims(tokenStr, &OAuthConsentClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return s.secret, nil
+	}, jwt.WithAudience(OAuthConsentAudience), jwt.WithSubject(userID))
+	if err != nil {
+		return err
+	}
+
+	if token.Claims.(*OAuthConsentClaims).OAuthConsent != consent {
+		return errors.New("consent token was issued for a different authorization request")
+	}
+	return nil
 }
 
 func (s *tokenService) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {

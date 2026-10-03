@@ -24,6 +24,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -304,11 +306,22 @@ func (h *handler) oauthRegisterHandler() http.Handler {
 			return
 		}
 
+		// The consent page shows this name to the person, so a name that
+		// could disguise itself is refused here, not rendered later.
+		clientName, err := auth.ValidateClientName(payload["client_name"])
+		if err != nil {
+			registrationError(w, "invalid_client_metadata", err.Error())
+			return
+		}
+		if clientName != "" {
+			payload["client_name"] = clientName
+		}
+
 		// The client_id IS a signed credential carrying the client's
 		// registered redirect_uris, so /oauth2/authorize can later bind the
 		// authorization request's redirect_uri to what this client actually
 		// registered (RFC 6749 §3.1.2.3) instead of accepting any value.
-		clientID, err := h.tokenSvc.CreateClientRegistrationToken(redirectURIs)
+		clientID, err := h.tokenSvc.CreateClientRegistrationToken(redirectURIs, clientName)
 		if err != nil {
 			registrationError(w, "invalid_client_metadata", "failed to register client")
 			return
@@ -539,10 +552,11 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		}
 
 		// 1. Is user logged in?
-		var userID string
+		var userID, email string
 		if cookie, err := r.Cookie("at"); err == nil && cookie.Value != "" {
 			if claims, err := h.tokenSvc.ValidateToken(cookie.Value); err == nil && claims != nil {
 				userID = claims.Subject
+				email = claims.Email
 			}
 		}
 
@@ -559,6 +573,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		// Document URL (draft-ietf-oauth-client-id-metadata-document), or a
 		// client_id minted by our own /oauth2/register (RFC 7591 DCR).
 		var registeredRedirectURIs []string
+		client := oauthconsent.Client{ID: clientID}
 		switch {
 		case clientID != "" && h.cimd.IsClientIDURL(clientID):
 			metadata, err := h.cimd.Resolve(r.Context(), clientID)
@@ -570,9 +585,11 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 				return
 			}
 			registeredRedirectURIs = metadata.RedirectURIs
+			client.Name, client.Kind = metadata.ClientName, oauthconsent.ClientMetadataDocument
 		case clientID != "":
 			if claims, err := h.tokenSvc.ValidateClientRegistrationToken(clientID); err == nil {
 				registeredRedirectURIs = claims.RedirectURIs
+				client.Name, client.Kind = claims.ClientName, oauthconsent.ClientRegistered
 			}
 		}
 
@@ -677,16 +694,26 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			return
 		}
 
+		// Being signed in is not consent: the person sees who is asking and
+		// for what, and the code is issued only when they press Allow.
 		workspaceIDBase62 := monoflake.ID(workspaceID).String()
-		code, err := h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62)
-		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-
-		// Redirect back to client
-		finalRedirect := fmt.Sprintf("%s?code=%s&state=%s", redirectURI, url.QueryEscape(code), url.QueryEscape(state))
-		http.Redirect(w, r, finalRedirect, http.StatusFound)
+		oauthconsent.Serve(w, r, h.tokenSvc, oauthconsent.Request{
+			UserID:      userID,
+			Email:       email,
+			Client:      client,
+			RedirectURI: redirectURI,
+			State:       state,
+			Resource:    workspaceIDBase62,
+			Access:      fmt.Sprintf("Work as the agent of the workspace “%s”: create and update its tasks, message you, change its memory and skills, and use the websites you shared with it.", workspace.Name),
+			Issue:       func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62) },
+			Decided: func(allowed bool) {
+				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
+					UserID:      workspace.UserID,
+					WorkspaceID: workspaceID,
+					Allowed:     allowed,
+				})
+			},
+		})
 	})
 }
 

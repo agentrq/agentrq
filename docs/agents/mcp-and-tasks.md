@@ -147,3 +147,12 @@ through those, never with a column `Update`, or the change leaves no history.
 `needsinput` (code 7) is a state of the history only, synced from pending
 questions in `CreateMessage`/`UpdateMessageMetadata`; never make it a task
 status, since the poller and every count read the status.
+
+
+## OAuth: being signed in is not consent
+
+Both servers' `/oauth2/authorize` (here and in CoreMCP) issue a code only from
+`oauthconsent.Serve`, after the person presses Allow; a new authorize path must
+go through it too. The page is rendered by the backend, never the Vue app, so
+no WebMCP tool or REST call can press Allow for an agent. A `client_name` is
+refused at registration, not cleaned at display, by `auth.ValidateClientName`.

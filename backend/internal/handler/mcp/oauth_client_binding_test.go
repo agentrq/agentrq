@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent/oauthconsenttest"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mustafaturan/monoflake"
@@ -25,11 +26,12 @@ type bindingTokenSvc struct {
 	mockTokenSvc
 	registeredClientID string
 	registeredURIs     []string
+	registeredName     string
 }
 
 func (m *bindingTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth.ClientRegistrationClaims, error) {
 	if tokenStr != "" && tokenStr == m.registeredClientID {
-		return &auth.ClientRegistrationClaims{RedirectURIs: m.registeredURIs}, nil
+		return &auth.ClientRegistrationClaims{RedirectURIs: m.registeredURIs, ClientName: m.registeredName}, nil
 	}
 	return nil, jwt.ErrSignatureInvalid
 }
@@ -87,8 +89,7 @@ func TestAuthorize_DCRRegisteredRedirectURIIsEnforced(t *testing.T) {
 	mux := setupBindingRouter(tokenSvc, &fakeCIMD{})
 
 	t.Run("registered redirect_uri is allowed", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, authorizeRequest("registered-client", "cursor://callback"))
+		w := oauthconsenttest.Allow(mux, authorizeRequest("registered-client", "cursor://callback"))
 		if w.Code != http.StatusFound {
 			t.Fatalf("expected 302 for a registered redirect_uri, got %d", w.Code)
 		}
@@ -97,16 +98,14 @@ func TestAuthorize_DCRRegisteredRedirectURIIsEnforced(t *testing.T) {
 	// Without binding, this custom-scheme URI would sail through the
 	// same-origin heuristic, which only inspects http/https redirects.
 	t.Run("unregistered custom-scheme redirect_uri is rejected", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, authorizeRequest("registered-client", "attacker://callback"))
+		w := oauthconsenttest.Allow(mux, authorizeRequest("registered-client", "attacker://callback"))
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for an unregistered redirect_uri, got %d", w.Code)
 		}
 	})
 
 	t.Run("unregistered https redirect_uri is rejected", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, authorizeRequest("registered-client", "https://agentrq.com/callback"))
+		w := oauthconsenttest.Allow(mux, authorizeRequest("registered-client", "https://agentrq.com/callback"))
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for an unregistered redirect_uri, got %d", w.Code)
 		}
@@ -141,8 +140,7 @@ func TestAuthorize_UnregisteredCustomSchemes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, authorizeRequest(tt.clientID, tt.redirectURI))
+			w := oauthconsenttest.Allow(mux, authorizeRequest(tt.clientID, tt.redirectURI))
 			if w.Code != tt.wantStatus {
 				t.Errorf("redirect_uri %q: got %d, want %d", tt.redirectURI, w.Code, tt.wantStatus)
 			}
@@ -159,8 +157,7 @@ func TestAuthorize_RegisteredClientMayUseAnyScheme(t *testing.T) {
 	}
 	mux := setupBindingRouter(tokenSvc, &fakeCIMD{})
 
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, authorizeRequest("registered-client", "someneweditor://callback"))
+	w := oauthconsenttest.Allow(mux, authorizeRequest("registered-client", "someneweditor://callback"))
 	if w.Code != http.StatusFound {
 		t.Fatalf("a registered redirect_uri must be honored regardless of scheme, got %d", w.Code)
 	}
@@ -183,8 +180,7 @@ func TestAuthorize_CIMDRedirectURIIsEnforced(t *testing.T) {
 	mux := setupBindingRouter(&bindingTokenSvc{}, cimd)
 
 	t.Run("redirect_uri published in the document is allowed", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, authorizeRequest(clientID, "https://client.example.com/callback"))
+		w := oauthconsenttest.Allow(mux, authorizeRequest(clientID, "https://client.example.com/callback"))
 		if w.Code != http.StatusFound {
 			t.Fatalf("expected 302 for a published redirect_uri, got %d", w.Code)
 		}
@@ -194,8 +190,7 @@ func TestAuthorize_CIMDRedirectURIIsEnforced(t *testing.T) {
 	})
 
 	t.Run("redirect_uri absent from the document is rejected", func(t *testing.T) {
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, authorizeRequest(clientID, "https://evil.example.com/callback"))
+		w := oauthconsenttest.Allow(mux, authorizeRequest(clientID, "https://evil.example.com/callback"))
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400 for an unpublished redirect_uri, got %d", w.Code)
 		}
@@ -208,8 +203,7 @@ func TestAuthorize_CIMDResolutionFailureAborts(t *testing.T) {
 	cimd := &fakeCIMD{err: fmt.Errorf("fetch failed")}
 	mux := setupBindingRouter(&bindingTokenSvc{}, cimd)
 
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, authorizeRequest("https://client.example.com/oauth-client", "https://client.example.com/callback"))
+	w := oauthconsenttest.Allow(mux, authorizeRequest("https://client.example.com/oauth-client", "https://client.example.com/callback"))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 when the metadata document cannot be resolved, got %d", w.Code)
 	}
@@ -447,8 +441,7 @@ func TestAuthorize_LoopbackRedirectURIIgnoresPort(t *testing.T) {
 	}
 	for _, redirectURI := range allowed {
 		t.Run("allowed "+redirectURI, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, authorizeRequest(claudeCodeClientID, redirectURI))
+			w := oauthconsenttest.Allow(mux, authorizeRequest(claudeCodeClientID, redirectURI))
 			if w.Code != http.StatusFound {
 				t.Errorf("expected 302 for loopback redirect_uri %q, got %d: %s",
 					redirectURI, w.Code, strings.TrimSpace(w.Body.String()))
@@ -466,8 +459,7 @@ func TestAuthorize_LoopbackRedirectURIIgnoresPort(t *testing.T) {
 	}
 	for _, redirectURI := range rejected {
 		t.Run("rejected "+redirectURI, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, authorizeRequest(claudeCodeClientID, redirectURI))
+			w := oauthconsenttest.Allow(mux, authorizeRequest(claudeCodeClientID, redirectURI))
 			if w.Code != http.StatusBadRequest {
 				t.Errorf("expected 400 for %q, got %d", redirectURI, w.Code)
 			}

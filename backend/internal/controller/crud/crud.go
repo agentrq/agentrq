@@ -48,6 +48,7 @@ type (
 		MemoryController
 		SkillController
 		SiteShareController
+		OAuthConsentController
 		EventTriggerController
 		WorkflowController
 		WorkflowStepController

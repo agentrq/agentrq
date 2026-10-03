@@ -16,6 +16,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent/oauthconsenttest"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/golang-jwt/jwt/v5"
@@ -24,8 +25,9 @@ import (
 
 type mockTokenSvc struct {
 	auth.TokenService
-	validCode  string
-	validToken string
+	lastRegisteredName string
+	validCode          string
+	validToken         string
 }
 
 func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
@@ -70,7 +72,20 @@ func (m *mockTokenSvc) ValidateClientRegistrationToken(tokenStr string) (*auth.C
 	return nil, jwt.ErrSignatureInvalid
 }
 
-func (m *mockTokenSvc) CreateClientRegistrationToken(redirectURIs []string) (string, error) {
+// consentTokens signs consent tokens for real, so the tests exercise the
+// binding between the page and the request it was shown for.
+var consentTokens = auth.NewTokenService(auth.TokenConfig{JWTSecret: "consent-test-secret"})
+
+func (m *mockTokenSvc) CreateOAuthConsentToken(userID string, consent auth.OAuthConsent) (string, error) {
+	return consentTokens.CreateOAuthConsentToken(userID, consent)
+}
+
+func (m *mockTokenSvc) ValidateOAuthConsentToken(tokenStr, userID string, consent auth.OAuthConsent) error {
+	return consentTokens.ValidateOAuthConsentToken(tokenStr, userID, consent)
+}
+
+func (m *mockTokenSvc) CreateClientRegistrationToken(redirectURIs []string, clientName string) (string, error) {
+	m.lastRegisteredName = clientName
 	return "mocked-client-id-" + strings.Join(redirectURIs, ","), nil
 }
 
@@ -86,10 +101,17 @@ func (m *mockRepo) SystemGetWorkspace(ctx context.Context, id int64) (model.Work
 
 type mockCrud struct {
 	crud.Controller
+	consents []entity.RecordOAuthConsentRequest
+}
+
+func (m *mockCrud) RecordOAuthConsent(ctx context.Context, req entity.RecordOAuthConsentRequest) {
+	m.consents = append(m.consents, req)
 }
 
 func (m *mockCrud) SystemGetWorkspace(ctx context.Context, id int64) (entity.Workspace, error) {
 	return entity.Workspace{
+		ID:     id,
+		Name:   "Release notes",
 		UserID: int64(monoflake.IDFromBase62("user123").Int64()),
 	}, nil
 }
@@ -179,8 +201,7 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	req.Host = "12345.mcp.agentrq.com"
 	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
 
-	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	w := oauthconsenttest.Allow(mux, req)
 
 	if w.Code != http.StatusFound {
 		t.Fatalf("Expected 302 Found, got %d", w.Code)
@@ -273,8 +294,7 @@ func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 			req.Host = "12345.mcp.agentrq.com"
 			req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
 
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, req)
+			w := oauthconsenttest.Allow(mux, req)
 
 			if w.Code != tt.expectedCode {
 				t.Errorf("Expected status %d, got %d", tt.expectedCode, w.Code)

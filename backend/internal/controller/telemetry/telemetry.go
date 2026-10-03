@@ -243,6 +243,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUISidePanelOpen
 	case entity.ActionUISidePanelLink:
 		action = model.ActionIDUISidePanelLink
+	case entity.ActionOAuthConsentAllow:
+		action = model.ActionIDOAuthConsentAllow
+	case entity.ActionOAuthConsentDeny:
+		action = model.ActionIDOAuthConsentDeny
 	default:
 		return
 	}

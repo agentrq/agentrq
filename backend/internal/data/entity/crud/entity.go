@@ -1542,6 +1542,12 @@ const (
 	// A link in a task or message opened in that side panel instead of the
 	// system browser. Browser-reported for the same reason.
 	ActionUISidePanelLink Action = 86
+	// A person answering the OAuth consent page, before an app gets a code
+	// for a workspace's MCP server or the supervisor's. Backend-observed: the
+	// server is what issues the code. The supervisor's carry workspace 0,
+	// because what it is granted is the whole account.
+	ActionOAuthConsentAllow Action = 87
+	ActionOAuthConsentDeny  Action = 88
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1702,6 +1708,10 @@ func (a Action) String() string {
 		return "ui_side_panel_open"
 	case ActionUISidePanelLink:
 		return "ui_side_panel_link"
+	case ActionOAuthConsentAllow:
+		return "oauth_consent_allow"
+	case ActionOAuthConsentDeny:
+		return "oauth_consent_deny"
 	}
 	return "unknown"
 }
@@ -1921,6 +1931,15 @@ type (
 		// than one with a duration, because the socket can be closed by a
 		// crash, and half an interval is worse than two counts.
 		Open bool
+	}
+
+	// RecordOAuthConsentRequest counts a person allowing (Allowed) or
+	// denying an app on the OAuth consent page. WorkspaceID is 0 for the
+	// supervisor, which is granted the whole account.
+	RecordOAuthConsentRequest struct {
+		UserID      int64
+		WorkspaceID int64
+		Allowed     bool
 	}
 
 	// RecordSiteShareRequest counts a site shared into (Shared) or withdrawn

@@ -24,6 +24,7 @@ import (
 type ClientMetadata struct {
 	ClientID                string   `json:"client_id"`
 	RedirectURIs            []string `json:"redirect_uris,omitempty"`
+	ClientName              string   `json:"client_name,omitempty"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
 }
 
@@ -307,7 +308,12 @@ func (r *cimdResolver) fetch(ctx context.Context, clientID string) (*ClientMetad
 		return nil, 0, fmt.Errorf("cimd: document client_id %q does not match fetch URL %q", docClientID, clientID)
 	}
 
-	metadata := &ClientMetadata{ClientID: docClientID}
+	clientName, err := ValidateClientName(doc["client_name"])
+	if err != nil {
+		return nil, 0, fmt.Errorf("cimd: %w", err)
+	}
+
+	metadata := &ClientMetadata{ClientID: docClientID, ClientName: clientName}
 	if authMethod, ok := doc["token_endpoint_auth_method"].(string); ok {
 		switch authMethod {
 		case "client_secret_post", "client_secret_basic", "client_secret_jwt":

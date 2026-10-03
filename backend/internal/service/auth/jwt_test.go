@@ -422,3 +422,120 @@ func TestBrowserTicket(t *testing.T) {
 		}
 	})
 }
+
+func TestClientRegistrationTokenCarriesName(t *testing.T) {
+	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+
+	clientID, err := svc.CreateClientRegistrationToken([]string{"http://localhost/callback"}, "Claude Code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, err := svc.ValidateClientRegistrationToken(clientID)
+	if err != nil {
+		t.Fatalf("a freshly registered client_id was refused: %v", err)
+	}
+	if claims.ClientName != "Claude Code" {
+		t.Errorf("the registration carried the name %q, want Claude Code", claims.ClientName)
+	}
+}
+
+func TestOAuthConsentToken(t *testing.T) {
+	svc := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+	other := NewTokenService(TokenConfig{JWTSecret: "another-secret"})
+	consent := OAuthConsent{Resource: "ws1", ClientID: "client-1", RedirectURI: "http://localhost:3118/callback", State: "s1"}
+
+	token, err := svc.CreateOAuthConsentToken("user-1", consent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ValidateOAuthConsentToken(token, "user-1", consent); err != nil {
+		t.Fatalf("the token the page was rendered with was refused: %v", err)
+	}
+
+	// Each field is something an attacker would want to swap after the
+	// person looked at the page.
+	changed := map[string]OAuthConsent{
+		"another workspace":    {Resource: "ws2", ClientID: "client-1", RedirectURI: consent.RedirectURI, State: "s1"},
+		"the supervisor":       {Resource: "coremcp", ClientID: "client-1", RedirectURI: consent.RedirectURI, State: "s1"},
+		"another client":       {Resource: "ws1", ClientID: "client-2", RedirectURI: consent.RedirectURI, State: "s1"},
+		"another redirect":     {Resource: "ws1", ClientID: "client-1", RedirectURI: "https://evil.example.com/callback", State: "s1"},
+		"another state":        {Resource: "ws1", ClientID: "client-1", RedirectURI: consent.RedirectURI, State: "s2"},
+		"an empty request":     {},
+		"the redirect dropped": {Resource: "ws1", ClientID: "client-1", State: "s1"},
+	}
+	for name, request := range changed {
+		t.Run("refused for "+name, func(t *testing.T) {
+			if err := svc.ValidateOAuthConsentToken(token, "user-1", request); err == nil {
+				t.Fatalf("a consent token shown for %+v approved %+v", consent, request)
+			}
+		})
+	}
+
+	t.Run("refused for another person", func(t *testing.T) {
+		if err := svc.ValidateOAuthConsentToken(token, "user-2", consent); err == nil {
+			t.Fatal("a consent token minted for user-1 was accepted for user-2")
+		}
+	})
+
+	refused := map[string]func() (string, error){
+		"a token signed with another secret": func() (string, error) { return other.CreateOAuthConsentToken("user-1", consent) },
+		"an access token":                    func() (string, error) { return svc.CreateToken("user-1", "a@b.c", "A", "") },
+		"an authorization code":              func() (string, error) { return svc.CreateOAuthCodeToken("user-1", "ws1") },
+		"a browser ticket":                   func() (string, error) { return svc.CreateBrowserTicket("user-1") },
+		"an empty string":                    func() (string, error) { return "", nil },
+	}
+	for name, mint := range refused {
+		t.Run("refused for "+name, func(t *testing.T) {
+			tok, err := mint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.ValidateOAuthConsentToken(tok, "user-1", consent); err == nil {
+				t.Fatalf("%s was accepted as consent", name)
+			}
+		})
+	}
+
+	t.Run("refused once expired", func(t *testing.T) {
+		expired := jwt.NewWithClaims(jwt.SigningMethodHS256, OAuthConsentClaims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:   "user-1",
+				Audience:  jwt.ClaimStrings{OAuthConsentAudience},
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+			},
+			OAuthConsent: consent,
+		})
+		tok, err := expired.SignedString([]byte("test-secret"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.ValidateOAuthConsentToken(tok, "user-1", consent); err == nil {
+			t.Fatal("a consent token that expired a minute ago was accepted")
+		}
+	})
+
+	t.Run("refused when signed with another algorithm", func(t *testing.T) {
+		none := jwt.NewWithClaims(jwt.SigningMethodNone, OAuthConsentClaims{
+			RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1", Audience: jwt.ClaimStrings{OAuthConsentAudience}},
+			OAuthConsent:     consent,
+		})
+		tok, err := none.SignedString(jwt.UnsafeAllowNoneSignatureType)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.ValidateOAuthConsentToken(tok, "user-1", consent); err == nil {
+			t.Fatal("an unsigned consent token was accepted")
+		}
+	})
+
+	t.Run("lasts as long as the page may stay open", func(t *testing.T) {
+		parsed, _, err := jwt.NewParser().ParseUnverified(token, &OAuthConsentClaims{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		exp := parsed.Claims.(*OAuthConsentClaims).ExpiresAt.Time
+		if left := time.Until(exp); left > OAuthConsentTTL || left < OAuthConsentTTL-5*time.Second {
+			t.Errorf("the consent token expires in %v, want about %v", left, OAuthConsentTTL)
+		}
+	})
+}
