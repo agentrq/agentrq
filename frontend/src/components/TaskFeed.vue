@@ -65,7 +65,7 @@
             <div v-for="(t, idx) in grp.tasks" :key="t.id"
                  @click="openTask(t)"
                  @contextmenu.prevent.stop="openContextMenu($event, t)"
-                 :class="[ 'p-4 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(t.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
+                 :class="[ 'p-4 -mx-4 @min-[48rem]:mx-0 cursor-pointer border-b border-gray-50 dark:border-zinc-800/50 group relative rounded-xl mb-1', String(selectedTaskId) === String(t.id) ? 'bg-white dark:bg-zinc-800 border-gray-100 dark:border-zinc-800 z-10' : 'bg-transparent hover:bg-gray-50 dark:hover:bg-zinc-800/50 ' ]">
               
               <div v-if="String(selectedTaskId) === String(t.id)" class="absolute left-0 top-4 bottom-4 w-1 bg-black dark:bg-white rounded-full"></div>
               
