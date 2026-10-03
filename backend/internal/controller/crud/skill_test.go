@@ -239,12 +239,12 @@ func TestSkills_FileLimit(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "wide", "SKILL.md", md("wide", "Many files."))
 	for i := 1; i < skill.MaxFiles; i++ {
-		e.save(t, skWS, "wide", fmt.Sprintf("f%02d.md", i), "x")
+		e.save(t, skWS, "wide", fmt.Sprintf("f%03d.md", i), "x")
 	}
 	_, err := e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "wide", Path: "one-more.md", Content: "x"})
 	wantSkillErr(t, err, SkillInvalid, "the limit")
 	// Replacing a file that exists is not adding one.
-	e.save(t, skWS, "wide", "f01.md", "y")
+	e.save(t, skWS, "wide", "f001.md", "y")
 }
 
 func TestSkills_DeleteFileRefusals(t *testing.T) {

@@ -29,7 +29,7 @@ const (
 	// MaxSubFileBytes caps every other file in a skill.
 	MaxSubFileBytes = 64 * 1024
 	// MaxFiles caps the files in one skill, SKILL.md included.
-	MaxFiles = 64
+	MaxFiles = 256
 	// MaxNameLength is the longest skill name, in characters.
 	MaxNameLength = 64
 	// MaxDescriptionLength is the longest description, in characters.

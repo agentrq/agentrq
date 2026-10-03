@@ -634,7 +634,7 @@ func NewWorkspaceServer(
 			"Writing skill://<name>/SKILL.md creates or updates the skill: it must start with YAML frontmatter holding a description of at most 1024 characters (what the skill does and when to use it) " +
 			"and, if it has a name, one equal to <name>. Names are lowercase letters and digits joined by single hyphens, at most 64 characters. " +
 			"Writing any other path adds or replaces a file in an existing skill, such as skill://<name>/references/guide.md. " +
-			"Limits: SKILL.md at most 96 KiB, any other file at most 64 KiB, UTF-8 text only, at most 64 files per skill. " +
+			"Limits: SKILL.md at most 96 KiB, any other file at most 64 KiB, UTF-8 text only, at most 256 files per skill. " +
 			"A skill shared into this workspace from another is read-only here.",
 		Annotations: mcphint.Overwrite("Write a skill file"),
 	}, ps.handleSaveSkill)

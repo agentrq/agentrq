@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -342,7 +343,7 @@ func TestFetch_Limits(t *testing.T) {
 	var many []tarEntry
 	many = append(many, tarEntry{name: root + "wide/SKILL.md", body: skillMD("wide", "Too many files.") + "Everything in `files/`.\n"})
 	for i := 0; i < skill.MaxFiles; i++ {
-		many = append(many, tarEntry{name: root + "wide/files/f" + strings.Repeat("a", i+1) + ".md", body: "x"})
+		many = append(many, tarEntry{name: root + fmt.Sprintf("wide/files/f%03d.md", i), body: "x"})
 	}
 	// Enough 60 KB files to pass the 2 MB import budget across two skills.
 	chunk := strings.Repeat("c", 60*1024)
@@ -367,7 +368,7 @@ func TestFetch_Limits(t *testing.T) {
 	for _, sk := range res.Skipped {
 		reasons[sk.Path] = sk.Reason
 	}
-	if !strings.Contains(reasons["wide"], "files; the limit is 64") {
+	if !strings.Contains(reasons["wide"], fmt.Sprintf("files; the limit is %d", skill.MaxFiles)) {
 		t.Errorf("wide: %q", reasons["wide"])
 	}
 	if !strings.Contains(reasons["b-second"], "2 MB limit") {
