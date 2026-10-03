@@ -97,7 +97,7 @@ async function mount() {
   await settle()
   return {
     el,
-    heading: () => el.querySelector('h1').textContent.trim(),
+    heading: () => el.querySelector('[data-test="task-title"]').textContent.trim(),
     title: () => el.querySelector('[data-test="task-title"]'),
     input: () => el.querySelector('[data-test="task-title-input"]'),
   }
@@ -186,10 +186,16 @@ describe('renaming a task from its page', () => {
     expect(page.input()).not.toBeNull()
   })
 
+  it('carries its own hint, in the title row', async () => {
+    const page = await mount()
+    expect(page.el.querySelector('[data-test="task-title-hint"]').textContent).toBe('Click to rename')
+  })
+
   it('leaves the title of a task older than 7 days as plain text', async () => {
     createdAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
     const page = await mount()
     expect(page.title().hasAttribute('role')).toBe(false)
+    expect(page.el.querySelector('[data-test="task-title-hint"]')).toBeNull()
     page.title().click()
     page.title().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await nextTick()

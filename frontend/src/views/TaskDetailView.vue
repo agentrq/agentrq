@@ -31,15 +31,17 @@
                    :disabled="renameSaving" maxlength="200" aria-label="Task title"
                    @keydown.enter.prevent="saveRename" @keydown.esc.prevent="cancelRename" @blur="saveRename"
                    class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight flex-1 min-w-0 bg-transparent outline-none border-b border-gray-300 dark:border-zinc-600 focus:border-gray-900 dark:focus:border-white" />
-            <h1 v-else data-test="task-title"
-                :role="renamable ? 'button' : undefined" :tabindex="renamable ? 0 : undefined"
-                @click="renamable && (startRename(), tooltipStore.hide())"
-                @keydown.enter.prevent="renamable && startRename()"
-                @mouseenter="renamable && tooltipStore.show($event, 'Click to rename', 'bottom')"
-                @mouseleave="tooltipStore.hide()"
-                :class="renamable ? 'cursor-text outline-none focus-visible:underline' : ''"
-                class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
-              {{ task.title }}
+            <!-- The hint is drawn in the title row itself, beside the text, on
+                 hover or keyboard focus; a phone, with no hover, just taps. -->
+            <h1 v-else class="flex items-baseline gap-2 flex-1 min-w-0 text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight">
+              <span data-test="task-title"
+                    :role="renamable ? 'button' : undefined" :tabindex="renamable ? 0 : undefined"
+                    @click="renamable && startRename()"
+                    @keydown.enter.prevent="renamable && startRename()"
+                    :class="renamable ? 'peer cursor-text outline-none focus-visible:underline' : ''"
+                    class="truncate min-w-0">{{ task.title }}</span>
+              <span v-if="renamable" data-test="task-title-hint" aria-hidden="true"
+                    class="shrink-0 text-[9px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500 opacity-0 peer-hover:opacity-100 peer-focus-visible:opacity-100 transition-opacity pointer-events-none">Click to rename</span>
             </h1>
           </div>
 
