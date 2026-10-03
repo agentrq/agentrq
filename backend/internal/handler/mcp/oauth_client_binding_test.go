@@ -315,6 +315,9 @@ func TestMetadata_RFC8414IssuerAndWellKnownPath(t *testing.T) {
 	if meta["client_id_metadata_document_supported"] != true {
 		t.Error("expected client_id_metadata_document_supported to be advertised")
 	}
+	if meta["logo_uri"] != "https://agentrq.com/agentrq.png" {
+		t.Errorf("logo_uri = %v, want the AgentRQ logo", meta["logo_uri"])
+	}
 	methods, _ := meta["token_endpoint_auth_methods_supported"].([]any)
 	if len(methods) != 1 || methods[0] != "none" {
 		t.Errorf("expected token_endpoint_auth_methods_supported=[none], got %v", meta["token_endpoint_auth_methods_supported"])

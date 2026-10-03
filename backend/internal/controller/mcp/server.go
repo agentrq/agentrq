@@ -501,16 +501,11 @@ func NewWorkspaceServer(
 	}
 
 	workspaceIDStr := monoflake.ID(workspaceID).String()
-	var icons []mcp.Icon
-	if icon != "" {
-		icons = append(icons, mcp.Icon{Source: icon})
-	}
-
 	mcpSrv := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    fmt.Sprintf("agentrq-workspace-%s", workspaceIDStr),
 			Version: "1.0.0",
-			Icons:   icons,
+			Icons:   workspaceIcons(icon, baseURL),
 		},
 		&mcp.ServerOptions{
 			Capabilities: &mcp.ServerCapabilities{
@@ -1334,6 +1329,26 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		return nextTask.ID
 	}
 	return 0
+}
+
+// workspaceIcons lists the workspace's own icon, then the AgentRQ logo the
+// account-wide server uses. Without the logo a workspace with no icon of its
+// own advertised none, and clients that only fetch https icons showed none.
+func workspaceIcons(icon, baseURL string) []mcp.Icon {
+	var icons []mcp.Icon
+	if icon != "" {
+		ic := mcp.Icon{Source: icon, Sizes: []string{"32x32"}}
+		if rest, ok := strings.CutPrefix(icon, "data:"); ok {
+			if i := strings.IndexAny(rest, ";,"); i > 0 {
+				ic.MIMEType = rest[:i]
+			}
+		}
+		icons = append(icons, ic)
+	}
+	if baseURL != "" {
+		icons = append(icons, mcp.Icon{Source: baseURL + "/agentrq.png", MIMEType: "image/png", Sizes: []string{"512x512"}})
+	}
+	return icons
 }
 
 func (ps *WorkspaceServer) UpdateMetadata(name, description, icon string) {

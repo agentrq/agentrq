@@ -534,6 +534,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			// that is itself an https URL is resolved as a client metadata
 			// document (oauthAuthorizeHandler's CIMDResolver backs this).
 			"client_id_metadata_document_supported": true,
+			"logo_uri":                              h.baseURL + "/agentrq.png",
 		}
 
 		importJson := json.NewEncoder(w)
