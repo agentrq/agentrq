@@ -2158,7 +2158,7 @@ var (
 const UntitledTaskTitle = "Untitled"
 
 // TaskTitleEditWindow is how long after it was created a task can be renamed.
-// The interface hides the pencil past it, using the same number.
+// Past it the interface stops offering a click on the title, using the same number.
 const TaskTitleEditWindow = 7 * 24 * time.Hour
 
 // ErrTaskTitleLocked refuses a rename past TaskTitleEditWindow. Its text is

@@ -8,7 +8,7 @@ import { updateTaskTitle } from '../api';
 /**
  * How long after it was created a task can be renamed. The server enforces the
  * same window (entity.TaskTitleEditWindow); this only decides whether to offer
- * the pencil at all.
+ * a click on the title at all.
  */
 export const TASK_RENAME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 

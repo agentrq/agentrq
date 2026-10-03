@@ -4,8 +4,8 @@
 
 /**
  * Renaming a task from its page, mounted for real: the coverage gate does not
- * see `.vue` files, and what matters here is the wiring — the pencil, the
- * input it opens, and the keys that save or abandon it.
+ * see `.vue` files, and what matters here is the wiring — the title that
+ * opens an input when clicked, and the keys that save or abandon it.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -98,7 +98,7 @@ async function mount() {
   return {
     el,
     heading: () => el.querySelector('h1').textContent.trim(),
-    pencil: () => el.querySelector('[data-test="task-title-rename"]'),
+    title: () => el.querySelector('[data-test="task-title"]'),
     input: () => el.querySelector('[data-test="task-title-input"]'),
   }
 }
@@ -123,7 +123,7 @@ describe('renaming a task from its page', () => {
     updateTaskTitle.mockImplementation((_ws, _id, title) => Promise.resolve({ task: { ...task(), title } }))
     const page = await mount()
 
-    page.pencil().click()
+    page.title().click()
     await nextTick()
     await nextTick()
     const input = page.input()
@@ -141,7 +141,7 @@ describe('renaming a task from its page', () => {
 
   it('abandons the edit on Escape', async () => {
     const page = await mount()
-    page.pencil().click()
+    page.title().click()
     await nextTick()
 
     type(page.input(), 'Something else', 'Escape')
@@ -154,7 +154,7 @@ describe('renaming a task from its page', () => {
   it('saves when the input loses focus', async () => {
     updateTaskTitle.mockImplementation((_ws, _id, title) => Promise.resolve({ task: { ...task(), title } }))
     const page = await mount()
-    page.pencil().click()
+    page.title().click()
     await nextTick()
 
     const input = page.input()
@@ -169,7 +169,7 @@ describe('renaming a task from its page', () => {
   it('says why when the server refuses', async () => {
     updateTaskTitle.mockRejectedValue(new Error('a task can only be renamed in the first 7 days after it was created'))
     const page = await mount()
-    page.pencil().click()
+    page.title().click()
     await nextTick()
 
     type(page.input(), 'Fix the login redirect', 'Enter')
@@ -178,9 +178,21 @@ describe('renaming a task from its page', () => {
     expect(useToasts().toasts.value.at(-1).message).toMatch(/Could not rename the task: a task can only be renamed/)
   })
 
-  it('offers no pencil on a task older than 7 days', async () => {
+  it('opens the editor from the keyboard too', async () => {
+    const page = await mount()
+    expect(page.title().getAttribute('role')).toBe('button')
+    page.title().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(page.input()).not.toBeNull()
+  })
+
+  it('leaves the title of a task older than 7 days as plain text', async () => {
     createdAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
     const page = await mount()
-    expect(page.pencil()).toBeNull()
+    expect(page.title().hasAttribute('role')).toBe(false)
+    page.title().click()
+    page.title().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await nextTick()
+    expect(page.input()).toBeNull()
   })
 })
