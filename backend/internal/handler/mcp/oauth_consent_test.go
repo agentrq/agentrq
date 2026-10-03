@@ -185,3 +185,43 @@ func TestRegister_ClientName(t *testing.T) {
 		})
 	}
 }
+
+func TestConsentWorkspaceName(t *testing.T) {
+	for name, want := range map[string]string{
+		"Release notes":           "the workspace “Release notes”",
+		"  Release   notes ":      "the workspace “Release notes”",
+		"":                        "workspace 4kc",
+		"Release notes‮":          "workspace 4kc",
+		"Approved by\nyour admin": "workspace 4kc",
+	} {
+		if got := consentWorkspaceName(name, "4kc"); got != want {
+			t.Errorf("consentWorkspaceName(%q) returned %q, want %q", name, got, want)
+		}
+	}
+}
+
+// A client that registered one address may leave redirect_uri out (RFC 6749
+// §3.1.2.3); the page then names that address, and the code goes there.
+func TestAuthorize_OnlyRegisteredAddressIsTheDefault(t *testing.T) {
+	mux, _ := consentRouter(&bindingTokenSvc{
+		registeredClientID: "registered-client",
+		registeredURIs:     []string{"https://client.example.com/callback"},
+	})
+
+	w := oauthconsenttest.Allow(mux, authorizeRequest("registered-client", ""))
+
+	if w.Code != http.StatusFound || !strings.HasPrefix(w.Header().Get("Location"), "https://client.example.com/callback?") {
+		t.Errorf("Allow with no redirect_uri answered %d to %q, want the one registered address", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func TestAuthorize_NoAddressAndNoRegistrationIsRefused(t *testing.T) {
+	mux, _ := consentRouter(&bindingTokenSvc{})
+
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, authorizeRequest("unknown-client", ""))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("an authorize with nowhere to send the code answered %d, want 400", w.Code)
+	}
+}

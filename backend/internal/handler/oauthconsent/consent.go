@@ -39,18 +39,23 @@ const (
 // Client is the app asking for access.
 type Client struct {
 	ID   string
-	Name string // validated by auth.ValidateClientName; "" when it gave none
+	Name string // validated by auth.ValidateDisplayName; "" when it gave none
 	Kind ClientKind
 }
 
-// Request is one authorization request, already validated by the caller:
-// the redirect_uri is bound to the client and the person may grant Resource.
+// Request is one authorization request. The caller has checked that the
+// person may grant Resource, and the redirect_uri with CheckRedirectURI;
+// Serve checks the redirect_uri again before it sends anything there.
 type Request struct {
-	UserID      string
-	Email       string
-	Client      Client
+	UserID string
+	Email  string
+	Client Client
+	// RedirectURI is where the answer goes, as CheckRedirectURI returned it.
 	RedirectURI string
-	State       string
+	// RegisteredRedirectURIs and BaseURL are what CheckRedirectURI was given.
+	RegisteredRedirectURIs []string
+	BaseURL                string
+	State                  string
 	// Resource is the base62 workspace ID, or "coremcp" for the supervisor.
 	Resource string
 	// Access says, in a sentence, what the app will be able to do.
@@ -70,10 +75,16 @@ const (
 // POST. The form posts back to the authorize URL itself, so the request's
 // query string arrives again and the caller validates it again.
 func Serve(w http.ResponseWriter, r *http.Request, tokens auth.TokenService, req Request) {
+	redirectURI := req.RedirectURI
+	if !isValidRedirect(redirectURI, req) {
+		http.Error(w, ErrRedirectMalformed.Error(), http.StatusBadRequest)
+		return
+	}
+
 	consent := auth.OAuthConsent{
 		Resource:    req.Resource,
 		ClientID:    req.Client.ID,
-		RedirectURI: req.RedirectURI,
+		RedirectURI: redirectURI,
 		State:       req.State,
 	}
 
@@ -103,11 +114,11 @@ func Serve(w http.ResponseWriter, r *http.Request, tokens auth.TokenService, req
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
-			http.Redirect(w, r, RedirectURL(req.RedirectURI, url.Values{"code": {code}, "state": {req.State}}), http.StatusFound)
+			http.Redirect(w, r, RedirectURL(redirectURI, url.Values{"code": {code}, "state": {req.State}}), http.StatusFound)
 			decided(req, true)
 		case DecisionDeny:
 			// RFC 6749 §4.1.2.1: the client learns the person said no.
-			http.Redirect(w, r, RedirectURL(req.RedirectURI, url.Values{"error": {"access_denied"}, "state": {req.State}}), http.StatusFound)
+			http.Redirect(w, r, RedirectURL(redirectURI, url.Values{"error": {"access_denied"}, "state": {req.State}}), http.StatusFound)
 			decided(req, false)
 		default:
 			http.Error(w, "decision must be allow or deny", http.StatusBadRequest)
@@ -157,36 +168,39 @@ func newPage(req Request, token string) page {
 		Token:       token,
 	}
 	if req.Client.Kind == ClientMetadataDocument {
+		// The host is the one proven thing about such a client. One the page
+		// cannot show truthfully proves nothing, so the client is unknown.
+		host, ok := "", false
 		if u, err := url.Parse(req.Client.ID); err == nil {
-			p.ClientHost = u.Host
+			host, ok = displayHost(u)
 		}
+		if !ok {
+			p.Kind = ClientUnregistered
+			return p
+		}
+		p.ClientHost = host
 		if !p.Named {
-			p.ClientName = p.ClientHost
-			p.Named = p.ClientName != ""
+			p.ClientName, p.Named = host, true
 		}
 	}
 	return p
 }
 
-// destination says where the code will go, in the words the page uses.
+// destination says where the code will go, in the words the page uses. The
+// address has passed CheckRedirectURI.
 func destination(redirectURI string) string {
-	u, err := url.Parse(redirectURI)
-	if err != nil || redirectURI == "" {
-		return "the app that asked"
-	}
-	if !u.IsAbs() {
+	u, _ := url.Parse(redirectURI)
+	switch {
+	case !u.IsAbs():
 		return "this AgentRQ server"
-	}
-	switch u.Scheme {
-	case "http", "https":
-		host := u.Hostname()
-		if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-			return "an app on this computer (" + u.Host + ")"
-		}
-		return u.Host
-	default:
+	case !isWeb(u):
 		return "the app that opens " + u.Scheme + ": links"
 	}
+	host, _ := displayHost(u)
+	if isLoopback(u) {
+		return "an app on this computer (" + host + ")"
+	}
+	return host
 }
 
 func render(w http.ResponseWriter, p page) {

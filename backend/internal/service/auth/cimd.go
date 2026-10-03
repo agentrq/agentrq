@@ -308,9 +308,9 @@ func (r *cimdResolver) fetch(ctx context.Context, clientID string) (*ClientMetad
 		return nil, 0, fmt.Errorf("cimd: document client_id %q does not match fetch URL %q", docClientID, clientID)
 	}
 
-	clientName, err := ValidateClientName(doc["client_name"])
+	clientName, err := ValidateDisplayName(doc["client_name"])
 	if err != nil {
-		return nil, 0, fmt.Errorf("cimd: %w", err)
+		return nil, 0, fmt.Errorf("cimd: client_name: %w", err)
 	}
 
 	metadata := &ClientMetadata{ClientID: docClientID, ClientName: clientName}

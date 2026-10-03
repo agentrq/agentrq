@@ -188,6 +188,18 @@ func TestConsentPageSaysHowMuchIsKnownAboutTheClient(t *testing.T) {
 			badge:  "published by <strong>tools.example.com</strong>",
 		},
 		{
+			name:   "a lookalike host is shown in its ASCII form",
+			client: Client{ID: "https://g\u043e\u043egle.com/client.json", Name: "Google", Kind: ClientMetadataDocument},
+			title:  "Google",
+			badge:  "published by <strong>xn--ggle-55da.com</strong>",
+		},
+		{
+			name:   "a host the page cannot show makes the client unknown",
+			client: Client{ID: "https://exa_mple.com/client.json", Name: "Example", Kind: ClientMetadataDocument},
+			title:  "Example",
+			badge:  "Unknown app",
+		},
+		{
 			name:   "a registered client without a name",
 			client: Client{ID: "client-1", Kind: ClientRegistered},
 			title:  "An unnamed app",
@@ -231,15 +243,57 @@ func TestDestination(t *testing.T) {
 		"http://127.0.0.1/callback":       "an app on this computer (127.0.0.1)",
 		"http://[::1]:9000/callback":      "an app on this computer ([::1]:9000)",
 		"https://client.example.com/cb":   "client.example.com",
+		"https://Client.Example.COM/cb":   "client.example.com",
 		"https://localhost.evil.com/cb":   "localhost.evil.com",
+		"https://g\u043e\u043egle.com/cb": "xn--ggle-55da.com",
 		"cursor://anysphere.cursor/oauth": "the app that opens cursor: links",
 		"/settings/callback":              "this AgentRQ server",
-		"":                                "the app that asked",
-		"http://%zz":                      "the app that asked",
 	} {
 		if got := destination(redirectURI); got != want {
 			t.Errorf("destination(%q) returned %q, want %q", redirectURI, got, want)
 		}
+	}
+}
+
+// Serve is the last stop before the code leaves, so it checks the address
+// itself instead of trusting that its caller did.
+func TestServeRefusesAnAddressItCannotValidate(t *testing.T) {
+	for name, redirectURI := range map[string]string{
+		"another site":             "https://evil.example.com/callback",
+		"an unknown custom scheme": "evilapp://callback",
+		"no address at all":        "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var o outcome
+			req := newRequest(&o)
+			req.RedirectURI = redirectURI
+			req.BaseURL = "https://agentrq.com"
+
+			page := httptest.NewRecorder()
+			handlerFor(newTokens(), req).ServeHTTP(page, authorizeGET())
+			if page.Code != http.StatusBadRequest {
+				t.Errorf("the page for %q answered %d, want 400", redirectURI, page.Code)
+			}
+
+			post := oauthconsenttest.Post(handlerFor(newTokens(), req), authorizeGET(), url.Values{"decision": {DecisionAllow}})
+			if post.Code != http.StatusBadRequest || post.Header().Get("Location") != "" {
+				t.Errorf("Allow for %q answered %d to %q, want 400 and no redirect", redirectURI, post.Code, post.Header().Get("Location"))
+			}
+			if o.issued != 0 || len(o.decision) != 0 {
+				t.Errorf("an unvalidated address issued %d codes and recorded %v", o.issued, o.decision)
+			}
+		})
+	}
+}
+
+// The page re-checks against the same registration the caller used.
+func TestServeAcceptsARegisteredAddress(t *testing.T) {
+	var o outcome
+	req := newRequest(&o)
+	req.RedirectURI = "https://client.example.com/callback"
+	req.RegisteredRedirectURIs = []string{"https://client.example.com/callback"}
+	if w := oauthconsenttest.Allow(handlerFor(newTokens(), req), authorizeGET()); w.Code != http.StatusFound {
+		t.Fatalf("Allow for a registered address answered %d, want 302: %s", w.Code, w.Body.String())
 	}
 }
 

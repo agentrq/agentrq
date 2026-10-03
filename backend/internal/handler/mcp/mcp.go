@@ -308,9 +308,9 @@ func (h *handler) oauthRegisterHandler() http.Handler {
 
 		// The consent page shows this name to the person, so a name that
 		// could disguise itself is refused here, not rendered later.
-		clientName, err := auth.ValidateClientName(payload["client_name"])
+		clientName, err := auth.ValidateDisplayName(payload["client_name"])
 		if err != nil {
-			registrationError(w, "invalid_client_metadata", err.Error())
+			registrationError(w, "invalid_client_metadata", "client_name: "+err.Error())
 			return
 		}
 		if clientName != "" {
@@ -564,14 +564,10 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		redirectURI := r.URL.Query().Get("redirect_uri")
 		state := r.URL.Query().Get("state")
 
-		// Bind the requested redirect_uri to whatever this client actually
-		// registered (RFC 6749 §3.1.2.3), instead of accepting any value —
-		// this is what makes client registration meaningful instead of
-		// decorative, and it closes custom-scheme redirect_uris (e.g.
-		// "evilapp://callback") that the heuristic below never checked.
-		// client_id can be registered two ways: a Client ID Metadata
-		// Document URL (draft-ietf-oauth-client-id-metadata-document), or a
-		// client_id minted by our own /oauth2/register (RFC 7591 DCR).
+		// Who is asking. A client_id is registered one of two ways: a Client
+		// ID Metadata Document URL (draft-ietf-oauth-client-id-metadata-
+		// document), or a client_id minted by our own /oauth2/register (RFC
+		// 7591 DCR). Either way it carries the redirect_uris it may use.
 		var registeredRedirectURIs []string
 		client := oauthconsent.Client{ID: clientID}
 		switch {
@@ -593,70 +589,13 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			}
 		}
 
-		if redirectURI != "" && len(registeredRedirectURIs) > 0 {
-			// Exact match, except that loopback URIs ignore the port — native
-			// clients get an ephemeral port from the OS at request time and so
-			// cannot register it (RFC 8252 §7.3).
-			if !auth.AnyRedirectURIMatches(registeredRedirectURIs, redirectURI) {
-				http.Error(w, "invalid redirect_uri: not registered for this client_id", http.StatusBadRequest)
-				return
-			}
-		} else if redirectURI != "" {
-			// No registered client to bind to: fall back to the same-origin
-			// heuristic below, preserving behavior for legacy / first-party
-			// callers that don't use client_id-scoped redirects.
-			if strings.HasPrefix(redirectURI, "/") && !strings.HasPrefix(redirectURI, "//") && !strings.HasPrefix(redirectURI, "/\\") {
-				// OK: local path
-			} else {
-				// Parse absolute URL and validate against baseURL
-				pRedirect, err := url.Parse(redirectURI)
-				if err != nil {
-					http.Error(w, "invalid redirect_uri", http.StatusBadRequest)
-					return
-				}
-				if pRedirect.IsAbs() {
-					pBase, err := url.Parse(h.baseURL)
-					if err != nil {
-						http.Error(w, "internal server error", http.StatusInternalServerError)
-						return
-					}
-
-					// Require https for absolute URLs unless it's localhost
-					isLocal := pRedirect.Host == "localhost" || strings.HasPrefix(pRedirect.Host, "localhost:") ||
-						pRedirect.Host == "127.0.0.1" || strings.HasPrefix(pRedirect.Host, "127.0.0.1:")
-
-					isCustomScheme := pRedirect.Scheme != "" && pRedirect.Scheme != "http" && pRedirect.Scheme != "https"
-
-					if isCustomScheme {
-						// A private-use scheme has no origin to validate
-						// against, so an unregistered one is only accepted if
-						// it belongs to a known native client. Accepting any
-						// scheme here would make the whole check moot: a
-						// caller could present an unrecognized client_id and
-						// have the code delivered to a scheme of their
-						// choosing.
-						if !auth.IsAllowedNativeRedirectScheme(pRedirect.Scheme) {
-							http.Error(w, "invalid redirect_uri: unrecognized custom scheme; register the redirect_uri to use it", http.StatusBadRequest)
-							return
-						}
-					} else {
-						if pRedirect.Scheme != "https" && !isLocal {
-							http.Error(w, "invalid redirect_uri: https required for non-localhost", http.StatusBadRequest)
-							return
-						}
-
-						// Allow host mismatch ONLY for localhost/127.0.0.1
-						if pRedirect.Host != pBase.Host && !isLocal {
-							http.Error(w, "invalid redirect_uri: host mismatch", http.StatusBadRequest)
-							return
-						}
-					}
-				} else {
-					// It's not absolute and doesn't start with /
-					http.Error(w, "invalid redirect_uri: relative path must start with /", http.StatusBadRequest)
-					return
-				}
-			}
+		// Bind the redirect_uri to what the client registered (RFC 6749
+		// §3.1.2.3) before anything else, so a bad one is refused before the
+		// person is sent through a login for nothing.
+		redirectURI, err = oauthconsent.CheckRedirectURI(redirectURI, registeredRedirectURIs, h.baseURL)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		if userID == "" {
@@ -698,14 +637,16 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		// for what, and the code is issued only when they press Allow.
 		workspaceIDBase62 := monoflake.ID(workspaceID).String()
 		oauthconsent.Serve(w, r, h.tokenSvc, oauthconsent.Request{
-			UserID:      userID,
-			Email:       email,
-			Client:      client,
-			RedirectURI: redirectURI,
-			State:       state,
-			Resource:    workspaceIDBase62,
-			Access:      fmt.Sprintf("Work as the agent of the workspace “%s”: create and update its tasks, message you, change its memory and skills, and use the websites you shared with it.", workspace.Name),
-			Issue:       func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62) },
+			UserID:                 userID,
+			Email:                  email,
+			Client:                 client,
+			RedirectURI:            redirectURI,
+			RegisteredRedirectURIs: registeredRedirectURIs,
+			BaseURL:                h.baseURL,
+			State:                  state,
+			Resource:               workspaceIDBase62,
+			Access:                 "Work as the agent of " + consentWorkspaceName(workspace.Name, workspaceIDBase62) + ": create and update its tasks, message you, change its memory and skills, and use the websites you shared with it.",
+			Issue:                  func() (string, error) { return h.tokenSvc.CreateOAuthCodeToken(userID, workspaceIDBase62) },
 			Decided: func(allowed bool) {
 				h.crud.RecordOAuthConsent(r.Context(), entity.RecordOAuthConsentRequest{
 					UserID:      workspace.UserID,
@@ -715,6 +656,17 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			},
 		})
 	})
+}
+
+// consentWorkspaceName names the workspace on the consent page. Its name is
+// shown only if it passes the same check as a client's: a supervisor agent
+// can name workspaces, so the name could otherwise be made to mislead. One
+// that fails, or is empty, is named by its ID.
+func consentWorkspaceName(name, workspaceIDBase62 string) string {
+	if valid, err := auth.ValidateDisplayName(name); err == nil && valid != "" {
+		return "the workspace “" + valid + "”"
+	}
+	return "workspace " + workspaceIDBase62
 }
 
 func (h *handler) oauthTokenHandler() http.Handler {

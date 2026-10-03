@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestValidateClientName(t *testing.T) {
+func TestValidateDisplayName(t *testing.T) {
 	accepted := []struct {
 		name string
 		raw  any
@@ -22,17 +22,17 @@ func TestValidateClientName(t *testing.T) {
 		{"surrounding and repeated spaces collapse", "  Claude   Code ", "Claude Code"},
 		{"letters from any script", "Éditeur 編集", "Éditeur 編集"},
 		{"markup is kept as text, the page escapes it", "<b>App</b>", "<b>App</b>"},
-		{"exactly the longest allowed", strings.Repeat("a", ClientNameMaxRunes), strings.Repeat("a", ClientNameMaxRunes)},
-		{"length counts characters, not bytes", strings.Repeat("é", ClientNameMaxRunes), strings.Repeat("é", ClientNameMaxRunes)},
+		{"exactly the longest allowed", strings.Repeat("a", DisplayNameMaxRunes), strings.Repeat("a", DisplayNameMaxRunes)},
+		{"length counts characters, not bytes", strings.Repeat("é", DisplayNameMaxRunes), strings.Repeat("é", DisplayNameMaxRunes)},
 	}
 	for _, tc := range accepted {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ValidateClientName(tc.raw)
+			got, err := ValidateDisplayName(tc.raw)
 			if err != nil {
-				t.Fatalf("ValidateClientName(%q) refused it: %v", tc.raw, err)
+				t.Fatalf("ValidateDisplayName(%q) refused it: %v", tc.raw, err)
 			}
 			if got != tc.want {
-				t.Errorf("ValidateClientName(%q) returned %q, want %q", tc.raw, got, tc.want)
+				t.Errorf("ValidateDisplayName(%q) returned %q, want %q", tc.raw, got, tc.want)
 			}
 		})
 	}
@@ -50,16 +50,16 @@ func TestValidateClientName(t *testing.T) {
 		{"a right-to-left override disguising the text", "moc.elgoog\u202e"},
 		{"a zero-width space", "Claude\u200bCode"},
 		{"a byte order mark", "\ufeffClaude Code"},
-		{"one character too long", strings.Repeat("a", ClientNameMaxRunes+1)},
+		{"one character too long", strings.Repeat("a", DisplayNameMaxRunes+1)},
 	}
 	for _, tc := range refused {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ValidateClientName(tc.raw)
+			got, err := ValidateDisplayName(tc.raw)
 			if err == nil {
-				t.Fatalf("ValidateClientName(%q) accepted it as %q, want it refused", tc.raw, got)
+				t.Fatalf("ValidateDisplayName(%q) accepted it as %q, want it refused", tc.raw, got)
 			}
-			if !errors.Is(err, ErrInvalidClientName) {
-				t.Errorf("ValidateClientName(%q) returned %v, want an error wrapping ErrInvalidClientName", tc.raw, err)
+			if !errors.Is(err, ErrInvalidDisplayName) {
+				t.Errorf("ValidateDisplayName(%q) returned %v, want an error wrapping ErrInvalidDisplayName", tc.raw, err)
 			}
 		})
 	}
