@@ -593,6 +593,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, taskId, assignee }) => api.updateTaskAssignee(workspaceId, taskId, assignee),
     }),
     tool({
+      name: 'updateTaskTitle',
+      description: 'Rename a task. Only possible in the first 7 days after it was created.',
+      properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, title: str('The new title.') },
+      required: ['workspaceId', 'taskId', 'title'],
+      screen: before(taskPage),
+      run: ({ workspaceId, taskId, title }) => api.updateTaskTitle(workspaceId, taskId, title),
+    }),
+    tool({
       name: 'updateTaskOrder',
       description: 'Reorder a task on the board.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID, order: int('The new position.') },

@@ -247,6 +247,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDOAuthConsentAllow
 	case entity.ActionOAuthConsentDeny:
 		action = model.ActionIDOAuthConsentDeny
+	case entity.ActionTaskTitleUpdate:
+		action = model.ActionIDTaskTitleUpdate
 	default:
 		return
 	}

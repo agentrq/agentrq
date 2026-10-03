@@ -6,6 +6,15 @@ import { ref, watch, onUnmounted } from 'vue';
 import TitleWorker from '../workers/titleWorker.js?worker';
 import { recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';
 
+// Whether this browser can run the local title model at all. Shared with the
+// background naming of untitled tasks, so the two agree.
+export function localTitleModelSupported() {
+  return typeof window !== 'undefined' &&
+    typeof Worker !== 'undefined' &&
+    typeof WebAssembly === 'object' &&
+    typeof WebAssembly.instantiate === 'function';
+}
+
 // workspaceId is optional and only used to scope usage telemetry; it may be a
 // plain string, a ref or a getter, matching however the caller's route exposes
 // it. Without one the generation still runs, it just goes uncounted.
@@ -61,10 +70,7 @@ export function useAutoTitle(descriptionRef, titleRef, workspaceId) {
     }
   };
 
-  const isSupported = typeof window !== 'undefined' &&
-    typeof Worker !== 'undefined' &&
-    typeof WebAssembly === 'object' &&
-    typeof WebAssembly.instantiate === 'function';
+  const isSupported = localTitleModelSupported();
 
   const generateTitle = () => {
     if (!isSupported) return;

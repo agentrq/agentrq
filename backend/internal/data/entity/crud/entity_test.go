@@ -79,6 +79,7 @@ func TestActionString(t *testing.T) {
 		{ActionUISidePanelLink, "ui_side_panel_link"},
 		{ActionOAuthConsentAllow, "oauth_consent_allow"},
 		{ActionOAuthConsentDeny, "oauth_consent_deny"},
+		{ActionTaskTitleUpdate, "task_title_update"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

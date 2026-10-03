@@ -640,6 +640,8 @@ const (
 	// An app allowed, or denied, on the OAuth consent page.
 	ActionIDOAuthConsentAllow
 	ActionIDOAuthConsentDeny
+	// A task renamed after it was created, by hand or by the local model.
+	ActionIDTaskTitleUpdate
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

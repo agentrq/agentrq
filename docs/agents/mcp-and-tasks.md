@@ -105,6 +105,9 @@ old one rather than raise the cap.
 
 - Cron validation also lives here for the REST API path (same rules).
 - `isValidTaskStatus` — valid statuses: `notstarted`, `ongoing`, `completed`, `rejected`, `cron`, `blocked`.
+- **A blank title becomes `Untitled` here**, for the web form, whose browser then
+  names it. Every other caller — both MCP servers, WebMCP, Slack — must refuse a
+  blank title itself before calling `CreateTask`, or agents get `Untitled` tasks.
 
 ## `StartPoller` is not the only thing that pushes a task's first message
 

@@ -48,7 +48,7 @@
             
             <input v-model="titleRef" 
                    @input="markOverridden"
-                   :placeholder="isModelLoading ? `Loading AI Model... ${modelProgress}%` : isGenerating ? 'Generating title...' : isAutoTitleSupported ? 'Task Title (Click sparkle to auto-generate)' : 'Task Title'"
+                   :placeholder="titlePlaceholder"
                    class="w-full bg-transparent outline-none border-none text-[13px] font-bold text-gray-900 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-600 pl-1" />
 
             <!-- AI Sparkles Button -->
@@ -299,7 +299,7 @@
 
              <!-- Submit Button -->
              <button type="submit"
-                     :disabled="sending || !newTask.title || !newTask.body"
+                     :disabled="!canSubmit"
                      class="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
                 <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
                 <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
@@ -323,6 +323,7 @@ import { useToasts } from '../composables/useToasts';
 import { useCron } from '../composables/useCron';
 import { useSpeechToText } from '../composables/useSpeechToText';
 import { useAutoTitle } from '../composables/useAutoTitle';
+import { nameUntitledTask } from '../composables/useUntitledTaskTitles';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useClearContext, clearContextTooltip } from '../composables/useClearContext';
@@ -384,7 +385,7 @@ const bodyRef = computed({
 function onDescriptionKeydown(event) {
   if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
   event.preventDefault();
-  if (sending.value || !newTask.value.title || !newTask.value.body) return;
+  if (!canSubmit.value) return;
   if (isEditMode.value) submitEditProtocol();
   else submitHumanTask();
 }
@@ -411,6 +412,21 @@ const {
   markOverridden,
   generateTitle
 } = useAutoTitle(bodyRef, titleRef, workspaceId);
+
+// A new task may leave its title out: the server calls it Untitled and this
+// browser names it afterwards (see useUntitledTaskTitles). Editing a scheduled
+// task still needs one, since that saves the title as typed.
+const canSubmit = computed(() =>
+  !sending.value && !!newTask.value.body && (!isEditMode.value || !!newTask.value.title)
+);
+
+const titlePlaceholder = computed(() => {
+  if (isModelLoading.value) return `Loading AI Model... ${modelProgress.value}%`;
+  if (isGenerating.value) return 'Generating title...';
+  if (isEditMode.value) return isAutoTitleSupported ? 'Task Title (Click sparkle to auto-generate)' : 'Task Title';
+  // Short enough to fit a phone; the sparkle button says what it does on hover.
+  return 'Task Title (optional)';
+});
 
 // What fires when the task completes: a single event, or a whole workflow.
 // Mutually exclusive by construction — picking one clears the other.
@@ -640,8 +656,9 @@ async function submitHumanTask() {
   sending.value = true;
   try {
     const status = scheduleType.value !== 'none' ? 'cron' : 'notstarted';
-    await createTask(
-      workspaceId, newTask.value.title, newTask.value.body,
+    const title = newTask.value.title.trim();
+    const res = await createTask(
+      workspaceId, title, newTask.value.body,
       newTask.value.assignee, newTaskAttachments.value,
       status, newTask.value.cronSchedule, newTask.value.allowAllCommands,
       selectedEventId.value, selectedWorkflowId.value,
@@ -649,6 +666,7 @@ async function submitHumanTask() {
       // hidden when nothing could act on it.
       clearContextOffered.value && newTask.value.clearContext
     );
+    if (!title) nameUntitledTask(workspaceId, res?.task?.id, newTask.value.body);
     notifySuccess('Task Created successfully');
     goBack(status === 'cron');
   } catch(err) {

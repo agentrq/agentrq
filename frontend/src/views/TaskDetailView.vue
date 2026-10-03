@@ -25,9 +25,24 @@
               <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
             </button>
             <!-- Removed workspace name on mobile per user request -->
-            <h1 class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
-              {{ task.title }}
-            </h1>
+            <!-- Renamable for 7 days after the task was created; the server
+                 refuses past that, so the pencil goes too. -->
+            <input v-if="renaming" ref="titleInput" v-model="renameDraft" data-test="task-title-input"
+                   :disabled="renameSaving" maxlength="200" aria-label="Task title"
+                   @keydown.enter.prevent="saveRename" @keydown.esc.prevent="cancelRename" @blur="saveRename"
+                   class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight flex-1 min-w-0 bg-transparent outline-none border-b border-gray-300 dark:border-zinc-600 focus:border-gray-900 dark:focus:border-white" />
+            <div v-else class="flex items-center gap-1 flex-1 min-w-0">
+              <h1 class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate min-w-0">
+                {{ task.title }}
+              </h1>
+              <button v-if="renamable" type="button" data-test="task-title-rename" @click="startRename(); tooltipStore.hide()"
+                      @mouseenter="tooltipStore.show($event, 'Rename task', 'bottom')"
+                      @mouseleave="tooltipStore.hide()"
+                      class="h-6 w-6 shrink-0 rounded-md text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center"
+                      aria-label="Rename task">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
+            </div>
           </div>
 
           <div class="flex items-center gap-1.5 shrink-0 relative z-10">
@@ -908,6 +923,7 @@ import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
+import { useTaskRename } from '../composables/useTaskRename';
 import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElicitExpired } from '../composables/useElicitAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
@@ -946,6 +962,26 @@ const task = ref(null);
 // The task's status history, oldest first, from the single-task GET only.
 const stateTransitions = ref([]);
 const user = ref(null);
+
+const titleInput = ref(null);
+const {
+  editing: renaming,
+  draft: renameDraft,
+  saving: renameSaving,
+  renamable,
+  start: beginRename,
+  cancel: cancelRename,
+  save: saveRename,
+} = useTaskRename(task, workspaceId, { onError: notifyError });
+
+function startRename() {
+  beginRename();
+  nextTick(() => {
+    titleInput.value?.focus();
+    titleInput.value?.select();
+  });
+}
+
 const descExpanded = ref(false);
 const replyText = ref('');
 

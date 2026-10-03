@@ -125,6 +125,8 @@ export default defineConfig({
         'src/composables/useTerminalView.js',
         'src/composables/usePwaUpdateProgress.js',
         'src/composables/useAutoTitle.js',
+        'src/composables/useUntitledTaskTitles.js',
+        'src/composables/useTaskRename.js',
         'src/utils/markdown.js',
         'src/utils/insertAtCursor.js',
         'src/composables/useNativeDictation.js',

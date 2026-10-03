@@ -31,6 +31,9 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	} else if errors.As(err, &forkErr) {
 		code = forkErrorStatus(forkErr.Kind)
 		msg = forkErr.Message
+	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
+		code = http.StatusConflict
+		msg = err.Error()
 	} else if err.Error() == "rate limit exceeded" {
 		code = http.StatusTooManyRequests
 		msg = "rate limit exceeded"

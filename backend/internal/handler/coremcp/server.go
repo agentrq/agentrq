@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -115,6 +116,8 @@ func textResponse(text string) *mcp.CallToolResult {
 		},
 	}
 }
+
+var errTitleRequired = errors.New("title is required")
 
 func errorResponse(err error) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
@@ -597,6 +600,11 @@ func (s *WorkspaceServer) handleListAllTasks(ctx context.Context, req *mcp.CallT
 
 func (s *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallToolRequest, args CreateTaskParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "createTask", parseID(args.WorkspaceID))
+	// Checked here because the controller now lets a title be left out, for
+	// the interface's sake; an agent must still name what it asks for.
+	if strings.TrimSpace(args.Title) == "" {
+		return errorResponse(errTitleRequired), nil, nil
+	}
 	userID := getUserID(ctx)
 	assignee := args.Assignee
 	if assignee == "" {

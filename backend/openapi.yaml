@@ -1116,6 +1116,8 @@ paths:
         A `cronSchedule` makes the task recurring and sets its status to `cron`.
         The minute field must be a single fixed integer: granularity below
         hourly is rejected.
+
+        `title` may be left out, and the task is then called `Untitled`.
       requestBody:
         required: true
         content:
@@ -1351,6 +1353,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/title:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    patch:
+      tags: [Tasks]
+      summary: Rename a task
+      description: |
+        Any status, but only in the first 7 days after the task was created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: object
+                  properties:
+                    value: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskEnvelope' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The task is more than 7 days old
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
   /workspaces/{id}/tasks/{taskID}/workspace:

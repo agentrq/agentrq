@@ -451,6 +451,17 @@ type (
 		Task Task
 	}
 
+	UpdateTaskTitleRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		Title       string
+		UserID      string
+	}
+
+	UpdateTaskTitleResponse struct {
+		Task Task
+	}
+
 	MoveTaskRequest struct {
 		WorkspaceID            int64
 		TaskID                 int64
@@ -1564,6 +1575,11 @@ const (
 	// because what it is granted is the whole account.
 	ActionOAuthConsentAllow Action = 87
 	ActionOAuthConsentDeny  Action = 88
+	// A task's title changed after it was created: renamed by hand, or by the
+	// browser's local model naming a task created without one. Kept apart
+	// from task_update so a rename does not send "status updated" emails and
+	// pushes, and so the two can be told apart in the counts.
+	ActionTaskTitleUpdate Action = 89
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1728,6 +1744,8 @@ func (a Action) String() string {
 		return "oauth_consent_allow"
 	case ActionOAuthConsentDeny:
 		return "oauth_consent_deny"
+	case ActionTaskTitleUpdate:
+		return "task_title_update"
 	}
 	return "unknown"
 }
@@ -2132,6 +2150,20 @@ var (
 	// that is gone.
 	ErrForkAgentRunning = errors.New("fork's agent is still running")
 )
+
+// UntitledTaskTitle is the title of a task created from the interface without
+// one. The browser that created it may then name it with its local model; a
+// task it does not name keeps this one, so lists, emails and agents always
+// have something to show.
+const UntitledTaskTitle = "Untitled"
+
+// TaskTitleEditWindow is how long after it was created a task can be renamed.
+// The interface hides the pencil past it, using the same number.
+const TaskTitleEditWindow = 7 * 24 * time.Hour
+
+// ErrTaskTitleLocked refuses a rename past TaskTitleEditWindow. Its text is
+// shown to the person as it is.
+var ErrTaskTitleLocked = errors.New("a task can only be renamed in the first 7 days after it was created")
 
 // ForkError is one of the Err* kinds above with the sentence a person sees.
 type ForkError struct {

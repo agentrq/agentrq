@@ -351,6 +351,18 @@ type (
 		Task Task `json:"task"`
 	}
 
+	UpdateTaskTitleRequest struct {
+		Title TaskTitleUpdate `json:"title"`
+	}
+
+	TaskTitleUpdate struct {
+		Value string `json:"value"`
+	}
+
+	UpdateTaskTitleResponse struct {
+		Task Task `json:"task"`
+	}
+
 	MoveTaskRequest struct {
 		Workspace TaskWorkspaceMove `json:"workspace"`
 	}

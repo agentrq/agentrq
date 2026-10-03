@@ -35,6 +35,7 @@ const (
 	_routePathOrder       = "/workspaces/:id/tasks/:taskID/order"
 	_routePathScheduled   = "/workspaces/:id/tasks/:taskID/scheduled"
 	_routePathAssignee    = "/workspaces/:id/tasks/:taskID/assignee"
+	_routePathTitle       = "/workspaces/:id/tasks/:taskID/title"
 	_routePathWorkspace   = "/workspaces/:id/tasks/:taskID/workspace"
 	_routePathAllowAll    = "/workspaces/:id/tasks/:taskID/allow_all"
 	_routePathPermission  = "/workspaces/:id/tasks/:taskID/permission"
@@ -58,6 +59,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Patch(_routePathStatus, h.updateTaskStatus())
 	h.router.Patch(_routePathOrder, h.updateTaskOrder())
 	h.router.Patch(_routePathAssignee, h.updateTaskAssignee())
+	h.router.Patch(_routePathTitle, h.updateTaskTitle())
 	h.router.Patch(_routePathWorkspace, h.moveTask())
 	h.router.Patch(_routePathAllowAll, h.updateTaskAllowAllCommands())
 	h.router.Put(_routePathScheduled, h.updateScheduledTask())
@@ -512,6 +514,35 @@ func (h *handler) updateTaskOrder() fiber.Handler {
 
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromUpdateTaskOrderResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) updateTaskTitle() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToUpdateTaskTitleRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.UpdateTaskTitle(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to rename task")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+
+		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
+			Type:    "task.updated",
+			Payload: mapper.FromEntityTaskToView(rs.Task),
+		})
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromUpdateTaskTitleResponseEntityToHTTPResponse(rs))
 	}
 }
 

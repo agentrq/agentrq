@@ -22,7 +22,8 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 		return nil
 	}
 	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 || payload.Task.Title == "" || payload.Task.CreatedBy == "" {
+	// No title is fine: the controller calls the task Untitled.
+	if workspaceID == 0 || payload.Task.CreatedBy == "" {
 		return nil
 	}
 
@@ -260,6 +261,29 @@ func FromHTTPRequestToUpdateTaskAssigneeRequestEntity(c *fiber.Ctx) *entity.Upda
 
 func FromUpdateTaskAssigneeResponseEntityToHTTPResponse(rs *entity.UpdateTaskAssigneeResponse) []byte {
 	payload, _ := json.Marshal(view.UpdateTaskAssigneeResponse{Task: FromEntityTaskToView(rs.Task)})
+	return payload
+}
+
+func FromHTTPRequestToUpdateTaskTitleRequestEntity(c *fiber.Ctx) *entity.UpdateTaskTitleRequest {
+	var payload view.UpdateTaskTitleRequest
+	if err := json.Unmarshal(c.BodyRaw(), &payload); err != nil {
+		return nil
+	}
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	title := strings.TrimSpace(payload.Title.Value)
+	if workspaceID == 0 || taskID == 0 || title == "" {
+		return nil
+	}
+	return &entity.UpdateTaskTitleRequest{
+		WorkspaceID: workspaceID,
+		TaskID:      taskID,
+		Title:       title,
+	}
+}
+
+func FromUpdateTaskTitleResponseEntityToHTTPResponse(rs *entity.UpdateTaskTitleResponse) []byte {
+	payload, _ := json.Marshal(view.UpdateTaskTitleResponse{Task: FromEntityTaskToView(rs.Task)})
 	return payload
 }
 

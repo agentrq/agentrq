@@ -148,6 +148,7 @@ type TaskController interface {
 	UpdateTaskStatus(ctx context.Context, req entity.UpdateTaskStatusRequest) (*entity.UpdateTaskStatusResponse, error)
 	UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskOrderRequest) (*entity.UpdateTaskOrderResponse, error)
 	UpdateTaskAssignee(ctx context.Context, req entity.UpdateTaskAssigneeRequest) (*entity.UpdateTaskAssigneeResponse, error)
+	UpdateTaskTitle(ctx context.Context, req entity.UpdateTaskTitleRequest) (*entity.UpdateTaskTitleResponse, error)
 	MoveTask(ctx context.Context, req entity.MoveTaskRequest) (*entity.MoveTaskResponse, error)
 	UpdateTaskAllowAllCommands(ctx context.Context, req entity.UpdateTaskAllowAllCommandsRequest) (*entity.UpdateTaskAllowAllCommandsResponse, error)
 	ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error)

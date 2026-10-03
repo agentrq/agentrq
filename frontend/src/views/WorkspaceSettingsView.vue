@@ -130,6 +130,30 @@
                     <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
                   </div>
 
+                  <!-- Kept on this device only, like the local copy: drawn the
+                       same way so it is not mistaken for a setting that
+                       follows the account. -->
+                  <div data-test="auto-title" class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 bg-gray-50/40 dark:bg-zinc-800/20">
+                    <div class="flex items-start justify-between gap-6">
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100">Name untitled tasks</h4>
+                          <span class="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-300 dark:border-zinc-600 rounded-sm px-1.5 py-0.5">This device only</span>
+                        </div>
+                        <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1.5 font-medium leading-relaxed">
+                          A task you create here without a title is named from its description by the local AI model, in the background.
+                          <span class="block mt-1 text-gray-500 dark:text-zinc-500">Off by default on phones, where the model can run out of memory. The sparkle button on the task form works either way.</span>
+                        </p>
+                      </div>
+                      <button type="button" role="switch" :aria-checked="autoTitleOn" @click="toggleAutoTitle"
+                              class="shrink-0 mt-1 w-11 h-6 rounded-full border transition-colors relative"
+                              :class="autoTitleOn ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+                        <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                              :class="autoTitleOn ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+                      </button>
+                    </div>
+                  </div>
+
                   <fieldset :disabled="isFork" data-test="send-delay" class="space-y-2 pt-4 border-t border-gray-100 dark:border-zinc-800/50 disabled:opacity-60">
                     <label class="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest ml-1">Message Send Delay</label>
                     <div class="flex flex-wrap gap-1.5 mt-1">
@@ -935,6 +959,7 @@ import MissionTemplatePicker from '../components/MissionTemplatePicker.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { isCacheEnabled, sharedCache } from '../composables/useCachedTasks';
+import { isAutoTitleOn, setAutoTitleOn } from '../composables/useUntitledTaskTitles';
 import {
   clearWorkspaceData,
   estimateUsage,
@@ -1567,6 +1592,17 @@ async function refreshLocalUsage() {
   localUsage.value = await estimateUsage();
 }
 
+// Naming untitled tasks with the local model: also this device's own choice.
+const autoTitleOn = ref(false);
+
+function toggleAutoTitle() {
+  setAutoTitleOn(workspaceId.value, !autoTitleOn.value);
+  autoTitleOn.value = isAutoTitleOn(workspaceId.value);
+  notifySuccess(autoTitleOn.value
+    ? 'Untitled tasks will be named on this device'
+    : 'Untitled tasks will keep their title on this device');
+}
+
 async function toggleLocalCache() {
   const next = !localCacheOn.value;
   setCacheEnabled(workspaceId.value, next);
@@ -1613,6 +1649,7 @@ onMounted(() => {
   // After `load`, which is what resolves the workspace this screen is for.
   extensionTabs.load(workspaceId.value);
   localCacheOn.value = isCacheEnabled(workspaceId.value);
+  autoTitleOn.value = isAutoTitleOn(workspaceId.value);
   retentionDays.value = getRetentionDays(workspaceId.value);
   refreshLocalUsage();
   // Asked once, and the answer does not change what the app does — a cache that

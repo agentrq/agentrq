@@ -463,6 +463,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionUISidePanelLink, model.ActionIDUISidePanelLink, "side panel link"},
 		{entity.ActionOAuthConsentAllow, model.ActionIDOAuthConsentAllow, "oauth consent allow"},
 		{entity.ActionOAuthConsentDeny, model.ActionIDOAuthConsentDeny, "oauth consent deny"},
+		{entity.ActionTaskTitleUpdate, model.ActionIDTaskTitleUpdate, "task title update"},
 	}
 
 	for _, tc := range cases {

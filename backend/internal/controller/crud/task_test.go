@@ -7,7 +7,9 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -176,18 +178,30 @@ func TestCreateTask_AgentLoopNoteIdempotent(t *testing.T) {
 	}
 }
 
-func TestCreateTask_EmptyTitle(t *testing.T) {
-	e := newTestController(t)
+// A task created without a title, or with only spaces, is called Untitled:
+// the interface names it afterwards with its local model.
+func TestCreateTask_BlankTitleIsUntitled(t *testing.T) {
+	for _, title := range []string{"", "   "} {
+		t.Run("title "+strconv.Quote(title), func(t *testing.T) {
+			e := newTestController(t)
 
-	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.idgen.EXPECT().NextID().Return(int64(47))
+			e.repo.EXPECT().CreateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+				return m, nil
+			})
 
-	_, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
-		UserID: testUserIDStr,
-		Task:   entity.Task{WorkspaceID: 1, Title: ""},
-	})
-
-	if err == nil || err.Error() != "title is required" {
-		t.Fatalf("expected 'title is required' error, got %v", err)
+			resp, err := e.controller.CreateTask(context.Background(), entity.CreateTaskRequest{
+				UserID: testUserIDStr,
+				Task:   entity.Task{WorkspaceID: 1, Title: title, Body: "Fix the login page", CreatedBy: "human"},
+			})
+			if err != nil {
+				t.Fatalf("CreateTask returned %v, want the task created", err)
+			}
+			if resp.Task.Title != entity.UntitledTaskTitle {
+				t.Errorf("CreateTask stored the title %q, want %q", resp.Task.Title, entity.UntitledTaskTitle)
+			}
+		})
 	}
 }
 
@@ -627,6 +641,97 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	}
 	if resp.Task.Body != "Original body.\n\nBe concise." {
 		t.Errorf("expected task body to be updated")
+	}
+}
+
+// ── UpdateTaskTitle ───────────────────────────────────────────────────────────
+
+func TestUpdateTaskTitle_RenamesATaskInAnyStatusWithinSevenDays(t *testing.T) {
+	e := newMachineTelemetryEnv(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Untitled", Status: "completed", CreatedAt: time.Now().Add(-6 * 24 * time.Hour)}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
+		return m, nil
+	})
+
+	resp, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
+		WorkspaceID: 1, TaskID: 10, Title: "  Fix the login page  ", UserID: testUserIDStr,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTaskTitle returned %v, want the task renamed", err)
+	}
+	if resp.Task.Title != "Fix the login page" {
+		t.Errorf("UpdateTaskTitle stored the title %q, want %q with the spaces trimmed", resp.Task.Title, "Fix the login page")
+	}
+	if resp.Task.Status != "completed" {
+		t.Errorf("UpdateTaskTitle changed the status to %q, want it left completed", resp.Task.Status)
+	}
+	// Its own action, not task_update, which would email "status updated".
+	if ev := e.only(t); ev.Action != entity.ActionTaskTitleUpdate || ev.ResourceID != 10 || ev.Actor != entity.ActorHuman {
+		t.Errorf("UpdateTaskTitle published %+v, want a task_title_update on task 10 by a human", ev)
+	}
+}
+
+func TestUpdateTaskTitle_RefusesATaskOlderThanSevenDays(t *testing.T) {
+	e := newTestController(t)
+
+	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Old", CreatedAt: time.Now().Add(-8 * 24 * time.Hour)}
+	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+
+	_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
+		WorkspaceID: 1, TaskID: 10, Title: "New", UserID: testUserIDStr,
+	})
+	if !errors.Is(err, entity.ErrTaskTitleLocked) {
+		t.Fatalf("UpdateTaskTitle returned %v, want ErrTaskTitleLocked", err)
+	}
+}
+
+func TestUpdateTaskTitle_RefusesABlankTitle(t *testing.T) {
+	e := newTestController(t)
+
+	_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
+		WorkspaceID: 1, TaskID: 10, Title: "  ", UserID: testUserIDStr,
+	})
+	if err == nil || err.Error() != "title is required" {
+		t.Fatalf("UpdateTaskTitle returned %v, want \"title is required\"", err)
+	}
+}
+
+func TestUpdateTaskTitle_PassesOnRepositoryFailures(t *testing.T) {
+	errDB := errors.New("database unavailable")
+	recent := model.Task{ID: 10, WorkspaceID: 1, CreatedAt: time.Now()}
+
+	cases := []struct {
+		name   string
+		expect func(e *testEnv)
+	}{
+		{"the workspace cannot be read", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, errDB)
+		}},
+		{"the task cannot be read", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDB)
+		}},
+		{"the task cannot be saved", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(recent, nil)
+			e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, errDB)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+			tc.expect(e)
+			_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
+				WorkspaceID: 1, TaskID: 10, Title: "New", UserID: testUserIDStr,
+			})
+			if !errors.Is(err, errDB) {
+				t.Fatalf("UpdateTaskTitle returned %v, want the database error", err)
+			}
+		})
 	}
 }
 

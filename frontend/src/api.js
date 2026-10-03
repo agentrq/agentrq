@@ -208,6 +208,18 @@ export async function updateTaskAssignee(workspaceId, taskId, value) {
   return res.json();
 }
 
+// Renames a task in any status, within 7 days of its creation; past that the
+// server refuses with a sentence saying so.
+export async function updateTaskTitle(workspaceId, taskId, value) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/title`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: { value } })
+  });
+  if (!res.ok) throw await refusal(res, 'Failed to rename task');
+  return res.json();
+}
+
 export async function moveTask(workspaceId, taskId, destinationWorkspaceId) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/workspace`, {
     method: 'PATCH',

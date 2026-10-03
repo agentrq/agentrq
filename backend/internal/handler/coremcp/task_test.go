@@ -71,3 +71,24 @@ func TestCreateTask_ClearContextDefaultsToFalseWhenOmitted(t *testing.T) {
 		t.Errorf("CreatedBy = %q, want %q so the crud layer applies the workspace's clearContextDefault", got.Task.CreatedBy, "agent")
 	}
 }
+
+// The interface may leave a title out and have the browser name the task, so
+// the crud controller now calls it Untitled. An agent has no such helper, and
+// must still say what it is asking for.
+func TestCreateTask_StillRequiresATitle(t *testing.T) {
+	for _, title := range []string{"", "   "} {
+		ctrl := &mockTaskCrud{createTask: func(_ context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
+			t.Fatalf("a task titled %q was created, want it refused", req.Task.Title)
+			return nil, nil
+		}}
+
+		res := toolResult(taskServer(ctrl).handleCreateTask(authedContext(), nil, CreateTaskParams{
+			WorkspaceID: base62(testWorkspace),
+			Title:       title,
+			Body:        "Wire up the new gateway",
+		}))
+		if !res.isError || res.text != "title is required" {
+			t.Errorf("createTask titled %q answered %+v, want the error \"title is required\"", title, res)
+		}
+	}
+}

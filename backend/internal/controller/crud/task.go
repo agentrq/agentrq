@@ -61,9 +61,11 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	if err != nil {
 		return nil, err
 	}
-	// Validation
-	if req.Task.Title == "" {
-		return nil, fmt.Errorf("title is required")
+	// A title is optional here, for the interface's sake: the browser names an
+	// untitled task afterwards. MCP and Slack still insist on one, each before
+	// it gets here.
+	if strings.TrimSpace(req.Task.Title) == "" {
+		req.Task.Title = entity.UntitledTaskTitle
 	}
 
 	status := req.Task.Status
@@ -509,6 +511,45 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 	})
 
 	return &entity.UpdateTaskAssigneeResponse{Task: c.fromModelTaskToEntity(updated)}, nil
+}
+
+// UpdateTaskTitle renames a task in any status, but only within
+// entity.TaskTitleEditWindow of its creation.
+func (c *controller) UpdateTaskTitle(ctx context.Context, req entity.UpdateTaskTitleRequest) (*entity.UpdateTaskTitleResponse, error) {
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	if _, err := c.ensureActiveWorkspace(ctx, req.WorkspaceID, req.UserID); err != nil {
+		return nil, err
+	}
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	if err != nil {
+		return nil, err
+	}
+	if time.Since(m.CreatedAt) > entity.TaskTitleEditWindow {
+		return nil, entity.ErrTaskTitleLocked
+	}
+
+	m.Title = title
+	m.UpdatedAt = time.Now()
+
+	updated, err := c.repository.UpdateTask(ctx, m)
+	if err != nil {
+		return nil, err
+	}
+
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionTaskTitleUpdate,
+		WorkspaceID:  updated.WorkspaceID,
+		UserID:       updated.UserID,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   updated.ID,
+		Actor:        entity.ActorHuman,
+	})
+
+	return &entity.UpdateTaskTitleResponse{Task: c.fromModelTaskToEntity(updated)}, nil
 }
 
 func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (*entity.MoveTaskResponse, error) {

@@ -372,6 +372,12 @@ describe('each tool calls the interface the way the UI does', () => {
       'updateTaskAssignee',
       ['ws1', 't1', 'human'],
     ],
+    [
+      'updateTaskTitle',
+      { workspaceId: 'ws1', taskId: 't1', title: 'Fix the login page' },
+      'updateTaskTitle',
+      ['ws1', 't1', 'Fix the login page'],
+    ],
     ['updateTaskOrder', { workspaceId: 'ws1', taskId: 't1', order: 4 }, 'updateTaskOrder', ['ws1', 't1', 4]],
     [
       'moveTask',
