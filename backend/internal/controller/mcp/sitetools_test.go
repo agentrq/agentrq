@@ -364,9 +364,9 @@ func TestListSiteToolsRefusals(t *testing.T) {
 		want   string
 	}{
 		{"short q", ListSiteToolsParams{Q: " ab "}, `q "ab" is too short; give at least 3 characters, or leave it out`},
-		{"long q", ListSiteToolsParams{Q: long}, "q is 257 characters; the limit is 256"},
+		{"long q", ListSiteToolsParams{Q: long}, "q is 17 characters; the limit is 16"},
 		{"short pattern", ListSiteToolsParams{Pattern: "a."}, `pattern "a." is too short; give at least 3 characters, or leave it out`},
-		{"long pattern", ListSiteToolsParams{Pattern: long}, "pattern is 257 characters; the limit is 256"},
+		{"long pattern", ListSiteToolsParams{Pattern: long}, "pattern is 17 characters; the limit is 16"},
 		{"invalid pattern", ListSiteToolsParams{Pattern: "(abc"}, "pattern is not a valid regular expression: error parsing regexp: missing closing ): `(?i)(abc`"},
 		{"negative limit", ListSiteToolsParams{Limit: -1}, "limit and offset cannot be negative"},
 		{"negative offset", ListSiteToolsParams{Offset: -1}, "limit and offset cannot be negative"},

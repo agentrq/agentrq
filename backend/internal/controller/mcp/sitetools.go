@@ -54,8 +54,8 @@ func (e *SiteToolFailedError) Error() string { return e.Message }
 // ListSiteToolsParams narrows and pages the listing. Every field is optional;
 // the workspace is the connection's.
 type ListSiteToolsParams struct {
-	Q       string `json:"q,omitempty" jsonschema:"Words to rank tools by (BM25 over each tool's name and description, a word matching any word it begins); at least 3 characters. Leave it out to list tools by name."`
-	Pattern string `json:"pattern,omitempty" jsonschema:"A regular expression (RE2, ignoring case) a tool's name or description must match; at least 3 characters."`
+	Q       string `json:"q,omitempty" jsonschema:"Words to rank tools by (BM25 over each tool's name and description, a word matching any word it begins); 3 to 16 characters. Leave it out to list tools by name."`
+	Pattern string `json:"pattern,omitempty" jsonschema:"A regular expression (RE2, ignoring case) a tool's name or description must match; 3 to 16 characters."`
 	Limit   int    `json:"limit,omitempty" jsonschema:"How many tools to return, at most 100. Leave it out to return every match."`
 	Offset  int    `json:"offset,omitempty" jsonschema:"How many matches to skip, for the next page."`
 }
@@ -66,7 +66,7 @@ const (
 	// minSiteToolsQuery and maxSiteToolsQuery bound q and pattern, in
 	// characters, when they are given at all.
 	minSiteToolsQuery = 3
-	maxSiteToolsQuery = 256
+	maxSiteToolsQuery = 16
 )
 
 // siteListing is what listSiteTools shows: every shared site, then one page of
