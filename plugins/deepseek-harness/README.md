@@ -90,7 +90,7 @@ Every tool the workspace server offers — eighteen today — bridged by `@deeps
 | `mcp__agentrq__saveSkill` | Write one file of one of the workspace's own skills |
 | `mcp__agentrq__deleteSkill` | Delete one of the workspace's own skills, or one of its files |
 | `mcp__agentrq__elicit` | Ask the human a question and wait for the answer |
-| `mcp__agentrq__listSiteTools` | List the websites the human shared from the Chrome extension, and their WebMCP tools' names and descriptions |
+| `mcp__agentrq__listSiteTools` | List the websites the human shared from the Chrome extension, and their WebMCP tools' names and descriptions; search with `q` (BM25) or `pattern` (regex), page with `limit`/`offset` |
 | `mcp__agentrq__getSiteToolDefinition` | Get one shared website's tool with its input schema, before calling it |
 | `mcp__agentrq__callSiteTool` | Run a shared website's tool in the human's Chrome; a tool not marked read-only asks the human first |
 

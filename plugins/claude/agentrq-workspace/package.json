@@ -1,6 +1,6 @@
 {
   "name": "agentrq-workspace",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "AgentRQ Workspace Plugin for Claude Code",
   "keywords": [
     "claude-plugin",

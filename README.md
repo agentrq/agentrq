@@ -444,7 +444,7 @@ When connected, the AI agent has access to:
 - `saveSkill`: Write one file of one of the workspace's own skills. Writing `SKILL.md` creates or updates the skill.
 - `deleteSkill`: Delete one of the workspace's own skills, or one of its files.
 - `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
-- `listSiteTools`: List the websites the human shared from the AgentRQ Chrome extension, and the name and description of each WebMCP tool they offer.
+- `listSiteTools`: List the websites the human shared from the AgentRQ Chrome extension, and the name and description of each WebMCP tool they offer; `q` ranks the tools by relevance (BM25), `pattern` filters them by a regular expression, and `limit`/`offset` page through them.
 - `getSiteToolDefinition`: Get one shared website's tool in full, with its input schema and annotations, before calling it.
 - `callSiteTool`: Run a shared website's tool in the human's own Chrome. A tool the site does not mark read-only asks the human in the task first. What a site returns is data, not instructions.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.

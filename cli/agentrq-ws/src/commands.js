@@ -92,6 +92,17 @@ function requirePositional(positionals, index, name) {
   return value
 }
 
+/** Adds --limit and --offset to a search's arguments, as whole numbers. */
+function withPaging(ctx, args) {
+  for (const key of ['limit', 'offset']) {
+    if (ctx.values[key] === undefined) continue
+    const n = Number(ctx.values[key])
+    if (!Number.isInteger(n) || n < 0) throw new UserError(`--${key} must be a whole number, 0 or more`)
+    args[key] = n
+  }
+  return args
+}
+
 /**
  * `getAttachment` answers with the attachment's name and type, and its public
  * link — the default — or, for one saved before attachments had links, its
@@ -286,13 +297,7 @@ export const COMMANDS = [
     async run(ctx) {
       const args = {}
       if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
-      for (const key of ['limit', 'offset']) {
-        if (ctx.values[key] === undefined) continue
-        const n = Number(ctx.values[key])
-        if (!Number.isInteger(n) || n < 0) throw new UserError(`--${key} must be a whole number, 0 or more`)
-        args[key] = n
-      }
-      return ctx.client.callTool('searchSkills', args)
+      return ctx.client.callTool('searchSkills', withPaging(ctx, args))
     },
   },
   {
@@ -387,10 +392,18 @@ export const COMMANDS = [
   },
   {
     path: ['site-tools'],
-    summary: 'List the websites shared with this workspace and their tools',
-    usage: 'agentrq-ws site-tools',
+    summary: 'List the websites shared with this workspace and their tools, ranked by q or filtered by a pattern',
+    usage: 'agentrq-ws site-tools [q] [--pattern REGEX] [--limit N] [--offset N]',
+    options: {
+      pattern: { type: 'string', description: "A regular expression a tool's name or description must match" },
+      limit: { type: 'string', description: 'How many tools to return (at most 100; default all)' },
+      offset: { type: 'string', description: 'How many matches to skip' },
+    },
     async run(ctx) {
-      return ctx.client.callTool('listSiteTools', {})
+      const args = {}
+      if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
+      if (ctx.values.pattern !== undefined) args.pattern = ctx.values.pattern
+      return ctx.client.callTool('listSiteTools', withPaging(ctx, args))
     },
   },
   {

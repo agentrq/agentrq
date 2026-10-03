@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -130,11 +132,37 @@ func callSite(t *testing.T, s *siteServer, p CallSiteToolParams) (string, bool) 
 	return resultText(t, res), res.IsError
 }
 
+// listSites calls listSiteTools and decodes what it says.
+func listSites(t *testing.T, s *siteServer, p ListSiteToolsParams) (siteListing, string) {
+	t.Helper()
+	res, _, err := s.handleListSiteTools(context.Background(), nil, p)
+	if err != nil {
+		t.Fatalf("handleListSiteTools: %v", err)
+	}
+	text := resultText(t, res)
+	if res.IsError {
+		t.Fatalf("listSiteTools refused: %s", text)
+	}
+	var got siteListing
+	if err := json.Unmarshal([]byte(text), &got); err != nil {
+		t.Fatalf("decode %s: %v", text, err)
+	}
+	return got, text
+}
+
+func toolNames(l siteListing) []string {
+	names := make([]string, len(l.Tools))
+	for i, t := range l.Tools {
+		names[i] = t.Site + " " + t.Name
+	}
+	return names
+}
+
 func TestListSiteToolsEmptyIsAnArray(t *testing.T) {
 	s := newSiteServer(t, &fakeSiteTools{}, "", nil)
 	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
-	if got := resultText(t, res); got != "[]" {
-		t.Fatalf("got %q, want []", got)
+	if got, want := resultText(t, res), `{"sites":[],"total":0,"tools":[]}`; got != want {
+		t.Fatalf("listSiteTools returned %s, want %s", got, want)
 	}
 }
 
@@ -144,14 +172,10 @@ func TestListSiteToolsMarksOnlineAndHidesRouting(t *testing.T) {
 	offline := SiteShareView{Site: "https://example.com", Tools: []sitetools.Tool{}}
 	s := newSiteServer(t, &fakeSiteTools{shares: []SiteShareView{share, offline}}, "", nil)
 
-	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
-	text := resultText(t, res)
-	var got []map[string]any
-	if err := json.Unmarshal([]byte(text), &got); err != nil {
-		t.Fatalf("decode %s: %v", text, err)
-	}
-	if len(got) != 2 || got[0]["online"] != true || got[1]["online"] != false {
-		t.Fatalf("online not marked: %s", text)
+	got, text := listSites(t, s, ListSiteToolsParams{})
+	want := []siteSummary{{Site: siteGitHub, Online: true, Tools: 3}, {Site: "https://example.com", Online: false, Tools: 0}}
+	if !slices.Equal(got.Sites, want) {
+		t.Fatalf("listSiteTools listed the sites as %+v, want %+v", got.Sites, want)
 	}
 	for _, hidden := range []string{"browser-1", "instance-1", "alwaysAllow", "AlwaysAllow"} {
 		if strings.Contains(text, hidden) {
@@ -162,17 +186,203 @@ func TestListSiteToolsMarksOnlineAndHidesRouting(t *testing.T) {
 
 // The listing is names and descriptions only: schemas and annotations are
 // getSiteToolDefinition's, so they stop costing context on every listing.
+// With no q, the tools come by name.
 func TestListSiteToolsListsNamesAndDescriptionsOnly(t *testing.T) {
 	share := githubShare()
 	share.Tools[0].Description = "Search repositories"
 	s := newSiteServer(t, &fakeSiteTools{shares: []SiteShareView{share}}, "", nil)
 
 	res, _, _ := s.handleListSiteTools(context.Background(), nil, ListSiteToolsParams{})
-	want := `[{"site":"https://github.com","online":true,"tools":[` +
-		`{"name":"search","description":"Search repositories"},` +
-		`{"name":"star","description":""},{"name":"fork","description":""}]}]`
+	want := `{"sites":[{"site":"https://github.com","online":true,"tools":3}],"total":3,"tools":[` +
+		`{"site":"https://github.com","name":"fork","description":""},` +
+		`{"site":"https://github.com","name":"search","description":"Search repositories"},` +
+		`{"site":"https://github.com","name":"star","description":""}]}`
 	if got := resultText(t, res); got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
+	}
+}
+
+// Two sites with tools for searching: issues on GitHub, flights on a travel
+// site, and a few that have nothing to do with either.
+func searchableShares() []SiteShareView {
+	return []SiteShareView{
+		{Site: siteGitHub, Online: true, Tools: []sitetools.Tool{
+			{Name: "searchIssues", Description: "Find issues in a repository by text"},
+			{Name: "createIssue", Description: "Open a new issue"},
+			{Name: "listRepositories", Description: "List the signed-in user's repositories"},
+		}},
+		{Site: "https://travel.example", Tools: []sitetools.Tool{
+			{Name: "searchFlights", Description: "Search flights between two airports"},
+			{Name: "bookFlight", Description: "Book a flight"},
+			{Name: "createIssue", Description: "Report a problem with a booking"},
+		}},
+	}
+}
+
+func TestListSiteToolsWithNoSearchListsByNameThenSite(t *testing.T) {
+	s := newSiteServer(t, &fakeSiteTools{shares: searchableShares()}, "", nil)
+	got, _ := listSites(t, s, ListSiteToolsParams{})
+	want := []string{
+		"https://travel.example bookFlight",
+		"https://github.com createIssue",
+		"https://travel.example createIssue",
+		"https://github.com listRepositories",
+		"https://travel.example searchFlights",
+		"https://github.com searchIssues",
+	}
+	if !slices.Equal(toolNames(got), want) || got.Total != 6 || got.Next != 0 {
+		t.Fatalf("listSiteTools listed %v (total %d, next %d), want %v (total 6, no next)", toolNames(got), got.Total, got.Next, want)
+	}
+}
+
+// q ranks by BM25 and drops the tools sharing no word with it. A camelCase
+// name is split into words, and a word of q matches any word it begins.
+func TestListSiteToolsRanksByQuery(t *testing.T) {
+	cases := []struct {
+		name string
+		q    string
+		want []string
+	}{
+		{"one word in a name and its description", "issue", []string{
+			"https://github.com createIssue",
+			"https://github.com searchIssues",
+			"https://travel.example createIssue",
+		}},
+		{"two words, the tool with both first, a plural finding its singular", "search flights", []string{
+			"https://travel.example searchFlights",
+			"https://travel.example bookFlight",
+			"https://github.com searchIssues",
+		}},
+		{"a prefix of a word", "repo", []string{
+			"https://github.com listRepositories",
+			"https://travel.example createIssue",
+			"https://github.com searchIssues",
+		}},
+		{"nothing matches", "weather", []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSiteServer(t, &fakeSiteTools{shares: searchableShares()}, "", nil)
+			got, _ := listSites(t, s, ListSiteToolsParams{Q: tc.q})
+			if !slices.Equal(toolNames(got), tc.want) || got.Total != len(tc.want) {
+				t.Fatalf("q %q listed %v (total %d), want %v", tc.q, toolNames(got), got.Total, tc.want)
+			}
+			if len(got.Sites) != 2 {
+				t.Errorf("q %q listed %d sites, want both shared sites whatever matches", tc.q, len(got.Sites))
+			}
+		})
+	}
+}
+
+func TestListSiteToolsFiltersByPattern(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		q       string
+		want    []string
+	}{
+		{"matches a name, ignoring case", "^SEARCH", "", []string{
+			"https://travel.example searchFlights",
+			"https://github.com searchIssues",
+		}},
+		{"matches a description", "booking$", "", []string{
+			"https://travel.example createIssue",
+		}},
+		{"filters before q ranks", "flight", "book", []string{
+			"https://travel.example bookFlight",
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSiteServer(t, &fakeSiteTools{shares: searchableShares()}, "", nil)
+			got, _ := listSites(t, s, ListSiteToolsParams{Pattern: tc.pattern, Q: tc.q})
+			if !slices.Equal(toolNames(got), tc.want) {
+				t.Fatalf("pattern %q with q %q listed %v, want %v", tc.pattern, tc.q, toolNames(got), tc.want)
+			}
+		})
+	}
+}
+
+func TestListSiteToolsPages(t *testing.T) {
+	cases := []struct {
+		name          string
+		limit, offset int
+		want          []string
+		next          int
+	}{
+		{"first page", 2, 0, []string{"https://travel.example bookFlight", "https://github.com createIssue"}, 2},
+		{"middle page", 2, 2, []string{"https://travel.example createIssue", "https://github.com listRepositories"}, 4},
+		{"last page has no next", 2, 4, []string{"https://travel.example searchFlights", "https://github.com searchIssues"}, 0},
+		{"no limit returns the rest", 0, 3, []string{"https://github.com listRepositories", "https://travel.example searchFlights", "https://github.com searchIssues"}, 0},
+		{"past the end", 2, 9, []string{}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSiteServer(t, &fakeSiteTools{shares: searchableShares()}, "", nil)
+			got, _ := listSites(t, s, ListSiteToolsParams{Limit: tc.limit, Offset: tc.offset})
+			if !slices.Equal(toolNames(got), tc.want) || got.Next != tc.next || got.Total != 6 {
+				t.Fatalf("limit %d offset %d listed %v (next %d, total %d), want %v (next %d, total 6)",
+					tc.limit, tc.offset, toolNames(got), got.Next, got.Total, tc.want, tc.next)
+			}
+		})
+	}
+}
+
+// Names sort ignoring case, so a capitalised name is not put before every
+// lowercase one; the same name on two sites comes by site.
+func TestListSiteToolsSortsNamesIgnoringCase(t *testing.T) {
+	shares := []SiteShareView{
+		{Site: "https://b.example", Tools: []sitetools.Tool{{Name: "Zoom"}, {Name: "apply"}, {Name: "Same"}}},
+		{Site: "https://a.example", Tools: []sitetools.Tool{{Name: "same"}, {Name: "Same"}}},
+	}
+	s := newSiteServer(t, &fakeSiteTools{shares: shares}, "", nil)
+	got, _ := listSites(t, s, ListSiteToolsParams{})
+	want := []string{"https://b.example apply", "https://a.example Same", "https://b.example Same", "https://a.example same", "https://b.example Zoom"}
+	if !slices.Equal(toolNames(got), want) {
+		t.Fatalf("listSiteTools listed %v, want %v", toolNames(got), want)
+	}
+}
+
+func TestListSiteToolsCapsTheLimit(t *testing.T) {
+	tools := make([]sitetools.Tool, maxSiteToolsLimit+5)
+	for i := range tools {
+		tools[i] = sitetools.Tool{Name: fmt.Sprintf("tool%03d", i)}
+	}
+	s := newSiteServer(t, &fakeSiteTools{shares: []SiteShareView{{Site: siteGitHub, Tools: tools}}}, "", nil)
+	got, _ := listSites(t, s, ListSiteToolsParams{Limit: 1000})
+	if len(got.Tools) != maxSiteToolsLimit || got.Next != maxSiteToolsLimit {
+		t.Fatalf("a limit of 1000 returned %d tools with next %d, want %d and next %d",
+			len(got.Tools), got.Next, maxSiteToolsLimit, maxSiteToolsLimit)
+	}
+}
+
+func TestListSiteToolsRefusals(t *testing.T) {
+	long := strings.Repeat("a", maxSiteToolsQuery+1)
+	cases := []struct {
+		name   string
+		params ListSiteToolsParams
+		want   string
+	}{
+		{"short q", ListSiteToolsParams{Q: " ab "}, `q "ab" is too short; give at least 3 characters, or leave it out`},
+		{"long q", ListSiteToolsParams{Q: long}, "q is 257 characters; the limit is 256"},
+		{"short pattern", ListSiteToolsParams{Pattern: "a."}, `pattern "a." is too short; give at least 3 characters, or leave it out`},
+		{"long pattern", ListSiteToolsParams{Pattern: long}, "pattern is 257 characters; the limit is 256"},
+		{"invalid pattern", ListSiteToolsParams{Pattern: "(abc"}, "pattern is not a valid regular expression: error parsing regexp: missing closing ): `(?i)(abc`"},
+		{"negative limit", ListSiteToolsParams{Limit: -1}, "limit and offset cannot be negative"},
+		{"negative offset", ListSiteToolsParams{Offset: -1}, "limit and offset cannot be negative"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeSiteTools{shares: searchableShares()}
+			s := newSiteServer(t, backend, "", nil)
+			res, _, _ := s.handleListSiteTools(context.Background(), nil, tc.params)
+			if text := resultText(t, res); !res.IsError || text != tc.want {
+				t.Fatalf("got %q (error %v), want %q", text, res.IsError, tc.want)
+			}
+			if len(backend.workspaces) != 0 {
+				t.Errorf("a refused listing still read the shared sites")
+			}
+		})
 	}
 }
 

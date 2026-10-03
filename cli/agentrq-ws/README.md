@@ -58,7 +58,7 @@ Node 20.6 or newer.
 | `skill delete <uri>` | Delete a skill (`skill://<name>`) or one of its files |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
-| `site-tools` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions |
+| `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |
 | `site-tool <site> <tool>` | Show one shared website's tool in full, with its input schema |
 | `call-site-tool <site> <tool> --task <taskId>` | Run a shared website's tool in the human's Chrome, with `--args '{…}'` |
 | `tools` | List the tools this workspace server offers |

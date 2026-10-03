@@ -551,10 +551,19 @@ test('every command is documented and reachable', () => {
   }
 })
 
-test('site-tools lists the shared websites', async () => {
+test('site-tools passes the query, pattern and paging on', async () => {
   const client = stubClient()
   await invoke('site-tools', { client })
-  assert.deepEqual(client.calls, [{ name: 'listSiteTools', args: {} }])
+  await invoke('site-tools', {
+    positionals: ['search', 'issues'],
+    values: { pattern: '^search', limit: '20', offset: '40' },
+    client,
+  })
+  assert.deepEqual(client.calls, [
+    { name: 'listSiteTools', args: {} },
+    { name: 'listSiteTools', args: { q: 'search issues', pattern: '^search', limit: 20, offset: 40 } },
+  ])
+  await assert.rejects(() => invoke('site-tools', { values: { limit: '2.5' } }), /--limit must be a whole number/)
 })
 
 test('site-tool asks for one tool of one site', async () => {

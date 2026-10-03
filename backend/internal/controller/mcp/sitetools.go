@@ -5,19 +5,23 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/sitetools"
+	"github.com/agentrq/agentrq/backend/internal/service/bm25"
 )
 
 // SiteToolsBackend is the sites shared into this workspace, and the route to
@@ -47,19 +51,44 @@ type SiteToolFailedError struct{ Message string }
 
 func (e *SiteToolFailedError) Error() string { return e.Message }
 
-// ListSiteToolsParams takes nothing; the workspace is the connection's.
-type ListSiteToolsParams struct{}
+// ListSiteToolsParams narrows and pages the listing. Every field is optional;
+// the workspace is the connection's.
+type ListSiteToolsParams struct {
+	Q       string `json:"q,omitempty" jsonschema:"Words to rank tools by (BM25 over each tool's name and description, a word matching any word it begins); at least 3 characters. Leave it out to list tools by name."`
+	Pattern string `json:"pattern,omitempty" jsonschema:"A regular expression (RE2, ignoring case) a tool's name or description must match; at least 3 characters."`
+	Limit   int    `json:"limit,omitempty" jsonschema:"How many tools to return, at most 100. Leave it out to return every match."`
+	Offset  int    `json:"offset,omitempty" jsonschema:"How many matches to skip, for the next page."`
+}
 
-// siteListing is one shared site as listSiteTools shows it: names and
-// descriptions only, since the schemas of every tool on every site cost the
-// agent's context on each call. getSiteToolDefinition has the rest.
+const (
+	// maxSiteToolsLimit is the largest page listSiteTools returns.
+	maxSiteToolsLimit = 100
+	// minSiteToolsQuery and maxSiteToolsQuery bound q and pattern, in
+	// characters, when they are given at all.
+	minSiteToolsQuery = 3
+	maxSiteToolsQuery = 256
+)
+
+// siteListing is what listSiteTools shows: every shared site, then one page of
+// the matching tools, names and descriptions only, since the schemas of every
+// tool on every site cost the agent's context on each call.
+// getSiteToolDefinition has the rest. Next is the offset of the next page,
+// left out on the last one.
 type siteListing struct {
-	Site   string            `json:"site"`
-	Online bool              `json:"online"`
-	Tools  []siteToolSummary `json:"tools"`
+	Sites []siteSummary     `json:"sites"`
+	Total int               `json:"total"`
+	Next  int               `json:"next,omitempty"`
+	Tools []siteToolSummary `json:"tools"`
+}
+
+type siteSummary struct {
+	Site   string `json:"site"`
+	Online bool   `json:"online"`
+	Tools  int    `json:"tools"`
 }
 
 type siteToolSummary struct {
+	Site        string `json:"site"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
@@ -91,22 +120,104 @@ func siteToolError(format string, a ...any) *mcp.CallToolResult {
 
 func (ps *WorkspaceServer) ownerID() int64 { return monoflake.IDFromBase62(ps.userID).Int64() }
 
-func (ps *WorkspaceServer) handleListSiteTools(ctx context.Context, req *mcp.CallToolRequest, _ ListSiteToolsParams) (*mcp.CallToolResult, any, error) {
+func (ps *WorkspaceServer) handleListSiteTools(ctx context.Context, req *mcp.CallToolRequest, params ListSiteToolsParams) (*mcp.CallToolResult, any, error) {
 	ps.emitTelemetry(ctx, ActionMCPToolCall, "listSiteTools", clientIdentityFromRequest(req))
+	q, pattern := strings.TrimSpace(params.Q), strings.TrimSpace(params.Pattern)
+	if refusal := checkSiteToolsSearch("q", q); refusal != "" {
+		return siteToolError("%s", refusal), nil, nil
+	}
+	if refusal := checkSiteToolsSearch("pattern", pattern); refusal != "" {
+		return siteToolError("%s", refusal), nil, nil
+	}
+	if params.Limit < 0 || params.Offset < 0 {
+		return siteToolError("limit and offset cannot be negative"), nil, nil
+	}
+	var re *regexp.Regexp
+	if pattern != "" {
+		var err error
+		if re, err = regexp.Compile("(?i)" + pattern); err != nil {
+			return siteToolError("pattern is not a valid regular expression: %v", err), nil, nil
+		}
+	}
 	shares, err := ps.siteTools.List(ctx, ps.contentID(), ps.ownerID())
 	if err != nil {
 		return siteToolError("failed to list shared websites: %v", err), nil, nil
 	}
-	listing := make([]siteListing, len(shares))
+
+	listing := siteListing{Sites: make([]siteSummary, len(shares)), Tools: []siteToolSummary{}}
+	var found []siteToolSummary
 	for i, share := range shares {
-		tools := make([]siteToolSummary, len(share.Tools))
-		for j, t := range share.Tools {
-			tools[j] = siteToolSummary{Name: t.Name, Description: t.Description}
+		listing.Sites[i] = siteSummary{Site: share.Site, Online: share.Online, Tools: len(share.Tools)}
+		for _, t := range share.Tools {
+			if re == nil || re.MatchString(t.Name) || re.MatchString(t.Description) {
+				found = append(found, siteToolSummary{Site: share.Site, Name: t.Name, Description: t.Description})
+			}
 		}
-		listing[i] = siteListing{Site: share.Site, Online: share.Online, Tools: tools}
+	}
+	found = rankSiteTools(found, q)
+
+	listing.Total = len(found)
+	if params.Offset < len(found) {
+		page := found[params.Offset:]
+		if limit := min(params.Limit, maxSiteToolsLimit); limit > 0 && limit < len(page) {
+			page = page[:limit]
+			listing.Next = params.Offset + limit
+		}
+		listing.Tools = page
 	}
 	b, _ := json.Marshal(listing)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+}
+
+// checkSiteToolsSearch says what is wrong with a q or pattern, or "" when it is
+// empty or fits.
+func checkSiteToolsSearch(field, value string) string {
+	switch n := utf8.RuneCountInString(value); {
+	case n > 0 && n < minSiteToolsQuery:
+		return fmt.Sprintf("%s %q is too short; give at least %d characters, or leave it out", field, value, minSiteToolsQuery)
+	case n > maxSiteToolsQuery:
+		return fmt.Sprintf("%s is %d characters; the limit is %d", field, n, maxSiteToolsQuery)
+	}
+	return ""
+}
+
+// rankSiteTools orders tools by name ignoring case, then site. With a query it
+// keeps only the tools sharing a word with it, best BM25 score first, ties
+// still by name.
+func rankSiteTools(tools []siteToolSummary, q string) []siteToolSummary {
+	byName := func(a, b siteToolSummary) int {
+		return cmp.Or(
+			cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)),
+			cmp.Compare(a.Name, b.Name),
+			cmp.Compare(a.Site, b.Site))
+	}
+	if q == "" {
+		slices.SortStableFunc(tools, byName)
+		return tools
+	}
+	docs := make([]string, len(tools))
+	for i, t := range tools {
+		docs[i] = t.Name + " " + t.Description
+	}
+	scores := bm25.New(docs).Scores(q)
+	type scored struct {
+		tool  siteToolSummary
+		score float64
+	}
+	var hits []scored
+	for i, t := range tools {
+		if scores[i] > 0 {
+			hits = append(hits, scored{t, scores[i]})
+		}
+	}
+	slices.SortStableFunc(hits, func(a, b scored) int {
+		return cmp.Or(cmp.Compare(b.score, a.score), byName(a.tool, b.tool))
+	})
+	ranked := make([]siteToolSummary, len(hits))
+	for i, h := range hits {
+		ranked[i] = h.tool
+	}
+	return ranked
 }
 
 func (ps *WorkspaceServer) handleGetSiteToolDefinition(ctx context.Context, req *mcp.CallToolRequest, params GetSiteToolDefinitionParams) (*mcp.CallToolResult, any, error) {

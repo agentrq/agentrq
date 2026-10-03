@@ -111,7 +111,9 @@ visible to agents, and each site goes to one workspace. **Stop sharing** in the
 popup, or the **Shared websites** list in Options, takes it away again.
 
 **What the agent sees.** Three tools on the workspace server: `listSiteTools`
-lists the shared sites and each tool's name and description,
+lists the shared sites and each tool's name and description (ranked by `q`
+with BM25, filtered by a regular expression `pattern`, and paged with `limit`
+and `offset`; with neither `q` nor `pattern` the tools come by name),
 `getSiteToolDefinition` gives one tool's input schema, and `callSiteTool` runs
 it. From a terminal, `agentrq-ws site-tools`, `agentrq-ws site-tool` and
 `agentrq-ws call-site-tool` do the same.
