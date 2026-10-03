@@ -32,7 +32,7 @@ jobs:
         # The floor declared in package.json's engines, and current. A CLI is
         # run with whatever node somebody already has, so the oldest supported
         # version is the one most likely to be the real one.
-        node-version: ['20.6', '22']
+        node-version: ['20.6', '26']
 
     steps:
       - name: Checkout
@@ -42,6 +42,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+
+      # npm 12 needs Node 22.22 or later; the 20.6 leg keeps the npm it ships with.
+      - name: Use npm 12.2.0
+        if: matrix.node-version != '20.6'
+        run: npm install -g npm@12.2.0
 
       # The package has no dependencies, so there is nothing to install and no
       # lockfile to cache. Left here as the place one would go if that changes.
@@ -61,7 +66,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       # Every line and every function of src/, enforced rather than asserted in
       # a README. Branches sit slightly lower on purpose: a handful are
@@ -97,14 +105,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
           registry-url: 'https://registry.npmjs.org'
 
-      # Node 22 ships npm 10.x, which has no OIDC support; trusted publishing
-      # needs npm >= 11.5.1. Without this the publish falls back to looking for
-      # a token and fails.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1; without it the publish falls
+      # back to looking for a token and fails.
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       # npm rejects republishing an existing version, which would fail every
       # push that touches the CLI without bumping it. This package rides the

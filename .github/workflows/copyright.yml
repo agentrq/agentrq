@@ -28,7 +28,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 26
 
       # No install step: the check reads files and asks git what is tracked, and
       # depends on nothing that would have to be fetched first.

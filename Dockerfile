@@ -9,7 +9,9 @@
 # CSS, byte-identical on either architecture. The platform-specific things npm
 # installs here (esbuild, rollup, sharp) stay in this stage and are never
 # copied into the image.
-FROM --platform=$BUILDPLATFORM node:25-alpine3.22 AS frontendbuild
+FROM --platform=$BUILDPLATFORM node:26-alpine3.22 AS frontendbuild
+
+RUN npm install -g npm@12.2.0
 
 # Set the working directory inside the container
 WORKDIR /app

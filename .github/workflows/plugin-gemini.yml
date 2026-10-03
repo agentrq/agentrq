@@ -38,7 +38,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       # Pinned, so a Gemini CLI release cannot turn this red on its own.
       - name: Validate with Gemini CLI

@@ -217,7 +217,7 @@ Authentication is [npm trusted publishing](https://docs.npmjs.com/trusted-publis
 Two things that break it, both non-obvious:
 
 - **Renaming the workflow file.** The trusted-publisher record names `plugin-deepseek-harness.yml` exactly; a rename must be made on npm's side too or every publish is rejected.
-- **npm older than 11.5.1.** `setup-node` with Node 22 installs npm 10.x, which has no OIDC support and silently falls back to looking for a token. The workflow upgrades npm explicitly for this reason — do not remove that step.
+- **npm older than 11.5.1.** It has no OIDC support and silently falls back to looking for a token. The workflow installs npm 12.2.0 explicitly rather than trusting the one `setup-node` ships — do not remove that step.
 
 ## Known limitations and deferred work
 

@@ -39,7 +39,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       - name: Check desktop, frontend and backend agree
         working-directory: desktop
@@ -109,7 +112,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       # The renderer is built from ../frontend/src, and those modules resolve
       # their own dependencies out of frontend/node_modules.

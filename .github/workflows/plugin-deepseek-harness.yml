@@ -36,8 +36,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       # The harness packages declare peer dependencies that pnpm resolves from a
       # dsh profile; a standalone npm install needs --legacy-peer-deps.
@@ -78,14 +81,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '26'
           registry-url: 'https://registry.npmjs.org'
 
-      # Node 22 ships npm 10.x, which has no OIDC support; trusted publishing
-      # needs npm >= 11.5.1. Without this the publish falls back to looking for
-      # a token and fails.
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1; without it the publish falls
+      # back to looking for a token and fails.
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
