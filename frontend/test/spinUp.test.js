@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { reactive } from 'vue';
 
 import { STEP_LABELS, canSpinUp, spinUpFailure, spinUpName, useSpinUp } from '../src/composables/useSpinUp';
 import { lastLaunchChoice, rememberLaunchChoice } from '../src/composables/useAgentLaunch';
@@ -17,13 +18,14 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => localStorage.clear());
 
 describe('canSpinUp', () => {
-  it('is offered on unfinished work in a workspace that can be forked', () => {
-    for (const status of ['notstarted', 'ongoing', 'blocked']) {
+  it('is offered on work waiting for an agent in a workspace that can be forked', () => {
+    for (const status of ['notstarted', 'blocked']) {
       expect(canSpinUp({ ...task, status }, parent)).toBe(true);
     }
   });
 
-  it('is not offered on finished work, a schedule, a fork or the supervisor', () => {
+  it('is not offered on work an agent has started, finished work, a schedule, a fork or the supervisor', () => {
+    expect(canSpinUp({ ...task, status: 'ongoing' }, parent)).toBe(false);
     expect(canSpinUp({ ...task, status: 'completed' }, parent)).toBe(false);
     expect(canSpinUp({ ...task, status: 'rejected' }, parent)).toBe(false);
     expect(canSpinUp({ ...task, status: 'cron' }, parent)).toBe(false);
@@ -110,6 +112,18 @@ describe('useSpinUp: opening', () => {
       "ops has no working directory, so there is no folder to make the fork's from.",
     ]);
     expect(spin.blockers.value[0].fix.to).toBe('/workspaces/p1/settings');
+    expect(await spin.run()).toBe(null);
+  });
+
+  it('refuses before forking when an agent takes the task on while it is open', async () => {
+    const { spin } = setup({ fetchMachines: vi.fn(() => Promise.resolve({ machines: [M1] })) });
+    const live = reactive({ ...task });
+    await spin.open(live, parent);
+    expect(spin.blockers.value).toEqual([]);
+    live.status = 'ongoing';
+    expect(spin.blockers.value.map((b) => b.reason)).toEqual([
+      'An agent has already started on this task, so it stays here.',
+    ]);
     expect(await spin.run()).toBe(null);
   });
 

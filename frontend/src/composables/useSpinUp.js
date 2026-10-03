@@ -30,12 +30,16 @@ import { launchableMachines, machineChoiceEligibility } from './useWorkspaceAgen
 import { canFork, kebabName } from './useWorkspaceForks'
 import { launchTerminalSize } from './useLaunchTerminalSize'
 
-/** A task still waiting on work: a schedule is a template, not work to hand off. */
-const UNFINISHED = ['notstarted', 'ongoing', 'blocked']
+/**
+ * A task still waiting for an agent. An ongoing one already has one, here, and
+ * moving it into a fork would take it from under that agent; a schedule is a
+ * template, not work to hand off.
+ */
+const WAITING = ['notstarted', 'blocked']
 
-/** Whether a task row offers Spin up: an unfinished task in a workspace that can be forked. */
+/** Whether a task row offers Spin up: a task waiting for an agent, in a workspace that can be forked. */
 export function canSpinUp(task, workspace) {
-  return !!task && UNFINISHED.includes(task.status) && canFork(workspace)
+  return !!task && WAITING.includes(task.status) && canFork(workspace)
 }
 
 /** The fork is named after the task, in kebab-case, cut to what a workspace name may hold. */
@@ -113,7 +117,11 @@ export function useSpinUp(deps = {}) {
           fix: { label: 'Set one in workspace settings', to: `/workspaces/${ws.id}/settings` },
         }
       : { ok: true }
-    return [machineChoiceEligibility(machineId.value, machines.value), folder, paramsEligibility(kind.value, params.value)]
+    // The task can be taken on while the popover is open.
+    const waiting = state.task?.status === 'ongoing'
+      ? { ok: false, reason: 'An agent has already started on this task, so it stays here.' }
+      : { ok: true }
+    return [waiting, machineChoiceEligibility(machineId.value, machines.value), folder, paramsEligibility(kind.value, params.value)]
       .filter((e) => !e.ok)
   })
 

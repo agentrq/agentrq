@@ -9,7 +9,7 @@ A fork is a **workspace fork**, not a git fork. It forks the AgentRQ workspace. 
 There are two ways to make a fork:
 
 - **Fork workspace**: right-click a workspace in the sidebar, or use its **⋯** button, and choose **Fork workspace**. Give the fork a name, or keep the default, `<parent>-fork`. Fork names are kebab-case, like workspace names.
-- **Spin up**: on a task row or a kanban card, choose **Spin up**, next to **Edit**. In one step it makes a fork named after the task, moves the task into it and launches an agent there. If one of those steps fails, it tells you which.
+- **Spin up**: on a task row or a kanban card, choose **Spin up**, next to **Edit**. In one step it makes a fork named after the task, moves the task into it and launches an agent there. If one of those steps fails, it tells you which. It is not offered on a task an agent has already started.
 
 Forks appear under their parent in the sidebar, with a fork mark. To give a fork more work, move tasks into it with **Move**, one or several at a time. The Move dialog lists forks under their parent.
 
