@@ -32,6 +32,10 @@ const defaultWorkspaceSelfLearningLoopNote = `Just before marking the task as co
 - Update the memory or skill that already covers the topic rather than adding a near-duplicate, and rewrite any older note the new lesson contradicts.
 - Write the rule, not the story: a line or two, linked from the memory index. If nothing was learned, save nothing.`
 
+// defaultInputSendDelaySeconds is a new workspace's composer send delay, so a
+// message can still be edited or taken back before it reaches the agent.
+const defaultInputSendDelaySeconds = 5
+
 func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorkspaceRequest) (*entity.CreateWorkspaceResponse, error) {
 	userID := monoflake.IDFromBase62(req.UserID).Int64()
 	if c.limiter != nil && !c.limiter.AllowWorkspace(userID) {
@@ -56,6 +60,9 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		SelfLearningLoopNote:  req.Workspace.SelfLearningLoopNote,
 		InputSendDelaySeconds: req.Workspace.InputSendDelaySeconds,
 		WorkingDirectory:      workingDirectory,
+	}
+	if m.InputSendDelaySeconds == 0 {
+		m.InputSendDelaySeconds = defaultInputSendDelaySeconds
 	}
 	// Only at creation: clearing the note later in settings is how a
 	// workspace opts out, and an update must not bring it back.

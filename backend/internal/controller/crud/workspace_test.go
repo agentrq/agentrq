@@ -64,6 +64,43 @@ func TestCreateWorkspace_ClearContextDefaultsToTrue(t *testing.T) {
 	}
 }
 
+// A new workspace holds a message for 5s before sending it, unless the
+// request names a delay of its own.
+func TestCreateWorkspace_InputSendDelaySeconds(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requested int
+		want      int
+	}{
+		{"unset defaults to 5s", 0, 5},
+		{"explicit value is kept", 10, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+
+			e.idgen.EXPECT().NextID().Return(int64(100))
+			var captured model.Workspace
+			e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+				func(_ context.Context, p model.Workspace) (model.Workspace, error) {
+					captured = p
+					return p, nil
+				},
+			)
+
+			_, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
+				UserID:    testUserIDStr,
+				Workspace: entity.Workspace{Name: "W", InputSendDelaySeconds: tc.requested},
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if captured.InputSendDelaySeconds != tc.want {
+				t.Errorf("InputSendDelaySeconds = %d, want %d", captured.InputSendDelaySeconds, tc.want)
+			}
+		})
+	}
+}
+
 // A workspace created without a note gets the default one, so a new
 // workspace's agents keep a self-learning loop unless somebody opts out.
 func TestCreateWorkspace_EmptyNoteGetsTheDefault(t *testing.T) {

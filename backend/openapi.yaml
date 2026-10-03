@@ -2358,7 +2358,8 @@ components:
           type: integer
           description: |
             Seconds a chat message waits in the thread before reaching the
-            agent. 0 disables the delay.
+            agent. 0 disables the delay. A new workspace starts at 5 unless
+            the request sets it.
         workingDirectory: { type: string }
         slack: { $ref: '#/components/schemas/SlackConfig' }
         forkOfId:

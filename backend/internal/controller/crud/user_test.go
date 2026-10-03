@@ -100,6 +100,9 @@ func TestFindOrCreateUser_NotFound_CreateNew(t *testing.T) {
 		if w.SelfLearningLoopNote != defaultSupervisorWorkspaceSelfLearningLoopNote {
 			return model.Workspace{}, fmt.Errorf("supervisor workspace self-learning-loop note should be the default")
 		}
+		if w.InputSendDelaySeconds != 5 {
+			return model.Workspace{}, fmt.Errorf("supervisor workspace send delay should default to 5s, got %d", w.InputSendDelaySeconds)
+		}
 		return w, nil
 	})
 

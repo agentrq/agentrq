@@ -122,13 +122,14 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 	// Every new account gets a "supervisor" workspace, the one whose
 	// .mcp.json setup snippet also wires in the cross-workspace coremcp tools.
 	supervisorWorkspace := model.Workspace{
-		ID:                   c.idgen.NextID(),
-		CreatedAt:            created.CreatedAt,
-		UpdatedAt:            created.CreatedAt,
-		UserID:               created.ID,
-		Name:                 "supervisor",
-		Description:          defaultSupervisorWorkspaceDescription,
-		SelfLearningLoopNote: defaultSupervisorWorkspaceSelfLearningLoopNote,
+		ID:                    c.idgen.NextID(),
+		CreatedAt:             created.CreatedAt,
+		UpdatedAt:             created.CreatedAt,
+		UserID:                created.ID,
+		Name:                  "supervisor",
+		Description:           defaultSupervisorWorkspaceDescription,
+		SelfLearningLoopNote:  defaultSupervisorWorkspaceSelfLearningLoopNote,
+		InputSendDelaySeconds: defaultInputSendDelaySeconds,
 	}
 	createdWorkspace, err := c.repository.CreateWorkspace(ctx, supervisorWorkspace)
 	if err != nil {
