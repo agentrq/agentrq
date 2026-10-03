@@ -37,7 +37,7 @@
                 @keydown.enter.prevent="renamable && startRename()"
                 @mouseenter="renamable && tooltipStore.show($event, 'Click to rename', 'bottom')"
                 @mouseleave="tooltipStore.hide()"
-                :class="renamable ? 'cursor-text rounded-sm hover:bg-gray-100 dark:hover:bg-zinc-800 outline-none focus-visible:ring-1 focus-visible:ring-gray-400' : ''"
+                :class="renamable ? 'cursor-text outline-none focus-visible:underline' : ''"
                 class="text-lg @min-[48rem]:text-xl font-black text-gray-800 dark:text-zinc-200 tracking-tight leading-tight truncate flex-1 min-w-0">
               {{ task.title }}
             </h1>
