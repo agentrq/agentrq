@@ -301,6 +301,32 @@ app.whenReady().then(async () => {
   const address = await js("document.querySelector('[data-side-panel-address]').value")
   record('the address field follows the page', address === `${origin}/page`, address)
 
+  // Cmd/Ctrl+F typed into the page opens the panel's find bar, not the page's.
+  const findModifier = process.platform === 'darwin' ? 'meta' : 'control'
+  guest.focus()
+  guest.sendInputEvent({ type: 'keyDown', keyCode: 'F', modifiers: [findModifier] })
+  guest.sendInputEvent({ type: 'keyUp', keyCode: 'F', modifiers: [findModifier] })
+  const findBar = await until(() => js("document.activeElement?.matches('[data-side-panel-find-input]') || null"), { timeout: 3000 })
+  record('Cmd/Ctrl+F in the page opens the find bar, focused', findBar === true)
+  await js(`(() => {
+    const input = document.querySelector('[data-side-panel-find-input]');
+    input.value = 'page';
+    input.dispatchEvent(new Event('input'));
+  })()`)
+  const count = await until(() => js("(() => { const c = document.querySelector('[data-side-panel-find-count]')?.textContent?.trim(); return c && c !== '0/0' ? c : null })()"), { timeout: 3000 })
+  record('the page is searched, and the matches counted', /^1\/[2-9]$/.test(count ?? ''), count)
+  await js("document.querySelector('[data-side-panel-find-next]').click()")
+  const stepped = await until(() => js("(() => { const c = document.querySelector('[data-side-panel-find-count]').textContent.trim(); return c.startsWith('2/') ? c : null })()"), { timeout: 3000 })
+  record('next steps to the following match', Boolean(stepped), stepped)
+  if (process.env.SHOTS) {
+    await wait(800)
+    await mkdir(process.env.SHOTS, { recursive: true })
+    await writeFile(join(process.env.SHOTS, `side-panel-find-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+  await js("document.querySelector('[data-side-panel-find-input]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+  await wait(200)
+  record('Escape closes the find bar', (await js("!document.querySelector('[data-side-panel-find]')")) === true)
+
   // A target=_blank link stays in the panel and opens no window.
   // As a click: Chromium blocks a popup that no user gesture asked for.
   await guest.executeJavaScript("document.getElementById('popup').click()", true)
@@ -469,6 +495,19 @@ app.whenReady().then(async () => {
   await wait(300)
   const phoneLayout = await js("getComputedStyle(document.querySelector('button[title=\"Go Back\"]')).display !== 'none'")
   record('beside the panel the task view uses its phone layout', phoneLayout === true)
+
+  // So does the New Task form: its Agent/Human toggle shows icons, not words.
+  await js("history.pushState({}, '', '/workspaces/w1/tasks/new'); dispatchEvent(new PopStateEvent('popstate'))")
+  await until(() => js("!!document.querySelector('#taskForm')"))
+  await wait(300)
+  const toggleWords = await js("[...document.querySelectorAll('#taskForm span')].filter((s) => ['Agent', 'Human'].includes(s.textContent.trim())).map((s) => getComputedStyle(s).display)")
+  record('beside the panel the New Task toggle shows icons', toggleWords.length === 2 && toggleWords.every((d) => d === 'none'), JSON.stringify(toggleWords))
+  if (process.env.SHOTS) {
+    await wait(800)
+    await writeFile(join(process.env.SHOTS, `task-form-beside-panel-${theme}.png`), (frame ?? (await win.webContents.capturePage())).toPNG())
+  }
+  await js("history.pushState({}, '', '/workspaces/w1/tasks/t1'); dispatchEvent(new PopStateEvent('popstate'))")
+  await until(() => js("!!document.querySelector('button[title=\"Go Back\"]')"))
 
   if (process.env.SHOTS) {
     await guest.loadURL(`${origin}/page`)

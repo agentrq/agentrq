@@ -29,6 +29,8 @@ function fakeGuest() {
     goForward: vi.fn(),
     reload: vi.fn(),
     stop: vi.fn(),
+    findInPage: vi.fn(),
+    stopFindInPage: vi.fn(),
     canGoBack: () => guest.history.back,
     canGoForward: () => guest.history.forward,
   })
@@ -420,6 +422,162 @@ describe('SidePanel', () => {
     await click('[data-side-panel-external]')
     expect(window.agentrq.sidePanel.openExternal).toHaveBeenCalledWith('https://example.com/')
     delete window.agentrq
+  })
+
+  describe('finding in the page', () => {
+    function findBridge() {
+      let onFind = null
+      const stop = vi.fn()
+      const bridge = { openExternal: vi.fn(), onFind: vi.fn((cb) => { onFind = cb; return stop }) }
+      return { bridge, stop, press: async () => { await onFind(); await nextTick() } }
+    }
+
+    async function find(text) {
+      const input = $('[data-side-panel-find-input]')
+      input.value = text
+      input.dispatchEvent(new Event('input'))
+      await nextTick()
+    }
+
+    const key = (target, fields) => target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...fields }))
+
+    it('opens the find bar when the shell says Cmd/Ctrl+F was pressed in the page', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      expect($('[data-side-panel-find]')).toBeNull()
+
+      await press()
+      expect($('[data-side-panel-find]')).not.toBeNull()
+      expect(document.activeElement).toBe($('[data-side-panel-find-input]'))
+    })
+
+    it('searches as it is typed, and steps through the matches', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      const guest = guests[0]
+      await press()
+      expect($('[data-side-panel-find-next]').disabled).toBe(true)
+
+      await find('agent')
+      expect(guest.findInPage).toHaveBeenLastCalledWith('agent', { findNext: true })
+      fire(guest, 'found-in-page', { result: { activeMatchOrdinal: 1, matches: 4 } })
+      await nextTick()
+      expect($('[data-side-panel-find-count]').textContent).toBe('1/4')
+
+      await click('[data-side-panel-find-next]')
+      expect(guest.findInPage).toHaveBeenLastCalledWith('agent', { forward: true, findNext: false })
+      await click('[data-side-panel-find-previous]')
+      expect(guest.findInPage).toHaveBeenLastCalledWith('agent', { forward: false, findNext: false })
+
+      key($('[data-side-panel-find-input]'), { key: 'Enter' })
+      expect(guest.findInPage).toHaveBeenLastCalledWith('agent', { forward: true, findNext: false })
+      key($('[data-side-panel-find-input]'), { key: 'Enter', shiftKey: true })
+      expect(guest.findInPage).toHaveBeenLastCalledWith('agent', { forward: false, findNext: false })
+    })
+
+    it('counts nothing for a result with no numbers, or once the page navigates away', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      const guest = guests[0]
+      await press()
+      await find('agent')
+      fire(guest, 'found-in-page', {})
+      await nextTick()
+      expect($('[data-side-panel-find-count]').textContent).toBe('0/0')
+
+      fire(guest, 'found-in-page', { result: { activeMatchOrdinal: 2, matches: 3 } })
+      fire(guest, 'did-navigate', { url: 'https://example.com/next' })
+      await nextTick()
+      expect($('[data-side-panel-find-count]').textContent).toBe('0/0')
+    })
+
+    it('clears the highlights when the text is emptied, and steps nowhere', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      const guest = guests[0]
+      await press()
+      await find('agent')
+      fire(guest, 'found-in-page', { result: { activeMatchOrdinal: 1, matches: 2 } })
+      await find('')
+
+      expect(guest.stopFindInPage).toHaveBeenCalledWith('clearSelection')
+      expect($('[data-side-panel-find-count]').textContent).toBe('')
+      guest.findInPage.mockClear()
+      key($('[data-side-panel-find-input]'), { key: 'Enter' })
+      expect(guest.findInPage).not.toHaveBeenCalled()
+    })
+
+    it('closes with Escape or its button, leaving the match selected and the page focused', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      const guest = guests[0]
+      guest.focus = vi.fn()
+      await press()
+      key($('[data-side-panel-find-input]'), { key: 'Escape' })
+      await nextTick()
+      expect($('[data-side-panel-find]')).toBeNull()
+      expect(guest.stopFindInPage).toHaveBeenCalledWith('keepSelection')
+      expect(guest.focus).toHaveBeenCalled()
+
+      await press()
+      await click('[data-side-panel-find-close]')
+      expect($('[data-side-panel-find]')).toBeNull()
+    })
+
+    it('searches again for the text it kept when it is reopened', async () => {
+      const { bridge, press } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      const guest = guests[0]
+      await press()
+      await find('agent')
+      await click('[data-side-panel-find-close]')
+      guest.findInPage.mockClear()
+
+      await press()
+      expect($('[data-side-panel-find-input]').value).toBe('agent')
+      expect(guest.findInPage).toHaveBeenCalledWith('agent', { findNext: true })
+    })
+
+    it('opens on Cmd/Ctrl+F in the panel itself, and not on another key', async () => {
+      mount({ url: 'https://example.com/' })
+      const address = $('[data-side-panel-address]')
+
+      key(address, { key: 'f', shiftKey: true, metaKey: true })
+      key(address, { key: 'f', altKey: true, ctrlKey: true })
+      key(address, { key: 'f', metaKey: true, ctrlKey: true })
+      key(address, { key: 'g', metaKey: true })
+      key(address, { key: 'f' })
+      await nextTick()
+      expect($('[data-side-panel-find]')).toBeNull()
+
+      const event = new KeyboardEvent('keydown', { key: 'F', ctrlKey: true, bubbles: true, cancelable: true })
+      address.dispatchEvent(event)
+      await nextTick()
+      expect(event.defaultPrevented).toBe(true)
+      expect($('[data-side-panel-find]')).not.toBeNull()
+    })
+
+    it('has nothing to find with no page, or a page that failed to load', async () => {
+      const { bridge, press } = findBridge()
+      mount({ bridge })
+      await press()
+      expect($('[data-side-panel-find]')).toBeNull()
+
+      $('[data-side-panel-address]').value = 'https://example.com/'
+      await type('https://example.com/')
+      fire(guests[0], 'did-fail-load', { errorCode: -105, errorDescription: 'Not found', isMainFrame: true })
+      await nextTick()
+      await press()
+      expect($('[data-side-panel-find]')).toBeNull()
+    })
+
+    it('stops listening for the shortcut when it goes away', () => {
+      const { bridge, stop } = findBridge()
+      mount({ url: 'https://example.com/', bridge })
+      app.unmount()
+      app = null
+      expect(stop).toHaveBeenCalled()
+    })
   })
 
   describe('asking before a page uses something', () => {

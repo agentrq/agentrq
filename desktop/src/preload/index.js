@@ -316,6 +316,16 @@ contextBridge.exposeInMainWorld('agentrq', {
       ipcRenderer.on('agentrq:side-panel:open', listener)
       return () => ipcRenderer.off('agentrq:side-panel:open', listener)
     },
+    /**
+     * Cmd/Ctrl+F pressed while the page in the panel has focus.
+     *
+     * @returns {() => void} unsubscribe
+     */
+    onFind: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('agentrq:side-panel:find', listener)
+      return () => ipcRenderer.off('agentrq:side-panel:find', listener)
+    },
     /** @returns {Promise<Array<{ owner: string, extension: string, id: string, label: string, url: string }>>} */
     pages: () => ipcRenderer.invoke('agentrq:side-panel:pages'),
     /** "Open in browser": the ordinary link rule decides what leaves. */

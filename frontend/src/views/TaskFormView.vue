@@ -5,7 +5,11 @@
 -->
 
 <template>
-  <div class="h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
+  <!-- Laid out by its own width, not the window's: beside the desktop side
+       panel the form gets a phone's width, and should look like it does on a
+       phone. `@min-[40rem]:` and `@min-[48rem]:` are `sm:` and `md:` measured
+       against this element. -->
+  <div class="@container h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
     <!-- Breadcrumb Header -->
     <header class="py-4 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center justify-between gap-4 bg-white dark:bg-zinc-900 sticky top-0 z-30 px-6">
       <div class="flex items-center gap-2 text-xs font-semibold min-w-0 flex-1">
@@ -22,14 +26,14 @@
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto pt-8 md:pt-16 pb-24 px-1 sm:px-2 md:px-4 scroll-smooth custom-scrollbar flex items-start justify-center"
+    <main class="flex-1 overflow-y-auto pt-8 @min-[48rem]:pt-16 pb-24 px-1 @min-[40rem]:px-2 @min-[48rem]:px-4 scroll-smooth custom-scrollbar flex items-start justify-center"
           @dragover.prevent="isDragging = true"
           @dragleave.prevent="isDragging = false"
           @drop.prevent="handleDrop">
       
       <div class="w-full max-w-3xl space-y-4">
         
-        <h1 class="text-xl md:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
+        <h1 class="text-xl @min-[48rem]:text-3xl font-black text-gray-800 dark:text-zinc-200 tracking-tight text-center mb-8">
           {{ isEditMode ? 'Edit Task' : 'What do you want to achieve?' }}
         </h1>
 
@@ -83,7 +87,7 @@
 
           <!-- Bottom Toolbar -->
           <div class="flex items-center justify-between px-3 pb-2 pt-2 border-t border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50 rounded-b-xl flex-wrap gap-2 relative">
-             <div class="flex items-center gap-1 sm:gap-2 flex-wrap">
+             <div class="flex items-center gap-1 @min-[40rem]:gap-2 flex-wrap">
                 <!-- Attachment Button -->
                 <button type="button" @click="$refs.fileInput.click()"
                         class="h-7 w-7 rounded-md text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center"
@@ -115,15 +119,15 @@
                           @mouseenter="tooltipStore.show($event, 'Assign to Agent', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'agent' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
-                    <span class="hidden sm:inline">Agent</span>
-                    <svg class="sm:hidden w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
+                    <span class="hidden @min-[40rem]:inline">Agent</span>
+                    <svg class="@min-[40rem]:hidden w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
                   </button>
                   <button type="button" @click="newTask.assignee = 'human'; tooltipStore.hide()"
                           @mouseenter="tooltipStore.show($event, 'Assign to Human', 'top')" @mouseleave="tooltipStore.hide()"
                           :class="newTask.assignee === 'human' ? 'bg-white dark:bg-zinc-700 text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'"
                           class="px-2 rounded flex items-center justify-center text-[10px] font-bold uppercase tracking-wider transition-all">
-                    <span class="hidden sm:inline">Human</span>
-                    <svg class="sm:hidden w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    <span class="hidden @min-[40rem]:inline">Human</span>
+                    <svg class="@min-[40rem]:hidden w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                   </button>
                 </div>
 
@@ -148,9 +152,9 @@
                         @mouseenter="tooltipStore.show($event, newTask.allowAllCommands ? 'YOLO Active: Agent will execute all commands without approval' : 'YOLO Mode: Skip approval for sensitive commands', 'top')"
                         @mouseleave="tooltipStore.hide()"
                         :class="newTask.allowAllCommands ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-black border-transparent shadow-sm' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-200 dark:hover:bg-zinc-700 border border-gray-200 dark:border-zinc-700'"
-                        class="flex items-center justify-center gap-1 w-7 h-7 sm:w-auto sm:px-2.5 rounded-md transition-all text-[10px] font-bold uppercase tracking-wider">
+                        class="flex items-center justify-center gap-1 w-7 h-7 @min-[40rem]:w-auto @min-[40rem]:px-2.5 rounded-md transition-all text-[10px] font-bold uppercase tracking-wider">
                   <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.99 7.99 0 0120 13a7.98 7.98 0 01-2.343 5.657z" /><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 16.121A3 3 0 1012.015 11L11 14l2.015-2.879z" /></svg>
-                  <span class="hidden sm:inline">YOLO</span>
+                  <span class="hidden @min-[40rem]:inline">YOLO</span>
                 </button>
 
                 <!-- Schedule / Cron Dropdown (Popover) -->
@@ -164,7 +168,7 @@
                    </button>
 
                    <!-- Schedule Menu Content -->
-                   <div v-if="showScheduleMenu" class="fixed sm:absolute left-4 right-4 sm:left-0 sm:right-auto bottom-4 sm:bottom-full mb-3 w-auto sm:w-[320px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
+                   <div v-if="showScheduleMenu" class="fixed @min-[40rem]:absolute left-4 right-4 @min-[40rem]:left-0 @min-[40rem]:right-auto bottom-4 @min-[40rem]:bottom-full mb-3 w-auto @min-[40rem]:w-[320px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
                        <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">Execution Strategy</h3>
                        
                        <div class="flex p-1 bg-gray-100 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-sm mb-4">
@@ -240,7 +244,7 @@
                            class="flex items-center justify-center w-7 h-7 rounded-md transition-all">
                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                    </button>
-                   <div v-if="showEventMenu" class="fixed sm:absolute left-4 right-4 sm:left-auto sm:right-0 bottom-4 sm:bottom-full mb-3 w-auto sm:w-[260px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
+                   <div v-if="showEventMenu" class="fixed @min-[40rem]:absolute left-4 right-4 @min-[40rem]:left-auto @min-[40rem]:right-0 bottom-4 @min-[40rem]:bottom-full mb-3 w-auto @min-[40rem]:w-[260px] bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-2xl z-50 p-4 animate-in fade-in slide-in-from-bottom-2">
                        <h3 class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-400 mb-3 border-b border-gray-100 dark:border-zinc-800 pb-2">On Completion</h3>
 
                        <!-- One control, two kinds. Selecting either clears the
@@ -293,14 +297,14 @@
 
              <!-- The shortcut, said out loud. Hidden on narrow screens, where
                   there is no keyboard to press it with and no room to say so. -->
-             <span class="hidden sm:inline text-[10px] font-medium text-gray-400 dark:text-zinc-500 mr-2 shrink-0">
+             <span class="hidden @min-[40rem]:inline text-[10px] font-medium text-gray-400 dark:text-zinc-500 mr-2 shrink-0">
                {{ isEditMode ? 'Cmd ⌘ + Enter to save' : 'Cmd ⌘ + Enter to create' }}
              </span>
 
              <!-- Submit Button -->
              <button type="submit"
                      :disabled="!canSubmit"
-                     class="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
+                     class="h-8 w-8 @min-[40rem]:h-9 @min-[40rem]:w-9 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-md border border-transparent">
                 <svg v-if="sending" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8v8H4z" /></svg>
                 <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
              </button>

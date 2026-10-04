@@ -7,7 +7,8 @@
 <template>
   <aside ref="asideRef" data-side-panel :data-full="panel.state.full || undefined"
          :class="['relative h-full min-h-0 flex py-4 pr-4', panel.state.full ? 'flex-1 min-w-0' : 'shrink-0']"
-         :style="panel.state.full ? null : { width: `${width}px` }">
+         :style="panel.state.full ? null : { width: `${width}px` }"
+         @keydown="onKeydown">
 
     <!-- The drag handle: the whole gap between the main column and the panel
          is grabbable, and a grip in the middle of it is always showing, so
@@ -96,6 +97,26 @@
                 class="px-3 py-1.5 rounded-md bg-black dark:bg-white text-[11px] font-semibold text-white dark:text-black hover:bg-gray-800 dark:hover:bg-zinc-200 transition-colors">Allow</button>
       </div>
 
+      <!-- Find in page: Cmd/Ctrl+F, here or in the page itself. -->
+      <div v-if="finding" data-side-panel-find role="search"
+           class="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 dark:border-zinc-800">
+        <input ref="findRef" v-model="findText" data-side-panel-find-input type="text" spellcheck="false" autocomplete="off"
+               aria-label="Find in page" placeholder="Find in page"
+               @input="search" @keydown.enter.prevent="findAgain(!$event.shiftKey)" @keydown.esc.prevent="closeFind"
+               class="flex-1 min-w-0 h-7 px-2.5 rounded-md bg-gray-100 dark:bg-zinc-800 text-xs text-gray-800 dark:text-zinc-100 placeholder:text-gray-400 dark:placeholder:text-zinc-500 outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600" />
+        <span data-side-panel-find-count aria-live="polite"
+              class="shrink-0 px-1 text-[11px] tabular-nums text-gray-500 dark:text-zinc-400">{{ findCount }}</span>
+        <button type="button" data-side-panel-find-previous title="Previous match" :disabled="!found.total" @click="findAgain(false)" :class="iconButton">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>
+        </button>
+        <button type="button" data-side-panel-find-next title="Next match" :disabled="!found.total" @click="findAgain(true)" :class="iconButton">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>
+        </button>
+        <button type="button" data-side-panel-find-close title="Close find bar" @click="closeFind" :class="iconButton">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
       <!-- The page. The element is created in script rather than declared
            here: its `src` has to be set before it is attached, and a
            `<webview>` is not an element the template compiler knows. -->
@@ -131,7 +152,7 @@
  * in the main process (`desktop/src/main/side-panel/`), which overwrites every
  * guest's preferences before it is attached; nothing set here can loosen that.
  */
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { isPanelUrl, normaliseAddress, panelWidth, useSidePanel } from '../composables/useSidePanel'
 import { describeQuestion, hasDecisions } from '../composables/useSitePermissions'
 import SidePanelPermissions from './SidePanelPermissions.vue'
@@ -210,6 +231,56 @@ function openPage(page) {
   show(page.url)
 }
 
+// Find in page. The guest searches and reports back with `found-in-page`.
+const findRef = ref(null)
+const finding = ref(false)
+const findText = ref('')
+const found = reactive({ active: 0, total: 0 })
+const findCount = computed(() => (findText.value ? `${found.active}/${found.total}` : ''))
+
+function clearFound() {
+  found.active = 0
+  found.total = 0
+}
+
+async function openFind() {
+  if (!guest || failure.value) return
+  finding.value = true
+  await nextTick()
+  findRef.value?.focus()
+  findRef.value?.select()
+  if (findText.value) search()
+}
+
+/** A new search, from the first match, whenever the text changes. */
+function search() {
+  if (!findText.value) {
+    guest?.stopFindInPage('clearSelection')
+    clearFound()
+    return
+  }
+  guest?.findInPage(findText.value, { findNext: true })
+}
+
+function findAgain(forward) {
+  if (findText.value) guest?.findInPage(findText.value, { forward, findNext: false })
+}
+
+function closeFind() {
+  finding.value = false
+  clearFound()
+  guest?.stopFindInPage('keepSelection')
+  guest?.focus()
+}
+
+/** Cmd/Ctrl+F with focus in the panel's own toolbar; the page's is the shell's. */
+function onKeydown(event) {
+  if (event.key?.toLowerCase() !== 'f' || event.shiftKey || event.altKey) return
+  if (event.metaKey === event.ctrlKey) return
+  event.preventDefault()
+  openFind()
+}
+
 const stops = []
 const isWebPage = computed(() => /^https?:/i.test(current.value))
 
@@ -254,8 +325,16 @@ function mountGuest(url) {
   guest.className = 'absolute inset-0 w-full h-full bg-white'
   guest.addEventListener('did-start-loading', () => { nav.loading = true })
   guest.addEventListener('did-stop-loading', () => { nav.loading = false; refreshNav() })
-  guest.addEventListener('did-navigate', onNavigate)
+  guest.addEventListener('did-navigate', (event) => {
+    // Matches were counted in the document that has gone.
+    clearFound()
+    onNavigate(event)
+  })
   guest.addEventListener('did-navigate-in-page', (event) => { if (event.isMainFrame) onNavigate(event) })
+  guest.addEventListener('found-in-page', (event) => {
+    found.active = event.result?.activeMatchOrdinal ?? 0
+    found.total = event.result?.matches ?? 0
+  })
   guest.addEventListener('did-fail-load', (event) => {
     // -3 is "aborted": a navigation replaced by another, which is not a failure.
     if (event.errorCode === -3 || event.isMainFrame === false) return
@@ -343,6 +422,7 @@ let observer = null
 onMounted(() => {
   room.value = measure()
   const bridge = props.bridge
+  stops.push(bridge?.onFind?.(openFind))
   stops.push(bridge?.onPermissionRequest?.((asked) => { question.value = asked }))
   stops.push(bridge?.onPermissionSettled?.((id) => {
     if (question.value?.id === id) question.value = null

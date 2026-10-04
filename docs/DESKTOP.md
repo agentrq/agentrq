@@ -148,7 +148,8 @@ can sit next to the task it belongs to. Open and close it with
 **Panel** button at the bottom of the sidebar, or — on macOS — the panel button
 in the title bar. It has back, forward, reload, an address field, **Open in
 browser** and **Expand**, which gives it the whole window beside the sidebar
-until you collapse it again.
+until you collapse it again. `Cmd/Ctrl+F` finds text in its page: `Enter` and
+`Shift+Enter` step through the matches, `Esc` closes the find bar.
 
 Opened, it takes all the room except a phone's width for the page beside it,
 and a task there is shown the way it is on a phone. Drag the panel's left edge

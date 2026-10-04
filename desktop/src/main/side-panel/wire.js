@@ -21,8 +21,9 @@ import { PanelTarget, hardenGuest, navigationTarget, openTarget } from './guest.
  *   the permission broker, told when a page goes away so a question it left
  *   waiting is answered
  * @param {{ warn: Function }} [options.logger]
+ * @param {string} [options.platform]  `process.platform`
  */
-export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, permissions, logger = console }) {
+export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, permissions, logger = console, platform = process.platform }) {
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     const hardened = hardenGuest(webPreferences, params, { partition: partition(), preload })
     if (hardened.ok) return
@@ -40,6 +41,15 @@ export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, p
       if (details?.isMainFrame !== false && !details?.isSameDocument) permissions?.cancelFor(guest.id)
     })
     guest.once('destroyed', () => permissions?.cancelFor(guest.id))
+
+    // Cmd/Ctrl+F while the page has focus. The keys go to the guest, which is
+    // a different web contents from the app, so the app's own find bar has to
+    // be told — and the page must not see them, or its own find would open too.
+    guest.on('before-input-event', (event, input) => {
+      if (!isFindShortcut(input, platform)) return
+      event.preventDefault()
+      if (!win.isDestroyed?.()) win.webContents.send('agentrq:side-panel:find')
+    })
 
     // Never a second window. A page that asks for one gets the panel, or the
     // browser when somebody Cmd/Ctrl-clicked.
@@ -60,6 +70,19 @@ export function wireSidePanel(win, { partition, preload, serverUrl, routeLink, p
       if (target !== PanelTarget.Blocked) routeLink(url)
     })
   })
+}
+
+/**
+ * Whether a key is the find shortcut: Cmd+F on macOS, Ctrl+F elsewhere, with
+ * no other modifier.
+ *
+ * @param {import('electron').Input} input
+ * @param {string} platform
+ */
+export function isFindShortcut(input, platform) {
+  if (input?.type !== 'keyDown' || String(input.key).toLowerCase() !== 'f') return false
+  if (input.shift || input.alt) return false
+  return platform === 'darwin' ? Boolean(input.meta) && !input.control : Boolean(input.control) && !input.meta
 }
 
 /**

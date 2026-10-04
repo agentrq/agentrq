@@ -5,7 +5,7 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 
-import { wirePanelPermissions, wireSidePanel } from '../../src/main/side-panel/wire.js'
+import { isFindShortcut, wirePanelPermissions, wireSidePanel } from '../../src/main/side-panel/wire.js'
 
 const SERVER_URL = 'https://app.agentrq.com'
 
@@ -17,8 +17,9 @@ function fakeGuest() {
   return guest
 }
 
-function setup() {
-  const win = { webContents: new EventEmitter() }
+function setup({ platform = 'darwin', destroyed = false } = {}) {
+  const win = { webContents: new EventEmitter(), isDestroyed: () => destroyed }
+  win.webContents.send = vi.fn()
   const routeLink = vi.fn()
   const logger = { warn: vi.fn() }
   const permissions = { cancelFor: vi.fn() }
@@ -29,6 +30,7 @@ function setup() {
     serverUrl: () => SERVER_URL,
     routeLink,
     logger,
+    platform,
   })
   const guest = fakeGuest()
   win.webContents.emit('did-attach-webview', {}, guest)
@@ -37,7 +39,58 @@ function setup() {
 
 const navigation = (url) => ({ url, preventDefault: vi.fn() })
 
+const key = (key, modifiers = {}) => ({ type: 'keyDown', key, ...modifiers })
+
+describe('isFindShortcut', () => {
+  it('is Cmd+F on macOS and Ctrl+F elsewhere', () => {
+    expect(isFindShortcut(key('f', { meta: true }), 'darwin')).toBe(true)
+    expect(isFindShortcut(key('F', { meta: true }), 'darwin')).toBe(true)
+    expect(isFindShortcut(key('f', { control: true }), 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f', { control: true }), 'linux')).toBe(true)
+    expect(isFindShortcut(key('f', { control: true }), 'win32')).toBe(true)
+    expect(isFindShortcut(key('f', { meta: true }), 'linux')).toBe(false)
+  })
+
+  it('is not another key, a release, or the shortcut with another modifier', () => {
+    expect(isFindShortcut(key('g', { meta: true }), 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f'), 'darwin')).toBe(false)
+    expect(isFindShortcut({ ...key('f', { meta: true }), type: 'keyUp' }, 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f', { meta: true, shift: true }), 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f', { meta: true, alt: true }), 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f', { meta: true, control: true }), 'darwin')).toBe(false)
+    expect(isFindShortcut(key('f', { control: true, meta: true }), 'linux')).toBe(false)
+    expect(isFindShortcut(undefined, 'linux')).toBe(false)
+  })
+})
+
 describe('wireSidePanel', () => {
+  it('takes the find shortcut from the page and tells the app', () => {
+    const { win, guest } = setup()
+    const event = { preventDefault: vi.fn() }
+    guest.emit('before-input-event', event, key('f', { meta: true }))
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(win.webContents.send).toHaveBeenCalledWith('agentrq:side-panel:find')
+  })
+
+  it('leaves every other key to the page', () => {
+    const { win, guest } = setup({ platform: 'linux' })
+    const event = { preventDefault: vi.fn() }
+    guest.emit('before-input-event', event, key('f', { meta: true }))
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(win.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('tells no window that has gone', () => {
+    const { win, guest } = setup({ destroyed: true })
+    const event = { preventDefault: vi.fn() }
+    guest.emit('before-input-event', event, key('f', { meta: true }))
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(win.webContents.send).not.toHaveBeenCalled()
+  })
+
   it('hardens a guest before it is attached', () => {
     const { win } = setup()
     const event = { preventDefault: vi.fn() }
