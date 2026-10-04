@@ -165,11 +165,30 @@ func (h *handler) agentHasRoom(ctx context.Context, workspaceID int64, userID st
 	return ongoing < limit
 }
 
+// taskPushContent is the line an agent is handed a task with. An untitled
+// task is named by its ID alone.
+func taskPushContent(t entity.Task) string {
+	header := "[Task " + monoflake.ID(t.ID).String() + "]"
+	if !entity.IsUntitledTask(t.Title) {
+		header += " " + t.Title
+	}
+	return header + "\n" + t.Body
+}
+
+// reassignedTaskContent tells the agent a task is now its own: by title, or by
+// ID while the task is untitled.
+func reassignedTaskContent(t entity.Task) string {
+	if entity.IsUntitledTask(t.Title) {
+		return "[Task reassigned to agent] " + monoflake.ID(t.ID).String()
+	}
+	return "[Task reassigned to agent] " + t.Title
+}
+
 // pushTaskToAgent hands a task to the workspace's agent now, rather than on
 // the poller's next tick.
 func (h *handler) pushTaskToAgent(ctx context.Context, userID string, t entity.Task) {
 	srv := h.mcpManager.Get(t.WorkspaceID, userID)
-	content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(t.ID).String(), t.Title, t.Body)
+	content := taskPushContent(t)
 	if atts := formatAttachments(t.Attachments); atts != "" {
 		content += "\n" + atts
 	}
@@ -575,7 +594,7 @@ func (h *handler) updateTaskAssignee() fiber.Handler {
 		// Notify agent if reassigned to agent
 		if rq.Assignee == "agent" {
 			srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
-			content := fmt.Sprintf("[Task reassigned to agent] %s", rs.Task.Title)
+			content := reassignedTaskContent(rs.Task)
 			// Same reasoning as the immediate push in createTask: clear before
 			// pushing, and leave the push itself unrecorded so StartPoller goes
 			// on offering the task until the agent takes it.

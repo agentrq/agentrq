@@ -2157,6 +2157,13 @@ var (
 // have something to show.
 const UntitledTaskTitle = "Untitled"
 
+// IsUntitledTask reports whether a task still has the placeholder title: one
+// nobody wrote and no local model named. Such a title tells an agent nothing,
+// so what reaches the agent names the task by its ID and body instead.
+func IsUntitledTask(title string) bool {
+	return title == UntitledTaskTitle
+}
+
 // TaskTitleEditWindow is how long after it was created a task can be renamed.
 // Past it the interface stops offering a click on the title, using the same number.
 const TaskTitleEditWindow = 7 * 24 * time.Hour

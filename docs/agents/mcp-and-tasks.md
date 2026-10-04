@@ -164,3 +164,10 @@ after Allow, and `Serve` re-checks the redirect_uri itself rather than trust
 its caller. The page is backend-rendered so no WebMCP tool can press Allow,
 and every value on it is validated first (`auth.ValidateDisplayName`, ASCII
 hosts), not cleaned at display.
+
+## An untitled task reaches the agent without its title
+
+A task created without a title is stored as `Untitled` until a browser's local
+model names it. Every message that hands a task to the agent checks
+`entity.IsUntitledTask` and names it by ID instead, so a new delivery path must
+too — or the agent reads "Untitled" as if somebody wrote it.

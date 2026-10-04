@@ -1266,7 +1266,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 			ongoingReq.Limit = 1
 			if rows, err := repo.ListTasks(context.Background(), ongoingReq, uid); err == nil && len(rows) > 0 {
 				ongoingTask := rows[0]
-				msg := fmt.Sprintf("Status Check: You are currently working on task %s. Please provide a brief status update for the mission: %s", monoflake.ID(ongoingTask.ID).String(), ongoingTask.Title)
+				msg := statusCheckMessage(ongoingTask)
 				ps.SendChannelNotification(context.Background(), ongoingTask.ID, msg)
 				ps.lastUpdateCheckAt = time.Now()
 			}
@@ -1321,7 +1321,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		// The ID is part of the push because a task body can instruct the
 		// agent to quote it back when publishing an event, and this path
 		// is how workflow-step tasks are delivered.
-		msg := fmt.Sprintf("Next assigned task:\nID: %s\nTitle: %s\nDetails: %s", monoflake.ID(nextTask.ID).String(), nextTask.Title, nextTask.Body)
+		msg := "Next assigned task:\n" + taskIDAndTitle(nextTask) + "\nDetails: " + nextTask.Body
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
 		}
@@ -1329,6 +1329,26 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		return nextTask.ID
 	}
 	return 0
+}
+
+// taskIDAndTitle is the "ID:" and "Title:" lines that name a task to the
+// agent. An untitled task has no "Title:" line: its placeholder says nothing.
+func taskIDAndTitle(t model.Task) string {
+	s := "ID: " + monoflake.ID(t.ID).String()
+	if !entity.IsUntitledTask(t.Title) {
+		s += "\nTitle: " + t.Title
+	}
+	return s
+}
+
+// statusCheckMessage asks the agent for an update on the task it is working
+// on, naming the mission only when the task has a title of its own.
+func statusCheckMessage(t model.Task) string {
+	msg := "Status Check: You are currently working on task " + monoflake.ID(t.ID).String() + ". Please provide a brief status update"
+	if entity.IsUntitledTask(t.Title) {
+		return msg + "."
+	}
+	return msg + " for the mission: " + t.Title
 }
 
 // workspaceIcons lists the workspace's own icon, then the AgentRQ logo the
@@ -2044,7 +2064,7 @@ func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolR
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s\nID: %s\nTitle: %s", header, monoflake.ID(task.ID).String(), task.Title)
+	sb.WriteString(header + "\n" + taskIDAndTitle(task))
 	if task.Status != "" {
 		fmt.Fprintf(&sb, "\nStatus: %s", task.Status)
 	}
