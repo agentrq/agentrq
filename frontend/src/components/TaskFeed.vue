@@ -199,7 +199,7 @@ const props = defineProps({
 const emit = defineEmits(['filter-change', 'tasks-updated']);
 
 const router = useRouter();
-const { notifyError, notifySuccess, notifyInfo } = useToasts();
+const { notifyError, notifySuccess } = useToasts();
 const activeStatusMenuId = ref(null);
 
 const showDeleteModal = ref(false);
@@ -452,9 +452,6 @@ watch(() => props.liveEvents.length, (newLen, oldLen) => {
           pendingTasks.value.push(t);
         }
 
-        if (ev.type === 'task.created' && t.createdBy === 'agent') {
-          notifyInfo(`Agent defined a new task: ${t.title}`, 'New Task');
-        }
         loadCounts();
         emitUpdatedTasks();
       }

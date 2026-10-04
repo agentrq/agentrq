@@ -13,7 +13,6 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_idgen "github.com/agentrq/agentrq/backend/internal/service/mocks/idgen"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repo "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
@@ -31,7 +30,6 @@ func newTestController(t *testing.T) (*controller, *mock_repo.MockRepository, *m
 		repo:   mockRepo,
 		pubsub: mockPubSub,
 		ids:    mockIDGen,
-		bus:    eventbus.New(),
 	}
 	return c, mockRepo, mockPubSub, mockIDGen
 }

@@ -392,10 +392,6 @@ func New(cfg Config) (*App, error) {
 							Origin:       entity.OriginMCP,
 						},
 					})
-					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
-						Type:    "task.created",
-						Payload: mapper.FromModelTaskToView(res),
-					})
 				}
 				return res, err
 			},
@@ -718,7 +714,6 @@ func New(cfg Config) (*App, error) {
 		Repository: repo,
 		PubSub:     pubsubSvc,
 		IDGen:      ids,
-		Bus:        bus,
 	})
 	if err := eventConsumer.Start(context.Background()); err != nil {
 		zlog.Error().Err(err).Msg("failed to start event consumer")

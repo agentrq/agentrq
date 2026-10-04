@@ -1489,12 +1489,8 @@ func (ps *WorkspaceServer) handleCreateTask(ctx context.Context, req *mcp.CallTo
 		ps.sessionTasksMu.Unlock()
 	}
 
-	// Push SSE event to human subscribers
-	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
-		Type:    "task.created",
-		Payload: mapper.FromModelTaskToView(created),
-	})
-
+	// No task.created here: the create callback's CRUD event is what reaches
+	// the live stream, once.
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
 			Text: fmt.Sprintf("task created with id=%s", monoflake.ID(created.ID).String()),

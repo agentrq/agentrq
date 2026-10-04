@@ -12,9 +12,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
-	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
-	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/agentrq/agentrq/backend/internal/service/eventinstruction"
 	"github.com/agentrq/agentrq/backend/internal/service/idgen"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -27,7 +25,6 @@ type (
 		Repository base.Repository
 		PubSub     pubsub.Service
 		IDGen      idgen.Service
-		Bus        *eventbus.Bus
 	}
 
 	Controller interface {
@@ -38,7 +35,6 @@ type (
 		repo   base.Repository
 		pubsub pubsub.Service
 		ids    idgen.Service
-		bus    *eventbus.Bus
 	}
 )
 
@@ -47,7 +43,6 @@ func New(p Params) Controller {
 		repo:   p.Repository,
 		pubsub: p.PubSub,
 		ids:    p.IDGen,
-		bus:    p.Bus,
 	}
 }
 
@@ -199,8 +194,6 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 		return
 	}
 
-	ownerID := monoflake.ID(ws.UserID).String()
-
 	c.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicCRUD,
 		Event: entity.CRUDEvent{
@@ -212,11 +205,6 @@ func (c *controller) createTriggeredTask(ctx context.Context, trigger model.Even
 			Actor:        entity.ActorAgent,
 			Origin:       entity.OriginAPI,
 		},
-	})
-
-	c.bus.Publish(trigger.WorkspaceID, ownerID, eventbus.Event{
-		Type:    "task.created",
-		Payload: mapper.FromModelTaskToView(created),
 	})
 }
 
@@ -303,8 +291,6 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 		return
 	}
 
-	ownerID := monoflake.ID(ws.UserID).String()
-
 	c.pubsub.Publish(ctx, pubsub.PublishRequest{
 		PubSubID: entity.PubSubTopicCRUD,
 		Event: entity.CRUDEvent{
@@ -316,11 +302,6 @@ func (c *controller) createWorkflowTask(ctx context.Context, step model.Workflow
 			Actor:        entity.ActorAgent,
 			Origin:       entity.OriginAPI,
 		},
-	})
-
-	c.bus.Publish(step.WorkspaceID, ownerID, eventbus.Event{
-		Type:    "task.created",
-		Payload: mapper.FromModelTaskToView(created),
 	})
 }
 

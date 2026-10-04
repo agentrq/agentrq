@@ -212,6 +212,40 @@ func TestWorkspaceServer_HandleCreateTask(t *testing.T) {
 	}
 }
 
+// The create callback's CRUD event is what the central forwarder turns into
+// task.created. Publishing one here as well put the task on the stream twice
+// more, and the browser toasted each one.
+func TestWorkspaceServer_HandleCreateTask_LeavesTaskCreatedToTheForwarder(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockPS := mock_pubsub.NewMockService(ctrl)
+	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
+	mockIdgen := mock_idgen.NewMockService(ctrl)
+	mockIdgen.EXPECT().NextID().Return(int64(123))
+
+	const workspaceID int64 = 100
+	bus := eventbus.New()
+	sub := bus.Subscribe(workspaceID, "")
+	t.Cleanup(func() { bus.Unsubscribe(workspaceID, "", sub) })
+
+	ps := &WorkspaceServer{
+		workspaceID: workspaceID,
+		userID:      monoflake.ID(15264777).String(),
+		pubsub:      mockPS,
+		idgen:       mockIdgen,
+		bus:         bus,
+		createTask: func(ctx context.Context, task model.Task) (model.Task, error) {
+			task.ID = 123
+			return task, nil
+		},
+	}
+
+	res, _, err := ps.handleCreateTask(context.Background(), nil, CreateTaskParams{Title: "Rotate the API keys", Body: "Before Friday."})
+	if err != nil || res.IsError {
+		t.Fatalf("handleCreateTask: err=%v res=%v", err, res)
+	}
+	noMoreEvents(t, sub)
+}
+
 func TestWorkspaceServer_HandleUpdateTaskStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

@@ -102,12 +102,6 @@ func (h *handler) createTask() fiber.Handler {
 			}
 		}
 
-		// Push SSE event
-		h.bus.Publish(rq.Task.WorkspaceID, rq.UserID, eventbus.Event{
-			Type:    "task.created",
-			Payload: mapper.FromEntityTaskToView(rs.Task),
-		})
-
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromCreateTaskResponseEntityToHTTPResponse(rs))
 	}
@@ -360,11 +354,6 @@ func (h *handler) forkTask() fiber.Handler {
 		if room {
 			h.pushTaskToAgent(ctx, rq.UserID, rs.Task)
 		}
-
-		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
-			Type:    "task.created",
-			Payload: mapper.FromEntityTaskToView(rs.Task),
-		})
 
 		c.Status(http.StatusCreated)
 		return c.Send(mapper.FromForkTaskResponseEntityToHTTPResponse(rs))

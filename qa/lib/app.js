@@ -96,3 +96,22 @@ export function nextResponse(page, method, path, params = {}) {
 export function unique(prefix) {
   return `${prefix}-${Date.now().toString(36)}`
 }
+
+// Creates a task the way an agent does: over the workspace's MCP server, with
+// the workspace token, and an MCP session of its own.
+export async function createTaskAsAgent(page, workspaceId, title) {
+  const { token } = await expectOk(await page.request.get(`${API}/workspaces/${workspaceId}/token`), 'reading the workspace token')
+  const url = `/mcp/${workspaceId}?token=${encodeURIComponent(token)}`
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
+  const rpc = async (body, session) => {
+    const res = await page.request.post(url, { headers: session ? { ...headers, 'mcp-session-id': session } : headers, data: body })
+    if (!res.ok()) throw new Error(`MCP ${body.method} answered ${res.status()}: ${await res.text()}`)
+    return res
+  }
+  const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'agentrq-qa', version: '0' } } })
+  const session = init.headers()['mcp-session-id']
+  await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, session)
+  const res = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'createTask', arguments: { title, body: `Created by the QA suite: ${title}` } } }, session)
+  const text = await res.text()
+  if (!text.includes('task created with id=')) throw new Error(`createTask over MCP answered: ${text}`)
+}

@@ -60,6 +60,9 @@ export default defineConfig({
         PORT: String(apiPort),
         AGENTRQ_AUTH_ROOT_LOGIN_ENABLED: 'true',
         AGENTRQ_AUTH_ROOT_ACCESS_TOKEN: rootToken,
+        // The server refuses to start without one; this one signs only the
+        // run's own throwaway sessions.
+        AGENTRQ_AUTH_JWT_SECRET: process.env.AGENTRQ_AUTH_JWT_SECRET || 'agentrq-qa-jwt-secret',
         AGENTRQ_SQLITE_DSN: join(dataDir, 'agentrq.db'),
         AGENTRQ_STORAGE_DIR: dataDir,
         AGENTRQ_RATELIMIT_ENABLED: 'false',
