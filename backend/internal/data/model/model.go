@@ -36,8 +36,12 @@ type (
 
 	// Task hosts a task created by a human or an agent within a workspace
 	Task struct {
-		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
-		CreatedAt time.Time
+		ID int64 `gorm:"primaryKey;autoIncrement:false"`
+		// idx_tasks_cron_run lets one scheduled run exist once: a cron's child
+		// is created at the minute it was scheduled for, so every backend
+		// instance ticking that minute writes the same (parent_id, created_at)
+		// and only one of them gets in. Tasks with no parent are left out.
+		CreatedAt time.Time `gorm:"uniqueIndex:idx_tasks_cron_run,priority:2"`
 		UpdatedAt time.Time
 
 		// idx_tasks_dequeue is a composite index matching the equality prefix of the
@@ -58,7 +62,7 @@ type (
 		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
 
 		CronSchedule string `gorm:"type:varchar(64)"`
-		ParentID     int64  `gorm:"index:idx_tasks_parent_id"`
+		ParentID     int64  `gorm:"index:idx_tasks_parent_id;uniqueIndex:idx_tasks_cron_run,priority:1,where:parent_id <> 0"`
 		// Never `type:real`: on Postgres that is a 4-byte float, which rounds a
 		// Unix-seconds order to 128 s and puts a dragged card back where it was.
 		SortOrder        float64 `gorm:"default:0"`

@@ -80,12 +80,15 @@ func (s *scheduler) tick(ctx context.Context) {
 		next := sched.Next(now.Add(-1 * time.Second))
 
 		if next.Equal(now) {
-			s.spawn(ctx, c)
+			s.spawn(ctx, c, now)
 		}
 	}
 }
 
-func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
+// spawn starts the run of parent scheduled for the minute at. Every backend
+// instance ticks that minute, so both ways of starting it let exactly one
+// instance through and leave the others with nothing to do or announce.
+func (s *scheduler) spawn(ctx context.Context, parent model.Task, at time.Time) {
 	// Check if ANY active task with ParentID exists (notstarted OR ongoing)
 	// This prevents double-spawning if the first one was already picked up by an agent.
 	exists, err := s.repo.SystemCheckTaskExists(ctx, parent.WorkspaceID, parent.ID, "notstarted")
@@ -101,31 +104,26 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		return
 	}
 
+	// A schedule is one-time only when BOTH day-of-month and month are fixed (e.g.
+	// "0 9 1 1 *"), matching the frontend contract (useCron.js and the task-form
+	// generators). A fixed month with a wildcard day-of-month (e.g. "0 9 * 6 *" —
+	// every day in June) is recurring and must keep its template.
+	parts := strings.Fields(parent.CronSchedule)
+	if len(parts) == 5 && parts[2] != "*" && parts[3] != "*" {
+		s.startOneTime(ctx, parent, at)
+		return
+	}
+
 	// The ID is claimed before the body is built so the instruction can tell the
 	// agent which task it is publishing for.
 	taskID := s.idgen.NextID()
 
-	body := parent.Body
-	// Keep the event link on spawned runs. The publish instruction must live in
-	// the body because scheduled children reach the agent via getTask/poller
-	// notifications, which have no event-aware path of their own.
-	if parent.EventID != 0 {
-		if ev, evErr := s.repo.GetEvent(ctx, parent.EventID, parent.UserID); evErr == nil {
-			body += eventinstruction.Build(eventinstruction.Params{
-				EventName:         ev.Name,
-				TaskID:            monoflake.ID(taskID).String(),
-				PayloadGuidelines: ev.PayloadGuidelines,
-			})
-		} else {
-			zlog.Warn().Err(evErr).Int64("cron_id", parent.ID).Int64("event_id", parent.EventID).
-				Msg("scheduler: linked event not found, on-completion publishEvent instruction omitted")
-		}
-	}
-
 	now := time.Now()
 	child := model.Task{
-		ID:               taskID,
-		CreatedAt:        now,
+		ID: taskID,
+		// The scheduled minute, not the clock: it is what every instance
+		// writes for this run, so idx_tasks_cron_run lets only one in.
+		CreatedAt:        at,
 		UpdatedAt:        now,
 		UserID:           parent.UserID,
 		WorkspaceID:      parent.WorkspaceID,
@@ -133,7 +131,7 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		Assignee:         parent.Assignee,
 		Status:           "notstarted",
 		Title:            parent.Title,
-		Body:             body,
+		Body:             s.runBody(ctx, parent, taskID),
 		Attachments:      parent.Attachments,
 		ParentID:         parent.ID,
 		AllowAllCommands: parent.AllowAllCommands,
@@ -152,60 +150,87 @@ func (s *scheduler) spawn(ctx context.Context, parent model.Task) {
 		CompletionTriggerType: parent.CompletionTriggerType,
 	}
 
-	created, err := s.repo.CreateTask(ctx, child)
+	created, err := s.repo.SystemCreateCronRun(ctx, child)
 	if err != nil {
 		zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to spawn task")
 		return
 	}
-
-	if s.pubsub != nil {
-		_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
-			PubSubID: entity.PubSubTopicCRUD,
-			Event: entity.CRUDEvent{
-				Action:       entity.ActionTaskFromScheduled,
-				WorkspaceID:  parent.WorkspaceID,
-				UserID:       parent.UserID,
-				ResourceType: entity.ResourceTask,
-				ResourceID:   created.ID,
-				Actor:        entity.ActorHuman, // System acting on behalf of human
-				Origin:       entity.OriginScheduler,
-			},
-		})
+	if !created {
+		// Another instance created this run first.
+		return
 	}
 
-	zlog.Info().Int64("task_id", created.ID).Int64("cron_id", parent.ID).Msg("scheduler: spawned task")
-
+	s.publishRun(ctx, child)
+	zlog.Info().Int64("task_id", child.ID).Int64("cron_id", parent.ID).Msg("scheduler: spawned task")
 	s.bus.Publish(parent.WorkspaceID, monoflake.ID(parent.UserID).String(), eventbus.Event{
 		Type:    "task.created",
-		Payload: mapper.FromModelTaskToView(created),
+		Payload: mapper.FromModelTaskToView(child),
 	})
+}
 
-	// If this is a one-time schedule, delete the parent template now that we've spawned it.
-	// A schedule is one-time only when BOTH day-of-month and month are fixed (e.g.
-	// "0 9 1 1 *"), matching the frontend contract (useCron.js and the task-form
-	// generators). A fixed month with a wildcard day-of-month (e.g. "0 9 * 6 *" —
-	// every day in June) is recurring and must keep its parent template.
-	parts := strings.Fields(parent.CronSchedule)
-	if len(parts) == 5 && parts[2] != "*" && parts[3] != "*" {
-		err := s.repo.DeleteTask(ctx, parent.WorkspaceID, parent.ID, parent.UserID)
-		if err != nil {
-			zlog.Error().Err(err).Int64("cron_id", parent.ID).Msg("scheduler: failed to delete one-time parent task")
-		} else {
-			zlog.Info().Int64("cron_id", parent.ID).Msg("scheduler: deleted one-time parent task")
-			if s.pubsub != nil {
-				_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
-					PubSubID: entity.PubSubTopicCRUD,
-					Event: entity.CRUDEvent{
-						Action:       entity.ActionTaskDelete,
-						WorkspaceID:  parent.WorkspaceID,
-						UserID:       parent.UserID,
-						ResourceType: entity.ResourceTask,
-						ResourceID:   parent.ID,
-						Actor:        entity.ActorHuman,
-						Origin:       entity.OriginScheduler,
-					},
-				})
-			}
-		}
+// startOneTime runs a one-time schedule as the template itself, rather than
+// as a child of a template that is then deleted: the task keeps its ID, and
+// only the instance whose update finds it still in cron announces it.
+func (s *scheduler) startOneTime(ctx context.Context, t model.Task, at time.Time) {
+	t.Status = "notstarted"
+	t.CronSchedule = ""
+	t.Body = s.runBody(ctx, t, t.ID)
+	t.CreatedAt = at
+	t.UpdatedAt = time.Now()
+
+	started, err := s.repo.SystemStartOneTimeTask(ctx, t)
+	if err != nil {
+		zlog.Error().Err(err).Int64("cron_id", t.ID).Msg("scheduler: failed to start one-time task")
+		return
 	}
+	if !started {
+		// Another instance started it first.
+		return
+	}
+
+	s.publishRun(ctx, t)
+	zlog.Info().Int64("task_id", t.ID).Msg("scheduler: started one-time task")
+	s.bus.Publish(t.WorkspaceID, monoflake.ID(t.UserID).String(), eventbus.Event{
+		Type:    "task.updated",
+		Payload: mapper.FromModelTaskToView(t),
+	})
+}
+
+// runBody is the template's body plus, when it is linked to an event, the
+// instruction to publish it naming runID. The publish instruction must live
+// in the body because scheduled runs reach the agent via getTask/poller
+// notifications, which have no event-aware path of their own.
+func (s *scheduler) runBody(ctx context.Context, parent model.Task, runID int64) string {
+	if parent.EventID == 0 {
+		return parent.Body
+	}
+	ev, err := s.repo.GetEvent(ctx, parent.EventID, parent.UserID)
+	if err != nil {
+		zlog.Warn().Err(err).Int64("cron_id", parent.ID).Int64("event_id", parent.EventID).
+			Msg("scheduler: linked event not found, on-completion publishEvent instruction omitted")
+		return parent.Body
+	}
+	return parent.Body + eventinstruction.Build(eventinstruction.Params{
+		EventName:         ev.Name,
+		TaskID:            monoflake.ID(runID).String(),
+		PayloadGuidelines: ev.PayloadGuidelines,
+	})
+}
+
+func (s *scheduler) publishRun(ctx context.Context, run model.Task) {
+	if s.pubsub == nil {
+		return
+	}
+	_, _ = s.pubsub.Publish(ctx, pubsub.PublishRequest{
+		PubSubID: entity.PubSubTopicCRUD,
+		Event: entity.CRUDEvent{
+			Action:       entity.ActionTaskFromScheduled,
+			WorkspaceID:  run.WorkspaceID,
+			UserID:       run.UserID,
+			ResourceType: entity.ResourceTask,
+			ResourceID:   run.ID,
+			Actor:        entity.ActorHuman, // System acting on behalf of human
+			Origin:       entity.OriginScheduler,
+		},
+	})
 }

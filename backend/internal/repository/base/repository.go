@@ -141,6 +141,8 @@ type Repository interface {
 	SystemGetUser(ctx context.Context, id int64) (model.User, error)
 	SystemListTasksByStatus(ctx context.Context, status string) ([]model.Task, error)
 	SystemCheckTaskExists(ctx context.Context, workspaceID, parentID int64, status string) (bool, error)
+	SystemCreateCronRun(ctx context.Context, t model.Task) (bool, error)
+	SystemStartOneTimeTask(ctx context.Context, t model.Task) (bool, error)
 	GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error)
 	GetDetailedUserStats(ctx context.Context, userID int64, startTime, endTime int64) (entity.GetDetailedUserStatsRows, error)
 	GetWorkspaceTaskCounts(ctx context.Context, workspaceID int64) (int64, int64, error)
@@ -966,6 +968,53 @@ func (r *repository) SystemCheckTaskExists(ctx context.Context, workspaceID, par
 		Where("workspace_id = ? AND parent_id = ? AND status = ?", workspaceID, parentID, status).
 		Count(&count).Error
 	return count > 0, err
+}
+
+// SystemCreateCronRun creates t, a scheduled run of the cron t.ParentID, unless
+// that run already exists: idx_tasks_cron_run allows one task per (parent_id,
+// created_at), and every backend instance ticking a minute writes the same
+// pair, so exactly one of them gets true. Losing is not an error, so the
+// conflict is skipped rather than raised and logged.
+func (r *repository) SystemCreateCronRun(ctx context.Context, t model.Task) (bool, error) {
+	created := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&t)
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		created = true
+		return recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status))
+	})
+	return created && err == nil, err
+}
+
+// SystemStartOneTimeTask turns a one-time cron template into its own run: it
+// becomes notstarted with no schedule, keeping its ID, and takes t's body and
+// timestamps. Only a task still in cron is changed, so when several backend
+// instances tick the same minute exactly one of them gets true.
+func (r *repository) SystemStartOneTimeTask(ctx context.Context, t model.Task) (bool, error) {
+	started := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Task{}).
+			Where("id = ? AND status = ?", t.ID, "cron").
+			Updates(map[string]any{
+				"status":        "notstarted",
+				"cron_schedule": "",
+				"body":          t.Body,
+				"created_at":    t.CreatedAt,
+				"updated_at":    t.UpdatedAt,
+			})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		started = true
+		from, err := currentTaskState(tx, t.ID, "cron")
+		if err != nil {
+			return err
+		}
+		return recordTaskStateTransition(tx, t, from, model.TaskStateFromStatus("notstarted"))
+	})
+	return started && err == nil, err
 }
 
 func (r *repository) GetDetailedWorkspaceStats(ctx context.Context, workspaceID int64, startTime, endTime int64) (entity.GetDetailedWorkspaceStatsResponse, error) {

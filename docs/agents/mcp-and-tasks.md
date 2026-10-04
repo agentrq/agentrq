@@ -101,6 +101,13 @@ old one rather than raise the cap.
 - A `loadMemory` miss is **not** an error: every agent's first call on a fresh
   workspace misses, and answering with an error teaches agents to stop asking.
 
+## A scheduled run is made once, however many instances tick
+
+Every backend instance runs the scheduler. A recurring run is created at its
+scheduled minute, not the clock's, so `idx_tasks_cron_run` (parent_id,
+created_at) admits one. A one-time run is the template itself, started only
+while it is still `cron`. Undo either and every instance spawns the run.
+
 ## CRUD task controller (`backend/internal/controller/crud/task.go`)
 
 - Cron validation also lives here for the REST API path (same rules).
