@@ -76,6 +76,20 @@ func FromHTTPRequestToDeleteSkillRequestEntity(c *fiber.Ctx) *entity.DeleteSkill
 	return &entity.DeleteSkillRequest{WorkspaceID: workspaceID, Name: name}
 }
 
+// FromHTTPRequestToSetSkillEnabledRequestEntity reads {"enabled": bool}, which
+// must be given: an empty body is refused rather than read as off.
+func FromHTTPRequestToSetSkillEnabledRequestEntity(c *fiber.Ctx) *entity.SetSkillEnabledRequest {
+	workspaceID, name, ok := skillParams(c, true)
+	if !ok {
+		return nil
+	}
+	var rq view.SetSkillEnabledRequest
+	if err := c.BodyParser(&rq); err != nil || rq.Enabled == nil {
+		return nil
+	}
+	return &entity.SetSkillEnabledRequest{WorkspaceID: workspaceID, Name: name, Enabled: *rq.Enabled}
+}
+
 func FromHTTPRequestToImportSkillsRequestEntity(c *fiber.Ctx) *entity.ImportSkillsRequest {
 	workspaceID, _, ok := skillParams(c, false)
 	if !ok {
@@ -120,6 +134,11 @@ func FromSearchSkillsResponseEntityToHTTPResponse(rs *entity.SearchSkillsRespons
 }
 
 func FromGetSkillResponseEntityToHTTPResponse(rs *entity.GetSkillResponse) []byte {
+	payload, _ := json.Marshal(view.GetSkillResponse{Skill: fromEntitySkillToView(rs.Skill)})
+	return payload
+}
+
+func FromSetSkillEnabledResponseEntityToHTTPResponse(rs *entity.SetSkillEnabledResponse) []byte {
 	payload, _ := json.Marshal(view.GetSkillResponse{Skill: fromEntitySkillToView(rs.Skill)})
 	return payload
 }
@@ -178,6 +197,7 @@ func fromEntitySkillToView(s entity.Skill) view.Skill {
 		LocallyModified: s.LocallyModified,
 		FileCount:       s.FileCount,
 		TotalBytes:      s.TotalBytes,
+		Enabled:         s.Enabled,
 	}
 	if s.SharedFromWorkspaceID != 0 {
 		v.SharedFromWorkspaceID = monoflake.ID(s.SharedFromWorkspaceID).String()

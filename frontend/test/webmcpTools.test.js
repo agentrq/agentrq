@@ -154,10 +154,12 @@ describe('the catalogue as a whole', () => {
         'deleteWorkspace',
         'deleteWorkspaceSkill',
         // Not deletes, but each can take away what an agent relied on: an
-        // unshared skill is gone from the other workspace, and an import with
-        // overwrite replaces skills this workspace already had.
+        // unshared skill is gone from the other workspace, an import with
+        // overwrite replaces skills this workspace already had, and a skill
+        // turned off is hidden from every agent.
         'unshareWorkspaceSkill',
         'importWorkspaceSkills',
+        'setWorkspaceSkillEnabled',
         // Not deletes either, and the most destructive things here: each
         // ends every session on a machine and starts them again empty.
         'restartDaemon',

@@ -51,8 +51,9 @@ func (r *repository) ListSkillsSharedInto(ctx context.Context, userID, workspace
 
 // SearchSkills returns the skills a workspace can use — its own and those
 // shared into it — whose name or description contains q, ignoring case, by
-// name; and how many match in all. A limit of 0 returns every match.
-func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64, q string, limit, offset int) ([]model.Skill, int64, error) {
+// name; and how many match in all. enabledOnly leaves out the skills turned
+// off. A limit of 0 returns every match.
+func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64, q string, enabledOnly bool, limit, offset int) ([]model.Skill, int64, error) {
 	shared := r.conn(ctx).Model(&model.SkillShare{}).Select("skill_id").
 		Where("user_id = ? AND target_workspace_id = ?", userID, workspaceID)
 	query := r.conn(ctx).Model(&model.Skill{}).
@@ -61,6 +62,9 @@ func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64
 		// LIKE's own wildcards in q are matched literally.
 		pattern := "%" + likeEscaper.Replace(strings.ToLower(q)) + "%"
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
+	}
+	if enabledOnly {
+		query = query.Where("disabled = ?", false)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -194,6 +198,19 @@ func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, 
 		return nil, err
 	}
 	return storageIDs, nil
+}
+
+// SetSkillDisabled turns a skill off for agents, or back on. It leaves
+// updated_at alone: the skill's content did not change.
+func (r *repository) SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error {
+	res := r.conn(ctx).Model(&model.Skill{}).Where("id = ?", skillID).UpdateColumn("disabled", disabled)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *repository) GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error) {

@@ -225,6 +225,11 @@ export function skillsTabPath(workspaceId) {
   return `/workspaces/${encodeURIComponent(workspaceId)}/settings?tab=skills`;
 }
 
+/** What a toast says once a skill is turned on or off. */
+export function skillEnabledMessage(name, enabled) {
+  return enabled ? `${name} is available to agents again` : `${name} is now hidden from agents`;
+}
+
 /** "1 file", "3 files". */
 export function skillFileCount(n) {
   const count = Number(n) || 0;

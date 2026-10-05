@@ -240,6 +240,9 @@ type (
 		LocallyModified bool
 		FileCount       int
 		TotalBytes      int
+		// Disabled hides the skill from agents while keeping it. Stored as the
+		// negative so every skill, old or new, is on without a default.
+		Disabled bool
 	}
 
 	// SkillFile is one file of a skill. Its content is in storage.
@@ -646,6 +649,9 @@ const (
 	ActionIDOAuthConsentDeny
 	// A task renamed after it was created, by hand or by the local model.
 	ActionIDTaskTitleUpdate
+	// A skill turned on or off for agents from the interface.
+	ActionIDSkillEnable
+	ActionIDSkillDisable
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

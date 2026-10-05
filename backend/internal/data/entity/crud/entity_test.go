@@ -80,6 +80,8 @@ func TestActionString(t *testing.T) {
 		{ActionOAuthConsentAllow, "oauth_consent_allow"},
 		{ActionOAuthConsentDeny, "oauth_consent_deny"},
 		{ActionTaskTitleUpdate, "task_title_update"},
+		{ActionSkillEnable, "skill_enable"},
+		{ActionSkillDisable, "skill_disable"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

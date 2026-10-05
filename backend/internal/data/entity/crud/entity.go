@@ -876,6 +876,7 @@ type (
 		LocallyModified       bool
 		FileCount             int
 		TotalBytes            int
+		Enabled               bool
 		SharedFromWorkspaceID int64
 		Files                 []SkillFile
 	}
@@ -901,13 +902,15 @@ type (
 	}
 
 	// SearchSkillsRequest finds skills by name or description. An empty Query
-	// matches every skill, and a Limit of 0 returns every match.
+	// matches every skill, and a Limit of 0 returns every match. EnabledOnly
+	// leaves out the skills turned off, which agents never see.
 	SearchSkillsRequest struct {
 		WorkspaceID int64
 		UserID      string
 		Query       string
 		Limit       int
 		Offset      int
+		EnabledOnly bool
 	}
 
 	SearchSkillsResponse struct {
@@ -922,6 +925,18 @@ type (
 	}
 
 	GetSkillResponse struct {
+		Skill Skill
+	}
+
+	// SetSkillEnabledRequest turns a skill on or off for agents.
+	SetSkillEnabledRequest struct {
+		WorkspaceID int64
+		UserID      string
+		Name        string
+		Enabled     bool
+	}
+
+	SetSkillEnabledResponse struct {
 		Skill Skill
 	}
 
@@ -1580,6 +1595,9 @@ const (
 	// from task_update so a rename does not send "status updated" emails and
 	// pushes, and so the two can be told apart in the counts.
 	ActionTaskTitleUpdate Action = 89
+	// A skill turned on or off for agents from the interface.
+	ActionSkillEnable  Action = 90
+	ActionSkillDisable Action = 91
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1746,6 +1764,10 @@ func (a Action) String() string {
 		return "oauth_consent_deny"
 	case ActionTaskTitleUpdate:
 		return "task_title_update"
+	case ActionSkillEnable:
+		return "skill_enable"
+	case ActionSkillDisable:
+		return "skill_disable"
 	}
 	return "unknown"
 }

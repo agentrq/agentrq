@@ -34,6 +34,7 @@ import (
 type SkillController interface {
 	SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error)
 	GetSkill(ctx context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error)
+	SetSkillEnabled(ctx context.Context, req entity.SetSkillEnabledRequest) (*entity.SetSkillEnabledResponse, error)
 	GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error)
 	SaveSkillFile(ctx context.Context, req entity.SaveSkillFileRequest) (*entity.SaveSkillFileResponse, error)
 	DeleteSkill(ctx context.Context, req entity.DeleteSkillRequest) error
@@ -154,7 +155,7 @@ func (c *controller) SearchSkills(ctx context.Context, req entity.SearchSkillsRe
 		return nil, skillErr(SkillInvalid, "limit and offset cannot be negative")
 	}
 	limit := min(req.Limit, MaxSkillSearchLimit)
-	found, total, err := c.repository.SearchSkills(ctx, uid, workspaceID, q, limit, req.Offset)
+	found, total, err := c.repository.SearchSkills(ctx, uid, workspaceID, q, req.EnabledOnly, limit, req.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -209,6 +210,41 @@ func (c *controller) GetSkill(ctx context.Context, req entity.GetSkillRequest) (
 		e.Files[i] = entity.SkillFile{Path: f.Path, SizeBytes: f.SizeBytes, UpdatedAt: f.UpdatedAt, URL: storage.PublicURL(c.skillStorage, f.StorageID)}
 	}
 	return &entity.GetSkillResponse{Skill: e}, nil
+}
+
+// SetSkillEnabled turns a skill on or off for agents. Off, it stays in the
+// workspace and in the interface, but searchSkills leaves it out and loadSkill
+// does not find it. The flag is the skill's own, so it holds in every
+// workspace the skill is shared into, and only its owner may change it.
+func (c *controller) SetSkillEnabled(ctx context.Context, req entity.SetSkillEnabledRequest) (*entity.SetSkillEnabledResponse, error) {
+	uid, workspaceID, err := c.memoryOwner(ctx, req.WorkspaceID, req.UserID)
+	if err != nil {
+		return nil, err
+	}
+	name, err := skillName(req.Name)
+	if err != nil {
+		return nil, err
+	}
+	s, exists, err := c.ownedSkill(ctx, uid, workspaceID, name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, base.ErrNotFound
+	}
+	if s.Disabled == !req.Enabled {
+		return &entity.SetSkillEnabledResponse{Skill: fromModelSkill(s, 0)}, nil
+	}
+	if err := c.repository.SetSkillDisabled(ctx, s.ID, !req.Enabled); err != nil {
+		return nil, err
+	}
+	s.Disabled = !req.Enabled
+	action := entity.ActionSkillEnable
+	if s.Disabled {
+		action = entity.ActionSkillDisable
+	}
+	c.emitSkillEvent(ctx, action, uid, req.WorkspaceID, s.ID)
+	return &entity.SetSkillEnabledResponse{Skill: fromModelSkill(s, 0)}, nil
 }
 
 func (c *controller) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
@@ -494,7 +530,8 @@ func (c *controller) importSkill(ctx context.Context, uid, workspaceID int64, ex
 	now := time.Now()
 	s := model.Skill{ID: c.idgen.NextID(), CreatedAt: now}
 	if taken {
-		s.ID, s.CreatedAt = existing.ID, existing.CreatedAt
+		// A re-import replaces the content, not the human's choice to turn it off.
+		s.ID, s.CreatedAt, s.Disabled = existing.ID, existing.CreatedAt, existing.Disabled
 	}
 	s.UpdatedAt = now
 	s.UserID, s.WorkspaceID = uid, workspaceID
@@ -653,6 +690,7 @@ func fromModelSkill(s model.Skill, sharedFrom int64) entity.Skill {
 		LocallyModified:       s.LocallyModified,
 		FileCount:             s.FileCount,
 		TotalBytes:            s.TotalBytes,
+		Enabled:               !s.Disabled,
 		SharedFromWorkspaceID: sharedFrom,
 	}
 }

@@ -611,7 +611,8 @@ func NewWorkspaceServer(
 		Description: "Find the skills this workspace can use — its own and those shared into it — with each one's description and the skill:// URI of its SKILL.md. " +
 			"With q (at least 3 characters) only skills whose name or description contains it are returned, ignoring case; without it, every skill. " +
 			"limit and offset page through the matches. " +
-			"Call this at the start of a task, then loadSkill the SKILL.md of any skill whose description matches the task. Bodies are not included.",
+			"Call this at the start of a task, then loadSkill the SKILL.md of a skill only when its description matches the work in hand; never load every skill up front. " +
+			"Bodies are not included, and skills the human turned off are not listed.",
 		Annotations: mcphint.Read("Search skills"),
 	}, ps.handleSearchSkills)
 
@@ -619,7 +620,7 @@ func NewWorkspaceServer(
 		Name: "loadSkill",
 		Description: "Read one file of a skill by its URI, skill://<name>/<path>; skill://<name> alone reads its SKILL.md. " +
 			"A SKILL.md comes with the URIs of the skill's other files; load those only when the SKILL.md points you to them. " +
-			"A skill or file that does not exist is not an error.",
+			"Load a skill when the task needs it, not in advance. A skill or file that does not exist, or a skill the human turned off, is not an error.",
 		Annotations: mcphint.Read("Read a skill"),
 	}, ps.handleLoadSkill)
 

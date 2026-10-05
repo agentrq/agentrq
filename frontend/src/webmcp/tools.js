@@ -351,7 +351,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       description:
         'Find the skills a workspace\'s agents can load: its own and those other workspaces of the account ' +
         'share into it, with description, size and source, plus how many match in all. A shared-in skill ' +
-        'carries sharedFromWorkspaceId and is read-only there. File contents are not included.',
+        'carries sharedFromWorkspaceId and is read-only there. One with enabled false is turned off: it is ' +
+        'kept, but agents do not see it. File contents are not included.',
       properties: {
         workspaceId: WORKSPACE_ID,
         q: str('Text to find in a skill\'s name or description, ignoring case; at least 3 characters. Leave it out to list every skill.'),
@@ -408,6 +409,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(settingsPage('skills')),
       run: ({ workspaceId, name }) => api.deleteWorkspaceSkill(workspaceId, name),
+    }),
+    tool({
+      name: 'setWorkspaceSkillEnabled',
+      description:
+        'Turn one of a workspace\'s own skills on or off for agents. Off, the skill is kept and still listed here, but agents ' +
+        'no longer find or load it, in this workspace or any it is shared into. Skills are on when created.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.'), enabled: bool('true to make it available to agents, false to hide it from them.') },
+      required: ['workspaceId', 'name', 'enabled'],
+      // Off takes away a skill agents may be relying on, as unsharing does.
+      destructive: true,
+      screen: before(settingsPage('skills')),
+      run: ({ workspaceId, name, enabled }) => api.setWorkspaceSkillEnabled(workspaceId, name, enabled),
     }),
     tool({
       name: 'listWorkspaceSkillShares',

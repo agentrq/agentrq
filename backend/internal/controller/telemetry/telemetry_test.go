@@ -464,6 +464,8 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionOAuthConsentAllow, model.ActionIDOAuthConsentAllow, "oauth consent allow"},
 		{entity.ActionOAuthConsentDeny, model.ActionIDOAuthConsentDeny, "oauth consent deny"},
 		{entity.ActionTaskTitleUpdate, model.ActionIDTaskTitleUpdate, "task title update"},
+		{entity.ActionSkillEnable, model.ActionIDSkillEnable, "skill enable"},
+		{entity.ActionSkillDisable, model.ActionIDSkillDisable, "skill disable"},
 	}
 
 	for _, tc := range cases {

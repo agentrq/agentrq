@@ -111,6 +111,26 @@ func TestSkillTelemetry_Import(t *testing.T) {
 	}
 }
 
+func TestSkillTelemetry_TurnOffAndOn(t *testing.T) {
+	e := newSkillEnv(t)
+	saved := e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
+	events := withSkillEvents(t, e)
+	set := func(enabled bool) {
+		t.Helper()
+		if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", Enabled: enabled}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	set(false)
+	wantSkillEvents(t, events, entity.CRUDEvent{Action: entity.ActionSkillDisable, WorkspaceID: skWS, ResourceID: saved.Skill.ID})
+	// Asking for the state it is already in changes nothing, and counts nothing.
+	set(false)
+	wantSkillEvents(t, events)
+	set(true)
+	wantSkillEvents(t, events, entity.CRUDEvent{Action: entity.ActionSkillEnable, WorkspaceID: skWS, ResourceID: saved.Skill.ID})
+}
+
 func TestResourceSkillString(t *testing.T) {
 	if got := entity.ResourceSkill.String(); got != "skill" {
 		t.Errorf("ResourceSkill.String() = %q", got)

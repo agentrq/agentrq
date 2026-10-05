@@ -17,6 +17,7 @@
         <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">searchSkills</code>
         and read them with
         <code class="bg-gray-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-gray-900 dark:text-white">loadSkill</code>.
+        Turn one off to keep it here but hide it from agents.
       </p>
     </div>
 
@@ -110,14 +111,22 @@
     </div>
 
     <!-- Compact cards, three to a row where there is room. A card opens the
-         skill's own page, which reads it and holds sharing and deleting. -->
+         skill's own page, which reads it and holds sharing and deleting. The
+         switch sits beside the link, not in it, so a toggle never navigates. -->
     <div v-else data-test="skill-grid" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 sm:gap-2 divide-y sm:divide-y-0 divide-gray-100 dark:divide-zinc-800 border-y sm:border-y-0 border-gray-100 dark:border-zinc-800">
-      <RouterLink v-for="s in orderedSkills" :key="s.name" :to="skillPagePath(workspaceId, s.name)" data-test="skill-card"
-                  class="group flex flex-col gap-1.5 min-w-0 py-3 sm:p-3 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-600 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-        <span data-test="skill-card-name" class="truncate text-xs font-bold text-gray-800 dark:text-zinc-100 font-mono">{{ s.name }}</span>
-        <span class="line-clamp-2 min-h-[2lh] text-[11px] leading-snug text-gray-500 dark:text-zinc-400 break-words">{{ s.description }}</span>
+      <div v-for="s in orderedSkills" :key="s.name" class="relative min-w-0">
+      <RouterLink :to="skillPagePath(workspaceId, s.name)" data-test="skill-card" :data-enabled="s.enabled !== false"
+                  class="group h-full flex flex-col gap-1.5 min-w-0 py-3 sm:p-3 sm:bg-gray-50 sm:dark:bg-zinc-800/50 sm:rounded-sm sm:border border-gray-100 dark:border-zinc-800 hover:border-gray-300 dark:hover:border-zinc-600 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+        <span data-test="skill-card-name" class="truncate text-xs leading-6 font-bold font-mono"
+              :class="[s.sharedFromWorkspaceId ? '' : 'pr-12', s.enabled === false ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-800 dark:text-zinc-100']">{{ s.name }}</span>
+        <span class="line-clamp-2 min-h-[2lh] text-[11px] leading-snug break-words"
+              :class="s.enabled === false ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-500 dark:text-zinc-400'">{{ s.description }}</span>
         <span class="mt-auto flex items-center gap-1.5 min-w-0 text-[10px] text-gray-400 dark:text-zinc-500 tabular-nums">
           <span class="shrink-0">{{ formatSkillSize(s.totalBytes) }}</span>
+          <span v-if="s.enabled === false" data-test="skill-card-off" title="Hidden from agents"
+                class="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-300 dark:border-zinc-600 rounded px-1 py-px">
+            Off
+          </span>
           <span v-if="s.sharedFromWorkspaceId" :title="`Shared from ${workspaceName(s.sharedFromWorkspaceId)}`"
                 class="min-w-0 truncate text-[8px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40 rounded px-1 py-px">
             Shared from {{ workspaceName(s.sharedFromWorkspaceId) }}
@@ -129,6 +138,17 @@
           <span v-if="!s.sharedFromWorkspaceId && !s.locallyModified" class="min-w-0 truncate" :title="skillSource(s)">· {{ skillSource(s) }}</span>
         </span>
       </RouterLink>
+      <!-- Only the owning workspace may turn a skill on or off. -->
+      <button v-if="!s.sharedFromWorkspaceId" type="button" role="switch" data-test="skill-card-enabled"
+              :aria-checked="s.enabled !== false" :aria-label="`Available to agents: ${s.name}`"
+              :title="s.enabled === false ? 'Off: hidden from agents' : 'On: agents can find and load it'"
+              :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)"
+              class="absolute top-3 right-0 sm:right-3 shrink-0 w-11 h-6 rounded-full border transition-colors disabled:opacity-50"
+              :class="s.enabled !== false ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+        <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+              :class="s.enabled !== false ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+      </button>
+      </div>
     </div>
   </div>
 </template>
@@ -136,7 +156,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { importWorkspaceSkills, searchWorkspaceSkills } from '../api';
+import { importWorkspaceSkills, searchWorkspaceSkills, setWorkspaceSkillEnabled } from '../api';
 import {
   SKILL_FILE,
   SkillsState,
@@ -145,15 +165,18 @@ import {
   githubImportUrlValid,
   orderCandidates,
   orderSkills,
+  skillEnabledMessage,
   skillPagePath,
   skillSource,
   skillsState,
 } from '../composables/useSkills';
+import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const props = defineProps({ workspaceId: { type: String, required: true } });
 
 const workspaceStore = useWorkspaceStore();
+const { notifySuccess, notifyError } = useToasts();
 
 const skills = ref([]);
 const loading = ref(false);
@@ -176,6 +199,26 @@ async function loadSkills() {
 
 function workspaceName(id) {
   return workspaceStore.getWorkspace(id)?.name || 'another workspace';
+}
+
+// ── Turning a skill on or off ───────────────────────────────────────────────
+// Skills whose switch was just flipped and whose answer is still out.
+const pendingEnabled = ref(new Set());
+
+async function toggleEnabled(s) {
+  const enabled = s.enabled === false;
+  pendingEnabled.value = new Set(pendingEnabled.value).add(s.name);
+  try {
+    const res = await setWorkspaceSkillEnabled(props.workspaceId, s.name, enabled);
+    skills.value = skills.value.map((x) => (x.name === s.name ? { ...x, ...res.skill } : x));
+    notifySuccess(skillEnabledMessage(s.name, enabled));
+  } catch (err) {
+    notifyError(err.message);
+  } finally {
+    const next = new Set(pendingEnabled.value);
+    next.delete(s.name);
+    pendingEnabled.value = next;
+  }
 }
 
 // ── Importing ───────────────────────────────────────────────────────────────

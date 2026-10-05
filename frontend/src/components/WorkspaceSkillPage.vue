@@ -34,6 +34,11 @@
                   class="shrink-0 text-[8px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-500/40 rounded px-1.5 py-0.5">
               Modified locally
             </span>
+            <!-- The owner has the switch below; a workspace it is shared into sees only the state. -->
+            <span v-if="skill.sharedFromWorkspaceId && skill.enabled === false" data-test="skill-page-off"
+                  class="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-300 dark:border-zinc-600 rounded px-1.5 py-0.5">
+              Off for agents
+            </span>
           </div>
           <!-- Only the owning workspace may change a skill. An icon alone on a phone. -->
           <button v-if="!skill.sharedFromWorkspaceId" type="button" data-test="skill-delete" @click="pendingDelete = true" title="Delete" aria-label="Delete"
@@ -46,6 +51,24 @@
           {{ formatSkillSize(skill.totalBytes) }} · {{ skillFileCount(skill.fileCount) }} · {{ skillSource(skill) }}
         </p>
       </header>
+
+      <div v-if="!skill.sharedFromWorkspaceId" class="flex items-start justify-between gap-4 min-w-0">
+        <div class="min-w-0">
+          <p id="skill-enabled-label" class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Available to agents</p>
+          <p data-test="skill-enabled-hint" class="mt-1 text-[11px] text-gray-500 dark:text-zinc-400 break-words">
+            {{ skill.enabled === false
+              ? 'Off: kept here, but agents do not find or load it, here or where it is shared.'
+              : 'On: agents find it with searchSkills and load it when a task needs it.' }}
+          </p>
+        </div>
+        <button type="button" role="switch" data-test="skill-enabled" aria-labelledby="skill-enabled-label"
+                :aria-checked="skill.enabled !== false" :disabled="pendingEnabled" @click="toggleEnabled"
+                class="shrink-0 mt-1 w-11 h-6 rounded-full border transition-colors relative disabled:opacity-50"
+                :class="skill.enabled !== false ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
+          <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                :class="skill.enabled !== false ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+        </button>
+      </div>
 
       <!-- Every other workspace, ticked where the skill is shared: a tick
            shares it and clearing one takes it back. -->
@@ -149,6 +172,7 @@ import {
   fetchWorkspaceSkillShares,
   getWorkspaceSkill,
   getWorkspaceSkillFile,
+  setWorkspaceSkillEnabled,
   shareWorkspaceSkill,
   unshareWorkspaceSkill,
 } from '../api';
@@ -161,6 +185,7 @@ import {
   skillBreadcrumb,
   skillFileCount,
   skillFullness,
+  skillEnabledMessage,
   skillLinkFromEvent,
   skillSource,
   skillsTabPath,
@@ -299,6 +324,23 @@ function openFile(path) {
 function goBack() {
   const previous = history.value.pop();
   if (previous) showFile(previous.skill, previous.path);
+}
+
+// ── Turning it on or off ────────────────────────────────────────────────────
+const pendingEnabled = ref(false);
+
+async function toggleEnabled() {
+  const enabled = skill.value.enabled === false;
+  pendingEnabled.value = true;
+  try {
+    const res = await setWorkspaceSkillEnabled(workspaceId.value, skillName.value, enabled);
+    skill.value = { ...skill.value, enabled: res.skill.enabled };
+    notifySuccess(skillEnabledMessage(skillName.value, enabled));
+  } catch (err) {
+    notifyError(err.message);
+  } finally {
+    pendingEnabled.value = false;
+  }
 }
 
 // ── Deleting and sharing ────────────────────────────────────────────────────

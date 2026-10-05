@@ -51,7 +51,7 @@ makes them self-evidently true. A few happen entirely in the browser and are
   one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
-- **Skills used from the interface** (`skill_import`/`_view`/`_search`) share
+- **Skills used from the interface** (`skill_import`/`_view`/`_search`/`_enable`/`_disable`) share
   controller methods with the MCP skill tools, so MCP callers mark their ctx
   `OriginMCP` and the controller skips it; drop the mark and every agent read
   counts twice.

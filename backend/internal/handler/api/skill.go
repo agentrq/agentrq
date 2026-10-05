@@ -19,6 +19,7 @@ func (h *handler) registerSkillRoutes(r fiber.Router) {
 	r.Get("/:id/skills", h.searchSkills())
 	r.Post("/:id/skills/import", h.importSkills())
 	r.Get("/:id/skills/:name", h.getSkill())
+	r.Patch("/:id/skills/:name", h.setSkillEnabled())
 	r.Delete("/:id/skills/:name", h.deleteSkill())
 	r.Get("/:id/skills/:name/files/*", h.getSkillFile())
 	r.Get("/:id/skills/:name/shares", h.listSkillShares())
@@ -83,6 +84,27 @@ func (h *handler) getSkill() fiber.Handler {
 			return sendSkillError(c, err)
 		}
 		return c.Send(mapper.FromGetSkillResponseEntityToHTTPResponse(rs))
+	}
+}
+
+// setSkillEnabled turns a skill on or off for agents.
+func (h *handler) setSkillEnabled() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToSetSkillEnabledRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.SetSkillEnabled(ctx, *rq)
+		if err != nil {
+			return sendSkillError(c, err)
+		}
+		return c.Send(mapper.FromSetSkillEnabledResponseEntityToHTTPResponse(rs))
 	}
 }
 

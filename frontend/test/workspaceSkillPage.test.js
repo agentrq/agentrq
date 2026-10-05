@@ -45,6 +45,7 @@ const api = vi.hoisted(() => ({
   fetchWorkspaceSkillShares: vi.fn(() => Promise.resolve({ shares: [{ targetWorkspaceId: 'ws3' }] })),
   shareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
   unshareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
+  setWorkspaceSkillEnabled: vi.fn((_ws, name, enabled) => Promise.resolve({ skill: { name, enabled } })),
 }));
 vi.mock('../src/api', () => api);
 
@@ -199,6 +200,8 @@ describe('a skill\'s page', () => {
     expect(text(el)).toContain('Shared from Platform');
     expect(el.querySelector('[data-test="skill-delete"]')).toBeNull();
     expect(el.querySelector('[data-test="skill-shares"]')).toBeNull();
+    expect(el.querySelector('[data-test="skill-enabled"]')).toBeNull();
+    expect(el.querySelector('[data-test="skill-page-off"]')).toBeNull();
     expect(api.fetchWorkspaceSkillShares).not.toHaveBeenCalled();
   });
 
@@ -228,6 +231,46 @@ describe('a skill\'s page', () => {
     await click(confirm);
     expect(api.deleteWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging');
     expect(router.currentRoute.value.fullPath).toBe('/workspaces/ws1/settings?tab=skills');
+  });
+
+  it('turns the skill off and on for agents, and says what that means', async () => {
+    const { el } = await mount('systematic-debugging');
+    const toggle = () => el.querySelector('[data-test="skill-enabled"]');
+    const hint = () => text(el.querySelector('[data-test="skill-enabled-hint"]'));
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(hint()).toContain('On: agents find it');
+
+    await click(toggle());
+    expect(api.setWorkspaceSkillEnabled).toHaveBeenLastCalledWith('ws1', 'systematic-debugging', false);
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    expect(hint()).toContain('Off: kept here');
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is now hidden from agents');
+
+    let answer;
+    api.setWorkspaceSkillEnabled.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    await click(toggle());
+    expect(toggle().disabled).toBe(true);
+    answer({ skill: { name: 'systematic-debugging', enabled: true } });
+    await settle();
+    expect(toggle().disabled).toBe(false);
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is available to agents again');
+
+    api.setWorkspaceSkillEnabled.mockRejectedValueOnce(new Error('turn off failed'));
+    await click(toggle());
+    expect(toasts.value.at(-1).message).toBe('turn off failed');
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('shows a shared-in skill that is off without a switch', async () => {
+    META.review.enabled = false;
+    try {
+      const { el } = await mount('review');
+      expect(el.querySelector('[data-test="skill-enabled"]')).toBeNull();
+      expect(text(el.querySelector('[data-test="skill-page-off"]'))).toContain('Off for agents');
+    } finally {
+      delete META.review.enabled;
+    }
   });
 
   it('holds a box while its answer is out', async () => {

@@ -37,7 +37,7 @@ func refusal(err error) error {
 
 func (s *skillStore) SearchSkills(ctx context.Context, q string, limit, offset int) ([]mcp.SkillSummary, int, error) {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
-	rs, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Query: q, Limit: limit, Offset: offset})
+	rs, err := s.crud.SearchSkills(ctx, entity.SearchSkillsRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Query: q, Limit: limit, Offset: offset, EnabledOnly: true})
 	if err != nil {
 		return nil, 0, refusal(err)
 	}
@@ -62,7 +62,8 @@ func (s *skillStore) SearchSkills(ctx context.Context, q string, limit, offset i
 }
 
 // LoadSkillFile reads one file, and for a SKILL.md the paths of its skill's
-// files as well, which is what loadSkill lists after it.
+// files as well, which is what loadSkill lists after it. A skill turned off
+// is not found, as searchSkills does not list it.
 func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (string, []string, bool, error) {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
 	file, err := s.crud.GetSkillFile(ctx, entity.GetSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path})
@@ -71,6 +72,9 @@ func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (stri
 	}
 	if err != nil {
 		return "", nil, false, refusal(err)
+	}
+	if !file.Skill.Enabled {
+		return "", nil, false, nil
 	}
 	if path != skill.FileName {
 		return file.File.Content, nil, true, nil
@@ -89,17 +93,37 @@ func (s *skillStore) LoadSkillFile(ctx context.Context, name, path string) (stri
 	return file.File.Content, files, true, nil
 }
 
+// turnedOff refuses a change to a skill the human turned off: the agent
+// cannot see it, so it should not be rewriting it either.
+func (s *skillStore) turnedOff(ctx context.Context, name string) error {
+	rs, err := s.crud.GetSkill(entity.WithOrigin(ctx, entity.OriginMCP), entity.GetSkillRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name})
+	if err != nil || rs.Skill.Enabled {
+		// A miss or a refusal is left to the call itself, which reports it.
+		return nil
+	}
+	return &mcp.SkillRefusal{Message: fmt.Sprintf("skill %q is turned off in this workspace, so agents cannot use or change it; ask the human to turn it on in the Skills tab", rs.Skill.Name)}
+}
+
 func (s *skillStore) SaveSkillFile(ctx context.Context, name, path, content string) error {
+	if err := s.turnedOff(ctx, name); err != nil {
+		return err
+	}
 	_, err := s.crud.SaveSkillFile(ctx, entity.SaveSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path, Content: content})
 	return refusal(err)
 }
 
 func (s *skillStore) DeleteSkill(ctx context.Context, name string) (bool, error) {
+	if err := s.turnedOff(ctx, name); err != nil {
+		return false, err
+	}
 	err := s.crud.DeleteSkill(ctx, entity.DeleteSkillRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name})
 	return deleted(err)
 }
 
 func (s *skillStore) DeleteSkillFile(ctx context.Context, name, path string) (bool, error) {
+	if err := s.turnedOff(ctx, name); err != nil {
+		return false, err
+	}
 	_, err := s.crud.DeleteSkillFile(ctx, entity.DeleteSkillFileRequest{WorkspaceID: s.workspaceID, UserID: s.userID, Name: name, Path: path})
 	return deleted(err)
 }

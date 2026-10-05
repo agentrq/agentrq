@@ -802,6 +802,17 @@ export async function deleteWorkspaceSkill(workspaceId, name) {
   return true;
 }
 
+// A skill turned off stays in the workspace, but its agents no longer see it.
+export async function setWorkspaceSkillEnabled(workspaceId, name, enabled) {
+  const res = await apiFetch(skillPath(workspaceId, name), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: !!enabled }),
+  });
+  if (!res.ok) throw await skillError(res, enabled ? 'Failed to turn skill on' : 'Failed to turn skill off');
+  return res.json();
+}
+
 export async function fetchWorkspaceSkillShares(workspaceId, name) {
   const res = await apiFetch(`${skillPath(workspaceId, name)}/shares`);
   if (!res.ok) throw await skillError(res, 'Failed to fetch skill shares');

@@ -511,6 +511,7 @@ type (
 		LocallyModified       bool        `json:"locallyModified"`
 		FileCount             int         `json:"fileCount"`
 		TotalBytes            int         `json:"totalBytes"`
+		Enabled               bool        `json:"enabled"`
 		SharedFromWorkspaceID string      `json:"sharedFromWorkspaceId,omitempty"`
 		Files                 []SkillFile `json:"files,omitempty"`
 	}
@@ -532,6 +533,13 @@ type (
 
 	GetSkillResponse struct {
 		Skill Skill `json:"skill"`
+	}
+
+	// SetSkillEnabledRequest turns a skill on or off for agents. A skill that
+	// is off stays in the workspace but is left out of searchSkills and
+	// loadSkill.
+	SetSkillEnabledRequest struct {
+		Enabled *bool `json:"enabled"`
 	}
 
 	GetSkillFileResponse struct {

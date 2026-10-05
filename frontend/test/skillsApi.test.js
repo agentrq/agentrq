@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { importWorkspaceSkills, searchWorkspaceSkills } from '../src/api';
+import { importWorkspaceSkills, searchWorkspaceSkills, setWorkspaceSkillEnabled } from '../src/api';
 
 // The search query travels in the URL, relative so the desktop app's proxy
 // carries it, with only the parameters that were given.
@@ -54,5 +54,35 @@ describe('importWorkspaceSkills', () => {
       { url: 'https://github.com/a/b', overwrite: true },
       { url: 'https://github.com/a/b', overwrite: false, skills: ['ship', 'tools/guard'] },
     ]);
+  });
+});
+
+// Turning a skill on or off is a PATCH of the skill, always naming the state.
+describe('setWorkspaceSkillEnabled', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends the state asked for, and returns the skill', async () => {
+    const seen = [];
+    vi.stubGlobal('fetch', vi.fn((url, init) => {
+      seen.push([url, init.method, JSON.parse(init.body)]);
+      return Promise.resolve(new Response(JSON.stringify({ skill: { name: 'tdd', enabled: false } }), { status: 200 }));
+    }));
+
+    await expect(setWorkspaceSkillEnabled('ws1', 'tdd', false)).resolves.toEqual({ skill: { name: 'tdd', enabled: false } });
+    await setWorkspaceSkillEnabled('ws1', 'a b', true);
+    expect(seen).toEqual([
+      ['/api/v1/workspaces/ws1/skills/tdd', 'PATCH', { enabled: false }],
+      ['/api/v1/workspaces/ws1/skills/a%20b', 'PATCH', { enabled: true }],
+    ]);
+  });
+
+  it('passes the server\'s refusal on, or says which way it failed', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ error: { message: 'read-only here' } }), { status: 403 })),
+    ));
+    await expect(setWorkspaceSkillEnabled('ws1', 'tdd', false)).rejects.toMatchObject({ message: 'read-only here', status: 403 });
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 500 }))));
+    await expect(setWorkspaceSkillEnabled('ws1', 'tdd', false)).rejects.toMatchObject({ message: 'Failed to turn skill off' });
+    await expect(setWorkspaceSkillEnabled('ws1', 'tdd', true)).rejects.toMatchObject({ message: 'Failed to turn skill on' });
   });
 });

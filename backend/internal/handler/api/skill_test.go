@@ -52,6 +52,13 @@ func (s *skillCrud) GetSkill(_ context.Context, rq entity.GetSkillRequest) (*ent
 	return &entity.GetSkillResponse{Skill: testSkill()}, s.err
 }
 
+func (s *skillCrud) SetSkillEnabled(_ context.Context, rq entity.SetSkillEnabledRequest) (*entity.SetSkillEnabledResponse, error) {
+	s.saw = rq
+	sk := testSkill()
+	sk.Enabled = rq.Enabled
+	return &entity.SetSkillEnabledResponse{Skill: sk}, s.err
+}
+
 func (s *skillCrud) GetSkillFile(_ context.Context, rq entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
 	s.saw = rq
 	return &entity.GetSkillFileResponse{Skill: testSkill(), File: entity.SkillFile{Path: rq.Path, Content: "body"}}, s.err
@@ -148,6 +155,12 @@ func TestSkillRoutes(t *testing.T) {
 		{"import, choosing skills", http.MethodPost, prefix + "/import", `{"url":"https://github.com/garrytan/gstack","skills":["ship","careful"]}`, 200,
 			entity.ImportSkillsRequest{WorkspaceID: 4242, UserID: "user-1", URL: "https://github.com/garrytan/gstack", Skills: []string{"ship", "careful"}},
 			[]string{`"candidates":[{"name":"ship","path":"ship","sizeBytes":77710,"reason":"SKILL.md is too big"},{"name":"careful","path":"careful","sizeBytes":3516}]`}},
+		{"turn off", http.MethodPatch, prefix + "/tdd", `{"enabled":false}`, 200,
+			entity.SetSkillEnabledRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd", Enabled: false},
+			[]string{`"skill":{`, `"enabled":false`}},
+		{"turn on", http.MethodPatch, prefix + "/tdd", `{"enabled":true}`, 200,
+			entity.SetSkillEnabledRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd", Enabled: true},
+			[]string{`"enabled":true`}},
 		{"delete", http.MethodDelete, prefix + "/tdd", "", 204, entity.DeleteSkillRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd"}, nil},
 		{"shares", http.MethodGet, prefix + "/tdd/shares", "", 200, entity.ListSkillSharesRequest{WorkspaceID: 4242, UserID: "user-1", Name: "tdd"},
 			[]string{`"shares":[{"targetWorkspaceId":"` + skillTarget + `"`}},
@@ -186,6 +199,9 @@ func TestSkillRoutes_Unparseable(t *testing.T) {
 		{"import: not json", http.MethodPost, bad + "/import", `{`},
 		{"import: no workspace", http.MethodPost, "/workspaces/0/skills/import", `{"url":"u"}`},
 		{"delete: no workspace", http.MethodDelete, "/workspaces/0/skills/tdd", ""},
+		{"turn off: enabled not given", http.MethodPatch, bad + "/tdd", `{}`},
+		{"turn off: not json", http.MethodPatch, bad + "/tdd", `{`},
+		{"turn off: no workspace", http.MethodPatch, "/workspaces/0/skills/tdd", `{"enabled":false}`},
 		{"shares: no workspace", http.MethodGet, "/workspaces/0/skills/tdd/shares", ""},
 		{"share: no target", http.MethodPut, bad + "/tdd/shares/0", ""},
 		{"share: bad name", http.MethodPut, bad + "/%zz/shares/" + skillTarget, ""},
@@ -211,6 +227,7 @@ func TestSkillRoutes_Errors(t *testing.T) {
 		{http.MethodGet, prefix + "/tdd/files/SKILL.md", ""},
 		{http.MethodPost, prefix + "/import", `{"url":"u"}`},
 		{http.MethodDelete, prefix + "/tdd", ""},
+		{http.MethodPatch, prefix + "/tdd", `{"enabled":false}`},
 		{http.MethodGet, prefix + "/tdd/shares", ""},
 		{http.MethodPut, prefix + "/tdd/shares/" + skillTarget, ""},
 		{http.MethodDelete, prefix + "/tdd/shares/" + skillTarget, ""},

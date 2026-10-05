@@ -193,8 +193,32 @@ func TestSearchSkills_ReportsFailures(t *testing.T) {
 		r := New(&mockDB{db: db})
 		seedSkill(t, r)
 		failNth(db, n)
-		if _, _, err := r.SearchSkills(context.Background(), skUser, skWS, "tdd", 1, 0); !errors.Is(err, errInjected) {
+		if _, _, err := r.SearchSkills(context.Background(), skUser, skWS, "tdd", false, 1, 0); !errors.Is(err, errInjected) {
 			t.Errorf("statement %d: got %v", n, err)
 		}
+	}
+}
+
+func TestSetSkillDisabled(t *testing.T) {
+	db := skillDB(t)
+	r := New(&mockDB{db: db})
+	ctx := context.Background()
+	seedSkill(t, r)
+
+	if err := r.SetSkillDisabled(ctx, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if found, total, err := r.SearchSkills(ctx, skUser, skOther, "", true, 0, 0); err != nil || total != 0 || len(found) != 0 {
+		t.Errorf("enabled only, in the share target: %v, %d, %v", found, total, err)
+	}
+	if found, total, err := r.SearchSkills(ctx, skUser, skWS, "tdd", false, 0, 0); err != nil || total != 1 || !found[0].Disabled {
+		t.Errorf("every skill: %v, %d, %v", found, total, err)
+	}
+	if err := r.SetSkillDisabled(ctx, 2, true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing skill: %v", err)
+	}
+	failNth(db, 1)
+	if err := r.SetSkillDisabled(ctx, 1, false); !errors.Is(err, errInjected) {
+		t.Errorf("failure: %v", err)
 	}
 }

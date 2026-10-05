@@ -772,6 +772,39 @@ paths:
                   skill: { $ref: '#/components/schemas/Skill' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
+    patch:
+      tags: [Workspaces]
+      summary: Turn a skill on or off for agents
+      description: >
+        A skill that is off stays in the workspace and is still listed here, but
+        agents do not see it: `searchSkills` leaves it out and `loadSkill` does
+        not find it. It is off in every workspace it is shared into. Skills are
+        on when created or imported, and a re-import keeps one off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/Skill' }
+        '403':
+          description: The skill was shared into this workspace; only its owner can turn it on or off
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
     delete:
       tags: [Workspaces]
       summary: Delete a skill, its files and its shares
@@ -2562,6 +2595,9 @@ components:
           description: An imported skill that has been changed since.
         fileCount: { type: integer, description: Files including SKILL.md. At most 64. }
         totalBytes: { type: integer }
+        enabled:
+          type: boolean
+          description: Whether agents can see the skill. Off, it is kept but left out of `searchSkills` and `loadSkill`.
         sharedFromWorkspaceId:
           type: string
           description: Set when another workspace shared the skill in; it is read-only here.

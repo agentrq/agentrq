@@ -22,6 +22,7 @@ import {
   resolveWithin,
   skillBody,
   skillBreadcrumb,
+  skillEnabledMessage,
   skillFileCount,
   skillFileTree,
   skillFullness,
@@ -320,5 +321,12 @@ describe('choosing from a repository too large to import whole', () => {
   it('chooses only those without a reason', () => {
     expect(choosablePaths(candidates)).toEqual(['b/guard', 'a/guard', 'careful']);
     expect(choosablePaths()).toEqual([]);
+  });
+});
+
+describe('skillEnabledMessage', () => {
+  it('says which way a skill was switched', () => {
+    expect(skillEnabledMessage('tdd', false)).toBe('tdd is now hidden from agents');
+    expect(skillEnabledMessage('tdd', true)).toBe('tdd is available to agents again');
   });
 });

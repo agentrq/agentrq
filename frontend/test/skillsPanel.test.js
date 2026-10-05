@@ -54,10 +54,12 @@ const api = vi.hoisted(() => ({
   fetchWorkspaceSkillShares: vi.fn(() => Promise.resolve({ shares: [{ targetWorkspaceId: 'ws3' }] })),
   shareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
   unshareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
+  setWorkspaceSkillEnabled: vi.fn((_ws, name, enabled) => Promise.resolve({ skill: { name, enabled } })),
 }));
 vi.mock('../src/api', () => api);
 
 const { default: WorkspaceSkillsPanel } = await import('../src/components/WorkspaceSkillsPanel.vue');
+const { toasts } = (await import('../src/composables/useToasts')).useToasts();
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 const apps = [];
@@ -209,5 +211,51 @@ describe('the Skills tab', () => {
     const cancel = [...el.querySelectorAll('[data-test="skill-import-choice"] button')].find((b) => b.textContent.trim() === 'Cancel');
     await click(cancel);
     expect(el.querySelector('[data-test="skill-import-choice"]')).toBeNull();
+  });
+
+  it('turns an own skill off and on from its card, without leaving the tab', async () => {
+    const el = await mount();
+    const card = (name) => [...el.querySelectorAll('[data-test="skill-card"]')].find((c) => c.querySelector('[data-test="skill-card-name"]').textContent === name);
+    const toggle = () => card('systematic-debugging').parentElement.querySelector('[data-test="skill-card-enabled"]');
+    // A skill shared in is the owner's to switch, not this workspace's.
+    expect(card('review').parentElement.querySelector('[data-test="skill-card-enabled"]')).toBeNull();
+    // On by default, and the switch is beside the link, not inside it.
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(card('systematic-debugging').contains(toggle())).toBe(false);
+    expect(card('systematic-debugging').querySelector('[data-test="skill-card-off"]')).toBeNull();
+
+    await click(toggle());
+    expect(api.setWorkspaceSkillEnabled).toHaveBeenLastCalledWith('ws1', 'systematic-debugging', false);
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    expect(card('systematic-debugging').dataset.enabled).toBe('false');
+    expect(text(card('systematic-debugging').querySelector('[data-test="skill-card-off"]'))).toContain('Off');
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is now hidden from agents');
+
+    await click(toggle());
+    expect(api.setWorkspaceSkillEnabled).toHaveBeenLastCalledWith('ws1', 'systematic-debugging', true);
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is available to agents again');
+  });
+
+  it('holds a switch while its answer is out, and reports a failure without flipping it', async () => {
+    api.searchWorkspaceSkills.mockResolvedValueOnce({ skills: [{ name: 'tdd', description: 'Test first.', totalBytes: 10, sourceType: 'manual', enabled: false }] });
+    const el = await mount();
+    const toggle = () => el.querySelector('[data-test="skill-card-enabled"]');
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+
+    let answer;
+    api.setWorkspaceSkillEnabled.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    await click(toggle());
+    expect(toggle().disabled).toBe(true);
+    answer({ skill: { name: 'tdd', enabled: true } });
+    await settle();
+    expect(toggle().disabled).toBe(false);
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+
+    api.setWorkspaceSkillEnabled.mockRejectedValueOnce(new Error('read-only here'));
+    await click(toggle());
+    expect(toasts.value.at(-1).message).toBe('read-only here');
+    expect(toggle().getAttribute('aria-checked')).toBe('true');
+    expect(toggle().disabled).toBe(false);
   });
 });

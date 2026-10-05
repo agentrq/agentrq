@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
@@ -27,6 +28,8 @@ type fakeSkillCrud struct {
 	scopes                        []string
 	search                        entity.SearchSkillsRequest
 	origins                       []entity.Origin
+	// off is a skill the human turned off.
+	off bool
 }
 
 func (f *fakeSkillCrud) scope(workspaceID int64, userID string) {
@@ -50,13 +53,13 @@ func (f *fakeSkillCrud) GetWorkspace(_ context.Context, req entity.GetWorkspaceR
 
 func (f *fakeSkillCrud) GetSkill(_ context.Context, req entity.GetSkillRequest) (*entity.GetSkillResponse, error) {
 	f.scope(req.WorkspaceID, req.UserID)
-	return &entity.GetSkillResponse{Skill: entity.Skill{Files: []entity.SkillFile{{Path: "SKILL.md"}, {Path: "a.md"}}}}, f.getErr
+	return &entity.GetSkillResponse{Skill: entity.Skill{Name: "tdd", Enabled: !f.off, Files: []entity.SkillFile{{Path: "SKILL.md"}, {Path: "a.md"}}}}, f.getErr
 }
 
 func (f *fakeSkillCrud) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
 	f.origins = append(f.origins, entity.GetOrigin(ctx))
 	f.scope(req.WorkspaceID, req.UserID)
-	return &entity.GetSkillFileResponse{File: entity.SkillFile{Content: "content of " + req.Path}}, f.fileErr
+	return &entity.GetSkillFileResponse{Skill: entity.Skill{Enabled: !f.off}, File: entity.SkillFile{Content: "content of " + req.Path}}, f.fileErr
 }
 
 func (f *fakeSkillCrud) SaveSkillFile(_ context.Context, req entity.SaveSkillFileRequest) (*entity.SaveSkillFileResponse, error) {
@@ -102,7 +105,7 @@ func TestSkillStore_List(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v", got)
 	}
-	if total != 14 || f.search.Query != "tdd" || f.search.Limit != 5 || f.search.Offset != 2 {
+	if total != 14 || f.search.Query != "tdd" || f.search.Limit != 5 || f.search.Offset != 2 || !f.search.EnabledOnly {
 		t.Errorf("total %d, search %+v", total, f.search)
 	}
 	if !reflect.DeepEqual(f.scopes, []string{"owner@7"}) {
@@ -202,5 +205,42 @@ func TestSkillStore_ReadsAreMCPOrigin(t *testing.T) {
 	}
 	if want := []entity.Origin{entity.OriginMCP, entity.OriginMCP}; !reflect.DeepEqual(f.origins, want) {
 		t.Errorf("origins = %v, want %v", f.origins, want)
+	}
+}
+
+// A skill the human turned off is invisible to the agent: a load does not find
+// it, and a write to it is refused rather than made blind.
+func TestSkillStore_TurnedOff(t *testing.T) {
+	ctx := context.Background()
+	for _, p := range []string{"SKILL.md", "a.md"} {
+		if _, _, found, err := newSkillStore(&fakeSkillCrud{off: true}).LoadSkillFile(ctx, "tdd", p); found || err != nil {
+			t.Errorf("load %s: found %v err %v", p, found, err)
+		}
+	}
+
+	isTurnedOff := func(err error) bool {
+		var r *mcp.SkillRefusal
+		return errors.As(err, &r) && strings.Contains(r.Message, `skill "tdd" is turned off`)
+	}
+	f := &fakeSkillCrud{off: true}
+	s := newSkillStore(f)
+	if err := s.SaveSkillFile(ctx, "tdd", "SKILL.md", "x"); !isTurnedOff(err) {
+		t.Errorf("save: %v", err)
+	}
+	if deleted, err := s.DeleteSkill(ctx, "tdd"); deleted || !isTurnedOff(err) {
+		t.Errorf("delete: %v %v", deleted, err)
+	}
+	if deleted, err := s.DeleteSkillFile(ctx, "tdd", "a.md"); deleted || !isTurnedOff(err) {
+		t.Errorf("delete file: %v %v", deleted, err)
+	}
+	// Only the lookups ran; nothing was written.
+	if len(f.scopes) != 3 {
+		t.Errorf("calls: %v", f.scopes)
+	}
+
+	// A skill that is not there yet is the write's own business: saving its
+	// SKILL.md creates it.
+	if err := newSkillStore(&fakeSkillCrud{getErr: base.ErrNotFound}).SaveSkillFile(ctx, "new", "SKILL.md", "x"); err != nil {
+		t.Errorf("save a new skill: %v", err)
 	}
 }

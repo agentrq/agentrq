@@ -333,6 +333,10 @@ func TestSkills_AccountIsolation(t *testing.T) {
 		"delete": func() error {
 			return e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
 		},
+		"turn off": func() error {
+			_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
+			return err
+		},
 		"delete file": func() error {
 			_, err := e.c.DeleteSkillFile(e.ctx, entity.DeleteSkillFileRequest{WorkspaceID: skWS, UserID: other, Name: "tdd", Path: "x.md"})
 			return err
@@ -725,6 +729,10 @@ func TestSkills_DatabaseFailures(t *testing.T) {
 		_, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
 		return err
 	}
+	turnOff := func(e *skillEnv) error {
+		_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
+		return err
+	}
 	share := func(e *skillEnv) error {
 		return e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS3})
 	}
@@ -750,6 +758,8 @@ func TestSkills_DatabaseFailures(t *testing.T) {
 		{"import: own", "query", "skills", imp},
 		{"import: shared", "subquery", "skill_shares", imp},
 		{"shares", "query", "skill_shares", shares},
+		{"turn off: resolve", "query", "skills", turnOff},
+		{"turn off: write", "update", "skills", turnOff},
 		{"share: target access", "target", "workspaces", share},
 		{"share: target's own skill", "target", "skills", share},
 		{"share: target's shared skills", "subquery", "skill_shares", share},
@@ -946,5 +956,90 @@ func TestNew_SkillStorage(t *testing.T) {
 	}
 	if c := New(Params{Storage: local, SkillStorage: skills}).(*controller); c.skillStorage != skills || c.storage != local {
 		t.Error("SkillStorage was not used for skills alone")
+	}
+}
+
+// A skill turned off stays in the workspace and in the interface; only the
+// agent's view of the list leaves it out.
+func TestSkills_TurnOffAndOn(t *testing.T) {
+	e := newSkillEnv(t)
+	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
+	e.save(t, skWS, "debugging", "SKILL.md", md("debugging", "Find the cause."))
+	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS2}); err != nil {
+		t.Fatal(err)
+	}
+	set := func(ws int64, name string, enabled bool) (*entity.SetSkillEnabledResponse, error) {
+		return e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: ws, UserID: skUserStr, Name: name, Enabled: enabled})
+	}
+	names := func(ws int64, q string, enabledOnly bool) []string {
+		t.Helper()
+		rs, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: ws, UserID: skUserStr, Query: q, EnabledOnly: enabledOnly})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range rs.Skills {
+			out = append(out, fmt.Sprintf("%s:%t", s.Name, s.Enabled))
+		}
+		if rs.Total != len(out) {
+			t.Errorf("total %d for %d skills", rs.Total, len(out))
+		}
+		return out
+	}
+
+	if got := names(skWS, "", true); !slices.Equal(got, []string{"debugging:true", "tdd:true"}) {
+		t.Fatalf("a new skill is on: %v", got)
+	}
+	rs, err := set(skWS, "TDD", false)
+	if err != nil || rs.Skill.Name != "tdd" || rs.Skill.Enabled {
+		t.Fatalf("turn off: %+v, %v", rs, err)
+	}
+	if got := names(skWS, "", false); !slices.Equal(got, []string{"debugging:true", "tdd:false"}) {
+		t.Errorf("the interface still lists it, as off: %v", got)
+	}
+	if got := names(skWS, "", true); !slices.Equal(got, []string{"debugging:true"}) {
+		t.Errorf("an agent's list leaves it out: %v", got)
+	}
+	if got := names(skWS, "test", true); len(got) != 0 {
+		t.Errorf("a search does not find it either: %v", got)
+	}
+	// Off wherever it is shared, and only its owner can turn it back on.
+	if got := names(skWS2, "", true); len(got) != 0 {
+		t.Errorf("the share target's agent still sees %v", got)
+	}
+	_, err = set(skWS2, "tdd", true)
+	wantSkillErr(t, err, SkillReadOnly, `workspace "alpha"`)
+
+	// Turning it off again is the state already asked for; editing it, or
+	// importing over it, keeps it off.
+	if rs, err := set(skWS, "tdd", false); err != nil || rs.Skill.Enabled {
+		t.Fatalf("turn off again: %+v, %v", rs, err)
+	}
+	if saved := e.save(t, skWS, "tdd", "notes.md", "n"); saved.Skill.Enabled {
+		t.Error("saving a file turned the skill back on")
+	}
+	e.importer.res = githubResult(importedSkill("tdd", "Theirs."))
+	if imp, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Overwrite: true}); err != nil || len(imp.Imported) != 1 || imp.Imported[0].Enabled {
+		t.Fatalf("an import over it turned it back on: %+v, %v", imp, err)
+	}
+	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
+	if err != nil || got.Skill.Enabled || got.Skill.Description != "Theirs." {
+		t.Fatalf("get: %+v, %v", got, err)
+	}
+
+	if rs, err := set(skWS, "tdd", true); err != nil || !rs.Skill.Enabled {
+		t.Fatalf("turn on: %+v, %v", rs, err)
+	}
+	if got := names(skWS2, "", true); !slices.Equal(got, []string{"tdd:true"}) {
+		t.Errorf("back on in the share target: %v", got)
+	}
+}
+
+func TestSkills_TurnOffRefusals(t *testing.T) {
+	e := newSkillEnv(t)
+	_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "Bad Name"})
+	wantSkillErr(t, err, SkillInvalid, "not usable")
+	if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "missing"}); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("missing skill: %v", err)
 	}
 }

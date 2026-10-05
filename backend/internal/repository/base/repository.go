@@ -75,7 +75,8 @@ type Repository interface {
 	GetSkill(ctx context.Context, userID, workspaceID int64, name string) (model.Skill, error)
 	ListSkillsByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
 	ListSkillsSharedInto(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
-	SearchSkills(ctx context.Context, userID, workspaceID int64, q string, limit, offset int) ([]model.Skill, int64, error)
+	SearchSkills(ctx context.Context, userID, workspaceID int64, q string, enabledOnly bool, limit, offset int) ([]model.Skill, int64, error)
+	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
 	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile) (model.Skill, []string, error)
 	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile) (model.Skill, string, error)
 	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)

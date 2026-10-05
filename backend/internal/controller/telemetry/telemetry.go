@@ -249,6 +249,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDOAuthConsentDeny
 	case entity.ActionTaskTitleUpdate:
 		action = model.ActionIDTaskTitleUpdate
+	case entity.ActionSkillEnable:
+		action = model.ActionIDSkillEnable
+	case entity.ActionSkillDisable:
+		action = model.ActionIDSkillDisable
 	default:
 		return
 	}
