@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * The attachment preview's Download and Copy link buttons, mounted for real:
+ * The attachment preview's Download, Open in browser and Copy link buttons,
+ * mounted for real:
  * the coverage gate does not see `.vue` files. Download follows an attachment's
- * public link when there is one, and the signed-in route otherwise; Copy link
- * shares only a public link.
+ * public link when there is one, and the signed-in route otherwise; Open in
+ * browser and Copy link offer only a public link.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -153,6 +154,25 @@ describe('clicking Download', () => {
     expect(saved).toEqual([{ href: 'blob:app/1', download: 'shot.png' }])
     fetchSpy.mockRestore()
     click.mockRestore()
+  })
+})
+
+describe('the Open in browser link', () => {
+  const link = (el) => el.querySelector('a[aria-label="Open in browser"]')
+
+  it('opens the public link in a new tab', async () => {
+    const el = await mount()
+    await open(el, 'shot.png')
+    expect(link(el).getAttribute('href')).toBe('https://agentrq.example/storage/artifacts/w-1/t1/a1')
+    expect(link(el).getAttribute('target')).toBe('_blank')
+    expect(link(el).getAttribute('rel')).toBe('noopener noreferrer')
+    expect(link(el).hasAttribute('download')).toBe(false)
+  })
+
+  it('is not offered for an attachment with no public link', async () => {
+    const el = await mount()
+    await open(el, 'old.txt')
+    expect(link(el)).toBeNull()
   })
 })
 

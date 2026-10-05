@@ -862,6 +862,14 @@
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
             <span class="hidden @min-[40rem]:inline">Download</span>
           </a>
+          <!-- The public link, never the signed-in route: in the desktop app that route is
+               on app:// and would open in-app, not in the browser. -->
+          <a v-if="selectedAtt.url" :href="selectedAtt.url" target="_blank" rel="noopener noreferrer"
+             title="Open in browser" aria-label="Open in browser"
+             class="shrink-0 flex items-center justify-center gap-2 px-3 @min-[40rem]:px-4 py-2 rounded-sm border border-zinc-700 text-white text-[10px] font-semibold hover:bg-zinc-800 transition-all">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+            <span class="hidden @min-[40rem]:inline">Open in browser</span>
+          </a>
           <!-- Only a public link is worth sharing: the signed-in route opens for nobody else. -->
           <button v-if="selectedAtt.url" type="button" @click="copyAttachmentLink(selectedAtt)"
                   :title="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'" :aria-label="copiedMessages.has('att-' + selectedAtt.id) ? 'Copied' : 'Copy link'"
