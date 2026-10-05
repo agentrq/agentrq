@@ -925,6 +925,7 @@ import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle'
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
 import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElicitExpired } from '../composables/useElicitAnswer';
+import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
 import TaskTimeline from '../components/TaskTimeline.vue';
@@ -1461,6 +1462,7 @@ async function handleFileUpload(e) {
 const handleVerdict = async (requestId, behavior) => {
   try {
     await sendPermissionVerdict(workspaceId.value, taskId.value, requestId, behavior);
+    markAnswered(requestId, { status: behavior });
     notifySuccess("Verdict sent successfully");
   } catch (err) {
     notifyError('Failed to send verdict: ' + err.message);
@@ -1525,12 +1527,20 @@ async function submitElicitation(m, action) {
   const content = action === 'accept' && m.metadata.mode === 'form' ? (elicitFormValues.value[m.id] || {}) : undefined;
   try {
     await respondToElicitation(workspaceId.value, taskId.value, requestId, action, content);
+    markAnswered(requestId, content ? { status: action, content } : { status: action });
     notifySuccess(action === 'accept' ? 'Response sent' : action === 'decline' ? 'Declined' : 'Cancelled');
   } catch (err) {
     // Dismissing a question nobody waits for any more is done once it is closed.
+    if (err.closed) markAnswered(requestId, { status: 'cancel' });
     if (err.closed && action === 'cancel') notifySuccess('Dismissed');
     else notifyError('Failed to send response: ' + err.message);
   }
+}
+
+// Shows a card answered as soon as the server confirms it, rather than waiting
+// on the live event — see withRequestAnswered.
+function markAnswered(requestId, answer) {
+  task.value = cacheTaskUpdate(sharedCache(), task.value, withRequestAnswered(task.value, requestId, answer));
 }
 
 async function updateStatus(newStatus) {

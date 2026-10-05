@@ -97,21 +97,30 @@ export function unique(prefix) {
   return `${prefix}-${Date.now().toString(36)}`
 }
 
-// Creates a task the way an agent does: over the workspace's MCP server, with
-// the workspace token, and an MCP session of its own.
-export async function createTaskAsAgent(page, workspaceId, title) {
+// Opens an MCP session on the workspace's server the way an agent does: with
+// the workspace token, and a session of its own. Returns a function calling one
+// of its tools, which resolves to the response's text.
+export async function agentSession(page, workspaceId) {
   const { token } = await expectOk(await page.request.get(`${API}/workspaces/${workspaceId}/token`), 'reading the workspace token')
   const url = `/mcp/${workspaceId}?token=${encodeURIComponent(token)}`
   const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }
-  const rpc = async (body, session) => {
-    const res = await page.request.post(url, { headers: session ? { ...headers, 'mcp-session-id': session } : headers, data: body })
+  const rpc = async (body, session, timeout) => {
+    const res = await page.request.post(url, { headers: session ? { ...headers, 'mcp-session-id': session } : headers, data: body, timeout })
     if (!res.ok()) throw new Error(`MCP ${body.method} answered ${res.status()}: ${await res.text()}`)
     return res
   }
   const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'agentrq-qa', version: '0' } } })
   const session = init.headers()['mcp-session-id']
   await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }, session)
-  const res = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'createTask', arguments: { title, body: `Created by the QA suite: ${title}` } } }, session)
-  const text = await res.text()
+  let id = 1
+  // A tool that waits on the human (elicit) holds the request open until they
+  // answer, so it gets the test's own deadline rather than the request's.
+  return async (name, args) => (await rpc({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }, session, 0)).text()
+}
+
+// Creates a task the way an agent does, over the workspace's MCP server.
+export async function createTaskAsAgent(page, workspaceId, title) {
+  const call = await agentSession(page, workspaceId)
+  const text = await call('createTask', { title, body: `Created by the QA suite: ${title}` })
   if (!text.includes('task created with id=')) throw new Error(`createTask over MCP answered: ${text}`)
 }
