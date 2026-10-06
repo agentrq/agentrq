@@ -20,7 +20,7 @@ You can fork any active workspace, with three exceptions: a fork cannot be forke
 | | |
 |---|---|
 | Memory (`memory.md` and the rest) | Shared. Whatever either agent saves, both read |
-| Skills, and skills shared into the parent | Shared |
+| Skills turned on in the parent | Shared: the fork uses the parent's switches |
 | Websites shared from the Chrome extension | Shared |
 | Attachments | Shared storage, so an attachment still opens after its task moves between the two |
 | Notifications, auto-allowed tools, allow-all-commands, clear-context default, self-learning note, message send delay | Inherited. Change them on the parent, and every fork follows. A fork's settings page shows them read-only |

@@ -30,7 +30,7 @@ under `CI`.
 | `analytics.spec.js` | A workspace's stats and task latency answer for every range and aggregate, and the cards show the server's numbers. The account's Performance tab loads. |
 | `forks.spec.js` | Fork a workspace from the sidebar menu. Merge is refused while a task is unfinished, both in the menu and by the server (409). Then the fork merges, and its task moves to the parent. |
 | `tasks.spec.js` | Dragging a card into Done completes the task. Deleting from the task list removes the row. A delete the server refuses (the task was deleted elsewhere) is reported. |
-| `skills.spec.js` | The skills tab lists the workspace's skills. An import the server refuses shows the server's own reason. |
+| `skills.spec.js` | The skills tab lists the account's skills, with the workspace ticked for an import. An import the server refuses shows the server's own reason. The sidebar's Skills link opens the account's Skills page. |
 
 Every test also fails if the page made an API call that failed, or logged a
 console error, other than the failures it causes on purpose.

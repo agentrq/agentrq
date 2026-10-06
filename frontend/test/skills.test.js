@@ -12,7 +12,9 @@ import {
   SkillsState,
   dirOf,
   choosablePaths,
+  contentWorkspaceId,
   formatSkillSize,
+  mergeSkill,
   orderCandidates,
   githubImportUrlValid,
   inlineCodeFileMatch,
@@ -29,10 +31,17 @@ import {
   skillLinkFromEvent,
   skillLinkTarget,
   skillPagePath,
+  skillSeenByAgents,
   skillSource,
+  skillSwitchOn,
   skillUri,
+  skillWorkspaceChoices,
+  skillWorkspaceCount,
+  skillWorkspaceMessage,
+  skillsListPath,
   skillsState,
   skillsTabPath,
+  withWorkspace,
 } from '../src/composables/useSkills';
 
 describe('skill URIs', () => {
@@ -207,10 +216,14 @@ describe('ordering, size and source', () => {
     expect(skillFileCount(undefined)).toBe('0 files');
   });
 
-  it('links a skill\'s page and the tab it is listed on', () => {
+  it('links a skill\'s page and the list it is on, in a workspace or on the Skills page', () => {
     expect(skillPagePath('ws1', 'tdd')).toBe('/workspaces/ws1/settings/skills/tdd');
     expect(skillPagePath('ws 1', 'a/b')).toBe('/workspaces/ws%201/settings/skills/a%2Fb');
+    expect(skillPagePath('', 'a/b')).toBe('/skills/a%2Fb');
+    expect(skillPagePath(undefined, 'tdd')).toBe('/skills/tdd');
     expect(skillsTabPath('ws1')).toBe('/workspaces/ws1/settings?tab=skills');
+    expect(skillsListPath('ws1')).toBe('/workspaces/ws1/settings?tab=skills');
+    expect(skillsListPath('')).toBe('/skills');
   });
 
   it('breaks a path into a breadcrumb', () => {
@@ -328,5 +341,74 @@ describe('skillEnabledMessage', () => {
   it('says which way a skill was switched', () => {
     expect(skillEnabledMessage('tdd', false)).toBe('tdd is now hidden from agents');
     expect(skillEnabledMessage('tdd', true)).toBe('tdd is available to agents again');
+  });
+});
+
+describe('the two switches', () => {
+  it('says which way a skill was switched in a workspace', () => {
+    expect(skillWorkspaceMessage('tdd', true)).toBe('tdd is on in this workspace');
+    expect(skillWorkspaceMessage('tdd', false, 'Ops')).toBe('tdd is off in Ops');
+  });
+
+  it('reads the workspace\'s switch in a workspace, and the account\'s without one', () => {
+    // The server leaves workspaceEnabled out when it is off.
+    expect(skillSwitchOn({ enabled: true }, 'ws1')).toBe(false);
+    expect(skillSwitchOn({ enabled: false, workspaceEnabled: true }, 'ws1')).toBe(true);
+    expect(skillSwitchOn({ workspaceEnabled: true }, '')).toBe(true);
+    expect(skillSwitchOn({ enabled: false, workspaceEnabled: true }, '')).toBe(false);
+    expect(skillSwitchOn(undefined, '')).toBe(true);
+  });
+
+  it('lets agents see a skill in a workspace only while both are on', () => {
+    expect(skillSeenByAgents({ enabled: true, workspaceEnabled: true }, 'ws1')).toBe(true);
+    expect(skillSeenByAgents({ enabled: false, workspaceEnabled: true }, 'ws1')).toBe(false);
+    expect(skillSeenByAgents({ enabled: true }, 'ws1')).toBe(false);
+    expect(skillSeenByAgents({}, '')).toBe(true);
+    expect(skillSeenByAgents({ enabled: false }, '')).toBe(false);
+    expect(skillSeenByAgents(undefined, 'ws1')).toBe(false);
+  });
+
+  it('takes an answer that leaves workspaceEnabled out as off, only in a workspace', () => {
+    const skill = { name: 'tdd', enabled: true, workspaceEnabled: true };
+    expect(mergeSkill(skill, { name: 'tdd', enabled: true }, 'ws1')).toEqual({ name: 'tdd', enabled: true, workspaceEnabled: false });
+    expect(mergeSkill(skill, { name: 'tdd', workspaceEnabled: true }, 'ws1').workspaceEnabled).toBe(true);
+    expect(mergeSkill(skill, undefined, 'ws1').workspaceEnabled).toBe(false);
+    expect(mergeSkill(skill, { enabled: false }, '')).toEqual({ name: 'tdd', enabled: false, workspaceEnabled: true });
+  });
+});
+
+describe('the workspaces a skill is on in', () => {
+  it('counts them', () => {
+    expect(skillWorkspaceCount({ workspaceIds: ['a'] })).toBe('On in 1 workspace');
+    expect(skillWorkspaceCount({ workspaceIds: ['a', 'b', 'c'] })).toBe('On in 3 workspaces');
+    expect(skillWorkspaceCount({ workspaceIds: [] })).toBe('Not on in any workspace');
+    expect(skillWorkspaceCount({})).toBe('Not on in any workspace');
+    expect(skillWorkspaceCount(undefined)).toBe('Not on in any workspace');
+  });
+
+  it('turns one on or off in a list, each once, as strings', () => {
+    expect(withWorkspace(['a'], 'b', true)).toEqual(['a', 'b']);
+    expect(withWorkspace(['a', 'b'], 'a', true)).toEqual(['b', 'a']);
+    expect(withWorkspace(['a', 'b'], 'a', false)).toEqual(['b']);
+    expect(withWorkspace([7], 7, false)).toEqual([]);
+    expect(withWorkspace(undefined, 7, true)).toEqual(['7']);
+  });
+
+  it('offers neither forks, which use their parent\'s, nor archived workspaces', () => {
+    const workspaces = [
+      { id: 'a', name: 'ops' },
+      { id: 'b', name: 'ops-fork', forkOfId: 'a' },
+      { id: 'c', name: 'old', archivedAt: '2026-01-01T00:00:00Z' },
+      { id: 'd', name: 'web' },
+    ];
+    expect(skillWorkspaceChoices(workspaces).map((w) => w.id)).toEqual(['a', 'd']);
+    expect(skillWorkspaceChoices()).toEqual([]);
+  });
+
+  it('switches a fork in its parent', () => {
+    expect(contentWorkspaceId({ id: 'b', forkOfId: 'a' }, 'b')).toBe('a');
+    expect(contentWorkspaceId({ id: 'a' }, 'a')).toBe('a');
+    expect(contentWorkspaceId(undefined, 'a')).toBe('a');
+    expect(contentWorkspaceId(undefined, undefined)).toBe('');
   });
 });

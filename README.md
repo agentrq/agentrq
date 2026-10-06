@@ -141,7 +141,7 @@ Open a running session from any browser and you are at the prompt. Keystrokes go
 
 ### Skills
 
-Give a workspace's agents the playbooks your team already follows. A skill is a `SKILL.md` plus the files it points to, in the same format Claude Code uses. Paste a public GitHub link, such as [obra/superpowers](https://github.com/obra/superpowers), and every skill in it is imported. Write your own, or let an agent save one. Share a skill with your other workspaces and they all read the same copy, so an edit reaches every one of them. Every agent that connects to the workspace is told to search its skills at the start of a task and load the ones that match, over MCP, whatever harness it runs in. [How skills work →](docs/SKILLS.md)
+Give a workspace's agents the playbooks your team already follows. A skill is a `SKILL.md` plus the files it points to, in the same format Claude Code uses. Paste a public GitHub link, such as [obra/superpowers](https://github.com/obra/superpowers), and every skill in it is imported. Write your own, or let an agent save one. Skills belong to your account: turn each one on in the workspaces that need it, and they all read the same copy, so an edit reaches every one of them. Every agent that connects to the workspace is told to search its skills at the start of a task and load the ones that match, over MCP, whatever harness it runs in. [How skills work →](docs/SKILLS.md)
 
 </td>
 </tr>
@@ -442,9 +442,9 @@ When connected, the AI agent has access to:
 - `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
 - `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
 - `deleteMemory`: Remove one of the workspace's notes.
-- `searchSkills`: Find the skills the workspace can use — its own and those shared into it — with each one's description and `skill://` URI. Optional `q` (at least 3 characters) matches name or description; optional `limit`/`offset` page through the results.
+- `searchSkills`: Find the skills the workspace can use — the account's skills turned on in it — with each one's description and `skill://` URI. Optional `q` (at least 3 characters) matches name or description; optional `limit`/`offset` page through the results.
 - `loadSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; a `SKILL.md` comes with the URIs of the skill's other files.
-- `saveSkill`: Write one file of one of the workspace's own skills. Writing `SKILL.md` creates or updates the skill.
+- `saveSkill`: Write one file of a skill the workspace can use. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is turned on in the workspace.
 - `deleteSkill`: Delete one of the workspace's own skills, or one of its files.
 - `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
 - `listSiteTools`: List the websites the human shared from the AgentRQ Chrome extension, and the name and description of each WebMCP tool they offer; `q` ranks the tools by relevance (BM25), `pattern` filters them by a regular expression, and `limit`/`offset` page through them.
@@ -453,11 +453,11 @@ When connected, the AI agent has access to:
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
 ### Skills
-Skills are `SKILL.md` playbooks that agents load when a task matches one. Each workspace has its own, can import them from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and can share them with the account's other workspaces. Shared skills are read-only live references, not copies.
+Skills are `SKILL.md` playbooks that agents load when a task matches one. They belong to the account, can be imported from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and are turned on workspace by workspace. A skill on in several workspaces is one skill, not copies.
 
-- **Import:** in a workspace's **Settings → Skills**, paste a GitHub link to a repository, branch or folder and choose **Import**. The report lists what was imported and why anything was skipped. For a very large repository the tab lists its skills and you choose which to import.
+- **Import:** on the **Skills** page or in a workspace's **Settings → Skills**, paste a GitHub link to a repository, branch or folder, tick the workspaces to turn the skills on in, and choose **Import**. The report lists what was imported and why anything was skipped. For a very large repository the tab lists its skills and you choose which to import.
 - **Use:** agents are told to call `searchSkills` at the start of a task, then `loadSkill` the `SKILL.md` of any match. Every file is addressed as `skill://<name>/<path>`.
-- **Write:** an agent can create or edit the workspace's own skills with `saveSkill`, so a lesson learned in one task becomes a playbook for the next.
+- **Write:** an agent can create or edit the skills on in its workspace with `saveSkill`, so a lesson learned in one task becomes a playbook for the next.
 - **Supervisor:** the account-wide server can search any workspace's skills and read them with `searchSkills` and `getSkill`.
 
 See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
@@ -573,7 +573,7 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 - `getMemory`: Read one memory in full. `MEMORY.md` is the index the others hang off.
 
 **Workspace Skills**
-- `searchSkills`: Find the skills a workspace can use, its own and those shared into it, by name or description (`q`, at least 3 characters), with `limit`/`offset` paging and a `total`. Content is not included.
+- `searchSkills`: Find the account's skills as a workspace sees them, with whether each is on there, by name or description (`q`, at least 3 characters), with `limit`/`offset` paging and a `total`. Content is not included.
 - `getSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`.
 
 **Machine Setup**

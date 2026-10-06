@@ -140,7 +140,6 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 
 	// 1. Get all task and message attachment IDs directly from DB
 	attachments, _ := c.repository.GetWorkspaceAttachments(ctx, req.ID)
-	skillFileIDs, _ := c.repository.GetWorkspaceSkillStorageIDs(ctx, req.ID)
 
 	// 2. Delete from DB (repository handles cascaded DB delete)
 	if err := c.repository.DeleteWorkspace(ctx, req.ID, uid); err != nil {
@@ -159,7 +158,6 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	for _, a := range attachments {
 		storage.DeleteAttachment(c.storage, req.ID, a.TaskID, a.ID)
 	}
-	c.purge(skillFileIDs)
 
 	return nil
 }

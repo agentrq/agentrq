@@ -35,6 +35,7 @@ tags:
   - name: Attachments
   - name: Events
   - name: Workflows
+  - name: Skills
   - name: Push
   - name: Telemetry
   - name: Browser
@@ -651,12 +652,13 @@ paths:
       - $ref: '#/components/parameters/WorkspaceId'
     get:
       tags: [Workspaces]
-      summary: Search the skills this workspace can use
+      summary: The account's skills, as this workspace sees them
       description: >
-        Its own skills and those other workspaces of the same account shared
-        into it, by name. With `q`, only skills whose name or description
-        contains it, ignoring case. A shared-in skill carries
-        `sharedFromWorkspaceId` and is read-only here. `files` is omitted.
+        Every skill of the account, by name, each with `workspaceEnabled`:
+        whether it is on in this workspace (its parent, for a fork). The
+        workspace's agent sees a skill only when it is on here and `enabled`
+        for the account. With `q`, only skills whose name or description
+        contains it, ignoring case. `files` is omitted.
       parameters:
         - name: q
           in: query
@@ -690,76 +692,13 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
-  /workspaces/{id}/skills/import:
-    parameters:
-      - $ref: '#/components/parameters/WorkspaceId'
-    post:
-      tags: [Workspaces]
-      summary: Import skills from a public GitHub repository
-      description: >
-        Downloads the repository once and imports every skill in it. A plugin
-        manifest, `.agentrq/plugin.json` or else `.muse-plugin/plugin.json`,
-        says which directories are skills; without one, every directory with a
-        `SKILL.md` is. A skill keeps its Markdown files, except a repository's
-        own README, CLAUDE, AGENTS and similar meta files, and any other file
-        its kept files reference, directly or in turn. Anything left out is
-        listed in `skipped` with the reason, rather than failing the import.
-        A repository too large to download whole imports nothing: its skills
-        come back in `candidates`, and the import is asked again with the
-        wanted ones in `skills`, which are then read file by file.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [url]
-              properties:
-                url:
-                  type: string
-                  example: https://github.com/obra/superpowers
-                  description: >
-                    `https://github.com/<owner>/<repo>`, optionally ending in
-                    `.git`, `/tree/<ref>` or `/tree/<ref>/<path>`.
-                overwrite:
-                  type: boolean
-                  default: false
-                  description: >
-                    Replace a skill this workspace owns that has the same name.
-                    A skill shared into the workspace is never replaced.
-                skills:
-                  type: array
-                  maxItems: 256
-                  items: { type: string }
-                  example: [ship, careful]
-                  description: >
-                    Import only these skills, by their directory in the
-                    repository as `candidates` gives it.
-      responses:
-        '200':
-          description: What was imported, and what was left out
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SkillImportReport' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422':
-          description: Not a GitHub repository link, or one GitHub does not serve publicly
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '502':
-          description: GitHub could not be reached, or would not list a repository too large to import whole
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-
   /workspaces/{id}/skills/{name}:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
       - $ref: '#/components/parameters/SkillName'
     get:
       tags: [Workspaces]
-      summary: One skill, with its list of files
+      summary: One skill as this workspace sees it, with its list of files
       description: The files are listed by path and size, without content.
       responses:
         '200':
@@ -774,12 +713,11 @@ paths:
         '422': { $ref: '#/components/responses/InvalidPayload' }
     patch:
       tags: [Workspaces]
-      summary: Turn a skill on or off for agents
+      summary: Turn a skill on or off in this workspace
       description: >
-        A skill that is off stays in the workspace and is still listed here, but
-        agents do not see it: `searchSkills` leaves it out and `loadSkill` does
-        not find it. It is off in every workspace it is shared into. Skills are
-        on when created or imported, and a re-import keeps one off.
+        On, this workspace's agent sees the skill, as long as it is on for the
+        account too. Off, the skill stays in the account and in every other
+        workspace it is on in. A fork's switch is its parent's.
       requestBody:
         required: true
         content:
@@ -798,23 +736,6 @@ paths:
                 type: object
                 properties:
                   skill: { $ref: '#/components/schemas/Skill' }
-        '403':
-          description: The skill was shared into this workspace; only its owner can turn it on or off
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/InvalidPayload' }
-    delete:
-      tags: [Workspaces]
-      summary: Delete a skill, its files and its shares
-      responses:
-        '204': { description: Deleted }
-        '403':
-          description: The skill was shared into this workspace; only its owner can delete it
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
@@ -845,13 +766,30 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
-  /workspaces/{id}/skills/{name}/shares:
-    parameters:
-      - $ref: '#/components/parameters/WorkspaceId'
-      - $ref: '#/components/parameters/SkillName'
+  /skills:
     get:
-      tags: [Workspaces]
-      summary: The workspaces this skill is shared into
+      tags: [Skills]
+      summary: Search the account's skills
+      description: >
+        Every skill of the account, by name, each with the workspaces it is on
+        in. With `q`, only skills whose name or description contains it,
+        ignoring case. `files` is omitted.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string, minLength: 3, maxLength: 256 }
+          description: Text to find in a skill's name or description. Leave it out to list every skill.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 100 }
+          description: How many skills to return; larger values are capped at 100. Leave it out, or 0, to return every match.
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+          description: How many matches to skip.
       responses:
         '200':
           description: OK
@@ -860,56 +798,161 @@ paths:
               schema:
                 type: object
                 properties:
-                  shares:
+                  skills:
                     type: array
-                    items: { $ref: '#/components/schemas/SkillShare' }
-        '403':
-          description: The skill was shared into this workspace; only its owner sees its shares
+                    items: { $ref: '#/components/schemas/Skill' }
+                  total:
+                    type: integer
+                    description: How many skills match in all, across every page.
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /skills/import:
+    post:
+      tags: [Skills]
+      summary: Import skills from a public GitHub repository
+      description: >
+        Downloads the repository once and imports every skill in it. A plugin
+        manifest, `.agentrq/plugin.json` or else `.muse-plugin/plugin.json`,
+        says which directories are skills; without one, every directory with a
+        `SKILL.md` is. A skill keeps its Markdown files, except a repository's
+        own README, CLAUDE, AGENTS and similar meta files, and any other file
+        its kept files reference, directly or in turn. Anything left out is
+        listed in `skipped` with the reason, rather than failing the import.
+        A repository too large to download whole imports nothing: its skills
+        come back in `candidates`, and the import is asked again with the
+        wanted ones in `skills`, which are then read file by file. Every
+        skill imported belongs to the account, and is turned on in each
+        workspace of `workspaceIds`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  example: https://github.com/obra/superpowers
+                  description: >
+                    `https://github.com/<owner>/<repo>`, optionally ending in
+                    `.git`, `/tree/<ref>` or `/tree/<ref>/<path>`.
+                overwrite:
+                  type: boolean
+                  default: false
+                  description: >
+                    Replace the account's skill that has the same name. It keeps
+                    the workspaces it is on in, and whether it is on at all.
+                skills:
+                  type: array
+                  maxItems: 256
+                  items: { type: string }
+                  example: [ship, careful]
+                  description: >
+                    Import only these skills, by their directory in the
+                    repository as `candidates` gives it.
+                workspaceIds:
+                  type: array
+                  items: { type: string }
+                  description: >
+                    Workspaces (base62) to turn each imported skill on in. A
+                    fork stands for its parent.
+      responses:
+        '200':
+          description: What was imported, and what was left out
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SkillImportReport' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Not a GitHub repository link, or one GitHub does not serve publicly
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '502':
+          description: GitHub could not be reached, or would not list a repository too large to import whole
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /skills/{name}:
+    parameters:
+      - $ref: '#/components/parameters/SkillName'
+    get:
+      tags: [Skills]
+      summary: One skill, with its list of files
+      description: The files are listed by path and size, without content.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/Skill' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    patch:
+      tags: [Skills]
+      summary: Turn a skill on or off for every workspace
+      description: >
+        A skill that is off stays in the account, and on in its workspaces,
+        but no agent sees it: `searchSkills` leaves it out and `loadSkill`
+        does not find it. Skills are on when created or imported, and a
+        re-import keeps one off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/Skill' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+    delete:
+      tags: [Skills]
+      summary: Delete a skill and its files from the account
+      description: Every workspace it was on in loses it.
+      responses:
+        '204': { description: Deleted }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
-  /workspaces/{id}/skills/{name}/shares/{targetWorkspaceId}:
+  /skills/{name}/files/{path}:
     parameters:
-      - $ref: '#/components/parameters/WorkspaceId'
       - $ref: '#/components/parameters/SkillName'
-      - name: targetWorkspaceId
+      - name: path
         in: path
         required: true
-        schema: { type: string }
-        description: Another workspace of the same account (base62).
-    put:
-      tags: [Workspaces]
-      summary: Share a skill into another workspace
-      description: >
-        The skill stays one skill: the target reads it live, read-only, and
-        sees every later change. Sharing it again is not an error.
+        schema: { type: string, maxLength: 255 }
+        description: >
+          The file's path from the skill's root, e.g. `SKILL.md` or
+          `scripts/run.sh`. It is the rest of the URL, so it may contain `/`.
+    get:
+      tags: [Skills]
+      summary: One file of a skill, with its content
       responses:
-        '204': { description: Shared }
-        '403':
-          description: The skill was shared into this workspace; only its owner can share it
+        '200':
+          description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409':
-          description: The target workspace already has a skill with this name
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
-        '422': { $ref: '#/components/responses/InvalidPayload' }
-    delete:
-      tags: [Workspaces]
-      summary: Stop sharing a skill into a workspace
-      responses:
-        '204': { description: No longer shared }
-        '403':
-          description: The skill was shared into this workspace; only its owner can unshare it
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              schema:
+                type: object
+                properties:
+                  skill: { $ref: '#/components/schemas/Skill' }
+                  file: { $ref: '#/components/schemas/SkillFile' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
@@ -2572,14 +2615,13 @@ components:
       type: object
       description: >
         A playbook agents load for a kind of task: a `SKILL.md` and the files it
-        references. Agents read it over MCP as `skill://<name>/<path>`.
+        references. It belongs to the account, its name unique there, and is
+        turned on in workspaces one by one. Agents read it over MCP as
+        `skill://<name>/<path>`.
       properties:
         id: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-        workspaceId:
-          type: string
-          description: The workspace that owns the skill.
         name: { type: string, maxLength: 64 }
         description:
           type: string
@@ -2593,14 +2635,18 @@ components:
         locallyModified:
           type: boolean
           description: An imported skill that has been changed since.
-        fileCount: { type: integer, description: Files including SKILL.md. At most 64. }
+        fileCount: { type: integer, description: Files including SKILL.md. At most 256. }
         totalBytes: { type: integer }
         enabled:
           type: boolean
-          description: Whether agents can see the skill. Off, it is kept but left out of `searchSkills` and `loadSkill`.
-        sharedFromWorkspaceId:
-          type: string
-          description: Set when another workspace shared the skill in; it is read-only here.
+          description: The account-wide switch. Off, no agent sees the skill, whichever workspaces it is on in.
+        workspaceIds:
+          type: array
+          items: { type: string }
+          description: The workspaces the skill is on in, whose agents see it while `enabled` is true.
+        workspaceEnabled:
+          type: boolean
+          description: Given only when the skill is read through a workspace, and then whether it is on there.
         files:
           type: array
           description: Present only when one skill was requested by name.
@@ -2624,12 +2670,6 @@ components:
           description: |
             Public link to the file, readable with no session: the bucket when
             skills are kept in S3, `<base URL>/storage/skills/...` otherwise.
-
-    SkillShare:
-      type: object
-      properties:
-        targetWorkspaceId: { type: string }
-        createdAt: { type: string, format: date-time }
 
     SkillImportReport:
       type: object

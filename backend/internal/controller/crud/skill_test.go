@@ -70,7 +70,7 @@ func newSkillEnv(t *testing.T) *skillEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.WorkspaceSkill{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ws := range []model.Workspace{
@@ -159,12 +159,12 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 	if n := e.blobs(t); n != 2 {
 		t.Errorf("storage holds %d blobs, want 2", n)
 	}
-	// Each blob is filed under its workspace and skill.
+	// Each blob is filed under its account and skill.
 	var sk model.Skill
 	e.db.Where("name = ?", "pr-reviewer").First(&sk)
 	var files []model.SkillFile
 	e.db.Where("skill_id = ?", sk.ID).Find(&files)
-	dir := "w-" + monoflake.ID(skWS).String() + "/skill-" + monoflake.ID(sk.ID).String() + "/"
+	dir := "u-" + monoflake.ID(skUser).String() + "/skill-" + monoflake.ID(sk.ID).String() + "/"
 	for _, f := range files {
 		if !strings.HasPrefix(f.StorageID, dir) {
 			t.Errorf("blob %q is not under %q", f.StorageID, dir)
@@ -174,9 +174,14 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 		}
 	}
 
+	// Saved from a workspace, a new skill is the account's and on there.
 	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
-	if err != nil || len(list.Skills) != 1 || list.Skills[0].SharedFromWorkspaceID != 0 {
+	if err != nil || len(list.Skills) != 1 || !list.Skills[0].WorkspaceEnabled || !slices.Equal(list.Skills[0].WorkspaceIDs, []int64{skWS}) {
 		t.Fatalf("list: %+v, %v", list, err)
+	}
+	account, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{UserID: skUserStr})
+	if err != nil || len(account.Skills) != 1 || account.Skills[0].WorkspaceEnabled {
+		t.Fatalf("the account's list: %+v, %v", account, err)
 	}
 
 	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "pr-reviewer"})
@@ -197,7 +202,7 @@ func TestSkills_SaveListReadDelete(t *testing.T) {
 		t.Errorf("storage holds %d blobs after deleting a file, want 1", n)
 	}
 
-	if err := e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "pr-reviewer"}); err != nil {
+	if err := e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{UserID: skUserStr, Name: "pr-reviewer"}); err != nil {
 		t.Fatalf("delete skill: %v", err)
 	}
 	if n := e.blobs(t); n != 0 {
@@ -305,9 +310,9 @@ func TestSkills_ReadRefusals(t *testing.T) {
 	}
 }
 
-// Skills are the workspace owner's, exactly like memories: another account
-// cannot read, write, import into or share into a workspace it does not own,
-// and learns nothing about whether it exists.
+// Skills are their account's: another account cannot reach them through a
+// workspace it does not own, learns nothing about whether it exists, and
+// sees none of them from its own account.
 func TestSkills_AccountIsolation(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
@@ -322,6 +327,10 @@ func TestSkills_AccountIsolation(t *testing.T) {
 			_, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
 			return err
 		},
+		"get from the account": func() error {
+			_, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: other, Name: "tdd"})
+			return err
+		},
 		"file": func() error {
 			_, err := e.c.GetSkillFile(e.ctx, entity.GetSkillFileRequest{WorkspaceID: skWS, UserID: other, Name: "tdd", Path: "SKILL.md"})
 			return err
@@ -333,150 +342,153 @@ func TestSkills_AccountIsolation(t *testing.T) {
 		"delete": func() error {
 			return e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
 		},
+		"delete from the account": func() error {
+			return e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{UserID: other, Name: "tdd"})
+		},
 		"turn off": func() error {
 			_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
+			return err
+		},
+		"turn on in a foreign workspace": func() error {
+			_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skForgn, UserID: skUserStr, Name: "tdd", Enabled: true})
 			return err
 		},
 		"delete file": func() error {
 			_, err := e.c.DeleteSkillFile(e.ctx, entity.DeleteSkillFileRequest{WorkspaceID: skWS, UserID: other, Name: "tdd", Path: "x.md"})
 			return err
 		},
-		"import": func() error {
-			_, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: other, URL: "https://github.com/a/b"})
+		"import into a foreign workspace": func() error {
+			e.importer.res = githubResult()
+			_, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "https://github.com/a/b", WorkspaceIDs: []int64{skForgn}})
 			return err
-		},
-		"shares": func() error {
-			_, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS, UserID: other, Name: "tdd"})
-			return err
-		},
-		"share": func() error {
-			return e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: other, Name: "tdd", TargetWorkspaceID: skForgn})
-		},
-		"share into a foreign workspace": func() error {
-			return e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skForgn})
-		},
-		"unshare": func() error {
-			return e.c.UnshareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: other, Name: "tdd", TargetWorkspaceID: skWS2})
 		},
 	}
 	for name, call := range calls {
 		if err := call(); !errors.Is(err, base.ErrNotFound) {
-			t.Errorf("%s: want ErrNotFound, got %v", name, err)
+			t.Errorf("%s returned %v, want ErrNotFound", name, err)
 		}
 	}
-	if _, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: 0, UserID: skUserStr}); err == nil {
-		t.Error("workspace 0 must be refused")
+	if rs, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{UserID: other}); err != nil || len(rs.Skills) != 0 {
+		t.Errorf("another account's own list returned %+v, %v; want nothing", rs, err)
+	}
+	if _, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{}); err == nil {
+		t.Error("a request with no account was not refused")
+	}
+	if _, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{URL: "u"}); err == nil {
+		t.Error("an import with no account was not refused")
+	}
+	if e.importer.url != "" {
+		t.Error("an import into a foreign workspace still reached GitHub")
 	}
 }
 
-func TestSkills_Sharing(t *testing.T) {
+// Each workspace has its own switch: a skill on in one is not on in another
+// until it is turned on there, and the account sees which workspaces have it.
+func TestSkills_WorkspaceSwitch(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
 	e.save(t, skWS, "tdd", "notes.md", "red, green, refactor")
-	share := entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS2}
-	if err := e.c.ShareSkill(e.ctx, share); err != nil {
-		t.Fatalf("share: %v", err)
+	set := func(ws int64, enabled bool) *entity.SetSkillEnabledResponse {
+		t.Helper()
+		rs, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: ws, UserID: skUserStr, Name: "tdd", Enabled: enabled})
+		if err != nil {
+			t.Fatalf("SetSkillEnabled(%d, %t): %v", ws, enabled, err)
+		}
+		return rs
 	}
-	// Sharing twice is the state already asked for.
-	if err := e.c.ShareSkill(e.ctx, share); err != nil {
-		t.Fatalf("share again: %v", err)
+	agentSees := func(ws int64) []string {
+		t.Helper()
+		rs, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: ws, UserID: skUserStr, EnabledOnly: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := []string{}
+		for _, s := range rs.Skills {
+			out = append(out, s.Name)
+		}
+		return out
 	}
 
-	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
-	if err != nil || len(list.Skills) != 1 || list.Skills[0].SharedFromWorkspaceID != skWS {
-		t.Fatalf("target list: %+v, %v", list, err)
+	if got := agentSees(skWS2); len(got) != 0 {
+		t.Fatalf("beta's agent sees %v before it was turned on there, want nothing", got)
 	}
-	// A live reference: a change at the source is what the target reads.
+	// Beta's own list still has it, switched off there.
+	list, _ := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
+	if len(list.Skills) != 1 || list.Skills[0].WorkspaceEnabled {
+		t.Fatalf("beta's list is %+v, want tdd, off there", list.Skills)
+	}
+
+	if rs := set(skWS2, true); !rs.Skill.WorkspaceEnabled || !slices.Equal(rs.Skill.WorkspaceIDs, []int64{skWS, skWS2}) {
+		t.Fatalf("turning it on in beta returned %+v, want it on in alpha and beta", rs.Skill)
+	}
+	set(skWS2, true) // the state already asked for
+	if got := agentSees(skWS2); !slices.Equal(got, []string{"tdd"}) {
+		t.Errorf("beta's agent sees %v, want [tdd]", got)
+	}
+	// One skill, not a copy: a change made from alpha is what beta reads.
 	e.save(t, skWS, "tdd", "notes.md", "updated")
 	file, err := e.c.GetSkillFile(e.ctx, entity.GetSkillFileRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Path: "notes.md"})
-	if err != nil || file.File.Content != "updated" || file.Skill.SharedFromWorkspaceID != skWS {
-		t.Fatalf("target read: %+v, %v", file, err)
-	}
-	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd"})
-	if err != nil || got.Skill.SharedFromWorkspaceID != skWS || len(got.Skill.Files) != 2 {
-		t.Fatalf("target get: %+v, %v", got, err)
+	if err != nil || file.File.Content != "updated" || !file.Skill.WorkspaceEnabled {
+		t.Fatalf("beta read %+v, %v; want the updated notes", file, err)
 	}
 
-	// Read-only in the target, whichever way a write comes in.
-	_, err = e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Path: "notes.md", Content: "x"})
-	wantSkillErr(t, err, SkillReadOnly, `workspace "alpha"`)
-	_, err = e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Path: "SKILL.md", Content: md("tdd", "mine now")})
-	wantSkillErr(t, err, SkillReadOnly, "read-only")
-	err = e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd"})
-	wantSkillErr(t, err, SkillReadOnly, "read-only")
-	_, err = e.c.DeleteSkillFile(e.ctx, entity.DeleteSkillFileRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Path: "notes.md"})
-	wantSkillErr(t, err, SkillReadOnly, "read-only")
-	err = e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS3})
-	wantSkillErr(t, err, SkillReadOnly, "read-only")
-
-	shares, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
-	if err != nil || len(shares.Shares) != 1 || shares.Shares[0].TargetWorkspaceID != skWS2 {
-		t.Fatalf("shares: %+v, %v", shares, err)
+	if rs := set(skWS, false); rs.Skill.WorkspaceEnabled || !slices.Equal(rs.Skill.WorkspaceIDs, []int64{skWS2}) {
+		t.Fatalf("turning it off in alpha returned %+v, want it on in beta alone", rs.Skill)
 	}
-
-	if err := e.c.UnshareSkill(e.ctx, share); err != nil {
-		t.Fatalf("unshare: %v", err)
+	set(skWS, false) // off already
+	if got := agentSees(skWS); len(got) != 0 {
+		t.Errorf("alpha's agent still sees %v", got)
 	}
-	if err := e.c.UnshareSkill(e.ctx, share); !errors.Is(err, base.ErrNotFound) {
-		t.Errorf("unshare again: %v", err)
-	}
-	list, _ = e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS2, UserID: skUserStr})
-	if len(list.Skills) != 0 {
-		t.Errorf("after unsharing the target still lists %+v", list.Skills)
+	got, _ := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: skUserStr, Name: "tdd"})
+	if !slices.Equal(got.Skill.WorkspaceIDs, []int64{skWS2}) || got.Skill.WorkspaceEnabled {
+		t.Errorf("the account reads %+v, want it on in beta alone", got.Skill)
 	}
 }
 
-func TestSkills_ShareRefusals(t *testing.T) {
+// Deleting from a workspace, as an agent does, only takes the skill out of
+// that workspace while another still has it on; the last one deletes it.
+func TestSkills_DeleteFromAWorkspace(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
-	e.save(t, skWS2, "tdd", "SKILL.md", md("tdd", "Beta's own."))
-	e.save(t, skWS3, "tdd", "SKILL.md", md("tdd", "Gamma's own."))
-
-	err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS})
-	wantSkillErr(t, err, SkillInvalid, "already available")
-
-	err = e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS2})
-	wantSkillErr(t, err, SkillConflict, "its own skill")
-
-	// Two skills of one name cannot both be shared into the same workspace.
-	e.save(t, skWS, "lint", "SKILL.md", md("lint", "Alpha lint."))
-	e.save(t, skWS3, "lint", "SKILL.md", md("lint", "Gamma lint."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skWS2}); err != nil {
-		t.Fatal(err)
-	}
-	err = e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS3, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skWS2})
-	wantSkillErr(t, err, SkillConflict, "already shared into")
-
-	// And a workspace cannot then create its own skill under a name it
-	// already sees shared in.
-	_, err = e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", Path: "SKILL.md", Content: md("lint", "Mine.")})
-	wantSkillErr(t, err, SkillReadOnly, "read-only")
-
-	for _, name := range []string{"Bad Name", "missing"} {
-		err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: name, TargetWorkspaceID: skWS3})
-		if err == nil {
-			t.Errorf("share %q: want an error", name)
-		}
-	}
-	if _, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "missing"}); !errors.Is(err, base.ErrNotFound) {
-		t.Errorf("shares of a missing skill: %v", err)
-	}
-}
-
-// Deleting a skill takes its shares with it, so the target stops seeing it.
-func TestSkills_DeleteRemovesShares(t *testing.T) {
-	e := newSkillEnv(t)
-	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS2}); err != nil {
+	if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("delete from alpha: %v", err)
+	}
+	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: skUserStr, Name: "tdd"})
+	if err != nil || !slices.Equal(got.Skill.WorkspaceIDs, []int64{skWS2}) || e.blobs(t) != 1 {
+		t.Fatalf("after deleting from alpha the skill reads %+v, %v; want it kept, on in beta", got, err)
+	}
+	if err := e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd"}); err != nil {
+		t.Fatalf("delete from beta: %v", err)
+	}
+	if _, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: skUserStr, Name: "tdd"}); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("after the last workspace let it go the skill reads %v, want ErrNotFound", err)
+	}
+	if n := e.blobs(t); n != 0 {
+		t.Errorf("storage holds %d blobs, want 0", n)
 	}
 	var n int64
-	e.db.Model(&model.SkillShare{}).Count(&n)
+	e.db.Model(&model.WorkspaceSkill{}).Count(&n)
 	if n != 0 {
-		t.Errorf("%d shares outlived their skill", n)
+		t.Errorf("%d workspace rows outlived their skill", n)
+	}
+}
+
+// A name is unique in the account: a workspace cannot make a second skill
+// under a name another workspace's skill has.
+func TestSkills_NamesAreUniquePerAccount(t *testing.T) {
+	e := newSkillEnv(t)
+	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Alpha's."))
+	rs := e.save(t, skWS2, "tdd", "SKILL.md", md("tdd", "Beta's."))
+	if rs.Skill.Description != "Beta's." || rs.Skill.WorkspaceEnabled || !slices.Equal(rs.Skill.WorkspaceIDs, []int64{skWS}) {
+		t.Errorf("saving tdd from beta returned %+v, want alpha's skill updated and still off in beta", rs.Skill)
+	}
+	var n int64
+	e.db.Model(&model.Skill{}).Count(&n)
+	if n != 1 {
+		t.Errorf("the account has %d skills, want 1", n)
 	}
 }
 
@@ -496,17 +508,12 @@ func importedSkill(name, description string, extra ...skillimport.File) skillimp
 func TestSkills_Import(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Our own."))
-	e.save(t, skWS2, "lint", "SKILL.md", md("lint", "Shared in."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skWS}); err != nil {
-		t.Fatal(err)
-	}
 	e.importer.res = githubResult(
 		importedSkill("systematic-debugging", "Debug.", skillimport.File{Path: "root-cause-tracing.md", Content: []byte("trace")}),
 		importedSkill("tdd", "Theirs."),
-		importedSkill("lint", "Theirs too."),
 	)
 
-	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "https://github.com/obra/superpowers"})
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "https://github.com/obra/superpowers", WorkspaceIDs: []int64{skWS2, skWS3, skWS2}})
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
@@ -517,33 +524,37 @@ func TestSkills_Import(t *testing.T) {
 		rs.Imported[0].SourceType != "github" || rs.Imported[0].SourceRepo != "obra/superpowers" || rs.Imported[0].SourcePath != "skills/systematic-debugging" {
 		t.Fatalf("imported: %+v", rs.Imported)
 	}
+	// On in each chosen workspace, once.
+	if got := rs.Imported[0].WorkspaceIDs; !slices.Equal(got, []int64{skWS2, skWS3}) {
+		t.Errorf("the imported skill is on in %v, want beta and gamma", got)
+	}
 	reasons := map[string]string{}
 	for _, s := range rs.Skipped {
 		reasons[s.Name] = s.Reason
 	}
-	for name, want := range map[string]string{"brainstorming": "96 KiB", "tdd": "overwrite", "lint": "shared into this workspace"} {
+	for name, want := range map[string]string{"brainstorming": "96 KiB", "tdd": "overwrite"} {
 		if !strings.Contains(reasons[name], want) {
 			t.Errorf("skipped %s: %q, want %q", name, reasons[name], want)
 		}
 	}
 
-	// Overwrite replaces the workspace's own skill, keeping its identity, but
-	// still never a shared-in one.
-	before, _ := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
-	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Overwrite: true})
+	// Overwrite replaces the account's skill, keeping its identity and the
+	// workspaces it was on in, and turns it on in the ones chosen now.
+	before, _ := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: skUserStr, Name: "tdd"})
+	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Overwrite: true, WorkspaceIDs: []int64{skWS3}})
 	if err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
 	if len(rs.Imported) != 2 {
 		t.Fatalf("overwrite imported %+v", rs.Imported)
 	}
-	after, _ := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
-	if after.Skill.ID != before.Skill.ID || after.Skill.Description != "Theirs." || after.Skill.SourceType != "github" {
+	after, _ := e.c.GetSkill(e.ctx, entity.GetSkillRequest{UserID: skUserStr, Name: "tdd"})
+	if after.Skill.ID != before.Skill.ID || after.Skill.Description != "Theirs." || after.Skill.SourceType != "github" || !slices.Equal(after.Skill.WorkspaceIDs, []int64{skWS, skWS3}) {
 		t.Errorf("overwritten: before %+v after %+v", before.Skill, after.Skill)
 	}
 	// Two skills, three files, and nothing left over from what was replaced.
-	if n := e.blobs(t); n != 4 { // tdd, systematic-debugging ×2, and lint in skWS2
-		t.Errorf("storage holds %d blobs, want 4", n)
+	if n := e.blobs(t); n != 3 {
+		t.Errorf("storage holds %d blobs, want 3", n)
 	}
 
 	// Editing an imported skill marks it, so a later re-sync knows.
@@ -559,7 +570,7 @@ func TestSkills_Import(t *testing.T) {
 
 func TestSkills_ImportErrors(t *testing.T) {
 	e := newSkillEnv(t)
-	req := entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"}
+	req := entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"}
 
 	e.importer.err = fmt.Errorf("%w: use a link like …", skillimport.ErrInvalidURL)
 	_, err := e.c.ImportSkills(e.ctx, req)
@@ -586,7 +597,7 @@ func TestSkills_ImportOffersAndChooses(t *testing.T) {
 		Repo: "garrytan/gstack", Ref: "main", Commit: "abc",
 		Candidates: []skillimport.Candidate{{Name: "ship", Path: "ship", SkillBytes: 77710, Reason: "SKILL.md is too big"}, {Name: "careful", Path: "careful", SkillBytes: 3516}},
 	}
-	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,12 +607,12 @@ func TestSkills_ImportOffersAndChooses(t *testing.T) {
 	}
 
 	e.importer.res = githubResult(importedSkill("careful", "Careful."))
-	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Skills: []string{"careful"}})
+	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Skills: []string{"careful"}})
 	if err != nil || len(rs.Imported) != 1 || len(rs.Candidates) != 0 || !slices.Equal(e.importer.only, []string{"careful"}) {
 		t.Fatalf("got %+v, %v; importer saw %v", rs, err, e.importer.only)
 	}
 
-	_, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Skills: make([]string, skillimport.MaxSelected+1)})
+	_, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Skills: make([]string, skillimport.MaxSelected+1)})
 	wantSkillErr(t, err, SkillInvalid, "at most 256 skills")
 }
 
@@ -610,7 +621,7 @@ func TestSkills_ImportStorageFailureLeavesNothing(t *testing.T) {
 	e := newSkillEnv(t)
 	e.importer.res = githubResult(importedSkill("a", "A.", skillimport.File{Path: "b.md", Content: []byte("b")}))
 	e.c.skillStorage = &failingStorage{Service: e.c.skillStorage, failAfter: 1}
-	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"})
 	if err != nil || len(rs.Imported) != 0 || !strings.Contains(rs.Skipped[len(rs.Skipped)-1].Reason, "could not be saved") {
 		t.Fatalf("got %+v, %v", rs, err)
 	}
@@ -697,10 +708,6 @@ func TestSkills_DatabaseFailures(t *testing.T) {
 		_, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
 		return err
 	}
-	getShared := func(e *skillEnv) error {
-		_, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "not-here"})
-		return err
-	}
 	file := func(e *skillEnv) error {
 		_, err := e.c.GetSkillFile(e.ctx, entity.GetSkillFileRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", Path: "SKILL.md"})
 		return err
@@ -722,19 +729,28 @@ func TestSkills_DatabaseFailures(t *testing.T) {
 	}
 	imp := func(e *skillEnv) error {
 		e.importer.res = githubResult(importedSkill("new-one", "New."))
-		_, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
-		return err
-	}
-	shares := func(e *skillEnv) error {
-		_, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
+		_, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"})
 		return err
 	}
 	turnOff := func(e *skillEnv) error {
+		_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{UserID: skUserStr, Name: "tdd"})
+		return err
+	}
+	turnOnHere := func(e *skillEnv) error {
+		_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS3, UserID: skUserStr, Name: "tdd", Enabled: true})
+		return err
+	}
+	turnOffHere := func(e *skillEnv) error {
 		_, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
 		return err
 	}
-	share := func(e *skillEnv) error {
-		return e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS3})
+	delHere := func(e *skillEnv) error {
+		return e.c.DeleteSkill(e.ctx, entity.DeleteSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
+	}
+	impInto := func(e *skillEnv) error {
+		e.importer.res = githubResult(importedSkill("new-one", "New."))
+		_, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", WorkspaceIDs: []int64{skWS}})
+		return err
 	}
 
 	for _, tc := range []struct {
@@ -742,28 +758,35 @@ func TestSkills_DatabaseFailures(t *testing.T) {
 		op, table string
 		call      call
 	}{
-		{"list: own", "query", "skills", list},
-		{"list: shared", "subquery", "skill_shares", list},
+		{"list: skills", "query", "skills", list},
+		{"list: workspaces", "query", "workspace_skills", list},
 		{"access check", "query", "workspaces", list},
 		{"get: skill", "query", "skills", get},
-		{"get: shared", "subquery", "skill_shares", getShared},
 		{"get: files", "query", "skill_files", get},
+		{"get: workspaces", "query", "workspace_skills", get},
 		{"file: row", "query", "skill_files", file},
+		{"file: workspaces", "query", "workspace_skills", file},
 		{"save: file lookup", "query", "skill_files", saveSub},
 		{"save: write", "create", "skill_files", saveSub},
+		{"save: workspaces", "query", "workspace_skills", saveSub},
 		{"save: new skill", "create", "skills", saveNew},
 		{"save: resolve", "query", "skills", saveSub},
 		{"delete", "delete", "skill_files", del},
+		{"delete: resolve", "query", "skills", del},
+		{"delete from a workspace: turn off", "delete", "workspace_skills", delHere},
+		{"delete from a workspace: what is left", "query", "workspace_skills", delHere},
 		{"delete file", "delete", "skill_files", delFile},
-		{"import: own", "query", "skills", imp},
-		{"import: shared", "subquery", "skill_shares", imp},
-		{"shares", "query", "skill_shares", shares},
+		{"delete file: resolve", "query", "skills", delFile},
+		{"delete file: workspaces", "query", "workspace_skills", delFile},
+		{"import: account skills", "query", "skills", imp},
+		{"import: workspaces", "query", "workspace_skills", imp},
+		{"import: workspace access", "query", "workspaces", impInto},
 		{"turn off: resolve", "query", "skills", turnOff},
 		{"turn off: write", "update", "skills", turnOff},
-		{"share: target access", "target", "workspaces", share},
-		{"share: target's own skill", "target", "skills", share},
-		{"share: target's shared skills", "subquery", "skill_shares", share},
-		{"share: write", "create", "skill_shares", share},
+		{"turn off: workspaces", "query", "workspace_skills", turnOff},
+		{"turn on here: what is on", "query", "workspace_skills", turnOnHere},
+		{"turn on here: write", "create", "workspace_skills", turnOnHere},
+		{"turn off here: write", "delete", "workspace_skills", turnOffHere},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newSkillEnv(t)
@@ -786,9 +809,6 @@ func TestSkills_ListIsSortedByName(t *testing.T) {
 	e.save(t, skWS, "zeta", "SKILL.md", md("zeta", "Z."))
 	e.save(t, skWS, "alpha", "SKILL.md", md("alpha", "A."))
 	e.save(t, skWS2, "mid", "SKILL.md", md("mid", "M."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "mid", TargetWorkspaceID: skWS}); err != nil {
-		t.Fatalf("share: %v", err)
-	}
 	list, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr})
 	if err != nil {
 		t.Fatalf("SearchSkills: %v", err)
@@ -834,7 +854,7 @@ func TestSkills_ImportReportsASkillThatCouldNotBeSaved(t *testing.T) {
 		}
 	})
 	blobs := e.blobs(t)
-	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"})
 	if err != nil {
 		t.Fatalf("ImportSkills: %v", err)
 	}
@@ -860,7 +880,7 @@ func TestSkills_ImportIsRateLimited(t *testing.T) {
 	e := newSkillEnv(t)
 	e.c.limiter = &stubLimiter{}
 	e.importer.res = githubResult()
-	if _, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"}); err == nil || err.Error() != "rate limit exceeded" {
+	if _, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"}); err == nil || err.Error() != "rate limit exceeded" {
 		t.Fatalf("got %v", err)
 	}
 	if e.importer.url != "" {
@@ -873,11 +893,7 @@ func TestSkills_Search(t *testing.T) {
 	e.save(t, skWS, "pr-reviewer", "SKILL.md", md("pr-reviewer", "Reviews Pull Requests."))
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Write the failing test first."))
 	e.save(t, skWS, "percent", "SKILL.md", md("percent", "Handles 100% of cases."))
-	e.save(t, skWS2, "reviewed-by-ops", "SKILL.md", md("reviewed-by-ops", "Shared in from beta."))
-	e.save(t, skWS3, "unshared-review", "SKILL.md", md("unshared-review", "Not visible to alpha."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "reviewed-by-ops", TargetWorkspaceID: skWS}); err != nil {
-		t.Fatal(err)
-	}
+	e.save(t, skWS2, "reviewed-by-ops", "SKILL.md", md("reviewed-by-ops", "Saved from beta."))
 	search := func(q string, limit, offset int) *entity.SearchSkillsResponse {
 		t.Helper()
 		rs, err := e.c.SearchSkills(e.ctx, entity.SearchSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, Query: q, Limit: limit, Offset: offset})
@@ -896,7 +912,7 @@ func TestSkills_Search(t *testing.T) {
 
 	for _, tc := range []struct{ q, want string }{
 		{"", "percent,pr-reviewer,reviewed-by-ops,tdd"},
-		{"review", "pr-reviewer,reviewed-by-ops"}, // name, own and shared-in
+		{"review", "pr-reviewer,reviewed-by-ops"}, // name, from any workspace
 		{"PULL requests", "pr-reviewer"},          // description, any case
 		{"  failing  ", "tdd"},                    // trimmed
 		{"100%", "percent"},                       // % matches itself
@@ -909,9 +925,9 @@ func TestSkills_Search(t *testing.T) {
 		}
 	}
 
-	// A shared-in skill says where it came from.
-	if rs := search("reviewed", 0, 0); rs.Skills[0].SharedFromWorkspaceID != skWS2 {
-		t.Errorf("shared from: %+v", rs.Skills[0])
+	// Each says whether it is on in the workspace asked from.
+	if rs := search("review", 0, 0); !rs.Skills[0].WorkspaceEnabled || rs.Skills[1].WorkspaceEnabled {
+		t.Errorf("pr-reviewer should be on in alpha and reviewed-by-ops not: %+v", rs.Skills)
 	}
 
 	// Pages by name, with the total of every match.
@@ -959,17 +975,17 @@ func TestNew_SkillStorage(t *testing.T) {
 	}
 }
 
-// A skill turned off stays in the workspace and in the interface; only the
-// agent's view of the list leaves it out.
+// A skill turned off for the account stays in it and in the interface; only
+// agents' lists leave it out, in every workspace it is on in.
 func TestSkills_TurnOffAndOn(t *testing.T) {
 	e := newSkillEnv(t)
 	e.save(t, skWS, "tdd", "SKILL.md", md("tdd", "Test first."))
 	e.save(t, skWS, "debugging", "SKILL.md", md("debugging", "Find the cause."))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd", TargetWorkspaceID: skWS2}); err != nil {
+	if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "tdd", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	set := func(ws int64, name string, enabled bool) (*entity.SetSkillEnabledResponse, error) {
-		return e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: ws, UserID: skUserStr, Name: name, Enabled: enabled})
+	set := func(name string, enabled bool) (*entity.SetSkillEnabledResponse, error) {
+		return e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{UserID: skUserStr, Name: name, Enabled: enabled})
 	}
 	names := func(ws int64, q string, enabledOnly bool) []string {
 		t.Helper()
@@ -990,8 +1006,8 @@ func TestSkills_TurnOffAndOn(t *testing.T) {
 	if got := names(skWS, "", true); !slices.Equal(got, []string{"debugging:true", "tdd:true"}) {
 		t.Fatalf("a new skill is on: %v", got)
 	}
-	rs, err := set(skWS, "TDD", false)
-	if err != nil || rs.Skill.Name != "tdd" || rs.Skill.Enabled {
+	rs, err := set("TDD", false)
+	if err != nil || rs.Skill.Name != "tdd" || rs.Skill.Enabled || !slices.Equal(rs.Skill.WorkspaceIDs, []int64{skWS, skWS2}) {
 		t.Fatalf("turn off: %+v, %v", rs, err)
 	}
 	if got := names(skWS, "", false); !slices.Equal(got, []string{"debugging:true", "tdd:false"}) {
@@ -1003,23 +1019,20 @@ func TestSkills_TurnOffAndOn(t *testing.T) {
 	if got := names(skWS, "test", true); len(got) != 0 {
 		t.Errorf("a search does not find it either: %v", got)
 	}
-	// Off wherever it is shared, and only its owner can turn it back on.
 	if got := names(skWS2, "", true); len(got) != 0 {
-		t.Errorf("the share target's agent still sees %v", got)
+		t.Errorf("beta's agent still sees %v", got)
 	}
-	_, err = set(skWS2, "tdd", true)
-	wantSkillErr(t, err, SkillReadOnly, `workspace "alpha"`)
 
 	// Turning it off again is the state already asked for; editing it, or
 	// importing over it, keeps it off.
-	if rs, err := set(skWS, "tdd", false); err != nil || rs.Skill.Enabled {
+	if rs, err := set("tdd", false); err != nil || rs.Skill.Enabled {
 		t.Fatalf("turn off again: %+v, %v", rs, err)
 	}
 	if saved := e.save(t, skWS, "tdd", "notes.md", "n"); saved.Skill.Enabled {
 		t.Error("saving a file turned the skill back on")
 	}
 	e.importer.res = githubResult(importedSkill("tdd", "Theirs."))
-	if imp, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Overwrite: true}); err != nil || len(imp.Imported) != 1 || imp.Imported[0].Enabled {
+	if imp, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Overwrite: true}); err != nil || len(imp.Imported) != 1 || imp.Imported[0].Enabled {
 		t.Fatalf("an import over it turned it back on: %+v, %v", imp, err)
 	}
 	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "tdd"})
@@ -1027,11 +1040,11 @@ func TestSkills_TurnOffAndOn(t *testing.T) {
 		t.Fatalf("get: %+v, %v", got, err)
 	}
 
-	if rs, err := set(skWS, "tdd", true); err != nil || !rs.Skill.Enabled {
+	if rs, err := set("tdd", true); err != nil || !rs.Skill.Enabled {
 		t.Fatalf("turn on: %+v, %v", rs, err)
 	}
 	if got := names(skWS2, "", true); !slices.Equal(got, []string{"tdd:true"}) {
-		t.Errorf("back on in the share target: %v", got)
+		t.Errorf("back on in beta: %v", got)
 	}
 }
 
@@ -1041,5 +1054,8 @@ func TestSkills_TurnOffRefusals(t *testing.T) {
 	wantSkillErr(t, err, SkillInvalid, "not usable")
 	if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "missing"}); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("missing skill: %v", err)
+	}
+	if _, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{UserID: "", Name: "tdd"}); err == nil {
+		t.Error("a request with no account was not refused")
 	}
 }

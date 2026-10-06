@@ -15,10 +15,23 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
 
-func (r *repository) GetSkill(ctx context.Context, userID, workspaceID int64, name string) (model.Skill, error) {
+// accountSkill is the workspace_id every skill of an account carries; a
+// non-zero one is a legacy skill the backfill has yet to move.
+const accountSkill = 0
+
+// SkillFilter narrows a skill search.
+type SkillFilter struct {
+	// InWorkspace keeps only the skills turned on in that workspace; 0 keeps
+	// every skill of the account.
+	InWorkspace int64
+	// EnabledOnly leaves out the skills turned off for the whole account.
+	EnabledOnly bool
+}
+
+func (r *repository) GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error) {
 	var s model.Skill
 	err := r.conn(ctx).
-		Where("user_id = ? AND workspace_id = ? AND name = ?", userID, workspaceID, name).
+		Where("user_id = ? AND workspace_id = ? AND name = ?", userID, accountSkill, name).
 		First(&s).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Skill{}, ErrNotFound
@@ -26,44 +39,23 @@ func (r *repository) GetSkill(ctx context.Context, userID, workspaceID int64, na
 	return s, err
 }
 
-// ListSkillsByWorkspace returns the skills a workspace owns, by name.
-func (r *repository) ListSkillsByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error) {
-	var skills []model.Skill
-	err := r.conn(ctx).
-		Where("user_id = ? AND workspace_id = ?", userID, workspaceID).
-		Order("name asc").
-		Find(&skills).Error
-	return skills, err
-}
-
-// ListSkillsSharedInto returns the skills other workspaces of the same owner
-// have shared into this one, by name.
-func (r *repository) ListSkillsSharedInto(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error) {
-	var skills []model.Skill
-	shared := r.conn(ctx).Model(&model.SkillShare{}).Select("skill_id").
-		Where("user_id = ? AND target_workspace_id = ?", userID, workspaceID)
-	err := r.conn(ctx).
-		Where("user_id = ? AND id IN (?)", userID, shared).
-		Order("name asc").
-		Find(&skills).Error
-	return skills, err
-}
-
-// SearchSkills returns the skills a workspace can use — its own and those
-// shared into it — whose name or description contains q, ignoring case, by
-// name; and how many match in all. enabledOnly leaves out the skills turned
-// off. A limit of 0 returns every match.
-func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64, q string, enabledOnly bool, limit, offset int) ([]model.Skill, int64, error) {
-	shared := r.conn(ctx).Model(&model.SkillShare{}).Select("skill_id").
-		Where("user_id = ? AND target_workspace_id = ?", userID, workspaceID)
+// SearchSkills returns an account's skills whose name or description contains
+// q, ignoring case, by name; and how many match in all. A limit of 0 returns
+// every match.
+func (r *repository) SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error) {
 	query := r.conn(ctx).Model(&model.Skill{}).
-		Where("user_id = ? AND (workspace_id = ? OR id IN (?))", userID, workspaceID, shared)
+		Where("user_id = ? AND workspace_id = ?", userID, accountSkill)
+	if filter.InWorkspace != 0 {
+		on := r.conn(ctx).Model(&model.WorkspaceSkill{}).Select("skill_id").
+			Where("user_id = ? AND workspace_id = ?", userID, filter.InWorkspace)
+		query = query.Where("id IN (?)", on)
+	}
 	if q != "" {
 		// LIKE's own wildcards in q are matched literally.
 		pattern := "%" + likeEscaper.Replace(strings.ToLower(q)) + "%"
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
-	if enabledOnly {
+	if filter.EnabledOnly {
 		query = query.Where("disabled = ?", false)
 	}
 	var total int64
@@ -84,9 +76,10 @@ func (r *repository) SearchSkills(ctx context.Context, userID, workspaceID int64
 var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 
 // ReplaceSkill writes a skill and exactly the given files, creating the skill
-// when s.ID is not stored yet. It returns the storage ids of the files it
-// dropped, for the caller to purge after the commit.
-func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile) (model.Skill, []string, error) {
+// when s.ID is not stored yet, and turns it on in the workspaces on names. It
+// returns the storage ids of the files it dropped, for the caller to purge
+// after the commit.
+func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error) {
 	var dropped []string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&s).Error; err != nil {
@@ -106,6 +99,9 @@ func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []mo
 				return err
 			}
 		}
+		if err := turnOn(tx, s.ID, on); err != nil {
+			return err
+		}
 		return recount(tx, &s)
 	})
 	if err != nil {
@@ -115,9 +111,9 @@ func (r *repository) ReplaceSkill(ctx context.Context, s model.Skill, files []mo
 }
 
 // UpsertSkillFile writes one file of a skill, creating the skill when s.ID is
-// not stored yet, and returns the storage id of the content it replaced ("" for
-// a new file).
-func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile) (model.Skill, string, error) {
+// not stored yet, turns it on in the workspaces on names, and returns the
+// storage id of the content it replaced ("" for a new file).
+func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error) {
 	var replaced string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(&s).Error; err != nil {
@@ -136,12 +132,27 @@ func (r *repository) UpsertSkillFile(ctx context.Context, s model.Skill, f model
 		if err := tx.Save(&f).Error; err != nil {
 			return err
 		}
+		if err := turnOn(tx, s.ID, on); err != nil {
+			return err
+		}
 		return recount(tx, &s)
 	})
 	if err != nil {
 		return model.Skill{}, "", err
 	}
 	return s, replaced, nil
+}
+
+// turnOn turns a skill on in each workspace of on; one where it is on
+// already is left as it is.
+func turnOn(tx *gorm.DB, skillID int64, on []model.WorkspaceSkill) error {
+	if len(on) == 0 {
+		return nil
+	}
+	for i := range on {
+		on[i].SkillID = skillID
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&on).Error
 }
 
 // DeleteSkillFile removes one file and returns the storage id of its content.
@@ -171,8 +182,8 @@ func (r *repository) DeleteSkillFile(ctx context.Context, s model.Skill, path st
 	return s, storageID, nil
 }
 
-// DeleteSkill removes a skill, its files and its shares, and returns the
-// storage ids of the files' content.
+// DeleteSkill removes a skill, its files and every workspace it is on in, and
+// returns the storage ids of the files' content.
 func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, error) {
 	var storageIDs []string
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -182,7 +193,7 @@ func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, 
 		if err := tx.Where("skill_id = ?", skillID).Delete(&model.SkillFile{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("skill_id = ?", skillID).Delete(&model.SkillShare{}).Error; err != nil {
+		if err := tx.Where("skill_id = ?", skillID).Delete(&model.WorkspaceSkill{}).Error; err != nil {
 			return err
 		}
 		res := tx.Where("id = ?", skillID).Delete(&model.Skill{})
@@ -200,8 +211,8 @@ func (r *repository) DeleteSkill(ctx context.Context, skillID int64) ([]string, 
 	return storageIDs, nil
 }
 
-// SetSkillDisabled turns a skill off for agents, or back on. It leaves
-// updated_at alone: the skill's content did not change.
+// SetSkillDisabled turns a skill off for agents in every workspace, or back
+// on. It leaves updated_at alone: the skill's content did not change.
 func (r *repository) SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error {
 	res := r.conn(ctx).Model(&model.Skill{}).Where("id = ?", skillID).UpdateColumn("disabled", disabled)
 	if res.Error != nil {
@@ -229,38 +240,117 @@ func (r *repository) ListSkillFiles(ctx context.Context, skillID int64) ([]model
 	return files, err
 }
 
-// CreateSkillShare shares a skill into a workspace. Sharing it again is not an
+// ListSkillWorkspaces returns the workspaces each of the skills is on in, in
+// the order they were turned on. A skill on in none is not in the map.
+func (r *repository) ListSkillWorkspaces(ctx context.Context, skillIDs []int64) (map[int64][]int64, error) {
+	out := map[int64][]int64{}
+	if len(skillIDs) == 0 {
+		return out, nil
+	}
+	var rows []model.WorkspaceSkill
+	if err := r.conn(ctx).Where("skill_id IN ?", skillIDs).Order("created_at asc, id asc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.SkillID] = append(out[row.SkillID], row.WorkspaceID)
+	}
+	return out, nil
+}
+
+// TurnSkillOn turns a skill on in a workspace. Turning it on again is not an
 // error: the state the caller asked for already holds.
-func (r *repository) CreateSkillShare(ctx context.Context, sh model.SkillShare) error {
-	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&sh).Error
+func (r *repository) TurnSkillOn(ctx context.Context, on model.WorkspaceSkill) error {
+	return r.conn(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&on).Error
 }
 
-func (r *repository) DeleteSkillShare(ctx context.Context, skillID, targetWorkspaceID int64) error {
+// TurnSkillOff turns a skill off in a workspace, and says whether it was on.
+func (r *repository) TurnSkillOff(ctx context.Context, skillID, workspaceID int64) (bool, error) {
 	res := r.conn(ctx).
-		Where("skill_id = ? AND target_workspace_id = ?", skillID, targetWorkspaceID).
-		Delete(&model.SkillShare{})
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+		Where("skill_id = ? AND workspace_id = ?", skillID, workspaceID).
+		Delete(&model.WorkspaceSkill{})
+	return res.RowsAffected > 0, res.Error
 }
 
-func (r *repository) ListSkillShares(ctx context.Context, skillID int64) ([]model.SkillShare, error) {
-	var shares []model.SkillShare
-	err := r.conn(ctx).Where("skill_id = ?", skillID).Order("created_at asc").Find(&shares).Error
-	return shares, err
+// ListLegacySkills returns every skill still filed under a workspace, from
+// before skills belonged to the account, oldest first.
+func (r *repository) ListLegacySkills(ctx context.Context) ([]model.Skill, error) {
+	var skills []model.Skill
+	err := r.conn(ctx).Where("workspace_id <> ?", accountSkill).Order("created_at asc, id asc").Find(&skills).Error
+	return skills, err
 }
 
-// GetWorkspaceSkillStorageIDs lists the storage ids of every skill file a
-// workspace owns, so deleting the workspace can purge them.
-func (r *repository) GetWorkspaceSkillStorageIDs(ctx context.Context, workspaceID int64) ([]string, error) {
-	var ids []string
-	skillIDs := r.conn(ctx).Model(&model.Skill{}).Select("id").Where("workspace_id = ?", workspaceID)
-	err := r.conn(ctx).Model(&model.SkillFile{}).Where("skill_id IN (?)", skillIDs).Pluck("storage_id", &ids).Error
-	return ids, err
+// ListLegacySkillShares returns the workspaces a legacy skill was shared into.
+func (r *repository) ListLegacySkillShares(ctx context.Context, skillID int64) ([]int64, error) {
+	var targets []int64
+	err := r.conn(ctx).Model(&model.SkillShare{}).Where("skill_id = ?", skillID).
+		Order("created_at asc, id asc").Pluck("target_workspace_id", &targets).Error
+	return targets, err
+}
+
+// MoveLegacySkill makes a legacy skill the account's: s as it is to be saved,
+// with its files' new storage ids, turned on in the workspaces of on, and its
+// shares gone. It reports false, changing nothing, when the skill is no
+// longer filed under fromWorkspaceID, because another instance moved it first.
+func (r *repository) MoveLegacySkill(ctx context.Context, fromWorkspaceID int64, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (bool, error) {
+	moved := false
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Skill{}).Where("id = ? AND workspace_id = ?", s.ID, fromWorkspaceID).
+			Updates(map[string]any{"workspace_id": accountSkill, "name": s.Name, "description": s.Description})
+		if res.Error != nil || res.RowsAffected == 0 {
+			return res.Error
+		}
+		for _, f := range files {
+			if err := tx.Model(&model.SkillFile{}).Where("id = ?", f.ID).
+				Updates(map[string]any{"storage_id": f.StorageID, "size_bytes": f.SizeBytes, "sha256": f.SHA256}).Error; err != nil {
+				return err
+			}
+		}
+		if err := turnOn(tx, s.ID, on); err != nil {
+			return err
+		}
+		if err := tx.Where("skill_id = ?", s.ID).Delete(&model.SkillShare{}).Error; err != nil {
+			return err
+		}
+		if err := recount(tx, &s); err != nil {
+			return err
+		}
+		moved = true
+		return nil
+	})
+	return moved, err
+}
+
+// MergeLegacySkill folds a legacy skill into the account skill into, which
+// has the same files: into is turned on in the workspaces of on, and from is
+// deleted with its files and shares. It returns the storage ids of from's
+// files, for the caller to purge after the commit.
+func (r *repository) MergeLegacySkill(ctx context.Context, from model.Skill, into int64, on []model.WorkspaceSkill) ([]string, error) {
+	var storageIDs []string
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.SkillFile{}).Where("skill_id = ?", from.ID).Pluck("storage_id", &storageIDs).Error; err != nil {
+			return err
+		}
+		res := tx.Where("id = ? AND workspace_id = ?", from.ID, from.WorkspaceID).Delete(&model.Skill{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// Another instance got here first.
+			storageIDs = nil
+			return nil
+		}
+		if err := tx.Where("skill_id = ?", from.ID).Delete(&model.SkillFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("skill_id = ?", from.ID).Delete(&model.SkillShare{}).Error; err != nil {
+			return err
+		}
+		return turnOn(tx, into, on)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return storageIDs, nil
 }
 
 // recount keeps a skill's file count and size in step with its files.

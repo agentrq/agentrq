@@ -4,17 +4,18 @@
   SPDX-License-Identifier: AGPL-3.0-only
 -->
 
-<!-- One skill of a workspace, opened from a card on the Skills tab and shown
-     in its place: its files beside the one being read, which also opens others
-     by following its references. -->
+<!-- One skill, opened from a card on the Skills page or a workspace's Skills
+     tab and shown in its place: the workspaces it is on in, and its files
+     beside the one being read, which also opens others by following its
+     references. -->
 <template>
   <div class="space-y-5 min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-300">
-    <RouterLink :to="skillsTabPath(workspaceId)" data-test="skill-page-back-to-list"
+    <RouterLink :to="skillsListPath(workspaceId)" data-test="skill-page-back-to-list"
                 class="inline-block text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">← Skills</RouterLink>
 
     <p v-if="state === 'loading'" class="text-[11px] text-gray-400 dark:text-zinc-500">Loading skill…</p>
     <p v-else-if="state === 'missing'" data-test="skill-page-missing" class="text-[11px] font-bold text-amber-600 dark:text-amber-400 break-words">
-      There is no skill called {{ skillName }} in this workspace.
+      There is no skill called {{ skillName }}.
     </p>
     <div v-else-if="state === 'failed'" class="p-4 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-sm">
       <p class="text-[11px] font-bold text-red-600 dark:text-red-400 break-words">{{ loadError }}</p>
@@ -26,22 +27,13 @@
         <div class="flex items-start gap-2 min-w-0">
           <div class="flex flex-wrap items-center gap-2 min-w-0 flex-1">
             <h2 data-test="skill-page-name" class="min-w-0 break-all text-base font-bold text-gray-900 dark:text-zinc-100 font-mono">{{ skill.name }}</h2>
-            <span v-if="skill.sharedFromWorkspaceId"
-                  class="shrink-0 text-[8px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/40 rounded px-1.5 py-0.5">
-              Shared from {{ workspaceName(skill.sharedFromWorkspaceId) }}
-            </span>
             <span v-if="skill.locallyModified"
                   class="shrink-0 text-[8px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-300 border border-amber-200 dark:border-amber-500/40 rounded px-1.5 py-0.5">
               Modified locally
             </span>
-            <!-- The owner has the switch below; a workspace it is shared into sees only the state. -->
-            <span v-if="skill.sharedFromWorkspaceId && skill.enabled === false" data-test="skill-page-off"
-                  class="shrink-0 text-[8px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 border border-gray-300 dark:border-zinc-600 rounded px-1.5 py-0.5">
-              Off for agents
-            </span>
           </div>
-          <!-- Only the owning workspace may change a skill. An icon alone on a phone. -->
-          <button v-if="!skill.sharedFromWorkspaceId" type="button" data-test="skill-delete" @click="pendingDelete = true" title="Delete" aria-label="Delete"
+          <!-- An icon alone on a phone. -->
+          <button type="button" data-test="skill-delete" @click="pendingDelete = true" title="Delete" aria-label="Delete"
                   class="shrink-0 p-2 sm:px-3 sm:py-1.5 border border-red-200 dark:border-red-500/30 rounded-lg text-[10px] font-black uppercase tracking-widest text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10">
             <svg class="w-3.5 h-3.5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg><span class="hidden sm:inline">Delete</span>
           </button>
@@ -52,13 +44,14 @@
         </p>
       </header>
 
-      <div v-if="!skill.sharedFromWorkspaceId" class="flex items-start justify-between gap-4 min-w-0">
+      <!-- The account-wide switch; the workspaces below each have their own. -->
+      <div class="flex items-start justify-between gap-4 min-w-0">
         <div class="min-w-0">
           <p id="skill-enabled-label" class="text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Available to agents</p>
           <p data-test="skill-enabled-hint" class="mt-1 text-[11px] text-gray-500 dark:text-zinc-400 break-words">
             {{ skill.enabled === false
-              ? 'Off: kept here, but agents do not find or load it, here or where it is shared.'
-              : 'On: agents find it with searchSkills and load it when a task needs it.' }}
+              ? 'Off: kept, but no agent finds or loads it, whichever workspaces it is on in.'
+              : 'On: agents find it with searchSkills in the workspaces it is on in, and load it when a task needs it.' }}
           </p>
         </div>
         <button type="button" role="switch" data-test="skill-enabled" aria-labelledby="skill-enabled-label"
@@ -70,16 +63,17 @@
         </button>
       </div>
 
-      <!-- Every other workspace, ticked where the skill is shared: a tick
-           shares it and clearing one takes it back. -->
-      <fieldset v-if="!skill.sharedFromWorkspaceId && otherWorkspaces.length" data-test="skill-shares" class="min-w-0">
-        <legend class="mb-1.5 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Shared with</legend>
+      <!-- Every workspace that can use it, ticked where it is on: a tick turns
+           it on there and clearing one turns it off. Forks use their
+           parent's, so they are not listed. -->
+      <fieldset v-if="workspaceChoices.length" data-test="skill-workspaces" class="min-w-0">
+        <legend class="mb-1.5 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Workspaces</legend>
         <div class="flex flex-wrap gap-1.5">
-          <label v-for="w in otherWorkspaces" :key="w.id" data-test="skill-share-option"
-                 :class="[isShared(w.id) ? 'border-gray-900 dark:border-zinc-100 text-gray-900 dark:text-zinc-100' : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600',
-                          pendingShare.has(String(w.id)) ? 'opacity-50' : 'cursor-pointer']"
+          <label v-for="w in workspaceChoices" :key="w.id" data-test="skill-workspace-option"
+                 :class="[isOn(w.id) ? 'border-gray-900 dark:border-zinc-100 text-gray-900 dark:text-zinc-100' : 'border-gray-200 dark:border-zinc-700 text-gray-500 dark:text-zinc-400 hover:border-gray-300 dark:hover:border-zinc-600',
+                          pendingWorkspace.has(String(w.id)) ? 'opacity-50' : 'cursor-pointer']"
                  class="inline-flex items-center gap-1.5 max-w-full min-w-0 px-2 py-1 border rounded-sm text-[11px] transition-colors">
-            <input type="checkbox" :checked="isShared(w.id)" :disabled="pendingShare.has(String(w.id))" @change="toggleShare(w.id, $event.target)"
+            <input type="checkbox" :checked="isOn(w.id)" :disabled="pendingWorkspace.has(String(w.id))" @change="toggleWorkspace(w, $event.target)"
                    class="shrink-0 rounded-sm border-gray-300 dark:border-zinc-600" />
             <span class="min-w-0 truncate">{{ w.name }}</span>
           </label>
@@ -156,7 +150,7 @@
     <DeleteModal
       :show="pendingDelete"
       title="Delete Skill"
-      :message="`Delete the skill '${skillName}' and all its files? Workspaces it is shared with lose it too. This cannot be undone.`"
+      :message="`Delete the skill '${skillName}' and all its files? Every workspace loses it. This cannot be undone.`"
       @close="pendingDelete = false"
       @confirm="confirmDelete"
     />
@@ -168,13 +162,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {
-  deleteWorkspaceSkill,
-  fetchWorkspaceSkillShares,
+  deleteSkill,
+  getSkill,
+  getSkillFile,
   getWorkspaceSkill,
   getWorkspaceSkillFile,
+  setSkillEnabled,
   setWorkspaceSkillEnabled,
-  shareWorkspaceSkill,
-  unshareWorkspaceSkill,
 } from '../api';
 import DeleteModal from './DeleteModal.vue';
 import {
@@ -188,14 +182,17 @@ import {
   skillEnabledMessage,
   skillLinkFromEvent,
   skillSource,
-  skillsTabPath,
+  skillWorkspaceChoices,
+  skillWorkspaceMessage,
+  skillsListPath,
 } from '../composables/useSkills';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { renderMarkdown } from '../utils/markdown';
 
+// With no workspace, the skill as the Skills page opens it.
 const props = defineProps({
-  workspaceId: { type: String, required: true },
+  workspaceId: { type: String, default: '' },
   name: { type: String, required: true },
 });
 
@@ -206,9 +203,11 @@ const workspaceStore = useWorkspaceStore();
 const workspaceId = computed(() => props.workspaceId);
 const skillName = computed(() => props.name);
 
-function workspaceName(id) {
-  return workspaceStore.getWorkspace(id)?.name || 'another workspace';
-}
+// Read through the workspace when there is one, so the answer is that
+// workspace's view of the skill.
+const fetchSkill = (name) => (workspaceId.value ? getWorkspaceSkill(workspaceId.value, name) : getSkill(name));
+const fetchFile = (name, path) =>
+  workspaceId.value ? getWorkspaceSkillFile(workspaceId.value, name, path) : getSkillFile(name, path);
 
 // ── The skill this page is for ──────────────────────────────────────────────
 const skill = ref(null);
@@ -218,11 +217,10 @@ const loadError = ref('');
 async function load() {
   state.value = 'loading';
   history.value = [];
-  shares.value = [];
   collapsed.value = new Set();
   Object.assign(current, { skill: '', files: [] });
   try {
-    const res = await getWorkspaceSkill(workspaceId.value, skillName.value);
+    const res = await fetchSkill(skillName.value);
     skill.value = res.skill;
     Object.assign(current, { skill: res.skill.name, files: res.skill.files || [] });
     state.value = 'ready';
@@ -232,7 +230,6 @@ async function load() {
     loadError.value = err.message || 'Could not load this skill.';
     return;
   }
-  if (!skill.value.sharedFromWorkspaceId) loadShares();
   await showFile(skill.value.name, SKILL_FILE);
 }
 
@@ -257,7 +254,7 @@ async function showFile(name, path) {
   Object.assign(current, { path, content: '', error: '', missing: '', loading: true });
   try {
     if (current.skill !== name || !current.files.length) {
-      const res = await getWorkspaceSkill(workspaceId.value, name);
+      const res = await fetchSkill(name);
       if (seq !== loadSeq) return;
       current.files = res.skill?.files || [];
       current.skill = name;
@@ -268,7 +265,7 @@ async function showFile(name, path) {
       return;
     }
     current.sizeBytes = file.sizeBytes;
-    const res = await getWorkspaceSkillFile(workspaceId.value, name, path);
+    const res = await fetchFile(name, path);
     if (seq !== loadSeq) return;
     current.content = res.file?.content || '';
   } catch (err) {
@@ -280,7 +277,7 @@ async function showFile(name, path) {
     } else if (current.skill !== name) {
       current.skill = name;
       current.files = [];
-      current.missing = `There is no skill called ${name} in this workspace.`;
+      current.missing = `There is no skill called ${name}.`;
     } else {
       current.missing = `There is no ${path} in the skill ${name}.`;
     }
@@ -333,7 +330,7 @@ async function toggleEnabled() {
   const enabled = skill.value.enabled === false;
   pendingEnabled.value = true;
   try {
-    const res = await setWorkspaceSkillEnabled(workspaceId.value, skillName.value, enabled);
+    const res = await setSkillEnabled(skillName.value, enabled);
     skill.value = { ...skill.value, enabled: res.skill.enabled };
     notifySuccess(skillEnabledMessage(skillName.value, enabled));
   } catch (err) {
@@ -343,60 +340,46 @@ async function toggleEnabled() {
   }
 }
 
-// ── Deleting and sharing ────────────────────────────────────────────────────
+// ── The workspaces it is on in ──────────────────────────────────────────────
+// Workspaces whose box was just changed and whose answer is still out.
+const pendingWorkspace = ref(new Set());
+const workspaceChoices = computed(() => skillWorkspaceChoices(workspaceStore.workspaces));
+
+function isOn(id) {
+  return (skill.value?.workspaceIds || []).some((x) => String(x) === String(id));
+}
+
+async function toggleWorkspace(w, input) {
+  const key = String(w.id);
+  const on = input.checked;
+  pendingWorkspace.value = new Set(pendingWorkspace.value).add(key);
+  try {
+    const res = await setWorkspaceSkillEnabled(key, skillName.value, on);
+    skill.value = { ...skill.value, workspaceIds: res.skill.workspaceIds || [] };
+    notifySuccess(skillWorkspaceMessage(skillName.value, on, w.name));
+  } catch (err) {
+    notifyError(err.message);
+  } finally {
+    // A failed box is put back by hand: its binding never changed, so Vue
+    // would leave the click showing.
+    input.checked = isOn(key);
+    const next = new Set(pendingWorkspace.value);
+    next.delete(key);
+    pendingWorkspace.value = next;
+  }
+}
+
+// ── Deleting ────────────────────────────────────────────────────────────────
 const pendingDelete = ref(false);
 
 async function confirmDelete() {
   pendingDelete.value = false;
   try {
-    await deleteWorkspaceSkill(workspaceId.value, skillName.value);
+    await deleteSkill(skillName.value);
     notifySuccess(`Deleted ${skillName.value}`);
-    router.push(skillsTabPath(workspaceId.value));
+    router.push(skillsListPath(workspaceId.value));
   } catch (err) {
     notifyError(err.message);
-  }
-}
-
-const shares = ref([]);
-// Workspaces whose box was just changed and whose answer is still out.
-const pendingShare = ref(new Set());
-const otherWorkspaces = computed(() => workspaceStore.workspaces.filter((w) => String(w.id) !== workspaceId.value));
-
-function isShared(id) {
-  return shares.value.some((sh) => String(sh.targetWorkspaceId) === String(id));
-}
-
-async function loadShares() {
-  try {
-    const res = await fetchWorkspaceSkillShares(workspaceId.value, skillName.value);
-    shares.value = res.shares || [];
-  } catch (err) {
-    notifyError(err.message);
-  }
-}
-
-async function toggleShare(id, input) {
-  const key = String(id);
-  const on = input.checked;
-  pendingShare.value = new Set(pendingShare.value).add(key);
-  try {
-    if (on) {
-      await shareWorkspaceSkill(workspaceId.value, skillName.value, key);
-      notifySuccess(`Shared ${skillName.value} with ${workspaceName(key)}`);
-    } else {
-      await unshareWorkspaceSkill(workspaceId.value, skillName.value, key);
-      notifySuccess(`Stopped sharing ${skillName.value} with ${workspaceName(key)}`);
-    }
-  } catch (err) {
-    notifyError(err.message);
-  } finally {
-    // The list as the server has it. A failed box is put back by hand: its
-    // binding never changed, so Vue would leave the click showing.
-    await loadShares();
-    input.checked = isShared(key);
-    const next = new Set(pendingShare.value);
-    next.delete(key);
-    pendingShare.value = next;
   }
 }
 

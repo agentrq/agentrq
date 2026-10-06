@@ -102,7 +102,7 @@ event: code_changed
 ### Workspace Skills
 | Tool | Description |
 |------|-------------|
-| `searchSkills` | Find the skills a workspace can use, its own and those shared into it, by name or description (`q`, at least 3 characters): name, description, source and size, with `limit`/`offset` paging and a `total`. Content is not included |
+| `searchSkills` | Find the account's skills as a workspace sees them, with whether each is on there, by name or description (`q`, at least 3 characters): name, description, source and size, with `limit`/`offset` paging and a `total`. Content is not included |
 | `getSkill` | Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`, with the list of its other files |
 
 ## Resources and Prompts

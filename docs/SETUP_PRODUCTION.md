@@ -182,12 +182,12 @@ Skill files are not attachments: cleanup never deletes them.
 
 Skill files and attachments are kept under `AGENTRQ_STORAGE_DIR` by default (`/storage` in docker-compose, `./_storage` otherwise), in `skills/` and `artifacts/` (where attachments live). Set `AGENTRQ_SKILLS_STORAGE=s3` or `AGENTRQ_ARTIFACTS_STORAGE=s3` to keep either in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), under the same two prefixes; the server refuses to start on any value other than `local` or `s3`.
 
-Every file is kept at a key that names its workspace and its task or skill, and ends in a fresh id:
+Every file is kept at a key that names its workspace and task, or its account and skill, and ends in a fresh id:
 
 - attachments: `artifacts/w-<workspace id>/<task id>/<id>`
-- skill files: `skills/w-<workspace id>/skill-<skill id>/<id>`
+- skill files: `skills/u-<account id>/skill-<skill id>/<id>`
 
-**Each file has a public link, and the link is the only credential needed to read it.** Without knowing both the workspace id and the task (or skill) id, a link is nearly impossible to guess. Ids are time-ordered, though, so someone who holds one link has both, and can work out the links of the other files on that task or skill: share a link only with someone who may see everything there. The web app's Download button, the agents' `getAttachment` tool (by default) and `agentrq-ws attachment get` all use it. Local files are served by the server itself at `<AGENTRQ_BASE_URL>/storage/artifacts/...` and `/storage/skills/...`, with no sign-in; files in S3 are read from the bucket, at `<AGENTRQ_S3_PUBLIC_URL>/artifacts/...` and `/skills/...`.
+**Each file has a public link, and the link is the only credential needed to read it.** Without knowing both the workspace id and the task id (or the account id and the skill id), a link is nearly impossible to guess. Ids are time-ordered, though, so someone who holds one link has both, and can work out the links of the other files on that task or skill: share a link only with someone who may see everything there. The web app's Download button, the agents' `getAttachment` tool (by default) and `agentrq-ws attachment get` all use it. Local files are served by the server itself at `<AGENTRQ_BASE_URL>/storage/artifacts/...` and `/storage/skills/...`, with no sign-in; files in S3 are read from the bucket, at `<AGENTRQ_S3_PUBLIC_URL>/artifacts/...` and `/skills/...`.
 
 | Variable | Default | Description |
 |---|---|---|

@@ -331,6 +331,7 @@ func New(cfg Config) (*App, error) {
 		SkillImport:  skillimport.New(),
 		TaskAgents:   taskAgentCtrl,
 	})
+	moveLegacySkills(context.Background(), crudCtrl)
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
 	pubStatsCtrl := pub.NewStatsController(pub.Params{
@@ -1403,6 +1404,7 @@ func migratedModels() []any {
 		&model.Skill{},
 		&model.SkillFile{},
 		&model.SkillShare{},
+		&model.WorkspaceSkill{},
 		&model.SiteShare{},
 		&model.Machine{},
 		&model.EnrolmentCode{},

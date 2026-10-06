@@ -55,7 +55,7 @@ func publicFileApp(t *testing.T) publicFiles {
 	f := publicFiles{
 		attKey:   storage.AttachmentKey(1, 2, monoflake.ID(3).String()),
 		htmlKey:  storage.AttachmentKey(1, 2, monoflake.ID(4).String()),
-		skillKey: "w-00000000001/skill-00000000002/" + monoflake.ID(6).String(),
+		skillKey: "u-00000000001/skill-00000000002/" + monoflake.ID(6).String(),
 	}
 	for key, content := range map[string]string{
 		f.attKey:  "\x89PNG\r\n\x1a\n image",

@@ -35,7 +35,7 @@ func forkDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()

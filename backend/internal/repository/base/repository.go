@@ -69,24 +69,26 @@ type Repository interface {
 	ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error)
 	DeleteMemory(ctx context.Context, userID, workspaceID int64, name string) error
 
-	// Skill — a workspace's playbooks. Metadata only: file content is in the
-	// storage service, and the methods that drop files return the storage ids
-	// the caller must purge once the transaction has committed.
-	GetSkill(ctx context.Context, userID, workspaceID int64, name string) (model.Skill, error)
-	ListSkillsByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
-	ListSkillsSharedInto(ctx context.Context, userID, workspaceID int64) ([]model.Skill, error)
-	SearchSkills(ctx context.Context, userID, workspaceID int64, q string, enabledOnly bool, limit, offset int) ([]model.Skill, int64, error)
+	// Skill — an account's playbooks, each on in some of its workspaces.
+	// Metadata only: file content is in the storage service, and the methods
+	// that drop files return the storage ids the caller must purge once the
+	// transaction has committed.
+	GetSkill(ctx context.Context, userID int64, name string) (model.Skill, error)
+	SearchSkills(ctx context.Context, userID int64, q string, filter SkillFilter, limit, offset int) ([]model.Skill, int64, error)
 	SetSkillDisabled(ctx context.Context, skillID int64, disabled bool) error
-	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile) (model.Skill, []string, error)
-	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile) (model.Skill, string, error)
+	ReplaceSkill(ctx context.Context, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (model.Skill, []string, error)
+	UpsertSkillFile(ctx context.Context, s model.Skill, f model.SkillFile, on []model.WorkspaceSkill) (model.Skill, string, error)
 	DeleteSkillFile(ctx context.Context, s model.Skill, path string) (model.Skill, string, error)
 	DeleteSkill(ctx context.Context, skillID int64) ([]string, error)
 	GetSkillFile(ctx context.Context, skillID int64, path string) (model.SkillFile, error)
 	ListSkillFiles(ctx context.Context, skillID int64) ([]model.SkillFile, error)
-	CreateSkillShare(ctx context.Context, sh model.SkillShare) error
-	DeleteSkillShare(ctx context.Context, skillID, targetWorkspaceID int64) error
-	ListSkillShares(ctx context.Context, skillID int64) ([]model.SkillShare, error)
-	GetWorkspaceSkillStorageIDs(ctx context.Context, workspaceID int64) ([]string, error)
+	ListSkillWorkspaces(ctx context.Context, skillIDs []int64) (map[int64][]int64, error)
+	TurnSkillOn(ctx context.Context, on model.WorkspaceSkill) error
+	TurnSkillOff(ctx context.Context, skillID, workspaceID int64) (bool, error)
+	ListLegacySkills(ctx context.Context) ([]model.Skill, error)
+	ListLegacySkillShares(ctx context.Context, skillID int64) ([]int64, error)
+	MoveLegacySkill(ctx context.Context, fromWorkspaceID int64, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (bool, error)
+	MergeLegacySkill(ctx context.Context, from model.Skill, into int64, on []model.WorkspaceSkill) ([]string, error)
 
 	// SiteShare — a website shared from the Chrome extension into a
 	// workspace. Unique on (user, origin): one site, one workspace.
@@ -463,16 +465,8 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.TaskStateTransition{}).Error; err != nil {
 		return err
 	}
-	// Skills go with their workspace, and so does every share of them and
-	// every share into it. The files' content is purged by the caller.
-	skillIDs := tx.Model(&model.Skill{}).Select("id").Where("workspace_id = ?", id)
-	if err := tx.Where("skill_id IN (?) OR target_workspace_id = ?", skillIDs, id).Delete(&model.SkillShare{}).Error; err != nil {
-		return err
-	}
-	if err := tx.Where("skill_id IN (?)", skillIDs).Delete(&model.SkillFile{}).Error; err != nil {
-		return err
-	}
-	if err := tx.Where("workspace_id = ?", id).Delete(&model.Skill{}).Error; err != nil {
+	// Skills belong to the account and stay; only their being on here goes.
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.WorkspaceSkill{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.SiteShare{}).Error; err != nil {

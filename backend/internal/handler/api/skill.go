@@ -13,25 +13,29 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// registerSkillRoutes serves a workspace's skills. Writing single files is
-// left to the MCP tools; people import, delete and share.
-func (h *handler) registerSkillRoutes(r fiber.Router) {
-	r.Get("/:id/skills", h.searchSkills())
-	r.Post("/:id/skills/import", h.importSkills())
-	r.Get("/:id/skills/:name", h.getSkill())
-	r.Patch("/:id/skills/:name", h.setSkillEnabled())
-	r.Delete("/:id/skills/:name", h.deleteSkill())
-	r.Get("/:id/skills/:name/files/*", h.getSkillFile())
-	r.Get("/:id/skills/:name/shares", h.listSkillShares())
-	r.Put("/:id/skills/:name/shares/:targetWorkspaceId", h.shareSkill())
-	r.Delete("/:id/skills/:name/shares/:targetWorkspaceId", h.unshareSkill())
+// registerSkillRoutes serves the account's skills under /skills, and the same
+// skills as one workspace sees them under /workspaces/:id/skills, where the
+// switch is that workspace's own. Writing single files is left to the MCP
+// tools; people import, delete and turn skills on and off.
+func (h *handler) registerSkillRoutes(workspaces fiber.Router) {
+	r := h.router.Group("/skills")
+	r.Get("", h.searchSkills())
+	r.Post("/import", h.importSkills())
+	r.Get("/:name", h.getSkill())
+	r.Patch("/:name", h.setSkillEnabled())
+	r.Delete("/:name", h.deleteSkill())
+	r.Get("/:name/files/*", h.getSkillFile())
+
+	workspaces.Get("/:id/skills", h.searchSkills())
+	workspaces.Get("/:id/skills/:name", h.getSkill())
+	workspaces.Patch("/:id/skills/:name", h.setSkillEnabled())
+	workspaces.Get("/:id/skills/:name/files/*", h.getSkillFile())
 }
 
 // skillStatus is the status a skill refusal is answered with. Its message is
 // written for the caller and is passed on; any other error is not.
 var skillStatus = map[crud.SkillErrorKind]int{
 	crud.SkillInvalid:  http.StatusUnprocessableEntity,
-	crud.SkillReadOnly: http.StatusForbidden,
 	crud.SkillConflict: http.StatusConflict,
 	crud.SkillUpstream: http.StatusBadGateway,
 }
@@ -87,7 +91,8 @@ func (h *handler) getSkill() fiber.Handler {
 	}
 }
 
-// setSkillEnabled turns a skill on or off for agents.
+// setSkillEnabled turns a skill on or off for agents: in every workspace
+// under /skills, in one under /workspaces/:id/skills.
 func (h *handler) setSkillEnabled() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(_headerContentType, _mimeJSON)
@@ -163,68 +168,6 @@ func (h *handler) deleteSkill() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 		if err := h.crud.DeleteSkill(ctx, *rq); err != nil {
-			return sendSkillError(c, err)
-		}
-		c.Status(http.StatusNoContent)
-		return c.Send([]byte(""))
-	}
-}
-
-func (h *handler) listSkillShares() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		c.Set(_headerContentType, _mimeJSON)
-		rq := mapper.FromHTTPRequestToListSkillSharesRequestEntity(c)
-		if rq == nil {
-			c.Status(http.StatusUnprocessableEntity)
-			return c.Send(_invalidPayload)
-		}
-		rq.UserID = c.Locals("user_id").(string)
-
-		ctx, cancel := newContext(c)
-		defer cancel()
-		rs, err := h.crud.ListSkillShares(ctx, *rq)
-		if err != nil {
-			return sendSkillError(c, err)
-		}
-		return c.Send(mapper.FromListSkillSharesResponseEntityToHTTPResponse(rs))
-	}
-}
-
-// shareSkill is idempotent: sharing a skill that is already shared there is
-// not an error, since the state the caller asked for already holds.
-func (h *handler) shareSkill() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		c.Set(_headerContentType, _mimeJSON)
-		rq := mapper.FromHTTPRequestToShareSkillRequestEntity(c)
-		if rq == nil {
-			c.Status(http.StatusUnprocessableEntity)
-			return c.Send(_invalidPayload)
-		}
-		rq.UserID = c.Locals("user_id").(string)
-
-		ctx, cancel := newContext(c)
-		defer cancel()
-		if err := h.crud.ShareSkill(ctx, *rq); err != nil {
-			return sendSkillError(c, err)
-		}
-		c.Status(http.StatusNoContent)
-		return c.Send([]byte(""))
-	}
-}
-
-func (h *handler) unshareSkill() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		c.Set(_headerContentType, _mimeJSON)
-		rq := mapper.FromHTTPRequestToShareSkillRequestEntity(c)
-		if rq == nil {
-			c.Status(http.StatusUnprocessableEntity)
-			return c.Send(_invalidPayload)
-		}
-		rq.UserID = c.Locals("user_id").(string)
-
-		ctx, cancel := newContext(c)
-		defer cancel()
-		if err := h.crud.UnshareSkill(ctx, *rq); err != nil {
 			return sendSkillError(c, err)
 		}
 		c.Status(http.StatusNoContent)

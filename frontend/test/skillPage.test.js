@@ -3,12 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * A skill's own page, mounted. The rules of references are tested in
- * `skills.test.js`; this is the wiring that makes them the whole way in: a
- * skill's files open from the list beside the reader and by following
- * references from the file on screen, Back retraces them, and only the owning
- * workspace may share or delete. The
- * coverage gate ignores `.vue`, so none of this is counted there.
+ * A skill's own page, mounted, in a workspace's settings and on the Skills
+ * page. The rules of references are tested in `skills.test.js`; this is the
+ * wiring that makes them the whole way in: a skill's files open from the list
+ * beside the reader and by following references from the file on screen, Back
+ * retraces them, and the page turns the skill on and off per workspace and for
+ * the account, and deletes it. The coverage gate ignores `.vue`, so none of
+ * this is counted there.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -25,8 +26,8 @@ const FILES = {
   review: [{ path: 'SKILL.md', sizeBytes: 10 }],
 };
 const META = {
-  'systematic-debugging': { description: 'Use when debugging.', totalBytes: 8252, fileCount: 3, sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: 'abcdef1234', locallyModified: true },
-  review: { description: 'Use when reviewing.', totalBytes: 10, fileCount: 1, sourceType: 'manual', sharedFromWorkspaceId: 'ws2' },
+  'systematic-debugging': { description: 'Use when debugging.', totalBytes: 8252, fileCount: 3, sourceType: 'github', sourceRepo: 'obra/superpowers', sourceCommit: 'abcdef1234', locallyModified: true, workspaceIds: ['ws3'] },
+  review: { description: 'Use when reviewing.', totalBytes: 10, fileCount: 1, sourceType: 'manual' },
 };
 const CONTENT = {
   'systematic-debugging/SKILL.md':
@@ -38,34 +39,48 @@ const CONTENT = {
 const notFound = () => Promise.reject(Object.assign(new Error('not found'), { status: 404 }));
 
 const api = vi.hoisted(() => ({
-  fetchWorkspaces: vi.fn(() => Promise.resolve({ workspaces: [{ id: 'ws1', name: 'Home' }, { id: 'ws2', name: 'Platform' }, { id: 'ws3', name: 'Ops' }] })),
+  fetchWorkspaces: vi.fn(() =>
+    Promise.resolve({
+      workspaces: [
+        { id: 'ws1', name: 'Home' },
+        { id: 'ws2', name: 'Platform' },
+        { id: 'ws3', name: 'Ops' },
+        // A fork uses its parent's skills, so it has no box of its own.
+        { id: 'ws4', name: 'Home-fork', forkOfId: 'ws1' },
+      ],
+    }),
+  ),
+  getSkill: vi.fn(),
+  getSkillFile: vi.fn(),
   getWorkspaceSkill: vi.fn(),
   getWorkspaceSkillFile: vi.fn(),
-  deleteWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
-  fetchWorkspaceSkillShares: vi.fn(() => Promise.resolve({ shares: [{ targetWorkspaceId: 'ws3' }] })),
-  shareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
-  unshareWorkspaceSkill: vi.fn(() => Promise.resolve(true)),
-  setWorkspaceSkillEnabled: vi.fn((_ws, name, enabled) => Promise.resolve({ skill: { name, enabled } })),
+  deleteSkill: vi.fn(() => Promise.resolve(true)),
+  setSkillEnabled: vi.fn((name, enabled) => Promise.resolve({ skill: { name, enabled } })),
+  setWorkspaceSkillEnabled: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
 
-const { default: WorkspaceSkillPage } = await import('../src/components/WorkspaceSkillPage.vue');
+const { default: SkillPage } = await import('../src/components/SkillPage.vue');
+const { default: SkillsView } = await import('../src/views/SkillsView.vue');
 const { toasts } = (await import('../src/composables/useToasts')).useToasts();
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 const apps = [];
 
-async function mount(name) {
+// In a workspace's settings by default; `at` opens another path, such as the
+// Skills page's /skills/<name>.
+async function mount(name, at = `/workspaces/ws1/settings/skills/${name}`) {
   const el = document.createElement('div');
   document.body.append(el);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/workspaces/:id/settings/skills/:name', component: WorkspaceSkillPage },
+      { path: '/workspaces/:id/settings/skills/:name', component: SkillPage },
+      { path: '/skills/:name', component: SkillsView },
       { path: '/:any(.*)*', component: { render: () => h('p', { 'data-test': 'elsewhere' }, 'elsewhere') } },
     ],
   });
-  await router.push(`/workspaces/ws1/settings/skills/${name}`);
+  await router.push(at);
   // The settings screen hands the page its workspace and skill from the route.
   const app = createApp({ render: () => h(RouterView, null, { default: ({ Component, route }) => Component && h(Component, { workspaceId: route.params.id, name: route.params.name }) }) });
   app.use(createPinia());
@@ -88,10 +103,16 @@ beforeEach(() => {
   while (apps.length) apps.pop().unmount();
   document.body.innerHTML = '';
   vi.clearAllMocks();
-  api.getWorkspaceSkill.mockImplementation((_ws, name) =>
-    FILES[name] ? Promise.resolve({ skill: { name, ...META[name], files: FILES[name] } }) : notFound(),
+  const read = (name) => (FILES[name] ? Promise.resolve({ skill: { name, ...META[name], files: FILES[name] } }) : notFound());
+  const readFile = (name, path) => Promise.resolve({ file: { path, content: CONTENT[`${name}/${path}`] } });
+  api.getWorkspaceSkill.mockImplementation((_ws, name) => read(name));
+  api.getWorkspaceSkillFile.mockImplementation((_ws, name, path) => readFile(name, path));
+  api.getSkill.mockImplementation(read);
+  api.getSkillFile.mockImplementation(readFile);
+  // The answer names the workspaces it is now on in.
+  api.setWorkspaceSkillEnabled.mockImplementation((ws, name, enabled) =>
+    Promise.resolve({ skill: { name, workspaceIds: enabled ? ['ws3', ws] : ['ws3'].filter((x) => x !== ws) } }),
   );
-  api.getWorkspaceSkillFile.mockImplementation((_ws, name, path) => Promise.resolve({ file: { path, content: CONTENT[`${name}/${path}`] } }));
 });
 
 describe('a skill\'s page', () => {
@@ -195,59 +216,50 @@ describe('a skill\'s page', () => {
     expect(text(el)).toContain('name: systematic-debugging');
   });
 
-  it('offers neither share nor delete on a skill shared in', async () => {
-    const { el } = await mount('review');
-    expect(text(el)).toContain('Shared from Platform');
-    expect(el.querySelector('[data-test="skill-delete"]')).toBeNull();
-    expect(el.querySelector('[data-test="skill-shares"]')).toBeNull();
-    expect(el.querySelector('[data-test="skill-enabled"]')).toBeNull();
-    expect(el.querySelector('[data-test="skill-page-off"]')).toBeNull();
-    expect(api.fetchWorkspaceSkillShares).not.toHaveBeenCalled();
-  });
-
-  it('ticks the workspaces a skill is shared with, shares and unshares by the box, and deletes', async () => {
+  it('ticks the workspaces it is on in, turns it on and off in each by the box, and deletes it', async () => {
     const { el, router } = await mount('systematic-debugging');
-    const options = () => [...el.querySelectorAll('[data-test="skill-share-option"]')];
+    const options = () => [...el.querySelectorAll('[data-test="skill-workspace-option"]')];
     const box = (name) => options().find((o) => o.textContent.trim() === name).querySelector('input');
-    // Every workspace but this one, ticked where it is shared.
-    expect(options().map((o) => o.textContent.trim())).toEqual(['Ops', 'Platform']);
+    // Every workspace but forks, this one included, ticked where it is on.
+    expect(options().map((o) => o.textContent.trim())).toEqual(['Home', 'Ops', 'Platform']);
     expect(box('Ops').checked).toBe(true);
     expect(box('Platform').checked).toBe(false);
 
-    api.fetchWorkspaceSkillShares.mockResolvedValueOnce({ shares: [{ targetWorkspaceId: 'ws3' }, { targetWorkspaceId: 'ws2' }] });
     await click(box('Platform'));
-    expect(api.shareWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging', 'ws2');
-    expect(toasts.value.at(-1).message).toContain('Shared systematic-debugging with Platform');
+    expect(api.setWorkspaceSkillEnabled).toHaveBeenCalledWith('ws2', 'systematic-debugging', true);
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is on in Platform');
     expect(box('Platform').checked).toBe(true);
 
-    api.fetchWorkspaceSkillShares.mockResolvedValueOnce({ shares: [{ targetWorkspaceId: 'ws2' }] });
     await click(box('Ops'));
-    expect(api.unshareWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging', 'ws3');
-    expect(toasts.value.at(-1).message).toContain('Stopped sharing systematic-debugging with Ops');
+    expect(api.setWorkspaceSkillEnabled).toHaveBeenLastCalledWith('ws3', 'systematic-debugging', false);
+    expect(toasts.value.at(-1).message).toBe('systematic-debugging is off in Ops');
     expect(box('Ops').checked).toBe(false);
 
     await click(el.querySelector('[data-test="skill-delete"]'));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(text(dialog)).toContain("Delete the skill 'systematic-debugging' and all its files? Every workspace loses it. This cannot be undone.");
     const confirm = [...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]'));
     await click(confirm);
-    expect(api.deleteWorkspaceSkill).toHaveBeenCalledWith('ws1', 'systematic-debugging');
+    expect(api.deleteSkill).toHaveBeenCalledWith('systematic-debugging');
     expect(router.currentRoute.value.fullPath).toBe('/workspaces/ws1/settings?tab=skills');
   });
 
-  it('turns the skill off and on for agents, and says what that means', async () => {
+  it('turns the skill off and on for the whole account, and says what that means', async () => {
     const { el } = await mount('systematic-debugging');
     const toggle = () => el.querySelector('[data-test="skill-enabled"]');
     const hint = () => text(el.querySelector('[data-test="skill-enabled-hint"]'));
     expect(toggle().getAttribute('aria-checked')).toBe('true');
-    expect(hint()).toContain('On: agents find it');
+    expect(hint()).toContain('On: agents find it with searchSkills in the workspaces it is on in');
 
     await click(toggle());
-    expect(api.setWorkspaceSkillEnabled).toHaveBeenLastCalledWith('ws1', 'systematic-debugging', false);
+    expect(api.setSkillEnabled).toHaveBeenLastCalledWith('systematic-debugging', false);
+    expect(api.setWorkspaceSkillEnabled).not.toHaveBeenCalled();
     expect(toggle().getAttribute('aria-checked')).toBe('false');
-    expect(hint()).toContain('Off: kept here');
+    expect(hint()).toContain('Off: kept, but no agent finds or loads it');
     expect(toasts.value.at(-1).message).toBe('systematic-debugging is now hidden from agents');
 
     let answer;
-    api.setWorkspaceSkillEnabled.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    api.setSkillEnabled.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
     await click(toggle());
     expect(toggle().disabled).toBe(true);
     answer({ skill: { name: 'systematic-debugging', enabled: true } });
@@ -256,64 +268,72 @@ describe('a skill\'s page', () => {
     expect(toggle().getAttribute('aria-checked')).toBe('true');
     expect(toasts.value.at(-1).message).toBe('systematic-debugging is available to agents again');
 
-    api.setWorkspaceSkillEnabled.mockRejectedValueOnce(new Error('turn off failed'));
+    api.setSkillEnabled.mockRejectedValueOnce(new Error('skill systematic-debugging not found'));
     await click(toggle());
-    expect(toasts.value.at(-1).message).toBe('turn off failed');
+    expect(toasts.value.at(-1).message).toBe('skill systematic-debugging not found');
     expect(toggle().getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('shows a shared-in skill that is off without a switch', async () => {
-    META.review.enabled = false;
-    try {
-      const { el } = await mount('review');
-      expect(el.querySelector('[data-test="skill-enabled"]')).toBeNull();
-      expect(text(el.querySelector('[data-test="skill-page-off"]'))).toContain('Off for agents');
-    } finally {
-      delete META.review.enabled;
-    }
   });
 
   it('holds a box while its answer is out', async () => {
     const { el } = await mount('systematic-debugging');
     let answer;
-    api.shareWorkspaceSkill.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
-    const platform = () => [...el.querySelectorAll('[data-test="skill-share-option"]')].find((o) => o.textContent.trim() === 'Platform').querySelector('input');
+    api.setWorkspaceSkillEnabled.mockImplementationOnce(() => new Promise((r) => { answer = r; }));
+    const platform = () => [...el.querySelectorAll('[data-test="skill-workspace-option"]')].find((o) => o.textContent.trim() === 'Platform').querySelector('input');
     await click(platform());
     expect(platform().disabled).toBe(true);
-    answer(true);
+    answer({ skill: { name: 'systematic-debugging', workspaceIds: ['ws3', 'ws2'] } });
     await settle();
     expect(platform().disabled).toBe(false);
+    expect(platform().checked).toBe(true);
   });
 
-  it('reports a failed share, unshare, delete or shares list by toast, and puts the box back', async () => {
-    api.fetchWorkspaceSkillShares.mockRejectedValueOnce(new Error('shares down'));
+  it('reports a failed switch or delete by toast, and puts the box back', async () => {
     const { el, router } = await mount('systematic-debugging');
-    expect(toasts.value.at(-1).message).toBe('shares down');
-    const box = (name) => [...el.querySelectorAll('[data-test="skill-share-option"]')].find((o) => o.textContent.trim() === name).querySelector('input');
-    // With the list unknown every box starts clear; the next fetch fills it in.
-    expect(box('Ops').checked).toBe(false);
+    const box = (name) => [...el.querySelectorAll('[data-test="skill-workspace-option"]')].find((o) => o.textContent.trim() === name).querySelector('input');
 
-    api.shareWorkspaceSkill.mockRejectedValueOnce(new Error('share failed'));
+    api.setWorkspaceSkillEnabled.mockRejectedValueOnce(new Error('workspace not found'));
     await click(box('Platform'));
-    expect(toasts.value.at(-1).message).toBe('share failed');
+    expect(toasts.value.at(-1).message).toBe('workspace not found');
     expect(box('Platform').checked).toBe(false);
     expect(box('Ops').checked).toBe(true);
 
-    api.unshareWorkspaceSkill.mockRejectedValueOnce(new Error('unshare failed'));
+    api.setWorkspaceSkillEnabled.mockRejectedValueOnce(new Error('workspace not found'));
     await click(box('Ops'));
-    expect(toasts.value.at(-1).message).toBe('unshare failed');
     expect(box('Ops').checked).toBe(true);
 
-    api.deleteWorkspaceSkill.mockRejectedValueOnce(new Error('delete failed'));
+    // An answer naming no workspaces means it is on in none.
+    api.setWorkspaceSkillEnabled.mockResolvedValueOnce({ skill: { name: 'systematic-debugging' } });
+    await click(box('Ops'));
+    expect(box('Ops').checked).toBe(false);
+
+    api.deleteSkill.mockRejectedValueOnce(new Error('database unavailable'));
     await click(el.querySelector('[data-test="skill-delete"]'));
     await click([...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]')));
-    expect(toasts.value.at(-1).message).toBe('delete failed');
+    expect(toasts.value.at(-1).message).toBe('database unavailable');
     expect(router.currentRoute.value.path).toBe('/workspaces/ws1/settings/skills/systematic-debugging');
+  });
+
+  it('is the Skills page\'s too: read from the account, leading back to /skills', async () => {
+    const { el, router } = await mount('systematic-debugging', '/skills/systematic-debugging');
+    expect(el.querySelector('h1').textContent.trim()).toBe('Skills');
+    expect(el.querySelector('[data-test="skill-page-name"]').textContent).toBe('systematic-debugging');
+    expect(api.getSkill).toHaveBeenCalledWith('systematic-debugging');
+    expect(api.getSkillFile).toHaveBeenCalledWith('systematic-debugging', 'SKILL.md');
+    expect(api.getWorkspaceSkill).not.toHaveBeenCalled();
+    expect(el.querySelector('[data-test="skill-page-back-to-list"]').getAttribute('href')).toBe('/skills');
+
+    await click(skillLink(el, 'skill://systematic-debugging/root-cause-tracing.md'));
+    expect(api.getSkillFile).toHaveBeenLastCalledWith('systematic-debugging', 'root-cause-tracing.md');
+
+    await click(el.querySelector('[data-test="skill-delete"]'));
+    await click([...document.querySelectorAll('button')].find((b) => /delete|confirm/i.test(b.textContent) && b.closest('[role="dialog"]')));
+    expect(api.deleteSkill).toHaveBeenCalledWith('systematic-debugging');
+    expect(router.currentRoute.value.fullPath).toBe('/skills');
   });
 
   it('says a skill is missing only when the server says so, and retries a failure', async () => {
     let { el } = await mount('nowhere');
-    expect(text(el.querySelector('[data-test="skill-page-missing"]'))).toContain('There is no skill called nowhere in this workspace.');
+    expect(text(el.querySelector('[data-test="skill-page-missing"]')).trim()).toBe('There is no skill called nowhere.');
 
     api.getWorkspaceSkill.mockImplementationOnce(() => Promise.reject(Object.assign(new Error('Failed to fetch skill'), { status: 500 })));
     ({ el } = await mount('review'));

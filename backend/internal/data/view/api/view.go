@@ -492,28 +492,30 @@ type (
 		Memory Memory `json:"memory"`
 	}
 
-	// Skill as the interface sees it. `files` is listed only when one skill is
-	// asked for, and never with content: each file is fetched on its own.
-	// `sharedFromWorkspaceId` is set on a skill another workspace shared in,
-	// which is read-only here.
+	// Skill as the interface sees it: one of the account's skills. `enabled`
+	// is the account-wide switch, `workspaceIds` the workspaces it is on in,
+	// and `workspaceEnabled`, given only when it is read from a workspace,
+	// whether it is on there. An agent sees it only when both are on.
+	// `files` is listed only when one skill is asked for, and never with
+	// content: each file is fetched on its own.
 	Skill struct {
-		ID                    string      `json:"id"`
-		CreatedAt             time.Time   `json:"createdAt"`
-		UpdatedAt             time.Time   `json:"updatedAt"`
-		WorkspaceID           string      `json:"workspaceId"`
-		Name                  string      `json:"name"`
-		Description           string      `json:"description"`
-		SourceType            string      `json:"sourceType"`
-		SourceRepo            string      `json:"sourceRepo,omitempty"`
-		SourceRef             string      `json:"sourceRef,omitempty"`
-		SourceCommit          string      `json:"sourceCommit,omitempty"`
-		SourcePath            string      `json:"sourcePath,omitempty"`
-		LocallyModified       bool        `json:"locallyModified"`
-		FileCount             int         `json:"fileCount"`
-		TotalBytes            int         `json:"totalBytes"`
-		Enabled               bool        `json:"enabled"`
-		SharedFromWorkspaceID string      `json:"sharedFromWorkspaceId,omitempty"`
-		Files                 []SkillFile `json:"files,omitempty"`
+		ID               string      `json:"id"`
+		CreatedAt        time.Time   `json:"createdAt"`
+		UpdatedAt        time.Time   `json:"updatedAt"`
+		Name             string      `json:"name"`
+		Description      string      `json:"description"`
+		SourceType       string      `json:"sourceType"`
+		SourceRepo       string      `json:"sourceRepo,omitempty"`
+		SourceRef        string      `json:"sourceRef,omitempty"`
+		SourceCommit     string      `json:"sourceCommit,omitempty"`
+		SourcePath       string      `json:"sourcePath,omitempty"`
+		LocallyModified  bool        `json:"locallyModified"`
+		FileCount        int         `json:"fileCount"`
+		TotalBytes       int         `json:"totalBytes"`
+		Enabled          bool        `json:"enabled"`
+		WorkspaceIDs     []string    `json:"workspaceIds"`
+		WorkspaceEnabled bool        `json:"workspaceEnabled,omitempty"`
+		Files            []SkillFile `json:"files,omitempty"`
 	}
 
 	SkillFile struct {
@@ -535,9 +537,9 @@ type (
 		Skill Skill `json:"skill"`
 	}
 
-	// SetSkillEnabledRequest turns a skill on or off for agents. A skill that
-	// is off stays in the workspace but is left out of searchSkills and
-	// loadSkill.
+	// SetSkillEnabledRequest turns a skill on or off for agents, in every
+	// workspace or in one. A skill that is off stays in the account but is
+	// left out of searchSkills and loadSkill.
 	SetSkillEnabledRequest struct {
 		Enabled *bool `json:"enabled"`
 	}
@@ -547,10 +549,13 @@ type (
 		File  SkillFile `json:"file"`
 	}
 
+	// ImportSkillsRequest imports into the account; `workspaceIds` are the
+	// workspaces to turn the imported skills on in.
 	ImportSkillsRequest struct {
-		URL       string   `json:"url"`
-		Overwrite bool     `json:"overwrite"`
-		Skills    []string `json:"skills,omitempty"`
+		URL          string   `json:"url"`
+		Overwrite    bool     `json:"overwrite"`
+		Skills       []string `json:"skills,omitempty"`
+		WorkspaceIDs []string `json:"workspaceIds,omitempty"`
 	}
 
 	// SkillImportCandidate is a skill offered to choose from, by a
@@ -584,15 +589,6 @@ type (
 		SourceRepo   string                 `json:"sourceRepo"`
 		SourceRef    string                 `json:"sourceRef"`
 		SourceCommit string                 `json:"sourceCommit"`
-	}
-
-	SkillShare struct {
-		TargetWorkspaceID string    `json:"targetWorkspaceId"`
-		CreatedAt         time.Time `json:"createdAt"`
-	}
-
-	ListSkillSharesResponse struct {
-		Shares []SkillShare `json:"shares"`
 	}
 
 	Event struct {

@@ -218,12 +218,15 @@ type (
 		Content     string `gorm:"type:varchar(64000)"`
 	}
 
-	// Skill is a workspace's playbook for a kind of task: a SKILL.md and the
+	// Skill is an account's playbook for a kind of task: a SKILL.md and the
 	// files beside it. Only metadata lives here; every file's content is in
-	// the storage service under SkillFile.StorageID.
+	// the storage service under SkillFile.StorageID. WorkspaceSkill says which
+	// workspaces' agents see it.
 	//
-	// Keyed per (owner, workspace, name) like Memory, with the same one index
-	// name on all three columns.
+	// WorkspaceID is 0 on every account skill, which makes the index on
+	// (owner, workspace, name) one name per account. A non-zero WorkspaceID is
+	// a skill from before skills belonged to the account, which the startup
+	// backfill moves.
 	Skill struct {
 		ID              int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt       time.Time
@@ -257,8 +260,19 @@ type (
 		StorageID string `gorm:"type:varchar(64)"`
 	}
 
-	// SkillShare makes a skill readable from another of its owner's
-	// workspaces. A reference, not a copy: the target sees every change.
+	// WorkspaceSkill turns an account's skill on in one of its workspaces:
+	// that workspace's agent sees it. A fork's is filed under its parent.
+	WorkspaceSkill struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		UserID      int64 `gorm:"index:idx_workspace_skills_user_id"`
+		SkillID     int64 `gorm:"index:idx_workspace_skills_skill_id;uniqueIndex:uk_workspace_skills_skill_id_workspace_id,priority:1"`
+		WorkspaceID int64 `gorm:"index:idx_workspace_skills_workspace_id;uniqueIndex:uk_workspace_skills_skill_id_workspace_id,priority:2"`
+	}
+
+	// SkillShare made a workspace's skill readable from another workspace,
+	// before skills belonged to the account. The startup backfill turns each
+	// into a WorkspaceSkill and deletes it; nothing else writes one.
 	SkillShare struct {
 		ID                int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt         time.Time

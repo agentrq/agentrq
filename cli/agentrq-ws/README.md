@@ -55,7 +55,7 @@ Node 20.6 or newer.
 | `skill search [q]` | Find the skills this workspace can use, by name or description; `--limit`/`--offset` page |
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
 | `skill save <uri> --content …` | Replace a file of one of this workspace's skills |
-| `skill delete <uri>` | Delete a skill (`skill://<name>`) or one of its files |
+| `skill delete <uri>` | Take a skill out of this workspace (`skill://<name>`), deleting it when no other workspace uses it, or delete one of its files |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
 | `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |

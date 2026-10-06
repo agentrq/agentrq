@@ -47,6 +47,8 @@ describe('routes', () => {
       '/extensions/:name/:pageId',
       '/machines',
       '/machines/:id',
+      '/skills',
+      '/skills/:name',
       '/sessions/:id',
       '/workflows',
       '/workflows/:id',

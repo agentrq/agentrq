@@ -92,7 +92,7 @@ func TestGetPublicFile(t *testing.T) {
 	atts, skills := newPublicStore(t), newPublicStore(t)
 	c.storage, c.skillStorage = atts, skills
 	attKey := storage.AttachmentKey(1, 2, monoflake.ID(3).String())
-	skillKey := "w-00000000001/skill-00000000002/" + monoflake.ID(4).String()
+	skillKey := "u-00000000001/skill-00000000002/" + monoflake.ID(4).String()
 	if err := atts.Save(attKey, "iVBORw0KGgoK"); err != nil { // a PNG signature
 		t.Fatal(err)
 	}

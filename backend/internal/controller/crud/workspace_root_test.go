@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,8 +110,8 @@ func TestAForkSharesItsParentsSkills(t *testing.T) {
 	e := newForkSkillEnv(t)
 	e.save(t, skWS, "deploy", skill.FileName, md("deploy", "how we ship"))
 	saved := e.save(t, skFork, "review", skill.FileName, md("review", "how we review"))
-	if saved.Skill.WorkspaceID != skWS {
-		t.Fatalf("a skill saved in a fork is filed under %d, want the parent %d", saved.Skill.WorkspaceID, skWS)
+	if !slices.Equal(saved.Skill.WorkspaceIDs, []int64{skWS}) {
+		t.Fatalf("a skill saved in a fork is on in %v, want the parent %d", saved.Skill.WorkspaceIDs, skWS)
 	}
 
 	for _, ws := range []int64{skWS, skFork} {
@@ -122,8 +123,8 @@ func TestAForkSharesItsParentsSkills(t *testing.T) {
 			t.Fatalf("workspace %d sees %d skills, want both", ws, rs.Total)
 		}
 		for _, s := range rs.Skills {
-			if s.SharedFromWorkspaceID != 0 {
-				t.Errorf("workspace %d sees %s as shared in from %d; it is its own", ws, s.Name, s.SharedFromWorkspaceID)
+			if !s.WorkspaceEnabled {
+				t.Errorf("workspace %d sees %s as off there, want it on", ws, s.Name)
 			}
 		}
 	}
@@ -139,72 +140,25 @@ func TestAForkSharesItsParentsSkills(t *testing.T) {
 	}
 }
 
-// A skill shared into a fork is shared into its parent, where the fork reads
-// it; and a parent cannot share into its own fork, which already has it.
-func TestASkillSharedIntoAForkIsSharedIntoItsParent(t *testing.T) {
+// A skill turned on in a fork is turned on in its parent, where the fork
+// reads it; importing into a fork does the same.
+func TestASkillTurnedOnInAForkIsOnInItsParent(t *testing.T) {
 	e := newForkSkillEnv(t)
 	e.save(t, skWS2, "lint", skill.FileName, md("lint", "lint rules"))
-	e.save(t, skWS, "deploy", skill.FileName, md("deploy", "how we ship"))
 
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skFork}); err != nil {
-		t.Fatalf("share into the fork: %v", err)
+	rs, err := e.c.SetSkillEnabled(e.ctx, entity.SetSkillEnabledRequest{WorkspaceID: skFork, UserID: skUserStr, Name: "lint", Enabled: true})
+	if err != nil || !rs.Skill.WorkspaceEnabled || !slices.Equal(rs.Skill.WorkspaceIDs, []int64{skWS2, skWS}) {
+		t.Fatalf("turning lint on in the fork returned %+v, %v; want it on in beta and the parent", rs, err)
 	}
-	shares, err := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint"})
-	if err != nil || len(shares.Shares) != 1 || shares.Shares[0].TargetWorkspaceID != skWS {
-		t.Fatalf("shares = %+v, %v; want one into the parent", shares, err)
-	}
-	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skFork, UserID: skUserStr, Name: "lint"})
-	if err != nil || got.Skill.SharedFromWorkspaceID != skWS2 {
-		t.Fatalf("the fork reads the share: %+v, %v", got, err)
+	got, err := e.c.GetSkill(e.ctx, entity.GetSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "lint"})
+	if err != nil || !got.Skill.WorkspaceEnabled {
+		t.Fatalf("the parent reads %+v, %v; want lint on there", got, err)
 	}
 
-	err = e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "deploy", TargetWorkspaceID: skFork})
-	var se *SkillError
-	if !errors.As(err, &se) || se.Kind != SkillInvalid {
-		t.Fatalf("sharing into its own fork: %v, want a refusal", err)
-	}
-
-	if err := e.c.UnshareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skFork}); err != nil {
-		t.Fatalf("unshare from the fork: %v", err)
-	}
-	if shares, _ := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint"}); len(shares.Shares) != 0 {
-		t.Fatalf("unsharing from the fork left %+v", shares.Shares)
-	}
-}
-
-func TestShareSkill_ForkLookupFailureIsReported(t *testing.T) {
-	e := newForkSkillEnv(t)
-	e.save(t, skWS2, "lint", skill.FileName, md("lint", "lint rules"))
-	// The target passes the access check but cannot then be read.
-	e.db.Callback().Query().After("gorm:query").Register("fail_target", func(tx *gorm.DB) {
-		if strings.Contains(tx.Statement.SQL.String(), "workspaces") && tx.Statement.Vars != nil && len(tx.Statement.Vars) == 1 && tx.Statement.Vars[0] == skFork {
-			_ = tx.AddError(errors.New("database unavailable"))
-		}
-	})
-
-	err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skFork})
-
-	if err == nil || !strings.Contains(err.Error(), "database unavailable") {
-		t.Fatalf("err = %v, want the lookup failure", err)
-	}
-}
-
-// Unsharing from a workspace that is gone still removes the share.
-func TestUnshareSkill_FromAWorkspaceThatIsGone(t *testing.T) {
-	e := newForkSkillEnv(t)
-	e.save(t, skWS2, "lint", skill.FileName, md("lint", "lint rules"))
-	if err := e.c.ShareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skWS3}); err != nil {
-		t.Fatal(err)
-	}
-	if err := e.db.Delete(&model.Workspace{}, skWS3).Error; err != nil {
-		t.Fatal(err)
-	}
-
-	if err := e.c.UnshareSkill(e.ctx, entity.ShareSkillRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint", TargetWorkspaceID: skWS3}); err != nil {
-		t.Fatalf("unshare: %v", err)
-	}
-	if shares, _ := e.c.ListSkillShares(e.ctx, entity.ListSkillSharesRequest{WorkspaceID: skWS2, UserID: skUserStr, Name: "lint"}); len(shares.Shares) != 0 {
-		t.Fatalf("the share is still there: %+v", shares.Shares)
+	e.importer.res = githubResult(importedSkill("deploy", "How we ship."))
+	imp, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", WorkspaceIDs: []int64{skFork, skWS}})
+	if err != nil || len(imp.Imported) != 1 || !slices.Equal(imp.Imported[0].WorkspaceIDs, []int64{skWS}) {
+		t.Fatalf("importing into the fork and its parent returned %+v, %v; want deploy on in the parent once", imp, err)
 	}
 }
 
@@ -225,7 +179,7 @@ func newForkTaskEnv(t *testing.T) *forkTaskEnv {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()

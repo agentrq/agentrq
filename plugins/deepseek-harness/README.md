@@ -87,8 +87,8 @@ Every tool the workspace server offers — eighteen today — bridged by `@deeps
 | `mcp__agentrq__deleteMemory` | Delete one of the workspace's memories |
 | `mcp__agentrq__searchSkills` | Find the workspace's skills by name or description, with their `skill://` URIs |
 | `mcp__agentrq__loadSkill` | Read one file of a skill by its `skill://` URI |
-| `mcp__agentrq__saveSkill` | Write one file of one of the workspace's own skills |
-| `mcp__agentrq__deleteSkill` | Delete one of the workspace's own skills, or one of its files |
+| `mcp__agentrq__saveSkill` | Write one file of a skill the workspace can use |
+| `mcp__agentrq__deleteSkill` | Take a skill out of the workspace, or delete one of its files |
 | `mcp__agentrq__elicit` | Ask the human a question and wait for the answer |
 | `mcp__agentrq__listSiteTools` | List the websites the human shared from the Chrome extension, and their WebMCP tools' names and descriptions; search with `q` (BM25) or `pattern` (regex), page with `limit`/`offset` |
 | `mcp__agentrq__getSiteToolDefinition` | Get one shared website's tool with its input schema, before calling it |

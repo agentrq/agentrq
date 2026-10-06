@@ -77,6 +77,7 @@ const taskPage = ({ workspaceId, taskId }) => `/workspaces/${seg(workspaceId)}/t
 const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
 const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
 const workflowPage = ({ workflowId }) => `/workflows/${seg(workflowId)}`
+const skillPage = ({ name }) => `/skills/${seg(name)}`
 
 /**
  * The page a write tool acts on, so the person sees what the agent did.
@@ -115,17 +116,17 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Take the user to an AgentRQ page. Pass the in-app path, ' +
-        'optionally ?query; IDs are base62, from getCurrentPage or list tools. Pages:\n' +
+        'Take the user to a page. Pass the in-app path, ' +
+        'optionally ?query; IDs come from getCurrentPage or list tools. Pages:\n' +
         '- "/" every workspace, "/workspaces/new" creates one.\n' +
         '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
         '(on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
-        'open one beside it, then "/instances" for a scheduled task\'s runs.\n' +
+        'open one beside it, then "/instances" for its runs.\n' +
         '- "/workspaces/<workspaceId>" its tasks ("?filter=" as above); under it "/board", ' +
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>".\n' +
+        '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>", "/skills", "/skills/<name>".\n' +
         '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
         'Others are refused. Returns the page reached.',
@@ -346,13 +347,84 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       readOnly: true,
       run: ({ workspaceId, name }) => api.getWorkspaceMemory(workspaceId, name),
     }),
+    // Skills belong to the account; a workspace turns each on or off, and its
+    // agents see one only while that and the account-wide switch are both on.
+    tool({
+      name: 'searchSkills',
+      description:
+        'Find the account\'s skills, with description, size, source, the workspaces each is on in (workspaceIds), plus how ' +
+        'many match in all. One with enabled false is turned off for the whole account: no agent sees it. File contents are not included.',
+      properties: {
+        q: str('Text to find in a skill\'s name or description, ignoring case; at least 3 characters. Leave it out to list every skill.'),
+        limit: int('How many skills to return, at most 100. Leave it out to return every match.'),
+        offset: int('How many matches to skip, for the next page.'),
+      },
+      readOnly: true,
+      run: ({ q, limit, offset }) => api.searchSkills({ q, limit, offset }),
+    }),
+    tool({
+      name: 'getSkill',
+      description: 'One skill of the account, with the paths and sizes of its files but not their content.',
+      properties: { name: str('The skill\'s name, as searchSkills reports it.') },
+      required: ['name'],
+      readOnly: true,
+      run: ({ name }) => api.getSkill(name),
+    }),
+    tool({
+      name: 'getSkillFile',
+      description: 'One file of a skill, in full. Start with SKILL.md, which says which other files matter.',
+      properties: {
+        name: str('The skill\'s name.'),
+        path: str('The file\'s path within the skill, like SKILL.md or references/guide.md.'),
+      },
+      required: ['name', 'path'],
+      readOnly: true,
+      run: ({ name, path }) => api.getSkillFile(name, path),
+    }),
+    tool({
+      name: 'importSkills',
+      description:
+        'Import skills from a public GitHub repository into the account, e.g. https://github.com/obra/superpowers ' +
+        'or a /tree/<ref>/<path> link to part of one, turning them on in the workspaces named. Returns what was imported and what was skipped, with why. ' +
+        'A repository too large to import whole imports nothing and returns `candidates`; import again naming the wanted ones in `skills`.',
+      properties: {
+        url: str('The GitHub link.'),
+        overwrite: bool('Replace skills the account already has under the same name.'),
+        skills: { type: 'array', items: { type: 'string' }, description: 'Import only these skills, by the `path` a candidate gives.' },
+        workspaceIds: { type: 'array', items: { type: 'string' }, description: 'The workspaces to turn the imported skills on in. Leave it out to turn them on nowhere yet.' },
+      },
+      required: ['url'],
+      // With overwrite, it replaces skills the account already had.
+      destructive: true,
+      screen: before(() => '/skills'),
+      run: ({ url, overwrite, skills, workspaceIds }) => api.importSkills(url, overwrite, skills, workspaceIds),
+    }),
+    tool({
+      name: 'deleteSkill',
+      description: 'Delete a skill from the account, with all its files; every workspace loses it. Cannot be undone.',
+      properties: { name: str('The skill\'s name.') },
+      required: ['name'],
+      destructive: true,
+      screen: before(() => '/skills'),
+      run: ({ name }) => api.deleteSkill(name),
+    }),
+    tool({
+      name: 'setSkillEnabled',
+      description:
+        'Turn a skill on or off for the whole account. Off, the skill is kept and still listed, but no agent finds or ' +
+        'loads it, whichever workspaces it is on in. Skills are on when created.',
+      properties: { name: str('The skill\'s name.'), enabled: bool('true to make it available to agents, false to hide it from them.') },
+      required: ['name', 'enabled'],
+      // Off takes away a skill agents may be relying on.
+      destructive: true,
+      screen: before(skillPage),
+      run: ({ name, enabled }) => api.setSkillEnabled(name, enabled),
+    }),
     tool({
       name: 'searchWorkspaceSkills',
       description:
-        'Find the skills a workspace\'s agents can load: its own and those other workspaces of the account ' +
-        'share into it, with description, size and source, plus how many match in all. A shared-in skill ' +
-        'carries sharedFromWorkspaceId and is read-only there. One with enabled false is turned off: it is ' +
-        'kept, but agents do not see it. File contents are not included.',
+        'Every skill of the account as a workspace sees it, with workspaceEnabled true where it is on in that workspace, ' +
+        'plus how many match in all. Its agents see a skill only when workspaceEnabled and enabled are both true. File contents are not included.',
       properties: {
         workspaceId: WORKSPACE_ID,
         q: str('Text to find in a skill\'s name or description, ignoring case; at least 3 characters. Leave it out to list every skill.'),
@@ -365,7 +437,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     }),
     tool({
       name: 'getWorkspaceSkill',
-      description: 'One skill of a workspace, with the paths and sizes of its files but not their content.',
+      description: 'One skill as a workspace sees it, with the paths and sizes of its files but not their content.',
       properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name, as searchWorkspaceSkills reports it.') },
       required: ['workspaceId', 'name'],
       readOnly: true,
@@ -373,7 +445,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     }),
     tool({
       name: 'getWorkspaceSkillFile',
-      description: 'One file of a skill, in full. Start with SKILL.md, which says which other files matter.',
+      description: 'One file of a skill, read through a workspace, in full. Start with SKILL.md, which says which other files matter.',
       properties: {
         workspaceId: WORKSPACE_ID,
         name: str('The skill\'s name.'),
@@ -384,77 +456,16 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, name, path }) => api.getWorkspaceSkillFile(workspaceId, name, path),
     }),
     tool({
-      name: 'importWorkspaceSkills',
-      description:
-        'Import skills from a public GitHub repository into a workspace, e.g. https://github.com/obra/superpowers ' +
-        'or a /tree/<ref>/<path> link to part of one. Returns what was imported and what was skipped, with why. ' +
-        'A repository too large to import whole imports nothing and returns `candidates`; import again naming the wanted ones in `skills`.',
-      properties: {
-        workspaceId: WORKSPACE_ID,
-        url: str('The GitHub link.'),
-        overwrite: bool('Replace skills this workspace already has under the same name.'),
-        skills: { type: 'array', items: { type: 'string' }, description: 'Import only these skills, by the `path` a candidate gives.' },
-      },
-      required: ['workspaceId', 'url'],
-      // With overwrite, it replaces skills the workspace already had.
-      destructive: true,
-      screen: before(settingsPage('skills')),
-      run: ({ workspaceId, url, overwrite, skills }) => api.importWorkspaceSkills(workspaceId, url, overwrite, skills),
-    }),
-    tool({
-      name: 'deleteWorkspaceSkill',
-      description: 'Delete one of a workspace\'s own skills, with all its files and shares. Cannot be undone.',
-      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.') },
-      required: ['workspaceId', 'name'],
-      destructive: true,
-      screen: before(settingsPage('skills')),
-      run: ({ workspaceId, name }) => api.deleteWorkspaceSkill(workspaceId, name),
-    }),
-    tool({
       name: 'setWorkspaceSkillEnabled',
       description:
-        'Turn one of a workspace\'s own skills on or off for agents. Off, the skill is kept and still listed here, but agents ' +
-        'no longer find or load it, in this workspace or any it is shared into. Skills are on when created.',
-      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.'), enabled: bool('true to make it available to agents, false to hide it from them.') },
+        'Turn one of the account\'s skills on or off in a workspace. On, its agents find and load it while the skill is also on ' +
+        'for the account; off, they do not. A fork uses its parent\'s.',
+      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.'), enabled: bool('true to turn it on in this workspace, false to turn it off.') },
       required: ['workspaceId', 'name', 'enabled'],
-      // Off takes away a skill agents may be relying on, as unsharing does.
+      // Off takes away a skill this workspace's agents may be relying on.
       destructive: true,
       screen: before(settingsPage('skills')),
       run: ({ workspaceId, name, enabled }) => api.setWorkspaceSkillEnabled(workspaceId, name, enabled),
-    }),
-    tool({
-      name: 'listWorkspaceSkillShares',
-      description: 'The other workspaces one of a workspace\'s own skills is shared into.',
-      properties: { workspaceId: WORKSPACE_ID, name: str('The skill\'s name.') },
-      required: ['workspaceId', 'name'],
-      readOnly: true,
-      run: ({ workspaceId, name }) => api.fetchWorkspaceSkillShares(workspaceId, name),
-    }),
-    tool({
-      name: 'shareWorkspaceSkill',
-      description:
-        'Share one of a workspace\'s own skills into another workspace of the same account, where it can be read but not changed.',
-      properties: {
-        workspaceId: WORKSPACE_ID,
-        name: str('The skill\'s name.'),
-        targetWorkspaceId: str('The workspace to share it into.'),
-      },
-      required: ['workspaceId', 'name', 'targetWorkspaceId'],
-      screen: before(settingsPage('skills')),
-      run: ({ workspaceId, name, targetWorkspaceId }) => api.shareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
-    }),
-    tool({
-      name: 'unshareWorkspaceSkill',
-      description: 'Stop sharing a skill into a workspace; its agents can no longer load it.',
-      properties: {
-        workspaceId: WORKSPACE_ID,
-        name: str('The skill\'s name.'),
-        targetWorkspaceId: str('The workspace to stop sharing it into.'),
-      },
-      required: ['workspaceId', 'name', 'targetWorkspaceId'],
-      destructive: true,
-      screen: before(settingsPage('skills')),
-      run: ({ workspaceId, name, targetWorkspaceId }) => api.unshareWorkspaceSkill(workspaceId, name, targetWorkspaceId),
     }),
     tool({
       name: 'setWorkspaceSlackChannel',

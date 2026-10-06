@@ -3,7 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * A workspace's skills, as the settings screen shows them.
+ * The account's skills, as the Skills page and a workspace's Skills tab show
+ * them.
+ *
+ * A skill belongs to the account and is turned on per workspace; an agent sees
+ * it only where it is on and while the account-wide switch is on too. Every
+ * helper that takes a `workspaceId` reads the account's view without one.
  *
  * A skill is a SKILL.md and the files it points to. The list shows only the
  * skills themselves; a skill's page lists its files, and also opens them by
@@ -13,6 +18,7 @@
  */
 
 import { formatMemorySize } from './useMemories';
+import { isFork } from './useWorkspaceForks';
 
 /** The file every skill has, and the one opened first. */
 export const SKILL_FILE = 'SKILL.md';
@@ -215,8 +221,12 @@ export function skillSource(skill) {
   return at ? `GitHub ${skill.sourceRepo}@${at}` : `GitHub ${skill.sourceRepo}`;
 }
 
-/** The page that shows one skill of a workspace, in place of the Skills tab. */
+/**
+ * The page that shows one skill: on the Skills page, or in a workspace's
+ * settings in place of its Skills tab.
+ */
 export function skillPagePath(workspaceId, name) {
+  if (!workspaceId) return `/skills/${encodeURIComponent(name)}`;
   return `/workspaces/${encodeURIComponent(workspaceId)}/settings/skills/${encodeURIComponent(name)}`;
 }
 
@@ -225,9 +235,69 @@ export function skillsTabPath(workspaceId) {
   return `/workspaces/${encodeURIComponent(workspaceId)}/settings?tab=skills`;
 }
 
-/** What a toast says once a skill is turned on or off. */
+/** The list a skill's page leads back to: the workspace's tab, or the Skills page. */
+export function skillsListPath(workspaceId) {
+  return workspaceId ? skillsTabPath(workspaceId) : '/skills';
+}
+
+/** What a toast says once a skill is turned on or off for the whole account. */
 export function skillEnabledMessage(name, enabled) {
   return enabled ? `${name} is available to agents again` : `${name} is now hidden from agents`;
+}
+
+/** What a toast says once a skill is turned on or off in one workspace. */
+export function skillWorkspaceMessage(name, on, where = 'this workspace') {
+  return `${name} is ${on ? 'on' : 'off'} in ${where}`;
+}
+
+/**
+ * Where the switch on a skill's card stands: the workspace's own switch in a
+ * workspace, the account-wide one on the Skills page. The server leaves
+ * `workspaceEnabled` out when it is off.
+ */
+export function skillSwitchOn(skill, workspaceId) {
+  return workspaceId ? skill?.workspaceEnabled === true : skill?.enabled !== false;
+}
+
+/** Whether agents see the skill: in a workspace, both switches must be on. */
+export function skillSeenByAgents(skill, workspaceId) {
+  return skill?.enabled !== false && (!workspaceId || skill?.workspaceEnabled === true);
+}
+
+/**
+ * A skill with a switch's answer merged in. Read through a workspace, an
+ * answer that leaves `workspaceEnabled` out means off, so it is set either way.
+ */
+export function mergeSkill(skill, updated, workspaceId) {
+  const merged = { ...skill, ...updated };
+  if (workspaceId) merged.workspaceEnabled = updated?.workspaceEnabled === true;
+  return merged;
+}
+
+/** "On in 3 workspaces", or that it is on in none. */
+export function skillWorkspaceCount(skill) {
+  const n = skill?.workspaceIds?.length || 0;
+  if (!n) return 'Not on in any workspace';
+  return `On in ${n} ${n === 1 ? 'workspace' : 'workspaces'}`;
+}
+
+/** `ids` with `id` turned on or off, each id once. */
+export function withWorkspace(ids = [], id, on) {
+  const rest = ids.filter((x) => String(x) !== String(id));
+  return on ? [...rest, String(id)] : rest;
+}
+
+/**
+ * The workspaces a skill can be turned on in: not archived, and not forks,
+ * which use their parent's skills.
+ */
+export function skillWorkspaceChoices(workspaces = []) {
+  return workspaces.filter((w) => !isFork(w) && !w.archivedAt);
+}
+
+/** The workspace whose switches a workspace uses: a fork's parent, else itself. */
+export function contentWorkspaceId(workspace, workspaceId) {
+  return String(workspace?.forkOfId || workspaceId || '');
 }
 
 /** "1 file", "3 files". */

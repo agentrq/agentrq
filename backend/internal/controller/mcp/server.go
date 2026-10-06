@@ -608,7 +608,7 @@ func NewWorkspaceServer(
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name: "searchSkills",
-		Description: "Find the skills this workspace can use — its own and those shared into it — with each one's description and the skill:// URI of its SKILL.md. " +
+		Description: "Find the skills this workspace can use — the account's skills the human turned on here — with each one's description and the skill:// URI of its SKILL.md. " +
 			"With q (at least 3 characters) only skills whose name or description contains it are returned, ignoring case; without it, every skill. " +
 			"limit and offset page through the matches. " +
 			"Call this at the start of a task, then loadSkill the SKILL.md of a skill only when its description matches the work in hand; never load every skill up front. " +
@@ -626,19 +626,19 @@ func NewWorkspaceServer(
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name: "saveSkill",
-		Description: "Write one file of one of this workspace's skills, replacing it completely — there is no append. " +
+		Description: "Write one file of a skill this workspace can use, replacing it completely — there is no append. " +
 			"Writing skill://<name>/SKILL.md creates or updates the skill: it must start with YAML frontmatter holding a description of at most 1024 characters (what the skill does and when to use it) " +
 			"and, if it has a name, one equal to <name>. Names are lowercase letters and digits joined by single hyphens, at most 64 characters. " +
 			"Writing any other path adds or replaces a file in an existing skill, such as skill://<name>/references/guide.md. " +
 			"Limits: SKILL.md at most 96 KiB, any other file at most 64 KiB, UTF-8 text only, at most 256 files per skill. " +
-			"A skill shared into this workspace from another is read-only here.",
+			"A new skill belongs to the account and is turned on in this workspace.",
 		Annotations: mcphint.Overwrite("Write a skill file"),
 	}, ps.handleSaveSkill)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name: "deleteSkill",
-		Description: "Delete one of this workspace's skills: skill://<name> deletes the whole skill, skill://<name>/<path> one of its files. " +
-			"A SKILL.md cannot be deleted on its own; delete the skill. A skill shared into this workspace is read-only here. " +
+		Description: "Delete a skill this workspace can use: skill://<name> takes the whole skill out of this workspace, and deletes it when no other workspace uses it; skill://<name>/<path> deletes one of its files. " +
+			"A SKILL.md cannot be deleted on its own; delete the skill. " +
 			"Deleting something that does not exist is not an error.",
 		Annotations: mcphint.Overwrite("Delete a skill"),
 	}, ps.handleDeleteSkill)

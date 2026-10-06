@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -184,4 +185,31 @@ func ParseURI(raw string) (name, p string, err error) {
 		return "", "", err
 	}
 	return name, p, nil
+}
+
+// WithName returns a SKILL.md whose frontmatter names the skill name, with
+// everything else as it was: the name line replaced, or added after the
+// opening --- when there is none.
+func WithName(content []byte, name string) ([]byte, error) {
+	text := strings.TrimPrefix(string(content), "\ufeff")
+	newline := "\n"
+	if strings.Contains(text, "\r\n") {
+		newline = "\r\n"
+	}
+	lines := strings.Split(text, newline)
+	if lines[0] != "---" {
+		return nil, fmt.Errorf("%s does not start with YAML frontmatter", FileName)
+	}
+	end := slices.Index(lines[1:], "---") + 1
+	if end == 0 {
+		return nil, fmt.Errorf("%s frontmatter is not closed", FileName)
+	}
+	for i := 1; i < end; i++ {
+		if strings.HasPrefix(lines[i], "name:") {
+			lines[i] = "name: " + name
+			return []byte(strings.Join(lines, newline)), nil
+		}
+	}
+	lines = slices.Insert(lines, 1, "name: "+name)
+	return []byte(strings.Join(lines, newline)), nil
 }

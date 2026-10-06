@@ -159,6 +159,19 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
           </router-link>
 
+          <router-link to="/skills"
+              @mouseenter="showTooltip($event, 'Skills')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/skills') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Skills</span>
+          </router-link>
+
           <template v-if="workspaces.length > 0 && (!isCollapsed || isMobileMenuOpen)">
             <div class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
               <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Workspaces</span>
@@ -1155,6 +1168,7 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';
   else if (path.startsWith('/machines')) document.title = 'Machines | AgentRQ';
+  else if (path.startsWith('/skills')) document.title = 'Skills | AgentRQ';
   else if (path.startsWith('/sessions/')) document.title = 'Terminal | AgentRQ';
   else if (path.startsWith('/tasks/')) {
     const filter = route.params.filter || '';

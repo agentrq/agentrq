@@ -72,6 +72,10 @@ export const routes = [
   { path: '/machines', component: () => import('./views/MachinesView.vue') },
   { path: '/machines/:id', component: () => import('./views/MachineDetailView.vue'), meta: { remount: true } },
 
+  // Skills belong to the account too; a workspace only turns each on or off.
+  { path: '/skills', component: () => import('./views/SkillsView.vue') },
+  { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },
+
   // A session's terminal. Addressed by session rather than by machine: a
   // session is what a person is watching, and it outlives the page they
   // reached it from.

@@ -27,14 +27,14 @@ func TestNewSkillStorage(t *testing.T) {
 				t.Fatalf("%s: %v", doc, err)
 			}
 			// Local skills are filed by workspace and skill under local.
-			if err := got.Save("w-1/skill-2/3", ""); err != nil {
+			if err := got.Save("u-1/skill-2/3", ""); err != nil {
 				t.Fatalf("%s: %v", doc, err)
 			}
-			if _, err := os.Stat(filepath.Join(local, "w-1", "skill-2", "3")); err != nil {
+			if _, err := os.Stat(filepath.Join(local, "u-1", "skill-2", "3")); err != nil {
 				t.Errorf("%s: %v", doc, err)
 			}
 			// And read publicly through the file routes.
-			key := "w-1/skill-2/" + monoflake.ID(3).String()
+			key := "u-1/skill-2/" + monoflake.ID(3).String()
 			if got := storage.PublicURL(got, key); got != "https://agentrq.example/storage/skills/"+key {
 				t.Errorf("%s: link %q", doc, got)
 			}
@@ -71,7 +71,7 @@ func TestNewSkillStorage(t *testing.T) {
 			t.Fatalf("got %v, %v", got, err)
 		}
 		// Public in the bucket, not through the file routes.
-		key := "w-1/skill-2/" + monoflake.ID(3).String()
+		key := "u-1/skill-2/" + monoflake.ID(3).String()
 		if got := storage.PublicURL(got, key); got != "http://127.0.0.1:9/b/skills/"+key {
 			t.Errorf("link %q", got)
 		}

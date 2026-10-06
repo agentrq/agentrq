@@ -675,8 +675,8 @@
 
                 <!-- Skills: playbooks agents load, with their own panel, and one
                      skill's page in its place when the route names one. -->
-                <WorkspaceSkillPage v-if="activeTab === 'skills' && skillName" :workspace-id="workspaceId" :name="skillName" />
-                <WorkspaceSkillsPanel v-else-if="activeTab === 'skills'" :workspace-id="workspaceId" />
+                <SkillPage v-if="activeTab === 'skills' && skillName" :workspace-id="workspaceId" :name="skillName" />
+                <SkillsPanel v-else-if="activeTab === 'skills'" :workspace-id="workspaceId" />
 
                 <!-- Slack Integration -->
                 <div v-if="activeTab === 'slack'" class="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -952,8 +952,8 @@ import MergeForkModal from '../components/MergeForkModal.vue';
 import { isFork as isForkWorkspace, mergeBlockedReason, parentName, useForkActions } from '../composables/useWorkspaceForks';
 import DeleteModal from '../components/DeleteModal.vue';
 import WorkspaceMemoryPage from '../components/WorkspaceMemoryPage.vue';
-import WorkspaceSkillPage from '../components/WorkspaceSkillPage.vue';
-import WorkspaceSkillsPanel from '../components/WorkspaceSkillsPanel.vue';
+import SkillPage from '../components/SkillPage.vue';
+import SkillsPanel from '../components/SkillsPanel.vue';
 import StartAgentPanel from '../components/StartAgentPanel.vue';
 import MissionTemplatePicker from '../components/MissionTemplatePicker.vue';
 import { useWorkspaceStore } from '../stores/workspaceStore';

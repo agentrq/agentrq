@@ -152,13 +152,13 @@ describe('the catalogue as a whole', () => {
         'deleteWorkflow',
         'deleteWorkflowStep',
         'deleteWorkspace',
-        'deleteWorkspaceSkill',
+        'deleteSkill',
         // Not deletes, but each can take away what an agent relied on: an
-        // unshared skill is gone from the other workspace, an import with
-        // overwrite replaces skills this workspace already had, and a skill
-        // turned off is hidden from every agent.
-        'unshareWorkspaceSkill',
-        'importWorkspaceSkills',
+        // import with overwrite replaces skills the account already had, and
+        // a skill turned off, for the account or in a workspace, is hidden
+        // from those agents.
+        'importSkills',
+        'setSkillEnabled',
         'setWorkspaceSkillEnabled',
         // Not deletes either, and the most destructive things here: each
         // ends every session on a machine and starts them again empty.
@@ -313,6 +313,21 @@ describe('each tool calls the interface the way the UI does', () => {
       'getWorkspaceMemory',
       ['ws1', 'MEMORY.md'],
     ],
+    ['searchSkills', { q: 'debug', limit: 5 }, 'searchSkills', [{ q: 'debug', limit: 5, offset: undefined }]],
+    ['getSkill', { name: 'tdd' }, 'getSkill', ['tdd']],
+    ['getSkillFile', { name: 'tdd', path: 'SKILL.md' }, 'getSkillFile', ['tdd', 'SKILL.md']],
+    [
+      'importSkills',
+      { url: 'https://github.com/a/b', overwrite: true, skills: ['guard'], workspaceIds: ['ws1', 'ws2'] },
+      'importSkills',
+      ['https://github.com/a/b', true, ['guard'], ['ws1', 'ws2']],
+    ],
+    ['deleteSkill', { name: 'tdd' }, 'deleteSkill', ['tdd']],
+    ['setSkillEnabled', { name: 'tdd', enabled: false }, 'setSkillEnabled', ['tdd', false]],
+    ['searchWorkspaceSkills', { workspaceId: 'ws1', q: 'debug' }, 'searchWorkspaceSkills', ['ws1', { q: 'debug', limit: undefined, offset: undefined }]],
+    ['getWorkspaceSkill', { workspaceId: 'ws1', name: 'tdd' }, 'getWorkspaceSkill', ['ws1', 'tdd']],
+    ['getWorkspaceSkillFile', { workspaceId: 'ws1', name: 'tdd', path: 'SKILL.md' }, 'getWorkspaceSkillFile', ['ws1', 'tdd', 'SKILL.md']],
+    ['setWorkspaceSkillEnabled', { workspaceId: 'ws1', name: 'tdd', enabled: true }, 'setWorkspaceSkillEnabled', ['ws1', 'tdd', true]],
     [
       'setWorkspaceSlackChannel',
       { workspaceId: 'ws1', channelId: 'C1', channelName: 'general' },
@@ -595,6 +610,14 @@ describe('the page every write tool shows', () => {
     expect(by('createWorkflow').after({}, {})).toBe('/workflows');
   });
 
+  it('opens the Skills page, or the skill, for an account-wide skill change', () => {
+    const by = (name, input) => writes.find((t) => t.name === name).screen.before(input);
+
+    expect(by('importSkills', {})).toBe('/skills');
+    expect(by('deleteSkill', { name: 'tdd' })).toBe('/skills');
+    expect(by('setSkillEnabled', { name: 'a/b' })).toBe('/skills/a%2Fb');
+  });
+
   it('encodes an ID so it cannot become another page', () => {
     const { screen } = writes.find((t) => t.name === 'restartDaemon');
 
@@ -604,7 +627,7 @@ describe('the page every write tool shows', () => {
   it('opens the settings tab a setting lives on', () => {
     const by = (name) => writes.find((t) => t.name === name).screen.before({ workspaceId: 'w1' });
 
-    expect(by('importWorkspaceSkills')).toBe('/workspaces/w1/settings?tab=skills');
+    expect(by('setWorkspaceSkillEnabled')).toBe('/workspaces/w1/settings?tab=skills');
     expect(by('setWorkspaceSlackChannel')).toBe('/workspaces/w1/settings?tab=slack');
     expect(by('updateWorkspace')).toBe('/workspaces/w1/settings');
   });

@@ -30,7 +30,7 @@ type mockSkillCrud struct {
 func (m *mockSkillCrud) SearchSkills(ctx context.Context, req entity.SearchSkillsRequest) (*entity.SearchSkillsResponse, error) {
 	m.origins = append(m.origins, entity.GetOrigin(ctx))
 	m.list = req
-	return &entity.SearchSkillsResponse{Skills: []entity.Skill{{Name: "tdd", Description: "Test first.", SharedFromWorkspaceID: 301}}, Total: 1}, m.listErr
+	return &entity.SearchSkillsResponse{Skills: []entity.Skill{{Name: "tdd", Description: "Test first.", Enabled: true, WorkspaceIDs: []int64{testWorkspace, 301}, WorkspaceEnabled: true}}, Total: 1}, m.listErr
 }
 
 func (m *mockSkillCrud) GetSkillFile(ctx context.Context, req entity.GetSkillFileRequest) (*entity.GetSkillFileResponse, error) {
@@ -50,11 +50,14 @@ func TestSearchSkills_ScopesToTheAuthenticatedUserAndWorkspace(t *testing.T) {
 	body := textOf(t, toolResult(s.handleSearchSkills(authedContext(), nil, SearchSkillsParams{WorkspaceID: base62(testWorkspace), Q: "test", Limit: 5, Offset: 10})))
 
 	if ctrl.list.UserID != testUserID || ctrl.list.WorkspaceID != testWorkspace || ctrl.list.Query != "test" || ctrl.list.Limit != 5 || ctrl.list.Offset != 10 {
-		t.Errorf("request = %+v", ctrl.list)
+		t.Errorf("the controller was asked %+v, want user %s, workspace %d, query test, limit 5 and offset 10", ctrl.list, testUserID, testWorkspace)
 	}
-	for _, want := range []string{`"total":1`, `"name":"tdd"`, `"description":"Test first."`, `"sharedFromWorkspaceId":"` + base62(301) + `"`} {
+	// Both switches reach the supervisor, so it can tell a skill turned off
+	// for the account from one not on in this workspace.
+	for _, want := range []string{`"total":1`, `"name":"tdd"`, `"description":"Test first."`, `"enabled":true`,
+		`"workspaceIds":["` + base62(testWorkspace) + `","` + base62(301) + `"]`, `"workspaceEnabled":true`} {
 		if !strings.Contains(body, want) {
-			t.Errorf("body %s lacks %s", body, want)
+			t.Errorf("the body %s does not contain %s", body, want)
 		}
 	}
 }
@@ -87,7 +90,7 @@ func TestGetSkill(t *testing.T) {
 }
 
 func TestSkillTools_ReportFailures(t *testing.T) {
-	refusal := &crud.SkillError{Kind: crud.SkillReadOnly, Message: "read-only here"}
+	refusal := &crud.SkillError{Kind: crud.SkillInvalid, Message: "not a valid skill name"}
 	for _, tc := range []struct {
 		name string
 		ctrl *mockSkillCrud
@@ -102,7 +105,7 @@ func TestSkillTools_ReportFailures(t *testing.T) {
 		}, "not a skill URI"},
 		{"file", &mockSkillCrud{fileErr: refusal}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "skill://tdd"}))
-		}, "read-only here"},
+		}, "not a valid skill name"},
 		{"file list", &mockSkillCrud{getErr: errors.New("database unavailable")}, func(s *WorkspaceServer) callResult {
 			return toolResult(s.handleGetSkill(authedContext(), nil, GetSkillParams{WorkspaceID: base62(testWorkspace), URI: "skill://tdd"}))
 		}, "database unavailable"},

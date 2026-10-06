@@ -2,7 +2,7 @@
 
 A skill is a playbook an agent loads when a task matches it. It is a directory with a `SKILL.md` and, optionally, other files that the `SKILL.md` points to, such as references, prompts and scripts. It is the same format Claude Code and Antigravity use, so skills written for them work here.
 
-Every workspace has its own skills, and a workspace can share its skills with the other workspaces in the same account.
+Skills belong to your account, and each workspace has its own switch for each of them. A workspace's agents see a skill only when it is on in that workspace and on for the account. Open **Skills** in the sidebar to see all of them, or a workspace's **Settings → Skills** for that workspace's switches.
 
 ## A minimal skill
 
@@ -27,18 +27,18 @@ description: Use when reviewing a pull request, before leaving any comments.
 | | |
 |---|---|
 | File name | Exactly `SKILL.md` |
-| `name` | Lowercase letters and digits joined by single hyphens, at most 64 characters. Unique among the skills a workspace can use, including skills shared into it |
+| `name` | Lowercase letters and digits joined by single hyphens, at most 64 characters. Unique in the account |
 | `description` | Required, at most 1024 characters, no `<` or `>` |
 | `SKILL.md` size | At most 96 KiB |
 | Other files | At most 64 KiB each, UTF-8 text only |
 | Paths | Relative to the skill. No `..`, no absolute paths, no hidden files, at most 255 characters |
-| Files per skill | At most 64, including `SKILL.md` |
+| Files per skill | At most 256, including `SKILL.md` |
 
 Anything over a limit is refused, never truncated. The error says what to change.
 
 ## Importing from GitHub
 
-In a workspace's **Settings → Skills**, paste a public GitHub link and choose **Import**. Accepted forms:
+On the **Skills** page, or in a workspace's **Settings → Skills**, paste a public GitHub link, tick the workspaces to turn the skills on in, and choose **Import**. From a workspace, that workspace is ticked already. Accepted forms:
 
 ```
 https://github.com/obra/superpowers
@@ -61,17 +61,23 @@ Everything else is left out, including one of those meta files unless something 
 - a `SKILL.md` over 96 KiB, which skips the whole skill
 - a binary, symlink or hidden file
 - a file nothing references
-- a name the workspace already uses
+- a name the account already uses
 
 Every skill in obra/superpowers fits these limits, so importing it brings in all of them.
 
 **Large repositories.** A repository whose download is over 20 MB compressed or 64 MB unpacked, such as garrytan/gstack, is not imported whole. The tab lists its skills instead, with each `SKILL.md`'s size and, greyed out, any that are over a limit. Tick the ones you want and choose **Import selected**: only their files are downloaded.
 
-**Overwrite existing** replaces skills this workspace already owns under the same name. A skill shared into the workspace is never replaced.
+**Overwrite existing** replaces the account's skill of the same name. It stays on in the workspaces it was on in, and is turned on in the ones ticked now.
 
-## Sharing
+## Turning a skill on and off
 
-On one of your own skills, pick another workspace in the **Share** picker. The skill is not copied. The other workspace reads the same skill, so it sees every later change, but it cannot edit or delete it; only the workspace that owns a skill can. Sharing is limited to workspaces in the same account.
+A skill has two kinds of switch:
+- **One per workspace.** On, that workspace's agents see the skill. A skill page lists every workspace with its switch, and a workspace's **Settings → Skills** has the switch for that workspace on each skill. A fork uses its parent's switches.
+- **One for the account.** Off, no agent sees the skill in any workspace, but it is kept, and so are its workspace switches, for when it is turned back on.
+
+It is one skill wherever it is on, not a copy, so an edit made from any workspace reaches all of them. **Delete** on a skill's page deletes it from the account, and every workspace loses it.
+
+Skills from before they belonged to the account were moved to it when the server first started with this version. Each one is on in the workspace that had it and in every workspace it was shared into. When two workspaces had a skill with the same name, the two were merged if their files were the same; otherwise the later one was renamed `<name>-<workspace>`, with its `SKILL.md` changed to match.
 
 ## Reading a skill
 
@@ -91,13 +97,13 @@ On the workspace server, which every agent in the workspace connects to:
 
 | Tool | What it does |
 |---|---|
-| `searchSkills(q?, limit?, offset?)` | The skills this workspace can use, each with its description and `skill://` URI. `q` (at least 3 characters) keeps only skills whose name or description contains it, ignoring case; `limit` (at most 100) and `offset` page through the matches, and the answer says how many there are in all. Contents are not included |
+| `searchSkills(q?, limit?, offset?)` | The skills on in this workspace (and on for the account), each with its description and `skill://` URI. `q` (at least 3 characters) keeps only skills whose name or description contains it, ignoring case; `limit` (at most 100) and `offset` page through the matches, and the answer says how many there are in all. Contents are not included |
 | `loadSkill(uri)` | One file, as stored. A `SKILL.md` comes with the URIs of the skill's other files |
-| `saveSkill(uri, content)` | Writes one file of one of this workspace's own skills. Writing `SKILL.md` creates or updates the skill |
-| `deleteSkill(uri)` | Deletes a skill (`skill://<name>`) or one of its files. A `SKILL.md` cannot be deleted on its own |
+| `saveSkill(uri, content)` | Writes one file of a skill on in this workspace. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is on in this workspace |
+| `deleteSkill(uri)` | `skill://<name>` turns the skill off in this workspace, and deletes it from the account when no other workspace has it on; `skill://<name>/<path>` deletes one of its files. A `SKILL.md` cannot be deleted on its own |
 
 Agents are told to call `searchSkills` at the start of a task and to load the `SKILL.md` of any skill that matches it.
 
 The supervisor's account-wide server has read-only `searchSkills(workspaceId, q?, limit?, offset?)` and `getSkill(workspaceId, uri)`.
 
-The REST API searches the same way: `GET /api/v1/workspaces/{id}/skills?q=&limit=&offset=` returns `{skills, total}`.
+The REST API searches the same way: `GET /api/v1/skills?q=&limit=&offset=` returns the account's `{skills, total}`, each with the `workspaceIds` it is on in, and `GET /api/v1/workspaces/{id}/skills` the same skills with `workspaceEnabled` for that workspace.

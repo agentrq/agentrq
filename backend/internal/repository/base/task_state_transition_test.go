@@ -196,7 +196,7 @@ func TestTaskStateTransitions_GoneWithTheirTaskAndWorkspace(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := deleteTaskDB(t)
-			if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.SkillShare{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
+			if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
 				t.Fatalf("migrate: %v", err)
 			}
 			if err := db.Create(&model.Workspace{ID: dtWorkspaceID, UserID: dtUserID, Name: "w"}).Error; err != nil {

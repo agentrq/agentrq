@@ -14,12 +14,15 @@ import (
 	"github.com/mustafaturan/monoflake"
 )
 
-// skillParams reads the workspace and the percent-decoded skill name from the
-// path; a name is required only when the route has one.
+// skillParams reads the workspace, when the route is under one, and the
+// percent-decoded skill name from the path; a name is required only when the
+// route has one. A route with no workspace is the account's, workspace 0.
 func skillParams(c *fiber.Ctx, wantName bool) (int64, string, bool) {
-	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
-	if workspaceID == 0 {
-		return 0, "", false
+	var workspaceID int64
+	if raw := c.Params("id"); raw != "" {
+		if workspaceID = monoflake.IDFromBase62(raw).Int64(); workspaceID == 0 {
+			return 0, "", false
+		}
 	}
 	if !wantName {
 		return workspaceID, "", true
@@ -90,38 +93,20 @@ func FromHTTPRequestToSetSkillEnabledRequestEntity(c *fiber.Ctx) *entity.SetSkil
 	return &entity.SetSkillEnabledRequest{WorkspaceID: workspaceID, Name: name, Enabled: *rq.Enabled}
 }
 
+// FromHTTPRequestToImportSkillsRequestEntity reads the import, and the
+// workspaces to turn the imported skills on in.
 func FromHTTPRequestToImportSkillsRequestEntity(c *fiber.Ctx) *entity.ImportSkillsRequest {
-	workspaceID, _, ok := skillParams(c, false)
-	if !ok {
-		return nil
-	}
 	var rq view.ImportSkillsRequest
 	if err := c.BodyParser(&rq); err != nil || rq.URL == "" {
 		return nil
 	}
-	return &entity.ImportSkillsRequest{WorkspaceID: workspaceID, URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills}
-}
-
-func FromHTTPRequestToListSkillSharesRequestEntity(c *fiber.Ctx) *entity.ListSkillSharesRequest {
-	workspaceID, name, ok := skillParams(c, true)
-	if !ok {
-		return nil
+	workspaceIDs := make([]int64, len(rq.WorkspaceIDs))
+	for i, raw := range rq.WorkspaceIDs {
+		if workspaceIDs[i] = monoflake.IDFromBase62(raw).Int64(); workspaceIDs[i] == 0 {
+			return nil
+		}
 	}
-	return &entity.ListSkillSharesRequest{WorkspaceID: workspaceID, Name: name}
-}
-
-// FromHTTPRequestToShareSkillRequestEntity serves both sharing and
-// unsharing, which name the same three things.
-func FromHTTPRequestToShareSkillRequestEntity(c *fiber.Ctx) *entity.ShareSkillRequest {
-	workspaceID, name, ok := skillParams(c, true)
-	if !ok {
-		return nil
-	}
-	target := monoflake.IDFromBase62(c.Params("targetWorkspaceId")).Int64()
-	if target == 0 {
-		return nil
-	}
-	return &entity.ShareSkillRequest{WorkspaceID: workspaceID, Name: name, TargetWorkspaceID: target}
+	return &entity.ImportSkillsRequest{URL: rq.URL, Overwrite: rq.Overwrite, Skills: rq.Skills, WorkspaceIDs: workspaceIDs}
 }
 
 func FromSearchSkillsResponseEntityToHTTPResponse(rs *entity.SearchSkillsResponse) []byte {
@@ -172,35 +157,27 @@ func FromImportSkillsResponseEntityToHTTPResponse(rs *entity.ImportSkillsRespons
 	return payload
 }
 
-func FromListSkillSharesResponseEntityToHTTPResponse(rs *entity.ListSkillSharesResponse) []byte {
-	shares := make([]view.SkillShare, len(rs.Shares))
-	for i, s := range rs.Shares {
-		shares[i] = view.SkillShare{TargetWorkspaceID: monoflake.ID(s.TargetWorkspaceID).String(), CreatedAt: s.CreatedAt}
-	}
-	payload, _ := json.Marshal(view.ListSkillSharesResponse{Shares: shares})
-	return payload
-}
-
 func fromEntitySkillToView(s entity.Skill) view.Skill {
 	v := view.Skill{
-		ID:              monoflake.ID(s.ID).String(),
-		CreatedAt:       s.CreatedAt,
-		UpdatedAt:       s.UpdatedAt,
-		WorkspaceID:     monoflake.ID(s.WorkspaceID).String(),
-		Name:            s.Name,
-		Description:     s.Description,
-		SourceType:      s.SourceType,
-		SourceRepo:      s.SourceRepo,
-		SourceRef:       s.SourceRef,
-		SourceCommit:    s.SourceCommit,
-		SourcePath:      s.SourcePath,
-		LocallyModified: s.LocallyModified,
-		FileCount:       s.FileCount,
-		TotalBytes:      s.TotalBytes,
-		Enabled:         s.Enabled,
+		ID:               monoflake.ID(s.ID).String(),
+		CreatedAt:        s.CreatedAt,
+		UpdatedAt:        s.UpdatedAt,
+		Name:             s.Name,
+		Description:      s.Description,
+		SourceType:       s.SourceType,
+		SourceRepo:       s.SourceRepo,
+		SourceRef:        s.SourceRef,
+		SourceCommit:     s.SourceCommit,
+		SourcePath:       s.SourcePath,
+		LocallyModified:  s.LocallyModified,
+		FileCount:        s.FileCount,
+		TotalBytes:       s.TotalBytes,
+		Enabled:          s.Enabled,
+		WorkspaceIDs:     make([]string, len(s.WorkspaceIDs)),
+		WorkspaceEnabled: s.WorkspaceEnabled,
 	}
-	if s.SharedFromWorkspaceID != 0 {
-		v.SharedFromWorkspaceID = monoflake.ID(s.SharedFromWorkspaceID).String()
+	for i, id := range s.WorkspaceIDs {
+		v.WorkspaceIDs[i] = monoflake.ID(id).String()
 	}
 	for _, f := range s.Files {
 		v.Files = append(v.Files, fromEntitySkillFileToView(f))

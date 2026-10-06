@@ -746,13 +746,16 @@ export async function getWorkspaceMemory(workspaceId, name) {
   return res.json();
 }
 
+// Skills belong to the account. Read through a workspace, each also says
+// whether it is on there (`workspaceEnabled`).
 // A skill's name is one URL segment and a file's path several, each encoded on
 // its own so its slashes stay separators.
+const accountSkillPath = (name) => `${API_BASE_URL}/skills/${encodeURIComponent(name)}`;
 const skillPath = (workspaceId, name) => `${API_BASE_URL}/workspaces/${workspaceId}/skills/${encodeURIComponent(name)}`;
 const encodePath = (path) => String(path).split('/').map(encodeURIComponent).join('/');
 
 // A refusal from the skills API says what was wrong — a bad link, a name
-// taken, a read-only skill — and is worth showing as it is.
+// taken — and is worth showing as it is.
 // The status travels with it, so a missing skill can be told from a failure.
 async function skillError(res, fallback) {
   const body = await res.json().catch(() => ({}));
@@ -761,13 +764,71 @@ async function skillError(res, fallback) {
 
 // q (at least 3 characters) matches a skill's name or description; with no
 // limit every match comes back. The answer carries `total` either way.
-export async function searchWorkspaceSkills(workspaceId, { q, limit, offset } = {}) {
+function skillQuery({ q, limit, offset } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (limit) params.set('limit', limit);
   if (offset) params.set('offset', offset);
   const query = params.toString();
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills${query ? `?${query}` : ''}`);
+  return query ? `?${query}` : '';
+}
+
+export async function searchSkills(options) {
+  const res = await apiFetch(`${API_BASE_URL}/skills${skillQuery(options)}`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skills');
+  return res.json();
+}
+
+export async function getSkill(name) {
+  const res = await apiFetch(accountSkillPath(name));
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skill');
+  return res.json();
+}
+
+export async function getSkillFile(name, path) {
+  const res = await apiFetch(`${accountSkillPath(name)}/files/${encodePath(path)}`);
+  if (!res.ok) throw await skillError(res, 'Failed to fetch skill file');
+  return res.json();
+}
+
+// `skills` names the skills to import by their directory, as the `candidates`
+// of a repository too large to import whole give them; `workspaceIds` are the
+// workspaces to turn them on in.
+export async function importSkills(url, overwrite = false, skills = [], workspaceIds = []) {
+  const body = { url, overwrite };
+  if (skills?.length) body.skills = skills;
+  if (workspaceIds?.length) body.workspaceIds = workspaceIds;
+  const res = await apiFetch(`${API_BASE_URL}/skills/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await skillError(res, 'Failed to import skills');
+  return res.json();
+}
+
+// Deletes it from the account, so every workspace loses it.
+export async function deleteSkill(name) {
+  const res = await apiFetch(accountSkillPath(name), { method: 'DELETE' });
+  if (!res.ok) throw await skillError(res, 'Failed to delete skill');
+  return true;
+}
+
+// The account-wide switch: off, no workspace's agents see the skill, whichever
+// workspaces it is on in.
+export async function setSkillEnabled(name, enabled) {
+  const res = await apiFetch(accountSkillPath(name), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: !!enabled }),
+  });
+  if (!res.ok) throw await skillError(res, enabled ? 'Failed to turn skill on' : 'Failed to turn skill off');
+  return res.json();
+}
+
+// Every skill of the account, each with whether it is on in this workspace.
+export async function searchWorkspaceSkills(workspaceId, options) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills${skillQuery(options)}`);
   if (!res.ok) throw await skillError(res, 'Failed to fetch workspace skills');
   return res.json();
 }
@@ -784,25 +845,8 @@ export async function getWorkspaceSkillFile(workspaceId, name, path) {
   return res.json();
 }
 
-// `skills` names the skills to import by their directory, as the `candidates`
-// of a repository too large to import whole give them.
-export async function importWorkspaceSkills(workspaceId, url, overwrite = false, skills = []) {
-  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/skills/import`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(skills?.length ? { url, overwrite, skills } : { url, overwrite }),
-  });
-  if (!res.ok) throw await skillError(res, 'Failed to import skills');
-  return res.json();
-}
-
-export async function deleteWorkspaceSkill(workspaceId, name) {
-  const res = await apiFetch(skillPath(workspaceId, name), { method: 'DELETE' });
-  if (!res.ok) throw await skillError(res, 'Failed to delete skill');
-  return true;
-}
-
-// A skill turned off stays in the workspace, but its agents no longer see it.
+// Turns a skill on or off in one workspace; its agents see it only while this
+// and the account-wide switch are both on. A fork's switch is its parent's.
 export async function setWorkspaceSkillEnabled(workspaceId, name, enabled) {
   const res = await apiFetch(skillPath(workspaceId, name), {
     method: 'PATCH',
@@ -811,24 +855,6 @@ export async function setWorkspaceSkillEnabled(workspaceId, name, enabled) {
   });
   if (!res.ok) throw await skillError(res, enabled ? 'Failed to turn skill on' : 'Failed to turn skill off');
   return res.json();
-}
-
-export async function fetchWorkspaceSkillShares(workspaceId, name) {
-  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares`);
-  if (!res.ok) throw await skillError(res, 'Failed to fetch skill shares');
-  return res.json();
-}
-
-export async function shareWorkspaceSkill(workspaceId, name, targetWorkspaceId) {
-  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares/${targetWorkspaceId}`, { method: 'PUT' });
-  if (!res.ok) throw await skillError(res, 'Failed to share skill');
-  return true;
-}
-
-export async function unshareWorkspaceSkill(workspaceId, name, targetWorkspaceId) {
-  const res = await apiFetch(`${skillPath(workspaceId, name)}/shares/${targetWorkspaceId}`, { method: 'DELETE' });
-  if (!res.ok) throw await skillError(res, 'Failed to stop sharing skill');
-  return true;
 }
 
 export async function fetchGlobalTaskStats() {

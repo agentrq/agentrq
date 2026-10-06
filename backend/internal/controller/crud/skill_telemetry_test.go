@@ -96,13 +96,13 @@ func TestSkillTelemetry_Import(t *testing.T) {
 	e.importer.res = githubResult(importedSkill("debugging", "Debug."), importedSkill("tdd", "Theirs."))
 
 	// One per skill imported: tdd is skipped, and so is not counted.
-	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u"})
+	rs, err := e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u"})
 	if err != nil || len(rs.Imported) != 1 {
 		t.Fatalf("import: %+v, %v", rs, err)
 	}
-	wantSkillEvents(t, events, entity.CRUDEvent{Action: entity.ActionSkillImport, WorkspaceID: skWS, ResourceID: rs.Imported[0].ID})
+	wantSkillEvents(t, events, entity.CRUDEvent{Action: entity.ActionSkillImport, ResourceID: rs.Imported[0].ID})
 
-	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{WorkspaceID: skWS, UserID: skUserStr, URL: "u", Overwrite: true})
+	rs, err = e.c.ImportSkills(e.ctx, entity.ImportSkillsRequest{UserID: skUserStr, URL: "u", Overwrite: true})
 	if err != nil || len(rs.Imported) != 2 {
 		t.Fatalf("overwrite: %+v, %v", rs, err)
 	}

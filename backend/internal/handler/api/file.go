@@ -29,7 +29,7 @@ const _routePathPublicFile = PublicFilesPrefix + "/*"
 // the like never name a file. It captures the kind and the key.
 var publicFilePath = regexp.MustCompile(`^` + PublicFilesPrefix + `/(?:` +
 	`(artifacts)/(w-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
-	`|(skills)/(w-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
+	`|(skills)/(u-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
 	`)$`)
 
 // registerPublicFileRoutes serves attachments and skill files by their

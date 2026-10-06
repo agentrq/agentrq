@@ -23,7 +23,7 @@ type PublicFileController interface {
 // segment a base62 monoflake id of fixed length.
 var publicFileKeys = map[string]*regexp.Regexp{
 	entity.PublicFileArtifacts: regexp.MustCompile(`^w-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
-	entity.PublicFileSkills:    regexp.MustCompile(`^w-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
+	entity.PublicFileSkills:    regexp.MustCompile(`^u-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
 }
 
 // GetPublicFile reads an attachment or a skill file by the key in its public

@@ -857,28 +857,29 @@ type (
 		Memory Memory
 	}
 
-	// Skill is one of the skills a workspace can use: its own, or one shared
-	// into it, in which case SharedFromWorkspaceID names the owner and the
-	// skill is read-only here. Files is only filled when one skill was asked
-	// for, and then without content.
+	// Skill is one of an account's skills. Enabled is the account-wide
+	// switch; WorkspaceIDs are the workspaces it is on in, and
+	// WorkspaceEnabled says whether it is on in the workspace it was asked
+	// for from, if any. An agent sees it only when both are on. Files is
+	// only filled when one skill was asked for, and then without content.
 	Skill struct {
-		ID                    int64
-		CreatedAt             time.Time
-		UpdatedAt             time.Time
-		WorkspaceID           int64
-		Name                  string
-		Description           string
-		SourceType            string
-		SourceRepo            string
-		SourceRef             string
-		SourceCommit          string
-		SourcePath            string
-		LocallyModified       bool
-		FileCount             int
-		TotalBytes            int
-		Enabled               bool
-		SharedFromWorkspaceID int64
-		Files                 []SkillFile
+		ID               int64
+		CreatedAt        time.Time
+		UpdatedAt        time.Time
+		Name             string
+		Description      string
+		SourceType       string
+		SourceRepo       string
+		SourceRef        string
+		SourceCommit     string
+		SourcePath       string
+		LocallyModified  bool
+		FileCount        int
+		TotalBytes       int
+		Enabled          bool
+		WorkspaceIDs     []int64
+		WorkspaceEnabled bool
+		Files            []SkillFile
 	}
 
 	SkillFile struct {
@@ -890,20 +891,17 @@ type (
 		URL string
 	}
 
-	SkillShare struct {
-		TargetWorkspaceID int64
-		CreatedAt         time.Time
-	}
-
 	SkillImportSkip struct {
 		Name   string
 		Path   string
 		Reason string
 	}
 
-	// SearchSkillsRequest finds skills by name or description. An empty Query
-	// matches every skill, and a Limit of 0 returns every match. EnabledOnly
-	// leaves out the skills turned off, which agents never see.
+	// SearchSkillsRequest finds an account's skills by name or description,
+	// as seen from WorkspaceID, or from the account when it is 0. An empty
+	// Query matches every skill, and a Limit of 0 returns every match.
+	// EnabledOnly keeps only what that workspace's agent sees: the skills on
+	// for the account and on in the workspace.
 	SearchSkillsRequest struct {
 		WorkspaceID int64
 		UserID      string
@@ -928,7 +926,8 @@ type (
 		Skill Skill
 	}
 
-	// SetSkillEnabledRequest turns a skill on or off for agents.
+	// SetSkillEnabledRequest turns a skill on or off in WorkspaceID, or for
+	// the whole account when it is 0.
 	SetSkillEnabledRequest struct {
 		WorkspaceID int64
 		UserID      string
@@ -983,13 +982,14 @@ type (
 	}
 
 	// ImportSkillsRequest imports every skill the URL names, or only those
-	// whose directories Skills lists.
+	// whose directories Skills lists, into the account, and turns each on in
+	// the workspaces WorkspaceIDs lists.
 	ImportSkillsRequest struct {
-		WorkspaceID int64
-		UserID      string
-		URL         string
-		Overwrite   bool
-		Skills      []string
+		UserID       string
+		URL          string
+		Overwrite    bool
+		Skills       []string
+		WorkspaceIDs []int64
 	}
 
 	// SkillImportCandidate is a skill a repository too large to import whole
@@ -1008,23 +1008,6 @@ type (
 		SourceRepo   string
 		SourceRef    string
 		SourceCommit string
-	}
-
-	ListSkillSharesRequest struct {
-		WorkspaceID int64
-		UserID      string
-		Name        string
-	}
-
-	ListSkillSharesResponse struct {
-		Shares []SkillShare
-	}
-
-	ShareSkillRequest struct {
-		WorkspaceID       int64
-		UserID            string
-		Name              string
-		TargetWorkspaceID int64
 	}
 
 	Event struct {

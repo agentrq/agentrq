@@ -179,3 +179,27 @@ func TestParseURI(t *testing.T) {
 		}
 	}
 }
+
+func TestWithName(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{"replaces the name line", "---\nname: tdd\ndescription: d\n---\n# tdd\n", "---\nname: tdd-beta\ndescription: d\n---\n# tdd\n"},
+		{"adds one when there is none", "---\ndescription: d\n---\nbody", "---\nname: tdd-beta\ndescription: d\n---\nbody"},
+		{"keeps CRLF line ends", "---\r\nname: tdd\r\ndescription: d\r\n---\r\n", "---\r\nname: tdd-beta\r\ndescription: d\r\n---\r\n"},
+		{"leaves an indented name alone", "---\nmeta:\n  name: x\n---\n", "---\nname: tdd-beta\nmeta:\n  name: x\n---\n"},
+		{"drops a byte order mark", "\ufeff---\nname: tdd\n---\n", "---\nname: tdd-beta\n---\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := WithName([]byte(tc.in), "tdd-beta")
+			if err != nil || string(got) != tc.want {
+				t.Errorf("WithName returned %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	for _, in := range []string{"no frontmatter", "---\nname: tdd\n"} {
+		if _, err := WithName([]byte(in), "x"); err == nil {
+			t.Errorf("WithName(%q) returned no error, want one", in)
+		}
+	}
+}

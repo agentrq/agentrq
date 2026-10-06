@@ -24,16 +24,13 @@ import (
 type SkillSummary struct {
 	Name        string
 	Description string
-	// SharedFrom names the workspace that owns a skill shared into this one,
-	// which makes it read-only here. Empty for the workspace's own skills.
-	SharedFrom string
 }
 
-// SkillStore is this workspace's skills. It is bound to one workspace and its
+// SkillStore is the account's skills on in this workspace. It is bound to one workspace and its
 // owner when the server is built, so no tool can name another workspace.
 //
 // A miss is reported as found or deleted being false, not as an error. A
-// refusal the caller should read — a rule broken, a read-only skill — is a
+// refusal the caller should read — a rule broken, a skill not on here — is a
 // *SkillRefusal, passed to the agent word for word.
 type SkillStore interface {
 	// SearchSkills finds skills by name or description; an empty q matches
@@ -48,7 +45,7 @@ type SkillStore interface {
 }
 
 // SkillRefusal is a refusal written for the agent, such as an invalid SKILL.md
-// or a write to a skill another workspace owns.
+// or a write to a skill that is not on in this workspace.
 type SkillRefusal struct{ Message string }
 
 func (r *SkillRefusal) Error() string { return r.Message }
@@ -126,9 +123,6 @@ func (ps *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.Call
 	fmt.Fprintf(&b, " Load the %s of any whose description matches your task with loadSkill.\n", skill.FileName)
 	for _, s := range skills {
 		fmt.Fprintf(&b, "\n- %s: %s\n  %s", s.Name, s.Description, skill.URI(s.Name, skill.FileName))
-		if s.SharedFrom != "" {
-			fmt.Fprintf(&b, " (shared from %s, read-only)", s.SharedFrom)
-		}
 	}
 	return textResult("%s", b.String()), nil, nil
 }

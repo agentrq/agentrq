@@ -104,7 +104,7 @@ func tddSkills() *fakeSkills {
 	return &fakeSkills{
 		skills: []SkillSummary{
 			{Name: "tdd", Description: "Use when writing code."},
-			{Name: "review", Description: "Use when reviewing.", SharedFrom: `workspace "Platform"`},
+			{Name: "review", Description: "Use when reviewing."},
 		},
 		files: map[string]map[string]string{
 			"tdd":  {"SKILL.md": "---\ndescription: d\n---\nSee references/guide.md.", "references/guide.md": "guide", "scripts/run.sh": "#!/bin/sh"},
@@ -122,7 +122,7 @@ func TestSearchSkills(t *testing.T) {
 	for _, want := range []string{
 		"2 skills",
 		"- tdd: Use when writing code.\n  skill://tdd/SKILL.md",
-		"- review: Use when reviewing.\n  skill://review/SKILL.md (shared from workspace \"Platform\", read-only)",
+		"- review: Use when reviewing.\n  skill://review/SKILL.md",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("list lacks %q:\n%s", want, text)
@@ -130,6 +130,11 @@ func TestSearchSkills(t *testing.T) {
 	}
 	if strings.Contains(text, "See references") {
 		t.Error("the list must not carry skill bodies")
+	}
+	// Every skill an agent is shown is one it may change: nothing is marked
+	// read-only since skills belong to the account.
+	if strings.Contains(text, "read-only") || strings.Contains(text, "shared from") {
+		t.Errorf("the list marks a skill read-only or shared, want neither:\n%s", text)
 	}
 	if strings.Join(*tools, ",") != "searchSkills" {
 		t.Errorf("telemetry: %v", *tools)
@@ -268,12 +273,12 @@ func TestSkillTools_Failures(t *testing.T) {
 		err  error
 		want map[string]string
 	}{
-		{&SkillRefusal{Message: `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`}, map[string]string{
-			"list":        `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
-			"load":        `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
-			"save":        `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
-			"delete":      `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
-			"delete file": `skill "tdd" is shared into this workspace from workspace "Platform" and is read-only here; change it there`,
+		{&SkillRefusal{Message: `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`}, map[string]string{
+			"list":        `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`,
+			"load":        `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`,
+			"save":        `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`,
+			"delete":      `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`,
+			"delete file": `skill "tdd" belongs to the account but is not on in this workspace, so this agent cannot use or change it; ask the human to turn it on in this workspace's Skills tab, or choose another name`,
 		}},
 		{errors.New("disk full"), map[string]string{
 			"list":        "failed to search skills: disk full",
