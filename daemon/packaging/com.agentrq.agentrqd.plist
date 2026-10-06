@@ -7,16 +7,16 @@
   runs as the logged-in user, which is what the daemon requires. A LaunchDaemon
   runs as root, which it refuses.
 
-    sed -i '' "s|/Users/you/|$HOME/|" com.agentrq.agentrqd.plist
     cp com.agentrq.agentrqd.plist ~/Library/LaunchAgents/
     launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist
 
   launchctl sets XPC_SERVICE_NAME, which is how the daemon knows to exit and be
   restarted rather than re-exec itself after an update.
 
-  launchd expands neither ~ nor $HOME, so the binary's path is absolute: the
-  sed above writes your home into it, and the install script, which saves a
-  copy of this file, writes the path it installed to.
+  launchd expands neither ~ nor $HOME in ProgramArguments, so the daemon is
+  started through sh, which does, and exec hands the job to agentrqd itself.
+  That keeps this file correct for every user as shipped. The install script
+  rewrites the path in its saved copy when told to install somewhere else.
 -->
 <plist version="1.0">
 <dict>
@@ -25,8 +25,9 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/you/.local/bin/agentrqd</string>
-    <string>serve</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>exec "$HOME/.local/bin/agentrqd" serve</string>
   </array>
 
   <key>RunAtLoad</key>

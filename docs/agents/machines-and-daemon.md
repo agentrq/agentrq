@@ -184,6 +184,11 @@ and an install guide that works around that has removed the only thing keeping
 an agent to what its user can already do. The installer refuses to run as root
 for the same reason, and `daemonInstall.test.js` still enforces it here.
 
+The LaunchAgent starts the daemon through `/bin/sh -c 'exec "$HOME/..."'`,
+because launchd expands neither `~` nor `$HOME`. A literal path in its place is
+right for one user and silently never starts for everyone else;
+`daemon/packaging/packaging_test.go` runs it the way launchd does.
+
 The detected platform picks which tab opens and nothing else: you are usually
 setting up a machine other than the one you are browsing from.
 

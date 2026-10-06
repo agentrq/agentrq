@@ -43,8 +43,12 @@ install -m 0755 agentrqd ~/.local/bin/
 # put ~/.local/bin on your PATH, for the shell you use; skip if it is already
 line='export PATH="$HOME/.local/bin:$PATH"'
 case "$(basename "$SHELL")" in
-  zsh)  echo "$line" >> ~/.zshrc ;;
-  bash) echo "$line" >> ~/.bash_profile ;;
+  zsh)  echo "$line" >> "${ZDOTDIR:-$HOME}/.zshrc" ;;
+  # a login bash reads only the first of these that exists, so add to that one
+  bash) for rc in ~/.bash_profile ~/.bash_login ~/.profile ~/.bash_profile; do
+          [ -f "$rc" ] && break
+        done
+        echo "$line" >> "$rc" ;;
   fish) fish -c 'fish_add_path ~/.local/bin' ;;
   *)    echo "$line" >> ~/.profile ;;
 esac
@@ -53,12 +57,15 @@ esac
 **Windows (PowerShell)**
 
 ```powershell
-Expand-Archive agentrqd_*_windows_*.zip -DestinationPath $env:LOCALAPPDATA\agentrqd
+$dir = "$env:LOCALAPPDATA\Programs"
+New-Item -ItemType Directory -Force $dir | Out-Null
+Expand-Archive agentrqd_*_windows_*.zip -DestinationPath .
+Move-Item -Force agentrqd.exe "$dir\agentrqd.exe"
 
-# Windows has no user directory that is already on PATH, so add this one.
-# Takes effect in new shells.
-[Environment]::SetEnvironmentVariable("Path",
-  "$env:Path;$env:LOCALAPPDATA\agentrqd", "User")
+# Windows has no user folder already on PATH, so add this one; skip if it is.
+# Read the User value: $env:Path is that and the system PATH combined.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User")
 ```
 
 **Do not install it as root or Administrator.** The daemon refuses to start
@@ -103,8 +110,6 @@ root.
 **macOS (LaunchAgent)** — the supported way:
 
 ```sh
-# launchd expands neither ~ nor $HOME, so write your own path into it
-sed -i '' "s|/Users/you/|$HOME/|" com.agentrq.agentrqd.plist
 cp com.agentrq.agentrqd.plist ~/Library/LaunchAgents/
 launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist
 ```

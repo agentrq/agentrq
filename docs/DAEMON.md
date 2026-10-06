@@ -137,8 +137,12 @@ install -m 0755 agentrqd ~/.local/bin/
 # put ~/.local/bin on your PATH, for the shell you use; skip if it is already
 line='export PATH="$HOME/.local/bin:$PATH"'
 case "$(basename "$SHELL")" in
-  zsh)  echo "$line" >> ~/.zshrc ;;
-  bash) echo "$line" >> ~/.bash_profile ;;
+  zsh)  echo "$line" >> "${ZDOTDIR:-$HOME}/.zshrc" ;;
+  # a login bash reads only the first of these that exists, so add to that one
+  bash) for rc in ~/.bash_profile ~/.bash_login ~/.profile ~/.bash_profile; do
+          [ -f "$rc" ] && break
+        done
+        echo "$line" >> "$rc" ;;
   fish) fish -c 'fish_add_path ~/.local/bin' ;;
   *)    echo "$line" >> ~/.profile ;;
 esac
@@ -147,8 +151,15 @@ esac
 **Windows (PowerShell)**
 
 ```powershell
+$dir = "$env:LOCALAPPDATA\Programs"
+New-Item -ItemType Directory -Force $dir | Out-Null
 Expand-Archive agentrqd_*_windows_*.zip -DestinationPath .
-Move-Item agentrqd.exe "$env:LOCALAPPDATA\Programs\agentrqd.exe"
+Move-Item -Force agentrqd.exe "$dir\agentrqd.exe"
+
+# Windows has no user folder already on PATH, so add this one; skip if it is.
+# Read the User value: $env:Path is that and the system PATH combined.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User")
 ```
 
 Nothing here needs `sudo`.
@@ -195,9 +206,8 @@ leaves them in the archive you unpacked:
   Add `sudo loginctl enable-linger "$USER"` so it survives logout.
 - **macOS** — copy `com.agentrq.agentrqd.plist` into `~/Library/LaunchAgents/`,
   then `launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist`.
-  The script's copy already names where it installed the binary; the archive's
-  says `/Users/you/.local/bin/agentrqd`, so put your own path there first —
-  launchd expands neither `~` nor `$HOME`.
+  It runs `~/.local/bin/agentrqd` as shipped; the script's copy names wherever
+  `--dir` put it instead.
 
 Both are **user**-level — a systemd user unit and a LaunchAgent, not a system
 service and not a LaunchDaemon — for the reason above. Under either, the daemon
