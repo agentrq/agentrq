@@ -140,7 +140,7 @@ case "$(basename "$SHELL")" in
   zsh)  echo "$line" >> ~/.zshrc ;;
   bash) echo "$line" >> ~/.bash_profile ;;
   fish) fish -c 'fish_add_path ~/.local/bin' ;;
-  *)    echo "add $HOME/.local/bin to PATH in your shell's startup file" ;;
+  *)    echo "$line" >> ~/.profile ;;
 esac
 ```
 
