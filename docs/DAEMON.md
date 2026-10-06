@@ -134,8 +134,14 @@ install -m 0755 agentrqd ~/.local/bin/
 tar xzf agentrqd_*_darwin_*.tar.gz
 mkdir -p ~/.local/bin
 install -m 0755 agentrqd ~/.local/bin/
-# zsh, the macOS default; not needed if it is on your PATH already
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+# put ~/.local/bin on your PATH, for the shell you use; skip if it is already
+line='export PATH="$HOME/.local/bin:$PATH"'
+case "$(basename "$SHELL")" in
+  zsh)  echo "$line" >> ~/.zshrc ;;
+  bash) echo "$line" >> ~/.bash_profile ;;
+  fish) fish -c 'fish_add_path ~/.local/bin' ;;
+  *)    echo "add $HOME/.local/bin to PATH in your shell's startup file" ;;
+esac
 ```
 
 **Windows (PowerShell)**
