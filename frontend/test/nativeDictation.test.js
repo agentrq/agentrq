@@ -122,6 +122,13 @@ describe('browserLanguageName', () => {
     expect(browserLanguageName({ userAgent: IPHONE, language: 'not a tag!' })).toBe('not a tag!')
   })
 
+  it("reads the browser's own navigator when given none", () => {
+    vi.stubGlobal('navigator', { userAgent: IPHONE, language: 'tr-TR' })
+    expect(browserLanguageName()).toBe('Turkish (Türkiye)')
+    vi.stubGlobal('navigator', undefined)
+    expect(browserLanguageName()).toBe('English')
+  })
+
   it("names Whisper's language on a computer", () => {
     expect(browserLanguageName({ userAgent: MAC, language: 'de-AT' })).toBe('German')
   })
