@@ -127,7 +127,7 @@
                         {{ name }} ({{ code }})
                       </option>
                     </select>
-                    <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">Select the spoken language for local speech-to-text transcribing.</p>
+                    <p class="text-[9px] text-gray-500 dark:text-zinc-500 font-bold uppercase tracking-wider ml-1 mt-1">The language you speak when using the mic.</p>
                   </div>
 
                   <!-- Kept on this device only, like the local copy: drawn the
@@ -980,6 +980,7 @@ import {
 } from '../composables/useExtensionSettingsTabs';
 import ExtensionNode from '../components/ExtensionNode.vue';
 import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
+import { browserLanguageName } from '../composables/useNativeDictation';
 
 const { toKebabCase, liveKebabCase } = useFormat();
 
@@ -1064,12 +1065,7 @@ watch(noMachine, (none) => {
 const token = ref('');
 const slackConfig = ref(null);
 
-const browserLanguageLabel = computed(() => {
-  if (typeof window === 'undefined') return 'Use Browser Language';
-  const browserLang = (navigator.language || '').split('-')[0].toLowerCase();
-  const name = WHISPER_LANGUAGES[browserLang];
-  return name ? `Use Browser Language (${name})` : 'Use Browser Language (English)';
-});
+const browserLanguageLabel = `Use Browser Language (${browserLanguageName()})`;
 const slackForm = ref({
   channelId: '',
   channelName: ''

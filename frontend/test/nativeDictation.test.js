@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, nextTick } from 'vue'
-import { dictationPlatform, isMobileDevice, dictationLanguage, useNativeDictation } from '../src/composables/useNativeDictation'
+import { dictationPlatform, isMobileDevice, dictationLanguage, browserLanguageName, useNativeDictation } from '../src/composables/useNativeDictation'
 
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 
@@ -103,6 +103,32 @@ describe('dictationLanguage', () => {
 
   it('falls back to US English with no browser language', () => {
     expect(dictationLanguage(null, undefined)).toBe('en-US')
+  })
+})
+
+describe('browserLanguageName', () => {
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
+
+  it('names the full tag on a phone, which dictates in it', () => {
+    expect(browserLanguageName({ userAgent: IPHONE, language: 'de-AT' })).toBe('German (Austria)')
+    expect(browserLanguageName({ userAgent: ANDROID, language: 'fil-PH' })).toBe('Filipino (Philippines)')
+  })
+
+  it('names US English on a phone with no browser language', () => {
+    expect(browserLanguageName({ userAgent: ANDROID })).toBe('English (United States)')
+  })
+
+  it('shows the tag itself on a phone when it cannot be named', () => {
+    expect(browserLanguageName({ userAgent: IPHONE, language: 'not a tag!' })).toBe('not a tag!')
+  })
+
+  it("names Whisper's language on a computer", () => {
+    expect(browserLanguageName({ userAgent: MAC, language: 'de-AT' })).toBe('German')
+  })
+
+  it("falls back to English on a computer when Whisper lacks the language", () => {
+    expect(browserLanguageName({ userAgent: MAC, language: 'fil-PH' })).toBe('English')
+    expect(browserLanguageName({ userAgent: MAC })).toBe('English')
   })
 })
 

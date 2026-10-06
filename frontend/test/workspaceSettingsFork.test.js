@@ -177,6 +177,7 @@ describe('a workspace\'s settings tabs', () => {
     tabButton('input').click()
     await settle()
     expect(text(el.querySelector('[data-test=voice-language]'))).toMatch(/^Voice Input Language/)
+    expect(text(el.querySelector('[data-test=voice-language]'))).toMatch(/Use Browser Language \(.+\).*The language you speak when using the mic\.$/)
     expect(text(el.querySelector('[data-test=send-delay]'))).toMatch(/^Message Send Delay/)
     expect([...el.querySelectorAll('button')].some((b) => text(b) === 'Update Workspace')).toBe(true)
     tabButton('local storage').click()

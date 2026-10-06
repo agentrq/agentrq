@@ -4,6 +4,7 @@
 
 import { ref, nextTick } from 'vue';
 import { insertAtCursor } from '../utils/insertAtCursor';
+import { WHISPER_LANGUAGES } from '../utils/whisperLanguages';
 
 /**
  * Which phone or tablet this is, of those whose own dictation is used:
@@ -40,6 +41,24 @@ export function dictationLanguage(saved, browserLang) {
   const browser = browserLang || 'en-US';
   if (!saved || saved === 'auto') return browser;
   return browser.split('-')[0].toLowerCase() === saved ? browser : saved;
+}
+
+/**
+ * The name of the language "Use Browser Language" stands for, as the mic
+ * will hear it. A phone dictates in the browser's own tag, region and all, so
+ * it is named in full; Whisper knows only its own list, and falls back to
+ * English for anything else.
+ */
+export function browserLanguageName(nav = typeof navigator !== 'undefined' ? navigator : undefined) {
+  const tag = nav?.language || 'en-US';
+  if (dictationPlatform(nav)) {
+    try {
+      return new Intl.DisplayNames(['en'], { type: 'language', languageDisplay: 'standard' }).of(tag);
+    } catch {
+      return tag;
+    }
+  }
+  return WHISPER_LANGUAGES[tag.split('-')[0].toLowerCase()] || 'English';
 }
 
 const ERRORS = {
