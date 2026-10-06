@@ -167,7 +167,7 @@
                 $route.path.startsWith('/skills') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
               ]">
             <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M11.7 18.27H10.3L8.78 20.24L6.04 19.1L6.36 16.63L5.37 15.64L2.9 15.96L1.76 13.22L3.73 11.7L3.73 10.3L1.76 8.78L2.9 6.04L5.37 6.36L6.36 5.37L6.04 2.9L8.78 1.76L10.3 3.73L11.7 3.73L13.22 1.76L15.96 2.9L15.64 5.37L16.63 6.36L19.1 6.04L20.24 8.78L18.27 10.3L18.27 11.7M8.5 9.5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1zM11 8.5V7M11 15v-1.5M8.5 11H7M15 11h-1.5M14 18a4 4 0 1 0 8 0a4 4 0 1 0-8 0M16.2 18.1l1.2 1.2 2.4-2.6" />
             </svg>
             <span v-if="!isCollapsed || isMobileMenuOpen">Skills</span>
           </router-link>
