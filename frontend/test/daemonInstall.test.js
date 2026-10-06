@@ -12,6 +12,7 @@ import {
   PLATFORMS,
   RELEASES_URL,
   DAEMON_DOCS_URL,
+  INSTALL_HINT,
   INSTALLER_URL,
   INSTALLER_URL_WINDOWS,
   usesInstaller,
@@ -136,11 +137,14 @@ describe('installGuide', () => {
     expect(titles).toEqual(['Install it', 'Enrol this machine', 'Run it'])
   })
 
-  // The one-liner hides what it runs, so the step that prints it links to the
-  // guide that shows how to read it first. True on every platform now.
-  it('links the install step to the guide', () => {
+  // The command is the install, so the step says to copy it rather than
+  // offering a download link beside it, which read as a second way.
+  it('tells you to copy the install command, with no download link', () => {
     for (const platform of PLATFORMS) {
-      expect(installGuide(platform, '').steps[0].link, platform).toBe(DAEMON_DOCS_URL)
+      const step = installGuide(platform, '').steps[0]
+      expect(step.hint, platform).toBe(INSTALL_HINT)
+      expect(step.hint, platform).toBe('Copy the following code into your terminal to install.')
+      expect(step.link, platform).toBeUndefined()
     }
   })
 

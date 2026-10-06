@@ -64,8 +64,8 @@ export function platformLabel(platform) {
  * and it lost to two things: the manual steps verified nothing at all, and an
  * install nobody completes protects nobody. The script is the shortest path
  * *and* the only one that checks what it downloaded. Somebody who wants to
- * read it first is a step away — `docs/DAEMON.md`, linked from this step,
- * shows the fetch-read-run form.
+ * read it first is a step away — `docs/DAEMON.md`, linked from the panel's
+ * warning, shows the fetch-read-run form.
  *
  * Windows has no `sh`, so it gets its own PowerShell script rather than the
  * same one — but it is a script the same way, and adds its own install
@@ -124,6 +124,12 @@ export function runSteps(platform) {
 }
 
 /**
+ * What the install step says above its command. Plain text, not a download
+ * link: the command is the install, and a link beside it read as a second way.
+ */
+export const INSTALL_HINT = 'Copy the following code into your terminal to install.'
+
+/**
  * The whole panel's content for one platform.
  *
  * Assembled here rather than in the template so the ordering — install, enrol,
@@ -136,7 +142,7 @@ export function installGuide(platform, enrolCommand) {
     platform,
     label: platformLabel(platform),
     steps: [
-      { title: 'Install it', lines: installSteps(platform), link: DAEMON_DOCS_URL },
+      { title: 'Install it', lines: installSteps(platform), hint: INSTALL_HINT },
       { title: 'Enrol this machine', lines: enrolCommand ? [enrolCommand] : [] },
       { title: 'Run it', lines: runSteps(platform) },
     ],

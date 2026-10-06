@@ -164,14 +164,7 @@ async function copy(text, what) {
             >
             <div class="min-w-0 flex-1">
               <p class="text-xs font-bold text-gray-800 dark:text-zinc-200">{{ step.title }}</p>
-              <a
-                v-if="step.link"
-                :href="step.link"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-xs text-gray-600 dark:text-zinc-400 underline break-all"
-                >Download agentrqd for {{ guide.label }}</a
-              >
+              <p v-if="step.hint" class="text-xs text-gray-600 dark:text-zinc-400">{{ step.hint }}</p>
               <div v-if="step.lines.length" class="mt-1 flex items-start gap-2">
                 <!-- A foreground for every background. Without the text
                      colours this inherits the document's, which is the browser
