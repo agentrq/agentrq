@@ -40,7 +40,7 @@ describe('index.html applies the saved theme before first paint', () => {
   })
 
   it('stays light for a saved light theme, even on a dark OS', () => {
-    expect(load('light', true)).toMatchObject({ dark: false, themeColor: '#f4f4f5', statusBar: 'default' })
+    expect(load('light', true)).toMatchObject({ dark: false, themeColor: '#ffffff', statusBar: 'default' })
   })
 
   it('stays light when there is no matchMedia or storage', () => {
@@ -51,7 +51,18 @@ describe('index.html applies the saved theme before first paint', () => {
   it('gives the body the app shell background in both themes', () => {
     // iOS tints the status bar from this, so a light-only class shows as a
     // silver strip above the dark app.
-    expect(load('dark').body).toContain('bg-zinc-100')
+    expect(load('dark').body).toContain('md:bg-zinc-100')
     expect(load('dark').body).toContain('dark:bg-zinc-950')
+  })
+
+  it('is white on a phone in light mode, like the page under the status bar', () => {
+    // The strip is set once at launch and the page below it is a white card
+    // with the menu closed, so the shell (and the open menu) must be white too.
+    expect(load('light').body).toMatch(/(^| )bg-white( |$)/)
+    const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8')
+    for (const el of ['id="app"', '<nav v-if="!isLoginPage"', '<main v-else']) {
+      const tag = app.slice(app.indexOf(el), app.indexOf('>', app.indexOf(el)))
+      expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-950')
+    }
   })
 })
