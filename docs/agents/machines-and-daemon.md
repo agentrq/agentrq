@@ -177,8 +177,9 @@ and fail-closed, with no flag to skip it** — so if that ever becomes optional,
 this decision should be revisited rather than inherited. `docs/DAEMON.md`
 carries the fetch-read-run form for anyone who wants to look first.
 
-The rule that did *not* change: **never `sudo` for running the daemon**, only
-for copying a file into `/usr/local/bin`. The daemon refuses to run as root,
+The rule that did *not* change: **never `sudo`**. The script installs to
+`~/.local/bin` on macOS too, and prints the PATH line for the user's shell
+rather than asking for a password. The daemon refuses to run as root,
 and an install guide that works around that has removed the only thing keeping
 an agent to what its user can already do. The installer refuses to run as root
 for the same reason, and `daemonInstall.test.js` still enforces it here.

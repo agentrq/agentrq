@@ -77,9 +77,8 @@ describe('installSteps', () => {
 
   // The daemon refuses to run as root or Administrator, so an install that
   // reached for sudo/elevation would be teaching somebody to work around the
-  // check that keeps an agent to what they can do themselves. The script asks
-  // for it only to copy a file into /usr/local/bin on macOS, and that is its
-  // business, not this panel's.
+  // check that keeps an agent to what they can do themselves. The script does
+  // not use it either: it installs to ~/.local/bin on macOS too.
   it('never tells anybody to install it as root', () => {
     for (const platform of PLATFORMS) {
       expect(installSteps(platform).join('\n'), platform).not.toContain('sudo')

@@ -54,8 +54,9 @@ export function platformLabel(platform) {
  *
  * One line everywhere, matching the desktop app's installer. It works out the
  * right build, checks it against the SHA-256 checksums published with the
- * release — mandatorily, with no flag to skip — and installs to `~/.local/bin`,
- * `/usr/local/bin` or `%LOCALAPPDATA%\Programs`. It installs only: it does not
+ * release — mandatorily, with no flag to skip — and installs to `~/.local/bin`
+ * or `%LOCALAPPDATA%\Programs`, printing the PATH line for the user's shell when
+ * that folder is not on it. It never asks for a password. It installs only: it does not
  * enrol, start anything, or run as root or Administrator.
  *
  * This panel used to refuse the pipe and print `tar` and `install` instead, on

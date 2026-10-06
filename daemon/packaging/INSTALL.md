@@ -33,11 +33,15 @@ then:
 ```sh
 # Linux
 tar xzf agentrqd_*_linux_*.tar.gz
+mkdir -p ~/.local/bin
 install -m 0755 agentrqd ~/.local/bin/
 
 # macOS
 tar xzf agentrqd_*_darwin_*.tar.gz
-sudo install -m 0755 agentrqd /usr/local/bin/
+mkdir -p ~/.local/bin
+install -m 0755 agentrqd ~/.local/bin/
+# zsh, the macOS default; not needed if it is on your PATH already
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
 **Windows (PowerShell)**
@@ -53,8 +57,7 @@ Expand-Archive agentrqd_*_windows_*.zip -DestinationPath $env:LOCALAPPDATA\agent
 
 **Do not install it as root or Administrator.** The daemon refuses to start
 that way, because an agent it runs would have those powers too. If an install
-guide tells you to use `sudo` for anything other than copying the binary into
-`/usr/local/bin`, it is working around that check.
+guide tells you to use `sudo` for any of this, it is working around that check.
 
 ## 2. Enrol
 
@@ -94,6 +97,8 @@ root.
 **macOS (LaunchAgent)** — the supported way:
 
 ```sh
+# launchd expands neither ~ nor $HOME, so write your own path into it
+sed -i '' "s|/Users/you/|$HOME/|" com.agentrq.agentrqd.plist
 cp com.agentrq.agentrqd.plist ~/Library/LaunchAgents/
 launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist
 ```

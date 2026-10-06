@@ -50,8 +50,9 @@ curl -fsSL https://agentrq.com/install-agentrqd.sh | sh
 
 It works out which archive this machine needs, **verifies it against the
 SHA-256 checksums published with the release**, and installs to
-`~/.local/bin` on Linux or `/usr/local/bin` on macOS. Running it again
-updates in place. It installs and nothing more: it does not enrol the
+`~/.local/bin`, a folder you own, so it never asks for a password. If that
+folder is not on your `PATH` yet, it prints the one line that adds it, for the
+shell you use. Running it again updates in place. It installs and nothing more: it does not enrol the
 machine, start anything, install a service, or run as root.
 
 The checksum is not optional and there is no flag to skip it — a download the
@@ -123,6 +124,7 @@ installing on, not the one you are reading this on.
 
 ```sh
 tar xzf agentrqd_*_linux_*.tar.gz
+mkdir -p ~/.local/bin
 install -m 0755 agentrqd ~/.local/bin/
 ```
 
@@ -130,7 +132,10 @@ install -m 0755 agentrqd ~/.local/bin/
 
 ```sh
 tar xzf agentrqd_*_darwin_*.tar.gz
-sudo install -m 0755 agentrqd /usr/local/bin/
+mkdir -p ~/.local/bin
+install -m 0755 agentrqd ~/.local/bin/
+# zsh, the macOS default; not needed if it is on your PATH already
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 ```
 
 **Windows (PowerShell)**
@@ -140,7 +145,7 @@ Expand-Archive agentrqd_*_windows_*.zip -DestinationPath .
 Move-Item agentrqd.exe "$env:LOCALAPPDATA\Programs\agentrqd.exe"
 ```
 
-That `sudo` on macOS copies a file into `/usr/local/bin` and nothing more.
+Nothing here needs `sudo`.
 **Do not run the daemon itself as root or Administrator** — it refuses, because
 an agent it starts would inherit those powers. If an install guide anywhere
 tells you to work around that refusal, it is removing the only thing keeping an
@@ -184,6 +189,9 @@ leaves them in the archive you unpacked:
   Add `sudo loginctl enable-linger "$USER"` so it survives logout.
 - **macOS** — copy `com.agentrq.agentrqd.plist` into `~/Library/LaunchAgents/`,
   then `launchctl load -w ~/Library/LaunchAgents/com.agentrq.agentrqd.plist`.
+  The script's copy already names where it installed the binary; the archive's
+  says `/Users/you/.local/bin/agentrqd`, so put your own path there first —
+  launchd expands neither `~` nor `$HOME`.
 
 Both are **user**-level — a systemd user unit and a LaunchAgent, not a system
 service and not a LaunchDaemon — for the reason above. Under either, the daemon
