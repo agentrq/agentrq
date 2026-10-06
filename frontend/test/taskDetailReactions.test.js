@@ -139,6 +139,16 @@ describe('a reply of one emoji', () => {
     expect([...el.querySelectorAll('span')].filter((s) => /^Agent · /.test(s.textContent))).toHaveLength(1)
   })
 
+  it("sits under the agent's text where it starts, and on the edge of the person's bubble", async () => {
+    messages.push(human('m3', '👍', 2), agent('m4', '✅', 3))
+    const { labelled } = await mount()
+    // The agent's message has no bubble and spans the chat, so a badge pushed
+    // to the right lands far from a short reply.
+    const row = (label) => labelled(label)[0].parentElement.parentElement
+    expect(row('You reacted 👍').classList).toContain('justify-start')
+    expect(row('Agent reacted ✅').classList).toContain('justify-end')
+  })
+
   it('counts the same emoji sent twice', async () => {
     messages.push(human('m3', '👍', 2), human('m4', '👍', 3))
     const { labelled, badges } = await mount()
