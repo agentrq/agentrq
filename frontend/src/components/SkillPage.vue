@@ -58,8 +58,8 @@
                 :aria-checked="skill.enabled !== false" :disabled="pendingEnabled" @click="toggleEnabled"
                 class="shrink-0 mt-1 w-11 h-6 rounded-full border transition-colors relative disabled:opacity-50"
                 :class="skill.enabled !== false ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
-          <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                :class="skill.enabled !== false ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+          <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
+                :class="skill.enabled !== false ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
         </button>
       </div>
 

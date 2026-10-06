@@ -162,8 +162,8 @@
               :disabled="pendingEnabled.has(s.name)" @click="toggleEnabled(s)"
               class="absolute top-3 right-0 sm:right-3 shrink-0 w-11 h-6 rounded-full border transition-colors disabled:opacity-50"
               :class="skillSwitchOn(s, workspaceId) ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white' : 'bg-gray-200 dark:bg-zinc-700 border-gray-300 dark:border-zinc-600'">
-        <span class="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-              :class="skillSwitchOn(s, workspaceId) ? 'left-[22px] bg-white dark:bg-zinc-900' : 'left-0.5 bg-white dark:bg-zinc-400'"></span>
+        <span class="absolute top-[3px] w-4 h-4 rounded-full transition-all"
+              :class="skillSwitchOn(s, workspaceId) ? 'left-[23px] bg-white dark:bg-zinc-900' : 'left-[3px] bg-white dark:bg-zinc-400'"></span>
       </button>
       </div>
     </div>
