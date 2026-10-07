@@ -16,19 +16,19 @@
       // Apply the saved theme before first paint. iOS colours the status bar
       // from the page background and reads theme-color at launch, so waiting
       // for the Vue app leaves a light strip above a dark page. On a phone the
-      // light shell is white, like the page under the bar with the menu closed.
+      // shell is the colour of the page under the bar with the menu closed.
       (function () {
         var theme = null
         try { theme = localStorage.getItem('theme') } catch (e) {}
         var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
         if (!dark) return
         document.documentElement.classList.add('dark')
-        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#09090b')
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#18181b')
         document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]').setAttribute('content', 'black')
       })()
     </script>
   </head>
-  <body class="bg-white md:bg-zinc-100 dark:bg-zinc-950 text-slate-900 font-sans antialiased">
+  <body class="bg-white md:bg-zinc-100 dark:bg-zinc-900 md:dark:bg-zinc-950 text-slate-900 font-sans antialiased">
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

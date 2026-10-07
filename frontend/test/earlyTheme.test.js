@@ -31,7 +31,7 @@ function load(theme, osDark = false) {
 
 describe('index.html applies the saved theme before first paint', () => {
   it('goes dark for a saved dark theme', () => {
-    expect(load('dark')).toMatchObject({ dark: true, themeColor: '#09090b', statusBar: 'black' })
+    expect(load('dark')).toMatchObject({ dark: true, themeColor: '#18181b', statusBar: 'black' })
   })
 
   it('follows a dark OS when the theme is system or unset', () => {
@@ -52,17 +52,19 @@ describe('index.html applies the saved theme before first paint', () => {
     // iOS tints the status bar from this, so a light-only class shows as a
     // silver strip above the dark app.
     expect(load('dark').body).toContain('md:bg-zinc-100')
-    expect(load('dark').body).toContain('dark:bg-zinc-950')
+    expect(load('dark').body).toContain('md:dark:bg-zinc-950')
   })
 
-  it('is white on a phone in light mode, like the page under the status bar', () => {
-    // The strip is set once at launch and the page below it is a white card
-    // with the menu closed, so the shell (and the open menu) must be white too.
+  it('is the page card colour on a phone, like the page under the status bar', () => {
+    // The strip is set once at launch and the page below it is the card (white,
+    // or zinc-900 in dark) with the menu closed, so the shell and the open menu
+    // must be that colour too.
     expect(load('light').body).toMatch(/(^| )bg-white( |$)/)
+    expect(load('dark').body).toMatch(/(^| )dark:bg-zinc-900( |$)/)
     const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8')
     for (const el of ['id="app"', '<nav v-if="!isLoginPage"', '<main v-else']) {
       const tag = app.slice(app.indexOf(el), app.indexOf('>', app.indexOf(el)))
-      expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-950')
+      expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-900 md:dark:bg-zinc-950')
     }
   })
 })
