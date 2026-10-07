@@ -522,7 +522,7 @@
              </div>
              <!-- Reactions: replies that were a single emoji, hung on the
                     message they answer — see useEmojiReactions. -->
-               <div v-if="reactionBadges[m.id]" class="flex justify-end mt-1 relative z-10">
+               <div v-if="reactionBadges[m.id]" class="flex justify-end relative z-10">
                  <div class="inline-flex items-center gap-1.5 px-1.5 h-5 rounded-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 shadow-sm">
                    <span v-for="r in reactionBadges[m.id]" :key="r.emoji" role="img" :aria-label="r.label"
                          @mouseenter="tooltipStore.show($event, r.label, 'top')"

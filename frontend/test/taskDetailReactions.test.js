@@ -143,9 +143,11 @@ describe('a reply of one emoji', () => {
     messages.push(human('m3', '👍', 2), agent('m4', '✅', 3))
     const { labelled } = await mount()
     // Bottom right is where people look for a reaction. The agent's message
-    // has no bubble to overlap, so its badge sits just under the text.
+    // has no bubble to overlap, so its badge sits right under the text, with
+    // no margin of its own.
     const row = (label) => labelled(label)[0].parentElement.parentElement
-    expect([...row('You reacted 👍').classList]).toEqual(expect.arrayContaining(['justify-end', 'mt-1']))
+    expect(row('You reacted 👍').classList).toContain('justify-end')
+    expect([...row('You reacted 👍').classList].filter((c) => /^-?mt-/.test(c))).toEqual([])
     expect([...row('Agent reacted ✅').classList]).toEqual(expect.arrayContaining(['justify-end', '-mt-2']))
   })
 
