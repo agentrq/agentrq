@@ -139,14 +139,14 @@ describe('a reply of one emoji', () => {
     expect([...el.querySelectorAll('span')].filter((s) => /^Agent · /.test(s.textContent))).toHaveLength(1)
   })
 
-  it("sits under the agent's text where it starts, and on the edge of the person's bubble", async () => {
+  it("sits at the bottom right of the agent's message, and on the edge of the person's bubble", async () => {
     messages.push(human('m3', '👍', 2), agent('m4', '✅', 3))
     const { labelled } = await mount()
-    // The agent's message has no bubble and spans the chat, so a badge pushed
-    // to the right lands far from a short reply.
+    // Bottom right is where people look for a reaction. The agent's message
+    // has no bubble to overlap, so its badge sits just under the text.
     const row = (label) => labelled(label)[0].parentElement.parentElement
-    expect(row('You reacted 👍').classList).toContain('justify-start')
-    expect(row('Agent reacted ✅').classList).toContain('justify-end')
+    expect([...row('You reacted 👍').classList]).toEqual(expect.arrayContaining(['justify-end', 'mt-1']))
+    expect([...row('Agent reacted ✅').classList]).toEqual(expect.arrayContaining(['justify-end', '-mt-2']))
   })
 
   it('counts the same emoji sent twice', async () => {
