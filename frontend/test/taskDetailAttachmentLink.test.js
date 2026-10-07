@@ -207,3 +207,26 @@ describe('the Copy link button', () => {
     expect(button(el)).toBeUndefined()
   })
 })
+
+describe('Escape', () => {
+  const preview = () => document.querySelector('.fixed.inset-0.z-\\[110\\]')
+  const escape = (target = document.body) => {
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  it('closes the attachment preview, wherever focus is', async () => {
+    const el = await mount()
+    await open(el, 'shot.png')
+    expect(preview()).not.toBeNull()
+    expect(escape().defaultPrevented).toBe(true)
+    await settle()
+    expect(preview()).toBeNull()
+  })
+
+  it('is left to the rest of the page when no preview is open', async () => {
+    await mount()
+    expect(escape().defaultPrevented).toBe(false)
+  })
+})

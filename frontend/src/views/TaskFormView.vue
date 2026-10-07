@@ -331,6 +331,7 @@ import { nameUntitledTask } from '../composables/useUntitledTaskTitles';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useClearContext, clearContextTooltip } from '../composables/useClearContext';
+import { useEscapeKey } from '../composables/useEscapeKey';
 import AgentModelPicker from '../components/AgentModelPicker.vue';
 
 const { getNextRunLabel, daysOptions } = useCron();
@@ -697,6 +698,8 @@ async function submitEditProtocol() {
     notifyError("Update Error: " + err.message);
   } finally { sending.value = false; }
 }
+
+useEscapeKey(() => goBack());
 
 function goBack(isScheduled = false) {
   if (isScheduled) {

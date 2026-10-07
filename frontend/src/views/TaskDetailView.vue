@@ -887,7 +887,7 @@
     </footer>
 
     <!-- Attachment Preview Modal -->
-    <div v-if="selectedAtt" class="fixed inset-0 z-[110] flex items-center justify-center" @keydown.esc="selectedAtt = null">
+    <div v-if="selectedAtt" class="fixed inset-0 z-[110] flex items-center justify-center">
       <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" @click="selectedAtt = null"></div>
       <button @click="selectedAtt = null" class="absolute top-6 right-6 text-white/50 hover:text-white z-20 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-all">
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -964,6 +964,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment } from '../composables/useAttachmentDownload';
+import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
 import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
@@ -1902,6 +1903,11 @@ const selectedAtt = ref(null);
 function previewAttachment(att) {
   selectedAtt.value = att;
 }
+
+useEscapeKey(() => {
+  if (!selectedAtt.value) return false;
+  selectedAtt.value = null;
+});
 
 function downloadSelected() {
   const att = selectedAtt.value;

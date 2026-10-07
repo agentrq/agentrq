@@ -27,6 +27,7 @@ under `CI`.
 
 | Spec | Checks |
 | --- | --- |
+| `escape.spec.js` | Escape closes the attachment preview, and the new task form even while typing in it. With the task finder open over the form, the first Escape closes only the finder. |
 | `analytics.spec.js` | A workspace's stats and task latency answer for every range and aggregate, and the cards show the server's numbers. The account's Performance tab loads. |
 | `forks.spec.js` | Fork a workspace from the sidebar menu. Merge is refused while a task is unfinished, both in the menu and by the server (409). Then the fork merges, and its task moves to the parent. |
 | `tasks.spec.js` | Dragging a card into Done completes the task. Deleting from the task list removes the row. A delete the server refuses (the task was deleted elsewhere) is reported. |

@@ -35,8 +35,8 @@ export async function createWorkspace(page, name) {
   return (await expectOk(res, `creating the workspace ${name}`)).workspace
 }
 
-export async function createTask(page, workspaceId, title, status = 'notstarted') {
-  const task = { title, body: `Created by the QA suite: ${title}`, createdBy: 'human', assignee: 'agent', status }
+export async function createTask(page, workspaceId, title, status = 'notstarted', extra = {}) {
+  const task = { title, body: `Created by the QA suite: ${title}`, createdBy: 'human', assignee: 'agent', status, ...extra }
   const res = await send(page, 'POST', `/workspaces/${workspaceId}/tasks`, { task })
   return (await expectOk(res, `creating the task ${title}`)).task
 }

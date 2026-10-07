@@ -47,6 +47,7 @@ export default defineConfig({
         'src/composables/useStreamToasts.js',
         'src/composables/useToasts.js',
         'src/composables/useDrawerFrame.js',
+        'src/composables/useEscapeKey.js',
         'src/composables/useTaskGroups.js',
         'src/composables/useKanbanOrder.js',
         'src/composables/useTaskStatusStyle.js',

@@ -923,8 +923,11 @@ onUnmounted(() => {
   window.removeEventListener('open-command-palette', openCommandPaletteHandler)
 })
 
+// Capture, and the default prevented, so a page closing something of its own on
+// Escape (see `useEscapeKey`) leaves it alone while an overlay is still open.
 const closeOverlaysOnEscape = (e) => {
-  if (e.key !== 'Escape') return
+  if (e.key !== 'Escape' || !overlay.value) return
+  e.preventDefault()
   closeOverlay()
 }
 
@@ -1046,7 +1049,7 @@ onMounted(() => {
     if (detail?.name) notifyError(`${detail.name} was disabled: ${detail.reason ?? 'it kept failing.'}`)
   })
   document.addEventListener('click', handleClickOutside)
-  window.addEventListener('keydown', closeOverlaysOnEscape)
+  window.addEventListener('keydown', closeOverlaysOnEscape, true)
   window.addEventListener('keydown', onExtensionKey, true)
 })
 
@@ -1133,7 +1136,7 @@ onUnmounted(() => {
   stopSidePanelToggle?.()
   stopSidePanelOpen?.()
   document.removeEventListener('click', handleClickOutside)
-  window.removeEventListener('keydown', closeOverlaysOnEscape)
+  window.removeEventListener('keydown', closeOverlaysOnEscape, true)
   window.removeEventListener('keydown', onExtensionKey, true)
   stopExtensionWatch?.()
   if (sweepTimer) clearInterval(sweepTimer)

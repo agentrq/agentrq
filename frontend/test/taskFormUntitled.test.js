@@ -125,3 +125,19 @@ describe('a new task without a title', () => {
     expect(form.submit().disabled).toBe(true)
   })
 })
+
+describe('Escape', () => {
+  it('closes the form, even while typing in it', async () => {
+    await mount()
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(push).toHaveBeenCalledWith('/workspaces/ws1')
+  })
+
+  it('leaves the form open when something else answered it first', async () => {
+    await mount()
+    const field = document.activeElement
+    field.addEventListener('keydown', (e) => e.preventDefault())
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(push).not.toHaveBeenCalled()
+  })
+})
