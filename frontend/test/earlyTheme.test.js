@@ -31,7 +31,7 @@ function load(theme, osDark = false) {
 
 describe('index.html applies the saved theme before first paint', () => {
   it('goes dark for a saved dark theme', () => {
-    expect(load('dark')).toMatchObject({ dark: true, themeColor: '#18181b', statusBar: 'black' })
+    expect(load('dark')).toMatchObject({ dark: true, themeColor: '#09090b', statusBar: 'black' })
   })
 
   it('follows a dark OS when the theme is system or unset', () => {
@@ -52,23 +52,26 @@ describe('index.html applies the saved theme before first paint', () => {
     // iOS tints the status bar from this, so a light-only class shows as a
     // silver strip above the dark app.
     expect(load('dark').body).toContain('md:bg-zinc-100')
-    expect(load('dark').body).toContain('md:dark:bg-zinc-950')
+    expect(load('dark').body).toContain('dark:bg-zinc-950')
   })
 
-  it('is the page card colour on a phone, like the page under the status bar', () => {
-    // The strip is set once at launch and the page below it is the card (white,
-    // or zinc-900 in dark) with the menu closed, so the shell must be that
-    // colour too, and in light mode so must the open menu.
+  it('is one colour on a phone, under the status bar, menu open or closed', () => {
+    // The strip is set once at launch, so the page under it with the menu
+    // closed and the open menu must be one colour: white in light mode, the
+    // shell's zinc-950 in dark mode, where the page card is zinc-900 only on
+    // wider screens.
     expect(load('light').body).toMatch(/(^| )bg-white( |$)/)
-    expect(load('dark').body).toMatch(/(^| )dark:bg-zinc-900( |$)/)
     const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8')
-    for (const el of ['id="app"', '<main v-else']) {
+    for (const el of ['id="app"', '<nav v-if="!isLoginPage"', '<main v-else']) {
       const tag = app.slice(app.indexOf(el), app.indexOf('>', app.indexOf(el)))
-      expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-900 md:dark:bg-zinc-950')
+      expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-950')
     }
-    // The open menu keeps the darker shell colour; the theme store moves the
-    // status bar to it while the menu is open.
-    const nav = app.slice(app.indexOf('<nav v-if="!isLoginPage"'), app.indexOf('>', app.indexOf('<nav v-if="!isLoginPage"')))
-    expect(nav).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-950')
+    const card = app.slice(app.lastIndexOf('<div', app.indexOf('scroll-smooth')), app.indexOf('>', app.indexOf('scroll-smooth')))
+    expect(card).toContain('bg-white dark:bg-zinc-950 md:dark:bg-zinc-900')
+    // Sticky page headers are drawn in the card's colour.
+    for (const view of ['WorkspaceFormView', 'TaskFormView']) {
+      const src = readFileSync(resolve(__dirname, `../src/views/${view}.vue`), 'utf-8')
+      expect(src, view).toContain('bg-white dark:bg-zinc-950 md:dark:bg-zinc-900 sticky')
+    }
   })
 })

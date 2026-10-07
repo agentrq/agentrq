@@ -5,9 +5,9 @@
 -->
 
 <template>
-  <div class="h-full bg-white dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
+  <div class="h-full bg-white dark:bg-zinc-950 md:dark:bg-zinc-900 flex flex-col w-full max-w-full overflow-x-hidden relative">
     <!-- Breadcrumb Header, the same shell as the new-task page -->
-    <header class="py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center justify-between gap-4 bg-white dark:bg-zinc-900 sticky top-0 z-30 px-4">
+    <header class="py-2 border-b border-gray-100 dark:border-zinc-800 shrink-0 flex items-center justify-between gap-4 bg-white dark:bg-zinc-950 md:dark:bg-zinc-900 sticky top-0 z-30 px-4">
       <div class="flex items-center gap-2 text-xs font-semibold min-w-0 flex-1">
         <router-link to="/" class="text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 transition-colors shrink-0">
           Workspaces
