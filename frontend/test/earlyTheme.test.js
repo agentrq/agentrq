@@ -57,14 +57,18 @@ describe('index.html applies the saved theme before first paint', () => {
 
   it('is the page card colour on a phone, like the page under the status bar', () => {
     // The strip is set once at launch and the page below it is the card (white,
-    // or zinc-900 in dark) with the menu closed, so the shell and the open menu
-    // must be that colour too.
+    // or zinc-900 in dark) with the menu closed, so the shell must be that
+    // colour too, and in light mode so must the open menu.
     expect(load('light').body).toMatch(/(^| )bg-white( |$)/)
     expect(load('dark').body).toMatch(/(^| )dark:bg-zinc-900( |$)/)
     const app = readFileSync(resolve(__dirname, '../src/App.vue'), 'utf-8')
-    for (const el of ['id="app"', '<nav v-if="!isLoginPage"', '<main v-else']) {
+    for (const el of ['id="app"', '<main v-else']) {
       const tag = app.slice(app.indexOf(el), app.indexOf('>', app.indexOf(el)))
       expect(tag, el).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-900 md:dark:bg-zinc-950')
     }
+    // The open menu keeps the darker shell colour; the theme store moves the
+    // status bar to it while the menu is open.
+    const nav = app.slice(app.indexOf('<nav v-if="!isLoginPage"'), app.indexOf('>', app.indexOf('<nav v-if="!isLoginPage"')))
+    expect(nav).toContain('bg-white md:bg-zinc-100 dark:bg-zinc-950')
   })
 })

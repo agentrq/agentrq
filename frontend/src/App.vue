@@ -90,7 +90,7 @@
     <!-- Sidebar -->
     <nav v-if="!isLoginPage"
          :class="[
-           isMobileMenuOpen ? 'flex' : 'hidden', 'md:flex fixed inset-y-0 left-0 z-[100] transform bg-white md:bg-zinc-100 dark:bg-zinc-900 md:dark:bg-zinc-950 md:relative md:translate-x-0',
+           isMobileMenuOpen ? 'flex' : 'hidden', 'md:flex fixed inset-y-0 left-0 z-[100] transform bg-white md:bg-zinc-100 dark:bg-zinc-950 md:relative md:translate-x-0',
            'text-gray-900 dark:text-zinc-100 shrink-0 flex-col h-full transition-all duration-300 ease-in-out',
            isCollapsed && !isMobileMenuOpen ? 'w-16' : 'w-64',
            isMobileMenuOpen ? 'w-[280px] shadow-2xl' : ''
@@ -757,6 +757,7 @@ const isMobileMenuOpen = ref(false);
 const workspaceDropdownRef = ref(null)
 const userMenuRef = ref(null)
 const themeStore = useThemeStore()
+watch(isMobileMenuOpen, (open) => themeStore.setMenuOpen(open))
 const tooltipStore = useTooltipStore()
 const workspaceStore = useWorkspaceStore()
 const workspaces = computed(() => workspaceStore.workspaces)
