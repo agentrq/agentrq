@@ -469,6 +469,7 @@ function handleDrop(e) {
 }
 
 onMounted(async () => {
+  bodyInput.value?.focus();
   try {
     // Both pickers degrade to empty rather than blocking the form: a task can
     // always be created without an on-completion trigger.

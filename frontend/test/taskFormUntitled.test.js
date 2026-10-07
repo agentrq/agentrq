@@ -80,6 +80,11 @@ beforeEach(() => {
 afterEach(() => app?.unmount())
 
 describe('a new task without a title', () => {
+  it('puts the cursor in the description', async () => {
+    await mount()
+    expect(document.activeElement).toBe(document.querySelector('#taskForm textarea'))
+  })
+
   it('can be sent once it has a description, and is queued for naming', async () => {
     const form = await mount()
     expect(form.title().placeholder).toMatch(/optional/)
