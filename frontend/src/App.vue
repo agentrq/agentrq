@@ -98,7 +98,7 @@
       <div :class="[isCollapsed ? 'px-2 py-4' : 'p-4']" class="flex flex-col min-h-0 grow">
         <!-- Sidebar Header -->
         <div :class="[
-          'relative border-b border-transparent pb-3 flex transition-all duration-300',
+          'relative border-b border-transparent pb-1 flex transition-all duration-300',
           isCollapsed ? 'flex-col items-center gap-2' : 'flex-row items-center gap-1'
         ]">
           <div :class="[
@@ -129,8 +129,8 @@
           </button>
         </div>
 
-        <div class="space-y-0.5 mt-4 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2">
-          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-2">
+        <div class="space-y-0.5 overflow-y-auto custom-scrollbar flex-1 min-h-0 px-2" :class="{ 'mt-6': isCollapsed && !isMobileMenuOpen }">
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
             <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Overview</span>
           </div>
           <router-link to="/"
@@ -173,14 +173,14 @@
           </router-link>
 
           <template v-if="workspaces.length > 0 && (!isCollapsed || isMobileMenuOpen)">
-            <div class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
+            <div class="p-2 border-gray-200/50 dark:border-zinc-600/50">
               <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Workspaces</span>
             </div>
 
             <SidebarWorkspaces :workspaces="workspaces" :show-tooltip="showTooltip" :hide-tooltip="hideTooltip" />
           </template>
 
-          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
             <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Tasks</span>
           </div>
 
@@ -263,7 +263,7 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Completed</span>
           </router-link>
 
-          <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mt-5 mb-2 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50">
+          <div v-if="!isCollapsed || isMobileMenuOpen" class="p-2 border-gray-200/50 dark:border-zinc-600/50">
             <span class="text-[11px] font-medium text-gray-500 dark:text-zinc-400">Advanced</span>
           </div>
           <div v-else class="mt-4 pt-4 border-t border-gray-200/50 dark:border-zinc-600/50"></div>
@@ -326,7 +326,7 @@
         </div>
 
         <!-- Sidebar Footer -->
-        <div class="mt-auto" :class="(isCollapsed && !isMobileMenuOpen) ? 'px-2 py-4' : 'p-4'">
+        <div class="mt-auto" :class="(isCollapsed && !isMobileMenuOpen) ? 'px-2 pt-4' : 'px-4 pt-4'">
 
           <!-- App Version & Docs -->
           <div v-if="!isCollapsed || isMobileMenuOpen" class="px-2 mb-3 flex items-center justify-between gap-2">
@@ -339,14 +339,6 @@
                 </svg>
                 Docs
               </a>
-              <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click="sidePanel.toggle()"
-                      :aria-pressed="sidePanel.state.open" title="Side panel (Ctrl/⌘ + \)"
-                      class="flex items-center gap-1 text-[10px] text-gray-400 dark:text-zinc-600 hover:text-gray-700 dark:hover:text-zinc-300 transition-colors">
-                <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
-                </svg>
-                Panel
-              </button>
             </div>
           </div>
 
@@ -359,14 +351,6 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
               </svg>
             </a>
-            <button v-if="platformStore.isDesktop" type="button" data-side-panel-toggle @click="sidePanel.toggle()"
-                    :aria-pressed="sidePanel.state.open" aria-label="Side panel"
-                    @mouseenter="showTooltip($event, 'Side panel')" @mouseleave="hideTooltip"
-                    class="flex items-center justify-center size-8 rounded-md text-gray-400 dark:text-zinc-600 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-zinc-800 transition-all duration-150">
-              <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
-              </svg>
-            </button>
           </div>
 
           <!-- User Profile -->

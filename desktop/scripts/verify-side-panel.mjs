@@ -261,7 +261,7 @@ app.whenReady().then(async () => {
   await win.loadURL('app://agentrq/')
   await win.webContents.executeJavaScript(`localStorage.clear(); localStorage.setItem('theme', '${theme}'); true`)
   await win.loadURL('app://agentrq/')
-  await until(() => win.webContents.executeJavaScript("!!document.querySelector('[data-side-panel-toggle]')"))
+  await until(() => win.webContents.executeJavaScript("!!document.querySelector('nav')"))
 
   const results = []
   const record = (name, pass, detail = '') => {
