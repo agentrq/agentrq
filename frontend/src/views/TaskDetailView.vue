@@ -9,7 +9,7 @@
        panel the task gets a phone's width, and should look like it does on a
        phone. `@min-[40rem]:` and `@min-[48rem]:` are `sm:` and `md:` measured
        against this element. -->
-  <div class="@container h-full flex flex-col w-full max-w-full overflow-x-hidden relative bg-white dark:bg-zinc-950 md:dark:bg-zinc-900" v-if="task && workspace"
+  <div class="@container h-full flex flex-col w-full max-w-full overflow-x-hidden relative page-surface" v-if="task && workspace"
        @dragenter="onDragEnter"
        @dragover="onDragOver"
        @dragleave="onDragLeave"

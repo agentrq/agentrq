@@ -76,6 +76,16 @@
   color-scheme: dark;
 }
 
+/* The page card. On a phone in dark mode it takes the shell's colour, as the
+ * light card is the shell's white, because the status bar is coloured once at
+ * launch and must match the page and the open menu alike. A class, not
+ * `md:` utilities, so the container-sized views stay free of breakpoints. */
+@utility page-surface {
+  background-color: var(--color-white);
+  @variant dark { background-color: var(--color-zinc-950); }
+  @variant md { @variant dark { background-color: var(--color-zinc-900); } }
+}
+
 @theme {
   --font-inter: "Inter Variable", "Inter", sans-serif;
   --color-accent: var(--accent);

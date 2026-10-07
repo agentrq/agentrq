@@ -5,7 +5,7 @@
 -->
 
 <template>
-  <div class="flex-1 min-w-0 flex flex-col h-full bg-white dark:bg-zinc-950 md:dark:bg-zinc-900 overflow-hidden px-4">
+  <div class="flex-1 min-w-0 flex flex-col h-full page-surface overflow-hidden px-4">
 
     <!-- Content -->
     <div class="flex-1 overflow-y-auto custom-scrollbar">
