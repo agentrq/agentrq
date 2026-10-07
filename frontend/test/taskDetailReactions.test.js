@@ -144,10 +144,15 @@ describe('a reply of one emoji', () => {
     const { labelled } = await mount()
     // Bottom right is where people look for a reaction. The agent's message
     // has no bubble to overlap, so its badge tucks up into the last line's
-    // leading, filled so it shows against the page.
+    // leading.
     const row = (label) => labelled(label)[0].parentElement.parentElement
     expect([...row('You reacted 👍').classList]).toEqual(expect.arrayContaining(['justify-end', '-mt-1']))
-    expect(labelled('You reacted 👍')[0].parentElement.classList).toContain('bg-gray-100')
+    // Every pill is filled, with no border, on the page and on a bubble.
+    for (const label of ['You reacted 👍', 'Agent reacted ✅']) {
+      const pill = labelled(label)[0].parentElement.classList
+      expect(pill).toContain('bg-gray-200')
+      expect(pill).not.toContain('border')
+    }
     expect([...row('Agent reacted ✅').classList]).toEqual(expect.arrayContaining(['justify-end', '-mt-2']))
   })
 
