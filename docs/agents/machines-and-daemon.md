@@ -143,6 +143,11 @@ readable in exactly one of the two, and light mode is the one you are looking
 at while writing it. `style.css` pairs them properly for `.md-body pre`; do the
 same for anything new.
 
+**The terminal has a palette per theme, switched in place on the `.dark` class.**
+Light mode also sets xterm's `minimumContrastRatio`: agents print 24-bit
+colours picked for a dark background, which a palette cannot remap. Re-theme
+through `term.options`, never by rebuilding the terminal, which drops its scrollback.
+
 `color-scheme` is the other half, and it is not a Tailwind class. A class says
 nothing to the parts of a page the *browser* draws — a `<select>`'s dropdown, a
 caret, the autofill background, the default scrollbar — so without

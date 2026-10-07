@@ -11,11 +11,14 @@
  * than the pixels.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createApp, h } from 'vue'
 
 /** The element the terminal was opened on. */
 let openedOn = null
+
+/** Every terminal built, so a theme switch can be shown not to build another. */
+const terms = []
 
 /** What reached the session as input, and the cursor mode the terminal reports. */
 const sent = []
@@ -32,9 +35,15 @@ vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 vi.mock('@xterm/xterm', () => ({
   Terminal: class {
-    constructor() {
+    constructor(options) {
       this.cols = 80
       this.rows = 24
+      this.options = { ...options }
+      this.atlasCleared = 0
+      terms.push(this)
+    }
+    clearTextureAtlas() {
+      this.atlasCleared += 1
     }
     loadAddon() {}
     open(el) {
@@ -103,6 +112,9 @@ vi.mock('../src/composables/useTerminalSession', () => ({
 }))
 
 const { default: SessionTerminal } = await import('../src/components/SessionTerminal.vue')
+const { TERMINAL_DARK_THEME, TERMINAL_LIGHT_THEME, LIGHT_MINIMUM_CONTRAST } = await import(
+  '../src/composables/useTerminalView.js'
+)
 
 /** Mount it into the jsdom the suite already runs in. */
 function mount({ ended = false } = {}) {
@@ -239,5 +251,66 @@ describe('the on-screen keys', () => {
     expect(button(el, 'Escape').disabled).toBe(true)
 
     app.unmount()
+  })
+})
+
+describe('the theme', () => {
+  const html = document.documentElement
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  let app = null
+
+  beforeEach(() => {
+    terms.length = 0
+    html.classList.remove('dark')
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.unmount()
+    app = null
+    html.classList.remove('dark')
+  })
+
+  it('opens dark in dark mode, exactly as before', () => {
+    html.classList.add('dark')
+    ;({ app } = mount())
+
+    expect(terms[0].options.theme).toBe(TERMINAL_DARK_THEME)
+    expect(terms[0].options.minimumContrastRatio).toBe(1)
+  })
+
+  it('opens light in light mode, chrome and all', () => {
+    let el
+    ;({ app, el } = mount())
+
+    expect(terms[0].options.theme).toBe(TERMINAL_LIGHT_THEME)
+    expect(terms[0].options.minimumContrastRatio).toBe(LIGHT_MINIMUM_CONTRAST)
+    expect(el.firstElementChild.style.backgroundColor).toBe('rgb(250, 250, 250)')
+  })
+
+  // A rebuilt terminal would lose its scrollback; a reconnect would replay it.
+  it('switches live with the app, on the same terminal', async () => {
+    let el
+    ;({ app, el } = mount())
+
+    html.classList.add('dark')
+    await tick()
+    expect(terms).toHaveLength(1)
+    expect(terms[0].options.theme).toBe(TERMINAL_DARK_THEME)
+    expect(terms[0].atlasCleared).toBe(1)
+    expect(el.firstElementChild.style.backgroundColor).toBe('rgb(9, 9, 11)')
+
+    html.classList.remove('dark')
+    await tick()
+    expect(terms[0].options.theme).toBe(TERMINAL_LIGHT_THEME)
+  })
+
+  it('stops following the theme once unmounted', async () => {
+    ;({ app } = mount())
+    app.unmount()
+    app = null
+
+    html.classList.add('dark')
+    await tick()
+    expect(terms[0].options.theme).toBe(TERMINAL_LIGHT_THEME)
   })
 })

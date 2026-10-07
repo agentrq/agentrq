@@ -14,18 +14,17 @@ import { ref, computed } from 'vue'
 import * as api from '../api'
 
 /**
- * The palette xterm renders with.
+ * The palette xterm renders with in dark mode.
  *
- * Set explicitly rather than left to xterm's defaults, and deliberately dark
- * in both themes: a terminal is a terminal, and an agent's output is full of
- * ANSI colours chosen on the assumption of a dark background. Rendering them
- * on white is how you get yellow on white.
+ * Set explicitly rather than left to xterm's defaults: an agent's output is
+ * full of ANSI colours chosen on the assumption of a dark background, and this
+ * is the background they were chosen for.
  *
  * The sixteen are given in full because a program that asks for "bright black"
  * expects something it can read; leaving them to a default that has never seen
  * this background is where unreadable output comes from.
  */
-export const TERMINAL_THEME = {
+export const TERMINAL_DARK_THEME = {
   background: '#09090b',
   foreground: '#e4e4e7',
   cursor: '#e4e4e7',
@@ -49,6 +48,93 @@ export const TERMINAL_THEME = {
   brightMagenta: '#d8b4fe',
   brightCyan: '#67e8f9',
   brightWhite: '#fafafa',
+}
+
+/**
+ * The palette in light mode.
+ *
+ * Every one of the sixteen is re-picked to read at 4.5:1 on this background,
+ * and a test holds them there. "White" and "bright white" are dark greys:
+ * programs print them as text expecting it to be readable, and white on
+ * white is the yellow-on-white bug again.
+ */
+export const TERMINAL_LIGHT_THEME = {
+  background: '#fafafa',
+  foreground: '#27272a',
+  cursor: '#27272a',
+  cursorAccent: '#fafafa',
+  selectionBackground: 'rgba(39, 39, 42, 0.18)',
+
+  black: '#3f3f46',
+  red: '#b91c1c',
+  green: '#15803d',
+  yellow: '#b45309',
+  blue: '#1d4ed8',
+  magenta: '#7e22ce',
+  cyan: '#0e7490',
+  white: '#52525b',
+
+  brightBlack: '#71717a',
+  brightRed: '#dc2626',
+  brightGreen: '#166534',
+  brightYellow: '#92400e',
+  brightBlue: '#2563eb',
+  brightMagenta: '#9333ea',
+  brightCyan: '#155e75',
+  brightWhite: '#18181b',
+}
+
+/**
+ * The contrast xterm enforces on glyphs in light mode.
+ *
+ * The palette covers the sixteen ANSI colours only. Agents such as Claude Code
+ * also print 24-bit colours picked for a dark background, which no palette can
+ * remap, so xterm darkens any glyph below this ratio against its own cell.
+ * xterm halves it for dim text, which therefore stays dimmer and still reads.
+ * Dark mode keeps xterm's default of 1, i.e. off, so it is exactly as before.
+ */
+export const LIGHT_MINIMUM_CONTRAST = 4.5
+
+/** Whether the app is in dark mode: the `.dark` class, never the OS setting. */
+export function isDarkDocument(root = document.documentElement) {
+  return root.classList.contains('dark')
+}
+
+/** The xterm options that differ between the app's two themes. */
+export function terminalAppearance(dark) {
+  return dark
+    ? { theme: TERMINAL_DARK_THEME, minimumContrastRatio: 1 }
+    : { theme: TERMINAL_LIGHT_THEME, minimumContrastRatio: LIGHT_MINIMUM_CONTRAST }
+}
+
+/**
+ * Re-theme a running terminal, keeping its connection and scrollback.
+ *
+ * The atlas is cleared because the WebGL renderer caches glyphs already
+ * painted in the old colours.
+ */
+export function applyTerminalAppearance(term, dark) {
+  Object.assign(term.options, terminalAppearance(dark))
+  term.clearTextureAtlas?.()
+}
+
+/**
+ * Call `onChange(dark)` whenever the `.dark` class on `root` flips.
+ *
+ * The class rather than the theme store, because "system" follows the OS and
+ * the store only re-applies the class; the class is what every other surface
+ * on the page is already painted from.
+ */
+export function followDarkClass({ onChange, root = document.documentElement }) {
+  let dark = isDarkDocument(root)
+  const observer = new MutationObserver(() => {
+    const now = isDarkDocument(root)
+    if (now === dark) return
+    dark = now
+    onChange(now)
+  })
+  observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+  return { stop: () => observer.disconnect() }
 }
 
 /**

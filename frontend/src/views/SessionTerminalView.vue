@@ -46,7 +46,7 @@ const TONES = {
   good: 'bg-emerald-500',
   pending: 'bg-amber-400',
   bad: 'bg-red-500',
-  muted: 'bg-zinc-600',
+  muted: 'bg-zinc-400 dark:bg-zinc-600',
 }
 
 const machineHref = computed(() =>
@@ -186,7 +186,7 @@ async function stop() {
       <template #title>
         <span class="flex items-center gap-2 min-w-0">
           <span class="h-2 w-2 rounded-full shrink-0" :class="TONES[statusTone(shownStatus)]" />
-          <span class="text-[11px] font-black uppercase tracking-widest text-zinc-400">
+          <span class="text-[11px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
             {{ statusLabel(shownStatus) }}
           </span>
         </span>
@@ -197,7 +197,7 @@ async function stop() {
              shows another what is happening — but never left implicit. -->
         <span
           v-if="others.length"
-          class="text-[11px] font-black uppercase tracking-widest text-amber-400 truncate"
+          class="text-[11px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400 truncate"
         >
           Shared with {{ others.join(', ') }}
         </span>

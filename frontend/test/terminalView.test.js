@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   useTerminalView,
   statusLabel,
@@ -10,7 +10,13 @@ import {
   hasEnded,
   endedReason,
   terminalPath,
-  TERMINAL_THEME,
+  TERMINAL_DARK_THEME,
+  TERMINAL_LIGHT_THEME,
+  LIGHT_MINIMUM_CONTRAST,
+  isDarkDocument,
+  terminalAppearance,
+  applyTerminalAppearance,
+  followDarkClass,
   TERMINAL_OPTIONS,
   TERMINAL_FONT,
   TERMINAL_FONT_SPECS,
@@ -368,22 +374,55 @@ describe('presence', () => {
   })
 })
 
+const ANSI = [
+  'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
+  'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
+]
+
+/** WCAG contrast ratio between two `#rrggbb` colours. */
+function contrast(a, b) {
+  const lum = (hex) => {
+    const [r, g, b] = [1, 3, 5]
+      .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
 // An agent's output assumes a dark background; rendering it on white is how
 // you get yellow on white.
 describe('the terminal itself', () => {
-  it('sets a dark background and a readable foreground', () => {
-    expect(TERMINAL_THEME.background).toMatch(/^#0/)
-    expect(TERMINAL_THEME.foreground).toMatch(/^#[de]/)
+  it('sets a dark background and a readable foreground in dark mode', () => {
+    expect(TERMINAL_DARK_THEME.background).toMatch(/^#0/)
+    expect(TERMINAL_DARK_THEME.foreground).toMatch(/^#[de]/)
   })
 
-  it('names all sixteen colours rather than leaving them to a default', () => {
-    for (const name of [
-      'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
-      'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
-      'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
-    ]) {
-      expect(TERMINAL_THEME[name], name).toMatch(/^#[0-9a-f]{6}$/i)
+  it('names all sixteen colours in both palettes rather than leaving them to a default', () => {
+    for (const theme of [TERMINAL_DARK_THEME, TERMINAL_LIGHT_THEME]) {
+      for (const name of ANSI) {
+        expect(theme[name], name).toMatch(/^#[0-9a-f]{6}$/i)
+      }
     }
+  })
+
+  // Yellow, white, bright white and bright black are the ones a light theme
+  // usually gets wrong, so every colour is measured rather than eyeballed.
+  it('keeps every light colour readable on the light background', () => {
+    const bg = TERMINAL_LIGHT_THEME.background
+    for (const name of [...ANSI, 'foreground', 'cursor']) {
+      expect(contrast(TERMINAL_LIGHT_THEME[name], bg), name).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('uses the light palette and enforces contrast only in light mode', () => {
+    expect(terminalAppearance(true)).toEqual({ theme: TERMINAL_DARK_THEME, minimumContrastRatio: 1 })
+    expect(terminalAppearance(false)).toEqual({
+      theme: TERMINAL_LIGHT_THEME,
+      minimumContrastRatio: LIGHT_MINIMUM_CONTRAST,
+    })
   })
 
   // The daemon sends exactly the bytes the program produced; a terminal that
@@ -506,5 +545,69 @@ describe('defaults', () => {
     const v = useTerminalView({ sessionId: 's1' })
     await v.load()
     expect(v.ended.value).toBe(true)
+  })
+})
+
+describe('following the app theme', () => {
+  const html = document.documentElement
+  beforeEach(() => {
+    html.classList.remove('dark')
+  })
+
+  it('reads the .dark class on <html>', () => {
+    expect(isDarkDocument()).toBe(false)
+    html.classList.add('dark')
+    expect(isDarkDocument()).toBe(true)
+  })
+
+  it('re-themes a running terminal in place and drops its cached glyphs', () => {
+    const term = { options: { fontSize: 13 }, clearTextureAtlas: vi.fn() }
+
+    applyTerminalAppearance(term, false)
+    expect(term.options).toEqual({
+      fontSize: 13,
+      theme: TERMINAL_LIGHT_THEME,
+      minimumContrastRatio: LIGHT_MINIMUM_CONTRAST,
+    })
+    expect(term.clearTextureAtlas).toHaveBeenCalledTimes(1)
+
+    applyTerminalAppearance(term, true)
+    expect(term.options.theme).toBe(TERMINAL_DARK_THEME)
+    expect(term.options.minimumContrastRatio).toBe(1)
+  })
+
+  it('copes with a terminal that has no texture atlas', () => {
+    const term = { options: {} }
+    applyTerminalAppearance(term, true)
+    expect(term.options.theme).toBe(TERMINAL_DARK_THEME)
+  })
+
+  it('reports each flip of the class, and nothing else', async () => {
+    const seen = []
+    const watch = followDarkClass({ onChange: (d) => seen.push(d) })
+
+    html.classList.add('dark')
+    await Promise.resolve()
+    html.classList.add('other') // a class change that is not a theme change
+    await Promise.resolve()
+    html.classList.remove('dark')
+    await Promise.resolve()
+    expect(seen).toEqual([true, false])
+
+    watch.stop()
+    html.classList.add('dark')
+    await Promise.resolve()
+    expect(seen).toEqual([true, false])
+    html.classList.remove('other')
+  })
+
+  it('watches any root it is given', async () => {
+    const root = document.createElement('div')
+    const seen = []
+    const watch = followDarkClass({ root, onChange: (d) => seen.push(d) })
+    root.className = 'dark'
+    await Promise.resolve()
+    expect(seen).toEqual([true])
+    watch.stop()
   })
 })

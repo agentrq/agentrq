@@ -50,9 +50,12 @@ import { useTerminalFit, refitWhenFontsLoad } from '../composables/useTerminalFi
 import { useTerminalRenderer } from '../composables/useTerminalRenderer'
 import {
   TERMINAL_OPTIONS,
-  TERMINAL_THEME,
   TERMINAL_FONT_SPECS,
   remeasureCell,
+  isDarkDocument,
+  terminalAppearance,
+  applyTerminalAppearance,
+  followDarkClass,
 } from '../composables/useTerminalView'
 import { TERMINAL_KEYS, pressKey } from '../composables/useTerminalKeys'
 import { terminalSocketUrl } from '../api'
@@ -66,6 +69,8 @@ const emit = defineEmits(['status', 'control', 'exit'])
 
 const host = ref(null)
 const failed = ref('')
+/** Follows the app's theme, so the chrome and the terminal switch together. */
+const dark = ref(isDarkDocument())
 
 let term = null
 let fit = null
@@ -74,12 +79,14 @@ let observer = null
 let fitter = null
 let fontWatch = null
 let renderer = null
+let themeWatch = null
 
 /** Ask for a fit. Safe before the fitter exists, which the observer can be. */
 const refit = () => fitter?.request()
 
 onMounted(async () => {
-  term = new Terminal({ ...TERMINAL_OPTIONS, theme: TERMINAL_THEME })
+  dark.value = isDarkDocument()
+  term = new Terminal({ ...TERMINAL_OPTIONS, ...terminalAppearance(dark.value) })
   fit = new FitAddon()
   term.loadAddon(fit)
   term.open(host.value)
@@ -168,12 +175,21 @@ onMounted(async () => {
     session.sendInput(data)
   })
 
+  // Re-themed in place: rebuilding the terminal would drop its scrollback.
+  themeWatch = followDarkClass({
+    onChange: (d) => {
+      dark.value = d
+      applyTerminalAppearance(term, d)
+    },
+  })
+
   session.open()
   session.sendResize(term.cols, term.rows)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', refit)
+  themeWatch?.stop()
   fontWatch?.cancel()
   fitter?.stop()
   observer?.disconnect()
@@ -195,7 +211,7 @@ function press(key) {
   pressKey(term, key)
 }
 
-const surface = computed(() => TERMINAL_THEME.background)
+const surface = computed(() => terminalAppearance(dark.value).theme.background)
 </script>
 
 <template>
@@ -203,20 +219,17 @@ const surface = computed(() => TERMINAL_THEME.background)
        it a flex child refuses to shrink below its content, and the content is
        exactly what the fit addon is sizing from. -->
   <div
-    class="flex flex-col min-h-0 flex-1 rounded-xl overflow-hidden border border-zinc-800"
+    class="flex flex-col min-h-0 flex-1 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800"
     :style="{ backgroundColor: surface }"
     @click="focusTerminal"
   >
-    <!-- The chrome is dark in both themes on purpose: a terminal is a
-         terminal, and the app's own light surface around it is what tells you
-         which is which. -->
     <div
-      class="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-zinc-800 bg-zinc-900/60"
+      class="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/60"
     >
       <span class="flex gap-1.5">
-        <span class="h-2.5 w-2.5 rounded-full bg-zinc-700" />
-        <span class="h-2.5 w-2.5 rounded-full bg-zinc-700" />
-        <span class="h-2.5 w-2.5 rounded-full bg-zinc-700" />
+        <span class="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        <span class="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        <span class="h-2.5 w-2.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
       </span>
       <slot name="title" />
       <div class="ml-auto flex items-center gap-3">
@@ -224,7 +237,7 @@ const surface = computed(() => TERMINAL_THEME.background)
       </div>
     </div>
 
-    <p v-if="failed" class="px-3 py-2 text-[11px] text-red-400">{{ failed }}</p>
+    <p v-if="failed" class="px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{{ failed }}</p>
 
     <!-- The padding belongs here, not on the host: the fit addon measures the
          host's border-box height, so padding there is counted but undrawable
@@ -239,7 +252,7 @@ const surface = computed(() => TERMINAL_THEME.background)
          prevented so a tap does not take focus from the terminal, and the click
          stops here so it does not open a keyboard that was closed. -->
     <div
-      class="hidden pointer-coarse:flex shrink-0 gap-1.5 px-2 py-2 border-t border-zinc-800 bg-zinc-900/60 overflow-x-auto"
+      class="hidden pointer-coarse:flex shrink-0 gap-1.5 px-2 py-2 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/60 overflow-x-auto"
       data-terminal-keys
       @click.stop
     >
@@ -250,7 +263,7 @@ const surface = computed(() => TERMINAL_THEME.background)
         :title="key.title"
         :aria-label="key.title"
         :disabled="ended"
-        class="flex-1 min-w-9 h-9 px-1 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-xs font-bold font-mono active:bg-zinc-700 disabled:opacity-40"
+        class="flex-1 min-w-9 h-9 px-1 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-bold font-mono active:bg-zinc-200 dark:active:bg-zinc-700 disabled:opacity-40"
         @mousedown.prevent
         @click="press(key)"
       >
@@ -267,6 +280,12 @@ const surface = computed(() => TERMINAL_THEME.background)
 :deep(.xterm-viewport),
 :deep(.xterm-screen) {
   height: 100% !important;
+}
+
+/* xterm's stylesheet paints the viewport black, which shows as a bar beside
+   and under the cells; let the terminal's own background through instead. */
+:deep(.xterm-viewport) {
+  background-color: transparent;
 }
 
 /* The scrollbar xterm draws is the browser default, which on a dark terminal
