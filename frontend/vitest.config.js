@@ -124,6 +124,7 @@ export default defineConfig({
         'src/composables/useLaunchTerminalSize.js',
         'src/composables/useWorkspaceTerminal.js',
         'src/composables/useTerminalView.js',
+        'src/composables/useTerminalKeys.js',
         'src/composables/usePwaUpdateProgress.js',
         'src/composables/useAutoTitle.js',
         'src/composables/useUntitledTaskTitles.js',

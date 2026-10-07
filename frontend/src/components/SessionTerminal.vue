@@ -54,6 +54,7 @@ import {
   TERMINAL_FONT_SPECS,
   remeasureCell,
 } from '../composables/useTerminalView'
+import { TERMINAL_KEYS, pressKey } from '../composables/useTerminalKeys'
 import { terminalSocketUrl } from '../api'
 
 const props = defineProps({
@@ -189,6 +190,11 @@ function focusTerminal() {
   term?.focus()
 }
 
+/** Send one of the on-screen keys. */
+function press(key) {
+  pressKey(term, key)
+}
+
 const surface = computed(() => TERMINAL_THEME.background)
 </script>
 
@@ -227,6 +233,29 @@ const surface = computed(() => TERMINAL_THEME.background)
       <!-- flex-1 min-h-0 gives a definite height that does not depend on its
            content. No padding, or see above. -->
       <div ref="host" class="flex-1 min-h-0" />
+    </div>
+
+    <!-- Touch screens only: a phone keyboard has no Esc or arrows. mousedown is
+         prevented so a tap does not take focus from the terminal, and the click
+         stops here so it does not open a keyboard that was closed. -->
+    <div
+      class="hidden pointer-coarse:flex shrink-0 gap-1.5 px-2 py-2 border-t border-zinc-800 bg-zinc-900/60 overflow-x-auto"
+      data-terminal-keys
+      @click.stop
+    >
+      <button
+        v-for="key in TERMINAL_KEYS"
+        :key="key.id"
+        type="button"
+        :title="key.title"
+        :aria-label="key.title"
+        :disabled="ended"
+        class="flex-1 min-w-9 h-9 px-1 rounded-lg border border-zinc-700 bg-zinc-800 text-zinc-200 text-xs font-bold font-mono active:bg-zinc-700 disabled:opacity-40"
+        @mousedown.prevent
+        @click="press(key)"
+      >
+        {{ key.label }}
+      </button>
     </div>
   </div>
 </template>

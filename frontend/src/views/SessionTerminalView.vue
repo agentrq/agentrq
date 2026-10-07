@@ -84,8 +84,9 @@ async function stop() {
 
 <template>
   <!-- h-full and min-h-0 all the way down: the terminal is the only thing that
-       scrolls, and it scrolls inside itself. -->
-  <div class="flex flex-col h-full min-h-0 gap-3">
+       scrolls, and it scrolls inside itself. The phone padding lifts its key
+       row clear of the floating Menu pill. -->
+  <div class="flex flex-col h-full min-h-0 gap-3 pb-6 md:pb-0">
     <div class="shrink-0 px-4 pt-2 flex items-center justify-between gap-4">
       <div class="min-w-0">
         <!-- Both ways out, because a terminal is reached from either: from the

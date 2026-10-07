@@ -17,6 +17,10 @@ import { createApp, h } from 'vue'
 /** The element the terminal was opened on. */
 let openedOn = null
 
+/** What reached the session as input, and the cursor mode the terminal reports. */
+const sent = []
+let applicationCursor = false
+
 // jsdom has no ResizeObserver; without this the mount throws.
 globalThis.ResizeObserver = class {
   observe() {}
@@ -36,7 +40,15 @@ vi.mock('@xterm/xterm', () => ({
     open(el) {
       openedOn = el
     }
-    onData() {}
+    get modes() {
+      return { applicationCursorKeysMode: applicationCursor }
+    }
+    onData(handler) {
+      this.handler = handler
+    }
+    input(data) {
+      this.handler(data)
+    }
     write() {}
     reset() {}
     focus() {}
@@ -85,7 +97,7 @@ vi.mock('../src/composables/useTerminalSession', () => ({
   useTerminalSession: () => ({
     open: () => {},
     close: () => {},
-    sendInput: () => {},
+    sendInput: (data) => sent.push(data),
     sendResize: () => {},
   }),
 }))
@@ -93,11 +105,11 @@ vi.mock('../src/composables/useTerminalSession', () => ({
 const { default: SessionTerminal } = await import('../src/components/SessionTerminal.vue')
 
 /** Mount it into the jsdom the suite already runs in. */
-function mount() {
+function mount({ ended = false } = {}) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const app = createApp({
-    render: () => h(SessionTerminal, { sessionId: 'abc123', ended: false }),
+    render: () => h(SessionTerminal, { sessionId: 'abc123', ended }),
   })
   app.mount(el)
   return { app, el }
@@ -168,5 +180,64 @@ describe('the terminal host', () => {
 
     app.unmount()
     expect(renderers.disposed).toBe(1)
+  })
+})
+
+describe('the on-screen keys', () => {
+  beforeEach(() => {
+    sent.length = 0
+    applicationCursor = false
+    document.body.innerHTML = ''
+  })
+
+  const button = (el, title) => el.querySelector(`[data-terminal-keys] button[title="${title}"]`)
+
+  it('are shown on touch screens only', () => {
+    const { app, el } = mount()
+
+    const bar = el.querySelector('[data-terminal-keys]')
+    expect([...bar.classList]).toEqual(expect.arrayContaining(['hidden', 'pointer-coarse:flex']))
+
+    app.unmount()
+  })
+
+  it('send Esc, Up and Down to the session', () => {
+    const { app, el } = mount()
+
+    button(el, 'Escape').click()
+    button(el, 'Up').click()
+    button(el, 'Down').click()
+    expect(sent).toEqual(['\x1b', '\x1b[A', '\x1b[B'])
+
+    app.unmount()
+  })
+
+  it('send arrows in the mode the program asked for', () => {
+    applicationCursor = true
+    const { app, el } = mount()
+
+    button(el, 'Up').click()
+    expect(sent).toEqual(['\x1bOA'])
+
+    app.unmount()
+  })
+
+  // A tap must not move focus off the terminal, or the phone's keyboard closes.
+  it('keep focus where it was', () => {
+    const { app, el } = mount()
+
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    button(el, 'Escape').dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+
+    app.unmount()
+  })
+
+  it('are disabled once the session has ended', () => {
+    const { app, el } = mount({ ended: true })
+
+    expect(button(el, 'Escape').disabled).toBe(true)
+
+    app.unmount()
   })
 })
