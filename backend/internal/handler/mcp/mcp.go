@@ -443,37 +443,17 @@ func (h *handler) identifyUser(ctx context.Context, workspaceID int64, tokenStr 
 		return ""
 	}
 
-	// 2. Try JWT situational authentication
+	// Only an access token minted for this workspace. Every token is signed
+	// with the same secret, so the audience is what tells a workspace's agent
+	// apart from another workspace's, a person's session or a refresh token.
 	claims, err := h.tokenSvc.ValidateToken(tokenStr)
-	if err == nil {
-		workspaceIDBase62 := monoflake.ID(workspaceID).String()
-		isWorkspaceValid := false
-		if len(claims.Audience) == 0 {
-			isWorkspaceValid = true // Global token
-		} else {
-			for _, aud := range claims.Audience {
-				if aud == workspaceIDBase62 {
-					isWorkspaceValid = true
-					break
-				}
-			}
-		}
-
-		if isWorkspaceValid {
-			hasInvalidAudience := false
-			for _, aud := range claims.Audience {
-				if aud == "refresh" || aud == "authorization_code" {
-					hasInvalidAudience = true
-					break
-				}
-			}
-			if !hasInvalidAudience {
-				return claims.Subject
-			}
-		}
+	if err != nil {
+		return ""
 	}
-
-	return ""
+	if !auth.HasAudience(claims, monoflake.ID(workspaceID).String()) || !auth.HasAudience(claims, "access") {
+		return ""
+	}
+	return claims.Subject
 }
 
 func (h *handler) oauthProtectedResourceHandler() http.Handler {

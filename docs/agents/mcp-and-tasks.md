@@ -75,6 +75,14 @@ cuts the rest without warning; the skills rule once fell past that point. The
 instruction test holds the text to 1024, so a new rule still fits: shorten an
 old one rather than raise the cap.
 
+## A workspace token reaches that workspace and nothing else
+
+The workspace MCP endpoint takes only `[<workspace>, access]` tokens, because
+every token shares one signing secret and only the audience scopes it. A task ID
+comes from the agent, and the database checks only that the task exists, so
+every agent write to a task goes through `workspaceTask` (`app/`) first. Without
+it, any workspace's token could post into any task.
+
 ## Workspace memory
 
 `loadMemory` / `saveMemory` (`memory.go`) give agents notes that outlive a task.

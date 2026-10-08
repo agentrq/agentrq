@@ -465,6 +465,10 @@ func New(cfg Config) (*App, error) {
 					return 0, fmt.Errorf("invalid chat ID: %s", chatID)
 				}
 				taskID := id.Int64()
+				m, err := workspaceTask(ctx, repo, workspaceID, workspaceOwner, taskID)
+				if err != nil {
+					return 0, err
+				}
 
 				crud.SaveAttachments(storageSvc, ids, contentID, taskID, attachments)
 
@@ -481,8 +485,7 @@ func New(cfg Config) (*App, error) {
 				}
 
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				m, err := repo.GetTask(ctx, workspaceID, taskID, uid)
-				if err == nil && m.Status == "notstarted" {
+				if m.Status == "notstarted" {
 					m.Status = "ongoing"
 					_, _ = repo.UpdateTask(ctx, m)
 				}
@@ -624,6 +627,9 @@ func New(cfg Config) (*App, error) {
 			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
 			siteToolsBackend{repo: repo, hub: siteHub},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+				if _, err := workspaceTask(ctx, repo, workspaceID, workspaceOwner, tc.TaskID); err != nil {
+					return model.ToolCall{}, err
+				}
 				created, err := repo.CreateToolCall(ctx, tc)
 				if err == nil {
 					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
