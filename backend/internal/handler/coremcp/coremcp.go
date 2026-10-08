@@ -484,8 +484,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			if r.URL.RawQuery != "" {
 				returnURL += "?" + r.URL.RawQuery
 			}
-			loginURL := fmt.Sprintf("%s/api/v1/auth/google/login?redirect_url=%s", h.baseURL, url.QueryEscape(returnURL))
-			http.Redirect(w, r, loginURL, http.StatusFound)
+			http.Redirect(w, r, oauthconsent.LoginURL(h.baseURL, returnURL), http.StatusFound)
 			return
 		}
 

@@ -184,12 +184,18 @@ func TestOAuthAuthorizeHandler_Unauthenticated(t *testing.T) {
 		t.Fatalf("Expected 302 Found, got %d", w.Code)
 	}
 
-	loc := w.Header().Get("Location")
-	if !strings.Contains(loc, "redirect_url=") {
-		t.Errorf("Expected redirect_url in Location, got %s", loc)
+	// The login page, not a provider's route: it offers GitHub and the root
+	// token too, where Google alone left those accounts unable to sign in.
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("Location is not a URL: %v", err)
 	}
-	if !strings.HasPrefix(loc, "https://agentrq.com/api/v1/auth/google/login") {
-		t.Errorf("Expected login redirect, got %s", loc)
+	if got := loc.Scheme + "://" + loc.Host + loc.Path; got != "https://agentrq.com/login" {
+		t.Errorf("Expected the login page, got %s", loc)
+	}
+	back := "https://12345.mcp.agentrq.com/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=https://agentrq.com/callback&state=somestate"
+	if got := loc.Query().Get("redirect_url"); got != back {
+		t.Errorf("Expected redirect_url %q, got %q", back, got)
 	}
 }
 

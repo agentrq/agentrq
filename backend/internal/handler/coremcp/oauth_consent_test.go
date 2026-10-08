@@ -47,6 +47,32 @@ func supervisorAuthorizeRequest() *http.Request {
 	return req
 }
 
+// A signed-out person goes to the login page, which offers every sign-in the
+// server has, and comes back here: sending them to Google's route left GitHub
+// and root-token accounts unable to sign in.
+func TestSupervisorAuthorize_SignedOutPersonGoesToTheLoginPage(t *testing.T) {
+	h, _ := consentHandler()
+	req := supervisorAuthorizeRequest()
+	req.Header.Del("Cookie")
+
+	w := httptest.NewRecorder()
+	h.oauthAuthorizeHandler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("a signed-out authorize answered %d, want 302", w.Code)
+	}
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("Location is not a URL: %v", err)
+	}
+	if got := loc.Scheme + "://" + loc.Host + loc.Path; got != "https://mcp.agentrq.com/login" {
+		t.Errorf("a signed-out authorize went to %q, want the login page", got)
+	}
+	if got, want := loc.Query().Get("redirect_url"), "https://mcp.agentrq.com"+req.URL.RequestURI(); got != want {
+		t.Errorf("redirect_url = %q, want %q", got, want)
+	}
+}
+
 // The reported bug, on the supervisor: being signed in handed out a code for
 // the whole account without a word.
 func TestSupervisorAuthorize_SignedInPersonIsAskedFirst(t *testing.T) {

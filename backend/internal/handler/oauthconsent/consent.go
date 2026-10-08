@@ -145,6 +145,14 @@ func RedirectURL(redirectURI string, params url.Values) string {
 	return redirectURI + separator + params.Encode()
 }
 
+// LoginURL sends a signed-out person to the web app's login page, which
+// offers every sign-in the server has enabled, and back to returnURL after.
+// Never a provider's login route: a GitHub or root-token account could not
+// sign in from there.
+func LoginURL(baseURL, returnURL string) string {
+	return baseURL + "/login?" + url.Values{"redirect_url": {returnURL}}.Encode()
+}
+
 type page struct {
 	ClientName  string
 	Named       bool

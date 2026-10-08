@@ -6,6 +6,7 @@ package oauthconsent
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -76,5 +77,21 @@ func TestCheckRedirectURI(t *testing.T) {
 				t.Errorf("CheckRedirectURI(%q) returned %q, %v, want the error %v", tc.requested, got, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoginURLCarriesTheReturnAddress(t *testing.T) {
+	back := "https://mcp.agentrq.com/mcp/oauth2/authorize?client_id=a&state=b c"
+	got := LoginURL("https://agentrq.com", back)
+
+	loc, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("LoginURL returned %q, not a URL: %v", got, err)
+	}
+	if prefix := "https://agentrq.com/login?"; !strings.HasPrefix(got, prefix) {
+		t.Errorf("LoginURL = %q, want it to start with %q", got, prefix)
+	}
+	if r := loc.Query().Get("redirect_url"); r != back {
+		t.Errorf("redirect_url = %q, want %q", r, back)
 	}
 }

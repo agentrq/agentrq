@@ -176,6 +176,10 @@ Each server has one scope, `mcp` or `supervisor-mcp` (`oauthScope`), and grants
 it whatever was asked for: refusing an unknown scope breaks clients that send
 `openid` or `offline_access` unasked.
 
+A signed-out person goes to the app's `/login` (`oauthconsent.LoginURL`), never
+a provider's login route: that one provider would be their only way in, which
+locks out GitHub and root-token accounts.
+
 ## An untitled task reaches the agent without its title
 
 A task created without a title is stored as `Untitled` until a browser's local

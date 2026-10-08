@@ -608,8 +608,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 		}
 
 		if userID == "" {
-			// Not authenticated, redirect to main login with 'redirect_url'
-			// To return back, building the current full URL:
+			// Not signed in: to the login page, then back here.
 			proto := "https://"
 			if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" && !strings.Contains(r.Host, "mcp.") {
 				proto = "http://"
@@ -632,8 +631,7 @@ func (h *handler) oauthAuthorizeHandler() http.Handler {
 			}
 
 			returnURL := proto + r.Host + returnPath + returnQuery
-			loginURL := fmt.Sprintf("%s/api/v1/auth/google/login?redirect_url=%s", h.baseURL, url.QueryEscape(returnURL))
-			http.Redirect(w, r, loginURL, http.StatusFound)
+			http.Redirect(w, r, oauthconsent.LoginURL(h.baseURL, returnURL), http.StatusFound)
 			return
 		}
 
