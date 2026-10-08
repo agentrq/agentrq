@@ -180,6 +180,11 @@ A signed-out person goes to the app's `/login` (`oauthconsent.LoginURL`), never
 a provider's login route: that one provider would be their only way in, which
 locks out GitHub and root-token accounts.
 
+`/auth.md` (`handler/authmd`) describes both servers' OAuth for agents; change
+it with any endpoint, grant or scope. It has no `agent_auth` block, and the
+metadata has none either, until agents can really self-register: advertising
+a flow we don't serve sends every agent that trusts it to a 404.
+
 ## An untitled task reaches the agent without its title
 
 A task created without a title is stored as `Untitled` until a browser's local

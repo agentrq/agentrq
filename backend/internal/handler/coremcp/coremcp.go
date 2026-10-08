@@ -15,6 +15,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/handler/authmd"
 	"github.com/agentrq/agentrq/backend/internal/handler/oauthconsent"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
@@ -106,6 +107,10 @@ func New(p Params) (Handler, error) {
 	p.Mux.Handle("/mcp/oauth2/authorize", h.oauthAuthorizeHandler())
 	p.Mux.Handle("/mcp/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 	p.Mux.Handle("/mcp/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+	// Covers the workspace servers too; it lives here because the mcp. host
+	// below answers every other path with this server's endpoint.
+	authMD := authmd.Handler(p.BaseURL)
+	p.Mux.Handle("/auth.md", authMD)
 
 	// Host-based distinct paths
 	if hostPattern != "" {
@@ -115,6 +120,7 @@ func New(p Params) (Handler, error) {
 		p.Mux.Handle(hostPattern+"/oauth2/authorize", h.oauthAuthorizeHandler())
 		p.Mux.Handle(hostPattern+"/oauth2/token", corsWrapper(h.oauthTokenHandler()))
 		p.Mux.Handle(hostPattern+"/oauth2/register", corsWrapper(h.oauthRegisterHandler()))
+		p.Mux.Handle(hostPattern+"/auth.md", authMD)
 	}
 
 	return h, nil
