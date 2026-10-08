@@ -184,6 +184,9 @@ locks out GitHub and root-token accounts.
 it with any endpoint, grant or scope. It has no `agent_auth` block, and the
 metadata has none either, until agents can really self-register: advertising
 a flow we don't serve sends every agent that trusts it to a 404.
+It and `robots.txt` are public on the `mcp.` host too, which answers every
+other path with the supervisor endpoint, so a new public file there needs its
+own route.
 
 ## An untitled task reaches the agent without its title
 
