@@ -221,6 +221,24 @@ func TestOAuthAuthorizeHandler_Authenticated(t *testing.T) {
 	}
 }
 
+// The only scope is "mcp", but any other is granted as "mcp" rather than
+// refused: clients send defaults such as offline_access without asking.
+func TestOAuthAuthorizeHandler_AnUnknownScopeIsStillGranted(t *testing.T) {
+	mux, _ := setupTestRouter()
+
+	req := httptest.NewRequest("GET", "/mcp/12345/oauth2/authorize?client_id=test&redirect_uri=https://agentrq.com/callback&state=somestate&scope=openid+offline_access", nil)
+	req.SetPathValue("workspaceID", "12345")
+	req.Host = "12345.mcp.agentrq.com"
+	req.AddCookie(&http.Cookie{Name: "at", Value: "valid-auth-cookie"})
+
+	w := oauthconsenttest.Allow(mux, req)
+
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	if w.Code != http.StatusFound || loc.Query().Get("code") == "" {
+		t.Fatalf("authorize with an unknown scope answered %d at %q, want a code", w.Code, loc)
+	}
+}
+
 func TestOAuthAuthorizeHandler_OpenRedirect(t *testing.T) {
 	mux, _ := setupTestRouter()
 
@@ -335,5 +353,8 @@ func TestOAuthTokenHandler(t *testing.T) {
 	}
 	if resp["refresh_token"] == nil || resp["refresh_token"] == "" {
 		t.Errorf("Expected refresh_token in response")
+	}
+	if resp["scope"] != "mcp" {
+		t.Errorf("Expected scope mcp in response, got %v", resp["scope"])
 	}
 }

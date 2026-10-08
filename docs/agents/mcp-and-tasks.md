@@ -172,6 +172,10 @@ its caller. The page is backend-rendered so no WebMCP tool can press Allow,
 and every value on it is validated first (`auth.ValidateDisplayName`, ASCII
 hosts), not cleaned at display.
 
+Each server has one scope, `mcp` or `supervisor-mcp` (`oauthScope`), and grants
+it whatever was asked for: refusing an unknown scope breaks clients that send
+`openid` or `offline_access` unasked.
+
 ## An untitled task reaches the agent without its title
 
 A task created without a title is stored as `Untitled` until a browser's local

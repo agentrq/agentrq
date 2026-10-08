@@ -222,13 +222,19 @@ func oauthIdentityFor(r *http.Request, workspaceID int64) oauthIdentity {
 	}
 }
 
+// oauthScope is the only scope: everything a workspace's MCP server offers. Whatever scope a
+// client asks for, it is granted this one and told so in the token response
+// (RFC 6749 §3.3); refusing others would break clients that send a default
+// scope such as openid or offline_access without reading ours.
+const oauthScope = "mcp"
+
 // challengeUnauthorized writes the RFC 9728 §5.1 challenge that tells an
 // unauthenticated client exactly where to find our metadata, instead of making
 // it guess well-known paths.
 func challengeUnauthorized(w http.ResponseWriter, r *http.Request, workspaceID int64, message string) {
 	id := oauthIdentityFor(r, workspaceID)
 	w.Header().Set("WWW-Authenticate", fmt.Sprintf(
-		`Bearer realm=%q, resource_metadata=%q`, id.resource, id.prmURL))
+		`Bearer realm=%q, resource_metadata=%q, scope=%q`, id.resource, id.prmURL, oauthScope))
 	sendJSONRPCError(w, message, jsonrpc.CodeInvalidRequest, http.StatusUnauthorized)
 }
 
@@ -490,6 +496,7 @@ func (h *handler) oauthProtectedResourceHandler() http.Handler {
 			// .../.well-known/oauth-authorization-server/.well-known/oauth-authorization-server.
 			"authorization_servers":    []string{id.issuer},
 			"bearer_methods_supported": []string{"header"},
+			"scopes_supported":         []string{oauthScope},
 		})
 	})
 }
@@ -519,6 +526,7 @@ func (h *handler) oauthMetadataHandler() http.Handler {
 			"token_endpoint":           id.issuer + "/oauth2/token",
 			"registration_endpoint":    id.issuer + "/oauth2/register",
 			"response_types_supported": []string{"code"},
+			"scopes_supported":         []string{oauthScope},
 			// Deliberately no client_credentials: every token here is bound to
 			// a specific user's workspace access, and that grant has no user to
 			// bind one to. Clients are also all public (see below), so there
@@ -749,6 +757,7 @@ func (h *handler) oauthTokenHandler() http.Handler {
 			"access_token":  accessToken,
 			"refresh_token": refreshToken,
 			"token_type":    "bearer",
+			"scope":         oauthScope,
 			"expires_in":    2592000, // 30 days
 		})
 	})

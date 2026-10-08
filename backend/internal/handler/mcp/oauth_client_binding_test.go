@@ -318,6 +318,9 @@ func TestMetadata_RFC8414IssuerAndWellKnownPath(t *testing.T) {
 	if meta["logo_uri"] != "https://agentrq.com/agentrq.png" {
 		t.Errorf("logo_uri = %v, want the AgentRQ logo", meta["logo_uri"])
 	}
+	if scopes, _ := meta["scopes_supported"].([]any); len(scopes) != 1 || scopes[0] != "mcp" {
+		t.Errorf("scopes_supported = %v, want [mcp]", meta["scopes_supported"])
+	}
 	methods, _ := meta["token_endpoint_auth_methods_supported"].([]any)
 	if len(methods) != 1 || methods[0] != "none" {
 		t.Errorf("expected token_endpoint_auth_methods_supported=[none], got %v", meta["token_endpoint_auth_methods_supported"])
@@ -360,6 +363,10 @@ func TestProtectedResource_AdvertisesIssuerPerRFC9728(t *testing.T) {
 	wantIssuer := "https://agentrq.com/mcp/" + monoflake.IDFromBase62("12345").String()
 	if issuer != wantIssuer {
 		t.Errorf("authorization_servers[0] = %q, want issuer %q", issuer, wantIssuer)
+	}
+
+	if scopes, _ := doc["scopes_supported"].([]any); len(scopes) != 1 || scopes[0] != "mcp" {
+		t.Errorf("scopes_supported = %v, want [mcp]", doc["scopes_supported"])
 	}
 
 	wantResource := wantIssuer
@@ -407,6 +414,9 @@ func TestUnauthorized_AdvertisesResourceMetadataChallenge(t *testing.T) {
 	}
 	if !strings.HasPrefix(challenge, "Bearer ") {
 		t.Errorf("WWW-Authenticate = %q, want a Bearer challenge", challenge)
+	}
+	if !strings.Contains(challenge, `scope="mcp"`) {
+		t.Errorf(`WWW-Authenticate = %q, want it to carry scope="mcp"`, challenge)
 	}
 
 	// The advertised metadata URL must resolve.
