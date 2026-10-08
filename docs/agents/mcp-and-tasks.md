@@ -164,6 +164,13 @@ ends. An answer that finds no waiter closes it only past its `expiresAt`, since
 until then the agent may be waiting on another instance.
 
 
+## Only a person's session opens the REST API
+
+Every token is signed with one secret, so its audience is the only thing that
+scopes it. REST and every other `at` cookie check use `ValidateSessionToken`,
+which takes only `actor:human`. Never let someone in with bare `ValidateToken`:
+an agent's workspace token sent as the cookie would open the whole account.
+
 ## OAuth: being signed in is not consent
 
 Both servers' `/oauth2/authorize` issue a code only from `oauthconsent.Serve`,

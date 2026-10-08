@@ -73,6 +73,12 @@ func (authorizeTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	}
 	return nil, jwt.ErrSignatureInvalid
 }
+func (authorizeTokenSvc) ValidateSessionToken(tokenStr string) (*auth.Claims, error) {
+	if tokenStr == "valid-auth-cookie" {
+		return &auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-1"}}, nil
+	}
+	return nil, jwt.ErrSignatureInvalid
+}
 func (authorizeTokenSvc) ValidateOAuthStateToken(tokenStr, provider string) (string, error) {
 	return "", nil
 }

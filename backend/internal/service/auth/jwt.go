@@ -136,6 +136,7 @@ type TokenService interface {
 	CreateOAuthConsentToken(userID string, consent OAuthConsent) (string, error)
 	ValidateOAuthConsentToken(tokenStr, userID string, consent OAuthConsent) error
 	ValidateToken(tokenStr string) (*Claims, error)
+	ValidateSessionToken(tokenStr string) (*Claims, error)
 	ValidateOAuthStateToken(tokenStr, provider string) (redirectURL string, err error)
 	ValidateClientRegistrationToken(tokenStr string) (*ClientRegistrationClaims, error)
 }
@@ -443,6 +444,21 @@ func (s *tokenService) ValidateOAuthStateToken(tokenStr, provider string) (strin
 		return "", errors.New("invalid state token")
 	}
 	return claims.RedirectURL, nil
+}
+
+// ValidateSessionToken accepts only a signed-in person's access token, the
+// `at` cookie that CreateToken mints. Every other token is signed with the same
+// secret, so without the audience check an agent's workspace MCP token, a
+// refresh token or a ticket would pass for the whole account.
+func (s *tokenService) ValidateSessionToken(tokenStr string) (*Claims, error) {
+	claims, err := s.ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if !HasAudience(claims, ActorHumanAudience) {
+		return nil, errors.New("not a session token")
+	}
+	return claims, nil
 }
 
 func (s *tokenService) ValidateToken(tokenStr string) (*Claims, error) {

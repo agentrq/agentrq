@@ -1222,7 +1222,7 @@ func (l sessionLookup) viewerClaims(r *http.Request, sessionID uint64) (*auth.Cl
 	if err != nil {
 		return nil, err
 	}
-	return l.tokens.ValidateToken(cookie.Value)
+	return l.tokens.ValidateSessionToken(cookie.Value)
 }
 
 func (l sessionLookup) LookupSession(r *http.Request, sessionID uint64) (machine.Attachment, error) {
@@ -1272,7 +1272,7 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		claims, err := tokenSvc.ValidateToken(cookie.Value)
+		claims, err := tokenSvc.ValidateSessionToken(cookie.Value)
 		if err != nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return

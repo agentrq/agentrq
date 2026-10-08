@@ -385,7 +385,7 @@ func (h *handler) authMiddleware() fiber.Handler {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}
 
-		claims, err := h.tokenSvc.ValidateToken(tokenStr)
+		claims, err := h.tokenSvc.ValidateSessionToken(tokenStr)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
 		}

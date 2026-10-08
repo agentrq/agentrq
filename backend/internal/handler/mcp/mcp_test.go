@@ -42,6 +42,18 @@ func (m *mockTokenSvc) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	return nil, jwt.ErrSignatureInvalid
 }
 
+func (m *mockTokenSvc) ValidateSessionToken(tokenStr string) (*auth.Claims, error) {
+	if tokenStr == "valid-auth-cookie" {
+		return &auth.Claims{
+			RegisteredClaims: jwt.RegisteredClaims{
+				Subject:  monoflake.IDFromBase62("user123").String(),
+				Audience: jwt.ClaimStrings{auth.ActorHumanAudience},
+			},
+		}, nil
+	}
+	return nil, jwt.ErrSignatureInvalid
+}
+
 func (m *mockTokenSvc) CreateOAuthCodeToken(userID, workspaceID string) (string, error) {
 	m.validCode = "mocked-code-" + userID + "-" + workspaceID
 	return m.validCode, nil

@@ -300,6 +300,66 @@ func TestRefreshTokens(t *testing.T) {
 	})
 }
 
+// Every token shares one signing secret, so the session check is the only
+// thing between an agent's workspace token and the whole account.
+func TestSessionToken(t *testing.T) {
+	s := NewTokenService(TokenConfig{JWTSecret: "test-secret"})
+
+	t.Run("accepts a signed-in person's access token", func(t *testing.T) {
+		token, _ := s.CreateToken("user123", "a@b.com", "A", "")
+
+		claims, err := s.ValidateSessionToken(token)
+		if err != nil {
+			t.Fatalf("ValidateSessionToken: %v", err)
+		}
+		if claims.Subject != "user123" || claims.Email != "a@b.com" {
+			t.Errorf("claims = %+v", claims)
+		}
+	})
+
+	others := map[string]func() (string, error){
+		"workspace MCP access token":  func() (string, error) { return s.CreateMCPToken("user123", "workspace1", "access") },
+		"workspace MCP refresh token": func() (string, error) { return s.CreateMCPToken("user123", "workspace1", "refresh") },
+		"supervisor MCP access token": func() (string, error) { return s.CreateMCPToken("user123", "coremcp", "access") },
+		"OAuth authorization code":    func() (string, error) { return s.CreateOAuthCodeToken("user123", "workspace1") },
+		"human refresh token":         func() (string, error) { return s.CreateRefreshToken("user123") },
+		"terminal ticket":             func() (string, error) { return s.CreateTerminalTicket("user123", "42") },
+		"browser ticket":              func() (string, error) { return s.CreateBrowserTicket("user123") },
+		"OAuth consent token": func() (string, error) {
+			return s.CreateOAuthConsentToken("user123", OAuthConsent{Resource: "workspace1", ClientID: "c"})
+		},
+	}
+	for name, mint := range others {
+		t.Run("rejects a "+name, func(t *testing.T) {
+			token, err := mint()
+			if err != nil {
+				t.Fatalf("mint: %v", err)
+			}
+			if _, err := s.ValidateSessionToken(token); err == nil {
+				t.Errorf("a %s was accepted as a session", name)
+			}
+		})
+	}
+
+	t.Run("rejects a token with no audience", func(t *testing.T) {
+		claims := Claims{RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   "user123",
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		}}
+		token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("test-secret"))
+
+		if _, err := s.ValidateSessionToken(token); err == nil {
+			t.Error("a token with no audience was accepted as a session")
+		}
+	})
+
+	t.Run("rejects nonsense", func(t *testing.T) {
+		if _, err := s.ValidateSessionToken("not.a.token"); err == nil {
+			t.Error("nonsense was accepted")
+		}
+	})
+}
+
 // A terminal ticket is a bearer credential that travels in a URL query
 // string, so what it is *not* valid for is the whole design.
 func TestTerminalTicket(t *testing.T) {
