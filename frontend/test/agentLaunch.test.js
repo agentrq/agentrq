@@ -22,13 +22,12 @@ import {
   GATEWAY_DEFAULTS,
   CLAUDE_CODE_MODELS,
   CLAUDE_CODE_EFFORTS,
-  MODEL_PLACEHOLDERS,
   lastClaudeCodeChoice,
   rememberClaudeCodeChoice,
   initialParams,
   rememberParams,
   useKindParams,
-  modelSuggestions,
+  stepIndex,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -701,7 +700,7 @@ describe('the last launch of each workspace', () => {
   })
 })
 
-describe('choosing Claude Code\'s model', () => {
+describe('choosing Claude Code\'s model and effort', () => {
   afterEach(() => localStorage.clear())
 
   it('offers the model as an optional field, checked like the gateway\'s', () => {
@@ -713,22 +712,20 @@ describe('choosing Claude Code\'s model', () => {
     expect(bad.reason).toContain('That model has characters the daemon will not accept')
   })
 
-  it('suggests Claude Code\'s aliases, and the gateway agent\'s own models for the gateway', () => {
-    const gateway = [{ id: 'gpt-5.5', name: 'GPT 5.5' }]
-    expect(modelSuggestions('claude-code', gateway)).toBe(CLAUDE_CODE_MODELS)
-    expect(CLAUDE_CODE_MODELS.map((m) => m.id)).toEqual(['fable', 'opus', 'sonnet', 'haiku', 'opusplan'])
-    expect(modelSuggestions('acp-gateway', gateway)).toBe(gateway)
-    expect(modelSuggestions('acp-gateway', undefined)).toEqual([])
-  })
-
-  it('offers every effort level Claude Code accepts, and checks them like the model', () => {
-    expect(CLAUDE_CODE_EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
-    for (const effort of CLAUDE_CODE_EFFORTS) expect(paramsEligibility('claude-code', { effort }).ok).toBe(true)
+  it('offers each model family and every effort level, each after Claude Code\'s default', () => {
+    expect(CLAUDE_CODE_MODELS.map((m) => m.id)).toEqual(['', 'haiku', 'sonnet', 'opus', 'fable'])
+    expect(CLAUDE_CODE_EFFORTS.map((e) => e.id)).toEqual(['', 'low', 'medium', 'high', 'xhigh', 'max'])
+    for (const { id } of [...CLAUDE_CODE_MODELS, ...CLAUDE_CODE_EFFORTS]) {
+      expect(paramsEligibility('claude-code', { model: id, effort: id }).ok).toBe(true)
+    }
     expect(launchParamsPayload('claude-code', { model: '', effort: 'high' })).toEqual({ effort: 'high' })
   })
 
-  it('says in the field what a blank model means for each kind', () => {
-    expect(MODEL_PLACEHOLDERS).toEqual({ 'claude-code': 'Claude Code default', 'acp-gateway': 'Gateway default' })
+  it('places a value on its step, and anything else on the default', () => {
+    expect(stepIndex(CLAUDE_CODE_MODELS, 'opus')).toBe(3)
+    expect(stepIndex(CLAUDE_CODE_EFFORTS, 'max')).toBe(5)
+    expect(stepIndex(CLAUDE_CODE_MODELS, 'opusplan')).toBe(0)
+    expect(stepIndex(CLAUDE_CODE_MODELS, undefined)).toBe(0)
   })
 
   it('has nothing remembered at first, and round-trips what was', () => {
@@ -740,12 +737,14 @@ describe('choosing Claude Code\'s model', () => {
   })
 
   it('treats unreadable or misshapen storage as nothing remembered', () => {
-    for (const bad of ['not json', 'null', '{"model":3}']) {
+    for (const bad of ['not json', 'null', '3']) {
       localStorage.setItem('agentrq:lastClaudeCode', bad)
       expect(lastClaudeCodeChoice()).toBeNull()
     }
-    // A level Claude Code would refuse opens on its default instead.
-    localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opus","effort":"ultra"}')
+    // A value no slider step stands for opens on the default instead.
+    localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opusplan","effort":"ultra"}')
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
+    localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opus"}')
     expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: '' })
   })
 

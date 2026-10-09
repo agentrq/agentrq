@@ -20,8 +20,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
 import AgentKindPicker from './AgentKindPicker.vue'
+import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
-import { CLAUDE_CODE_EFFORTS, MODEL_PLACEHOLDERS, launchFolderNote, modelSuggestions } from '../composables/useAgentLaunch'
+import { launchFolderNote } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
 const props = defineProps({
@@ -61,8 +62,6 @@ const {
   acpAgents,
   acpModels,
 } = launcher
-
-const models = computed(() => modelSuggestions(kind.value, acpModels.value))
 
 const open = ref(props.variant === 'card')
 const started = ref(null)
@@ -207,11 +206,13 @@ async function start() {
            and in a 420px card neither was wide enough to read. -->
       <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
 
-      <!-- Only the gateway has an agent, and it is the one required field.
-           Agent first: the gateway's model list is per-agent, so there is
-           nothing to suggest for the model until the agent is answered. -->
-      <div class="grid gap-3 @md:grid-cols-2">
-        <div v-if="kind === 'acp-gateway'">
+      <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" />
+
+      <!-- Only the gateway needs these, and only the agent is required. Agent
+           first: the model list is per-agent, so there is nothing to suggest
+           for the second field until the first is answered. -->
+      <div v-if="kind === 'acp-gateway'" class="grid gap-3 @md:grid-cols-2">
+        <div>
           <label
             for="start-agent-agent"
             class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
@@ -244,31 +245,15 @@ async function start() {
             v-model="params.model"
             type="text"
             list="start-agent-model-options"
-            :placeholder="MODEL_PLACEHOLDERS[kind]"
+            placeholder="Gateway default"
             spellcheck="false"
             autocapitalize="off"
             autocorrect="off"
             class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
           />
           <datalist id="start-agent-model-options">
-            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
+            <option v-for="m in acpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
-        </div>
-        <!-- A closed list, so a select rather than a field to type into. -->
-        <div v-if="kind === 'claude-code'">
-          <label
-            for="start-agent-effort"
-            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
-            >Effort <span class="normal-case font-normal tracking-normal">(optional)</span></label
-          >
-          <select
-            id="start-agent-effort"
-            v-model="params.effort"
-            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
-          >
-            <option value="">Claude Code default</option>
-            <option v-for="e in CLAUDE_CODE_EFFORTS" :key="e" :value="e">{{ e }}</option>
-          </select>
         </div>
       </div>
 

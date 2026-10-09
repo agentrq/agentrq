@@ -52,30 +52,33 @@ export const KINDS = [
 export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
 
 /**
- * Claude Code's model aliases, offered as suggestions. Each follows the latest
- * model of its family, so the list does not go stale with a release; a full
- * model id typed by hand is accepted the same way.
+ * The two sliders Claude Code launches with, each a list of steps from left to
+ * right. The first step of each is blank, which is Claude Code's own default.
+ *
+ * The models are aliases, each following the latest model of its family, so
+ * the list does not go stale with a release.
  */
 export const CLAUDE_CODE_MODELS = [
-  { id: 'fable', name: 'Fable' },
-  { id: 'opus', name: 'Opus' },
-  { id: 'sonnet', name: 'Sonnet' },
+  { id: '', name: 'Default' },
   { id: 'haiku', name: 'Haiku' },
-  { id: 'opusplan', name: 'Opus to plan, Sonnet to build' },
+  { id: 'sonnet', name: 'Sonnet' },
+  { id: 'opus', name: 'Opus' },
+  { id: 'fable', name: 'Fable' },
 ]
 
-/** The levels `claude --effort` accepts, lowest first. Blank is Claude Code's default. */
-export const CLAUDE_CODE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+/** The levels `claude --effort` accepts, lowest first, after the default. */
+export const CLAUDE_CODE_EFFORTS = [
+  { id: '', name: 'Default' },
+  { id: 'low', name: 'Low' },
+  { id: 'medium', name: 'Medium' },
+  { id: 'high', name: 'High' },
+  { id: 'xhigh', name: 'Extra high' },
+  { id: 'max', name: 'Max' },
+]
 
-/** The models to suggest for a kind: the gateway's agent's own, or Claude Code's aliases. */
-export function modelSuggestions(kind, acpModels) {
-  return kind === 'acp-gateway' ? (acpModels ?? []) : CLAUDE_CODE_MODELS
-}
-
-/** What a blank Model field means, said in the field itself. */
-export const MODEL_PLACEHOLDERS = {
-  'claude-code': 'Claude Code default',
-  'acp-gateway': 'Gateway default',
+/** Where a value sits on a slider's steps; one that is not a step sits on the default. */
+export function stepIndex(steps, value) {
+  return Math.max(0, steps.findIndex((step) => step.id === value))
 }
 
 /**
@@ -124,11 +127,13 @@ const LAST_CLAUDE_CODE_KEY = 'agentrq:lastClaudeCode'
 export function lastClaudeCodeChoice() {
   try {
     const parsed = JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null')
-    if (typeof parsed?.model !== 'string') return null
-    // Only the levels Claude Code accepts are restored; anything else opens
-    // on its default.
-    const effort = CLAUDE_CODE_EFFORTS.includes(parsed.effort) ? parsed.effort : ''
-    return { model: parsed.model, effort }
+    if (!parsed || typeof parsed !== 'object') return null
+    // Only what the sliders can show is restored; anything else opens on the
+    // default rather than on a value no step stands for.
+    return {
+      model: CLAUDE_CODE_MODELS[stepIndex(CLAUDE_CODE_MODELS, parsed.model)].id,
+      effort: CLAUDE_CODE_EFFORTS[stepIndex(CLAUDE_CODE_EFFORTS, parsed.effort)].id,
+    }
   } catch {
     return null
   }
@@ -160,7 +165,7 @@ export function rememberParams(kind, extra) {
  *
  * Both kinds have a model, and they are not interchangeable: a gateway model
  * handed to Claude Code is refused, so switching kind brings back what was
- * typed for that kind rather than carrying the other's across.
+ * chosen for that kind rather than carrying the other's across.
  */
 export function useKindParams(kind) {
   const byKind = {}

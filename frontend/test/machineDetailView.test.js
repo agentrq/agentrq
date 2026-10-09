@@ -141,19 +141,16 @@ describe('MachineDetailView: starting an agent', () => {
     expect(push).toHaveBeenCalledWith('/sessions/sess-10')
   })
 
-  it('sends the model and effort chosen for Claude Code, suggesting its aliases', async () => {
+  it('sends the model and effort chosen on the sliders for Claude Code', async () => {
     localStorage.clear()
     const { el, choose, clickStart, clickTab } = await mount()
     await clickTab('New Session')
     await choose('launch-workspace-ws1')
-    const field = el.querySelector('#launch-model')
-    expect(field.placeholder).toBe('Claude Code default')
-    expect(el.querySelectorAll('#launch-model-options option')).toHaveLength(5)
-    field.value = 'haiku'
-    field.dispatchEvent(new Event('input'))
+    const haiku = [...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Haiku')
+    haiku.click()
     const effort = el.querySelector('#launch-effort')
-    effort.value = 'low'
-    effort.dispatchEvent(new Event('change'))
+    effort.value = '1'
+    effort.dispatchEvent(new Event('input'))
     await settle()
     await clickStart()
 
