@@ -46,8 +46,9 @@ type Params struct {
 	// ServerName is the MCP server's name in .mcp.json, which is also what
 	// `server:<name>` refers to on the command line. One decision, not two.
 	ServerName string
-	// Model and Agent are the acp-gateway's selections.
+	// Model is either kind's model, blank for the agent's own default.
 	Model string
+	// Agent is the acp-gateway's selection.
 	Agent string
 }
 
@@ -139,6 +140,9 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if err := checkParam("serverName", p.ServerName); err != nil {
 			return Command{}, err
 		}
+		if err := checkOptionalParam("model", p.Model); err != nil {
+			return Command{}, err
+		}
 		// --dangerously-load-development-channels is always passed, confirmed
 		// by the owner on 2026-09-15 when I asked whether a daemon should.
 		//
@@ -154,13 +158,15 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		//
 		// `server:<name>` names the MCP server in .mcp.json, which is why the
 		// daemon writes that file and passes this argument as one step.
+		argv := []string{"claude", "--name", p.Workspace}
+		if p.Model != "" {
+			argv = append(argv, "--model", p.Model)
+		}
 		return Command{
-			Argv: []string{
-				"claude",
-				"--name", p.Workspace,
+			Argv: append(argv,
 				"--dangerously-load-development-channels",
-				"server:" + p.ServerName,
-			},
+				"server:"+p.ServerName,
+			),
 			NeedsMCPConfig:      true,
 			NeedsClaudeSettings: true,
 		}, nil

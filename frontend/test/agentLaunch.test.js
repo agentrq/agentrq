@@ -20,6 +20,14 @@ import {
   forkParent,
   KINDS,
   GATEWAY_DEFAULTS,
+  CLAUDE_CODE_MODELS,
+  MODEL_PLACEHOLDERS,
+  lastClaudeCodeChoice,
+  rememberClaudeCodeChoice,
+  initialParams,
+  rememberParams,
+  useKindParams,
+  modelSuggestions,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -391,6 +399,7 @@ describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
   it('opens the form on the remembered choice instead of GATEWAY_DEFAULTS', async () => {
     rememberAcpGatewayChoice({ agent: 'codex-acp', model: 'gpt-5.5' })
     const h = harness()
+    h.l.kind.value = 'acp-gateway'
     expect(h.l.params.value).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
   })
 
@@ -688,5 +697,92 @@ describe('the last launch of each workspace', () => {
     l.workspaceId.value = 'ws1'
     await l.launch()
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
+  })
+})
+
+describe('choosing Claude Code\'s model', () => {
+  afterEach(() => localStorage.clear())
+
+  it('offers the model as an optional field, checked like the gateway\'s', () => {
+    expect(paramsEligibility('claude-code', { model: '' }).ok).toBe(true)
+    expect(paramsEligibility('claude-code', { model: 'opus' }).ok).toBe(true)
+    expect(paramsEligibility('claude-code', { model: 'claude-opus-5-5' }).ok).toBe(true)
+    const bad = paramsEligibility('claude-code', { model: '--dangerously-skip-permissions' })
+    expect(bad.ok).toBe(false)
+    expect(bad.reason).toContain('That model has characters the daemon will not accept')
+  })
+
+  it('suggests Claude Code\'s aliases, and the gateway agent\'s own models for the gateway', () => {
+    const gateway = [{ id: 'gpt-5.5', name: 'GPT 5.5' }]
+    expect(modelSuggestions('claude-code', gateway)).toBe(CLAUDE_CODE_MODELS)
+    expect(CLAUDE_CODE_MODELS.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku', 'opusplan'])
+    expect(modelSuggestions('acp-gateway', gateway)).toBe(gateway)
+    expect(modelSuggestions('acp-gateway', undefined)).toEqual([])
+  })
+
+  it('says in the field what a blank model means for each kind', () => {
+    expect(MODEL_PLACEHOLDERS).toEqual({ 'claude-code': 'Claude Code default', 'acp-gateway': 'Gateway default' })
+  })
+
+  it('has nothing remembered at first, and round-trips what was', () => {
+    expect(lastClaudeCodeChoice()).toBeNull()
+    rememberClaudeCodeChoice({ model: 'sonnet' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'sonnet' })
+    rememberClaudeCodeChoice({})
+    expect(lastClaudeCodeChoice()).toEqual({ model: '' })
+  })
+
+  it('treats unreadable or misshapen storage as nothing remembered', () => {
+    for (const bad of ['not json', 'null', '{"model":3}']) {
+      localStorage.setItem('agentrq:lastClaudeCode', bad)
+      expect(lastClaudeCodeChoice()).toBeNull()
+    }
+  })
+
+  it('survives storage that throws', () => {
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError: storage is full') })
+    expect(() => rememberClaudeCodeChoice({ model: 'opus' })).not.toThrow()
+    set.mockRestore()
+  })
+
+  it('opens each kind on its last launch, or its defaults', () => {
+    expect(initialParams('claude-code')).toEqual({ model: '' })
+    expect(initialParams('acp-gateway')).toEqual(GATEWAY_DEFAULTS)
+    rememberParams('claude-code', { model: 'haiku' })
+    rememberParams('acp-gateway', { agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(initialParams('claude-code')).toEqual({ model: 'haiku' })
+    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+  })
+
+  it('keeps each kind\'s fields apart when the kind is switched back and forth', () => {
+    const kind = ref('claude-code')
+    const params = useKindParams(kind)
+    params.value = { model: 'opus' }
+    kind.value = 'acp-gateway'
+    expect(params.value).toEqual(GATEWAY_DEFAULTS)
+    params.value = { ...params.value, agent: 'codex-acp' }
+    kind.value = 'claude-code'
+    expect(params.value).toEqual({ model: 'opus' })
+    kind.value = 'acp-gateway'
+    expect(params.value.agent).toBe('codex-acp')
+  })
+
+  it('sends the chosen model with a Claude Code launch, and remembers it', async () => {
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    h.l.params.value = { model: ' opus ' }
+    await h.l.launch()
+    expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'opus' }))
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus' })
+  })
+
+  it('sends no model when none was chosen, so Claude Code starts on its default', async () => {
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    await h.l.launch()
+    expect(h.deps.launchAgent.mock.calls[0][1]).not.toHaveProperty('model')
+    expect(lastClaudeCodeChoice()).toEqual({ model: '' })
   })
 })

@@ -28,6 +28,9 @@ export const KINDS = [
     label: 'Claude Code',
     description: 'Reads the workspace over MCP. The daemon writes its config.',
     needs: [],
+    // Blank is Claude Code's own default, as it was before a model could be
+    // named here.
+    optional: ['model'],
   },
   {
     id: 'acp-gateway',
@@ -47,6 +50,29 @@ export const KINDS = [
  * required field.
  */
 export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
+
+/**
+ * Claude Code's model aliases, offered as suggestions. Each follows the latest
+ * model of its family, so the list does not go stale with a release; a full
+ * model id typed by hand is accepted the same way.
+ */
+export const CLAUDE_CODE_MODELS = [
+  { id: 'opus', name: 'Opus' },
+  { id: 'sonnet', name: 'Sonnet' },
+  { id: 'haiku', name: 'Haiku' },
+  { id: 'opusplan', name: 'Opus to plan, Sonnet to build' },
+]
+
+/** The models to suggest for a kind: the gateway's agent's own, or Claude Code's aliases. */
+export function modelSuggestions(kind, acpModels) {
+  return kind === 'acp-gateway' ? (acpModels ?? []) : CLAUDE_CODE_MODELS
+}
+
+/** What a blank Model field means, said in the field itself. */
+export const MODEL_PLACEHOLDERS = {
+  'claude-code': 'Claude Code default',
+  'acp-gateway': 'Gateway default',
+}
 
 /**
  * Where the gateway's last agent and model are remembered.
@@ -85,6 +111,62 @@ export function rememberAcpGatewayChoice({ agent, model }) {
     // Nothing to fall back to here: the next launch just opens on
     // GATEWAY_DEFAULTS again, exactly as it did before this existed.
   }
+}
+
+/** Where Claude Code's last model is remembered, the same way as the gateway's. */
+const LAST_CLAUDE_CODE_KEY = 'agentrq:lastClaudeCode'
+
+/** The model somebody last launched Claude Code with, or null. */
+export function lastClaudeCodeChoice() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null')
+    if (typeof parsed?.model !== 'string') return null
+    return { model: parsed.model }
+  } catch {
+    return null
+  }
+}
+
+/** Remembers a Claude Code launch's model, blank included, for the next one. */
+export function rememberClaudeCodeChoice({ model }) {
+  try {
+    localStorage.setItem(LAST_CLAUDE_CODE_KEY, JSON.stringify({ model: model ?? '' }))
+  } catch {
+    // The next launch opens on Claude Code's default instead.
+  }
+}
+
+/** The parameters a kind's fields open on: its last launch, or its defaults. */
+export function initialParams(kind) {
+  if (kind === 'acp-gateway') return lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS }
+  return lastClaudeCodeChoice() ?? { model: '' }
+}
+
+/** Remembers a launch's parameters for the next launch of the same kind. */
+export function rememberParams(kind, extra) {
+  if (kind === 'acp-gateway') rememberAcpGatewayChoice(extra)
+  else rememberClaudeCodeChoice(extra)
+}
+
+/**
+ * The fields for whichever kind is picked, each kind keeping its own.
+ *
+ * Both kinds have a model, and they are not interchangeable: a gateway model
+ * handed to Claude Code is refused, so switching kind brings back what was
+ * typed for that kind rather than carrying the other's across.
+ */
+export function useKindParams(kind) {
+  const byKind = {}
+  const params = ref(initialParams(kind.value))
+  watch(
+    kind,
+    (next, prev) => {
+      byKind[prev] = params.value
+      params.value = byKind[next] ?? initialParams(next)
+    },
+    { flush: 'sync' }
+  )
+  return params
 }
 
 /**
@@ -283,7 +365,7 @@ export function paramsEligibility(kind, params) {
   }
   // Optional fields are validated the same way when given, and skipped
   // entirely when not — leaving one blank is how "no preference" arrives.
-  for (const field of spec.optional ?? []) {
+  for (const field of spec.optional) {
     const value = (params?.[field] ?? '').trim()
     if (value && !SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
   }
@@ -301,7 +383,7 @@ export function launchParamsPayload(kind, params) {
   if (!spec) return {}
   const extra = {}
   for (const field of spec.needs) extra[field] = (params?.[field] ?? '').trim()
-  for (const field of spec.optional ?? []) {
+  for (const field of spec.optional) {
     const value = (params?.[field] ?? '').trim()
     if (value) extra[field] = value
   }
@@ -398,7 +480,7 @@ export function useAgentLaunch(deps = {}) {
 
   const workspaceId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = ref(lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS })
+  const params = useKindParams(kind)
 
   const { acpAgents, acpModels } = useAcpGatewaySuggestions({
     kind,
@@ -468,7 +550,7 @@ export function useAgentLaunch(deps = {}) {
         rows,
         ...extra,
       })
-      if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
+      rememberParams(kind.value, extra)
       rememberLaunchChoice(workspaceId.value, { machineId: machine.value.id, kind: kind.value })
       return created?.session ?? null
     } catch (e) {

@@ -41,7 +41,7 @@ import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
-import { useAgentLaunch } from '../composables/useAgentLaunch'
+import { MODEL_PLACEHOLDERS, modelSuggestions, useAgentLaunch } from '../composables/useAgentLaunch'
 import { terminalPath } from '../composables/useTerminalView'
 
 const route = useRoute()
@@ -73,6 +73,7 @@ const {
   acpAgents: launchAcpAgents,
   acpModels: launchAcpModels,
 } = launcher
+const launchModels = computed(() => modelSuggestions(launchKind.value, launchAcpModels.value))
 
 const liveCount = computed(() => liveSessions.value.length)
 const updateText = computed(() => updateConsequence(liveCount.value))
@@ -511,11 +512,11 @@ async function stopSession(id) {
 
           <AgentKindPicker id-prefix="launch-kind" v-model="launchKind" />
 
-          <!-- Only the gateway needs these, and only the agent is required.
-               Agent first: the model list is per-agent, so there is nothing
-               to suggest for the second field until the first is answered. -->
-          <div v-if="launchKind === 'acp-gateway'" class="grid gap-3 md:grid-cols-2">
-            <div>
+          <!-- Only the gateway has an agent, and it is the one required field.
+               Agent first: the gateway's model list is per-agent, so there is
+               nothing to suggest for the model until the agent is answered. -->
+          <div class="grid gap-3 md:grid-cols-2">
+            <div v-if="launchKind === 'acp-gateway'">
               <label
                 for="launch-agent"
                 class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
@@ -548,14 +549,14 @@ async function stopSession(id) {
                 v-model="launchParams.model"
                 type="text"
                 list="launch-model-options"
-                placeholder="Gateway default"
+                :placeholder="MODEL_PLACEHOLDERS[launchKind]"
                 spellcheck="false"
                 autocapitalize="off"
                 autocorrect="off"
                 class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
               />
               <datalist id="launch-model-options">
-                <option v-for="m in launchAcpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+                <option v-for="m in launchModels" :key="m.id" :value="m.id">{{ m.name }}</option>
               </datalist>
             </div>
           </div>

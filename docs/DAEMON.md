@@ -248,6 +248,11 @@ The daemon runs exactly two agents, and nothing else:
 - `claude-code`
 - `acp-gateway`
 
+Either can be started on a model you name when you launch it — for Claude Code
+an alias such as `opus` or `sonnet`, or a full model id; leave it blank for the
+agent's own default. Naming a Claude Code model needs agentrqd 0.9.15 or newer;
+an older one is refused rather than quietly starting the default.
+
 It will not run a shell, and it will not run a command the server sends it. The
 control panel asks for a *kind* — one of those two names — and the daemon
 decides what that means from its own configuration. A backend that has been

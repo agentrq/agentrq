@@ -557,6 +557,13 @@ func launchFork(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string) (*http.Re
 // launchForkOn is launchFork on a daemon that said the given version.
 func launchForkOn(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version string) (*http.Response, wire.StartSession) {
 	t.Helper()
+	return launchWith(t, crudCtrl, caps, version, `{"kind":"claude-code"}`)
+}
+
+// launchWith launches with the given body, which gains the machine's id, on a
+// daemon that said the given capabilities and version.
+func launchWith(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version, body string) (*http.Response, wire.StartSession) {
+	t.Helper()
 	machineID := monoflake.ID(5)
 	crudCtrl.machine = entity.MachineView{ID: machineID.String(), Enabled: true, Version: version}
 	conn := &capturingConn{}
@@ -572,7 +579,7 @@ func launchForkOn(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version
 	}
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/workspaces/"+monoflake.ID(crudCtrl.workspace.ID).String()+"/agent",
-		strings.NewReader(`{"machineId":"`+machineID.String()+`","kind":"claude-code"}`))
+		strings.NewReader(`{"machineId":"`+machineID.String()+`",`+strings.TrimPrefix(body, "{")))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := launchApp(h, monoflake.ID(100).String()).Test(req)
 	if err != nil {
@@ -694,5 +701,50 @@ func TestLaunchAgent_AForkWhoseParentCannotBeReadIsRefused(t *testing.T) {
 	resp, start := launchFork(t, c, []string{wire.CapabilityFork})
 	if resp.StatusCode != http.StatusNotFound || start.SessionID != 0 {
 		t.Errorf("status = %d, start = %+v", resp.StatusCode, start)
+	}
+}
+
+func claudeModelLaunchCrud() *fakeLaunchCrud {
+	return &fakeLaunchCrud{workspace: entity.Workspace{ID: 1, Name: "api", WorkingDirectory: "/srv/api"}}
+}
+
+// The chosen model reaches the daemon on a machine that says it passes it on.
+func TestLaunchAgent_ClaudeCodeCarriesTheChosenModel(t *testing.T) {
+	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityClaudeModel}, "0.9.15",
+		`{"kind":"claude-code","model":"opus"}`)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
+	}
+	if start.Model != "opus" {
+		t.Errorf("the start frame names model %q, want opus", start.Model)
+	}
+}
+
+// An older agentrqd would start Claude's default model and say nothing, so the
+// launch is refused before anything is sent.
+func TestLaunchAgent_AClaudeCodeModelIsRefusedOnADaemonThatWouldDropIt(t *testing.T) {
+	resp, start := launchWith(t, claudeModelLaunchCrud(), nil, "0.9.14", `{"kind":"claude-code","model":"opus"}`)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to choose Claude Code's model") {
+		t.Errorf("message = %s, want it to ask for an agentrqd update", msg)
+	}
+	if start.SessionID != 0 {
+		t.Error("the start was sent anyway")
+	}
+}
+
+// Leaving the model blank, or choosing the gateway's, needs nothing new from
+// the daemon: both worked before the capability existed.
+func TestLaunchAgent_OnlyAClaudeCodeModelNeedsTheCapability(t *testing.T) {
+	for _, body := range []string{
+		`{"kind":"claude-code"}`,
+		`{"kind":"acp-gateway","agent":"codex-acp","model":"gpt-5"}`,
+	} {
+		resp, _ := launchWith(t, claudeModelLaunchCrud(), nil, "0.9.14", body)
+		if resp.StatusCode != http.StatusAccepted {
+			t.Errorf("%s: status = %d, want 202: %s", body, resp.StatusCode, responseMessage(t, resp))
+		}
 	}
 }

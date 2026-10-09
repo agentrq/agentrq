@@ -153,6 +153,15 @@ describe('useSpinUp: running', () => {
     expect(spin.running.value).toBe(false);
   });
 
+  it('launches Claude Code with the model chosen for it, and remembers that too', async () => {
+    const { spin, deps } = setup({ fetchMachines: vi.fn(() => Promise.resolve({ machines: [M1] })) });
+    await spin.open(task, parent);
+    spin.params.value = { model: 'opus' };
+    await spin.run();
+    expect(deps.launchAgent).toHaveBeenCalledWith('f1', { machineId: 'm1', kind: 'claude-code', cols: 80, rows: 24, model: 'opus' });
+    expect(JSON.parse(localStorage.getItem('agentrq:lastClaudeCode'))).toEqual({ model: 'opus' });
+  });
+
   it('launches the gateway with its agent, and remembers that too', async () => {
     const { spin, deps } = setup({
       fetchMachines: vi.fn(() => Promise.resolve({ machines: [M1] })),

@@ -437,7 +437,7 @@ func (l *Link) recoverFrom(ctx context.Context, conn *Conn, err error) {
 
 // capabilities is what the hello says this daemon can do.
 func (l *Link) capabilities() []string {
-	caps := []string{wire.CapabilityFork, wire.CapabilityForkCleanup}
+	caps := []string{wire.CapabilityFork, wire.CapabilityForkCleanup, wire.CapabilityClaudeModel}
 	if l.Restarter != nil {
 		caps = append(caps, wire.CapabilityRestart)
 	}

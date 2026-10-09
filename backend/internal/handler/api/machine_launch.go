@@ -331,6 +331,15 @@ func (h *handler) launchAgent() fiber.Handler {
 				"update agentrqd on this machine to run a fork (it needs "+wire.MinForkVersion+" or newer)",
 				http.StatusConflict))
 		}
+		// An older agentrqd drops a Claude Code model and starts the default
+		// one, which would look like the choice was honoured.
+		if payload.Kind == "claude-code" && payload.Model != "" &&
+			!h.machineRegistry.HasCapability(machineID, wire.CapabilityClaudeModel) {
+			c.Status(http.StatusConflict)
+			return c.Send(mapper.FromMessageToHTTPResponse(
+				"update agentrqd on this machine to choose Claude Code's model, or leave the model blank",
+				http.StatusConflict))
+		}
 
 		start := wire.StartSession{
 			Kind:       payload.Kind,

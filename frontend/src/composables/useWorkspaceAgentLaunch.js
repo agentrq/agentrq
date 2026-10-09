@@ -22,14 +22,13 @@
 import { ref, computed } from 'vue'
 import * as api from '../api'
 import {
-  GATEWAY_DEFAULTS,
   KINDS,
-  lastAcpGatewayChoice,
   launchParamsPayload,
   paramsEligibility,
-  rememberAcpGatewayChoice,
+  rememberParams,
   rememberLaunchChoice,
   useAcpGatewaySuggestions,
+  useKindParams,
   workspaceEligibility,
 } from './useAgentLaunch'
 import { launchTerminalSize } from './useLaunchTerminalSize'
@@ -99,7 +98,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
 
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = ref(lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS })
+  const params = useKindParams(kind)
 
   const { acpAgents, acpModels } = useAcpGatewaySuggestions({
     kind,
@@ -200,7 +199,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
         rows,
         ...extra,
       })
-      if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
+      rememberParams(kind.value, extra)
       rememberLaunchChoice(workspace.value.id, { machineId: machineId.value, kind: kind.value })
       return created?.session ?? null
     } catch (e) {

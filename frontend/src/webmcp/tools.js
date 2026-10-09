@@ -890,7 +890,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         workspaceId: WORKSPACE_ID,
         machineId: MACHINE_ID,
         kind: str('Which agent to run: claude-code or acp-gateway.'),
-        model: str('The model, for acp-gateway.'),
+        model: str('The model, blank for the default: an alias such as opus or sonnet for claude-code, or the gateway agent\'s own.'),
         agent: str('The agent, for acp-gateway.'),
         cols: int('Terminal width in columns.'),
         rows: int('Terminal height in rows.'),

@@ -16,6 +16,7 @@ import { useRouter } from 'vue-router'
 import AgentKindPicker from './AgentKindPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { spinUpName } from '../composables/useSpinUp'
+import { MODEL_PLACEHOLDERS, modelSuggestions } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
 const props = defineProps({
@@ -29,6 +30,7 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 
 const task = computed(() => props.spin.state.task)
+const models = computed(() => modelSuggestions(props.spin.kind.value, props.spin.acpModels.value))
 const width = 320
 const style = computed(() => {
   const vw = typeof window === 'undefined' ? 1024 : window.innerWidth
@@ -83,8 +85,8 @@ async function start() {
 
       <AgentKindPicker id-prefix="spin-up-kind" :model-value="spin.kind.value" @update:model-value="spin.kind.value = $event" />
 
-      <div v-if="spin.kind.value === 'acp-gateway'" class="grid gap-2 grid-cols-2">
-        <div class="min-w-0">
+      <div class="grid gap-2 grid-cols-2">
+        <div v-if="spin.kind.value === 'acp-gateway'" class="min-w-0">
           <label for="spin-up-agent" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Agent</label>
           <input id="spin-up-agent" v-model="spin.params.value.agent" type="text" list="spin-up-agent-options"
                  spellcheck="false" autocapitalize="off" autocorrect="off"
@@ -95,11 +97,11 @@ async function start() {
         </div>
         <div class="min-w-0">
           <label for="spin-up-model" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Model</label>
-          <input id="spin-up-model" v-model="spin.params.value.model" type="text" list="spin-up-model-options" placeholder="Gateway default"
+          <input id="spin-up-model" v-model="spin.params.value.model" type="text" list="spin-up-model-options" :placeholder="MODEL_PLACEHOLDERS[spin.kind.value]"
                  spellcheck="false" autocapitalize="off" autocorrect="off"
                  class="w-full px-2 py-1.5 text-xs font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white" />
           <datalist id="spin-up-model-options">
-            <option v-for="m in spin.acpModels.value" :key="m.id" :value="m.id">{{ m.name }}</option>
+            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
         </div>
       </div>

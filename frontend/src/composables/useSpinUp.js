@@ -16,15 +16,14 @@ import { computed, reactive, ref } from 'vue'
 import * as api from '../api'
 import { TELEMETRY_UI_SPIN_UP } from '../api'
 import {
-  GATEWAY_DEFAULTS,
   KINDS,
-  lastAcpGatewayChoice,
   lastLaunchChoice,
   launchParamsPayload,
   paramsEligibility,
-  rememberAcpGatewayChoice,
+  rememberParams,
   rememberLaunchChoice,
   useAcpGatewaySuggestions,
+  useKindParams,
 } from './useAgentLaunch'
 import { launchableMachines, machineChoiceEligibility } from './useWorkspaceAgentLaunch'
 import { canFork, kebabName } from './useWorkspaceForks'
@@ -82,7 +81,7 @@ export function useSpinUp(deps = {}) {
   const machines = ref([])
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = ref(lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS })
+  const params = useKindParams(kind)
   const running = ref(false)
   const step = ref('')
   const error = ref('')
@@ -178,7 +177,7 @@ export function useSpinUp(deps = {}) {
       const extra = launchParamsPayload(kind.value, params.value)
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(fork.id, { machineId: machineId.value, kind: kind.value, cols, rows, ...extra })
-      if (kind.value === 'acp-gateway') rememberAcpGatewayChoice(extra)
+      rememberParams(kind.value, extra)
       // Remembered for the parent: the next spin up there starts the same way.
       rememberLaunchChoice(workspace.id, { machineId: machineId.value, kind: kind.value })
       rememberLaunchChoice(fork.id, { machineId: machineId.value, kind: kind.value })

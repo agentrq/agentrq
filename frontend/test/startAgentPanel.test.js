@@ -170,6 +170,36 @@ describe('StartAgentPanel', () => {
     expect(push).toHaveBeenCalledWith('/sessions/sess-9')
   })
 
+  it('lets Claude Code\'s model be chosen, and keeps the gateway\'s apart', async () => {
+    localStorage.clear()
+    const { el } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    const model = el.querySelector('#start-agent-model')
+    expect(el.querySelector('#start-agent-agent')).toBeNull()
+    expect(model.placeholder).toBe('Claude Code default')
+    expect([...el.querySelectorAll('#start-agent-model-options option')].map((o) => o.value)).toEqual([
+      'opus', 'sonnet', 'haiku', 'opusplan',
+    ])
+
+    el.querySelector('#start-agent-kind-acp-gateway').click()
+    await settle()
+    expect(el.querySelector('#start-agent-agent')).toBeTruthy()
+    expect(el.querySelector('#start-agent-model').placeholder).toBe('Gateway default')
+
+    el.querySelector('#start-agent-kind-claude-code').click()
+    await settle()
+    const field = el.querySelector('#start-agent-model')
+    expect(field.value).toBe('')
+    field.value = 'sonnet'
+    field.dispatchEvent(new Event('input'))
+    await settle()
+
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'sonnet' }))
+    localStorage.clear()
+  })
+
   describe('on a fork', () => {
     // A fork's folder is made from its parent's on the first launch, so "no
     // working directory" is not a reason to refuse it — its parent's is.
