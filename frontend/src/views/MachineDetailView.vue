@@ -73,6 +73,7 @@ const {
   error: launchError,
   acpAgents: launchAcpAgents,
   acpModels: launchAcpModels,
+  claudeModels: launchClaudeModels,
 } = launcher
 
 const liveCount = computed(() => liveSessions.value.length)
@@ -512,7 +513,7 @@ async function stopSession(id) {
 
           <AgentKindPicker id-prefix="launch-kind" v-model="launchKind" />
 
-          <ClaudeOptionsPicker v-if="launchKind === 'claude-code'" id-prefix="launch" v-model="launchParams" />
+          <ClaudeOptionsPicker v-if="launchKind === 'claude-code'" id-prefix="launch" v-model="launchParams" :models="launchClaudeModels" />
 
           <!-- Only the gateway needs these, and only the agent is required.
                Agent first: the model list is per-agent, so there is nothing

@@ -84,7 +84,7 @@ async function start() {
 
       <AgentKindPicker id-prefix="spin-up-kind" :model-value="spin.kind.value" @update:model-value="spin.kind.value = $event" />
 
-      <ClaudeOptionsPicker v-if="spin.kind.value === 'claude-code'" id-prefix="spin-up" :model-value="spin.params.value" @update:model-value="spin.params.value = $event" />
+      <ClaudeOptionsPicker v-if="spin.kind.value === 'claude-code'" id-prefix="spin-up" :model-value="spin.params.value" :models="spin.claudeModels.value" @update:model-value="spin.params.value = $event" />
 
       <div v-if="spin.kind.value === 'acp-gateway'" class="grid gap-2 grid-cols-2">
         <div class="min-w-0">

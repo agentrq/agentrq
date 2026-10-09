@@ -100,7 +100,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   const kind = ref(KINDS[0].id)
   const params = useKindParams(kind)
 
-  const { acpAgents, acpModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -227,6 +227,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     canLaunch,
     acpAgents,
     acpModels,
+    claudeModels,
     load,
     launch,
   }

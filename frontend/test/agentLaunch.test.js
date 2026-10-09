@@ -28,6 +28,7 @@ import {
   rememberParams,
   useKindParams,
   stepIndex,
+  claudeModelSteps,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -719,6 +720,29 @@ describe('choosing Claude Code\'s model and effort', () => {
       expect(paramsEligibility('claude-code', { model: id, effort: id }).ok).toBe(true)
     }
     expect(launchParamsPayload('claude-code', { model: '', effort: 'high' })).toEqual({ effort: 'high' })
+  })
+
+  it('builds the model steps from what the machine\'s Claude reported, fastest first', () => {
+    const steps = claudeModelSteps([
+      { id: 'default', name: 'Default (recommended)', description: 'Opus 5.5' },
+      { id: 'opus', name: 'Opus 5.5' },
+      { id: 'fable', name: 'Fable 5.1' },
+      { id: 'mythos' },
+      { id: 'haiku', name: 'Haiku 5.5' },
+      { id: 'claude-sonnet-4-6', name: 'Sonnet 4.6' },
+      { name: 'no id' },
+      null,
+    ])
+    expect(steps).toEqual([
+      { id: '', name: 'Default (Opus 5.5)' },
+      { id: 'haiku', name: 'Haiku 5.5' },
+      { id: 'opus', name: 'Opus 5.5' },
+      { id: 'fable', name: 'Fable 5.1' },
+      { id: 'mythos', name: 'mythos' },
+    ])
+    expect(claudeModelSteps([{ id: 'sonnet', name: 'Sonnet 5.5' }])[0]).toEqual({ id: '', name: 'Default' })
+    expect(claudeModelSteps([])).toBe(CLAUDE_CODE_MODELS)
+    expect(claudeModelSteps(undefined)).toBe(CLAUDE_CODE_MODELS)
   })
 
   it('places a value on its step, and anything else on the default', () => {

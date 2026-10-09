@@ -8,8 +8,9 @@ import ClaudeOptionsPicker from '../src/components/ClaudeOptionsPicker.vue'
 
 let app
 
-function mount(initial) {
+function mount(initial, models) {
   const value = ref(initial)
+  const steps = ref(models)
   const el = document.createElement('div')
   document.body.appendChild(el)
   app = createApp({
@@ -17,6 +18,7 @@ function mount(initial) {
       h(ClaudeOptionsPicker, {
         idPrefix: 'pick',
         modelValue: value.value,
+        ...(steps.value ? { models: steps.value } : {}),
         'onUpdate:modelValue': (next) => {
           value.value = next
         },
@@ -24,7 +26,7 @@ function mount(initial) {
   })
   app.mount(el)
   const shown = (field) => el.querySelector(`[data-test=pick-${field}-value]`).textContent.trim()
-  return { el, value, shown }
+  return { el, value, steps, shown }
 }
 
 afterEach(() => {
@@ -69,5 +71,23 @@ describe('ClaudeOptionsPicker', () => {
     await nextTick()
     expect(shown('model')).toBe('Default')
     expect(shown('effort')).toBe('Extra high')
+  })
+
+  it('shows the machine\'s own model names, and drops a model that machine does not offer', async () => {
+    const { el, value, steps, shown } = mount({ model: 'fable', effort: 'high' }, [
+      { id: '', name: 'Default (Opus 5.5)' },
+      { id: 'opus', name: 'Opus 5.5' },
+      { id: 'fable', name: 'Fable 5.1' },
+    ])
+    expect(shown('model')).toBe('Fable 5.1')
+    expect(el.querySelector('#pick-model').max).toBe('2')
+    steps.value = [
+      { id: '', name: 'Default (Opus 5.5)' },
+      { id: 'opus', name: 'Opus 5.5' },
+    ]
+    await nextTick()
+    await nextTick()
+    expect(value.value).toEqual({ model: '', effort: 'high' })
+    expect(shown('model')).toBe('Default (Opus 5.5)')
   })
 })

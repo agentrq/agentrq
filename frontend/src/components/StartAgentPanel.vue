@@ -61,6 +61,7 @@ const {
   canLaunch,
   acpAgents,
   acpModels,
+  claudeModels,
 } = launcher
 
 const open = ref(props.variant === 'card')
@@ -206,7 +207,7 @@ async function start() {
            and in a 420px card neither was wide enough to read. -->
       <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
 
-      <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" />
+      <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" :models="claudeModels" />
 
       <!-- Only the gateway needs these, and only the agent is required. Agent
            first: the model list is per-agent, so there is nothing to suggest

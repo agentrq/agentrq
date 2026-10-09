@@ -12,24 +12,29 @@
   choice to Claude Code. One component for all three launch forms, so they
   cannot disagree about the steps.
 
+  The model steps are the ones the machine's Claude reported (`models`), and
+  the fixed list until it has; effort is always the fixed list, which no
+  lookup reports.
+
   The value is the launch's params object, `{ model, effort }`, replaced whole
   on every change so the form's own ref sees it.
 -->
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { CLAUDE_CODE_EFFORTS, CLAUDE_CODE_MODELS, stepIndex } from '../composables/useAgentLaunch'
 
 const props = defineProps({
   modelValue: { type: Object, default: () => ({}) },
   idPrefix: { type: String, required: true },
+  models: { type: Array, default: () => CLAUDE_CODE_MODELS },
 })
 
 const emit = defineEmits(['update:modelValue'])
 
-const sliders = [
-  { field: 'model', label: 'Model', steps: CLAUDE_CODE_MODELS },
+const sliders = computed(() => [
+  { field: 'model', label: 'Model', steps: props.models },
   { field: 'effort', label: 'Effort', steps: CLAUDE_CODE_EFFORTS },
-]
+])
 
 // What was last sent, not only what the props say: the props catch up on the
 // next render, so a second change before then would undo the first.
@@ -45,6 +50,17 @@ function set(field, id) {
   current.value = { ...current.value, [field]: id }
   emit('update:modelValue', current.value)
 }
+
+// A model this machine's Claude does not offer goes back to the default, so
+// the launch never sends something the slider is not showing.
+watch(
+  () => props.models,
+  (steps) => {
+    const model = current.value.model
+    if (model && !steps.some((step) => step.id === model)) set('model', '')
+  },
+  { immediate: true }
+)
 </script>
 
 <template>

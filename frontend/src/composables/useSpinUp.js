@@ -89,7 +89,7 @@ export function useSpinUp(deps = {}) {
   // make a second one, so the popover says what happened and offers no retry.
   const forked = ref(null)
 
-  const { acpAgents, acpModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -208,6 +208,7 @@ export function useSpinUp(deps = {}) {
     canRun,
     acpAgents,
     acpModels,
+    claudeModels,
     open,
     close,
     run,

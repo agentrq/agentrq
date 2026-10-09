@@ -353,7 +353,8 @@ describe('useWorkspaceAgentLaunch: acp-gateway suggestions', () => {
     l.kind.value = 'acp-gateway'
     l.params.value = { ...l.params.value, agent: '' }
     await flush()
-    expect(fetchAcpModels).not.toHaveBeenCalled()
+    // Only the gateway's own lookup; Claude's is asked while the kind is Claude Code.
+    expect(fetchAcpModels.mock.calls.filter(([, , agent]) => agent !== 'claude-acp')).toEqual([])
   })
 
   it('copes with params carrying no agent key at all, not only an empty one', async () => {
@@ -363,7 +364,8 @@ describe('useWorkspaceAgentLaunch: acp-gateway suggestions', () => {
     l.kind.value = 'acp-gateway'
     l.params.value = { model: 'gemini-3.8-flash-high' } // no `agent` property
     await flush()
-    expect(fetchAcpModels).not.toHaveBeenCalled()
+    // Only the gateway's own lookup; Claude's is asked while the kind is Claude Code.
+    expect(fetchAcpModels.mock.calls.filter(([, , agent]) => agent !== 'claude-acp')).toEqual([])
   })
 
   it('fails open: a rejected lookup leaves the suggestions empty rather than throwing', async () => {
@@ -492,5 +494,42 @@ describe('a fork, and remembering the launch', () => {
     await l.launch()
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
     localStorage.clear()
+  })
+})
+
+describe('useWorkspaceAgentLaunch: Claude Code\'s models', () => {
+  const REPORTED = [
+    { id: 'default', name: 'Default (recommended)', description: 'Opus 5.5' },
+    { id: 'opus', name: 'Opus 5.5' },
+    { id: 'sonnet', name: 'Sonnet 5.5' },
+    { id: 'haiku', name: 'Haiku 5.5' },
+    { id: 'claude-opus-4-8', name: 'Opus 4.8' },
+  ]
+
+  it('asks the chosen machine\'s Claude through the gateway, from the workspace\'s folder', async () => {
+    const fetchAcpModels = vi.fn().mockResolvedValue({ agent: 'claude-acp', models: REPORTED })
+    const { l } = harness({ deps: { fetchAcpModels } })
+    await l.load()
+    await flush()
+    expect(fetchAcpModels).toHaveBeenCalledWith(OFFLINE_WORKSPACE.id, READY_MACHINE.id, 'claude-acp')
+    expect(l.claudeModels.value.map((m) => m.name)).toEqual(['Default (Opus 5.5)', 'Haiku 5.5', 'Sonnet 5.5', 'Opus 5.5'])
+  })
+
+  it('keeps the fixed list when the machine cannot answer', async () => {
+    const fetchAcpModels = vi.fn().mockRejectedValue(new Error('network unreachable'))
+    const { l } = harness({ deps: { fetchAcpModels } })
+    await l.load()
+    await flush()
+    expect(l.claudeModels.value.map((m) => m.id)).toEqual(['', 'haiku', 'sonnet', 'opus', 'fable'])
+  })
+
+  it('does not ask while the gateway is picked', async () => {
+    const fetchAcpModels = vi.fn().mockResolvedValue({ models: [] })
+    const { l } = harness({ deps: { fetchAcpModels } })
+    l.kind.value = 'acp-gateway'
+    l.params.value = { ...l.params.value, agent: '' }
+    await l.load()
+    await flush()
+    expect(fetchAcpModels.mock.calls.filter(([, , agent]) => agent === 'claude-acp')).toEqual([])
   })
 })

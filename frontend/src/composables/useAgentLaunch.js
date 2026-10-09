@@ -76,6 +76,36 @@ export const CLAUDE_CODE_EFFORTS = [
   { id: 'max', name: 'Max' },
 ]
 
+/** The gateway's name for Claude, which it can ask for the models a machine's Claude offers. */
+export const CLAUDE_ACP_AGENT = 'claude-acp'
+
+/** The model families, fastest first, which is the order the model slider runs in. */
+const CLAUDE_FAMILIES = ['haiku', 'sonnet', 'opus', 'fable']
+
+/**
+ * The model slider's steps from what a machine's Claude reported, or the fixed
+ * list when it reported nothing.
+ *
+ * Only the aliases are kept: they follow the newest model of each family, and
+ * the dated full ids beside them would crowd a slider past reading. Claude's
+ * own `default` becomes the blank first step, named after what it stands for.
+ */
+export function claudeModelSteps(reported) {
+  const models = (reported ?? []).filter((m) => typeof m?.id === 'string' && m.id)
+  if (!models.length) return CLAUDE_CODE_MODELS
+  const fallback = models.find((m) => m.id === 'default')
+  const aliases = models
+    .filter((m) => m.id !== 'default' && !m.id.startsWith('claude-'))
+    .map((m) => ({ id: m.id, name: m.name || m.id }))
+  const rank = (id) => {
+    const i = CLAUDE_FAMILIES.indexOf(id)
+    return i === -1 ? CLAUDE_FAMILIES.length : i
+  }
+  aliases.sort((a, b) => rank(a.id) - rank(b.id))
+  const name = fallback?.description ? `Default (${fallback.description})` : 'Default'
+  return [{ id: '', name }, ...aliases]
+}
+
 /** Where a value sits on a slider's steps; one that is not a step sits on the default. */
 export function stepIndex(steps, value) {
   return Math.max(0, steps.findIndex((step) => step.id === value))
@@ -432,6 +462,7 @@ export function useAcpGatewaySuggestions({
 }) {
   const acpAgents = ref([])
   const acpModels = ref([])
+  const claudeReported = ref([])
 
   watch(
     () => (kind.value === 'acp-gateway' ? getMachineId() : ''),
@@ -464,7 +495,30 @@ export function useAcpGatewaySuggestions({
     }
   )
 
-  return { acpAgents, acpModels }
+  // Claude Code's model slider, asked of the same machine through the gateway.
+  // The folder is the workspace's for the same reason as the lookup above.
+  watch(
+    () => {
+      if (kind.value !== 'claude-code') return ''
+      const machineId = getMachineId()
+      const workspaceId = getWorkspaceId()
+      return machineId && workspaceId ? `${workspaceId}/${machineId}` : ''
+    },
+    async (key) => {
+      claudeReported.value = []
+      if (!key) return
+      try {
+        const data = await fetchAcpModels(getWorkspaceId(), getMachineId(), CLAUDE_ACP_AGENT)
+        claudeReported.value = data?.models ?? []
+      } catch {
+        claudeReported.value = []
+      }
+    },
+    { immediate: true }
+  )
+  const claudeModels = computed(() => claudeModelSteps(claudeReported.value))
+
+  return { acpAgents, acpModels, claudeModels }
 }
 
 /**
@@ -494,7 +548,7 @@ export function useAgentLaunch(deps = {}) {
   const kind = ref(KINDS[0].id)
   const params = useKindParams(kind)
 
-  const { acpAgents, acpModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machine?.value?.id,
@@ -587,6 +641,7 @@ export function useAgentLaunch(deps = {}) {
     canLaunch,
     acpAgents,
     acpModels,
+    claudeModels,
     load,
     launch,
   }
