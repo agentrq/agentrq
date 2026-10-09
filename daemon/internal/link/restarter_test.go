@@ -50,12 +50,14 @@ func (r *restartRig) option(l *Link) {
 		Log:        quietLog(),
 		Mode:       update.ModeReexec,
 		Restart: func(update.Mode, string, []string) error {
-			r.mu.Lock()
-			r.restarts++
-			r.mu.Unlock()
+			// Counted after the hook, so a test that waits on the count
+			// sees whatever the hook recorded.
 			if r.atRestart != nil {
 				r.atRestart()
 			}
+			r.mu.Lock()
+			r.restarts++
+			r.mu.Unlock()
 			return r.err
 		},
 		Grace: time.Second,
