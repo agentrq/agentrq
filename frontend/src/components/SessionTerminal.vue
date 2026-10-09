@@ -252,7 +252,7 @@ const surface = computed(() => terminalAppearance(dark.value).theme.background)
          prevented so a tap does not take focus from the terminal, and the click
          stops here so it does not open a keyboard that was closed. -->
     <div
-      class="hidden pointer-coarse:flex shrink-0 gap-1.5 px-2 py-2 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/60 overflow-x-auto"
+      class="hidden pointer-coarse:flex shrink-0 gap-1 px-2 py-2 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/60 overflow-x-auto"
       data-terminal-keys
       @click.stop
     >
@@ -263,7 +263,7 @@ const surface = computed(() => terminalAppearance(dark.value).theme.background)
         :title="key.title"
         :aria-label="key.title"
         :disabled="ended"
-        class="flex-1 min-w-9 h-9 px-1 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-bold font-mono active:bg-zinc-200 dark:active:bg-zinc-700 disabled:opacity-40"
+        class="flex-1 min-w-0 h-9 px-0 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 text-xs font-bold font-mono active:bg-zinc-200 dark:active:bg-zinc-700 disabled:opacity-40"
         @mousedown.prevent
         @click="press(key)"
       >

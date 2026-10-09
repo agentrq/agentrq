@@ -18,6 +18,7 @@ export const TERMINAL_KEYS = [
   { id: 'left', label: '←', title: 'Left', cursor: 'D' },
   { id: 'right', label: '→', title: 'Right', cursor: 'C' },
   { id: 'ctrl-c', label: '^C', title: 'Ctrl+C', bytes: '\x03' },
+  { id: 'enter', label: '↵', title: 'Enter', bytes: '\r' },
 ]
 
 /** The bytes a key sends, given the terminal's cursor mode. */
