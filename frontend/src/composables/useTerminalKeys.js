@@ -11,13 +11,13 @@
  */
 export const TERMINAL_KEYS = [
   { id: 'esc', label: 'Esc', title: 'Escape', bytes: '\x1b' },
+  { id: 'ctrl-c', label: '^C', title: 'Ctrl+C', bytes: '\x03' },
   { id: 'tab', label: 'Tab', title: 'Tab', bytes: '\t' },
   { id: 'shift-tab', label: '⇧Tab', title: 'Shift+Tab', bytes: '\x1b[Z' },
   { id: 'up', label: '↑', title: 'Up', cursor: 'A' },
   { id: 'down', label: '↓', title: 'Down', cursor: 'B' },
   { id: 'left', label: '←', title: 'Left', cursor: 'D' },
   { id: 'right', label: '→', title: 'Right', cursor: 'C' },
-  { id: 'ctrl-c', label: '^C', title: 'Ctrl+C', bytes: '\x03' },
   { id: 'enter', label: '↵', title: 'Enter', bytes: '\r' },
 ]
 

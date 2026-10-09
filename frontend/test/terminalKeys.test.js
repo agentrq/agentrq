@@ -8,16 +8,16 @@ import { TERMINAL_KEYS, keyBytes, pressKey } from '../src/composables/useTermina
 const key = (id) => TERMINAL_KEYS.find((k) => k.id === id)
 
 describe('the on-screen terminal keys', () => {
-  it('offers Esc, Tab, Shift+Tab, the four arrows, Ctrl+C and Enter last', () => {
+  it('offers Esc and Ctrl+C together, then Tab, Shift+Tab, the four arrows and Enter last', () => {
     expect(TERMINAL_KEYS.map((k) => k.id)).toEqual([
       'esc',
+      'ctrl-c',
       'tab',
       'shift-tab',
       'up',
       'down',
       'left',
       'right',
-      'ctrl-c',
       'enter',
     ])
   })
