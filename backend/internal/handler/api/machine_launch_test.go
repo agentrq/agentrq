@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
@@ -64,6 +65,7 @@ type answeringConn struct {
 	replyOp wire.Op
 	body    any
 	got     wire.Control
+	asks    int
 }
 
 func (c *answeringConn) Send(f wire.Frame) error {
@@ -72,6 +74,7 @@ func (c *answeringConn) Send(f wire.Frame) error {
 		return err
 	}
 	c.got = ctl
+	c.asks++
 	c.reg.Deliver(wire.Control{ID: ctl.ID, Op: c.replyOp, Body: mustMarshal(c.body)})
 	return nil
 }
@@ -87,7 +90,11 @@ func mustMarshal(v any) []byte {
 }
 
 func acpGatewayApp(c crud.Controller, reg *machinectrl.Registry) *fiber.App {
-	h := &handler{crud: c, machineRegistry: reg}
+	return acpGatewayAppCached(c, reg, nil)
+}
+
+func acpGatewayAppCached(c crud.Controller, reg *machinectrl.Registry, cache *machinectrl.LookupCache) *fiber.App {
+	h := &handler{crud: c, machineRegistry: reg, acpLookups: cache}
 	app := fiber.New()
 	app.Use(func(ctx *fiber.Ctx) error {
 		ctx.Locals("user_id", "user-1")
@@ -204,8 +211,9 @@ func TestListAcpModelsFailsOpen(t *testing.T) {
 	machineQ := "machineId=" + monoflake.ID(11).String()
 
 	tests := map[string]struct {
-		url  string
-		crud *acpGatewayCrud
+		url      string
+		crud     *acpGatewayCrud
+		noDaemon bool
 	}{
 		"no agent named": {
 			url:  base + "?" + machineQ,
@@ -223,17 +231,148 @@ func TestListAcpModelsFailsOpen(t *testing.T) {
 			url:  base + "?" + machineQ + "&agent=codex-acp",
 			crud: &acpGatewayCrud{workspaceErr: errNotFoundForTest},
 		},
+		"machine not owned by the caller": {
+			url:  base + "?" + machineQ + "&agent=codex-acp",
+			crud: &acpGatewayCrud{machineErr: errNotFoundForTest, workspace: entity.Workspace{WorkingDirectory: "/work/ws"}},
+		},
+		"machine not connected here": {
+			url:      base + "?" + machineQ + "&agent=codex-acp",
+			crud:     &acpGatewayCrud{workspace: entity.Workspace{WorkingDirectory: "/work/ws"}},
+			noDaemon: true,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			reg := machinectrl.NewRegistry("pod-a")
-			reg.Add(11, &stubDaemonConn{})
+			if !tc.noDaemon {
+				reg.Add(11, &stubDaemonConn{})
+			}
 			res, _ := acpGatewayApp(tc.crud, reg).Test(httptest.NewRequest(http.MethodGet, tc.url, nil))
 			if res.StatusCode != http.StatusOK {
 				t.Fatalf("status = %d, want 200", res.StatusCode)
 			}
 			if got := decodeAcpModels(t, res); len(got.Models) != 0 {
 				t.Errorf("models = %+v, want none", got.Models)
+			}
+		})
+	}
+}
+
+func TestListAcpAgentsAsksAMachineOnceWithinTheTTL(t *testing.T) {
+	reg := machinectrl.NewRegistry("pod-a")
+	conn := &answeringConn{reg: reg, replyOp: wire.OpAcpAgents, body: wire.AcpAgentsList{
+		Agents: []wire.AcpAgent{{ID: "codex-acp", Name: "Codex"}},
+	}}
+	reg.Add(11, conn)
+	app := acpGatewayAppCached(&acpGatewayCrud{}, reg, machinectrl.NewLookupCache(time.Minute))
+
+	for i := range 2 {
+		res, _ := app.Test(httptest.NewRequest(http.MethodGet, "/machines/"+monoflake.ID(11).String()+"/acp-agents", nil))
+		if got := decodeAcpAgents(t, res); len(got.Agents) != 1 || got.Agents[0].ID != "codex-acp" {
+			t.Errorf("request %d: agents = %+v", i, got.Agents)
+		}
+	}
+	if conn.asks != 1 {
+		t.Errorf("daemon asked %d times, want 1", conn.asks)
+	}
+}
+
+// Models are kept per machine and agent, so another workspace asking about the
+// same agent on the same machine is answered from the cache.
+func TestListAcpModelsAsksAMachineOncePerAgentWithinTheTTL(t *testing.T) {
+	reg := machinectrl.NewRegistry("pod-a")
+	conn := &answeringConn{reg: reg, replyOp: wire.OpAcpModels, body: wire.AcpModelsList{
+		Agent:  "codex-acp",
+		Models: []wire.AcpModel{{ID: "gpt-5.5", Name: "5.5"}},
+	}}
+	reg.Add(11, conn)
+	cache := machinectrl.NewLookupCache(time.Minute)
+	ask := func(workspaceID int64, dir, agent string) wire.AcpModelsList {
+		c := &acpGatewayCrud{workspace: entity.Workspace{WorkingDirectory: dir}}
+		url := "/workspaces/" + monoflake.ID(workspaceID).String() + "/acp-models?machineId=" + monoflake.ID(11).String() + "&agent=" + agent
+		res, _ := acpGatewayAppCached(c, reg, cache).Test(httptest.NewRequest(http.MethodGet, url, nil))
+		return decodeAcpModels(t, res)
+	}
+
+	ask(70, "/work/a", "codex-acp")
+	if got := ask(71, "/work/b", "codex-acp"); len(got.Models) != 1 || got.Models[0].ID != "gpt-5.5" {
+		t.Errorf("cached answer = %+v", got)
+	}
+	if conn.asks != 1 {
+		t.Fatalf("daemon asked %d times for one agent, want 1", conn.asks)
+	}
+	ask(70, "/work/a", "claude")
+	if conn.asks != 2 {
+		t.Errorf("daemon asked %d times for two agents, want 2", conn.asks)
+	}
+}
+
+// Ownership is checked on every request, ahead of the cache: an answer cached
+// for the machine's owner is never served to anyone else, for either lookup.
+func TestCachedLookupsStillRequireOwningTheMachine(t *testing.T) {
+	machineQ := "machineId=" + monoflake.ID(11).String()
+	tests := map[string]struct {
+		url     string
+		replyOp wire.Op
+		body    any
+		empty   func(*http.Response) bool
+	}{
+		"agents": {
+			url:     "/machines/" + monoflake.ID(11).String() + "/acp-agents",
+			replyOp: wire.OpAcpAgents,
+			body:    wire.AcpAgentsList{Agents: []wire.AcpAgent{{ID: "codex-acp"}}},
+			empty:   func(res *http.Response) bool { return len(decodeAcpAgents(t, res).Agents) == 0 },
+		},
+		"models": {
+			url:     "/workspaces/" + monoflake.ID(70).String() + "/acp-models?" + machineQ + "&agent=codex-acp",
+			replyOp: wire.OpAcpModels,
+			body:    wire.AcpModelsList{Agent: "codex-acp", Models: []wire.AcpModel{{ID: "gpt-5.5"}}},
+			empty:   func(res *http.Response) bool { return len(decodeAcpModels(t, res).Models) == 0 },
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := machinectrl.NewRegistry("pod-a")
+			conn := &answeringConn{reg: reg, replyOp: tc.replyOp, body: tc.body}
+			reg.Add(11, conn)
+			cache := machinectrl.NewLookupCache(time.Minute)
+			ws := entity.Workspace{WorkingDirectory: "/work/ws"}
+
+			owner, _ := acpGatewayAppCached(&acpGatewayCrud{workspace: ws}, reg, cache).Test(httptest.NewRequest(http.MethodGet, tc.url, nil))
+			if tc.empty(owner) {
+				t.Fatal("the owner got nothing; the cache was never warmed")
+			}
+
+			other := &acpGatewayCrud{machineErr: errNotFoundForTest, workspace: ws}
+			res, _ := acpGatewayAppCached(other, reg, cache).Test(httptest.NewRequest(http.MethodGet, tc.url, nil))
+			if !tc.empty(res) {
+				t.Error("a caller who does not own the machine was served the cached answer")
+			}
+			if conn.asks != 1 {
+				t.Errorf("daemon asked %d times, want 1", conn.asks)
+			}
+		})
+	}
+}
+
+// An empty list is how every failure on the machine arrives, so neither it nor
+// an error reply is kept: the next request asks again.
+func TestListAcpAgentsDoesNotKeepAnEmptyOrErrorAnswer(t *testing.T) {
+	tests := map[string]*answeringConn{
+		"empty list":  {replyOp: wire.OpAcpAgents, body: wire.AcpAgentsList{}},
+		"error reply": {replyOp: wire.OpError, body: wire.AcpAgentsList{Agents: []wire.AcpAgent{{ID: "codex-acp"}}}},
+	}
+	for name, conn := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := machinectrl.NewRegistry("pod-a")
+			conn.reg = reg
+			reg.Add(11, conn)
+			app := acpGatewayAppCached(&acpGatewayCrud{}, reg, machinectrl.NewLookupCache(time.Minute))
+			for range 2 {
+				_, _ = app.Test(httptest.NewRequest(http.MethodGet, "/machines/"+monoflake.ID(11).String()+"/acp-agents", nil))
+			}
+			if conn.asks != 2 {
+				t.Errorf("daemon asked %d times, want 2", conn.asks)
 			}
 		})
 	}

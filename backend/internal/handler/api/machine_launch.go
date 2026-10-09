@@ -7,7 +7,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -35,6 +37,10 @@ const (
 // by typing: a request that hung forever behind a slow daemon would be a
 // worse outcome than answering "nothing to suggest" on time.
 const acpGatewayAskTimeout = 50 * time.Second
+
+// errNoWorkingDirectory is a models lookup for a workspace with no folder to
+// run the gateway in.
+var errNoWorkingDirectory = errors.New("workspace has no working directory")
 
 // mcpServerName is the entry written into .mcp.json and what `server:<name>`
 // refers to on the command line.
@@ -83,12 +89,19 @@ func (h *handler) listAcpAgents() fiber.Handler {
 		}
 		machineID := monoflake.IDFromBase62(c.Params("id")).Int64()
 
-		reply, err := h.askDaemon(ctx, machineID, wire.Control{Op: wire.OpListAcpAgents})
+		key := machinectrl.LookupKey{MachineID: machineID, Op: wire.OpListAcpAgents}
+		body, err := h.acpLookups.Load(ctx, key, func(ctx context.Context) ([]byte, bool, error) {
+			list, err := askDaemonFor[wire.AcpAgentsList](h, ctx, machineID, wire.Control{Op: key.Op})
+			if err != nil {
+				return nil, false, err
+			}
+			body, err := json.Marshal(list)
+			return body, len(list.Agents) > 0, err
+		})
 		if err != nil {
 			return c.JSON(out)
 		}
-		_ = json.Unmarshal(reply.Body, &out)
-		return c.JSON(out)
+		return c.Send(body)
 	}
 }
 
@@ -107,19 +120,16 @@ func (h *handler) listAcpModels() fiber.Handler {
 		ctx, cancel := newContext(c)
 		defer cancel()
 
-		agent := c.Query("agent")
+		// Cloned: fiber reuses the request's buffer, and agent outlives the
+		// request as a cache key and in a shared fetch.
+		agent := strings.Clone(c.Query("agent"))
 		out := wire.AcpModelsList{Agent: agent}
 		if agent == "" || c.Query("machineId") == "" {
 			return c.JSON(out)
 		}
 
 		userID := c.Locals("user_id").(string)
-		ws, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
-			ID: monoflake.IDFromBase62(c.Params("id")).Int64(), UserID: userID,
-		})
-		if err != nil || ws.Workspace.WorkingDirectory == "" {
-			return c.JSON(out)
-		}
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
 		if _, err := h.crud.GetMachine(ctx, entity.GetMachineRequest{
 			UserID: userID, MachineID: c.Query("machineId"),
 		}); err != nil {
@@ -127,17 +137,52 @@ func (h *handler) listAcpModels() fiber.Handler {
 		}
 		machineID := monoflake.IDFromBase62(c.Query("machineId")).Int64()
 
-		body, err := json.Marshal(wire.ListAcpModels{Agent: agent, Dir: ws.Workspace.WorkingDirectory})
+		// The workspace is read only on a miss: it names the folder to ask
+		// from, and a cached answer needs none.
+		key := machinectrl.LookupKey{MachineID: machineID, Op: wire.OpListAcpModels, Agent: agent}
+		reply, err := h.acpLookups.Load(ctx, key, func(ctx context.Context) ([]byte, bool, error) {
+			ws, err := h.crud.GetWorkspace(ctx, entity.GetWorkspaceRequest{
+				ID: workspaceID, UserID: userID,
+			})
+			if err != nil {
+				return nil, false, err
+			}
+			if ws.Workspace.WorkingDirectory == "" {
+				return nil, false, errNoWorkingDirectory
+			}
+			body, _ := json.Marshal(wire.ListAcpModels{Agent: agent, Dir: ws.Workspace.WorkingDirectory})
+			list, err := askDaemonFor[wire.AcpModelsList](h, ctx, machineID, wire.Control{Op: key.Op, Body: body})
+			if err != nil {
+				return nil, false, err
+			}
+			list.Agent = agent
+			reply, err := json.Marshal(list)
+			return reply, len(list.Models) > 0, err
+		})
 		if err != nil {
 			return c.JSON(out)
 		}
-		reply, err := h.askDaemon(ctx, machineID, wire.Control{Op: wire.OpListAcpModels, Body: body})
-		if err != nil {
-			return c.JSON(out)
-		}
-		_ = json.Unmarshal(reply.Body, &out)
-		return c.JSON(out)
+		return c.Send(reply)
 	}
+}
+
+// askDaemonFor asks a machine one lookup and decodes its answer. An error
+// reply decodes to nothing.
+//
+// Answers are kept in [machinectrl.LookupCache] per machine and agent, not per
+// workspace: what a machine's agents and models are does not depend on the
+// folder asked from. Only an answer with something in it is kept, since an
+// empty one is how every failure on the machine arrives.
+func askDaemonFor[T any](h *handler, ctx context.Context, machineID int64, c wire.Control) (T, error) {
+	var out T
+	reply, err := h.askDaemon(ctx, machineID, c)
+	if err != nil {
+		return out, err
+	}
+	if reply.Op != wire.OpError {
+		_ = json.Unmarshal(reply.Body, &out)
+	}
+	return out, nil
 }
 
 // askDaemon sends a correlated request to a machine and waits for its reply,

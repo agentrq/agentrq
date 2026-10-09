@@ -77,6 +77,7 @@ type (
 		tokenSvc         auth.TokenService
 		mcpManager       mcpManager
 		machineRegistry  *machinectrl.Registry
+		acpLookups       *machinectrl.LookupCache
 		bus              *eventbus.Bus
 		forks            forkMerger
 		baseURL          string
@@ -119,6 +120,7 @@ func New(p Params) (Handler, error) {
 		tokenSvc:         p.TokenSvc,
 		mcpManager:       liveMCPManager{p.MCPManager},
 		machineRegistry:  p.MachineRegistry,
+		acpLookups:       machinectrl.NewLookupCache(machinectrl.LookupCacheTTL),
 		bus:              p.EventBus,
 		forks:            p.ForkMerger,
 		baseURL:          p.BaseURL,
