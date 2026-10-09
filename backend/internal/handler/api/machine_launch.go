@@ -205,6 +205,7 @@ func (h *handler) launchAgent() fiber.Handler {
 			MachineID string `json:"machineId"`
 			Kind      string `json:"kind"`
 			Model     string `json:"model,omitempty"`
+			Effort    string `json:"effort,omitempty"`
 			Agent     string `json:"agent,omitempty"`
 			Cols      uint16 `json:"cols,omitempty"`
 			Rows      uint16 `json:"rows,omitempty"`
@@ -331,13 +332,13 @@ func (h *handler) launchAgent() fiber.Handler {
 				"update agentrqd on this machine to run a fork (it needs "+wire.MinForkVersion+" or newer)",
 				http.StatusConflict))
 		}
-		// An older agentrqd drops a Claude Code model and starts the default
-		// one, which would look like the choice was honoured.
-		if payload.Kind == "claude-code" && payload.Model != "" &&
-			!h.machineRegistry.HasCapability(machineID, wire.CapabilityClaudeModel) {
+		// An older agentrqd drops a Claude Code model and effort and starts
+		// the defaults, which would look like the choice was honoured.
+		if payload.Kind == "claude-code" && (payload.Model != "" || payload.Effort != "") &&
+			!h.machineRegistry.HasCapability(machineID, wire.CapabilityClaudeOptions) {
 			c.Status(http.StatusConflict)
 			return c.Send(mapper.FromMessageToHTTPResponse(
-				"update agentrqd on this machine to choose Claude Code's model, or leave the model blank",
+				"update agentrqd on this machine to choose Claude Code's model or effort, or leave both blank",
 				http.StatusConflict))
 		}
 
@@ -348,6 +349,7 @@ func (h *handler) launchAgent() fiber.Handler {
 			ServerName: mcpServerName,
 			Workspace:  ws.Workspace.Name,
 			Model:      payload.Model,
+			Effort:     payload.Effort,
 			Agent:      payload.Agent,
 			Cols:       payload.Cols,
 			Rows:       payload.Rows,

@@ -73,6 +73,7 @@ func (r *Restarter) handOver(ctx context.Context, reason, to string, install, un
 			Workspace:  sess.Params.Workspace,
 			ServerName: sess.Params.ServerName,
 			Model:      sess.Params.Model,
+			Effort:     sess.Params.Effort,
 			Agent:      sess.Params.Agent,
 			Cols:       sess.Cols,
 			Rows:       sess.Rows,

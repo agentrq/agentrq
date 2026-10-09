@@ -141,20 +141,23 @@ describe('MachineDetailView: starting an agent', () => {
     expect(push).toHaveBeenCalledWith('/sessions/sess-10')
   })
 
-  it('sends the model chosen for Claude Code, suggesting its aliases', async () => {
+  it('sends the model and effort chosen for Claude Code, suggesting its aliases', async () => {
     localStorage.clear()
     const { el, choose, clickStart, clickTab } = await mount()
     await clickTab('New Session')
     await choose('launch-workspace-ws1')
     const field = el.querySelector('#launch-model')
     expect(field.placeholder).toBe('Claude Code default')
-    expect(el.querySelectorAll('#launch-model-options option')).toHaveLength(4)
+    expect(el.querySelectorAll('#launch-model-options option')).toHaveLength(5)
     field.value = 'haiku'
     field.dispatchEvent(new Event('input'))
+    const effort = el.querySelector('#launch-effort')
+    effort.value = 'low'
+    effort.dispatchEvent(new Event('change'))
     await settle()
     await clickStart()
 
-    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'haiku' }))
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'haiku', effort: 'low' }))
     localStorage.clear()
   })
 

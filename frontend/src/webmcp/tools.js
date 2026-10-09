@@ -891,14 +891,15 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         machineId: MACHINE_ID,
         kind: str('Which agent to run: claude-code or acp-gateway.'),
         model: str('The model, blank for the default: an alias such as opus or sonnet for claude-code, or the gateway agent\'s own.'),
+        effort: str('The effort level for claude-code: low, medium, high, xhigh or max; blank for its default.'),
         agent: str('The agent, for acp-gateway.'),
         cols: int('Terminal width in columns.'),
         rows: int('Terminal height in rows.'),
       },
       required: ['workspaceId', 'machineId', 'kind'],
       screen: before(workspacePage),
-      run: ({ workspaceId, machineId, kind, model = '', agent = '', cols = 0, rows = 0 }) =>
-        api.launchAgent(workspaceId, { machineId, kind, model, agent, cols, rows }),
+      run: ({ workspaceId, machineId, kind, model = '', effort = '', agent = '', cols = 0, rows = 0 }) =>
+        api.launchAgent(workspaceId, { machineId, kind, model, effort, agent, cols, rows }),
     }),
     tool({
       name: 'restartDaemon',

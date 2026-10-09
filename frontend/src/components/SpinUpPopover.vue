@@ -16,7 +16,7 @@ import { useRouter } from 'vue-router'
 import AgentKindPicker from './AgentKindPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { spinUpName } from '../composables/useSpinUp'
-import { MODEL_PLACEHOLDERS, modelSuggestions } from '../composables/useAgentLaunch'
+import { CLAUDE_CODE_EFFORTS, MODEL_PLACEHOLDERS, modelSuggestions } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
 const props = defineProps({
@@ -103,6 +103,14 @@ async function start() {
           <datalist id="spin-up-model-options">
             <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
+        </div>
+        <div v-if="spin.kind.value === 'claude-code'" class="min-w-0">
+          <label for="spin-up-effort" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Effort</label>
+          <select id="spin-up-effort" v-model="spin.params.value.effort"
+                  class="w-full px-2 py-1.5 text-xs font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white">
+            <option value="">Default</option>
+            <option v-for="e in CLAUDE_CODE_EFFORTS" :key="e" :value="e">{{ e }}</option>
+          </select>
         </div>
       </div>
 

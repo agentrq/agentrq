@@ -41,7 +41,7 @@ import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
-import { MODEL_PLACEHOLDERS, modelSuggestions, useAgentLaunch } from '../composables/useAgentLaunch'
+import { CLAUDE_CODE_EFFORTS, MODEL_PLACEHOLDERS, modelSuggestions, useAgentLaunch } from '../composables/useAgentLaunch'
 import { terminalPath } from '../composables/useTerminalView'
 
 const route = useRoute()
@@ -558,6 +558,22 @@ async function stopSession(id) {
               <datalist id="launch-model-options">
                 <option v-for="m in launchModels" :key="m.id" :value="m.id">{{ m.name }}</option>
               </datalist>
+            </div>
+            <!-- A closed list, so a select rather than a field to type into. -->
+            <div v-if="launchKind === 'claude-code'">
+              <label
+                for="launch-effort"
+                class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+                >Effort <span class="normal-case font-normal tracking-normal">(optional)</span></label
+              >
+              <select
+                id="launch-effort"
+                v-model="launchParams.effort"
+                class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+              >
+                <option value="">Claude Code default</option>
+                <option v-for="e in CLAUDE_CODE_EFFORTS" :key="e" :value="e">{{ e }}</option>
+              </select>
             </div>
           </div>
 

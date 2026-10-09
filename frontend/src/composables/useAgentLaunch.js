@@ -28,9 +28,9 @@ export const KINDS = [
     label: 'Claude Code',
     description: 'Reads the workspace over MCP. The daemon writes its config.',
     needs: [],
-    // Blank is Claude Code's own default, as it was before a model could be
-    // named here.
-    optional: ['model'],
+    // Blank is Claude Code's own default for either, as it was before they
+    // could be chosen here.
+    optional: ['model', 'effort'],
   },
   {
     id: 'acp-gateway',
@@ -57,11 +57,15 @@ export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigr
  * model id typed by hand is accepted the same way.
  */
 export const CLAUDE_CODE_MODELS = [
+  { id: 'fable', name: 'Fable' },
   { id: 'opus', name: 'Opus' },
   { id: 'sonnet', name: 'Sonnet' },
   { id: 'haiku', name: 'Haiku' },
   { id: 'opusplan', name: 'Opus to plan, Sonnet to build' },
 ]
+
+/** The levels `claude --effort` accepts, lowest first. Blank is Claude Code's default. */
+export const CLAUDE_CODE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 /** The models to suggest for a kind: the gateway's agent's own, or Claude Code's aliases. */
 export function modelSuggestions(kind, acpModels) {
@@ -113,24 +117,27 @@ export function rememberAcpGatewayChoice({ agent, model }) {
   }
 }
 
-/** Where Claude Code's last model is remembered, the same way as the gateway's. */
+/** Where Claude Code's last model and effort are remembered, the same way as the gateway's. */
 const LAST_CLAUDE_CODE_KEY = 'agentrq:lastClaudeCode'
 
-/** The model somebody last launched Claude Code with, or null. */
+/** The model and effort somebody last launched Claude Code with, or null. */
 export function lastClaudeCodeChoice() {
   try {
     const parsed = JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null')
     if (typeof parsed?.model !== 'string') return null
-    return { model: parsed.model }
+    // Only the levels Claude Code accepts are restored; anything else opens
+    // on its default.
+    const effort = CLAUDE_CODE_EFFORTS.includes(parsed.effort) ? parsed.effort : ''
+    return { model: parsed.model, effort }
   } catch {
     return null
   }
 }
 
-/** Remembers a Claude Code launch's model, blank included, for the next one. */
-export function rememberClaudeCodeChoice({ model }) {
+/** Remembers a Claude Code launch's model and effort, blanks included, for the next one. */
+export function rememberClaudeCodeChoice({ model, effort }) {
   try {
-    localStorage.setItem(LAST_CLAUDE_CODE_KEY, JSON.stringify({ model: model ?? '' }))
+    localStorage.setItem(LAST_CLAUDE_CODE_KEY, JSON.stringify({ model: model ?? '', effort: effort ?? '' }))
   } catch {
     // The next launch opens on Claude Code's default instead.
   }
@@ -139,7 +146,7 @@ export function rememberClaudeCodeChoice({ model }) {
 /** The parameters a kind's fields open on: its last launch, or its defaults. */
 export function initialParams(kind) {
   if (kind === 'acp-gateway') return lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS }
-  return lastClaudeCodeChoice() ?? { model: '' }
+  return lastClaudeCodeChoice() ?? { model: '', effort: '' }
 }
 
 /** Remembers a launch's parameters for the next launch of the same kind. */

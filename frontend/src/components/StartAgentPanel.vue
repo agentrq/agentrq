@@ -21,7 +21,7 @@ import { useRouter } from 'vue-router'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
 import AgentKindPicker from './AgentKindPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
-import { MODEL_PLACEHOLDERS, launchFolderNote, modelSuggestions } from '../composables/useAgentLaunch'
+import { CLAUDE_CODE_EFFORTS, MODEL_PLACEHOLDERS, launchFolderNote, modelSuggestions } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 
 const props = defineProps({
@@ -253,6 +253,22 @@ async function start() {
           <datalist id="start-agent-model-options">
             <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
+        </div>
+        <!-- A closed list, so a select rather than a field to type into. -->
+        <div v-if="kind === 'claude-code'">
+          <label
+            for="start-agent-effort"
+            class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1"
+            >Effort <span class="normal-case font-normal tracking-normal">(optional)</span></label
+          >
+          <select
+            id="start-agent-effort"
+            v-model="params.effort"
+            class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+          >
+            <option value="">Claude Code default</option>
+            <option v-for="e in CLAUDE_CODE_EFFORTS" :key="e" :value="e">{{ e }}</option>
+          </select>
         </div>
       </div>
 

@@ -74,6 +74,7 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		Workspace:  s.Workspace,
 		ServerName: s.ServerName,
 		Model:      s.Model,
+		Effort:     s.Effort,
 		Agent:      s.Agent,
 	})
 	if err != nil {
@@ -92,6 +93,7 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 			Workspace:  s.Workspace,
 			ServerName: s.ServerName,
 			Model:      s.Model,
+			Effort:     s.Effort,
 			Agent:      s.Agent,
 		},
 		Dir:            s.Dir,

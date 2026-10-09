@@ -21,6 +21,7 @@ import {
   KINDS,
   GATEWAY_DEFAULTS,
   CLAUDE_CODE_MODELS,
+  CLAUDE_CODE_EFFORTS,
   MODEL_PLACEHOLDERS,
   lastClaudeCodeChoice,
   rememberClaudeCodeChoice,
@@ -715,9 +716,15 @@ describe('choosing Claude Code\'s model', () => {
   it('suggests Claude Code\'s aliases, and the gateway agent\'s own models for the gateway', () => {
     const gateway = [{ id: 'gpt-5.5', name: 'GPT 5.5' }]
     expect(modelSuggestions('claude-code', gateway)).toBe(CLAUDE_CODE_MODELS)
-    expect(CLAUDE_CODE_MODELS.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku', 'opusplan'])
+    expect(CLAUDE_CODE_MODELS.map((m) => m.id)).toEqual(['fable', 'opus', 'sonnet', 'haiku', 'opusplan'])
     expect(modelSuggestions('acp-gateway', gateway)).toBe(gateway)
     expect(modelSuggestions('acp-gateway', undefined)).toEqual([])
+  })
+
+  it('offers every effort level Claude Code accepts, and checks them like the model', () => {
+    expect(CLAUDE_CODE_EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    for (const effort of CLAUDE_CODE_EFFORTS) expect(paramsEligibility('claude-code', { effort }).ok).toBe(true)
+    expect(launchParamsPayload('claude-code', { model: '', effort: 'high' })).toEqual({ effort: 'high' })
   })
 
   it('says in the field what a blank model means for each kind', () => {
@@ -726,10 +733,10 @@ describe('choosing Claude Code\'s model', () => {
 
   it('has nothing remembered at first, and round-trips what was', () => {
     expect(lastClaudeCodeChoice()).toBeNull()
-    rememberClaudeCodeChoice({ model: 'sonnet' })
-    expect(lastClaudeCodeChoice()).toEqual({ model: 'sonnet' })
+    rememberClaudeCodeChoice({ model: 'sonnet', effort: 'xhigh' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'sonnet', effort: 'xhigh' })
     rememberClaudeCodeChoice({})
-    expect(lastClaudeCodeChoice()).toEqual({ model: '' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
   })
 
   it('treats unreadable or misshapen storage as nothing remembered', () => {
@@ -737,6 +744,9 @@ describe('choosing Claude Code\'s model', () => {
       localStorage.setItem('agentrq:lastClaudeCode', bad)
       expect(lastClaudeCodeChoice()).toBeNull()
     }
+    // A level Claude Code would refuse opens on its default instead.
+    localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opus","effort":"ultra"}')
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: '' })
   })
 
   it('survives storage that throws', () => {
@@ -746,11 +756,11 @@ describe('choosing Claude Code\'s model', () => {
   })
 
   it('opens each kind on its last launch, or its defaults', () => {
-    expect(initialParams('claude-code')).toEqual({ model: '' })
+    expect(initialParams('claude-code')).toEqual({ model: '', effort: '' })
     expect(initialParams('acp-gateway')).toEqual(GATEWAY_DEFAULTS)
-    rememberParams('claude-code', { model: 'haiku' })
+    rememberParams('claude-code', { model: 'haiku', effort: 'low' })
     rememberParams('acp-gateway', { agent: 'codex-acp', model: 'gpt-5.5' })
-    expect(initialParams('claude-code')).toEqual({ model: 'haiku' })
+    expect(initialParams('claude-code')).toEqual({ model: 'haiku', effort: 'low' })
     expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
   })
 
@@ -771,10 +781,10 @@ describe('choosing Claude Code\'s model', () => {
     const h = harness()
     await h.l.load()
     h.l.workspaceId.value = 'ws1'
-    h.l.params.value = { model: ' opus ' }
+    h.l.params.value = { model: ' opus ', effort: 'max' }
     await h.l.launch()
-    expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'opus' }))
-    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus' })
+    expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'opus', effort: 'max' }))
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: 'max' })
   })
 
   it('sends no model when none was chosen, so Claude Code starts on its default', async () => {
@@ -783,6 +793,7 @@ describe('choosing Claude Code\'s model', () => {
     h.l.workspaceId.value = 'ws1'
     await h.l.launch()
     expect(h.deps.launchAgent.mock.calls[0][1]).not.toHaveProperty('model')
-    expect(lastClaudeCodeChoice()).toEqual({ model: '' })
+    expect(h.deps.launchAgent.mock.calls[0][1]).not.toHaveProperty('effort')
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
   })
 })

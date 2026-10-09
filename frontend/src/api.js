@@ -380,11 +380,11 @@ export async function fetchWorkspaceSession(workspaceId) {
  * which arrives over the event stream — says whether it started. Callers must
  * not treat this resolving as the agent running.
  */
-export async function launchAgent(workspaceId, { machineId, kind, model = '', agent = '', cols = 0, rows = 0 }) {
+export async function launchAgent(workspaceId, { machineId, kind, model = '', effort = '', agent = '', cols = 0, rows = 0 }) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/agent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ machineId, kind, model, agent, cols, rows })
+    body: JSON.stringify({ machineId, kind, model, effort, agent, cols, rows })
   });
   if (!res.ok) {
     // The server says why it refused — the workspace already has an agent, the

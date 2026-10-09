@@ -102,6 +102,7 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 			Workspace:  req.Workspace,
 			ServerName: req.ServerName,
 			Model:      req.Model,
+			Effort:     req.Effort,
 			Agent:      req.Agent,
 		},
 		Dir:        req.Dir,

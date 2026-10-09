@@ -104,9 +104,9 @@ describe('StartAgentPanel', () => {
   it('does not ask which machine when there is only one', async () => {
     const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE])
     await open()
-    // The only dropdown left on this form is the machine, and there is
-    // nothing to pick: what to run is a segmented control.
-    expect(el.querySelectorAll('select')).toHaveLength(0)
+    // There is no machine to pick, and what to run is a segmented control:
+    // the only dropdown is Claude Code's effort.
+    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-effort'])
     expect(el.querySelector('#start-agent-kind-claude-code')).toBeTruthy()
     expect(text()).toMatch(/Runs in \/srv\/app on workshop-pi, your only machine that is online\./)
   })
@@ -119,7 +119,7 @@ describe('StartAgentPanel', () => {
       'start-agent-machine-m1',
       'start-agent-machine-m2',
     ])
-    expect(el.querySelectorAll('select')).toHaveLength(0)
+    expect([...el.querySelectorAll('select')].map((s) => s.id)).toEqual(['start-agent-effort'])
     expect(text()).toMatch(/on the machine you pick/)
     expect(text()).toMatch(/Pick a machine to run on/)
     expect(el.querySelector('button[disabled]')).toBeTruthy()
@@ -177,12 +177,16 @@ describe('StartAgentPanel', () => {
     expect(el.querySelector('#start-agent-agent')).toBeNull()
     expect(model.placeholder).toBe('Claude Code default')
     expect([...el.querySelectorAll('#start-agent-model-options option')].map((o) => o.value)).toEqual([
-      'opus', 'sonnet', 'haiku', 'opusplan',
+      'fable', 'opus', 'sonnet', 'haiku', 'opusplan',
+    ])
+    expect([...el.querySelectorAll('#start-agent-effort option')].map((o) => o.value)).toEqual([
+      '', 'low', 'medium', 'high', 'xhigh', 'max',
     ])
 
     el.querySelector('#start-agent-kind-acp-gateway').click()
     await settle()
     expect(el.querySelector('#start-agent-agent')).toBeTruthy()
+    expect(el.querySelector('#start-agent-effort')).toBeNull()
     expect(el.querySelector('#start-agent-model').placeholder).toBe('Gateway default')
 
     el.querySelector('#start-agent-kind-claude-code').click()
@@ -191,12 +195,15 @@ describe('StartAgentPanel', () => {
     expect(field.value).toBe('')
     field.value = 'sonnet'
     field.dispatchEvent(new Event('input'))
+    const effort = el.querySelector('#start-agent-effort')
+    effort.value = 'xhigh'
+    effort.dispatchEvent(new Event('change'))
     await settle()
 
     const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
     go.click()
     await settle()
-    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'sonnet' }))
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'sonnet', effort: 'xhigh' }))
     localStorage.clear()
   })
 

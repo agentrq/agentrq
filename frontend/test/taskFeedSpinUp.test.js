@@ -94,7 +94,7 @@ describe('Spin up on a task row', () => {
     expect(row('Fix login')).toBeUndefined()
   })
 
-  it('asks Claude Code\'s model in the popover and sends it', async () => {
+  it('asks Claude Code\'s model and effort in the popover and sends them', async () => {
     const { row } = await mount(PARENT)
     row('Fix login').querySelector('[title="Spin up in a fork"]').click()
     await settle()
@@ -104,10 +104,13 @@ describe('Spin up on a task row', () => {
     expect([...document.body.querySelectorAll('#spin-up-model-options option')].map((o) => o.value)).toContain('opus')
     field.value = 'opus'
     field.dispatchEvent(new Event('input'))
+    const effort = document.body.querySelector('#spin-up-effort')
+    effort.value = 'high'
+    effort.dispatchEvent(new Event('change'))
     await settle()
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
-    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'claude-code', model: 'opus' }))
+    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'claude-code', model: 'opus', effort: 'high' }))
   })
 
   it('keeps the row when the move is what failed', async () => {

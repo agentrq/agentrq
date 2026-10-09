@@ -48,6 +48,7 @@ type Session struct {
 	Workspace  string `json:"workspace,omitempty"`
 	ServerName string `json:"serverName,omitempty"`
 	Model      string `json:"model,omitempty"`
+	Effort     string `json:"effort,omitempty"`
 	Agent      string `json:"agent,omitempty"`
 	Cols       uint16 `json:"cols,omitempty"`
 	Rows       uint16 `json:"rows,omitempty"`

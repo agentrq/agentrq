@@ -167,6 +167,36 @@ func TestARestartHandsOverWithoutEndingTheSessions(t *testing.T) {
 
 // With no next daemon to start them, this one does — including a session of
 // its own profile, and not another's, which it has no connection to report on.
+// Claude Code's chosen model and effort are written into the note, so the
+// agent comes back on the same ones.
+func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
+	b := newBackend(t)
+	rig := &restartRig{state: t.TempDir()}
+	var note restore.File
+	rig.atRestart = func() {
+		raw, err := os.ReadFile(restore.Path(rig.state))
+		if err == nil {
+			err = json.Unmarshal(raw, &note)
+		}
+		if err != nil {
+			t.Errorf("no note at the handover: %v", err)
+		}
+	}
+	h := start(t, b, rig.option)
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high",
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
+	}))
+	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
+	waitFor(t, func() bool { return rig.count() == 1 }, "the daemon never restarted")
+
+	if len(note.Sessions) != 1 || note.Sessions[0].Model != "opus" || note.Sessions[0].Effort != "high" {
+		t.Errorf("the note said %+v, want one session on model opus with effort high", note)
+	}
+}
+
 func TestARestartThatFailsBringsTheAgentsBack(t *testing.T) {
 	b := newBackend(t)
 	rig := &restartRig{state: t.TempDir(), err: errors.New("exec format error")}

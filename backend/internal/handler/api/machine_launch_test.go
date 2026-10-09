@@ -708,30 +708,36 @@ func claudeModelLaunchCrud() *fakeLaunchCrud {
 	return &fakeLaunchCrud{workspace: entity.Workspace{ID: 1, Name: "api", WorkingDirectory: "/srv/api"}}
 }
 
-// The chosen model reaches the daemon on a machine that says it passes it on.
-func TestLaunchAgent_ClaudeCodeCarriesTheChosenModel(t *testing.T) {
-	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityClaudeModel}, "0.9.15",
-		`{"kind":"claude-code","model":"opus"}`)
+// The chosen model and effort reach the daemon on a machine that says it
+// passes them on.
+func TestLaunchAgent_ClaudeCodeCarriesTheChosenModelAndEffort(t *testing.T) {
+	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityClaudeOptions}, "0.9.15",
+		`{"kind":"claude-code","model":"opus","effort":"high"}`)
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
 	}
-	if start.Model != "opus" {
-		t.Errorf("the start frame names model %q, want opus", start.Model)
+	if start.Model != "opus" || start.Effort != "high" {
+		t.Errorf("the start frame names model %q and effort %q, want opus and high", start.Model, start.Effort)
 	}
 }
 
 // An older agentrqd would start Claude's default model and say nothing, so the
 // launch is refused before anything is sent.
-func TestLaunchAgent_AClaudeCodeModelIsRefusedOnADaemonThatWouldDropIt(t *testing.T) {
-	resp, start := launchWith(t, claudeModelLaunchCrud(), nil, "0.9.14", `{"kind":"claude-code","model":"opus"}`)
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("status = %d, want 409", resp.StatusCode)
-	}
-	if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to choose Claude Code's model") {
-		t.Errorf("message = %s, want it to ask for an agentrqd update", msg)
-	}
-	if start.SessionID != 0 {
-		t.Error("the start was sent anyway")
+func TestLaunchAgent_AClaudeCodeModelOrEffortIsRefusedOnADaemonThatWouldDropIt(t *testing.T) {
+	for _, body := range []string{
+		`{"kind":"claude-code","model":"opus"}`,
+		`{"kind":"claude-code","effort":"max"}`,
+	} {
+		resp, start := launchWith(t, claudeModelLaunchCrud(), nil, "0.9.14", body)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("%s: status = %d, want 409", body, resp.StatusCode)
+		}
+		if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to choose Claude Code's model or effort") {
+			t.Errorf("%s: message = %s, want it to ask for an agentrqd update", body, msg)
+		}
+		if start.SessionID != 0 {
+			t.Errorf("%s: the start was sent anyway", body)
+		}
 	}
 }
 

@@ -132,6 +132,31 @@ func TestARestoredSessionSaysItWasRestored(t *testing.T) {
 // A session that does not come back is reported failed, once, rather than
 // retried until somebody notices. Saying so is the point: a session silently
 // missing is worse than one that says why it is not there.
+// A restored Claude Code session comes back on the model and effort it was
+// started with.
+func TestARestoredClaudeCodeKeepsItsModelAndEffort(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
+	dir := t.TempDir()
+	if _, _, err := supervisor.WriteMCPConfig(dir, supervisor.MCPEntry{Name: "agentrq-workspace", URL: "https://agentrq.example/mcp/ws?token=test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.link.Restore(context.Background(), conn, restore.Session{
+		ID: 9, Profile: "work", Kind: string(supervisor.KindClaudeCode),
+		Dir: dir, Workspace: "demo", ServerName: "agentrq-workspace", Model: "opus", Effort: "max",
+	})
+
+	sess, err := h.sup.Get(9)
+	if err != nil {
+		t.Fatalf("the session did not come back: %v", err)
+	}
+	if sess.Params.Model != "opus" || sess.Params.Effort != "max" {
+		t.Errorf("restored with model %q and effort %q, want opus and max", sess.Params.Model, sess.Params.Effort)
+	}
+}
+
 func TestASessionThatCannotComeBackSaysWhy(t *testing.T) {
 	b := newBackend(t)
 	h := start(t, b)

@@ -123,8 +123,31 @@ func TestClaudeCodeTakesAnOptionalModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if strings.Contains(strings.Join(c.Argv, " "), "--model") {
-		t.Errorf("argv = %q, want no --model when none was chosen", c.Argv)
+	if got := strings.Join(c.Argv, " "); strings.Contains(got, "--model") || strings.Contains(got, "--effort") {
+		t.Errorf("argv = %q, want no --model or --effort when neither was chosen", got)
+	}
+}
+
+// Every level Claude Code accepts is passed on, after the model.
+func TestClaudeCodeTakesAnOptionalEffort(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		c, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s", Model: "opus", Effort: effort})
+		if err != nil {
+			t.Fatalf("Resolve with effort %q: %v", effort, err)
+		}
+		want := "claude --name w --model opus --effort " + effort + " --dangerously-load-development-channels server:s"
+		if got := strings.Join(c.Argv, " "); got != want {
+			t.Errorf("argv = %q, want %q", got, want)
+		}
+	}
+}
+
+// Effort is a closed list, so anything else is refused rather than passed on.
+func TestClaudeCodeRefusesAnUnknownEffort(t *testing.T) {
+	for _, effort := range []string{"ultra", "HIGH", "--max", "high max"} {
+		if _, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s", Effort: effort}); !errors.Is(err, ErrBadParameter) {
+			t.Errorf("Resolve accepted effort %q, error = %v", effort, err)
+		}
 	}
 }
 
