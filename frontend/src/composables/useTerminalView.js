@@ -172,6 +172,23 @@ export const TERMINAL_FALLBACK_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Co
  */
 export const TERMINAL_FONT_FAMILY = `"${TERMINAL_FONT}", ${TERMINAL_FALLBACK_FAMILY}`
 
+/**
+ * What clicking a hyperlink an agent printed does (OSC 8, which Claude Code
+ * uses for every link).
+ *
+ * Without a handler xterm asks `confirm()` and then opens a *blank* window and
+ * sets its location afterwards. The desktop shell routes a link by the URL a
+ * window opens with, so it saw `about:blank` and the link went nowhere after
+ * the prompt. Opening the URL itself sends it the way every other link goes:
+ * a browser tab on the web, the user's browser on desktop. xterm only hands
+ * over http(s) links here, and the desktop shell still refuses unsafe schemes.
+ */
+export const TERMINAL_LINK_HANDLER = {
+  activate: (_event, uri) => {
+    window.open(uri, '_blank', 'noopener')
+  },
+}
+
 /** How xterm itself is set up. */
 export const TERMINAL_OPTIONS = {
   // The agent controls the cursor; a blink the agent did not ask for is a lie
@@ -195,6 +212,7 @@ export const TERMINAL_OPTIONS = {
   // Never: the daemon sends exactly the bytes the program produced, and a
   // terminal that converted line endings would be changing them.
   convertEol: false,
+  linkHandler: TERMINAL_LINK_HANDLER,
   allowProposedApi: true,
 }
 
