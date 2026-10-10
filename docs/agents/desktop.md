@@ -59,6 +59,9 @@ Consequences worth knowing before changing anything here:
   keeps auth URLs on the configured server in-app because the `at` cookie has to
   land in this profile's jar — sent out, sign-in "succeeds" and the app stays
   signed out.
+  The shell routes a window by the URL it opens with, so open the link itself:
+  `window.open()` then `location =` reaches it as `about:blank` and goes nowhere
+  — what xterm's default hyperlink handler did until the terminal got its own.
 - **Never make a `file:` URL followable.** `classifyLink` blocks the scheme on
   purpose — message bodies are agent-written, and a followed `file:` link is how
   one reaches the machine. Rendered markdown therefore strips the href and

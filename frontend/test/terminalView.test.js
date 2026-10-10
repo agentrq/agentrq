@@ -18,6 +18,7 @@ import {
   applyTerminalAppearance,
   followDarkClass,
   TERMINAL_OPTIONS,
+  TERMINAL_LINK_HANDLER,
   TERMINAL_FONT,
   TERMINAL_FONT_SPECS,
   TERMINAL_FALLBACK_FAMILY,
@@ -429,6 +430,23 @@ describe('the terminal itself', () => {
   // converted line endings would be changing them.
   it('never converts line endings', () => {
     expect(TERMINAL_OPTIONS.convertEol).toBe(false)
+  })
+
+  // xterm's own fallback asks confirm() and opens a blank window, then sets
+  // its location — so the desktop shell, which routes a link by the URL it
+  // opens with, saw about:blank and the link went nowhere.
+  it('opens a printed hyperlink at its own URL, without asking first', () => {
+    expect(TERMINAL_OPTIONS.linkHandler).toBe(TERMINAL_LINK_HANDLER)
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const confirm = vi.spyOn(window, 'confirm')
+    try {
+      TERMINAL_LINK_HANDLER.activate(new MouseEvent('click'), 'https://example.com/docs')
+      expect(open).toHaveBeenCalledWith('https://example.com/docs', '_blank', 'noopener')
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      open.mockRestore()
+      confirm.mockRestore()
+    }
   })
 
   it('keeps enough scrollback to be useful and not enough to be a leak', () => {
