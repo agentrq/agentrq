@@ -13,6 +13,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
 	"github.com/glebarez/sqlite"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -35,7 +36,9 @@ func forkDB(t *testing.T) (*gorm.DB, Repository) {
 	}
 	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{},
 		&model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{},
-		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}); err != nil {
+		&model.TaskLatency{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{},
+		&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
+		&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()
@@ -189,6 +192,110 @@ func TestMergeForkIntoParent_EmptyForkIsJustDeleted(t *testing.T) {
 	}
 }
 
+// statsHour and statsLater are two hours of statistics: both workspaces have
+// rows in the first, only the fork in the second.
+const (
+	statsHour  = int64(1790000000)
+	statsLater = statsHour + 3600
+)
+
+// seedForkStats writes ws a telemetry event, and a telemetry row and a
+// worked-time latency row in every rollup for each period, with n events and
+// n tasks of seconds each.
+func seedForkStats(t *testing.T, db *gorm.DB, ws, n, seconds int64, periods ...int64) {
+	t.Helper()
+	if err := db.Create(&model.Telemetry{UserID: wfUser, WorkspaceID: ws, OccurredAt: periods[0], Action: 1}).Error; err != nil {
+		t.Fatalf("seed telemetry: %v", err)
+	}
+	var s tasklatency.Stats
+	for range n {
+		s.Add(seconds)
+	}
+	for _, p := range periods {
+		for _, r := range []any{
+			&model.HourlyTelemetry{PeriodStart: p, UserID: wfUser, WorkspaceID: ws, Action: 1, Count: n},
+			&model.DailyTelemetry{PeriodStart: p, UserID: wfUser, WorkspaceID: ws, Action: 1, Count: n},
+			&model.MonthlyTelemetry{PeriodStart: p, UserID: wfUser, WorkspaceID: ws, Action: 1, Count: n},
+		} {
+			if err := db.Create(r).Error; err != nil {
+				t.Fatalf("seed %T: %v", r, err)
+			}
+		}
+		for _, table := range []string{hourlyTaskLatencies, dailyTaskLatencies, monthlyTaskLatencies} {
+			row := entity.TaskLatencyRollup{PeriodStart: p, UserID: wfUser, WorkspaceID: ws, Metric: uint8(model.LatencyMetricWorked),
+				Count: s.Count, Sum: s.Sum, Min: s.Min, Max: s.Max, Histogram: tasklatency.EncodeHist(s.Hist)}
+			if err := db.Table(table).Create(&row).Error; err != nil {
+				t.Fatalf("seed %s: %v", table, err)
+			}
+		}
+	}
+}
+
+// A merge hands the fork's statistics to the parent, so the stats page
+// does not show them under a workspace that no longer exists. A period both
+// have is added into the parent's row, since the workspace is part of the
+// rollup's key.
+func TestMergeForkIntoParent_GivesTheParentTheForksStatistics(t *testing.T) {
+	db, repo := forkDB(t)
+	seedForkStats(t, db, wfParent, 2, 30, statsHour)
+	seedForkStats(t, db, wfFork, 3, 600, statsHour, statsLater)
+	// Someone else's row in the same hour is left alone.
+	seedForkStats(t, db, wfOther, 7, 60, statsHour)
+
+	if _, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	if n := countIn(t, db, &model.Telemetry{}, wfParent); n != 2 {
+		t.Errorf("the parent has %d telemetry events, want its own and the fork's", n)
+	}
+	for _, m := range []any{&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{}} {
+		if n := countIn(t, db, m, wfFork); n != 0 {
+			t.Errorf("%d rows of %T still name the deleted fork", n, m)
+		}
+	}
+	for _, table := range []string{"hourly_telemetries", "daily_telemetries", "monthly_telemetries"} {
+		var rows []model.HourlyTelemetry
+		db.Table(table).Where("workspace_id = ?", wfParent).Order("period_start").Find(&rows)
+		if len(rows) != 2 || rows[0].Count != 5 || rows[1].Count != 3 {
+			t.Errorf("the parent's %s are %+v, want 2+3 in the shared hour and the fork's 3 in the next", table, rows)
+		}
+		var other int64
+		db.Table(table).Select("count").Where("workspace_id = ?", wfOther).Scan(&other)
+		if other != 7 {
+			t.Errorf("another workspace's %s count is %d, want 7", table, other)
+		}
+	}
+
+	for _, table := range []string{hourlyTaskLatencies, dailyTaskLatencies, monthlyTaskLatencies} {
+		var fork int64
+		db.Table(table).Where("workspace_id = ?", wfFork).Count(&fork)
+		if fork != 0 {
+			t.Errorf("%d rows of %s still name the deleted fork", fork, table)
+		}
+		var rows []entity.TaskLatencyRollup
+		db.Table(table).Where("workspace_id = ?", wfParent).Order("period_start").Scan(&rows)
+		if len(rows) != 2 {
+			t.Fatalf("the parent has %d rows of %s, want 2", len(rows), table)
+		}
+		shared := tasklatency.Decode(rows[0].Count, rows[0].Sum, rows[0].Min, rows[0].Max, rows[0].Histogram)
+		if shared.Count != 5 || shared.Sum != 2*30+3*600 || shared.Min != 30 || shared.Max != 600 {
+			t.Errorf("the parent's shared hour of %s is %+v, want both workspaces' tasks", table, shared)
+		}
+		if p50, _ := shared.Value("p50"); p50 < 600 {
+			t.Errorf("the shared hour's p50 in %s is %d, want the fork's 600: its histogram was not merged", table, p50)
+		}
+		if rows[1].PeriodStart != statsLater || rows[1].Count != 3 || rows[1].Sum != 3*600 || rows[1].Metric != uint8(model.LatencyMetricWorked) {
+			t.Errorf("the parent's later hour of %s is %+v, want the fork's row as it was", table, rows[1])
+		}
+		var other entity.TaskLatencyRollup
+		db.Table(table).Where("workspace_id = ?", wfOther).Scan(&other)
+		if other.Count != 7 || other.Sum != 7*60 {
+			t.Errorf("another workspace's %s row is %+v, want it untouched", table, other)
+		}
+	}
+}
+
 // Only a fork of that parent merges into it: a workspace that is not a fork,
 // or a fork of someone else, is not found.
 func TestMergeForkIntoParent_NotAForkOfThatParent(t *testing.T) {
@@ -220,9 +327,10 @@ func TestMergeForkIntoParent_ErrorsRollBack(t *testing.T) {
 // Failing the Nth statement of the merge reaches every error return in turn.
 func TestMergeForkIntoParent_EachStatementCanFail(t *testing.T) {
 	errStatement := errors.New("statement failed")
-	for n := 1; n <= 8; n++ {
+	for n := 1; n <= 27; n++ {
 		db, repo := forkDB(t)
 		seedForkTask(t, db, wfFork, 200, "completed")
+		seedForkStats(t, db, wfFork, 1, 60, statsHour)
 		seen := 0
 		failNth := func(tx *gorm.DB) {
 			seen++
@@ -232,6 +340,9 @@ func TestMergeForkIntoParent_EachStatementCanFail(t *testing.T) {
 		}
 		_ = db.Callback().Query().Before("gorm:query").Register("fail", failNth)
 		_ = db.Callback().Update().Before("gorm:update").Register("fail", failNth)
+		_ = db.Callback().Raw().Before("gorm:raw").Register("fail", failNth)
+		_ = db.Callback().Row().Before("gorm:row").Register("fail", failNth)
+		_ = db.Callback().Create().Before("gorm:create").Register("fail", failNth)
 		_, err := repo.MergeForkIntoParent(context.Background(), wfFork, wfParent)
 		if !errors.Is(err, errStatement) {
 			t.Errorf("failing statement %d, the merge returned %v, want %v", n, err, errStatement)

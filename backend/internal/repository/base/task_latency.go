@@ -143,7 +143,7 @@ func (r *repository) AggregateHourlyTaskLatency(ctx context.Context, periodStart
 			stats[k].Add(v)
 		}
 	}
-	return r.writeTaskLatencyRollups(ctx, hourlyTaskLatencies, latencyRollupRows(stats, periodStart), false)
+	return writeTaskLatencyRollups(r.conn(ctx), hourlyTaskLatencies, latencyRollupRows(stats, periodStart), false)
 }
 
 // AggregateDailyTaskLatency merges the hourly rows of [periodStart, periodEnd)
@@ -174,7 +174,7 @@ func (r *repository) mergeTaskLatencyRollups(ctx context.Context, from, to strin
 		}
 		stats[k].Merge(tasklatency.Decode(row.Count, row.Sum, row.Min, row.Max, row.Histogram))
 	}
-	return r.writeTaskLatencyRollups(ctx, to, latencyRollupRows(stats, periodStart), to == monthlyTaskLatencies)
+	return writeTaskLatencyRollups(r.conn(ctx), to, latencyRollupRows(stats, periodStart), to == monthlyTaskLatencies)
 }
 
 var taskLatencyRollupColumns = []clause.Column{
@@ -183,7 +183,7 @@ var taskLatencyRollupColumns = []clause.Column{
 
 // writeTaskLatencyRollups inserts rollup rows. replace upserts them instead,
 // for the monthly re-run and the backfill; otherwise a row already there wins.
-func (r *repository) writeTaskLatencyRollups(ctx context.Context, table string, rows []entity.TaskLatencyRollup, replace bool) error {
+func writeTaskLatencyRollups(db *gorm.DB, table string, rows []entity.TaskLatencyRollup, replace bool) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -194,7 +194,59 @@ func (r *repository) writeTaskLatencyRollups(ctx context.Context, table string, 
 			DoUpdates: clause.AssignmentColumns([]string{"count", "sum", "min", "max", "histogram"}),
 		}
 	}
-	return r.conn(ctx).Table(table).Clauses(conflict).CreateInBatches(&rows, 500).Error
+	return db.Table(table).Clauses(conflict).CreateInBatches(&rows, 500).Error
+}
+
+// moveTaskLatencyRollups gives a workspace's latency rollups to another,
+// inside tx. Each row is merged into the other's row for the same period,
+// user and metric, since the workspace is part of the unique key and a
+// histogram cannot be added up in SQL.
+func moveTaskLatencyRollups(tx *gorm.DB, fromID, toID int64) error {
+	for _, table := range []string{hourlyTaskLatencies, dailyTaskLatencies, monthlyTaskLatencies} {
+		var src []entity.TaskLatencyRollup
+		if err := tx.Table(table).Where("workspace_id = ?", fromID).Scan(&src).Error; err != nil {
+			return err
+		}
+		if len(src) == 0 {
+			continue
+		}
+		type key struct {
+			periodStart, userID int64
+			metric              uint8
+		}
+		stats := make(map[key]*tasklatency.Stats, len(src))
+		first, last := src[0].PeriodStart, src[0].PeriodStart
+		for _, row := range src {
+			s := tasklatency.Decode(row.Count, row.Sum, row.Min, row.Max, row.Histogram)
+			stats[key{row.PeriodStart, row.UserID, row.Metric}] = &s
+			first, last = min(first, row.PeriodStart), max(last, row.PeriodStart)
+		}
+		var dst []entity.TaskLatencyRollup
+		if err := tx.Table(table).
+			Where("workspace_id = ? AND period_start >= ? AND period_start <= ?", toID, first, last).
+			Scan(&dst).Error; err != nil {
+			return err
+		}
+		for _, row := range dst {
+			if s := stats[key{row.PeriodStart, row.UserID, row.Metric}]; s != nil {
+				s.Merge(tasklatency.Decode(row.Count, row.Sum, row.Min, row.Max, row.Histogram))
+			}
+		}
+		rows := make([]entity.TaskLatencyRollup, 0, len(stats))
+		for k, s := range stats {
+			rows = append(rows, entity.TaskLatencyRollup{
+				PeriodStart: k.periodStart, UserID: k.userID, WorkspaceID: toID, Metric: k.metric,
+				Count: s.Count, Sum: s.Sum, Min: s.Min, Max: s.Max, Histogram: tasklatency.EncodeHist(s.Hist),
+			})
+		}
+		if err := tx.Exec("DELETE FROM "+table+" WHERE workspace_id = ?", fromID).Error; err != nil {
+			return err
+		}
+		if err := writeTaskLatencyRollups(tx, table, rows, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // backfillBatch is how many tasks the backfill reads at a time.
@@ -295,7 +347,7 @@ func (r *repository) BackfillTaskLatency(ctx context.Context, hourCut, dayCut in
 		for k, s := range stats[i] {
 			rows = append(rows, latencyRollupRows(map[latencyKey]*tasklatency.Stats{k.key: s}, k.period)...)
 		}
-		if err := r.writeTaskLatencyRollups(ctx, gr.table, rows, true); err != nil {
+		if err := writeTaskLatencyRollups(r.conn(ctx), gr.table, rows, true); err != nil {
 			return added, err
 		}
 	}

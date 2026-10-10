@@ -401,6 +401,14 @@ func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID i
 				return err
 			}
 		}
+		// Its statistics too, or the stats page shows them under a deleted
+		// workspace.
+		if err := moveTelemetry(tx, forkID, parentID); err != nil {
+			return err
+		}
+		if err := moveTaskLatencyRollups(tx, forkID, parentID); err != nil {
+			return err
+		}
 		return deleteWorkspaceRows(tx, forkID, fork.UserID)
 	})
 	if err != nil {
@@ -1335,6 +1343,32 @@ func (r *repository) AggregateMonthlyTelemetry(ctx context.Context, periodStart,
 		},
 		DoUpdates: clause.AssignmentColumns([]string{"count"}),
 	}).Create(&rows).Error
+}
+
+// telemetryRollupTables are the telemetry rollups, finest first.
+var telemetryRollupTables = []string{"hourly_telemetries", "daily_telemetries", "monthly_telemetries"}
+
+// moveTelemetry gives a workspace's telemetry to another, inside tx: its
+// events, and each rollup row added into the other's row for the same period
+// and dimensions, since the workspace is part of the rollup's unique key.
+func moveTelemetry(tx *gorm.DB, fromID, toID int64) error {
+	if err := tx.Model(&model.Telemetry{}).Where("workspace_id = ?", fromID).
+		Update("workspace_id", toID).Error; err != nil {
+		return err
+	}
+	for _, table := range telemetryRollupTables {
+		// The WHERE is also what lets SQLite parse ON CONFLICT after a SELECT.
+		if err := tx.Exec("INSERT INTO "+table+" (period_start, user_id, workspace_id, action, sub_action_id, actor, count) "+
+			"SELECT period_start, user_id, ?, action, sub_action_id, actor, count FROM "+table+" WHERE workspace_id = ? "+
+			"ON CONFLICT (period_start, user_id, workspace_id, action, sub_action_id, actor) "+
+			"DO UPDATE SET count = "+table+".count + excluded.count", toID, fromID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM "+table+" WHERE workspace_id = ?", fromID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
