@@ -2055,8 +2055,11 @@ type (
 type (
 	// SessionView is one agent session as the control panel sees it.
 	SessionView struct {
-		ID          string `json:"id"`
-		MachineID   string `json:"machineId"`
+		ID        string `json:"id"`
+		MachineID string `json:"machineId"`
+		// MachineName is which machine this agent is running on. Only the
+		// single-session read fills it: a list is already one machine's.
+		MachineName string `json:"machineName,omitempty"`
 		WorkspaceID string `json:"workspaceId,omitempty"`
 		// WorkspaceName is which workspace this agent is working in.
 		//

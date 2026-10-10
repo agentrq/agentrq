@@ -124,6 +124,8 @@ func TestGetSessionNamesTheWorkspace(t *testing.T) {
 		Return(model.Session{ID: 9, MachineID: 3, WorkspaceID: 7, Kind: "claude-code"}, nil)
 	env.repo.EXPECT().WorkspaceNamesByID(gomock.Any(), []int64{7}, uid).
 		Return(map[int64]string{7: "Q3 migration"}, nil)
+	env.repo.EXPECT().GetMachine(gomock.Any(), int64(3), uid).
+		Return(model.Machine{ID: 3, Name: "studio-mac"}, nil)
 
 	rs, err := env.controller.GetSession(t.Context(), entity.GetSessionRequest{
 		UserID: testUserBase62, SessionID: monoflake.ID(9).String(),
@@ -133,5 +135,40 @@ func TestGetSessionNamesTheWorkspace(t *testing.T) {
 	}
 	if rs.Session.WorkspaceName != "Q3 migration" {
 		t.Errorf("name = %q", rs.Session.WorkspaceName)
+	}
+}
+
+// The terminal page says which machine it is running on, named as the
+// machine's own page names it: its name, else its hostname.
+func TestGetSessionNamesTheMachine(t *testing.T) {
+	uid := monoflake.IDFromBase62(testUserBase62).Int64()
+	cases := []struct {
+		label   string
+		machine model.Machine
+		err     error
+		want    string
+	}{
+		{"named", model.Machine{ID: 3, Name: "studio-mac", Hostname: "mbp.local"}, nil, "studio-mac"},
+		{"hostname only", model.Machine{ID: 3, Hostname: "mbp.local"}, nil, "mbp.local"},
+		// The session is still the answer when the machine cannot be read.
+		{"database unavailable", model.Machine{}, errors.New("database unavailable"), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			env := newTestController(t)
+			env.repo.EXPECT().GetSession(gomock.Any(), int64(9), uid).
+				Return(model.Session{ID: 9, MachineID: 3, Kind: "claude-code"}, nil)
+			env.repo.EXPECT().GetMachine(gomock.Any(), int64(3), uid).Return(tc.machine, tc.err)
+
+			rs, err := env.controller.GetSession(t.Context(), entity.GetSessionRequest{
+				UserID: testUserBase62, SessionID: monoflake.ID(9).String(),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if rs.Session.MachineName != tc.want {
+				t.Errorf("machine name = %q, want %q", rs.Session.MachineName, tc.want)
+			}
+		})
 	}
 }

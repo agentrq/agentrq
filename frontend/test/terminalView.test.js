@@ -260,6 +260,37 @@ describe('loading the session', () => {
   })
 })
 
+// The page says which machine the terminal is running on, through the link
+// back to that machine.
+describe('the machine it is running on', () => {
+  it('is named when the server named it', async () => {
+    const h = harness({
+      getSession: vi.fn().mockResolvedValue({ session: { ...RUNNING, machineName: ' studio-mac ' } }),
+    })
+    await h.v.load()
+    expect(h.v.machineLabel.value).toBe('studio-mac')
+  })
+
+  it('is "Machine" before the session loads, or when it carries no name', async () => {
+    const h = harness({
+      getSession: vi.fn().mockResolvedValue({ session: { ...RUNNING, machineName: '  ' } }),
+    })
+    expect(h.v.machineLabel.value).toBe('Machine')
+    await h.v.load()
+    expect(h.v.machineLabel.value).toBe('Machine')
+  })
+
+  // A live update carries no name, and must not take the one already shown.
+  it('survives a live update', async () => {
+    const h = harness({
+      getSession: vi.fn().mockResolvedValue({ session: { ...RUNNING, machineName: 'studio-mac' } }),
+    })
+    await h.v.load()
+    h.v.handleEvent({ type: 'session.updated', payload: { id: 's1', status: 'running' } })
+    expect(h.v.machineLabel.value).toBe('studio-mac')
+  })
+})
+
 /**
  * Whether the heading may carry the link to the workspace.
  *

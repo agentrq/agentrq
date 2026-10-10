@@ -31,7 +31,8 @@ const { notifySuccess, notifyError } = useToasts()
 
 const sessionId = String(route.params.id ?? '')
 const view = useTerminalView({ sessionId })
-const { session, loading, others, ended, shownStatus, title, subtitle, titleIsWorkspaceName } = view
+const { session, loading, others, ended, shownStatus, title, subtitle, titleIsWorkspaceName, machineLabel } =
+  view
 
 // An explicit setter rather than an inline assignment in the template: `status`
 // here is a ref destructured out of a composable, and the compiler cannot know
@@ -93,12 +94,15 @@ async function stop() {
              machine that is running it, and from the workspace it is working
              in. Arriving from one and being offered only the other is how
              somebody loses their place. -->
+        <!-- The machine's link is named after it, which is also how the page
+             says where this terminal is running. -->
         <div class="flex items-center gap-2 min-w-0">
           <button
             @click="router.push(machineHref)"
-            class="text-[11px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
+            class="min-w-0 truncate text-[11px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300"
+            :title="`Running on ${machineLabel}`"
           >
-            ← Machine
+            ← {{ machineLabel }}
           </button>
           <!-- Only when the heading cannot carry the link itself. A session
                can have a workspace id while its heading is the kind — naming

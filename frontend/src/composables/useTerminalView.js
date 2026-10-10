@@ -344,6 +344,14 @@ export function useTerminalView(deps = {}) {
   /** The workspace this agent is working in, when the server named one. */
   const workspaceName = computed(() => (session.value?.workspaceName ?? '').trim())
 
+  /**
+   * The machine this agent is running on, as the way back to it reads.
+   *
+   * "Machine" until the server names one: naming is best-effort, and the link
+   * still goes somewhere without it.
+   */
+  const machineLabel = computed(() => (session.value?.machineName ?? '').trim() || 'Machine')
+
   const others = computed(() => viewers.value.filter((_, i) => i !== self.value))
 
   const ended = computed(() => !loading.value && hasEnded(session.value))
@@ -442,6 +450,7 @@ export function useTerminalView(deps = {}) {
     title,
     subtitle,
     titleIsWorkspaceName,
+    machineLabel,
     load,
     handleEvent,
     handleControl,

@@ -166,6 +166,11 @@ func (c *controller) GetSession(ctx context.Context, req entity.GetSessionReques
 	}
 	v := toSessionView(s)
 	c.nameWorkspaces(ctx, uid, []*entity.SessionView{&v})
+	// Best effort, as the workspace is: a terminal that cannot say where it
+	// runs is still a terminal.
+	if m, err := c.repository.GetMachine(ctx, s.MachineID, uid); err == nil {
+		v.MachineName = firstNonEmpty(m.Name, m.Hostname)
+	}
 	return &entity.GetSessionResponse{Session: v}, nil
 }
 
