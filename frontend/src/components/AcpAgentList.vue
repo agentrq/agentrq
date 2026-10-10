@@ -62,9 +62,9 @@ watch(
           <span class="flex items-baseline gap-1.5 min-w-0">
             <span class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ a.name || a.id }}</span>
             <span v-if="a.name" class="text-[10px] font-mono text-gray-500 dark:text-zinc-400 truncate">{{ a.id }}</span>
-            <span class="ml-auto flex gap-1 shrink-0">
+            <span class="ml-auto flex items-center gap-1 shrink-0">
               <span v-for="r in a.runtimes ?? []" :key="r"
-                    class="px-1 rounded text-[9px] font-mono text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">{{ r }}</span>
+                    class="inline-flex items-center h-4 px-1 leading-none rounded text-[9px] font-mono text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">{{ r }}</span>
             </span>
           </span>
           <span v-if="a.description" class="block text-[11px] text-gray-500 dark:text-zinc-400 truncate">{{ a.description }}</span>
