@@ -15,6 +15,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/acpregistry"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
@@ -87,6 +88,7 @@ type (
 		mcpManager       mcpManager
 		machineRegistry  *machinectrl.Registry
 		acpLookups       *machinectrl.LookupCache
+		acpRegistry      acpregistry.Controller
 		bus              *eventbus.Bus
 		forks            forkMerger
 		launcher         agentLauncher
@@ -131,6 +133,7 @@ func New(p Params) (Handler, error) {
 		mcpManager:       liveMCPManager{p.MCPManager},
 		machineRegistry:  p.MachineRegistry,
 		acpLookups:       machinectrl.NewLookupCache(machinectrl.LookupCacheTTL),
+		acpRegistry:      acpregistry.New(acpregistry.URL, http.DefaultClient, mapper.FromAcpRegistryAgentsEntityToHTTPResponse),
 		bus:              p.EventBus,
 		forks:            p.ForkMerger,
 		launcher:         p.Launcher,

@@ -1585,6 +1585,9 @@ const (
 	// browser: on the server it is an ordinary reply, indistinguishable from
 	// one typed out.
 	ActionUIMessageReact Action = 92
+	// An agent picked from the ACP registry's list in a launch form, reported
+	// by the browser: the launch itself carries only the id, typed or picked.
+	ActionUIAcpAgentPick Action = 93
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1625,6 +1628,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUISidePanelLink, true
 	case "ui_message_react":
 		return ActionUIMessageReact, true
+	case "ui_acp_agent_pick":
+		return ActionUIAcpAgentPick, true
 	}
 	return 0, false
 }
@@ -1759,6 +1764,8 @@ func (a Action) String() string {
 		return "skill_disable"
 	case ActionUIMessageReact:
 		return "ui_message_react"
+	case ActionUIAcpAgentPick:
+		return "ui_acp_agent_pick"
 	}
 	return "unknown"
 }

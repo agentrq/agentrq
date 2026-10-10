@@ -13,6 +13,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import AcpAgentList from './AcpAgentList.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
@@ -89,12 +90,9 @@ async function start() {
       <div v-if="spin.kind.value === 'acp-gateway'" class="grid gap-2 grid-cols-2">
         <div class="min-w-0">
           <label for="spin-up-agent" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Agent</label>
-          <input id="spin-up-agent" v-model="spin.params.value.agent" type="text" list="spin-up-agent-options"
+          <input id="spin-up-agent" v-model="spin.params.value.agent" type="text"
                  spellcheck="false" autocapitalize="off" autocorrect="off"
                  class="w-full px-2 py-1.5 text-xs font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white" />
-          <datalist id="spin-up-agent-options">
-            <option v-for="a in spin.acpAgents.value" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </datalist>
         </div>
         <div class="min-w-0">
           <label for="spin-up-model" class="block text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500 mb-1">Model</label>
@@ -106,6 +104,8 @@ async function start() {
           </datalist>
         </div>
       </div>
+
+      <AcpAgentList v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" :agents="spin.acpAgents.value" :query="spin.params.value.agent ?? ''" @pick="spin.pickAcpAgent" />
 
       <ul v-if="spin.blockers.value.length" class="space-y-1">
         <li v-for="b in spin.blockers.value" :key="b.reason" class="text-[11px] text-gray-500 dark:text-zinc-400">

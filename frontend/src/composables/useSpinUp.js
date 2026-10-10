@@ -75,13 +75,14 @@ export function useSpinUp(deps = {}) {
     measureTerminalSize = launchTerminalSize,
     fetchAcpAgents,
     fetchAcpModels,
+    registryAgents,
   } = deps
 
   const state = reactive({ task: null, workspace: null, x: 0, y: 0 })
   const machines = ref([])
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = useKindParams(kind)
+  const params = useKindParams(kind, () => state.workspace?.id)
   const running = ref(false)
   const step = ref('')
   const error = ref('')
@@ -89,7 +90,7 @@ export function useSpinUp(deps = {}) {
   // make a second one, so the popover says what happened and offers no retry.
   const forked = ref(null)
 
-  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -98,6 +99,8 @@ export function useSpinUp(deps = {}) {
     getWorkspaceId: () => state.workspace?.id,
     ...(fetchAcpAgents ? { fetchAcpAgents } : {}),
     ...(fetchAcpModels ? { fetchAcpModels } : {}),
+    ...(registryAgents ? { registryAgents } : {}),
+    recordTelemetry,
   })
 
   const available = computed(() => launchableMachines(machines.value))
@@ -179,8 +182,8 @@ export function useSpinUp(deps = {}) {
       const created = await launchAgent(fork.id, { machineId: machineId.value, kind: kind.value, cols, rows, ...extra })
       rememberParams(kind.value, extra)
       // Remembered for the parent: the next spin up there starts the same way.
-      rememberLaunchChoice(workspace.id, { machineId: machineId.value, kind: kind.value })
-      rememberLaunchChoice(fork.id, { machineId: machineId.value, kind: kind.value })
+      rememberLaunchChoice(workspace.id, { machineId: machineId.value, kind: kind.value, params: extra })
+      rememberLaunchChoice(fork.id, { machineId: machineId.value, kind: kind.value, params: extra })
       recordTelemetry(TELEMETRY_UI_SPIN_UP, workspace.id)
       state.task = null
       return { task, fork, session: created?.session ?? null }
@@ -209,6 +212,7 @@ export function useSpinUp(deps = {}) {
     acpAgents,
     acpModels,
     claudeModels,
+    pickAcpAgent,
     open,
     close,
     run,

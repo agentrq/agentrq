@@ -511,6 +511,7 @@ import { useWindowTitle } from './composables/useWindowTitle'
 import { connectWebMCP } from './composables/useWebMCP'
 import { onWebMCPChange } from './composables/useWebMCPChanges'
 import { recordUiAction } from './composables/useUiTelemetry'
+import { startAcpRegistry } from './composables/useAcpRegistry'
 import { usePlatformStore } from './stores/platformStore'
 import {
   copyLinkTarget,
@@ -826,6 +827,8 @@ const extensionKeys = ref([])
 
 /** Undoes the main process subscription, so a remount does not stack two. */
 let stopExtensionWatch = null
+/** Stops the ACP registry's hourly reload. */
+let stopAcpRegistry = null
 
 /**
  * `x` then a letter, which is the whole extension keyboard scheme.
@@ -1039,6 +1042,8 @@ onMounted(() => {
   loadUser()
   loadProfiles()
   workspaceStore.fetchWorkspaces()
+  // The launch forms list these; loaded up front so opening one never waits.
+  stopAcpRegistry = startAcpRegistry()
   connect() // Connect to global event stream
   refreshExtensions()
   // The host disables an extension after three failures, with no navigation
@@ -1139,6 +1144,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', closeOverlaysOnEscape, true)
   window.removeEventListener('keydown', onExtensionKey, true)
   stopExtensionWatch?.()
+  stopAcpRegistry?.()
   if (sweepTimer) clearInterval(sweepTimer)
 })
 

@@ -413,6 +413,19 @@ export async function fetchAcpAgents(machineId) {
 }
 
 /**
+ * The official ACP registry's agents — the ids acp-gateway accepts — for the
+ * launch forms' agent list.
+ *
+ * Always resolves, like `fetchAcpAgents`: a registry the server could not
+ * reach comes back as `{ agents: [] }`.
+ */
+export async function fetchAcpRegistryAgents() {
+  const res = await apiFetch(`${API_BASE_URL}/acp-registry/agents`);
+  if (!res.ok) return { agents: [] };
+  return res.json();
+}
+
+/**
  * The models one acp-gateway agent supports, for the same autocomplete once
  * an agent has been chosen.
  *
@@ -1095,6 +1108,9 @@ export const TELEMETRY_UI_SIDE_PANEL_LINK = 'ui_side_panel_link';
 // A reaction sent from a message's quick-reaction menu. On the server it is an
 // ordinary reply, so only the browser knows it was a reaction.
 export const TELEMETRY_UI_MESSAGE_REACT = 'ui_message_react';
+// An agent picked from the ACP registry's list in a launch form. The launch
+// carries only the id, so only the browser knows it was picked, not typed.
+export const TELEMETRY_UI_ACP_AGENT_PICK = 'ui_acp_agent_pick';
 
 // Records one local-AI feature use. Never throws and never blocks the caller:
 // a metric is not worth failing a user's click over, so a rejected or

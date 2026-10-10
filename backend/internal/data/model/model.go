@@ -668,6 +668,8 @@ const (
 	ActionIDSkillDisable
 	// A reaction sent from a message's quick-reaction menu.
 	ActionIDUIMessageReact
+	// An agent picked from the ACP registry's list in a launch form.
+	ActionIDUIAcpAgentPick
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

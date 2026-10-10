@@ -788,3 +788,19 @@ type (
 		ExpiresIn int    `json:"expiresIn"`
 	}
 )
+
+type (
+	// AcpRegistryAgents is the official ACP registry's agents, for the launch
+	// forms' agent picker.
+	AcpRegistryAgents struct {
+		Agents []AcpRegistryAgent `json:"agents"`
+	}
+
+	AcpRegistryAgent struct {
+		ID          string   `json:"id"`
+		Name        string   `json:"name"`
+		Version     string   `json:"version"`
+		Description string   `json:"description"`
+		Runtimes    []string `json:"runtimes"`
+	}
+)

@@ -868,6 +868,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ machineId }) => api.fetchAcpAgents(machineId),
     }),
     tool({
+      name: 'listAcpRegistryAgents',
+      description:
+        'Every agent in the official ACP registry: the ids acp-gateway accepts as launchAgent\'s agent, with a ' +
+        'description and how each runs (npx, uvx, binary). Empty when the registry cannot be reached.',
+      readOnly: true,
+      run: () => api.fetchAcpRegistryAgents(),
+    }),
+    tool({
       name: 'listAcpModels',
       description:
         'The models one acp-gateway agent supports, once an agent is chosen. Needs the workspace: the gateway has ' +

@@ -28,6 +28,7 @@ const (
 	_routePathAgentSession = "/workspaces/:id/session"
 	_routePathAcpAgents    = "/machines/:id/acp-agents"
 	_routePathAcpModels    = "/workspaces/:id/acp-models"
+	_routePathAcpRegistry  = "/acp-registry/agents"
 )
 
 // acpGatewayAskTimeout bounds how long a lookup waits on the daemon.
@@ -48,7 +49,30 @@ func (h *handler) registerAgentLaunchRoutes() {
 	h.router.Get(_routePathAgentSession, h.workspaceSession())
 	h.router.Get(_routePathAcpAgents, h.listAcpAgents())
 	h.router.Get(_routePathAcpModels, h.listAcpModels())
+	h.router.Get(_routePathAcpRegistry, h.listAcpRegistryAgents())
 }
+
+// listAcpRegistryAgents answers the official ACP registry's agents, the ids
+// acp-gateway accepts, so the launch forms can list them instead of leaving
+// the agent to be guessed.
+//
+// Fails open like [handler.listAcpAgents]: a registry that cannot be reached
+// answers an empty list, and the forms fall back to the machine's own.
+func (h *handler) listAcpRegistryAgents() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+
+		body, err := h.acpRegistry.Load(ctx)
+		if err != nil {
+			return c.Send(_emptyAcpRegistry)
+		}
+		return c.Send(body)
+	}
+}
+
+var _emptyAcpRegistry = mapper.FromAcpRegistryAgentsEntityToHTTPResponse(nil)
 
 // listAcpAgents answers the acp-gateway's agent catalogue, for the launch
 // form's autocomplete.

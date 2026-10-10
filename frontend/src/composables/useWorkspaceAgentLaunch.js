@@ -88,6 +88,8 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     measureTerminalSize = launchTerminalSize,
     fetchAcpAgents,
     fetchAcpModels,
+    registryAgents,
+    recordTelemetry,
   } = deps
 
   const machines = ref([])
@@ -98,15 +100,17 @@ export function useWorkspaceAgentLaunch(deps = {}) {
 
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = useKindParams(kind)
+  const params = useKindParams(kind, () => workspace?.value?.id)
 
-  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
     getWorkspaceId: () => workspace?.value?.id,
     ...(fetchAcpAgents ? { fetchAcpAgents } : {}),
     ...(fetchAcpModels ? { fetchAcpModels } : {}),
+    ...(registryAgents ? { registryAgents } : {}),
+    ...(recordTelemetry ? { recordTelemetry } : {}),
   })
 
   const available = computed(() => launchableMachines(machines.value))
@@ -200,7 +204,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
         ...extra,
       })
       rememberParams(kind.value, extra)
-      rememberLaunchChoice(workspace.value.id, { machineId: machineId.value, kind: kind.value })
+      rememberLaunchChoice(workspace.value.id, { machineId: machineId.value, kind: kind.value, params: extra })
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'
@@ -228,6 +232,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     acpAgents,
     acpModels,
     claudeModels,
+    pickAcpAgent,
     load,
     launch,
   }

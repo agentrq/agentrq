@@ -30,10 +30,18 @@ const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 'sess-9' } }))
 vi.mock('../src/api', () => ({
   fetchMachines: () => Promise.resolve({ machines }),
   launchAgent: (...args) => launchAgent(...args),
-  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpAgents: () => Promise.resolve({ agents: [{ id: 'local-acp', name: 'Local' }] }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [] }),
+  recordTelemetry: (...args) => recordTelemetry(...args),
+  TELEMETRY_UI_ACP_AGENT_PICK: 'ui_acp_agent_pick',
 }))
+const recordTelemetry = vi.fn()
+
+const { loadAcpRegistry } = await import('../src/composables/useAcpRegistry')
+await loadAcpRegistry(() =>
+  Promise.resolve({ agents: [{ id: 'codex-acp', name: 'Codex', description: 'OpenAI coding agent', runtimes: ['npx'] }] })
+)
 
 const { default: StartAgentPanel } = await import('../src/components/StartAgentPanel.vue')
 
@@ -231,5 +239,27 @@ describe('StartAgentPanel', () => {
       await settle()
       expect(text()).toMatch(/update agentrqd on this machine to run a fork/)
     })
+  })
+
+  it('lists the available gateway agents under Agent, and a click fills it in', async () => {
+    localStorage.clear()
+    const { el } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    expect(el.querySelector('[data-test=start-agent-acp-agents]')).toBeNull()
+    el.querySelector('#start-agent-kind-acp-gateway').click()
+    await settle()
+
+    const rows = [...el.querySelectorAll('[data-test=start-agent-acp-agents] li button')]
+    // The registry's first, then the one only this machine reports.
+    expect(rows.map((b) => b.querySelector('span span').textContent.trim())).toEqual(['Codex', 'Local'])
+    expect(rows[0].textContent).toContain('OpenAI coding agent')
+    rows[0].click()
+    await settle()
+    expect(el.querySelector('#start-agent-agent').value).toBe('codex-acp')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'ws1')
+
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', agent: 'codex-acp' }))
   })
 })

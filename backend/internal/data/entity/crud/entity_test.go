@@ -83,6 +83,7 @@ func TestActionString(t *testing.T) {
 		{ActionSkillEnable, "skill_enable"},
 		{ActionSkillDisable, "skill_disable"},
 		{ActionUIMessageReact, "ui_message_react"},
+		{ActionUIAcpAgentPick, "ui_acp_agent_pick"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

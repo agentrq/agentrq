@@ -56,6 +56,7 @@ export default defineConfig({
         'src/composables/useAttachmentDownload.js',
         'src/composables/useAgentTelemetry.js',
         'src/composables/useAgentModelPicker.js',
+        'src/composables/useAcpRegistry.js',
         'src/composables/useAgentConcurrency.js',
         'src/composables/useExtensionCatalogue.js',
         'src/composables/useExtensionGrant.js',

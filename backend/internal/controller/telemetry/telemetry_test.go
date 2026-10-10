@@ -467,6 +467,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionSkillEnable, model.ActionIDSkillEnable, "skill enable"},
 		{entity.ActionSkillDisable, model.ActionIDSkillDisable, "skill disable"},
 		{entity.ActionUIMessageReact, model.ActionIDUIMessageReact, "message react"},
+		{entity.ActionUIAcpAgentPick, model.ActionIDUIAcpAgentPick, "acp agent pick"},
 	}
 
 	for _, tc := range cases {

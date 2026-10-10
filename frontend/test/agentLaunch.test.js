@@ -15,6 +15,7 @@ import {
   lastAcpGatewayChoice,
   rememberAcpGatewayChoice,
   lastLaunchChoice,
+  lastLaunchParams,
   rememberLaunchChoice,
   launchFolderNote,
   forkParent,
@@ -29,6 +30,8 @@ import {
   useKindParams,
   stepIndex,
   claudeModelSteps,
+  mergeAcpAgents,
+  filterAcpAgents,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -468,11 +471,84 @@ describe('acp-gateway suggestions', () => {
     expect(h.deps.fetchAcpModels).not.toHaveBeenCalled()
   })
 
+  it('lists the ACP registry first, then what only the machine knows', async () => {
+    const registryAgents = ref([
+      { id: 'codex-acp', name: 'Codex', description: 'OpenAI', runtimes: ['npx'] },
+      { id: 'gemini', name: 'Gemini CLI', description: 'Google', runtimes: ['npx'] },
+    ])
+    const h = harness({
+      deps: {
+        registryAgents,
+        fetchAcpAgents: vi.fn().mockResolvedValue({
+          agents: [{ id: 'gemini', name: 'Gemini' }, { id: 'local-acp', name: 'Local' }],
+        }),
+      },
+    })
+    h.l.kind.value = 'acp-gateway'
+    await flush()
+    expect(h.l.acpAgents.value.map((a) => a.id)).toEqual(['codex-acp', 'gemini', 'local-acp'])
+    expect(h.l.acpAgents.value[1].name).toBe('Gemini CLI')
+
+    // An hourly reload reaches a form that is already open.
+    registryAgents.value = [...registryAgents.value, { id: 'goose', name: 'goose' }]
+    expect(h.l.acpAgents.value.map((a) => a.id)).toEqual(['codex-acp', 'gemini', 'goose', 'local-acp'])
+  })
+
+  it('fills the Agent field from the list, and counts the pick for the chosen workspace', async () => {
+    const recordTelemetry = vi.fn()
+    const h = harness({ deps: { recordTelemetry } })
+    h.l.kind.value = 'acp-gateway'
+    h.l.workspaceId.value = 'ws1'
+    h.l.pickAcpAgent('codex-acp')
+    expect(h.l.params.value.agent).toBe('codex-acp')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'ws1')
+  })
+
   it('fails open: a rejected lookup leaves the suggestions empty rather than throwing', async () => {
     const h = harness({ deps: { fetchAcpAgents: vi.fn().mockRejectedValue(new Error('offline')) } })
     h.l.kind.value = 'acp-gateway'
     await flush()
     expect(h.l.acpAgents.value).toEqual([])
+  })
+})
+
+describe('mergeAcpAgents', () => {
+  it('keeps each id once, the first seen, and skips entries without one', () => {
+    const a = { id: 'a', name: 'From the registry' }
+    expect(mergeAcpAgents([a, null, { name: 'no id' }], [{ id: 'a', name: 'From the machine' }, { id: 'b' }])).toEqual([
+      a,
+      { id: 'b' },
+    ])
+  })
+
+  it('takes either side missing', () => {
+    expect(mergeAcpAgents()).toEqual([])
+    expect(mergeAcpAgents(undefined, [{ id: 'b' }])).toEqual([{ id: 'b' }])
+  })
+})
+
+describe('filterAcpAgents', () => {
+  const AGENTS = [
+    { id: 'codex-acp', name: 'Codex', description: 'OpenAI coding agent' },
+    { id: 'gemini', name: 'Gemini CLI', description: "Google's agent" },
+    { id: 'bare' },
+  ]
+
+  it('shows every agent while the field is empty', () => {
+    expect(filterAcpAgents(AGENTS, '')).toBe(AGENTS)
+    expect(filterAcpAgents(AGENTS, '  ')).toBe(AGENTS)
+    expect(filterAcpAgents(AGENTS, undefined)).toBe(AGENTS)
+  })
+
+  it('shows every agent once the field names one exactly, so it can be swapped', () => {
+    expect(filterAcpAgents(AGENTS, 'Gemini ')).toBe(AGENTS)
+  })
+
+  it('narrows by id, name or description, ignoring case', () => {
+    expect(filterAcpAgents(AGENTS, 'acp').map((a) => a.id)).toEqual(['codex-acp'])
+    expect(filterAcpAgents(AGENTS, 'cli').map((a) => a.id)).toEqual(['gemini'])
+    expect(filterAcpAgents(AGENTS, 'OPENAI').map((a) => a.id)).toEqual(['codex-acp'])
+    expect(filterAcpAgents(AGENTS, 'nothing like it')).toEqual([])
   })
 })
 
@@ -698,6 +774,80 @@ describe('the last launch of each workspace', () => {
     l.workspaceId.value = 'ws1'
     await l.launch()
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
+  })
+})
+
+describe('each workspace\'s last agent', () => {
+  afterEach(() => localStorage.clear())
+
+  it('keeps each kind\'s parameters per workspace, beside the other kind\'s', () => {
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toBe(null)
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'gemini', model: 'pro' } })
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { model: 'opus' } })
+    rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'codex-acp' } })
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
+    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: 'opus', effort: '' })
+    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
+    expect(lastLaunchParams('ws2', 'claude-code')).toBe(null)
+    expect(lastLaunchParams('', 'acp-gateway')).toBe(null)
+
+    // A launch that names no parameters keeps those already stored.
+    rememberLaunchChoice('ws1', { machineId: 'm2', kind: 'acp-gateway' })
+    expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm2', kind: 'acp-gateway' })
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
+  })
+
+  it('reads stored parameters through the same checks as the browser-wide choice', () => {
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({
+      ws1: { machineId: 'm1', kind: 'acp-gateway', params: { 'acp-gateway': { model: 'pro' }, 'claude-code': { model: 'gpt', effort: 'max' } } },
+      ws2: { machineId: 'm1', kind: 'acp-gateway', params: 'not an object' },
+    }))
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toBe(null)
+    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: '', effort: 'max' })
+    expect(lastLaunchParams('ws2', 'acp-gateway')).toBe(null)
+    // And a launch writes over what it could not read.
+    rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'goose' } })
+    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'goose', model: '' })
+  })
+
+  it('opens a workspace on its own last agent before the one used anywhere', () => {
+    rememberAcpGatewayChoice({ agent: 'codex-acp', model: '' })
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'gemini' } })
+    expect(initialParams('acp-gateway', 'ws1')).toEqual({ agent: 'gemini', model: '' })
+    expect(initialParams('acp-gateway', 'ws2')).toEqual({ agent: 'codex-acp', model: '' })
+    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
+  })
+
+  it('brings back a workspace\'s own when it is picked, and leaves the fields alone for one never launched', () => {
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'gemini' } })
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { model: 'opus', effort: 'high' } })
+    const kind = ref('acp-gateway')
+    const workspaceId = ref('')
+    const params = useKindParams(kind, () => workspaceId.value)
+    params.value = { ...params.value, agent: 'typed-by-hand' }
+
+    workspaceId.value = 'ws-new'
+    expect(params.value.agent).toBe('typed-by-hand')
+    workspaceId.value = 'ws1'
+    expect(params.value).toEqual({ agent: 'gemini', model: '' })
+    kind.value = 'claude-code'
+    expect(params.value).toEqual({ model: 'opus', effort: 'high' })
+  })
+
+  it('is what the machine page opens on, once that workspace is picked', async () => {
+    const first = harness()
+    await first.l.load()
+    first.l.workspaceId.value = 'ws1'
+    first.l.kind.value = 'acp-gateway'
+    first.l.params.value = { agent: 'gemini', model: '' }
+    await first.l.launch()
+    localStorage.removeItem('agentrq:lastAcpGateway')
+
+    const next = harness()
+    next.l.kind.value = 'acp-gateway'
+    expect(next.l.params.value.agent).not.toBe('gemini')
+    next.l.workspaceId.value = 'ws1'
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: '' })
   })
 })
 

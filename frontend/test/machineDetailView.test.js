@@ -50,14 +50,17 @@ const SESSIONS = [
 
 let launchResult = { session: { id: 'sess-9', kind: 'claude-code', status: 'starting' } }
 const launchAgent = vi.fn(() => Promise.resolve(launchResult))
+const recordTelemetry = vi.fn()
 
 vi.mock('../src/api', () => ({
   getMachine: () => Promise.resolve({ machine: MACHINE }),
   fetchMachineSessions: () => Promise.resolve({ sessions: SESSIONS }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [WORKSPACE] }),
   launchAgent: (...args) => launchAgent(...args),
-  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpAgents: () => Promise.resolve({ agents: [{ id: 'codex-acp', name: 'Codex', runtimes: ['npx'] }] }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
+  recordTelemetry: (...args) => recordTelemetry(...args),
+  TELEMETRY_UI_ACP_AGENT_PICK: 'ui_acp_agent_pick',
   updateMachine: vi.fn(),
   deleteMachine: vi.fn(),
   killSession: vi.fn(),
@@ -127,6 +130,21 @@ describe('MachineDetailView: starting an agent', () => {
 
     expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code' }))
     expect(push).toHaveBeenCalledWith('/sessions/sess-9')
+  })
+
+  it('lists the gateway agents the machine knows, and a click fills in Agent', async () => {
+    launchResult = { session: { id: 'sess-10', kind: 'acp-gateway', status: 'starting' } }
+    const { el, choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
+    await choose('launch-workspace-ws1')
+    await choose('launch-kind-acp-gateway')
+
+    el.querySelector('[data-test=launch-acp-agents] li button').click()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(el.querySelector('#launch-agent').value).toBe('codex-acp')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'ws1')
+    await clickStart()
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', agent: 'codex-acp' }))
   })
 
   it('does the same for a gateway, which asks its own questions on the way up', async () => {

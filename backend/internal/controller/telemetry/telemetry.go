@@ -255,6 +255,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDSkillDisable
 	case entity.ActionUIMessageReact:
 		action = model.ActionIDUIMessageReact
+	case entity.ActionUIAcpAgentPick:
+		action = model.ActionIDUIAcpAgentPick
 	default:
 		return
 	}

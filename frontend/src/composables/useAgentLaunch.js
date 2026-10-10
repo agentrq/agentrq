@@ -20,6 +20,7 @@
 import { ref, computed, watch } from 'vue'
 import * as api from '../api'
 import { launchTerminalSize } from './useLaunchTerminalSize'
+import { useAcpRegistry } from './useAcpRegistry'
 
 /** The two things a daemon will run, and nothing else. */
 export const KINDS = [
@@ -130,14 +131,18 @@ const LAST_ACP_GATEWAY_KEY = 'agentrq:lastAcpGateway'
  */
 export function lastAcpGatewayChoice() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LAST_ACP_GATEWAY_KEY) ?? 'null')
-    // The agent is the one field a launch cannot go without; a remembered
-    // model is a bonus, not a condition for restoring the rest.
-    if (!parsed?.agent) return null
-    return { agent: parsed.agent, model: parsed.model ?? '' }
+    return acpGatewayParams(JSON.parse(localStorage.getItem(LAST_ACP_GATEWAY_KEY) ?? 'null'))
   } catch {
     return null
   }
+}
+
+/** A remembered gateway agent and model, or null when there is no agent to restore. */
+function acpGatewayParams(parsed) {
+  // The agent is the one field a launch cannot go without; a remembered
+  // model is a bonus, not a condition for restoring the rest.
+  if (!parsed?.agent) return null
+  return { agent: parsed.agent, model: parsed.model ?? '' }
 }
 
 /** Remembers a gateway launch's agent and model for the next one. */
@@ -156,16 +161,20 @@ const LAST_CLAUDE_CODE_KEY = 'agentrq:lastClaudeCode'
 /** The model and effort somebody last launched Claude Code with, or null. */
 export function lastClaudeCodeChoice() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null')
-    if (!parsed || typeof parsed !== 'object') return null
-    // Only what the sliders can show is restored; anything else opens on the
-    // default rather than on a value no step stands for.
-    return {
-      model: CLAUDE_CODE_MODELS[stepIndex(CLAUDE_CODE_MODELS, parsed.model)].id,
-      effort: CLAUDE_CODE_EFFORTS[stepIndex(CLAUDE_CODE_EFFORTS, parsed.effort)].id,
-    }
+    return claudeCodeParams(JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null'))
   } catch {
     return null
+  }
+}
+
+/** A remembered Claude Code model and effort, or null. */
+function claudeCodeParams(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null
+  // Only what the sliders can show is restored; anything else opens on the
+  // default rather than on a value no step stands for.
+  return {
+    model: CLAUDE_CODE_MODELS[stepIndex(CLAUDE_CODE_MODELS, parsed.model)].id,
+    effort: CLAUDE_CODE_EFFORTS[stepIndex(CLAUDE_CODE_EFFORTS, parsed.effort)].id,
   }
 }
 
@@ -178,8 +187,13 @@ export function rememberClaudeCodeChoice({ model, effort }) {
   }
 }
 
-/** The parameters a kind's fields open on: its last launch, or its defaults. */
-export function initialParams(kind) {
+/**
+ * The parameters a kind's fields open on: the workspace's last launch of that
+ * kind, else the last launch of it anywhere, else its defaults.
+ */
+export function initialParams(kind, workspaceId) {
+  const own = lastLaunchParams(workspaceId, kind)
+  if (own) return own
   if (kind === 'acp-gateway') return lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS }
   return lastClaudeCodeChoice() ?? { model: '', effort: '' }
 }
@@ -197,14 +211,25 @@ export function rememberParams(kind, extra) {
  * handed to Claude Code is refused, so switching kind brings back what was
  * chosen for that kind rather than carrying the other's across.
  */
-export function useKindParams(kind) {
-  const byKind = {}
-  const params = ref(initialParams(kind.value))
+export function useKindParams(kind, getWorkspaceId = () => '') {
+  let byKind = {}
+  const params = ref(initialParams(kind.value, getWorkspaceId()))
   watch(
     kind,
     (next, prev) => {
       byKind[prev] = params.value
-      params.value = byKind[next] ?? initialParams(next)
+      params.value = byKind[next] ?? initialParams(next, getWorkspaceId())
+    },
+    { flush: 'sync' }
+  )
+  // Another workspace brings back its own last launch. One never launched
+  // from leaves the fields as they are, rather than undoing what was typed.
+  watch(
+    getWorkspaceId,
+    (workspaceId) => {
+      byKind = {}
+      const own = lastLaunchParams(workspaceId, kind.value)
+      if (own) params.value = own
     },
     { flush: 'sync' }
   )
@@ -212,12 +237,14 @@ export function useKindParams(kind) {
 }
 
 /**
- * Where each workspace's last launch is remembered: the machine and the kind.
+ * Where each workspace's last launch is remembered: the machine, the kind,
+ * and each kind's parameters (the gateway's agent and model, Claude Code's
+ * model and effort).
  *
  * The same kind of per-browser convenience as the gateway's agent and model,
- * kept per workspace because "the machine this workspace runs on" is a fact
- * about the workspace. Spin up reads it to start a fork the way its parent was
- * last started.
+ * kept per workspace because "the machine this workspace runs on", and the
+ * agent it runs, are facts about the workspace. Spin up reads it to start a
+ * fork the way its parent was last started.
  */
 const LAST_LAUNCH_KEY = 'agentrq:lastLaunch'
 
@@ -237,12 +264,28 @@ export function lastLaunchChoice(workspaceId) {
   return { machineId: choice.machineId, kind: choice.kind }
 }
 
-/** Remembers a launch's machine and kind for its workspace. */
-export function rememberLaunchChoice(workspaceId, { machineId, kind }) {
+/**
+ * The parameters this workspace last launched `kind` with, or null when it
+ * never has. Read through the same checks as the browser-wide choice.
+ */
+export function lastLaunchParams(workspaceId, kind) {
+  if (!workspaceId) return null
+  const params = readLaunches()[String(workspaceId)]?.params?.[kind]
+  if (!params) return null
+  return kind === 'acp-gateway' ? acpGatewayParams(params) : claudeCodeParams(params)
+}
+
+/**
+ * Remembers a launch's machine and kind for its workspace, and the parameters
+ * it was launched with, beside those of the workspace's other kind.
+ */
+export function rememberLaunchChoice(workspaceId, { machineId, kind, params }) {
   if (!workspaceId || !machineId) return
   try {
     const all = readLaunches()
-    all[String(workspaceId)] = { machineId, kind }
+    const key = String(workspaceId)
+    const kept = all[key]?.params && typeof all[key].params === 'object' ? all[key].params : {}
+    all[key] = { machineId, kind, params: params ? { ...kept, [kind]: params } : kept }
     localStorage.setItem(LAST_LAUNCH_KEY, JSON.stringify(all))
   } catch {
     // As with the gateway's choice: the next launch just asks again.
@@ -433,6 +476,35 @@ export function launchParamsPayload(kind, params) {
 }
 
 /**
+ * The agents the gateway's Agent field lists: the ACP registry's, then any
+ * the machine's gateway reports that the registry does not, so an agent known
+ * only to that machine is still offered. Each id once; first seen wins.
+ */
+export function mergeAcpAgents(registry = [], machine = []) {
+  const seen = new Set()
+  const out = []
+  for (const a of [...registry, ...machine]) {
+    if (!a?.id || seen.has(a.id)) continue
+    seen.add(a.id)
+    out.push(a)
+  }
+  return out
+}
+
+/**
+ * The agents to show for what is typed in the Agent field: all of them while
+ * it is empty or names one exactly, so a chosen agent can still be swapped
+ * for another; otherwise those whose id, name or description contains it.
+ */
+export function filterAcpAgents(agents, query) {
+  const q = (query ?? '').trim().toLowerCase()
+  if (!q || agents.some((a) => a.id.toLowerCase() === q)) return agents
+  return agents.filter((a) =>
+    [a.id, a.name, a.description].some((s) => (s ?? '').toLowerCase().includes(q))
+  )
+}
+
+/**
  * Suggestions for the gateway's Agent and Model fields, kept behind the two
  * launch composables so there is one place that decides when to ask rather
  * than two that could disagree.
@@ -451,6 +523,8 @@ export function launchParamsPayload(kind, params) {
  *        from a workspace's own folder
  * @param {typeof api.fetchAcpAgents} [deps.fetchAcpAgents]
  * @param {typeof api.fetchAcpModels} [deps.fetchAcpModels]
+ * @param {import('vue').Ref<object[]>} [deps.registryAgents] the ACP registry's agents
+ * @param {typeof api.recordTelemetry} [deps.recordTelemetry]
  */
 export function useAcpGatewaySuggestions({
   kind,
@@ -459,25 +533,34 @@ export function useAcpGatewaySuggestions({
   getWorkspaceId,
   fetchAcpAgents = api.fetchAcpAgents,
   fetchAcpModels = api.fetchAcpModels,
+  registryAgents = useAcpRegistry().agents,
+  recordTelemetry = (...args) => api.recordTelemetry(...args),
 }) {
-  const acpAgents = ref([])
+  const machineAgents = ref([])
   const acpModels = ref([])
   const claudeReported = ref([])
 
   watch(
     () => (kind.value === 'acp-gateway' ? getMachineId() : ''),
     async (machineId) => {
-      acpAgents.value = []
+      machineAgents.value = []
       if (!machineId) return
       try {
         const data = await fetchAcpAgents(machineId)
-        acpAgents.value = data?.agents ?? []
+        machineAgents.value = data?.agents ?? []
       } catch {
-        acpAgents.value = []
+        machineAgents.value = []
       }
     },
     { immediate: true }
   )
+  const acpAgents = computed(() => mergeAcpAgents(registryAgents.value, machineAgents.value))
+
+  /** Fills the Agent field from the list. */
+  function pickAcpAgent(id) {
+    params.value.agent = id
+    recordTelemetry(api.TELEMETRY_UI_ACP_AGENT_PICK, getWorkspaceId())
+  }
 
   watch(
     () => (kind.value === 'acp-gateway' ? (params.value.agent ?? '').trim() : ''),
@@ -518,7 +601,7 @@ export function useAcpGatewaySuggestions({
   )
   const claudeModels = computed(() => claudeModelSteps(claudeReported.value))
 
-  return { acpAgents, acpModels, claudeModels }
+  return { acpAgents, acpModels, claudeModels, pickAcpAgent }
 }
 
 /**
@@ -537,6 +620,8 @@ export function useAgentLaunch(deps = {}) {
     measureTerminalSize = launchTerminalSize,
     fetchAcpAgents,
     fetchAcpModels,
+    registryAgents,
+    recordTelemetry,
   } = deps
 
   const workspaces = ref([])
@@ -546,15 +631,17 @@ export function useAgentLaunch(deps = {}) {
 
   const workspaceId = ref('')
   const kind = ref(KINDS[0].id)
-  const params = useKindParams(kind)
+  const params = useKindParams(kind, () => workspaceId.value)
 
-  const { acpAgents, acpModels, claudeModels } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machine?.value?.id,
     getWorkspaceId: () => workspaceId.value,
     ...(fetchAcpAgents ? { fetchAcpAgents } : {}),
     ...(fetchAcpModels ? { fetchAcpModels } : {}),
+    ...(registryAgents ? { registryAgents } : {}),
+    ...(recordTelemetry ? { recordTelemetry } : {}),
   })
 
   const selected = computed(() => workspaces.value.find((w) => w.id === workspaceId.value) ?? null)
@@ -617,7 +704,7 @@ export function useAgentLaunch(deps = {}) {
         ...extra,
       })
       rememberParams(kind.value, extra)
-      rememberLaunchChoice(workspaceId.value, { machineId: machine.value.id, kind: kind.value })
+      rememberLaunchChoice(workspaceId.value, { machineId: machine.value.id, kind: kind.value, params: extra })
       return created?.session ?? null
     } catch (e) {
       error.value = e?.message || 'Failed to start the agent'
@@ -642,6 +729,7 @@ export function useAgentLaunch(deps = {}) {
     acpAgents,
     acpModels,
     claudeModels,
+    pickAcpAgent,
     load,
     launch,
   }

@@ -40,6 +40,7 @@ import { useEventBus } from '../useEventBus'
 import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
+import AcpAgentList from '../components/AcpAgentList.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
 import ClaudeOptionsPicker from '../components/ClaudeOptionsPicker.vue'
 import { useAgentLaunch } from '../composables/useAgentLaunch'
@@ -74,6 +75,7 @@ const {
   acpAgents: launchAcpAgents,
   acpModels: launchAcpModels,
   claudeModels: launchClaudeModels,
+  pickAcpAgent: pickLaunchAcpAgent,
 } = launcher
 
 const liveCount = computed(() => liveSessions.value.length)
@@ -529,17 +531,11 @@ async function stopSession(id) {
                 id="launch-agent"
                 v-model="launchParams.agent"
                 type="text"
-                list="launch-agent-options"
                 spellcheck="false"
                 autocapitalize="off"
                 autocorrect="off"
                 class="w-full px-3 py-2 text-sm font-mono border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
               />
-              <!-- A datalist only ever suggests: typing anything else, including
-                   while the list is empty or never arrives, is still accepted. -->
-              <datalist id="launch-agent-options">
-                <option v-for="a in launchAcpAgents" :key="a.id" :value="a.id">{{ a.name }}</option>
-              </datalist>
             </div>
             <div>
               <label
@@ -562,6 +558,9 @@ async function stopSession(id) {
                 <option v-for="m in launchAcpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
               </datalist>
             </div>
+          <!-- The list only ever suggests: any other id typed in the field is
+               still sent, so an agent the list does not know can still run. -->
+          <AcpAgentList v-if="launchKind === 'acp-gateway'" id-prefix="launch" :agents="launchAcpAgents" :query="launchParams.agent" @pick="pickLaunchAcpAgent" />
           </div>
 
           <!-- Said before the button rather than after it is pressed. -->

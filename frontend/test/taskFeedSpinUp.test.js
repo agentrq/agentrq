@@ -35,11 +35,15 @@ vi.mock('../src/api', async (importOriginal) => ({
   forkWorkspace: (...a) => forkWorkspace(...a),
   moveTask: (...a) => moveTask(...a),
   launchAgent: (...a) => launchAgent(...a),
-  recordTelemetry: () => {},
+  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
+  recordTelemetry: (...a) => recordTelemetry(...a),
 }))
+const recordTelemetry = vi.fn()
 
 const { default: TaskFeed } = await import('../src/components/TaskFeed.vue')
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
+const { loadAcpRegistry, resetAcpRegistry } = await import('../src/composables/useAcpRegistry')
 
 const settle = () => new Promise((r) => setTimeout(r, 30))
 let app
@@ -109,6 +113,28 @@ describe('Spin up on a task row', () => {
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
     expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'claude-code', model: 'fable', effort: 'high' }))
+  })
+
+  it('lists the ACP registry\'s agents in the popover, and a click is what it launches', async () => {
+    await loadAcpRegistry(() =>
+      Promise.resolve({ agents: [{ id: 'gemini', name: 'Gemini CLI', description: "Google's agent", runtimes: ['npx'] }] })
+    )
+    try {
+      const { row } = await mount(PARENT)
+      row('Fix login').querySelector('[title="Spin up in a fork"]').click()
+      await settle()
+      document.body.querySelector('#spin-up-kind-acp-gateway').click()
+      await settle()
+      document.body.querySelector('[data-test=spin-up-acp-agents] li button').click()
+      await settle()
+      expect(document.body.querySelector('#spin-up-agent').value).toBe('gemini')
+      expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'p1')
+      ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
+      await settle()
+      expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'acp-gateway', agent: 'gemini' }))
+    } finally {
+      resetAcpRegistry()
+    }
   })
 
   it('keeps the row when the move is what failed', async () => {

@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { reactive } from 'vue';
+import { reactive, ref } from 'vue';
 
 import { STEP_LABELS, canSpinUp, spinUpFailure, spinUpName, useSpinUp } from '../src/composables/useSpinUp';
-import { lastLaunchChoice, rememberLaunchChoice } from '../src/composables/useAgentLaunch';
+import { lastLaunchChoice, lastLaunchParams, rememberLaunchChoice } from '../src/composables/useAgentLaunch';
 import { MAX_WORKSPACE_NAME } from '../src/composables/useWorkspaceForks';
 
 const parent = { id: 'p1', name: 'ops', workingDirectory: '/srv/ops' };
@@ -67,6 +67,25 @@ function setup(over = {}) {
 }
 
 describe('useSpinUp: opening', () => {
+  it('opens on the agent and model the parent last ran, and remembers them for the fork too', async () => {
+    rememberLaunchChoice('p1', { machineId: 'm2', kind: 'acp-gateway', params: { agent: 'gemini', model: 'gemini-3-pro' } });
+    const { spin } = setup();
+    await spin.open(task, parent);
+    expect(spin.params.value).toEqual({ agent: 'gemini', model: 'gemini-3-pro' });
+
+    await spin.run();
+    expect(lastLaunchParams('p1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro' });
+    expect(lastLaunchParams('f1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro' });
+  });
+
+  it('lists the registry\'s agents it is handed', async () => {
+    const registryAgents = ref([{ id: 'codex-acp', name: 'Codex' }]);
+    const { spin } = setup({ registryAgents });
+    await spin.open(task, parent);
+    spin.kind.value = 'acp-gateway';
+    expect(spin.acpAgents.value).toEqual([{ id: 'codex-acp', name: 'Codex' }]);
+  });
+
   it('opens on the parent\'s last launch when that machine is online', async () => {
     rememberLaunchChoice('p1', { machineId: 'm2', kind: 'acp-gateway' });
     const { spin } = setup();

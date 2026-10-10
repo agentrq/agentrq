@@ -9,7 +9,7 @@ import {
   machineChoiceEligibility,
   useWorkspaceAgentLaunch,
 } from '../src/composables/useWorkspaceAgentLaunch.js'
-import { KINDS, lastLaunchChoice } from '../src/composables/useAgentLaunch.js'
+import { KINDS, lastLaunchChoice, lastLaunchParams } from '../src/composables/useAgentLaunch.js'
 
 const OFFLINE_WORKSPACE = {
   id: 'ws1',
@@ -493,6 +493,32 @@ describe('a fork, and remembering the launch', () => {
     await l.load()
     await l.launch()
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
+    localStorage.clear()
+  })
+
+  it('lists the registry\'s agents it is handed, and counts a pick for the workspace', async () => {
+    const recordTelemetry = vi.fn()
+    const { l } = harness({ deps: { registryAgents: ref([{ id: 'codex-acp', name: 'Codex' }]), recordTelemetry } })
+    l.kind.value = 'acp-gateway'
+    expect(l.acpAgents.value).toEqual([{ id: 'codex-acp', name: 'Codex' }])
+    l.pickAcpAgent('codex-acp')
+    expect(l.params.value.agent).toBe('codex-acp')
+    expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'ws1')
+  })
+
+  it('opens the next time on the agent this workspace last ran', async () => {
+    localStorage.clear()
+    const first = harness()
+    await first.l.load()
+    first.l.kind.value = 'acp-gateway'
+    first.l.params.value = { agent: 'gemini', model: 'pro' }
+    await first.l.launch()
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
+    localStorage.removeItem('agentrq:lastAcpGateway')
+
+    const next = harness()
+    next.l.kind.value = 'acp-gateway'
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro' })
     localStorage.clear()
   })
 })
