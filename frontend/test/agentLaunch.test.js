@@ -12,6 +12,7 @@ import {
   sessionEligibility,
   paramsEligibility,
   launchParamsPayload,
+  launchStart,
   lastAcpGatewayChoice,
   rememberAcpGatewayChoice,
   lastLaunchChoice,
@@ -635,6 +636,36 @@ describe('launching', () => {
     h.l.workspaceId.value = 'ws1'
     expect(await h.l.launch()).toBeNull()
     expect(h.l.error.value).toBe('')
+  })
+})
+
+describe('a workspace\'s last kind', () => {
+  it('is picked with the workspace, and a workspace never launched leaves it alone', async () => {
+    localStorage.clear()
+    rememberLaunchChoice('ws1', { machineId: 'elsewhere', kind: 'acp-gateway', params: { agent: 'gemini', model: '' } })
+    const h = harness()
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    expect(h.l.kind.value).toBe('acp-gateway')
+    expect(h.l.params.value).toEqual({ agent: 'gemini', model: '' })
+    h.l.workspaceId.value = 'never'
+    expect(h.l.kind.value).toBe('acp-gateway')
+    localStorage.clear()
+  })
+})
+
+describe('launchStart', () => {
+  const ONLINE = [{ id: 'm1' }, { id: 'm2' }]
+
+  it('opens on the last machine while it is online, else the only one', () => {
+    localStorage.clear()
+    expect(launchStart('ws1', ONLINE)).toEqual({ machineId: '', kind: null })
+    expect(launchStart('ws1', [ONLINE[0]])).toEqual({ machineId: 'm1', kind: null })
+    rememberLaunchChoice('ws1', { machineId: 'm2', kind: 'acp-gateway' })
+    expect(launchStart('ws1', ONLINE)).toEqual({ machineId: 'm2', kind: 'acp-gateway' })
+    expect(launchStart('ws1', [ONLINE[0]])).toEqual({ machineId: 'm1', kind: 'acp-gateway' })
+    expect(launchStart('ws1', [])).toEqual({ machineId: '', kind: 'acp-gateway' })
+    localStorage.clear()
   })
 })
 

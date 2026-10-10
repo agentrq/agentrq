@@ -101,6 +101,7 @@ describe('useSpinUp: opening', () => {
     const { spin } = setup();
     await spin.open(task, parent);
     expect(spin.machineId.value).toBe('');
+    expect(spin.kind.value).toBe('claude-code');
     expect(spin.blockers.value[0].reason).toBe('Pick a machine to run on.');
     expect(spin.canRun.value).toBe(false);
   });

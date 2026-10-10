@@ -24,6 +24,7 @@ import * as api from '../api'
 import {
   KINDS,
   launchParamsPayload,
+  launchStart,
   paramsEligibility,
   rememberParams,
   rememberLaunchChoice,
@@ -171,8 +172,11 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     try {
       const data = await fetchMachines()
       machines.value = data?.machines ?? []
-      const only = launchableMachines(machines.value)
-      if (!machineId.value && only.length === 1) machineId.value = only[0].id
+      if (!machineId.value) {
+        const start = launchStart(workspace?.value?.id, launchableMachines(machines.value))
+        machineId.value = start.machineId
+        if (start.kind) kind.value = start.kind
+      }
       loaded.value = true
     } catch (e) {
       error.value = e?.message || 'Failed to load machines'

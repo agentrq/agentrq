@@ -17,8 +17,8 @@ import * as api from '../api'
 import { TELEMETRY_UI_SPIN_UP } from '../api'
 import {
   KINDS,
-  lastLaunchChoice,
   launchParamsPayload,
+  launchStart,
   paramsEligibility,
   rememberParams,
   rememberLaunchChoice,
@@ -145,14 +145,9 @@ export function useSpinUp(deps = {}) {
       machines.value = []
       error.value = e?.message || 'Failed to load machines'
     }
-    const online = launchableMachines(machines.value)
-    const last = lastLaunchChoice(workspace?.id)
-    if (last && online.some((m) => m.id === last.machineId)) {
-      machineId.value = last.machineId
-      kind.value = last.kind
-    } else {
-      machineId.value = online.length === 1 ? online[0].id : ''
-    }
+    const start = launchStart(workspace?.id, launchableMachines(machines.value))
+    machineId.value = start.machineId
+    if (start.kind) kind.value = start.kind
   }
 
   function close() {

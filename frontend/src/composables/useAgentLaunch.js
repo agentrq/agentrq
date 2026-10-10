@@ -265,6 +265,19 @@ export function lastLaunchChoice(workspaceId) {
 }
 
 /**
+ * Where a workspace's launch form opens: on its last machine while that is
+ * still online, else on the only one online, and on its last kind whichever
+ * machine it lands on, since the agent it runs is the workspace's choice.
+ * `kind` is null for a workspace never launched from this browser.
+ */
+export function launchStart(workspaceId, online) {
+  const last = lastLaunchChoice(workspaceId)
+  let machineId = online.length === 1 ? online[0].id : ''
+  if (last && online.some((m) => m.id === last.machineId)) machineId = last.machineId
+  return { machineId, kind: last?.kind ?? null }
+}
+
+/**
  * The parameters this workspace last launched `kind` with, or null when it
  * never has. Read through the same checks as the browser-wide choice.
  */
@@ -632,6 +645,15 @@ export function useAgentLaunch(deps = {}) {
   const workspaceId = ref('')
   const kind = ref(KINDS[0].id)
   const params = useKindParams(kind, () => workspaceId.value)
+  // The machine is this page's; the kind is the workspace's last one.
+  watch(
+    workspaceId,
+    (id) => {
+      const last = lastLaunchChoice(id)
+      if (last) kind.value = last.kind
+    },
+    { flush: 'sync' }
+  )
 
   const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
     kind,

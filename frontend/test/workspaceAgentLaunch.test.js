@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import {
   launchableMachines,
@@ -50,6 +50,9 @@ async function flush() {
   await nextTick()
   await nextTick()
 }
+
+// A launch remembers its machine and kind, and the next harness opens on them.
+beforeEach(() => localStorage.clear())
 
 describe('launchableMachines', () => {
   it('keeps machines that are both enabled and online', () => {
@@ -494,6 +497,39 @@ describe('a fork, and remembering the launch', () => {
     await l.launch()
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm1', kind: 'claude-code' })
     localStorage.clear()
+  })
+
+  it('opens on the machine and kind this workspace last launched with', async () => {
+    const first = harness({ machines: [{ ...READY_MACHINE }, { ...SECOND_MACHINE }] })
+    await first.l.load()
+    expect(first.l.machineId.value).toBe('')
+    first.l.machineId.value = 'm2'
+    first.l.kind.value = 'acp-gateway'
+    first.l.params.value = { agent: 'gemini', model: 'pro' }
+    await first.l.launch()
+
+    const next = harness({ machines: [{ ...READY_MACHINE }, { ...SECOND_MACHINE }] })
+    await next.l.load()
+    expect(next.l.machineId.value).toBe('m2')
+    expect(next.l.kind.value).toBe('acp-gateway')
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro' })
+  })
+
+  it('keeps the last kind, and asks for a machine, when the last one is offline', async () => {
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({ ws1: { machineId: 'gone', kind: 'acp-gateway' } }))
+    const { l } = harness({ machines: [{ ...READY_MACHINE }, { ...SECOND_MACHINE }] })
+    await l.load()
+    expect(l.machineId.value).toBe('')
+    expect(l.kind.value).toBe('acp-gateway')
+  })
+
+  it('leaves a machine already picked alone when the list reloads', async () => {
+    localStorage.setItem('agentrq:lastLaunch', JSON.stringify({ ws1: { machineId: 'm2', kind: 'acp-gateway' } }))
+    const { l } = harness({ machines: [{ ...READY_MACHINE }, { ...SECOND_MACHINE }] })
+    l.machineId.value = 'm1'
+    await l.load()
+    expect(l.machineId.value).toBe('m1')
+    expect(l.kind.value).toBe(KINDS[0].id)
   })
 
   it('lists the registry\'s agents it is handed, and counts a pick for the workspace', async () => {
