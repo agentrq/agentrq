@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
@@ -70,6 +71,11 @@ type (
 		Machines *machinectrl.Registry
 		Tokens   Tokens
 		URLs     URLs
+
+		// launching holds the workspaces with a launch between its checks and
+		// its session row, on this instance.
+		mu        sync.Mutex
+		launching map[int64]struct{}
 	}
 
 	// Request is one launch: which agent, in which workspace, on which
@@ -124,6 +130,15 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	if err != nil {
 		return nil, err
 	}
+
+	// The checks below and the session row are separate steps, so two
+	// launches at once would both pass them. A supervisor can send parallel
+	// calls, which makes that easy to hit. Held per workspace on this
+	// instance; a launch on another instance still relies on the row.
+	if !l.claim(workspaceID) {
+		return nil, busy("this workspace already has an agent starting")
+	}
+	defer l.release(workspaceID)
 
 	// The gate, and it is two questions rather than one.
 	//
@@ -283,6 +298,27 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	}
 
 	return session, nil
+}
+
+// claim reports whether this call may launch into the workspace, and marks it
+// taken until release.
+func (l *Launcher) claim(workspaceID int64) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, taken := l.launching[workspaceID]; taken {
+		return false
+	}
+	if l.launching == nil {
+		l.launching = map[int64]struct{}{}
+	}
+	l.launching[workspaceID] = struct{}{}
+	return true
+}
+
+func (l *Launcher) release(workspaceID int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.launching, workspaceID)
 }
 
 // Stop asks the machine running a workspace's agent to stop it, and answers

@@ -7,6 +7,8 @@ package coremcp
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -53,6 +55,11 @@ func (s *WorkspaceServer) handleListMachines(ctx context.Context, req *mcp.CallT
 
 func (s *WorkspaceServer) handleLaunchAgent(ctx context.Context, req *mcp.CallToolRequest, args LaunchAgentParams) (*mcp.CallToolResult, any, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPToolCall, "launchAgent", parseID(args.WorkspaceID))
+	// The schema's enum is only a description to the SDK, so it is checked
+	// here: an unknown kind would otherwise reach the machine as a session.
+	if !slices.Contains(agentlaunch.Kinds, args.Kind) {
+		return errorResponse(fmt.Errorf("kind must be one of %s", strings.Join(agentlaunch.Kinds, ", "))), nil, nil
+	}
 	res, err := s.launcher.Launch(ctx, agentlaunch.Request{
 		UserID:      getUserID(ctx),
 		WorkspaceID: args.WorkspaceID,

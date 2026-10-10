@@ -471,3 +471,27 @@ func TestURLsFollowTheDeployment(t *testing.T) {
 		}
 	}
 }
+
+// A second launch while the first is between its checks and its session row
+// is refused, and the workspace is free again once the first returns.
+func TestLaunch_OneAtATimePerWorkspace(t *testing.T) {
+	l, crud, c := launcher()
+	if !l.claim(1) {
+		t.Fatal("a free workspace could not be claimed")
+	}
+	_, err := l.Launch(context.Background(), request("claude-code"))
+	wantRefusal(t, err, entity.ErrLaunchBusy, "this workspace already has an agent starting")
+	if len(crud.created) != 0 || len(c.sent) != 0 {
+		t.Errorf("a refused launch left created=%v sent=%v", crud.created, c.sent)
+	}
+
+	l.release(1)
+	for range 2 {
+		if _, err := l.Launch(context.Background(), request("claude-code")); err != nil {
+			t.Fatalf("after release: %v", err)
+		}
+	}
+	if !l.claim(1) {
+		t.Error("a finished launch kept the workspace claimed")
+	}
+}

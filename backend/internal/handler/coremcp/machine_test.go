@@ -199,3 +199,18 @@ func TestNew_WiresTheLauncher(t *testing.T) {
 		t.Errorf("launcher = %v", got)
 	}
 }
+
+// The SDK treats the enum as description only, so an unknown kind is refused
+// here before it reaches the launcher.
+func TestLaunchAgent_RefusesAnUnknownKind(t *testing.T) {
+	for _, kind := range []string{"", "claude"} {
+		l := &fakeLauncher{}
+		r := toolResult((&WorkspaceServer{launcher: l}).handleLaunchAgent(authedContext(), nil, LaunchAgentParams{WorkspaceID: "w1", MachineID: "m1", Kind: kind}))
+		if !r.isError || r.text != "kind must be one of claude-code, acp-gateway" {
+			t.Errorf("%q: result = %+v", kind, r)
+		}
+		if l.launch != (agentlaunch.Request{}) {
+			t.Errorf("%q reached the launcher: %+v", kind, l.launch)
+		}
+	}
+}
