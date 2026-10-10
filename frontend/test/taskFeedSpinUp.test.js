@@ -137,6 +137,30 @@ describe('Spin up on a task row', () => {
     }
   })
 
+  it('opens in the middle of a wide screen, and beside the button on a phone', async () => {
+    const wide = window.innerWidth
+    try {
+      const { row } = await mount(PARENT)
+      row('Fix login').querySelector('[title="Spin up in a fork"]').click()
+      await settle()
+      const dialog = document.body.querySelector('[data-test=spin-up]')
+      expect(dialog.style.top).toBe('50%')
+      expect(dialog.style.transform).toBe('translate(-50%, -50%)')
+      expect(document.body.querySelector('[data-test=spin-up-backdrop]').className).toContain('bg-black/20')
+      app.unmount()
+
+      window.innerWidth = 390
+      const phone = await mount(PARENT)
+      phone.row('Fix login').querySelector('[title="Spin up in a fork"]').click()
+      await settle()
+      const beside = [...document.body.querySelectorAll('[data-test=spin-up]')].at(-1)
+      expect(beside.style.transform).toBe('')
+      expect(beside.style.top).not.toBe('50%')
+    } finally {
+      window.innerWidth = wide
+    }
+  })
+
   it('keeps the row when the move is what failed', async () => {
     moveTask.mockImplementationOnce(() => Promise.reject(new Error('task not found')))
     const { row } = await mount(PARENT)

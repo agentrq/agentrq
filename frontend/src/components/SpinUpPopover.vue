@@ -6,9 +6,10 @@
 
 <!--
   Spin up's one question: which machine, and what to run. Everything else —
-  the fork's name, where the task goes — follows from the task, so this stays a
-  popover beside the button rather than a form. It opens on the parent's last
-  launch, so the common case is one more click.
+  the fork's name, where the task goes — follows from the task. On a wide
+  screen it opens in the middle, like a dialog, rather than beside a button
+  that may sit in a corner; on a phone it stays beside the button. It opens on
+  the parent's last launch, so the common case is one more click.
 -->
 <script setup>
 import { computed } from 'vue'
@@ -19,6 +20,7 @@ import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { spinUpName } from '../composables/useSpinUp'
 import { useWorkspaceStore } from '../stores/workspaceStore'
+import { useViewport } from '../composables/useViewport'
 
 const props = defineProps({
   // The object `useSpinUp()` returns; the view that owns the button owns it.
@@ -31,9 +33,13 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 
 const task = computed(() => props.spin.state.task)
+const { isMobile } = useViewport()
 const width = 320
 const style = computed(() => {
-  const vw = typeof window === 'undefined' ? 1024 : window.innerWidth
+  if (!isMobile.value) {
+    return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '380px', maxHeight: 'calc(100vh - 32px)' }
+  }
+  const vw = window.innerWidth
   const left = Math.max(8, Math.min(props.spin.state.x - width + 24, vw - width - 8))
   return { top: `${props.spin.state.y + 8}px`, left: `${left}px`, width: `${Math.min(width, vw - 16)}px` }
 })
@@ -58,9 +64,9 @@ async function start() {
 
 <template>
   <Teleport to="body">
-    <div v-if="task" class="fixed inset-0 z-[140]" @click="spin.close()" @contextmenu.prevent="spin.close()"></div>
+    <div v-if="task" class="fixed inset-0 z-[140]" :class="isMobile ? '' : 'bg-black/20 dark:bg-black/40'" data-test="spin-up-backdrop" @click="spin.close()" @contextmenu.prevent="spin.close()"></div>
     <div v-if="task" role="dialog" aria-labelledby="spin-up-title" data-test="spin-up"
-         class="fixed z-[150] p-4 bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl shadow-2xl space-y-3 text-left"
+         class="fixed z-[150] p-4 overflow-y-auto bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-xl shadow-2xl space-y-3 text-left"
          :style="style" @click.stop @keydown.esc="spin.close()">
       <div class="min-w-0">
         <h2 id="spin-up-title" class="text-sm font-bold text-gray-800 dark:text-zinc-200">Spin up</h2>
