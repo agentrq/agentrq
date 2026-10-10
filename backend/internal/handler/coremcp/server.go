@@ -27,6 +27,7 @@ type WorkspaceServer struct {
 	streamServer *mcp.StreamableHTTPHandler
 	crud         crud.Controller
 	forks        ForkMerger
+	launcher     AgentLauncher
 	baseURL      string
 	pubsub       pubsub.Service
 }

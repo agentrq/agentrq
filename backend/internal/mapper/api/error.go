@@ -25,12 +25,16 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 	msg := "internal server error"
 
 	var forkErr *entity.ForkError
+	var launchErr *entity.LaunchError
 	if errors.Is(err, base.ErrNotFound) {
 		code = http.StatusNotFound
 		msg = "not found"
 	} else if errors.As(err, &forkErr) {
 		code = forkErrorStatus(forkErr.Kind)
 		msg = forkErr.Message
+	} else if errors.As(err, &launchErr) {
+		code = launchErrorStatus(launchErr.Kind)
+		msg = launchErr.Message
 	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
 		code = http.StatusConflict
 		msg = err.Error()
@@ -68,6 +72,21 @@ func forkErrorStatus(kind error) int {
 	switch kind {
 	case entity.ErrHasForks, entity.ErrForkUnfinished, entity.ErrForkNoDelete, entity.ErrForkAgentRunning:
 		return http.StatusConflict
+	}
+	return http.StatusUnprocessableEntity
+}
+
+// launchErrorStatus answers a refused agent launch.
+func launchErrorStatus(kind error) int {
+	switch kind {
+	case entity.ErrLaunchBusy:
+		return http.StatusConflict
+	case entity.ErrLaunchNoFolder:
+		return http.StatusPreconditionRequired
+	case entity.ErrLaunchUnavailable:
+		return http.StatusServiceUnavailable
+	case entity.ErrLaunchUnreachable:
+		return http.StatusBadGateway
 	}
 	return http.StatusUnprocessableEntity
 }

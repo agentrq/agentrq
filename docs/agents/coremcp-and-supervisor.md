@@ -41,6 +41,11 @@ per-workspace server, which must stay stateful — see
 [mcp-and-tasks.md](mcp-and-tasks.md). `protocol_version_test.go` in both
 packages fails if either is flipped.
 
+**`launchAgent` and `stopAgent` run `agentlaunch.Launcher`, the launch the web
+form runs**, wired in `app.go` like the fork merge. Never give them a launch of
+their own: the gates (fork capability, a second agent, a missing folder) would
+then hold on one path and not the other.
+
 **Don't put install/enrol prose in a resource.** The agentrqd install steps
 already live in three places kept in sync by hand — see
 [machines-and-daemon.md](machines-and-daemon.md), "Installation is answered in

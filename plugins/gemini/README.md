@@ -106,6 +106,9 @@ with a `toolName` and a higher priority for any tool you want to keep asking abo
 | `getWorkflowText` | Read a workflow's graph as the indented document text mode edits |
 | `replaceWorkflowFromText` | Replace a workflow's entire graph with a document |
 | `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd |
+| `listMachines` | List the account's machines, and whether each is online |
+| `launchAgent` | Start a workspace's agent on one of the account's machines |
+| `stopAgent` | Stop the agent a workspace is running on a machine |
 
 **Resources:** `agentrq://guides/new-workspace` and `agentrq://guides/agentrqd-setup`.
 

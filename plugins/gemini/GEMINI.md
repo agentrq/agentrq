@@ -55,6 +55,10 @@ hand each to the workspace whose agent is suited to it, and keep the human in th
 10. **Enrolling a machine**: `createEnrolmentCode` mints a one-time code that expires
     shortly — hand it to the human straight away.
 
+11. **Running agents on machines**: `listMachines` shows which machines are online;
+    `launchAgent` starts a workspace's agent on one of them and `stopAgent` stops it.
+    Launching is refused while the workspace already has an agent.
+
 The server also offers the guides `agentrq://guides/new-workspace` and
 `agentrq://guides/agentrqd-setup`, and the prompts `new-workspace`, `setup-agentrqd` and
 `workspace-status`.

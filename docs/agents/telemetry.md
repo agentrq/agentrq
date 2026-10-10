@@ -48,7 +48,7 @@ makes them self-evidently true. A few happen entirely in the browser and are
   `subActionIDByToolName` in `controller/telemetry/telemetry.go` — skip it and
   `sub_action_test.go` fails, because it lists what the live servers actually
   registered rather than trusting this doc. CoreMCP calls that aren't scoped to
-  one workspace (`listWorkspaces`, `createEnrolmentCode`, defining an
+  one workspace (`listWorkspaces`, `createEnrolmentCode`, `listMachines`, defining an
   event/workflow) store workspace `0`, same convention as the machine actions
   above.
 - **Skills used from the interface** (`skill_import`/`_view`/`_search`/`_enable`/`_disable`) share

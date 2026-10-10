@@ -28,7 +28,10 @@ type Params struct {
 	Crud crud.Controller
 	// ForkMerger merges a fork back, stopping its agent first.
 	ForkMerger ForkMerger
-	TokenSvc   auth.TokenService
+	// Launcher starts and stops a workspace's agent on a machine, as the
+	// web launch form does.
+	Launcher AgentLauncher
+	TokenSvc auth.TokenService
 	// CIMD resolves Client ID Metadata Document URLs. Optional: a default
 	// network-backed resolver is used when nil.
 	CIMD    auth.CIMDResolver
@@ -82,6 +85,7 @@ func New(p Params) (Handler, error) {
 
 	srv := NewServer(p.Crud, p.BaseURL, p.PubSub)
 	srv.forks = p.ForkMerger
+	srv.launcher = p.Launcher
 	h := &handler{
 		coremcpServer: srv,
 		crud:          p.Crud,

@@ -576,8 +576,11 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 - `searchSkills`: Find the account's skills as a workspace sees them, with whether each is on there, by name or description (`q`, at least 3 characters), with `limit`/`offset` paging and a `total`. Content is not included.
 - `getSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`.
 
-**Machine Setup**
+**Machines & Agents**
 - `createEnrolmentCode`: Mint a one-time code for enrolling a new machine with `agentrqd`. Shown once and expires shortly — there is no remote enrolment, so it hands back a ready-to-run command rather than acting on the machine itself.
+- `listMachines`: List the account's machines, with whether each is enabled and online and how many agents it runs.
+- `launchAgent`: Start a workspace's agent (`claude-code` or `acp-gateway`) on one of those machines, with the same checks as the launch button in the app.
+- `stopAgent`: Stop the agent a workspace is running on a machine.
 
 **Events & Triggers**
 An event is a named signal a workspace publishes; a trigger creates a task somewhere when it fires. Publishing stays agent-side (`publishEvent` on the per-workspace server) — the supervisor builds the wiring, the workers fire it.

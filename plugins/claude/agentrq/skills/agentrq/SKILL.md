@@ -77,6 +77,9 @@ A workflow is the graph those pieces add up to: a start event, and steps that re
 | `getWorkflowText` | Read the whole graph as an indented document. Steps naming a deleted event or workspace are left out so it always parses |
 | `replaceWorkflowFromText` | Replace the entire graph with a document. Names are resolved before anything is written, so an unknown one leaves the workflow untouched |
 | `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd. Shown once and expires shortly — hand it to the human right away |
+| `listMachines` | List the account's machines: enabled, online, agentrqd version and how many agents each runs |
+| `launchAgent` | Start a workspace's agent (`claude-code` or `acp-gateway`) on a machine from `listMachines`. Refused while the workspace already has one, has no working directory, or the machine is off, offline or too old |
+| `stopAgent` | Stop the agent a workspace is running on a machine, ending what it is in the middle of |
 
 Text mode is two spaces per level, and every list line is `- agent:<workspace>` or `- event:<name>`, alternating:
 

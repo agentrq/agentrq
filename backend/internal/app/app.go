@@ -21,6 +21,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
 	"github.com/agentrq/agentrq/backend/internal/controller/forkmerge"
@@ -836,10 +837,14 @@ func New(cfg Config) (*App, error) {
 	// One fork merge for REST and CoreMCP, so both stop the fork's agent first.
 	forkMerger := &forkmerge.Merger{Crud: crudCtrl, Machines: machineRegistry, Servers: mcpManager, Bus: bus}
 
+	// One agent launch for REST and CoreMCP, so both keep every gate.
+	launcher := newLauncher(cfg, cookieSecure, crudCtrl, mcpManager, machineRegistry, tokenSvc)
+
 	// CoreMCP Handler
 	if _, err := handlercoremcp.New(handlercoremcp.Params{
 		Crud:       crudCtrl,
 		ForkMerger: forkMerger,
+		Launcher:   launcher,
 		TokenSvc:   tokenSvc,
 		BaseURL:    cfg.App.BaseURL,
 		Domain:     cfg.App.Domain,
@@ -871,6 +876,7 @@ func New(cfg Config) (*App, error) {
 		MachineRegistry:  machineRegistry,
 		EventBus:         bus,
 		ForkMerger:       forkMerger,
+		Launcher:         launcher,
 		BaseURL:          cfg.App.BaseURL,
 		MCPBaseURL:       cfg.App.BaseURL,
 		Domain:           cfg.App.Domain,
@@ -1031,6 +1037,18 @@ const machineKindClaudeCode = "claude-code"
 // Enter key actually produces — the same bytes the browser's terminal sends.
 // A \n would leave the command sitting on the prompt, unsent.
 const clearCommand = "/clear\r"
+
+// newLauncher builds the agent launch, giving agents the same MCP addresses
+// the API hands out: the same base, domain and scheme.
+func newLauncher(cfg Config, secure bool, c agentlaunch.Crud, agents agentlaunch.Agents, machines *machine.Registry, tokens agentlaunch.Tokens) *agentlaunch.Launcher {
+	return &agentlaunch.Launcher{
+		Crud:     c,
+		Agents:   agents,
+		Machines: machines,
+		Tokens:   tokens,
+		URLs:     agentlaunch.URLs{Base: cfg.App.BaseURL, Domain: cfg.App.Domain, Secure: secure},
+	}
+}
 
 func instanceID(idgenNode uint16) string {
 	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {

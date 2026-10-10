@@ -755,6 +755,10 @@ const (
 	// CoreMCP's workspace forks.
 	SubActionIDMCPForkWorkspace
 	SubActionIDMCPMergeFork
+	// CoreMCP's agents on machines.
+	SubActionIDMCPListMachines
+	SubActionIDMCPLaunchAgent
+	SubActionIDMCPStopAgent
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

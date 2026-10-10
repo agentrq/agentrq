@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -443,12 +444,24 @@ func launchTestHandler(t *testing.T, machineID int64, crudCtrl *fakeLaunchCrud, 
 	registry := machinectrl.NewRegistry("test-instance")
 	registry.Add(machineID, conn)
 
-	return &handler{
+	return withLauncher(&handler{
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
 		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
+	})
+}
+
+// withLauncher gives h the launcher app.go would, built from its own fields.
+func withLauncher(h *handler) *handler {
+	h.launcher = &agentlaunch.Launcher{
+		Crud:     h.crud,
+		Agents:   h.mcpManager,
+		Machines: h.machineRegistry,
+		Tokens:   h.tokenSvc,
+		URLs:     h.mcpURLs(),
 	}
+	return h
 }
 
 func launchApp(h *handler, userID string) *fiber.App {
@@ -573,27 +586,6 @@ func TestLaunchAgent_StillSucceedsWhenTheCountFails(t *testing.T) {
 	}
 }
 
-// agentLaunchAction is the pure lookup the emission site defers to; every
-// case it can return is worth asserting directly, without a live handler.
-func TestAgentLaunchAction(t *testing.T) {
-	cases := []struct {
-		kind       string
-		wantAction entity.Action
-		wantOK     bool
-	}{
-		{"claude-code", entity.ActionAgentLaunchClaudeCode, true},
-		{"acp-gateway", entity.ActionAgentLaunchACPGateway, true},
-		{"", 0, false},
-		{"something-else", 0, false},
-	}
-	for _, tc := range cases {
-		got, ok := agentLaunchAction(tc.kind)
-		if got != tc.wantAction || ok != tc.wantOK {
-			t.Errorf("agentLaunchAction(%q) = (%v, %v), want (%v, %v)", tc.kind, got, ok, tc.wantAction, tc.wantOK)
-		}
-	}
-}
-
 // capturingConn keeps the start request the handler sent, so a test can assert
 // on what the daemon was actually asked to do.
 type capturingConn struct {
@@ -620,13 +612,13 @@ func launchInto(t *testing.T, workspaceName string) wire.StartSession {
 	conn := &capturingConn{}
 	registry := machinectrl.NewRegistry("test-instance")
 	registry.Add(machineID.Int64(), conn)
-	h := &handler{
+	h := withLauncher(&handler{
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
 		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
 		mcpBaseURL:      "https://agentrq.example",
-	}
+	})
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -648,7 +640,7 @@ func launchInto(t *testing.T, workspaceName string) wire.StartSession {
 // The supervisor workspace works across every other one, so its agent is given
 // the account-wide server as well as its own.
 func TestLaunchAgent_TheSupervisorGetsTheCoreServer(t *testing.T) {
-	start := launchInto(t, supervisorWorkspaceName)
+	start := launchInto(t, agentlaunch.SupervisorWorkspaceName)
 	if start.CoreMCPURL != "https://agentrq.example/mcp" {
 		t.Errorf("coreMcpUrl = %q, want the account-wide server", start.CoreMCPURL)
 	}
@@ -709,13 +701,13 @@ func launchWith(t *testing.T, crudCtrl *fakeLaunchCrud, caps []string, version, 
 	registry := machinectrl.NewRegistry("test-instance")
 	registry.Add(machineID.Int64(), conn)
 	registry.SetCapabilities(machineID.Int64(), conn, caps)
-	h := &handler{
+	h := withLauncher(&handler{
 		crud:            crudCtrl,
 		mcpManager:      &fakeMCPManager{},
 		machineRegistry: registry,
 		tokenSvc:        auth.NewTokenService(auth.TokenConfig{JWTSecret: "test-secret"}),
 		mcpBaseURL:      "https://agentrq.example",
-	}
+	})
 	req := httptest.NewRequest(http.MethodPost,
 		"/api/v1/workspaces/"+monoflake.ID(crudCtrl.workspace.ID).String()+"/agent",
 		strings.NewReader(`{"machineId":"`+machineID.String()+`",`+strings.TrimPrefix(body, "{")))

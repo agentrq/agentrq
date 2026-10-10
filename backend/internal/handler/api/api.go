@@ -7,7 +7,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -47,7 +47,10 @@ type (
 		EventBus        *eventbus.Bus
 		// ForkMerger merges a fork back, stopping its agent first; CoreMCP
 		// shares it.
-		ForkMerger       forkMerger
+		ForkMerger forkMerger
+		// Launcher starts an agent on a machine; CoreMCP's launchAgent runs
+		// the same one.
+		Launcher         agentLauncher
 		BaseURL          string
 		MCPBaseURL       string
 		Domain           string
@@ -63,6 +66,12 @@ type (
 	}
 
 	Handler interface{}
+
+	// agentLauncher is agentlaunch.Launcher, the one launch REST and CoreMCP
+	// share.
+	agentLauncher interface {
+		Launch(ctx context.Context, rq agentlaunch.Request) (*entity.CreateSessionResponse, error)
+	}
 
 	// forkMerger is forkmerge.Merger, the one merge REST and CoreMCP share.
 	forkMerger interface {
@@ -80,6 +89,7 @@ type (
 		acpLookups       *machinectrl.LookupCache
 		bus              *eventbus.Bus
 		forks            forkMerger
+		launcher         agentLauncher
 		baseURL          string
 		mcpBaseURL       string
 		domain           string
@@ -123,6 +133,7 @@ func New(p Params) (Handler, error) {
 		acpLookups:       machinectrl.NewLookupCache(machinectrl.LookupCacheTTL),
 		bus:              p.EventBus,
 		forks:            p.ForkMerger,
+		launcher:         p.Launcher,
 		baseURL:          p.BaseURL,
 		mcpBaseURL:       p.MCPBaseURL,
 		domain:           p.Domain,
@@ -189,42 +200,16 @@ func newContext(c *fiber.Ctx) (context.Context, context.CancelFunc) {
 }
 
 func (h *handler) mcpURL(workspaceID int64) string {
-	id := monoflake.ID(workspaceID).String()
-	url := fmt.Sprintf("%s/mcp/%s", h.mcpBaseURL, id)
-
-	// If subdomain masking is possible (not localhost/IP)
-	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") && !strings.HasPrefix(h.domain, "127.0.0.1") {
-		proto := "https"
-		if !h.cookieSecure {
-			proto = "http"
-		}
-		// Subdomain based URLs use base36 for better compatibility (case-insensitive subdomains)
-		id36 := strings.ToLower(strconv.FormatInt(workspaceID, 36))
-		url = fmt.Sprintf("%s://%s.mcp.%s", proto, id36, h.domain)
-	}
-
-	return url
+	return h.mcpURLs().Workspace(workspaceID)
 }
 
-// coreMCPURL is where the account-wide server answers.
-//
-// Templated from the same host as [handler.mcpURL] and by the same rule, so a
-// deployment with subdomain masking gets `https://mcp.{domain}/mcp` and one
-// without gets the bare `{baseURL}/mcp`. It carries no credential: that server
-// authenticates over its own OAuth flow rather than a minted token, which is
-// why this is a plain URL where the per-workspace one has a token on the end.
-//
-// Mirrors `buildSupervisorMcpUrl` in the frontend, which builds the same
-// address for the setup tab's snippet.
+// coreMCPURL is the account-wide server, given to the supervisor's agent.
 func (h *handler) coreMCPURL() string {
-	if h.domain != "" && !strings.HasPrefix(h.domain, "localhost") && !strings.HasPrefix(h.domain, "127.0.0.1") {
-		proto := "https"
-		if !h.cookieSecure {
-			proto = "http"
-		}
-		return fmt.Sprintf("%s://mcp.%s/mcp", proto, h.domain)
-	}
-	return h.mcpBaseURL + "/mcp"
+	return h.mcpURLs().Core()
+}
+
+func (h *handler) mcpURLs() agentlaunch.URLs {
+	return agentlaunch.URLs{Base: h.mcpBaseURL, Domain: h.domain, Secure: h.cookieSecure}
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────

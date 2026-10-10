@@ -518,5 +518,9 @@ and reported whichever of the five refusals it hit would make somebody press
 the button to find out whether they could press the button. It is never the
 authority: two people can press at once, and only the server sees both.
 
+**Every launch gate lives in `controller/agentlaunch`**, which the REST route
+and the supervisor's `launchAgent`/`stopAgent` both call. A gate added to the
+handler instead is one the supervisor walks straight past.
+
 The plan, with the decisions and who made them, is `docs/AGENTRQD_PLAN.md`.
 

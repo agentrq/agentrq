@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 )
 
@@ -74,6 +75,12 @@ func TestToolSchemaEnumsMatchTheValidators(t *testing.T) {
 			params: RespondToTaskParams{},
 			field:  "Action",
 			want:   crud.ValidTaskResponseActions,
+		},
+		{
+			name:   "launchAgent offers the kinds the launcher counts",
+			params: LaunchAgentParams{},
+			field:  "Kind",
+			want:   agentlaunch.Kinds,
 		},
 	}
 

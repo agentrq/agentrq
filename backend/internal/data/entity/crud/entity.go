@@ -2164,6 +2164,39 @@ var (
 	ErrForkAgentRunning = errors.New("fork's agent is still running")
 )
 
+// Why an agent launch was refused. Each one reaches the caller wrapped in a
+// LaunchError carrying the sentence to show, for the web launch form and the
+// supervisor's launchAgent alike.
+var (
+	// ErrLaunchInvalid: the request names no workspace or machine.
+	ErrLaunchInvalid = errors.New("invalid launch request")
+	// ErrLaunchBusy: the workspace already has an agent, or the machine
+	// cannot take this one as asked.
+	ErrLaunchBusy = errors.New("agent cannot be launched now")
+	// ErrLaunchNoFolder: the workspace has no folder to run in, and one is
+	// never guessed.
+	ErrLaunchNoFolder = errors.New("workspace has no working directory")
+	// ErrLaunchUnavailable: this server holds no machine connections.
+	ErrLaunchUnavailable = errors.New("machine connections are not available")
+	// ErrLaunchUnreachable: the start request could not be sent.
+	ErrLaunchUnreachable = errors.New("machine could not be reached")
+)
+
+// LaunchError is one of the ErrLaunch* kinds above with the sentence a person
+// sees.
+type LaunchError struct {
+	Kind    error
+	Message string
+}
+
+func (e *LaunchError) Error() string { return e.Message }
+func (e *LaunchError) Unwrap() error { return e.Kind }
+
+// NewLaunchError wraps kind with the message to show for it.
+func NewLaunchError(kind error, message string) error {
+	return &LaunchError{Kind: kind, Message: message}
+}
+
 // UntitledTaskTitle is the title of a task created from the interface without
 // one. The browser that created it may then name it with its local model; a
 // task it does not name keeps this one, so lists, emails and agents always
