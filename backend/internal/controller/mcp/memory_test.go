@@ -517,3 +517,85 @@ func TestMemoryToolsWithoutStorage(t *testing.T) {
 		t.Error("deleteMemory should report that memory is unavailable")
 	}
 }
+
+func TestSaveMemoryConfigurableLimit(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("global SetMaxMemoryBytes", func(t *testing.T) {
+		SetMaxMemoryBytes(32 * 1024)
+		defer SetMaxMemoryBytes(0)
+
+		store := &memoryStore{}
+		ps := newMemoryServer(t, store)
+
+		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("a", 32*1024),
+		})
+		if err != nil || res.IsError {
+			t.Fatalf("expected success saving 32 KiB memory: %v", res)
+		}
+
+		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("a", 32*1024+1),
+		})
+		if !resTooBig.IsError || !strings.Contains(resultText(t, resTooBig), "32 KiB") {
+			t.Fatalf("expected error mentioning 32 KiB, got: %s", resultText(t, resTooBig))
+		}
+	})
+
+	t.Run("server-specific SetMaxMemoryBytes", func(t *testing.T) {
+		store := &memoryStore{}
+		ps := newMemoryServer(t, store)
+		ps.SetMaxMemoryBytes(2000)
+
+		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("b", 2000),
+		})
+		if err != nil || res.IsError {
+			t.Fatalf("expected success saving 2000 bytes: %v", res)
+		}
+
+		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("b", 2001),
+		})
+		if !resTooBig.IsError {
+			t.Fatalf("expected error for 2001 bytes, got: %s", resultText(t, resTooBig))
+		}
+	})
+
+	t.Run("env var AGENTRQ_MEMORY_MAX_SIZE", func(t *testing.T) {
+		t.Setenv("AGENTRQ_MEMORY_MAX_SIZE", "64KiB")
+
+		store := &memoryStore{}
+		ps := newMemoryServer(t, store)
+
+		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("c", 64*1024),
+		})
+		if err != nil || res.IsError {
+			t.Fatalf("expected success with env var 64KiB: %v", res)
+		}
+
+		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
+			Content: strings.Repeat("c", 64*1024+1),
+		})
+		if !resTooBig.IsError || !strings.Contains(resultText(t, resTooBig), "64 KiB") {
+			t.Fatalf("expected error mentioning 64 KiB, got: %s", resultText(t, resTooBig))
+		}
+	})
+}
+
+func TestValidateMemoryContentStandalone(t *testing.T) {
+	if err := validateMemoryContent(strings.Repeat("a", MaxMemoryBytes)); err != nil {
+		t.Fatalf("expected valid content at limit, got: %v", err)
+	}
+	if err := validateMemoryContent(strings.Repeat("a", MaxMemoryBytes+1)); err == nil || !strings.Contains(err.Error(), "16 KiB") {
+		t.Fatalf("expected error mentioning 16 KiB, got: %v", err)
+	}
+
+	SetMaxMemoryBytes(100)
+	defer SetMaxMemoryBytes(0)
+	if err := validateMemoryContent(strings.Repeat("a", 101)); err == nil || !strings.Contains(err.Error(), "100 bytes") {
+		t.Fatalf("expected error for 100 bytes limit, got: %v", err)
+	}
+}

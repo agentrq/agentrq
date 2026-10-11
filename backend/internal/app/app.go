@@ -60,6 +60,7 @@ import (
 	svclimit "github.com/agentrq/agentrq/backend/internal/service/ratelimit"
 	"github.com/agentrq/agentrq/backend/internal/service/scheduler"
 	"github.com/agentrq/agentrq/backend/internal/service/server"
+	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/skillimport"
 	slacksvc "github.com/agentrq/agentrq/backend/internal/service/slack"
 	"github.com/agentrq/agentrq/backend/internal/service/smtp"
@@ -125,8 +126,10 @@ type (
 			MaxPerUser int           `yaml:"maxPerUser"`
 			Window     time.Duration `yaml:"window"`
 		} `yaml:"ratelimit"`
-		Storage   cleanup.Config `yaml:"storage"`
-		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
+		Storage   cleanup.Config      `yaml:"storage"`
+		Memory    config.MemoryConfig `yaml:"memory"`
+		Skills    config.SkillsConfig `yaml:"skills"`
+		ConfigSvc config.Service      `yaml:"-"` // injected, not from YAML
 	}
 
 	App struct {
@@ -144,6 +147,24 @@ type (
 func New(cfg Config) (*App, error) {
 	if cfg.Auth.JWTSecret == "" {
 		return nil, errors.New("auth: JWT secret must be configured")
+	}
+
+	if cfg.ConfigSvc != nil {
+		if cfg.Memory.MaxSize == nil && cfg.Memory.MaxMemorySize == nil && cfg.Memory.MaxFileSize == nil && cfg.Memory.MaxBytes == nil {
+			_ = cfg.ConfigSvc.Populate("memory", &cfg.Memory)
+		}
+		if cfg.Skills.MaxFileSize == nil && cfg.Skills.MaxSkillFileSize == nil && cfg.Skills.MaxSize == nil && cfg.Skills.MaxBytes == nil {
+			_ = cfg.ConfigSvc.Populate("skills", &cfg.Skills)
+		}
+	}
+	if memLimit, err := cfg.Memory.ResolveMaxBytes(); err == nil && memLimit > 0 {
+		mcp.SetMaxMemoryBytes(memLimit)
+	}
+	if skillLimit, err := cfg.Skills.ResolveMaxSkillFileBytes(); err == nil && skillLimit > 0 {
+		skill.SetMaxSkillFileBytes(skillLimit)
+	}
+	if subLimit, err := cfg.Skills.ResolveMaxSubFileBytes(); err == nil && subLimit > 0 {
+		skill.SetMaxSubFileBytes(subLimit)
 	}
 
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
@@ -674,6 +695,9 @@ func New(cfg Config) (*App, error) {
 			tokenSvc,
 			pubsubSvc,
 		)
+		if memLimit, err := cfg.Memory.ResolveMaxBytes(); err == nil && memLimit > 0 {
+			srv.SetMaxMemoryBytes(memLimit)
+		}
 		srv.StartPoller(repo)
 		srv.StartPing()
 		return srv

@@ -7,10 +7,12 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -42,9 +44,44 @@ const (
 	// column is.
 	MaxMemoryNameLength = 32
 
-	// MaxMemoryBytes caps one memory at 16 KiB of UTF-8.
+	// MaxMemoryBytes caps one memory at 16 KiB of UTF-8 by default.
 	MaxMemoryBytes = 16 * 1024
 )
+
+var configuredMaxMemoryBytes = 0
+
+// SetMaxMemoryBytes sets the maximum allowed size in bytes for a memory.
+// If n <= 0, it resets to the default (MaxMemoryBytes, 16 KiB).
+func SetMaxMemoryBytes(n int) {
+	configuredMaxMemoryBytes = n
+}
+
+// MaxMemoryLimit returns the active limit for memory in bytes.
+func MaxMemoryLimit() int {
+	if configuredMaxMemoryBytes > 0 {
+		return configuredMaxMemoryBytes
+	}
+	for _, env := range []string{
+		"AGENTRQ_MEMORY_MAX_SIZE",
+		"AGENTRQ_MEMORY_MAX_FILE_SIZE",
+		"AGENTRQ_MEMORY_MAX_BYTES",
+		"AGENTRQ_MAX_MEMORY_SIZE",
+		"AGENTRQ_MAX_MEMORY_MD_SIZE",
+		"AGENTRQ_MEMORY_MD_MAX_SIZE",
+	} {
+		if val := os.Getenv(env); val != "" {
+			if n, err := config.ParseByteSize(val); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return MaxMemoryBytes
+}
+
+// SetMaxMemoryBytes sets the maximum allowed size in bytes for a memory on this server.
+func (ps *WorkspaceServer) SetMaxMemoryBytes(n int) {
+	ps.maxMemoryBytes = n
+}
 
 // LoadMemoryFunc reads one of the workspace's memories.
 //
@@ -127,8 +164,28 @@ func resolveMemoryName(name string) (string, error) {
 // Refusing rather than truncating: an agent told that its memory is too large
 // can decide what to drop, which is a judgement only it can make.
 func validateMemoryContent(content string) error {
-	if n := len(content); n > MaxMemoryBytes {
-		return fmt.Errorf("memory is %d bytes; the limit is %d bytes (16 KiB). Split it across named memories and list them in %s", n, MaxMemoryBytes, DefaultMemoryName)
+	limit := MaxMemoryLimit()
+	if n := len(content); n > limit {
+		kib := limit / 1024
+		if kib > 0 && limit%1024 == 0 {
+			return fmt.Errorf("memory is %d bytes; the limit is %d bytes (%d KiB). Split it across named memories and list them in %s", n, limit, kib, DefaultMemoryName)
+		}
+		return fmt.Errorf("memory is %d bytes; the limit is %d bytes. Split it across named memories and list them in %s", n, limit, DefaultMemoryName)
+	}
+	return nil
+}
+
+func (ps *WorkspaceServer) validateMemoryContent(content string) error {
+	limit := ps.maxMemoryBytes
+	if limit <= 0 {
+		limit = MaxMemoryLimit()
+	}
+	if n := len(content); n > limit {
+		kib := limit / 1024
+		if kib > 0 && limit%1024 == 0 {
+			return fmt.Errorf("memory is %d bytes; the limit is %d bytes (%d KiB). Split it across named memories and list them in %s", n, limit, kib, DefaultMemoryName)
+		}
+		return fmt.Errorf("memory is %d bytes; the limit is %d bytes. Split it across named memories and list them in %s", n, limit, DefaultMemoryName)
 	}
 	return nil
 }
@@ -177,7 +234,7 @@ func (ps *WorkspaceServer) handleSaveMemory(ctx context.Context, req *mcp.CallTo
 	if err != nil {
 		return toolError("%v", err), nil, nil
 	}
-	if err := validateMemoryContent(params.Content); err != nil {
+	if err := ps.validateMemoryContent(params.Content); err != nil {
 		return toolError("%v", err), nil, nil
 	}
 	if ps.saveMemory == nil {
@@ -221,6 +278,8 @@ func (ps *WorkspaceServer) handleDeleteMemory(ctx context.Context, req *mcp.Call
 	}
 
 	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Deleted %q.", name)}},
+		Content: []mcp.Content{&mcp.TextContent{
+			Text: fmt.Sprintf("Deleted %q.", name),
+		}},
 	}, nil, nil
 }

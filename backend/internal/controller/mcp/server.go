@@ -128,6 +128,7 @@ type WorkspaceServer struct {
 	loadMemory            LoadMemoryFunc
 	saveMemory            SaveMemoryFunc
 	deleteMemory          DeleteMemoryFunc
+	maxMemoryBytes        int
 	skills                SkillStore
 	siteTools             SiteToolsBackend
 	recordToolCall        RecordToolCallFunc

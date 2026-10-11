@@ -77,12 +77,17 @@ storage:
   dir: ${AGENTRQ_STORAGE_DIR:./_storage}
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
 
+# Maximum size in bytes for a workspace memory note (memory.md). Default: 16 KiB (16384 bytes).
+memory:
+  maxSize: ${AGENTRQ_MEMORY_MAX_SIZE:16384}
+
 # Where skill files and attachments (artifacts) are kept: "local" (<storage dir>/skills
 # and <storage dir>/artifacts) or "s3", which uses the s3 block below. Either way each
 # file has a public link: <baseUrl>/storage/... when local, the bucket when s3, which
 # must then allow public reads under skills/ and artifacts/.
 skills:
   storage: ${AGENTRQ_SKILLS_STORAGE:local}
+  maxFileSize: ${AGENTRQ_SKILLS_MAX_FILE_SIZE:98304}
 
 artifacts:
   storage: ${AGENTRQ_ARTIFACTS_STORAGE:local}

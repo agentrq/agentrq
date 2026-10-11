@@ -910,10 +910,10 @@ func isPathChar(c byte) bool {
 
 // fileLimit is the most a file may weigh: SKILL.md has its own, lower cap.
 func fileLimit(p string) int64 {
-	if path.Base(p) == skill.FileName {
-		return skill.MaxSkillFileBytes
+	if path.Base(p) == skill.FileName || strings.EqualFold(path.Base(p), "skills.md") {
+		return int64(skill.MaxSkillFileLimit())
 	}
-	return skill.MaxSubFileBytes
+	return int64(skill.MaxSubFileLimit())
 }
 
 func dirOf(p string) string {
