@@ -204,10 +204,9 @@ type (
 	// unique across every workspace and every account, so one workspace saving
 	// "MEMORY.md" would take the name from everybody else.
 	//
-	// Content is capped at 16 KiB by the tools that write it, which is where
-	// there is a caller to refuse. The column is deliberately larger: the cap
-	// is counted in bytes of UTF-8, and 64000 characters is comfortably above
-	// what 16 KiB can encode.
+	// Content is capped by memory.maxSize (16 KiB by default) in the tools
+	// that write it, where there is a caller to refuse, and the repository
+	// refuses anything over MaxMemoryContentBytes whatever the setting says.
 	Memory struct {
 		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
 		CreatedAt   time.Time
@@ -215,7 +214,7 @@ type (
 		UserID      int64  `gorm:"index:idx_memories_user_id;uniqueIndex:uk_user_id_workspace_id_name,priority:1"`
 		WorkspaceID int64  `gorm:"index:idx_memories_workspace_id;uniqueIndex:uk_user_id_workspace_id_name,priority:2"`
 		Name        string `gorm:"type:varchar(32);uniqueIndex:uk_user_id_workspace_id_name,priority:3"`
-		Content     string `gorm:"type:varchar(64000)"`
+		Content     string `gorm:"type:text"`
 	}
 
 	// Skill is an account's playbook for a kind of task: a SKILL.md and the
@@ -546,6 +545,10 @@ type (
 		ThreadTS       string `gorm:"type:varchar(32)"` // Slack message ts that anchors the thread
 	}
 )
+
+// MaxMemoryContentBytes is the most a memory may hold whatever memory.maxSize
+// says: the repository refuses anything larger.
+const MaxMemoryContentBytes = 64 * 1024
 
 const (
 	ActionIDUnknown uint8 = iota

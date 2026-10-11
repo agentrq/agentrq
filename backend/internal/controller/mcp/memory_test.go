@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -518,84 +519,38 @@ func TestMemoryToolsWithoutStorage(t *testing.T) {
 	}
 }
 
-func TestSaveMemoryConfigurableLimit(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("global SetMaxMemoryBytes", func(t *testing.T) {
-		SetMaxMemoryBytes(32 * 1024)
-		defer SetMaxMemoryBytes(0)
-
-		store := &memoryStore{}
-		ps := newMemoryServer(t, store)
-
-		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("a", 32*1024),
-		})
-		if err != nil || res.IsError {
-			t.Fatalf("expected success saving 32 KiB memory: %v", res)
-		}
-
-		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("a", 32*1024+1),
-		})
-		if !resTooBig.IsError || !strings.Contains(resultText(t, resTooBig), "32 KiB") {
-			t.Fatalf("expected error mentioning 32 KiB, got: %s", resultText(t, resTooBig))
-		}
+// A configured limit is the one enforced, and the one the tools advertise.
+func TestConfiguredLimitsAreEnforcedAndAdvertised(t *testing.T) {
+	MaxMemoryBytes, skill.MaxSkillFileBytes, skill.MaxFiles = 40*1024, 128*1024, 10
+	t.Cleanup(func() {
+		MaxMemoryBytes, skill.MaxSkillFileBytes, skill.MaxFiles = DefaultMaxMemoryBytes, skill.DefaultMaxSkillFileBytes, skill.DefaultMaxFiles
 	})
 
-	t.Run("server-specific SetMaxMemoryBytes", func(t *testing.T) {
-		store := &memoryStore{}
-		ps := newMemoryServer(t, store)
-		ps.SetMaxMemoryBytes(2000)
-
-		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("b", 2000),
-		})
-		if err != nil || res.IsError {
-			t.Fatalf("expected success saving 2000 bytes: %v", res)
-		}
-
-		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("b", 2001),
-		})
-		if !resTooBig.IsError {
-			t.Fatalf("expected error for 2001 bytes, got: %s", resultText(t, resTooBig))
-		}
+	ps := newMemoryServer(t, &memoryStore{})
+	res, _, err := ps.handleSaveMemory(context.Background(), &mcp.CallToolRequest{}, SaveMemoryParams{
+		Content: strings.Repeat("a", 40*1024+1),
 	})
-
-	t.Run("env var AGENTRQ_MEMORY_MAX_SIZE", func(t *testing.T) {
-		t.Setenv("AGENTRQ_MEMORY_MAX_SIZE", "64KiB")
-
-		store := &memoryStore{}
-		ps := newMemoryServer(t, store)
-
-		res, _, err := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("c", 64*1024),
-		})
-		if err != nil || res.IsError {
-			t.Fatalf("expected success with env var 64KiB: %v", res)
-		}
-
-		resTooBig, _, _ := ps.handleSaveMemory(ctx, &mcp.CallToolRequest{}, SaveMemoryParams{
-			Content: strings.Repeat("c", 64*1024+1),
-		})
-		if !resTooBig.IsError || !strings.Contains(resultText(t, resTooBig), "64 KiB") {
-			t.Fatalf("expected error mentioning 64 KiB, got: %s", resultText(t, resTooBig))
-		}
-	})
-}
-
-func TestValidateMemoryContentStandalone(t *testing.T) {
-	if err := validateMemoryContent(strings.Repeat("a", MaxMemoryBytes)); err != nil {
-		t.Fatalf("expected valid content at limit, got: %v", err)
+	if err != nil {
+		t.Fatalf("saveMemory: %v", err)
 	}
-	if err := validateMemoryContent(strings.Repeat("a", MaxMemoryBytes+1)); err == nil || !strings.Contains(err.Error(), "16 KiB") {
-		t.Fatalf("expected error mentioning 16 KiB, got: %v", err)
+	if text := resultText(t, res); !res.IsError || !strings.Contains(text, "40960 bytes (40 KiB)") {
+		t.Errorf("refusal should name the configured limit; got %q", text)
 	}
 
-	SetMaxMemoryBytes(100)
-	defer SetMaxMemoryBytes(0)
-	if err := validateMemoryContent(strings.Repeat("a", 101)); err == nil || !strings.Contains(err.Error(), "100 bytes") {
-		t.Fatalf("expected error for 100 bytes limit, got: %v", err)
+	want := map[string]string{
+		"saveMemory": "at most 40 KiB",
+		"saveSkill":  "SKILL.md at most 128 KiB, any other file at most 64 KiB, UTF-8 text only, at most 10 files per skill",
+	}
+	for _, tool := range toolsOverTheWire(t) {
+		name, _ := tool["name"].(string)
+		if w, ok := want[name]; ok {
+			if d, _ := tool["description"].(string); !strings.Contains(d, w) {
+				t.Errorf("%s description %q should contain %q", name, d, w)
+			}
+			delete(want, name)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("tools not advertised: %v", want)
 	}
 }

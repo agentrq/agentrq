@@ -19,7 +19,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound = errors.New("not found")
+	// ErrMemoryTooLarge is a memory over model.MaxMemoryContentBytes.
+	ErrMemoryTooLarge = errors.New("memory too large")
+)
 
 type Repository interface {
 	// Workspace
@@ -1595,6 +1599,9 @@ func (r *repository) GetMemory(ctx context.Context, userID, workspaceID int64, n
 // row keeps the ID it already had — only the content and the timestamp move —
 // so a memory's identity survives being rewritten.
 func (r *repository) UpsertMemory(ctx context.Context, m model.Memory) (model.Memory, error) {
+	if len(m.Content) > model.MaxMemoryContentBytes {
+		return model.Memory{}, fmt.Errorf("%w: %d bytes; the limit is %d", ErrMemoryTooLarge, len(m.Content), model.MaxMemoryContentBytes)
+	}
 	err := r.conn(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}, {Name: "workspace_id"}, {Name: "name"}},
 		DoUpdates: clause.AssignmentColumns([]string{"content", "updated_at"}),
@@ -1610,7 +1617,7 @@ func (r *repository) UpsertMemory(ctx context.Context, m model.Memory) (model.Me
 
 // ListMemoriesByWorkspace returns every memory in a workspace, ordered by name.
 //
-// Content comes back with them: the rows are capped at 16 KiB and a workspace
+// Content comes back with them: the rows are capped at 64 KiB and a workspace
 // holds a handful, so a second query per memory would cost more than it saves.
 // Callers that only need the index — the settings list — drop it themselves.
 func (r *repository) ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error) {

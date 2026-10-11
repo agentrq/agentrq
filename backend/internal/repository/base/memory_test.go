@@ -290,3 +290,21 @@ func TestDeleteMemory_ScopedToOwnerAndWorkspace(t *testing.T) {
 		}
 	}
 }
+
+// The cap holds whatever memory.maxSize says, so nothing over it reaches the
+// column.
+func TestUpsertMemory_RefusesContentOverTheCap(t *testing.T) {
+	repo := New(&mockDB{db: memoryDB(t)})
+	ctx := context.Background()
+
+	if _, err := repo.UpsertMemory(ctx, memory(1, memUserID, memWorkspaceID, "big.md", strings.Repeat("a", model.MaxMemoryContentBytes))); err != nil {
+		t.Fatalf("at the cap: %v", err)
+	}
+	_, err := repo.UpsertMemory(ctx, memory(2, memUserID, memWorkspaceID, "bigger.md", strings.Repeat("a", model.MaxMemoryContentBytes+1)))
+	if !errors.Is(err, ErrMemoryTooLarge) {
+		t.Fatalf("over the cap: err = %v, want ErrMemoryTooLarge", err)
+	}
+	if _, err := repo.GetMemory(ctx, memUserID, memWorkspaceID, "bigger.md"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("refused memory was stored: err = %v", err)
+	}
+}

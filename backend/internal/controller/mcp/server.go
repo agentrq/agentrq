@@ -34,6 +34,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	"github.com/agentrq/agentrq/backend/internal/service/schedule"
+	"github.com/agentrq/agentrq/backend/internal/service/skill"
 	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -128,7 +129,6 @@ type WorkspaceServer struct {
 	loadMemory            LoadMemoryFunc
 	saveMemory            SaveMemoryFunc
 	deleteMemory          DeleteMemoryFunc
-	maxMemoryBytes        int
 	skills                SkillStore
 	siteTools             SiteToolsBackend
 	recordToolCall        RecordToolCallFunc
@@ -594,7 +594,7 @@ func NewWorkspaceServer(
 			"With no name it writes " + DefaultMemoryName + ", which should stay an index: keep detail in named memories and link to them from there " +
 			"as markdown links to memory://<name>, for example [how we ship](memory://deploys.md). " +
 			"Names are lowercase words joined by single hyphens and ending in .md, like release-notes.md; anything else is refused. " +
-			"One memory holds at most 16 KiB; a larger one is refused rather than truncated, so split it and index the parts. " +
+			fmt.Sprintf("One memory holds at most %d KiB; a larger one is refused rather than truncated, so split it and index the parts. ", MaxMemoryBytes/1024) +
 			"The memory belongs to the workspace, not to you — other agents working here read the same notes.",
 		Annotations: mcphint.Overwrite("Write a memory"),
 	}, ps.handleSaveMemory)
@@ -631,7 +631,7 @@ func NewWorkspaceServer(
 			"Writing skill://<name>/SKILL.md creates or updates the skill: it must start with YAML frontmatter holding a description of at most 1024 characters (what the skill does and when to use it) " +
 			"and, if it has a name, one equal to <name>. Names are lowercase letters and digits joined by single hyphens, at most 64 characters. " +
 			"Writing any other path adds or replaces a file in an existing skill, such as skill://<name>/references/guide.md. " +
-			"Limits: SKILL.md at most 96 KiB, any other file at most 64 KiB, UTF-8 text only, at most 256 files per skill. " +
+			fmt.Sprintf("Limits: SKILL.md at most %d KiB, any other file at most %d KiB, UTF-8 text only, at most %d files per skill. ", skill.MaxSkillFileBytes/1024, skill.MaxSubFileBytes/1024, skill.MaxFiles) +
 			"A new skill belongs to the account and is turned on in this workspace.",
 		Annotations: mcphint.Overwrite("Write a skill file"),
 	}, ps.handleSaveSkill)

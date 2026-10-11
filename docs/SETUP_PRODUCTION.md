@@ -223,6 +223,16 @@ An attachment's upload type is kept only when a browser cannot run it; anything 
 
 **Switching** does not move files already saved. Attachments kept flat in the storage directory before this layout are still found there, whichever store is in use, but have no public link. Copy skills' `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket, or re-import them.
 
+### Memory and Skill Limits
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_MEMORY_MAX_SIZE` | `16384` | Most bytes one workspace memory may hold; at most `65536`. |
+| `AGENTRQ_SKILLS_MAX_FILE_SIZE` | `98304` | Most bytes a skill's `SKILL.md` may hold. Its other files are capped at 64 KiB. |
+| `AGENTRQ_SKILLS_MAX_FILES` | `256` | Most files in one skill, `SKILL.md` included. |
+
+Values are whole numbers. The server refuses to start on anything else, or on a memory size above `65536`.
+
 ## Reverse Proxy Setup (Nginx Example)
 
 ```nginx

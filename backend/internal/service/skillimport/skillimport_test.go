@@ -376,32 +376,6 @@ func TestFetch_Limits(t *testing.T) {
 	}
 }
 
-func TestFetch_ConfigurableMaxFilesLimit(t *testing.T) {
-	skill.SetMaxFiles(2)
-	defer skill.SetMaxFiles(0)
-
-	root := "repo-main/"
-	var entries []tarEntry
-	entries = append(entries, tarEntry{name: root + "three/SKILL.md", body: skillMD("three", "Three files.") + "See parts.\n"})
-	entries = append(entries, tarEntry{name: root + "three/parts/f1.md", body: "x"})
-	entries = append(entries, tarEntry{name: root + "three/parts/f2.md", body: "x"})
-
-	gh := &fakeGitHub{commitBody: testSHA, tarball: buildTarball(t, entries)}
-	s, done := gh.server(t)
-	defer done()
-
-	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
-	if err != nil {
-		t.Fatalf("Fetch: %v", err)
-	}
-	if len(res.Skills) != 0 {
-		t.Fatalf("expected 0 imported skills, got %+v", names(res.Skills))
-	}
-	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "the limit is 2") {
-		t.Fatalf("expected skipped reason with limit 2, got %+v", res.Skipped)
-	}
-}
-
 func names(skills []Skill) []string {
 	var out []string
 	for _, s := range skills {
@@ -774,5 +748,34 @@ func TestFetch_KeepsAMetaFileSkillMDReferences(t *testing.T) {
 	}
 	if len(res.Skills[0].Files) != 2 {
 		t.Errorf("files: %+v", res.Skills[0].Files)
+	}
+}
+
+// The importer refuses by the configured limits, not the defaults.
+func TestFetch_ConfiguredLimits(t *testing.T) {
+	skill.MaxFiles, skill.MaxSkillFileBytes = 2, 128*1024
+	t.Cleanup(func() {
+		skill.MaxFiles, skill.MaxSkillFileBytes = skill.DefaultMaxFiles, skill.DefaultMaxSkillFileBytes
+	})
+
+	root := "repo-main/"
+	gh := &fakeGitHub{commitBody: testSHA, tarball: buildTarball(t, []tarEntry{
+		{name: root + "wide/SKILL.md", body: skillMD("wide", "Three files.") + "See `a.md` and `b.md`.\n"},
+		{name: root + "wide/a.md", body: "x"},
+		{name: root + "wide/b.md", body: "x"},
+		{name: root + "long/SKILL.md", body: skillMD("long", "Over 96 KiB.") + strings.Repeat("x", 100*1024)},
+	})}
+	s, done := gh.server(t)
+	defer done()
+
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Skills) != 1 || res.Skills[0].Name != "long" {
+		t.Errorf("a 100 KiB SKILL.md fits under 128 KiB: %+v", names(res.Skills))
+	}
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "has 3 files; the limit is 2") {
+		t.Errorf("skipped: %+v", res.Skipped)
 	}
 }

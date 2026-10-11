@@ -102,10 +102,12 @@ it, any workspace's token could post into any task.
   so one stored spelling is what makes the unique key behave the same on either.
   The strict shape is also what lets `memory://<name>` be parsed as a URL at
   all: a name with a space in it is not one.
-- **Limits are enforced at the tool boundary, not in the repository**: 16 KiB of
-  UTF-8 per memory and 32 characters per name, both refused rather than
-  truncated — an agent told its memory is too large can split it, while one
-  silently cut in half cannot know to.
+- **Limits are enforced at the tool boundary**: `memory.maxSize` bytes of UTF-8
+  per memory (16 KiB by default) and 32 characters per name, both refused rather
+  than truncated — an agent told its memory is too large can split it, while one
+  silently cut in half cannot know to. The repository also refuses anything over
+  64 KiB, so no setting can grow a memory past that, and the server will not start
+  with one above it.
 - A `loadMemory` miss is **not** an error: every agent's first call on a fresh
   workspace misses, and answering with an error teaches agents to stop asking.
 

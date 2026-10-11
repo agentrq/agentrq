@@ -252,19 +252,16 @@ func TestSkills_FileLimit(t *testing.T) {
 	e.save(t, skWS, "wide", "f001.md", "y")
 }
 
-func TestSkills_ConfigurableFileLimit(t *testing.T) {
+func TestSkills_ConfiguredFileLimit(t *testing.T) {
+	skill.MaxFiles = 3
+	t.Cleanup(func() { skill.MaxFiles = skill.DefaultMaxFiles })
+
 	e := newSkillEnv(t)
-	skill.SetMaxFiles(2)
-	defer skill.SetMaxFiles(0)
-
-	e.save(t, skWS, "small", "SKILL.md", md("small", "Two files max."))
-	e.save(t, skWS, "small", "f1.md", "x")
-
-	_, err := e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "small", Path: "f2.md", Content: "x"})
-	wantSkillErr(t, err, SkillInvalid, "already has 2 files, the limit")
-
-	// Replacing an existing file is still allowed.
-	e.save(t, skWS, "small", "f1.md", "y")
+	e.save(t, skWS, "wide", "SKILL.md", md("wide", "Many files."))
+	e.save(t, skWS, "wide", "a.md", "x")
+	e.save(t, skWS, "wide", "b.md", "x")
+	_, err := e.c.SaveSkillFile(e.ctx, entity.SaveSkillFileRequest{WorkspaceID: skWS, UserID: skUserStr, Name: "wide", Path: "c.md", Content: "x"})
+	wantSkillErr(t, err, SkillInvalid, "already has 3 files")
 }
 
 func TestSkills_DeleteFileRefusals(t *testing.T) {

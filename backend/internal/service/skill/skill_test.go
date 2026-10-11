@@ -5,7 +5,6 @@
 package skill
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -205,87 +204,18 @@ func TestWithName(t *testing.T) {
 	}
 }
 
-func TestCheckContent_ConfigurableLimits(t *testing.T) {
-	t.Run("SetMaxSkillFileBytes", func(t *testing.T) {
-		SetMaxSkillFileBytes(128 * 1024)
-		defer SetMaxSkillFileBytes(0)
+// skills.maxFileSize moves the SKILL.md cap and leaves the other files' alone.
+func TestCheckContent_ConfiguredSkillFileLimit(t *testing.T) {
+	MaxSkillFileBytes = 128 * 1024
+	t.Cleanup(func() { MaxSkillFileBytes = DefaultMaxSkillFileBytes })
 
-		if err := CheckContent(FileName, filled(128*1024)); err != nil {
-			t.Errorf("SKILL.md at custom 128 KiB limit: %v", err)
-		}
-		if err := CheckContent(FileName, filled(128*1024+1)); err == nil || !strings.Contains(err.Error(), "128 KiB") {
-			t.Errorf("SKILL.md over custom limit: got %v", err)
-		}
-		if err := CheckContent("skills.md", filled(128*1024)); err != nil {
-			t.Errorf("skills.md at custom 128 KiB limit: %v", err)
-		}
-	})
-
-	t.Run("SetMaxSubFileBytes", func(t *testing.T) {
-		SetMaxSubFileBytes(80 * 1024)
-		defer SetMaxSubFileBytes(0)
-
-		if err := CheckContent("guide.md", filled(80*1024)); err != nil {
-			t.Errorf("guide.md at custom 80 KiB limit: %v", err)
-		}
-		if err := CheckContent("guide.md", filled(80*1024+1)); err == nil || !strings.Contains(err.Error(), "80 KiB") {
-			t.Errorf("guide.md over custom limit: got %v", err)
-		}
-	})
-
-	t.Run("env var AGENTRQ_SKILLS_MAX_FILE_SIZE", func(t *testing.T) {
-		t.Setenv("AGENTRQ_SKILLS_MAX_FILE_SIZE", "192KiB")
-
-		if err := CheckContent(FileName, filled(192*1024)); err != nil {
-			t.Errorf("SKILL.md at env 192 KiB limit: %v", err)
-		}
-		if err := CheckContent(FileName, filled(192*1024+1)); err == nil || !strings.Contains(err.Error(), "192 KiB") {
-			t.Errorf("SKILL.md over env limit: got %v", err)
-		}
-	})
-
-	t.Run("env var AGENTRQ_SKILLS_MAX_SUB_FILE_SIZE", func(t *testing.T) {
-		t.Setenv("AGENTRQ_SKILLS_MAX_SUB_FILE_SIZE", "50000")
-
-		if err := CheckContent("data.txt", filled(50000)); err != nil {
-			t.Errorf("data.txt at env limit: %v", err)
-		}
-		if err := CheckContent("data.txt", filled(50001)); err == nil {
-			t.Error("data.txt over env limit should fail")
-		}
-	})
-}
-
-func TestMaxFilesLimit_Configurable(t *testing.T) {
-	t.Run("default limit", func(t *testing.T) {
-		SetMaxFiles(0)
-		if got := MaxFilesLimit(); got != MaxFiles {
-			t.Fatalf("got %d, want default %d", got, MaxFiles)
-		}
-	})
-
-	t.Run("SetMaxFiles programmatic override", func(t *testing.T) {
-		SetMaxFiles(10)
-		defer SetMaxFiles(0)
-
-		if got := MaxFilesLimit(); got != 10 {
-			t.Fatalf("got %d, want 10", got)
-		}
-	})
-
-	t.Run("env var override", func(t *testing.T) {
-		SetMaxFiles(0)
-		envs := []string{
-			"AGENTRQ_SKILLS_MAX_FILES",
-			"AGENTRQ_SKILLS_MAX_FILE_COUNT",
-			"AGENTRQ_MAX_SKILLS_FILES",
-		}
-		for _, e := range envs {
-			t.Setenv(e, "42")
-			if got := MaxFilesLimit(); got != 42 {
-				t.Fatalf("env %s: got %d, want 42", e, got)
-			}
-			os.Unsetenv(e)
-		}
-	})
+	if err := CheckContent(FileName, filled(128*1024)); err != nil {
+		t.Errorf("SKILL.md at the configured limit: %v", err)
+	}
+	if err := CheckContent(FileName, filled(128*1024+1)); err == nil || !strings.Contains(err.Error(), "128 KiB") {
+		t.Errorf("SKILL.md over the configured limit: got %v", err)
+	}
+	if err := CheckContent("references/big.md", filled(MaxSubFileBytes+1)); err == nil || !strings.Contains(err.Error(), "64 KiB") {
+		t.Errorf("sub file over its fixed limit: got %v", err)
+	}
 }

@@ -360,7 +360,7 @@ func (c *controller) SaveSkillFile(ctx context.Context, req entity.SaveSkillFile
 			return nil, skillErr(SkillInvalid, "skill %q does not exist yet; save its %s first", name, skill.FileName)
 		}
 		if _, err := c.repository.GetSkillFile(ctx, s.ID, path); errors.Is(err, base.ErrNotFound) {
-			if s.FileCount >= skill.MaxFilesLimit() {
+			if s.FileCount >= skill.MaxFiles {
 				return nil, skillErr(SkillInvalid, "skill %q already has %d files, the limit; delete one first", name, s.FileCount)
 			}
 		} else if err != nil {

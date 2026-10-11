@@ -12,13 +12,11 @@ package skill
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,12 +25,12 @@ const (
 	// it is what Claude Code, Antigravity and every published skill use.
 	FileName = "SKILL.md"
 
-	// MaxSkillFileBytes caps SKILL.md, which may be larger than its files.
-	MaxSkillFileBytes = 96 * 1024
+	// DefaultMaxSkillFileBytes is MaxSkillFileBytes when skills.maxFileSize is unset.
+	DefaultMaxSkillFileBytes = 96 * 1024
 	// MaxSubFileBytes caps every other file in a skill.
 	MaxSubFileBytes = 64 * 1024
-	// MaxFiles caps the files in one skill, SKILL.md included.
-	MaxFiles = 256
+	// DefaultMaxFiles is MaxFiles when skills.maxFiles is unset.
+	DefaultMaxFiles = 256
 	// MaxNameLength is the longest skill name, in characters.
 	MaxNameLength = 64
 	// MaxDescriptionLength is the longest description, in characters.
@@ -41,88 +39,14 @@ const (
 	MaxPathLength = 255
 )
 
+// Set once at startup from skills.maxFileSize and skills.maxFiles, before
+// anything is served.
 var (
-	configuredMaxSkillFileBytes = 0
-	configuredMaxSubFileBytes   = 0
-	configuredMaxFiles          = 0
+	// MaxSkillFileBytes caps SKILL.md, which may be larger than its files.
+	MaxSkillFileBytes = DefaultMaxSkillFileBytes
+	// MaxFiles caps the files in one skill, SKILL.md included.
+	MaxFiles = DefaultMaxFiles
 )
-
-// SetMaxSkillFileBytes sets the maximum allowed size in bytes for SKILL.md.
-// If n <= 0, it resets to the default (MaxSkillFileBytes, 96 KiB).
-func SetMaxSkillFileBytes(n int) {
-	configuredMaxSkillFileBytes = n
-}
-
-// SetMaxSubFileBytes sets the maximum allowed size in bytes for skill sub files.
-// If n <= 0, it resets to the default (MaxSubFileBytes, 64 KiB).
-func SetMaxSubFileBytes(n int) {
-	configuredMaxSubFileBytes = n
-}
-
-// SetMaxFiles sets the maximum allowed number of files in one skill.
-// If n <= 0, it resets to the default (MaxFiles, 256).
-func SetMaxFiles(n int) {
-	configuredMaxFiles = n
-}
-
-// MaxSkillFileLimit returns the active limit for SKILL.md in bytes.
-func MaxSkillFileLimit() int {
-	if configuredMaxSkillFileBytes > 0 {
-		return configuredMaxSkillFileBytes
-	}
-	for _, env := range []string{
-		"AGENTRQ_SKILLS_MAX_FILE_SIZE",
-		"AGENTRQ_SKILLS_MAX_SIZE",
-		"AGENTRQ_SKILLS_MAX_BYTES",
-		"AGENTRQ_MAX_SKILLS_FILE_SIZE",
-		"AGENTRQ_MAX_SKILLS_MD_SIZE",
-		"AGENTRQ_SKILLS_MD_MAX_SIZE",
-	} {
-		if val := os.Getenv(env); val != "" {
-			if n, err := config.ParseByteSize(val); err == nil && n > 0 {
-				return n
-			}
-		}
-	}
-	return MaxSkillFileBytes
-}
-
-// MaxSubFileLimit returns the active limit for skill sub files in bytes.
-func MaxSubFileLimit() int {
-	if configuredMaxSubFileBytes > 0 {
-		return configuredMaxSubFileBytes
-	}
-	for _, env := range []string{
-		"AGENTRQ_SKILLS_MAX_SUB_FILE_SIZE",
-		"AGENTRQ_SKILLS_MAX_SUB_FILE_BYTES",
-	} {
-		if val := os.Getenv(env); val != "" {
-			if n, err := config.ParseByteSize(val); err == nil && n > 0 {
-				return n
-			}
-		}
-	}
-	return MaxSubFileBytes
-}
-
-// MaxFilesLimit returns the active limit for files in one skill.
-func MaxFilesLimit() int {
-	if configuredMaxFiles > 0 {
-		return configuredMaxFiles
-	}
-	for _, env := range []string{
-		"AGENTRQ_SKILLS_MAX_FILES",
-		"AGENTRQ_SKILLS_MAX_FILE_COUNT",
-		"AGENTRQ_MAX_SKILLS_FILES",
-	} {
-		if val := os.Getenv(env); val != "" {
-			if n, err := config.ParseCount(val); err == nil && n > 0 {
-				return n
-			}
-		}
-	}
-	return MaxFiles
-}
 
 var namePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
@@ -182,16 +106,12 @@ func CleanPath(p string) (string, error) {
 // is not text. Refused rather than truncated, so the writer can decide what to
 // cut.
 func CheckContent(p string, content []byte) error {
-	limit := MaxSubFileLimit()
-	if p == FileName || strings.EqualFold(p, "skills.md") {
-		limit = MaxSkillFileLimit()
+	limit := MaxSubFileBytes
+	if p == FileName {
+		limit = MaxSkillFileBytes
 	}
 	if len(content) > limit {
-		kib := limit / 1024
-		if kib > 0 && limit%1024 == 0 {
-			return fmt.Errorf("%s is %d bytes; the limit is %d bytes (%d KiB)", p, len(content), limit, kib)
-		}
-		return fmt.Errorf("%s is %d bytes; the limit is %d bytes", p, len(content), limit)
+		return fmt.Errorf("%s is %d bytes; the limit is %d bytes (%d KiB)", p, len(content), limit, limit/1024)
 	}
 	if !utf8.Valid(content) || bytes.IndexByte(content, 0) >= 0 {
 		return fmt.Errorf("%s is not UTF-8 text; skills hold text files only", p)

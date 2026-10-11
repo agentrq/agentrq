@@ -64,7 +64,7 @@ func TestFetch_TooLargeOffersItsSkills(t *testing.T) {
 		commitBody: testSHA,
 		tarball:    []byte(strings.Repeat("x", 64)),
 		treeBody: treeOf(t, files,
-			treeItem{Path: "huge/SKILL.md", Mode: "100644", Type: "blob", Size: skill.MaxSkillFileBytes + 1},
+			treeItem{Path: "huge/SKILL.md", Mode: "100644", Type: "blob", Size: int64(skill.MaxSkillFileBytes) + 1},
 			treeItem{Path: "linked/SKILL.md", Mode: "120000", Type: "blob", Size: 10},
 			treeItem{Path: "nested", Mode: "040000", Type: "tree"},
 			treeItem{Path: "vendor/lib", Mode: "160000", Type: "commit"},
@@ -82,7 +82,7 @@ func TestFetch_TooLargeOffersItsSkills(t *testing.T) {
 		t.Fatalf("got %+v", res)
 	}
 	want := []Candidate{
-		{Name: "huge", Path: "huge", SkillBytes: skill.MaxSkillFileBytes + 1, Reason: "SKILL.md is 98305 bytes; the limit is 96 KiB"},
+		{Name: "huge", Path: "huge", SkillBytes: int64(skill.MaxSkillFileBytes) + 1, Reason: "SKILL.md is 98305 bytes; the limit is 96 KiB"},
 		{Name: "linked", Path: "linked", SkillBytes: 10, Reason: "SKILL.md links are not imported"},
 		{Name: "deep", Path: "nested/deep", SkillBytes: int64(len(files["nested/deep/SKILL.md"]))},
 		{Name: "small", Path: "small", SkillBytes: int64(len(files["small/SKILL.md"]))},

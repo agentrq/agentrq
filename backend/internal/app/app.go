@@ -6,6 +6,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -126,10 +127,16 @@ type (
 			MaxPerUser int           `yaml:"maxPerUser"`
 			Window     time.Duration `yaml:"window"`
 		} `yaml:"ratelimit"`
-		Storage   cleanup.Config      `yaml:"storage"`
-		Memory    config.MemoryConfig `yaml:"memory"`
-		Skills    config.SkillsConfig `yaml:"skills"`
-		ConfigSvc config.Service      `yaml:"-"` // injected, not from YAML
+		Storage cleanup.Config `yaml:"storage"`
+		// Zero leaves the default in place.
+		Memory struct {
+			MaxSize int `yaml:"maxSize"`
+		} `yaml:"memory"`
+		Skills struct {
+			MaxFileSize int `yaml:"maxFileSize"`
+			MaxFiles    int `yaml:"maxFiles"`
+		} `yaml:"skills"`
+		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
 	}
 
 	App struct {
@@ -148,26 +155,8 @@ func New(cfg Config) (*App, error) {
 	if cfg.Auth.JWTSecret == "" {
 		return nil, errors.New("auth: JWT secret must be configured")
 	}
-
-	if cfg.ConfigSvc != nil {
-		if cfg.Memory.MaxSize == nil && cfg.Memory.MaxMemorySize == nil && cfg.Memory.MaxFileSize == nil && cfg.Memory.MaxBytes == nil {
-			_ = cfg.ConfigSvc.Populate("memory", &cfg.Memory)
-		}
-		if cfg.Skills.MaxFileSize == nil && cfg.Skills.MaxSkillFileSize == nil && cfg.Skills.MaxSize == nil && cfg.Skills.MaxBytes == nil && cfg.Skills.MaxFiles == nil && cfg.Skills.MaxFileCount == nil {
-			_ = cfg.ConfigSvc.Populate("skills", &cfg.Skills)
-		}
-	}
-	if memLimit, err := cfg.Memory.ResolveMaxBytes(); err == nil && memLimit > 0 {
-		mcp.SetMaxMemoryBytes(memLimit)
-	}
-	if skillLimit, err := cfg.Skills.ResolveMaxSkillFileBytes(); err == nil && skillLimit > 0 {
-		skill.SetMaxSkillFileBytes(skillLimit)
-	}
-	if subLimit, err := cfg.Skills.ResolveMaxSubFileBytes(); err == nil && subLimit > 0 {
-		skill.SetMaxSubFileBytes(subLimit)
-	}
-	if filesLimit, err := cfg.Skills.ResolveMaxFiles(); err == nil && filesLimit > 0 {
-		skill.SetMaxFiles(filesLimit)
+	if err := applyLimits(cfg); err != nil {
+		return nil, err
 	}
 
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
@@ -698,9 +687,6 @@ func New(cfg Config) (*App, error) {
 			tokenSvc,
 			pubsubSvc,
 		)
-		if memLimit, err := cfg.Memory.ResolveMaxBytes(); err == nil && memLimit > 0 {
-			srv.SetMaxMemoryBytes(memLimit)
-		}
 		srv.StartPoller(repo)
 		srv.StartPing()
 		return srv
@@ -1429,4 +1415,21 @@ func migratedModels() []any {
 		&model.DailyTaskLatency{},
 		&model.MonthlyTaskLatency{},
 	}
+}
+
+// applyLimits sets the memory and skill limits from the config, refusing a
+// value the server could not honour rather than quietly using another.
+func applyLimits(cfg Config) error {
+	switch {
+	case cfg.Memory.MaxSize < 0 || cfg.Memory.MaxSize > model.MaxMemoryContentBytes:
+		return fmt.Errorf("memory.maxSize: %d bytes is not between 0 and %d", cfg.Memory.MaxSize, model.MaxMemoryContentBytes)
+	case cfg.Skills.MaxFileSize < 0:
+		return fmt.Errorf("skills.maxFileSize: %d is negative", cfg.Skills.MaxFileSize)
+	case cfg.Skills.MaxFiles < 0:
+		return fmt.Errorf("skills.maxFiles: %d is negative", cfg.Skills.MaxFiles)
+	}
+	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxSize, mcp.DefaultMaxMemoryBytes)
+	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
+	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
+	return nil
 }
