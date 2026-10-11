@@ -25,14 +25,14 @@ You are a **supervisor agent** orchestrating work across multiple specialized wo
 | `updateWorkspace` | Update workspace name, description, notification settings, or self-learning notes |
 | `getWorkspaceStats` | Get workspace statistics for a given time range (`7d` or `30d`) |
 | `forkWorkspace` | Fork a workspace: its own queue and agent, sharing the parent's settings, memory and skills. Move tasks into it for a second agent to work them |
-| `mergeFork` | Merge a fork back once its tasks are completed or rejected: its agent is stopped and every task moves to the parent |
+| `mergeFork` | Merge a fork back once its tasks are completed or rejected: its agent is stopped and every task moves to the parent. `deleteFolder` also deletes its folder on the machine, keeping its git branch |
 
 ### Task Management
 | Tool | Description |
 |------|-------------|
 | `listTasks` | List tasks in a specific workspace (filterable by status, creator; supports pagination) |
 | `listAllTasks` | List tasks across all workspaces (same filters as `listTasks`) |
-| `createTask` | Create a task with title, body, assignee (`human`/`agent`), optional cron schedule, and optional parent task |
+| `createTask` | Create a task with title, body, assignee (`human`/`agent`), optional cron schedule, and optional parent task. `clearContext` sends `/clear` to the agent's terminal first, so it starts without the previous task's context |
 | `getTask` | Get full task details including messages |
 | `replyToTask` | Post a message to a task's thread |
 | `respondToTask` | Answer a permission request: `allow`, `allow_all`, `reject`, or `text` to reply without deciding |
@@ -76,10 +76,6 @@ A workflow is the graph those pieces add up to: a start event, and steps that re
 | `listWorkflowTasks` | List the tasks a workflow has spawned |
 | `getWorkflowText` | Read the whole graph as an indented document. Steps naming a deleted event or workspace are left out so it always parses |
 | `replaceWorkflowFromText` | Replace the entire graph with a document. Names are resolved before anything is written, so an unknown one leaves the workflow untouched |
-| `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd. Shown once and expires shortly — hand it to the human right away |
-| `listMachines` | List the account's machines: enabled, online, agentrqd version and how many agents each runs |
-| `launchAgent` | Start a workspace's agent (`claude-code` or `acp-gateway`) on a machine from `listMachines`. Refused while the workspace already has one, has no working directory, or the machine is off, offline or too old |
-| `stopAgent` | Stop the agent a workspace is running on a machine, ending what it is in the middle of |
 
 Text mode is two spaces per level, and every list line is `- agent:<workspace>` or `- event:<name>`, alternating:
 
@@ -90,6 +86,16 @@ event: code_changed
   - event:doc_updated
 - agent:blog
 ```
+
+### Machines and Agents
+A machine is a computer running agentrqd; it is where a workspace's agent runs.
+
+| Tool | Description |
+|------|-------------|
+| `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd. Shown once and expires shortly — hand it to the human right away |
+| `listMachines` | List the account's machines: enabled, online, agentrqd version and how many agents each runs |
+| `launchAgent` | Start a workspace's agent (`claude-code` or `acp-gateway`, with an optional `model` and, for `claude-code`, `effort`) on a machine from `listMachines`. It connects a few seconds later and picks up its tasks. Refused while the workspace already has one, has no working directory, or the machine is off, offline or too old |
+| `stopAgent` | Stop the agent a workspace is running on a machine, ending what it is in the middle of |
 
 ### Attachments
 | Tool | Description |
@@ -126,6 +132,8 @@ The server also offers reference guides as resources, and ready-made prompts:
 4. **Leverage Self-Learning Notes**: Always read a workspace's `selfLearningLoopNote` and its memory index (`getMemory` with `MEMORY.md`) before starting work. Update it with new preferences, patterns, or lessons learned using `updateWorkspace`.
 5. **Use Sub-Tasks for Complex Work**: Break large goals into sub-tasks using `parentId` when creating tasks. This creates a clear hierarchy of work.
 6. **Track Status Accurately**: Update task statuses as work progresses — `ongoing` when starting, `completed` when finished, `rejected` if the work should not be done. There is no separate failure status: say what went wrong with `replyToTask` and leave the task `blocked` so a human sees it.
+7. **Give Idle Workspaces an Agent**: A task assigned to `agent` waits until the workspace has one running. `listMachines` shows which machines are online; `launchAgent` starts one there, and `stopAgent` stops it. Ask the human before stopping an agent that is mid-task.
+8. **Fork for Parallel Work**: To have a second agent work some of a workspace's tasks, `forkWorkspace` it, create those tasks in the fork (its own `workspaceId`) and launch an agent there. When every task in the fork is completed or rejected, `mergeFork` brings them back to the parent.
 
 ## Example Workflows
 
@@ -189,5 +197,16 @@ Track progress by updating status as work progresses:
   "workspaceId": "aB3dE5gH7jK",
   "taskId": "zX9vW7tS5rQ",
   "status": "completed"
+}
+```
+
+### 7. Launching an Agent
+Start a workspace's agent on an online machine from `listMachines`:
+```json
+{
+  "workspaceId": "aB3dE5gH7jK",
+  "machineId": "mN4pQ6rS8tU",
+  "kind": "claude-code",
+  "model": "opus"
 }
 ```

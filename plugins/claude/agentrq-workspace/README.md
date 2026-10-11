@@ -34,7 +34,7 @@ offers, including any added later:
 
 | Tool | Description |
 | --- | --- |
-| `createTask` | Create a task for the human or another agent, optionally on a cron schedule. Returns the task ID. |
+| `createTask` | Create a task for the human or another agent, optionally on a cron schedule, with an event to publish when it completes (`eventId`) or a clean slate for the agent (`clearContext`). Returns the task ID. |
 | `updateTaskStatus` | Update the status of a task: `ongoing` when you start, `completed` when you finish, or `blocked` when you need something from the human. |
 | `reply` | Send a message to the current ongoing task. You can optionally include attachments. |
 | `getAttachment` | Get an attachment of a task by its ID: its name, type and public link (`format=url`, the default), or its content as base64 (`format=base64`) |

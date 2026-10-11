@@ -57,7 +57,17 @@ hand each to the workspace whose agent is suited to it, and keep the human in th
 
 11. **Running agents on machines**: `listMachines` shows which machines are online;
     `launchAgent` starts a workspace's agent on one of them and `stopAgent` stops it.
-    Launching is refused while the workspace already has an agent.
+    Launching is refused while the workspace already has an agent. A task assigned to
+    `agent` waits until its workspace has one running.
+
+12. **Forks for parallel work**: `forkWorkspace` makes a workspace with its own queue
+    and agent that shares the parent's settings, memory and skills. Create tasks in the
+    fork and launch an agent there; once every task in it is completed or rejected,
+    `mergeFork` moves them back to the parent (`deleteFolder` also removes its folder,
+    keeping the git branch).
+
+13. **A clean slate**: `createTask` with `clearContext` sends `/clear` to the agent's
+    terminal first, so the task starts without the previous one's context.
 
 The server also offers the guides `agentrq://guides/new-workspace` and
 `agentrq://guides/agentrqd-setup`, and the prompts `new-workspace`, `setup-agentrqd` and
