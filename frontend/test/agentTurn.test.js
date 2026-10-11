@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workingPlaceholder } from '../src/composables/useAgentTurn'
+import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workDurations, workingPlaceholder } from '../src/composables/useAgentTurn'
 
 const gateway = { agentSupportsStop: true, agentConnected: true }
 const ongoing = { status: 'ongoing', assignee: 'agent' }
@@ -257,5 +257,37 @@ describe('formatElapsed', () => {
     expect(formatElapsed(65000)).toBe('1m 05s')
     expect(formatElapsed(3720000)).toBe('1h 02m')
     expect(formatElapsed(-5)).toBe('0s')
+  })
+})
+
+describe('workDurations', () => {
+  const at = (sender, id, time, extra = {}) => ({ id, sender, createdAt: `2026-10-11T10:${time}Z`, ...extra })
+
+  it('measures each agent message from the person message it answers', () => {
+    const messages = [
+      at('human', 'h1', '00:00'),
+      at('agent', 'a1', '00:07'),
+      at('agent', 'a2', '01:05'),
+      at('human', 'h2', '02:00'),
+      at('agent', 'a3', '02:30'),
+    ]
+    expect(workDurations(messages)).toEqual({ a1: '7s', a2: '1m 05s', a3: '30s' })
+  })
+
+  it('skips telemetry, sub-second replies, and messages with nothing to answer', () => {
+    const messages = [
+      at('agent', 'first', '00:00'),
+      at('human', 'h1', '00:10'),
+      at('agent', 'u1', '00:20', { metadata: { type: 'agent_usage' } }),
+      at('agent', 'quick', '00:10'),
+      { id: 'undated', sender: 'agent' },
+      { id: 'h2', sender: 'human' },
+      at('agent', 'orphan', '00:40'),
+    ]
+    expect(workDurations(messages)).toEqual({})
+  })
+
+  it('is empty for no messages', () => {
+    expect(workDurations()).toEqual({})
   })
 })

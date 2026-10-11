@@ -250,11 +250,11 @@
         <div v-else-if="m.sender === 'agent'" class="group flex animate-in fade-in slide-in-from-bottom-2 duration-300 w-full">
           <div class="flex flex-col items-stretch flex-1 min-w-0 max-w-full">
              <div class="min-w-0 max-w-full">
-               <div class="flex items-center justify-between mb-1.5">
-                 <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">Agent · {{ formatDateTime(m.createdAt) }}</span>
-                 <div class="flex items-center gap-1.5 shrink-0">
-                   <span class="text-gray-400 dark:text-zinc-500" title="Agent"><svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></span>
-                 </div>
+               <div class="flex items-center gap-1.5 mb-1.5 text-gray-500 dark:text-zinc-400">
+                 <span class="text-gray-400 dark:text-zinc-500" title="Agent"><svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></span>
+                 <span class="text-[9px] font-semibold">Agent · {{ formatDateTime(m.createdAt) }}</span>
+                 <!-- How long the agent took over what it is answering; room for it on a wide screen only. -->
+                 <span v-if="workedFor[m.id]" class="hidden @min-[40rem]:inline text-[9px] font-semibold text-gray-400 dark:text-zinc-500" title="Time since the message this answers">· worked for {{ workedFor[m.id] }}</span>
                </div>
                <MarkdownBody v-if="!rawMessages.has(m.id)" :text="m.text" :workspace-id="workspaceId" class="text-[13px] text-gray-800 dark:text-zinc-200" />
                <div v-else class="text-[13px] font-medium text-gray-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap break-words">{{ m.text }}</div>
@@ -1012,7 +1012,7 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread } from '../composables/useTrajectory';
-import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workingPlaceholder } from '../composables/useAgentTurn';
+import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
@@ -1431,6 +1431,9 @@ const displayMessages = computed(() => {
 // badge on the message it answers rather than as a bubble. The plan card is
 // not something said, so it is never what a reaction answers.
 const shownThread = computed(() => foldReactions(displayMessages.value, (m) => !isThreadTelemetry(m)));
+
+// What each agent message cost in time: from the person's message it answers.
+const workedFor = computed(() => workDurations(sortedMessages.value));
 
 const reactionBadges = computed(() => Object.fromEntries(
   Object.entries(shownThread.value.reactions).map(([id, list]) => [id, summarizeReactions(list)])

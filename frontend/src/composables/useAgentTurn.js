@@ -190,3 +190,22 @@ export function formatElapsed(ms) {
   if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`
   return `${s}s`
 }
+
+/**
+ * How long the agent took to produce each of its messages, as text keyed by
+ * message id: the time from the last person's message before it. Telemetry and
+ * messages with nothing before them to answer have no entry.
+ */
+export function workDurations(messages) {
+  const out = {}
+  let since = null
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (isFromAPerson(message)) {
+      since = message.createdAt ? new Date(message.createdAt).getTime() : null
+    } else if (since !== null && message?.sender === 'agent' && agentTelemetryKind(message) === null && message.createdAt) {
+      const ms = new Date(message.createdAt).getTime() - since
+      if (ms >= 1000) out[message.id] = formatElapsed(ms)
+    }
+  }
+  return out
+}
