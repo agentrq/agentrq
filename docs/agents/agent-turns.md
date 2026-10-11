@@ -26,6 +26,16 @@ snapshot of the turn", one per turn, including a turn cancelled by the Stop
 button, since a cancel resolves the prompt too. That is what drains the queue
 on its own after a stop.
 
+A turn stopped before the agent reported any usage has no footer to flush:
+its end is the gateway's stop-reason note ("⚠️ The turn was cancelled…",
+`reportStopReason`), sent after `flushReply`. Miss it and an early stop leaves
+the queue unsent and the composer locked.
+
+**Send Now on a queued message never posts it mid-turn.** It moves the message
+to the head and stops the turn, and the turn's end sends it. Posted at once, the
+gateway chains it behind the cancelled turn, and that turn's end then sends the
+next queued message into it.
+
 The footer is only sent when the agent reported usage at all, so for a task
 that has never seen one — and only then — a plain reply is taken as the end
 instead. Worse, but the old behaviour rather than a queue that is never sent.

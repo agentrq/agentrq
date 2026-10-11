@@ -77,6 +77,7 @@ const workingTask = () => ({
 })
 
 const respondToTask = vi.fn(() => Promise.resolve({ task: workingTask() }))
+const stopTask = vi.fn(() => Promise.resolve({ stopped: true }))
 
 vi.mock('../src/api', () => ({
   getWorkspace: () => Promise.resolve({ workspace: WORKSPACE }),
@@ -93,7 +94,7 @@ vi.mock('../src/api', () => ({
   updateTaskAssignee: vi.fn(),
   sendPermissionVerdict: vi.fn(),
   respondToElicitation: vi.fn(),
-  stopTask: vi.fn(),
+  stopTask: (...args) => stopTask(...args),
   updateTaskAllowAllCommands: vi.fn(),
   TELEMETRY_UI_COPY_MARKDOWN: 'ui.copy_markdown',
   TELEMETRY_UI_SHORTCUT_USE: 'ui.shortcut_use',
@@ -165,7 +166,26 @@ async function mount() {
     await settle()
   }
 
-  return { el, composer, send, click, queuedBubbles, endTheTurn, buttonsSaying,
+  /**
+   * A turn stopped before the agent reported any usage: no footer, only the
+   * gateway's note on why it ended, after earlier turns that were footed.
+   */
+  const stopTheTurnEarly = async () => {
+    const note = {
+      id: 'n1',
+      sender: 'agent',
+      text: '⚠️ The turn was cancelled before the agent finished.',
+      createdAt: '2026-09-22T07:03:00Z',
+    }
+    const earlier = { ...usageFooter('u0'), createdAt: '2026-09-22T06:59:00Z' }
+    events.value = [
+      ...events.value,
+      { type: 'task.updated', payload: { ...workingTask(), messages: [earlier, fromHuman('h1'), note] } },
+    ]
+    await settle()
+  }
+
+  return { el, composer, send, click, queuedBubbles, endTheTurn, stopTheTurnEarly, buttonsSaying,
     text: () => el.textContent.replace(/\s+/g, ' ').trim() }
 }
 
@@ -177,6 +197,7 @@ beforeEach(() => {
   localStorage.clear()
   events.value = []
   respondToTask.mockClear()
+  stopTask.mockClear()
 })
 
 describe('the composer while the agent is working', () => {
@@ -353,11 +374,69 @@ describe('when the turn ends', () => {
     expect(queuedBubbles()).toHaveLength(0)
   })
 
+  // The bug: a stop pressed before the agent reported any usage ends the turn
+  // with no footer, and the queue sat there unsent with the composer locked.
+  it('sends the first when a stop ends the turn before any usage came', async () => {
+    const { send, stopTheTurnEarly, queuedBubbles } = await mount()
+    await send('first thought')
+    await stopTheTurnEarly()
+
+    expect(respondToTask.mock.calls.map((c) => c[3])).toEqual(['first thought'])
+    expect(queuedBubbles()).toHaveLength(0)
+  })
+
   it('sends nothing when nothing was queued', async () => {
     const { endTheTurn } = await mount()
     await endTheTurn()
 
     expect(respondToTask).not.toHaveBeenCalled()
+  })
+})
+
+describe('sending a queued message now', () => {
+  // Posting it mid-turn would only chain it behind the turn, so Send Now stops
+  // the turn and lets the turn's end send it — ahead of anything queued before.
+  it('stops the agent and sends nothing until the turn ends', async () => {
+    const { send, click } = await mount()
+    await send('first thought')
+    await send('second thought')
+    await click('Send Now', 1)
+
+    expect(stopTask).toHaveBeenCalledWith('ws1', 't1')
+    expect(respondToTask).not.toHaveBeenCalled()
+  })
+
+  it('sends it ahead of the ones queued before it when the turn ends', async () => {
+    const { send, click, stopTheTurnEarly, queuedBubbles } = await mount()
+    await send('first thought')
+    await send('second thought')
+    await click('Send Now', 1)
+    await stopTheTurnEarly()
+
+    expect(respondToTask.mock.calls.map((c) => c[3])).toEqual(['second thought'])
+    expect(queuedBubbles()).toHaveLength(1)
+  })
+
+  // The turn may have ended between the queue being drawn and the click.
+  // There is nothing to stop then, and waiting for a turn-end would wait
+  // forever.
+  it('sends it at once when the agent is no longer working', async () => {
+    const { el, send, click, endTheTurn } = await mount()
+    await send('first thought')
+    await send('second thought')
+    // The first goes, and the answer to it is a turn already over, so nothing
+    // ends another turn to send the second.
+    respondToTask.mockResolvedValueOnce({
+      task: { ...workingTask(), messages: [fromHuman('h1'), usageFooter('u1')] },
+    })
+    await endTheTurn()
+    respondToTask.mockClear()
+
+    await click('Send Now')
+
+    expect(stopTask).not.toHaveBeenCalled()
+    expect(respondToTask.mock.calls.map((c) => c[3])).toEqual(['second thought'])
+    expect(el.textContent).not.toContain('Queued')
   })
 })
 

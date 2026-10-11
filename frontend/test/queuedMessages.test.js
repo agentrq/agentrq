@@ -123,6 +123,30 @@ describe('removing a queued message', () => {
   })
 })
 
+describe('moving a queued message to the front', () => {
+  it('makes it the next to go, and keeps the rest in order', () => {
+    queue.enqueue({ text: 'first' })
+    queue.enqueue({ text: 'second' })
+    queue.enqueue({ text: 'third' })
+    queue.promote(queue.queued.value[2].id)
+    expect(queue.queued.value.map((m) => m.text)).toEqual(['third', 'first', 'second'])
+    expect(queue.dequeue().text).toBe('third')
+  })
+
+  it('persists the new order, so a reload sends the same one first', () => {
+    queue.enqueue({ text: 'first' })
+    queue.enqueue({ text: 'second' })
+    queue.promote(queue.queued.value[1].id)
+    expect(JSON.parse(storage.getItem(KEY_A)).map((m) => m.text)).toEqual(['second', 'first'])
+  })
+
+  it('ignores an id that is not queued', () => {
+    queue.enqueue({ text: 'first' })
+    queue.promote('nope')
+    expect(queue.queued.value.map((m) => m.text)).toEqual(['first'])
+  })
+})
+
 describe('taking the next message', () => {
   it('hands back the first one alone, addressed to the task it was written in', () => {
     queue.enqueue({ text: 'first' })

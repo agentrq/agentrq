@@ -121,6 +121,21 @@ export function useQueuedMessages({ target, storage = globalThis.localStorage })
   }
 
   /**
+   * Move one queued message to the head of the queue, so it is the next to go.
+   *
+   * What "send now" does with it: the turn is stopped, and the turn's end
+   * sends the head as it always does. Sent any earlier, the gateway would chain
+   * it behind the turn being stopped, and the end of that turn would send the
+   * next queued message into this one.
+   */
+  function promote(id) {
+    const chosen = queued.value.find((m) => m.id === id)
+    if (!chosen) return
+    queued.value = [chosen, ...queued.value.filter((m) => m.id !== id)]
+    persist()
+  }
+
+  /**
    * Take the message at the head of the queue, addressed to its own task.
    *
    * One, not all of them: each starts a turn of its own, so the next is taken
@@ -142,5 +157,5 @@ export function useQueuedMessages({ target, storage = globalThis.localStorage })
     return { text: head.text, atts: head.atts, target: to };
   }
 
-  return { queued, enqueue, edit, remove, dequeue };
+  return { queued, enqueue, edit, remove, promote, dequeue };
 }

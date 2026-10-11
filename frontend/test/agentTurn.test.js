@@ -150,6 +150,43 @@ describe('agentIsWorking', () => {
     expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: messages.slice(0, 4) })).toBe(false)
   })
 
+  // The bug: a stop pressed before the agent reported any usage has no footer
+  // to flush, only the gateway's note on why the turn ended — and an agent
+  // that has footed earlier turns no longer counts a plain reply as the end.
+  // The composer stayed locked and the queue was never sent.
+  it('is waiting once the gateway says the turn ended early, footer or not', () => {
+    const notes = [
+      '⚠️ The turn was cancelled before the agent finished.',
+      '⚠️ The agent refused to continue this turn.',
+      '⚠️ The agent stopped mid-turn: it ran out of output tokens.',
+      '⚠️ The agent stopped mid-turn: it reached its limit on model requests for a single turn.',
+      '⚠️ The agent stopped for a reason this gateway does not recognise: other.',
+    ]
+    for (const text of notes) {
+      const messages = [fromHuman('h1'), usageFooter('u1'), fromHuman('h2'), { id: 'n', sender: 'agent', text }]
+
+      expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(false)
+    }
+  })
+
+  // Only the gateway's own note, word for word. An agent saying it was
+  // cancelled in a progress reply, or a telemetry message carrying the text,
+  // is still mid-turn.
+  it('is still working when something only looks like a stop note', () => {
+    const lookalikes = [
+      { id: 'q', sender: 'agent', text: 'The turn was cancelled before the agent finished.' },
+      { id: 'r', sender: 'agent', text: 'Note: ⚠️ The turn was cancelled before the agent finished.' },
+      { id: 's', sender: 'human', text: '⚠️ The turn was cancelled before the agent finished.' },
+      { id: 't', sender: 'agent', text: '⚠️ The turn was cancelled before the agent finished.', metadata: { type: 'agent_thought' } },
+      { id: 'u', sender: 'agent' },
+    ]
+    for (const note of lookalikes) {
+      const messages = [fromHuman('h1'), usageFooter('u1'), fromHuman('h2'), note]
+
+      expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(true)
+    }
+  })
+
   it('survives a messages list that is not one', () => {
     expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: null })).toBe(true)
     expect(agentIsWorking()).toBe(false)

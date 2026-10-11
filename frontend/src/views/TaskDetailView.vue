@@ -634,8 +634,10 @@
                  <button type="button" @click="cancelPendingSend" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
                  <button type="button" @click="sendPendingNow" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
                </div>
-               <!-- Edit / Delete on a queued message. No "send now": posting it
-                    mid-turn is exactly what the queue exists to prevent. -->
+               <!-- Edit / Delete / Send Now on a queued message. Send Now does
+                    not post it mid-turn, which the gateway would only chain
+                    behind the turn: it stops the turn, and the turn's end sends
+                    it first. -->
                <div v-else-if="m._queued" class="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-gray-300 dark:border-zinc-600 justify-end">
                  <template v-if="editingQueuedId === m._queuedId">
                    <button type="button" @click="cancelEditingQueued" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Cancel</button>
@@ -643,7 +645,8 @@
                  </template>
                  <template v-else>
                    <button type="button" @click="discardQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Delete</button>
-                   <button type="button" @click="startEditingQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Edit</button>
+                   <button type="button" @click="startEditingQueued(m)" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-white dark:bg-zinc-900 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-zinc-100 hover:border-gray-400 dark:hover:border-zinc-500 transition-colors shrink-0">Edit</button>
+                   <button type="button" @click="sendQueuedNow(m)" title="Stop the agent and send this next" class="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-sm bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 transition-opacity shrink-0">Send Now</button>
                  </template>
                </div>
                <!-- Attachments on human message -->
@@ -1113,6 +1116,7 @@ const {
   enqueue: queueMessage,
   edit: editQueuedMessage,
   remove: removeQueuedMessage,
+  promote: promoteQueuedMessage,
   dequeue: takeNextQueued,
 } = useQueuedMessages({
   target: () => ({ workspaceId: workspaceId.value, taskId: taskId.value }),
@@ -1821,6 +1825,22 @@ function cancelEditingQueued() {
 function discardQueued(m) {
   if (editingQueuedId.value === m._queuedId) editingQueuedId.value = null;
   removeQueuedMessage(m._queuedId);
+}
+
+/**
+ * Send a queued message ahead of the rest, interrupting the agent to do it.
+ *
+ * It goes to the head of the queue and the turn is stopped; the turn's end
+ * sends the head, as for any other. If the turn has already ended there is
+ * nothing to stop, and it goes now.
+ */
+async function sendQueuedNow(m) {
+  promoteQueuedMessage(m._queuedId);
+  if (!agentWorking.value) {
+    await sendNextQueued();
+    return;
+  }
+  await stopRunningTask();
 }
 
 function sendPendingNow() {

@@ -41,8 +41,15 @@
  * it "the last usage snapshot of the turn" — one per turn, at the end,
  * including a turn that ended because somebody pressed stop.
  *
- * It is only sent when the agent reported any usage at all, so an agent that
- * reports none would leave the composer locked for good. For that case, and
+ * It is only sent when the agent reported any usage at all — and a turn stopped
+ * before the agent reported any has none to send. What that turn does get is
+ * the gateway's note on why it ended early (`reportStopReason`, after
+ * `flushReply`, so it is the turn's last word too), which is therefore an end
+ * of a turn as well. Without it, a stop pressed early left the composer locked
+ * and the queue unsent.
+ *
+ * An agent that reports no usage at all would leave the composer locked for
+ * good. For that case, and
  * only that case, a plain reply is taken as the end of a turn: worse, but the
  * old behaviour rather than a dead end. A task that has seen a usage footer has
  * an agent that publishes them, so its footers are the only marker used.
@@ -67,6 +74,19 @@ function isFromAPerson(message) {
 /** The footer the gateway sends when a turn finishes. */
 function isUsageFooter(message) {
   return agentTelemetryKind(message) === 'usage'
+}
+
+/**
+ * The gateway's notes on a turn that ended before the agent finished, in
+ * `STOP_REASON_NOTES` and the fallback for a reason it does not know. Matched
+ * on the text because that is all a reply carries.
+ */
+const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: ))/u
+
+/** The note the gateway sends when a turn ends early, stopped or otherwise. */
+function isStopReasonNote(message) {
+  if (message?.sender !== 'agent' || message?.metadata?.type) return false
+  return typeof message.text === 'string' && STOP_REASON_NOTE.test(message.text)
 }
 
 /**
@@ -106,7 +126,7 @@ export function agentIsWorking({ task, workspace, messages } = {}) {
 
   for (let i = list.length - 1; i >= 0; i -= 1) {
     const message = list[i]
-    if (isUsageFooter(message)) return false
+    if (isUsageFooter(message) || isStopReasonNote(message)) return false
     if (!publishesFooters && isAPlainReply(message)) return false
     if (isFromAPerson(message)) return true
   }
