@@ -253,32 +253,6 @@
                <div class="flex items-center justify-between mb-1.5">
                  <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">Agent · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1.5 shrink-0">
-                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
-                     <button type="button" @click.stop="toggleMessageRender(m.id)"
-                             :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
-                             class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
-                     <button type="button" @click.stop="copyMessageText(m.id, m.text)"
-                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
-                       <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                       <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                     </button>
-                     <button type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
-                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
-                       <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
-                     </button>
-                   </div>
-                   <!-- Reacting answers the agent's latest message, because that
-                        is where a reply of one emoji lands; offering it on an
-                        older one would put the badge somewhere else. -->
-                   <div v-if="m.id === reactTargetId && canReply" class="relative flex items-center">
-                     <button type="button" @click.stop="reactPickerOpen = !reactPickerOpen"
-                             :class="reactPickerOpen ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
-                             class="transition-colors p-0.5 rounded" title="React" aria-label="React">
-                       <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>
-                     </button>
-                     <EmojiPicker v-if="reactPickerOpen" class="right-0 top-full mt-1"
-                                  @pick="sendReaction" @close="reactPickerOpen = false" />
-                   </div>
                    <span class="text-gray-400 dark:text-zinc-500" title="Agent"><svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></span>
                  </div>
                </div>
@@ -530,16 +504,8 @@
                          class="flex items-center gap-0.5 text-[12px] leading-none cursor-default">{{ r.emoji }}<span v-if="r.count > 1" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">{{ r.count }}</span></span>
                  </div>
                </div>
-          </div>
-        </div>
-
-        <!-- Slack message — right aligned -->
-        <div v-else-if="m.sender === 'slack'" class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%]">
-          <div class="flex flex-col items-end min-w-0 max-w-full">
-             <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800/70 dark:text-zinc-100 rounded-2xl rounded-br-md px-3.5 py-2.5 min-w-0 max-w-full">
-               <div class="flex items-center justify-between mb-1.5">
-                 <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}</span>
-                 <div class="flex items-center gap-1.5 shrink-0">
+          <!-- Message actions sit under the message, where the eye lands when it has read it. -->
+          <div class="flex items-center gap-1.5 mt-1 ">
                    <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
                      <button type="button" @click.stop="toggleMessageRender(m.id)"
                              :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
@@ -554,6 +520,29 @@
                        <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
                      </button>
                    </div>
+                   <!-- Reacting answers the agent's latest message, because that
+                        is where a reply of one emoji lands; offering it on an
+                        older one would put the badge somewhere else. -->
+                   <div v-if="m.id === reactTargetId && canReply" class="relative flex items-center">
+                     <button type="button" @click.stop="reactPickerOpen = !reactPickerOpen"
+                             :class="reactPickerOpen ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                             class="transition-colors p-0.5 rounded" title="React" aria-label="React">
+                       <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/></svg>
+                     </button>
+                     <EmojiPicker v-if="reactPickerOpen" class="left-0 bottom-full mb-1"
+                                  @pick="sendReaction" @close="reactPickerOpen = false" />
+                   </div>
+          </div>
+          </div>
+        </div>
+
+        <!-- Slack message — right aligned -->
+        <div v-else-if="m.sender === 'slack'" class="group flex flex-row-reverse animate-in fade-in slide-in-from-bottom-2 duration-300 self-end max-w-[90%] @min-[48rem]:max-w-[80%]">
+          <div class="flex flex-col items-end min-w-0 max-w-full">
+             <div class="bg-gray-100 text-gray-900 dark:bg-zinc-800/70 dark:text-zinc-100 rounded-2xl rounded-br-md px-3.5 py-2.5 min-w-0 max-w-full">
+               <div class="flex items-center justify-between mb-1.5">
+                 <span class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">Slack ({{ getSlackUser(m) }}) · {{ formatDateTime(m.createdAt) }}</span>
+                 <div class="flex items-center gap-1.5 shrink-0">
                    <span class="text-gray-400 dark:text-zinc-500" title="Slack"><svg viewBox="0 0 127 127" class="w-3 h-3" fill="currentColor"><path d="M27.2 80c0 7.3-5.9 13.2-13.2 13.2C6.7 93.2.8 87.3.8 80c0-7.3 5.9-13.2 13.2-13.2h13.2V80zm6.6 0c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V80zM47 27.2c-7.3 0-13.2-5.9-13.2-13.2C33.8 6.7 39.7.8 47 .8c7.3 0 13.2 5.9 13.2 13.2V27.2H47zm0 6.6c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H14c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33zM99.8 47c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H99.8V47zm-6.6 0c0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V14c0-7.3 5.9-13.2 13.2-13.2 7.3 0 13.2 5.9 13.2 13.2v33zM80 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8H80zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80z"/></svg></span>
                  </div>
                </div>
@@ -579,6 +568,23 @@
                          class="flex items-center gap-0.5 text-[12px] leading-none cursor-default">{{ r.emoji }}<span v-if="r.count > 1" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">{{ r.count }}</span></span>
                  </div>
                </div>
+          <!-- Message actions sit under the message, where the eye lands when it has read it. -->
+          <div class="flex items-center gap-1.5 mt-1 self-end">
+                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
+                     <button type="button" @click.stop="toggleMessageRender(m.id)"
+                             :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                             class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
+                     <button type="button" @click.stop="copyMessageText(m.id, m.text)"
+                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
+                       <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                       <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                     </button>
+                     <button type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
+                       <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
+                     </button>
+                   </div>
+          </div>
           </div>
         </div>
 
@@ -600,22 +606,6 @@
                  </span>
                  <span v-else class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400 text-right">You · {{ formatDateTime(m.createdAt) }}</span>
                  <div class="flex items-center gap-1.5 shrink-0">
-                   <!-- MD and copy work on a message not yet sent too; forking
-                        from one does not, as there is nothing on the server to fork. -->
-                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
-                     <button type="button" @click.stop="toggleMessageRender(m.id)"
-                             :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
-                             class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
-                     <button type="button" @click.stop="copyMessageText(m.id, m.text)"
-                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
-                       <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                       <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                     </button>
-                     <button v-if="!m._pending && !m._queued" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
-                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
-                       <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
-                     </button>
-                   </div>
                    <span class="text-gray-400 dark:text-zinc-500" title="You"><svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></span>
                  </div>
                </div>
@@ -669,10 +659,41 @@
                          class="flex items-center gap-0.5 text-[12px] leading-none cursor-default">{{ r.emoji }}<span v-if="r.count > 1" class="text-[9px] font-semibold text-gray-500 dark:text-zinc-400">{{ r.count }}</span></span>
                  </div>
                </div>
+          <!-- Message actions sit under the message, where the eye lands when it has read it. -->
+          <div class="flex items-center gap-1.5 mt-1 self-end">
+                   <!-- MD and copy work on a message not yet sent too; forking
+                        from one does not, as there is nothing on the server to fork. -->
+                   <div class="flex items-center gap-1 @min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100 transition-opacity duration-150">
+                     <button type="button" @click.stop="toggleMessageRender(m.id)"
+                             :class="!rawMessages.has(m.id) ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
+                             class="text-[8px] font-black uppercase tracking-wider transition-colors px-1 py-0.5 rounded">MD</button>
+                     <button type="button" @click.stop="copyMessageText(m.id, m.text)"
+                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors p-0.5 rounded" title="Copy raw text">
+                       <svg v-if="!copiedMessages.has(m.id)" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                       <svg v-else class="w-2.5 h-2.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                     </button>
+                     <button v-if="!m._pending && !m._queued" type="button" @click.stop="forkFromMessage(m)" :disabled="forkingMessageId !== null"
+                             class="text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 disabled:opacity-40 transition-colors p-0.5 rounded" title="Fork into a new task from here">
+                       <svg class="w-2.5 h-2.5" :class="forkingMessageId === m.id ? 'animate-pulse' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 7.5v1.5a3 3 0 003 3h6a3 3 0 003-3V7.5M12 12v4.5"/></svg>
+                     </button>
+                   </div>
+          </div>
           </div>
         </div>
 
       </template>
+
+      <!-- Agent is working: shown even before there is anything to read in the
+           trajectory, so a quiet chat does not look like a stalled one. -->
+      <div v-if="agentBusy" role="status" aria-live="polite" data-testid="agent-working"
+           class="flex items-center gap-2 text-[11px] font-medium text-gray-500 dark:text-zinc-400 animate-in fade-in duration-300">
+        <span class="flex items-center gap-0.5" aria-hidden="true">
+          <span class="w-1 h-1 rounded-full bg-gray-400 dark:bg-zinc-500 animate-bounce [animation-delay:-0.3s]"></span>
+          <span class="w-1 h-1 rounded-full bg-gray-400 dark:bg-zinc-500 animate-bounce [animation-delay:-0.15s]"></span>
+          <span class="w-1 h-1 rounded-full bg-gray-400 dark:bg-zinc-500 animate-bounce"></span>
+        </span>
+        <span>Agent is working · {{ busyElapsed }}</span>
+      </div>
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
@@ -991,7 +1012,7 @@ import {
   telemetryText,
 } from '../composables/useAgentTelemetry';
 import { belongsInThread } from '../composables/useTrajectory';
-import { agentIsWorking, workingPlaceholder } from '../composables/useAgentTurn';
+import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
@@ -1350,6 +1371,29 @@ const agentWorking = computed(() => agentIsWorking({
   workspace: workspace.value,
   messages: sortedMessages.value,
 }));
+
+// The sign of life at the foot of the conversation: the agent is connected and
+// on the task, whether or not anything shows in the trajectory yet. The clock
+// counts from the message it is answering, and from now if there is none.
+const agentBusy = computed(() => agentIsBusy({
+  task: task.value,
+  workspace: workspace.value,
+  messages: sortedMessages.value,
+}));
+const busyClock = ref(Date.now());
+const busyFallbackStart = ref(Date.now());
+// On appearing only, and scrolled into view: it sits below the last message,
+// where a reader who is following the conversation is already looking.
+watch(agentBusy, (busy) => {
+  if (!busy) return;
+  busyFallbackStart.value = Date.now();
+  scrollToBottom();
+});
+const busyClockTimer = setInterval(() => { busyClock.value = Date.now(); }, 1000);
+onUnmounted(() => clearInterval(busyClockTimer));
+const busyElapsed = computed(() => formatElapsed(
+  busyClock.value - (turnStartedAt(sortedMessages.value) ?? busyFallbackStart.value),
+));
 
 // Everything queued for this task, as bubbles the thread can render. Only the
 // first goes when the turn ends, so only the first can say so.

@@ -302,6 +302,17 @@ describe('changing a queued message', () => {
   })
 })
 
+describe('the working indicator', () => {
+  it('shows while the agent is mid-turn, and goes when the turn ends', async () => {
+    const { el, endTheTurn } = await mount()
+    const indicator = () => el.querySelector('[data-testid="agent-working"]')
+    expect(indicator()?.textContent).toMatch(/Agent is working · \d+/)
+
+    await endTheTurn()
+    expect(indicator()).toBeNull()
+  })
+})
+
 describe('when the turn ends', () => {
   // One per turn, not all at once. Sending the rest now would chain them
   // behind the turn this one starts — the thing the queue exists to prevent —
@@ -456,7 +467,7 @@ describe('reading a queued message', () => {
   it('shows the raw text when MD is switched off, and renders it again when on', async () => {
     const { el, send } = await mount()
     await send('make it **bold**')
-    const md = () => [...bubbleOf(el, 'make it').querySelectorAll('button')].find((b) => b.textContent.trim() === 'MD')
+    const md = () => [...bubbleOf(el, 'make it').parentElement.querySelectorAll('button')].find((b) => b.textContent.trim() === 'MD')
 
     md().click()
     await settle()
@@ -474,7 +485,7 @@ describe('reading a queued message', () => {
     const { el, send } = await mount()
     await send('make it **bold**')
 
-    bubbleOf(el, 'make it').querySelector('button[title="Copy raw text"]').click()
+    bubbleOf(el, 'make it').parentElement.querySelector('button[title="Copy raw text"]').click()
     await settle()
     expect(writeText).toHaveBeenCalledWith('make it **bold**')
   })
