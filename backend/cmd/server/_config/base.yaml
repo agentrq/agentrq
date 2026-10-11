@@ -79,7 +79,7 @@ storage:
 
 # Most bytes one workspace memory may hold: 16384 (16 KiB) by default, 131072 at most.
 memory:
-  maxSize: ${AGENTRQ_MEMORY_MAX_FILE_SIZE:16384}
+  maxFileSize: ${AGENTRQ_MEMORY_MAX_FILE_SIZE:16384}
 
 # Where skill files and attachments (artifacts) are kept: "local" (<storage dir>/skills
 # and <storage dir>/artifacts) or "s3", which uses the s3 block below. Either way each

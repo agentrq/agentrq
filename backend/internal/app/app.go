@@ -130,7 +130,7 @@ type (
 		Storage cleanup.Config `yaml:"storage"`
 		// Zero leaves the default in place.
 		Memory struct {
-			MaxSize int `yaml:"maxSize"`
+			MaxFileSize int `yaml:"maxFileSize"`
 		} `yaml:"memory"`
 		Skills struct {
 			MaxFileSize int `yaml:"maxFileSize"`
@@ -1421,14 +1421,14 @@ func migratedModels() []any {
 // value the server could not honour rather than quietly using another.
 func applyLimits(cfg Config) error {
 	switch {
-	case cfg.Memory.MaxSize < 0 || cfg.Memory.MaxSize > model.MaxMemoryContentBytes:
-		return fmt.Errorf("memory.maxSize: %d bytes is not between 0 and %d", cfg.Memory.MaxSize, model.MaxMemoryContentBytes)
+	case cfg.Memory.MaxFileSize < 0 || cfg.Memory.MaxFileSize > model.MaxMemoryContentBytes:
+		return fmt.Errorf("memory.maxFileSize: %d bytes is not between 0 and %d", cfg.Memory.MaxFileSize, model.MaxMemoryContentBytes)
 	case cfg.Skills.MaxFileSize < 0:
 		return fmt.Errorf("skills.maxFileSize: %d is negative", cfg.Skills.MaxFileSize)
 	case cfg.Skills.MaxFiles < 0:
 		return fmt.Errorf("skills.maxFiles: %d is negative", cfg.Skills.MaxFiles)
 	}
-	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxSize, mcp.DefaultMaxMemoryBytes)
+	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
 	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
 	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
 	return nil

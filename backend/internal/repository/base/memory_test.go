@@ -291,7 +291,7 @@ func TestDeleteMemory_ScopedToOwnerAndWorkspace(t *testing.T) {
 	}
 }
 
-// The cap holds whatever memory.maxSize says, so nothing over it reaches the
+// The cap holds whatever memory.maxFileSize says, so nothing over it reaches the
 // column.
 func TestUpsertMemory_RefusesContentOverTheCap(t *testing.T) {
 	repo := New(&mockDB{db: memoryDB(t)})

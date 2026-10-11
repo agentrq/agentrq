@@ -204,7 +204,7 @@ type (
 	// unique across every workspace and every account, so one workspace saving
 	// "MEMORY.md" would take the name from everybody else.
 	//
-	// Content is capped by memory.maxSize (16 KiB by default) in the tools
+	// Content is capped by memory.maxFileSize (16 KiB by default) in the tools
 	// that write it, where there is a caller to refuse, and the repository
 	// refuses anything over MaxMemoryContentBytes whatever the setting says.
 	Memory struct {
@@ -546,7 +546,7 @@ type (
 	}
 )
 
-// MaxMemoryContentBytes is the most a memory may hold whatever memory.maxSize
+// MaxMemoryContentBytes is the most a memory may hold whatever memory.maxFileSize
 // says: the repository refuses anything larger.
 const MaxMemoryContentBytes = 128 * 1024
 

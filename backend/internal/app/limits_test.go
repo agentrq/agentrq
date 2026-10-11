@@ -107,19 +107,19 @@ func TestApplyLimitsRefusesValuesItCannotHonour(t *testing.T) {
 		mem, size, files int
 		want             string
 	}{
-		"memory over the database cap": {mem: model.MaxMemoryContentBytes + 1, want: "memory.maxSize"},
-		"negative memory":              {mem: -1, want: "memory.maxSize"},
+		"memory over the database cap": {mem: model.MaxMemoryContentBytes + 1, want: "memory.maxFileSize"},
+		"negative memory":              {mem: -1, want: "memory.maxFileSize"},
 		"negative skill file size":     {size: -1, want: "skills.maxFileSize"},
 		"negative skill file count":    {files: -1, want: "skills.maxFiles"},
 	} {
 		var cfg Config
-		cfg.Memory.MaxSize, cfg.Skills.MaxFileSize, cfg.Skills.MaxFiles = tc.mem, tc.size, tc.files
+		cfg.Memory.MaxFileSize, cfg.Skills.MaxFileSize, cfg.Skills.MaxFiles = tc.mem, tc.size, tc.files
 		if err := applyLimits(cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
 		}
 	}
 	var cfg Config
-	cfg.Memory.MaxSize = model.MaxMemoryContentBytes
+	cfg.Memory.MaxFileSize = model.MaxMemoryContentBytes
 	if err := applyLimits(cfg); err != nil || mcp.MaxMemoryBytes != model.MaxMemoryContentBytes {
 		t.Errorf("memory at the database cap: err = %v, MaxMemoryBytes = %d", err, mcp.MaxMemoryBytes)
 	}
@@ -129,8 +129,8 @@ func TestNewRefusesABadLimitBeforeInitialization(t *testing.T) {
 	resetLimits(t)
 	var cfg Config
 	cfg.Auth.JWTSecret = testJWTSecret
-	cfg.Memory.MaxSize = model.MaxMemoryContentBytes + 1
-	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "memory.maxSize") {
-		t.Errorf("err = %v, want memory.maxSize refused", err)
+	cfg.Memory.MaxFileSize = model.MaxMemoryContentBytes + 1
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "memory.maxFileSize") {
+		t.Errorf("err = %v, want memory.maxFileSize refused", err)
 	}
 }

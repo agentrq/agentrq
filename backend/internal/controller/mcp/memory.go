@@ -42,12 +42,12 @@ const (
 	// column is.
 	MaxMemoryNameLength = 32
 
-	// DefaultMaxMemoryBytes is MaxMemoryBytes when memory.maxSize is unset.
+	// DefaultMaxMemoryBytes is MaxMemoryBytes when memory.maxFileSize is unset.
 	DefaultMaxMemoryBytes = 16 * 1024
 )
 
 // MaxMemoryBytes caps one memory, in bytes of UTF-8. Set once at startup from
-// memory.maxSize, before anything is served, and never above
+// memory.maxFileSize, before anything is served, and never above
 // model.MaxMemoryContentBytes, which the database refuses.
 var MaxMemoryBytes = DefaultMaxMemoryBytes
 
