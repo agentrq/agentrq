@@ -230,7 +230,19 @@ function usageTooltip(message, detail) {
 }
 
 /**
- * Everything the context ring needs, or null when nothing has been reported.
+ * Whether the session that wrote this usage report has gone — the gateway was
+ * stopped, or the workspace switched to another agent. Its counters describe
+ * an agent that is no longer attached.
+ *
+ * @param {object} message
+ */
+export function usageSessionEnded(message) {
+  return message?.metadata?.sessionEnded === true;
+}
+
+/**
+ * Everything the context ring needs, or null when nothing has been reported,
+ * or when what was reported belongs to a session that has ended.
  *
  * The ring is drawn as a stroked circle whose dash gap is the unused part, so
  * the geometry is worked out here rather than in the template.
@@ -241,7 +253,7 @@ function usageTooltip(message, detail) {
  *            tone: string, tooltip: string}|null}
  */
 export function contextGauge(message, radius = 8) {
-  if (agentTelemetryKind(message) !== 'usage') return null;
+  if (agentTelemetryKind(message) !== 'usage' || usageSessionEnded(message)) return null;
   const detail = usageDetail(message);
   const circumference = 2 * Math.PI * radius;
   return {

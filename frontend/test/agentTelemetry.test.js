@@ -308,6 +308,12 @@ describe('contextGauge', () => {
     expect(gauge.tone).toBe('normal')
   })
 
+  // The gateway left — stopped, or the workspace switched to Claude Code — and
+  // its counters say nothing about the agent attached now.
+  it('draws nothing for a session that has ended', () => {
+    expect(contextGauge(message({ type: 'agent_usage', used: 10, size: 100, sessionEnded: true }))).toBeNull()
+  })
+
   it('scales the ring to whatever radius the icon uses', () => {
     expect(contextGauge(usage, 20).dashArray).toBeCloseTo(2 * Math.PI * 20, 5)
   })

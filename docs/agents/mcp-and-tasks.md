@@ -45,6 +45,14 @@ and hard-coded count are **stale at seven today** — worth knowing because the
 plugin filters nothing, so every server tool reaches the model whatever that
 table says.
 
+## What an agent reports leaves with its stream
+
+Models, commands, concurrency and the usage ring are cached per MCP session and
+pushed to the page only as events. When a session's last stream closes,
+`agentSessionEnded` re-announces them and marks its usage message
+`sessionEnded`; **a new kind of report must be added there**, or switching from
+acp-gateway to Claude Code leaves the gateway's on screen.
+
 ## This server is stateful, so it cannot serve 2026-07-28
 
 Never set `StreamableHTTPOptions.Stateless = true` here to "add" protocol

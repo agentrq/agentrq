@@ -1364,7 +1364,7 @@ const queuedBubbles = computed(() => queuedMessages.value.map((m, i) => ({
 })));
 
 // The session's context and cost as they stand, or null until an agent reports
-// them. Only a connected ACP gateway sends these.
+// them or once that agent has left. Only a connected ACP gateway sends these.
 const contextUsage = computed(() => contextGauge(latestUsageMessage(sortedMessages.value)));
 
 // The thread, plus the messages that have not been sent yet: one counting down

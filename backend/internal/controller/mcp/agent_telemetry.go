@@ -93,7 +93,9 @@ func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID s
 	case agentTelemetryKindPlan:
 		ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentPlan)
 	case agentTelemetryKindUsage:
-		ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentUsage)
+		if msgID := ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentUsage); msgID != 0 {
+			ps.rememberUsageMessage(sessionID, taskID, msgID)
+		}
 	default:
 		zlog.Debug().Str("kind", p.Kind).Int64("task_id", taskID).
 			Msg("ignoring agent telemetry of an unrecognised kind")
@@ -131,8 +133,9 @@ func (ps *WorkspaceServer) postAgentTelemetryMessage(ctx context.Context, taskID
 }
 
 // reviseAgentTelemetryMessage updates the message already standing for this
-// plan or usage counter, and posts a new one only when there is none.
-func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, taskID int64, p AgentTelemetryParams, messageType string) {
+// plan or usage counter, and posts a new one only when there is none. It
+// returns that message's ID, or 0 when nothing stands for it.
+func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, taskID int64, p AgentTelemetryParams, messageType string) int64 {
 	key := agentTelemetryMessageKey(taskID, p.Kind, p.planID())
 	metadata := agentTelemetryMetadata(messageType, p)
 
@@ -154,21 +157,22 @@ func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, task
 
 	if revised {
 		ps.forgetRemovedPlan(key, p)
-		return
+		return msgID
 	}
 
 	// A withdrawal notice for a plan that was never shown says nothing to the
 	// human, and posting one would put an orphaned card in the conversation.
 	if p.removed() {
-		return
+		return 0
 	}
 
 	if msgID = ps.postAgentTelemetryMessage(ctx, taskID, p.Text, metadata); msgID == 0 {
-		return
+		return 0
 	}
 	ps.agentTelemetryMessagesMu.Lock()
 	ps.agentTelemetryMessages[key] = msgID
 	ps.agentTelemetryMessagesMu.Unlock()
+	return msgID
 }
 
 // forgetRemovedPlan releases a withdrawn plan's message, so that an agent

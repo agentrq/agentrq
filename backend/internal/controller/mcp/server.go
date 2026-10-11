@@ -169,6 +169,10 @@ type WorkspaceServer struct {
 	// each revision rewrites that message instead of appending another one.
 	agentTelemetryMessagesMu sync.RWMutex
 	agentTelemetryMessages   map[string]int64 // taskID:kind[:planID] -> messageID
+	// The usage messages each session wrote, so they can be marked as belonging
+	// to a session that has gone when its stream closes.
+	agentUsageMessagesMu sync.Mutex
+	agentUsageMessages   map[string]map[string]usageMessageRef // sessionID -> taskID:usage -> message
 	// What each connected session says it can switch between. Cached because it
 	// only ever arrives by notification, and read back filtered to live
 	// sessions so a disconnected agent stops advertising its models.
@@ -730,7 +734,9 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
-				ps.removeStreamingSession(sessID)
+				if ps.removeStreamingSession(sessID) {
+					ps.agentSessionEnded(context.WithoutCancel(r.Context()), sessID)
+				}
 				if ps.agentConnections.Add(-1) == 0 {
 					ps.publishAgentConnected(false)
 				}
@@ -867,14 +873,17 @@ func (ps *WorkspaceServer) addStreamingSession(sessID string) {
 	ps.streamingMu.Unlock()
 }
 
-func (ps *WorkspaceServer) removeStreamingSession(sessID string) {
+// removeStreamingSession records that one of a session's streams has closed,
+// and reports whether that was its last.
+func (ps *WorkspaceServer) removeStreamingSession(sessID string) bool {
 	ps.streamingMu.Lock()
+	defer ps.streamingMu.Unlock()
 	if ps.streaming[sessID] <= 1 {
 		delete(ps.streaming, sessID)
-	} else {
-		ps.streaming[sessID]--
+		return true
 	}
-	ps.streamingMu.Unlock()
+	ps.streaming[sessID]--
+	return false
 }
 
 // isStreaming reports whether a session still has a stream open.
