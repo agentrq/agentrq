@@ -523,7 +523,8 @@
                    <!-- Reacting answers the agent's latest message, because that
                         is where a reply of one emoji lands; offering it on an
                         older one would put the badge somewhere else. -->
-                   <div v-if="m.id === reactTargetId && canReply" class="relative flex items-center">
+                   <div v-if="m.id === reactTargetId && canReply" class="relative flex items-center transition-opacity duration-150"
+                        :class="reactPickerOpen ? '' : '@min-[40rem]:opacity-0 @min-[40rem]:group-hover:opacity-100'">
                      <button type="button" @click.stop="reactPickerOpen = !reactPickerOpen"
                              :class="reactPickerOpen ? 'text-gray-700 dark:text-zinc-200' : 'text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300'"
                              class="transition-colors p-0.5 rounded" title="React" aria-label="React">
