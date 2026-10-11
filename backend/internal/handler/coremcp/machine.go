@@ -30,6 +30,7 @@ type LaunchAgentParams struct {
 	Kind        string `json:"kind" jsonschema:"enum: claude-code, acp-gateway"`
 	Model       string `json:"model,omitempty" jsonschema:"The model: an alias such as opus or sonnet for claude-code, or a model the gateway's agent offers for acp-gateway. Leave it out for the default"`
 	Effort      string `json:"effort,omitempty" jsonschema:"claude-code only: low, medium, high, xhigh or max. Leave it out for the default"`
+	Autocompact string `json:"autocompact,omitempty" jsonschema:"claude-code only: the auto-compact window, 100k to 900k in whole hundreds such as 600k. Leave it out for the default, 400k"`
 	Agent       string `json:"agent,omitempty" jsonschema:"acp-gateway only: which agent the gateway runs"`
 }
 
@@ -67,6 +68,7 @@ func (s *WorkspaceServer) handleLaunchAgent(ctx context.Context, req *mcp.CallTo
 		Kind:        args.Kind,
 		Model:       args.Model,
 		Effort:      args.Effort,
+		Autocompact: args.Autocompact,
 		Agent:       args.Agent,
 	})
 	if err != nil {

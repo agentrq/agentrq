@@ -91,6 +91,10 @@ const CapabilityForkCleanup = "removeForkDir"
 // Claude's defaults.
 const CapabilityClaudeOptions = "claudeOptions"
 
+// CapabilityAutocompact is a daemon that passes [StartSession.Autocompact] to
+// claude-code. An older one drops it and starts the default window.
+const CapabilityAutocompact = "autocompact"
+
 // CapabilityRestart is a daemon that honours [OpRestart], and CapabilityUpdate
 // one that can also install an [OpUpdateNow]. An older daemon ignores the op,
 // so the backend refuses to send either unless it is listed here and the
@@ -284,6 +288,9 @@ type StartSession struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Agent  string `json:"agent,omitempty"`
+	// Autocompact is claude-code's auto-compact window, such as "600k";
+	// blank is the daemon's default. A value needs [CapabilityAutocompact].
+	Autocompact string `json:"autocompact,omitempty"`
 
 	// Fork runs this session in a folder of its own, made from Dir, for a
 	// workspace fork. Nil for every other workspace.

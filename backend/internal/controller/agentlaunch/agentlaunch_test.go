@@ -253,6 +253,18 @@ func TestLaunch_ClaudeCodeCarriesItsModelAndEffort(t *testing.T) {
 	}
 }
 
+func TestLaunch_ClaudeCodeCarriesItsAutocompactWindow(t *testing.T) {
+	l, _, c := launcher(wire.CapabilityAutocompact)
+	rq := request("claude-code")
+	rq.Autocompact = "600k"
+	if _, err := l.Launch(context.Background(), rq); err != nil {
+		t.Fatal(err)
+	}
+	if start := c.start(t); start.Autocompact != "600k" {
+		t.Errorf("start = %+v", start)
+	}
+}
+
 // Every refusal comes before a session row or a frame, so it leaves nothing
 // behind.
 func TestLaunch_Refusals(t *testing.T) {
@@ -294,6 +306,9 @@ func TestLaunch_Refusals(t *testing.T) {
 		}, entity.ErrLaunchBusy, "update agentrqd on this machine to run a fork (it needs " + wire.MinForkVersion + " or newer)"},
 		{"a Claude model on a daemon that would drop it", nil, func(_ *Launcher, _ *fakeCrud, rq *Request) { rq.Effort = "max" },
 			entity.ErrLaunchBusy, "update agentrqd on this machine to choose Claude Code's model or effort, or leave both blank"},
+		{"an autocompact window on a daemon that would drop it", []string{wire.CapabilityClaudeOptions}, func(_ *Launcher, _ *fakeCrud, rq *Request) {
+			rq.Effort, rq.Autocompact = "max", "600k"
+		}, entity.ErrLaunchBusy, "update agentrqd on this machine to choose Claude Code's auto-compact window, or leave it at the default"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

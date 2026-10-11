@@ -1,7 +1,7 @@
 .PHONY: dev backend frontend desktop desktop-dev install stop mocks test fmt hooks remote-claude remote-agy plugin-deepseek
 
 remote-claude:
-	claude --name agentrq-code --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
+	claude --name agentrq-code --autocompact 400k --dangerously-load-development-channels server:agentrq-0ZzhYQG2qtl
 
 remote-agy:
 	npx -y @agentrq/acp-gateway@latest --model gemini-3.8-flash-high --agent antigravity-acp

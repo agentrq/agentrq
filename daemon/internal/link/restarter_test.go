@@ -167,8 +167,8 @@ func TestARestartHandsOverWithoutEndingTheSessions(t *testing.T) {
 
 // With no next daemon to start them, this one does — including a session of
 // its own profile, and not another's, which it has no connection to report on.
-// Claude Code's chosen model and effort are written into the note, so the
-// agent comes back on the same ones.
+// Claude Code's chosen model, effort and auto-compact window are written into
+// the note, so the agent comes back on the same ones.
 func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 	b := newBackend(t)
 	rig := &restartRig{state: t.TempDir()}
@@ -184,7 +184,7 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 	}
 	h := start(t, b, rig.option)
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high",
+		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high", Autocompact: "700k",
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
@@ -192,8 +192,8 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
 	waitFor(t, func() bool { return rig.count() == 1 }, "the daemon never restarted")
 
-	if len(note.Sessions) != 1 || note.Sessions[0].Model != "opus" || note.Sessions[0].Effort != "high" {
-		t.Errorf("the note said %+v, want one session on model opus with effort high", note)
+	if len(note.Sessions) != 1 || note.Sessions[0].Model != "opus" || note.Sessions[0].Effort != "high" || note.Sessions[0].Autocompact != "700k" {
+		t.Errorf("the note said %+v, want one session on model opus with effort high and autocompact 700k", note)
 	}
 }
 

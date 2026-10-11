@@ -255,6 +255,11 @@ agent's own default. Claude Code also takes an effort level (`low`, `medium`,
 agentrqd 0.9.15 or newer; an older one is refused rather than quietly starting
 the defaults.
 
+Claude Code starts with `--autocompact 400k`, compacting its conversation once
+it reaches 400k tokens. Each launch can pick another window from 100k to 900k,
+and the control panel remembers the choice per workspace in your browser.
+Choosing one needs agentrqd 0.9.18 or newer.
+
 It will not run a shell, and it will not run a command the server sends it. The
 control panel asks for a *kind* — one of those two names — and the daemon
 decides what that means from its own configuration. A backend that has been

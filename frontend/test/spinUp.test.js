@@ -179,7 +179,7 @@ describe('useSpinUp: running', () => {
     spin.params.value = { model: 'opus' };
     await spin.run();
     expect(deps.launchAgent).toHaveBeenCalledWith('f1', { machineId: 'm1', kind: 'claude-code', cols: 80, rows: 24, model: 'opus' });
-    expect(JSON.parse(localStorage.getItem('agentrq:lastClaudeCode'))).toEqual({ model: 'opus', effort: '' });
+    expect(JSON.parse(localStorage.getItem('agentrq:lastClaudeCode'))).toEqual({ model: 'opus', effort: '', autocompact: '' });
   });
 
   it('launches the gateway with its agent, and remembers that too', async () => {

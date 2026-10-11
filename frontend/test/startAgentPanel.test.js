@@ -209,6 +209,24 @@ describe('StartAgentPanel', () => {
     localStorage.clear()
   })
 
+  it('starts Claude Code on a 400k auto-compact window, and sends another when one is picked', async () => {
+    localStorage.clear()
+    const { el } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    expect(el.querySelector('[data-test=start-agent-autocompact-value]').textContent.trim()).toBe('400k (default)')
+    const window = el.querySelector('#start-agent-autocompact')
+    window.value = '5'
+    window.dispatchEvent(new Event('input'))
+    await settle()
+
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', autocompact: '600k' }))
+    // Remembered for this workspace, so its next launch opens on it.
+    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['claude-code'].autocompact).toBe('600k')
+    localStorage.clear()
+  })
+
   describe('on a fork', () => {
     // A fork's folder is made from its parent's on the first launch, so "no
     // working directory" is not a reason to refuse it — its parent's is.

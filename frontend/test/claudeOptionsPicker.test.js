@@ -35,13 +35,35 @@ afterEach(() => {
 })
 
 describe('ClaudeOptionsPicker', () => {
-  it('opens on the default for both, with each step named under its track', () => {
+  it('opens on the default for each, with each step named under its track', () => {
     const { el, shown } = mount({ model: '', effort: '' })
     expect(shown('model')).toBe('Default')
     expect(shown('effort')).toBe('Default')
+    expect(shown('autocompact')).toBe('400k (default)')
     expect(el.querySelector('#pick-model').getAttribute('aria-valuetext')).toBe('Default')
+    expect(el.querySelector('#pick-autocompact').value).toBe('3')
     const names = [...el.querySelectorAll('button')].map((b) => b.textContent.trim())
-    expect(names).toEqual(['Default', 'Haiku', 'Sonnet', 'Opus', 'Fable', 'Default', 'Low', 'Medium', 'High', 'Extra high', 'Max'])
+    expect(names).toEqual([
+      'Default', 'Haiku', 'Sonnet', 'Opus', 'Fable',
+      'Default', 'Low', 'Medium', 'High', 'Extra high', 'Max',
+      '100k', '200k', '300k', '400k', '500k', '600k', '700k', '800k', '900k',
+    ])
+  })
+
+  it('picks an auto-compact window from 100k to 900k, and back to the 400k default', async () => {
+    const { el, value, shown } = mount({ model: '', effort: '' })
+    const window = el.querySelector('#pick-autocompact')
+    window.value = '8'
+    window.dispatchEvent(new Event('input'))
+    await nextTick()
+    expect(value.value).toEqual({ model: '', effort: '', autocompact: '900k' })
+    expect(shown('autocompact')).toBe('900k')
+    expect(window.getAttribute('aria-valuetext')).toBe('900k')
+
+    ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim() === '400k').click()
+    await nextTick()
+    expect(value.value).toEqual({ model: '', effort: '', autocompact: '' })
+    expect(shown('autocompact')).toBe('400k (default)')
   })
 
   it('keeps both changes when the two sliders move before the form re-renders', async () => {

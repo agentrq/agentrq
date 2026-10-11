@@ -87,6 +87,7 @@ type (
 		Kind        string
 		Model       string
 		Effort      string
+		Autocompact string
 		Agent       string
 		Cols        uint16
 		Rows        uint16
@@ -219,18 +220,24 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		!l.Machines.HasCapability(machineID, wire.CapabilityClaudeOptions) {
 		return nil, busy("update agentrqd on this machine to choose Claude Code's model or effort, or leave both blank")
 	}
+	// Likewise an auto-compact window, which an older one never passes on.
+	if rq.Kind == "claude-code" && rq.Autocompact != "" &&
+		!l.Machines.HasCapability(machineID, wire.CapabilityAutocompact) {
+		return nil, busy("update agentrqd on this machine to choose Claude Code's auto-compact window, or leave it at the default")
+	}
 
 	start := wire.StartSession{
-		Kind:       rq.Kind,
-		Dir:        dir,
-		Fork:       fork,
-		ServerName: mcpServerName,
-		Workspace:  ws.Workspace.Name,
-		Model:      rq.Model,
-		Effort:     rq.Effort,
-		Agent:      rq.Agent,
-		Cols:       rq.Cols,
-		Rows:       rq.Rows,
+		Kind:        rq.Kind,
+		Dir:         dir,
+		Fork:        fork,
+		ServerName:  mcpServerName,
+		Workspace:   ws.Workspace.Name,
+		Model:       rq.Model,
+		Effort:      rq.Effort,
+		Autocompact: rq.Autocompact,
+		Agent:       rq.Agent,
+		Cols:        rq.Cols,
+		Rows:        rq.Rows,
 	}
 
 	// The supervisor workspace works across every other one, so its agent

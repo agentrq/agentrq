@@ -872,6 +872,30 @@ func TestLaunchAgent_AClaudeCodeModelOrEffortIsRefusedOnADaemonThatWouldDropIt(t
 	}
 }
 
+// A chosen auto-compact window reaches the daemon on a machine that passes it on,
+// and is refused on one that would drop it.
+func TestLaunchAgent_ClaudeCodeAutocompactWindowNeedsTheCapability(t *testing.T) {
+	body := `{"kind":"claude-code","autocompact":"800k"}`
+	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityAutocompact}, "0.9.18", body)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
+	}
+	if start.Autocompact != "800k" {
+		t.Errorf("the start frame names autocompact %q, want 800k", start.Autocompact)
+	}
+
+	resp, start = launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityClaudeOptions}, "0.9.17", body)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "choose Claude Code's auto-compact window") {
+		t.Errorf("message = %s, want it to ask for an agentrqd update", msg)
+	}
+	if start.SessionID != 0 {
+		t.Error("the start was sent anyway")
+	}
+}
+
 // Leaving the model blank, or choosing the gateway's, needs nothing new from
 // the daemon: both worked before the capability existed.
 func TestLaunchAgent_OnlyAClaudeCodeModelNeedsTheCapability(t *testing.T) {

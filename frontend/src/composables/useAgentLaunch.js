@@ -29,9 +29,9 @@ export const KINDS = [
     label: 'Claude Code',
     description: 'Reads the workspace over MCP. The daemon writes its config.',
     needs: [],
-    // Blank is Claude Code's own default for either, as it was before they
-    // could be chosen here.
-    optional: ['model', 'effort'],
+    // Blank is Claude Code's own default for model and effort, as it was
+    // before they could be chosen here, and the daemon's 400k for autocompact.
+    optional: ['model', 'effort', 'autocompact'],
   },
   {
     id: 'acp-gateway',
@@ -77,6 +77,23 @@ export const CLAUDE_CODE_EFFORTS = [
   { id: 'max', name: 'Max' },
 ]
 
+/**
+ * The auto-compact windows `claude --autocompact` is started with, smallest
+ * first. Blank is the daemon's default, 400k, so a launch that leaves it there
+ * still starts on an agentrqd that cannot choose another.
+ */
+export const CLAUDE_CODE_AUTOCOMPACTS = [
+  { id: '100k', name: '100k' },
+  { id: '200k', name: '200k' },
+  { id: '300k', name: '300k' },
+  { id: '', name: '400k', title: '400k (default)' },
+  { id: '500k', name: '500k' },
+  { id: '600k', name: '600k' },
+  { id: '700k', name: '700k' },
+  { id: '800k', name: '800k' },
+  { id: '900k', name: '900k' },
+]
+
 /** The gateway's name for Claude, which it can ask for the models a machine's Claude offers. */
 export const CLAUDE_ACP_AGENT = 'claude-acp'
 
@@ -107,9 +124,10 @@ export function claudeModelSteps(reported) {
   return [{ id: '', name }, ...aliases]
 }
 
-/** Where a value sits on a slider's steps; one that is not a step sits on the default. */
+/** Where a value sits on a slider's steps; one that is not a step sits on the default (blank) step. */
 export function stepIndex(steps, value) {
-  return Math.max(0, steps.findIndex((step) => step.id === value))
+  const i = steps.findIndex((step) => step.id === value)
+  return i !== -1 ? i : Math.max(0, steps.findIndex((step) => step.id === ''))
 }
 
 /**
@@ -155,10 +173,10 @@ export function rememberAcpGatewayChoice({ agent, model }) {
   }
 }
 
-/** Where Claude Code's last model and effort are remembered, the same way as the gateway's. */
+/** Where Claude Code's last model, effort and auto-compact window are remembered, the same way as the gateway's. */
 const LAST_CLAUDE_CODE_KEY = 'agentrq:lastClaudeCode'
 
-/** The model and effort somebody last launched Claude Code with, or null. */
+/** The model, effort and auto-compact window somebody last launched Claude Code with, or null. */
 export function lastClaudeCodeChoice() {
   try {
     return claudeCodeParams(JSON.parse(localStorage.getItem(LAST_CLAUDE_CODE_KEY) ?? 'null'))
@@ -167,7 +185,7 @@ export function lastClaudeCodeChoice() {
   }
 }
 
-/** A remembered Claude Code model and effort, or null. */
+/** A remembered Claude Code model, effort and auto-compact window, or null. */
 function claudeCodeParams(parsed) {
   if (!parsed || typeof parsed !== 'object') return null
   // Only what the sliders can show is restored; anything else opens on the
@@ -175,13 +193,17 @@ function claudeCodeParams(parsed) {
   return {
     model: CLAUDE_CODE_MODELS[stepIndex(CLAUDE_CODE_MODELS, parsed.model)].id,
     effort: CLAUDE_CODE_EFFORTS[stepIndex(CLAUDE_CODE_EFFORTS, parsed.effort)].id,
+    autocompact: CLAUDE_CODE_AUTOCOMPACTS[stepIndex(CLAUDE_CODE_AUTOCOMPACTS, parsed.autocompact)].id,
   }
 }
 
-/** Remembers a Claude Code launch's model and effort, blanks included, for the next one. */
-export function rememberClaudeCodeChoice({ model, effort }) {
+/** Remembers a Claude Code launch's model, effort and auto-compact window, blanks included, for the next one. */
+export function rememberClaudeCodeChoice({ model, effort, autocompact }) {
   try {
-    localStorage.setItem(LAST_CLAUDE_CODE_KEY, JSON.stringify({ model: model ?? '', effort: effort ?? '' }))
+    localStorage.setItem(
+      LAST_CLAUDE_CODE_KEY,
+      JSON.stringify({ model: model ?? '', effort: effort ?? '', autocompact: autocompact ?? '' })
+    )
   } catch {
     // The next launch opens on Claude Code's default instead.
   }
@@ -195,7 +217,7 @@ export function initialParams(kind, workspaceId) {
   const own = lastLaunchParams(workspaceId, kind)
   if (own) return own
   if (kind === 'acp-gateway') return lastAcpGatewayChoice() ?? { ...GATEWAY_DEFAULTS }
-  return lastClaudeCodeChoice() ?? { model: '', effort: '' }
+  return lastClaudeCodeChoice() ?? { model: '', effort: '', autocompact: '' }
 }
 
 /** Remembers a launch's parameters for the next launch of the same kind. */
@@ -239,7 +261,7 @@ export function useKindParams(kind, getWorkspaceId = () => '') {
 /**
  * Where each workspace's last launch is remembered: the machine, the kind,
  * and each kind's parameters (the gateway's agent and model, Claude Code's
- * model and effort).
+ * model, effort and auto-compact window).
  *
  * The same kind of per-browser convenience as the gateway's agent and model,
  * kept per workspace because "the machine this workspace runs on", and the

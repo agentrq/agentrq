@@ -49,9 +49,11 @@ type Session struct {
 	ServerName string `json:"serverName,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Effort     string `json:"effort,omitempty"`
-	Agent      string `json:"agent,omitempty"`
-	Cols       uint16 `json:"cols,omitempty"`
-	Rows       uint16 `json:"rows,omitempty"`
+	// Autocompact is claude-code's auto-compact window, blank for the default.
+	Autocompact string `json:"autocompact,omitempty"`
+	Agent       string `json:"agent,omitempty"`
+	Cols        uint16 `json:"cols,omitempty"`
+	Rows        uint16 `json:"rows,omitempty"`
 }
 
 // File is the note left for the next start.

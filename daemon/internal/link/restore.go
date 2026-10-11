@@ -71,11 +71,12 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 
 	kind := supervisor.Kind(s.Kind)
 	cmd, err := supervisor.Resolve(kind, supervisor.Params{
-		Workspace:  s.Workspace,
-		ServerName: s.ServerName,
-		Model:      s.Model,
-		Effort:     s.Effort,
-		Agent:      s.Agent,
+		Workspace:   s.Workspace,
+		ServerName:  s.ServerName,
+		Model:       s.Model,
+		Effort:      s.Effort,
+		Autocompact: s.Autocompact,
+		Agent:       s.Agent,
 	})
 	if err != nil {
 		l.Log.Warn("cannot restore a session", "session", s.ID, "error", err)
@@ -90,11 +91,12 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		ID:   s.ID,
 		Kind: kind,
 		Params: supervisor.Params{
-			Workspace:  s.Workspace,
-			ServerName: s.ServerName,
-			Model:      s.Model,
-			Effort:     s.Effort,
-			Agent:      s.Agent,
+			Workspace:   s.Workspace,
+			ServerName:  s.ServerName,
+			Model:       s.Model,
+			Effort:      s.Effort,
+			Autocompact: s.Autocompact,
+			Agent:       s.Agent,
 		},
 		Dir:            s.Dir,
 		ReuseMCPConfig: cmd.NeedsMCPConfig,

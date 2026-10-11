@@ -5,23 +5,28 @@
 -->
 
 <!--
-  Claude Code's model and effort, as two sliders.
+  Claude Code's model, effort and auto-compact window, as three sliders.
 
   Sliders rather than dropdowns or a field: both are short, ordered lists, and
-  every step is on screen at once. Each starts at Default, which leaves the
-  choice to Claude Code. One component for all three launch forms, so they
+  every step is on screen at once. Each starts at its blank step, which leaves
+  the choice to Claude Code (or, for auto-compact, to the daemon's 400k). One component for all three launch forms, so they
   cannot disagree about the steps.
 
   The model steps are the ones the machine's Claude reported (`models`), and
-  the fixed list until it has; effort is always the fixed list, which no
-  lookup reports.
+  the fixed list until it has; effort and auto-compact are always the fixed
+  lists, which no lookup reports.
 
-  The value is the launch's params object, `{ model, effort }`, replaced whole
+  The value is the launch's params object, `{ model, effort, autocompact }`, replaced whole
   on every change so the form's own ref sees it.
 -->
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { CLAUDE_CODE_EFFORTS, CLAUDE_CODE_MODELS, stepIndex } from '../composables/useAgentLaunch'
+import {
+  CLAUDE_CODE_AUTOCOMPACTS,
+  CLAUDE_CODE_EFFORTS,
+  CLAUDE_CODE_MODELS,
+  stepIndex,
+} from '../composables/useAgentLaunch'
 
 const props = defineProps({
   modelValue: { type: Object, default: () => ({}) },
@@ -34,7 +39,14 @@ const emit = defineEmits(['update:modelValue'])
 const sliders = computed(() => [
   { field: 'model', label: 'Model', steps: props.models },
   { field: 'effort', label: 'Effort', steps: CLAUDE_CODE_EFFORTS },
+  { field: 'autocompact', label: 'Auto-compact', steps: CLAUDE_CODE_AUTOCOMPACTS },
 ])
+
+/** The step a slider is on, named in full above the track. */
+function stepTitle(s) {
+  const step = s.steps[stepIndex(s.steps, props.modelValue?.[s.field])]
+  return step.title ?? step.name
+}
 
 // What was last sent, not only what the props say: the props catch up on the
 // next render, so a second change before then would undo the first.
@@ -73,7 +85,7 @@ watch(
           >{{ s.label }}</label
         >
         <span :data-test="`${idPrefix}-${s.field}-value`" class="text-[11px] font-bold text-gray-900 dark:text-zinc-100">
-          {{ s.steps[stepIndex(s.steps, modelValue?.[s.field])].name }}
+          {{ stepTitle(s) }}
         </span>
       </div>
       <input
@@ -83,7 +95,7 @@ watch(
         :max="s.steps.length - 1"
         step="1"
         :value="stepIndex(s.steps, modelValue?.[s.field])"
-        :aria-valuetext="s.steps[stepIndex(s.steps, modelValue?.[s.field])].name"
+        :aria-valuetext="stepTitle(s)"
         @input="set(s.field, s.steps[Number($event.target.value)].id)"
         class="w-full accent-black dark:accent-white cursor-pointer"
       />

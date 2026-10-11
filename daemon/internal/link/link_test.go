@@ -394,6 +394,10 @@ func TestHelloDescribesTheMachine(t *testing.T) {
 	if !slices.Contains(hello.Capabilities, wire.CapabilityClaudeOptions) {
 		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityClaudeOptions)
 	}
+	// Nor one that names an auto-compact window.
+	if !slices.Contains(hello.Capabilities, wire.CapabilityAutocompact) {
+		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityAutocompact)
+	}
 }
 
 // Who the daemon claims to be travels on the upgrade request.

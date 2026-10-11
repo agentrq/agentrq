@@ -139,10 +139,10 @@ func TestLaunchAgent_UsesTheSharedLaunch(t *testing.T) {
 	s := &WorkspaceServer{launcher: l}
 
 	body := textOf(t, toolResult(s.handleLaunchAgent(authedContext(), nil, LaunchAgentParams{
-		WorkspaceID: "w1", MachineID: "m1", Kind: "claude-code", Model: "opus", Effort: "high", Agent: "a",
+		WorkspaceID: "w1", MachineID: "m1", Kind: "claude-code", Model: "opus", Effort: "high", Autocompact: "500k", Agent: "a",
 	})))
 
-	want := agentlaunch.Request{UserID: testUserID, WorkspaceID: "w1", MachineID: "m1", Kind: "claude-code", Model: "opus", Effort: "high", Agent: "a"}
+	want := agentlaunch.Request{UserID: testUserID, WorkspaceID: "w1", MachineID: "m1", Kind: "claude-code", Model: "opus", Effort: "high", Autocompact: "500k", Agent: "a"}
 	if l.launch != want {
 		t.Errorf("request = %+v, want %+v", l.launch, want)
 	}

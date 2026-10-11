@@ -24,6 +24,7 @@ import {
   GATEWAY_DEFAULTS,
   CLAUDE_CODE_MODELS,
   CLAUDE_CODE_EFFORTS,
+  CLAUDE_CODE_AUTOCOMPACTS,
   lastClaudeCodeChoice,
   rememberClaudeCodeChoice,
   initialParams,
@@ -817,7 +818,7 @@ describe('each workspace\'s last agent', () => {
     rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { model: 'opus' } })
     rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'codex-acp' } })
     expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
-    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: 'opus', effort: '' })
+    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: 'opus', effort: '', autocompact: '' })
     expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
     expect(lastLaunchParams('ws2', 'claude-code')).toBe(null)
     expect(lastLaunchParams('', 'acp-gateway')).toBe(null)
@@ -834,7 +835,7 @@ describe('each workspace\'s last agent', () => {
       ws2: { machineId: 'm1', kind: 'acp-gateway', params: 'not an object' },
     }))
     expect(lastLaunchParams('ws1', 'acp-gateway')).toBe(null)
-    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: '', effort: 'max' })
+    expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: '', effort: 'max', autocompact: '' })
     expect(lastLaunchParams('ws2', 'acp-gateway')).toBe(null)
     // And a launch writes over what it could not read.
     rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'goose' } })
@@ -847,6 +848,15 @@ describe('each workspace\'s last agent', () => {
     expect(initialParams('acp-gateway', 'ws1')).toEqual({ agent: 'gemini', model: '' })
     expect(initialParams('acp-gateway', 'ws2')).toEqual({ agent: 'codex-acp', model: '' })
     expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
+  })
+
+  it('keeps Claude Code\'s auto-compact window per workspace, and opens elsewhere on the 400k default', () => {
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { autocompact: '700k' } })
+    expect(initialParams('claude-code', 'ws1')).toEqual({ model: '', effort: '', autocompact: '700k' })
+    expect(initialParams('claude-code', 'ws2')).toEqual({ model: '', effort: '', autocompact: '' })
+    // One no slider step stands for opens on the default.
+    rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { autocompact: '1m' } })
+    expect(initialParams('claude-code', 'ws1')).toEqual({ model: '', effort: '', autocompact: '' })
   })
 
   it('brings back a workspace\'s own when it is picked, and leaves the fields alone for one never launched', () => {
@@ -862,7 +872,7 @@ describe('each workspace\'s last agent', () => {
     workspaceId.value = 'ws1'
     expect(params.value).toEqual({ agent: 'gemini', model: '' })
     kind.value = 'claude-code'
-    expect(params.value).toEqual({ model: 'opus', effort: 'high' })
+    expect(params.value).toEqual({ model: 'opus', effort: 'high', autocompact: '' })
   })
 
   it('is what the machine page opens on, once that workspace is picked', async () => {
@@ -901,6 +911,8 @@ describe('choosing Claude Code\'s model and effort', () => {
       expect(paramsEligibility('claude-code', { model: id, effort: id }).ok).toBe(true)
     }
     expect(launchParamsPayload('claude-code', { model: '', effort: 'high' })).toEqual({ effort: 'high' })
+    expect(launchParamsPayload('claude-code', { autocompact: '600k' })).toEqual({ autocompact: '600k' })
+    expect(launchParamsPayload('claude-code', { autocompact: '' })).toEqual({})
   })
 
   it('builds the model steps from what the machine\'s Claude reported, fastest first', () => {
@@ -931,14 +943,18 @@ describe('choosing Claude Code\'s model and effort', () => {
     expect(stepIndex(CLAUDE_CODE_EFFORTS, 'max')).toBe(5)
     expect(stepIndex(CLAUDE_CODE_MODELS, 'opusplan')).toBe(0)
     expect(stepIndex(CLAUDE_CODE_MODELS, undefined)).toBe(0)
+    // A list whose default is not its first step falls back to that step.
+    expect(stepIndex(CLAUDE_CODE_AUTOCOMPACTS, '900k')).toBe(8)
+    expect(stepIndex(CLAUDE_CODE_AUTOCOMPACTS, '450k')).toBe(3)
+    expect(stepIndex(CLAUDE_CODE_AUTOCOMPACTS, undefined)).toBe(3)
   })
 
   it('has nothing remembered at first, and round-trips what was', () => {
     expect(lastClaudeCodeChoice()).toBeNull()
-    rememberClaudeCodeChoice({ model: 'sonnet', effort: 'xhigh' })
-    expect(lastClaudeCodeChoice()).toEqual({ model: 'sonnet', effort: 'xhigh' })
+    rememberClaudeCodeChoice({ model: 'sonnet', effort: 'xhigh', autocompact: '200k' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'sonnet', effort: 'xhigh', autocompact: '200k' })
     rememberClaudeCodeChoice({})
-    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '', autocompact: '' })
   })
 
   it('treats unreadable or misshapen storage as nothing remembered', () => {
@@ -948,9 +964,9 @@ describe('choosing Claude Code\'s model and effort', () => {
     }
     // A value no slider step stands for opens on the default instead.
     localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opusplan","effort":"ultra"}')
-    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '', autocompact: '' })
     localStorage.setItem('agentrq:lastClaudeCode', '{"model":"opus"}')
-    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: '' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: '', autocompact: '' })
   })
 
   it('survives storage that throws', () => {
@@ -960,11 +976,11 @@ describe('choosing Claude Code\'s model and effort', () => {
   })
 
   it('opens each kind on its last launch, or its defaults', () => {
-    expect(initialParams('claude-code')).toEqual({ model: '', effort: '' })
+    expect(initialParams('claude-code')).toEqual({ model: '', effort: '', autocompact: '' })
     expect(initialParams('acp-gateway')).toEqual(GATEWAY_DEFAULTS)
     rememberParams('claude-code', { model: 'haiku', effort: 'low' })
     rememberParams('acp-gateway', { agent: 'codex-acp', model: 'gpt-5.5' })
-    expect(initialParams('claude-code')).toEqual({ model: 'haiku', effort: 'low' })
+    expect(initialParams('claude-code')).toEqual({ model: 'haiku', effort: 'low', autocompact: '' })
     expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
   })
 
@@ -988,7 +1004,7 @@ describe('choosing Claude Code\'s model and effort', () => {
     h.l.params.value = { model: ' opus ', effort: 'max' }
     await h.l.launch()
     expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', model: 'opus', effort: 'max' }))
-    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: 'max' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: 'opus', effort: 'max', autocompact: '' })
   })
 
   it('sends no model when none was chosen, so Claude Code starts on its default', async () => {
@@ -998,6 +1014,6 @@ describe('choosing Claude Code\'s model and effort', () => {
     await h.l.launch()
     expect(h.deps.launchAgent.mock.calls[0][1]).not.toHaveProperty('model')
     expect(h.deps.launchAgent.mock.calls[0][1]).not.toHaveProperty('effort')
-    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '' })
+    expect(lastClaudeCodeChoice()).toEqual({ model: '', effort: '', autocompact: '' })
   })
 })

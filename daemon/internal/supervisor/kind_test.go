@@ -18,7 +18,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := "claude --name agentrq-code --dangerously-load-development-channels server:agentrq-workspace"
+	want := "claude --name agentrq-code --autocompact 400k --dangerously-load-development-channels server:agentrq-workspace"
 	if got := strings.Join(c.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -114,7 +114,7 @@ func TestClaudeCodeTakesAnOptionalModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := "claude --name w --model opus --dangerously-load-development-channels server:s"
+	want := "claude --name w --model opus --autocompact 400k --dangerously-load-development-channels server:s"
 	if got := strings.Join(c.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -135,9 +135,33 @@ func TestClaudeCodeTakesAnOptionalEffort(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Resolve with effort %q: %v", effort, err)
 		}
-		want := "claude --name w --model opus --effort " + effort + " --dangerously-load-development-channels server:s"
+		want := "claude --name w --model opus --effort " + effort + " --autocompact 400k --dangerously-load-development-channels server:s"
 		if got := strings.Join(c.Argv, " "); got != want {
 			t.Errorf("argv = %q, want %q", got, want)
+		}
+	}
+}
+
+// A chosen auto-compact window replaces the 400k default, after the effort.
+func TestClaudeCodeTakesAnAutocompactWindow(t *testing.T) {
+	for _, window := range []string{"100k", "400k", "900k"} {
+		c, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s", Effort: "high", Autocompact: window})
+		if err != nil {
+			t.Fatalf("Resolve with autocompact %q: %v", window, err)
+		}
+		want := "claude --name w --effort high --autocompact " + window + " --dangerously-load-development-channels server:s"
+		if got := strings.Join(c.Argv, " "); got != want {
+			t.Errorf("argv = %q, want %q", got, want)
+		}
+	}
+}
+
+// The window is whole hundreds of thousands up to 900k, so anything else is
+// refused rather than passed on.
+func TestClaudeCodeRefusesAnAutocompactWindowOutOfRange(t *testing.T) {
+	for _, window := range []string{"auto", "50k", "1000k", "1m", "450k", "400", "--400k", "400K"} {
+		if _, err := Resolve(KindClaudeCode, Params{Workspace: "w", ServerName: "s", Autocompact: window}); !errors.Is(err, ErrBadParameter) {
+			t.Errorf("Resolve accepted autocompact %q, error = %v", window, err)
 		}
 	}
 }
