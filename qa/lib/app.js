@@ -35,6 +35,18 @@ export async function createWorkspace(page, name) {
   return (await expectOk(res, `creating the workspace ${name}`)).workspace
 }
 
+// Forks and merges the way the supervisor's MCP does: outside the page, so
+// only the live stream can tell the page about it.
+export async function forkWorkspace(page, workspaceId, name) {
+  const res = await send(page, 'POST', `/workspaces/${workspaceId}/forks`, { name })
+  return (await expectOk(res, `forking workspace ${workspaceId}`)).workspace
+}
+
+export async function mergeFork(page, forkId) {
+  const res = await send(page, 'POST', `/workspaces/${forkId}/merge`, { deleteFolder: false })
+  return expectOk(res, `merging fork ${forkId}`)
+}
+
 export async function createTask(page, workspaceId, title, status = 'notstarted', extra = {}) {
   const task = { title, body: `Created by the QA suite: ${title}`, createdBy: 'human', assignee: 'agent', status, ...extra }
   const res = await send(page, 'POST', `/workspaces/${workspaceId}/tasks`, { task })

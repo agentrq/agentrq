@@ -23,16 +23,23 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
+  // Reads overlap — a form re-reads the list after its own change, and the
+  // stream's `workspaces.changed` asks for the same — so only the latest one
+  // may write: an older reply landing last would undo the change.
+  let latestFetch = 0;
+
   async function fetchWorkspaces() {
+    const fetchId = ++latestFetch;
     loading.value = true;
     try {
       const res = await apiFetchWorkspaces();
+      if (fetchId !== latestFetch) return;
       const list = res.workspaces || [];
       workspaces.value = list.sort(byName);
     } catch (err) {
-      console.error('Failed to fetch workspaces:', err);
+      if (fetchId === latestFetch) console.error('Failed to fetch workspaces:', err);
     } finally {
-      loading.value = false;
+      if (fetchId === latestFetch) loading.value = false;
     }
   }
 

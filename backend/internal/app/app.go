@@ -745,6 +745,9 @@ func New(cfg Config) (*App, error) {
 
 			// Forward task and message updates to the EventBus in the background
 			go func(ev entity.CRUDEvent) {
+				if publishWorkspaceListChange(bus, ev) {
+					return
+				}
 				ctx := context.Background()
 				ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
 				if err != nil {

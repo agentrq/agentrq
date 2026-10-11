@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { test, expect } from '../lib/fixtures.js'
-import { createTask, getTask, nextResponse, setTaskStatus, watchTraffic } from '../lib/app.js'
+import { createTask, forkWorkspace, getTask, mergeFork, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
 // Opens the sidebar if it is folded to icons, so the workspace rows show.
 async function openSidebar(page) {
@@ -86,4 +86,22 @@ test('a workspace forked from the sidebar merges back into its parent, but not w
   // reading it once more before the app moves to the parent (the list is
   // refreshed before the navigation, so the page sees its workspace vanish).
   traffic.expectClean({ allow: ['429 /forks', `404 /workspaces/${fork.id}`] })
+})
+
+// A fork made or merged elsewhere — by the supervisor's MCP, or another tab —
+// shows in the open page's sidebar without a reload.
+test('a fork made and merged outside the page appears and disappears in its sidebar live', async ({ page, workspace: parent }) => {
+  const traffic = watchTraffic(page)
+  await page.goto(`/workspaces/${parent.id}`)
+  await openSidebar(page)
+  await expect(page.getByRole('button', { name: `${parent.name} actions`, exact: true })).toBeVisible()
+
+  const fork = await forkWorkspace(page, parent.id, unique('live-fork'))
+  const row = page.locator('[data-test="sidebar-fork"]').filter({ hasText: fork.name })
+  await expect(row, 'the fork is listed under its parent without a reload').toBeVisible()
+
+  await mergeFork(page, fork.id)
+  await expect(row, 'the merged fork leaves the sidebar without a reload').toHaveCount(0)
+
+  traffic.expectClean()
 })

@@ -995,6 +995,12 @@ onEvent((event) => {
     workspaceStore.updateWorkspaceMetadata(event.payload)
   }
 
+  // A workspace was added or removed somewhere else — by the supervisor's MCP,
+  // another tab or another device — and the list is the only place it shows.
+  if (event.type === 'workspaces.changed') {
+    workspaceStore.fetchWorkspaces()
+  }
+
   // Keep the local copy current. Merged against what the cache already holds
   // rather than written straight through: a payload built without its relations
   // is indistinguishable from one whose relations are genuinely empty, and this

@@ -47,6 +47,46 @@ describe('workspaceStore', () => {
       expect(store.workspaces).toEqual([])
     })
 
+    it('keeps the latest read when an older one answers last', async () => {
+      let answerOld, answerNew
+      fetchWorkspaces
+        .mockReturnValueOnce(new Promise(r => { answerOld = r }))
+        .mockReturnValueOnce(new Promise(r => { answerNew = r }))
+      const store = useWorkspaceStore()
+
+      const older = store.fetchWorkspaces()
+      const newer = store.fetchWorkspaces()
+      answerNew({ workspaces: [ws('a', 'alpha'), ws('f', 'alpha-fork')] })
+      await newer
+      expect(store.loading).toBe(false)
+      answerOld({ workspaces: [ws('a', 'alpha')] })
+      await older
+
+      expect(store.workspaces.map(w => w.id)).toEqual(['a', 'f'])
+    })
+
+    it('neither reports nor stops loading for an older read that fails', async () => {
+      let failOld, answerNew
+      fetchWorkspaces
+        .mockReturnValueOnce(new Promise((_, reject) => { failOld = reject }))
+        .mockReturnValueOnce(new Promise(r => { answerNew = r }))
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const store = useWorkspaceStore()
+
+      const older = store.fetchWorkspaces()
+      const newer = store.fetchWorkspaces()
+      failOld(new Error('offline'))
+      await older
+      expect(store.loading).toBe(true)
+      answerNew({ workspaces: [ws('a', 'alpha')] })
+      await newer
+      err.mockRestore()
+
+      expect(err).not.toHaveBeenCalled()
+      expect(store.workspaces.map(w => w.id)).toEqual(['a'])
+      expect(store.loading).toBe(false)
+    })
+
     it('keeps what it had when the request fails, and stops loading', async () => {
       fetchWorkspaces.mockResolvedValueOnce({ workspaces: [ws('a', 'alpha')] })
       const store = useWorkspaceStore()
