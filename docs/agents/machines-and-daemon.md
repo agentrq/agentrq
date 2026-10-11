@@ -45,6 +45,11 @@ pseudo-terminals, and streams them to the browser.
   say so** (`forkmerge.Merger`, shared by REST and CoreMCP). Merging past a
   live one leaves it working, token on disk, for a workspace that is gone; so an offline machine refuses the
   merge, and the unfinished-task check runs before the kill.
+- **A workspace's folder is made on launch when missing, and `~` is expanded
+  by the daemon** (`prepareDir`): a workspace created without one is stored as
+  `~/.agentrq/<id>`, because only the machine knows its home. The write check
+  is what turns a read-only folder into "the folder is not set for this
+  workspace" instead of a `.mcp.json` error.
 - Machine and session events ride the **user's global** stream
   (`bus.Publish(0, userID, …)`), not a workspace's: a machine does not belong
   to a workspace, and the person watching the machines page may have none open.

@@ -48,8 +48,14 @@ func (c *controller) CreateWorkspace(ctx context.Context, req entity.CreateWorks
 		return nil, err
 	}
 
+	id := c.idgen.NextID()
+	// No folder given: the agent's machine makes one of its own for it.
+	if workingDirectory == "" {
+		workingDirectory = DefaultWorkingDirectory(id)
+	}
+
 	m := model.Workspace{
-		ID:                    c.idgen.NextID(),
+		ID:                    id,
 		CreatedAt:             now,
 		UpdatedAt:             now,
 		UserID:                userID,
@@ -206,6 +212,12 @@ func (c *controller) UnarchiveWorkspace(ctx context.Context, req entity.Unarchiv
 		})
 	}
 	return err
+}
+
+// DefaultWorkingDirectory is a new workspace's folder when none is given.
+// agentrqd expands the ~ and makes the folder on the first launch.
+func DefaultWorkingDirectory(id int64) string {
+	return "~/.agentrq/" + monoflake.ID(id).String()
 }
 
 // normalizeWorkingDirectory validates the optional working directory a workspace

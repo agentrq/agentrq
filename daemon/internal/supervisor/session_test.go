@@ -1025,11 +1025,17 @@ func TestTheWorkspaceFolderIsCheckedBeforeAnythingIsWritten(t *testing.T) {
 			dir:  func(*testing.T) string { return "" },
 			want: ErrMissingParam,
 		},
-		// A typo in the workspace's setting says so, rather than quietly
-		// becoming a new empty directory with a token in it.
-		"missing": {
-			dir:  func(t *testing.T) string { return filepath.Join(t.TempDir(), "nope") },
-			want: pty.ErrDirMissing,
+		// A missing folder is made; one that cannot be says the folder is
+		// not set.
+		"missing and cannot be made": {
+			dir: func(t *testing.T) string {
+				p := filepath.Join(t.TempDir(), "afile")
+				if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return filepath.Join(p, "nope")
+			},
+			want: ErrNoFolder,
 		},
 		"a file, not a folder": {
 			dir: func(t *testing.T) string {

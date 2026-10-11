@@ -273,6 +273,16 @@ terminal.
 The one other program it starts is `git`, and only to make a workspace fork's
 folder: `git worktree add` with arguments it builds itself, never a shell.
 
+### The workspace's folder is made if it is missing
+
+A workspace created without a working directory is given
+`~/.agentrq/<workspace id>`. agentrqd expands the `~` to your home folder
+(`%USERPROFILE%` on Windows), and on every launch makes the workspace's folder
+if it does not exist yet. If it cannot make the folder or write to it, the
+launch fails with "the folder is not set for this workspace", naming the folder
+and the reason; set a working directory you can write to in the workspace's
+settings.
+
 ### A workspace fork gets a folder of its own
 
 A fork runs in `~/.agentrq/forks/<fork id>`, made from its parent's working
@@ -400,6 +410,7 @@ binary back — it is kept for exactly that reason.
 | Config | `~/.config/agentrqd/config.json` (`%AppData%\agentrqd` on Windows) |
 | Tokens | one `0600` file per profile in `.../agentrqd/tokens/` |
 | Local status | `.../agentrqd/status.json`, what `agentrqd status` reads |
+| Workspaces created without a folder | `~/.agentrq/<workspace id>` |
 | Workspace forks | `~/.agentrq/forks/<fork id>`, one folder per fork |
 
 The config file is **not** a credential and can safely be copied, backed up or

@@ -259,10 +259,8 @@ func (s *Supervisor) home() (string, error) {
 //     say so. It is refused rather than resolved, because guessing which of
 //     the two was meant is exactly the kind of guess that goes unnoticed.
 //   - Cleaned, so one folder has one spelling however the path was typed.
-//   - It has to already exist and be a directory. The daemon runs an agent in
-//     a folder that is there; it does not conjure one, and a typo in the
-//     workspace's setting should say so rather than quietly become a new
-//     empty directory with a token in it.
+//   - It has to exist and be a directory by now: [Supervisor.prepareDir] has
+//     already made a missing one, and expanded a leading ~.
 //
 // The pty layer checks the folder too, and still should: it is the one that
 // has to be right about the directory the process actually starts in.
@@ -306,7 +304,17 @@ func (s *Supervisor) Start(ctx context.Context, profile string, req Request) (*S
 		if home, err = s.home(); err != nil {
 			return nil, err
 		}
+		from, err := s.prepareDir(req.Fork.From)
+		if err != nil {
+			return nil, err
+		}
+		fork := *req.Fork
+		fork.From = from
+		req.Fork = &fork
 	} else {
+		if req.Dir, err = s.prepareDir(req.Dir); err != nil {
+			return nil, err
+		}
 		dir, err := workspaceDir(req.Dir)
 		if err != nil {
 			return nil, err

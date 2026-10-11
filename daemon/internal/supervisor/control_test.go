@@ -108,9 +108,9 @@ func TestARefusedStartIsReportedRatherThanSilent(t *testing.T) {
 	}
 }
 
-// "Working directory does not exist: /srv/app" is actionable; "failed to
-// start" is not. The server cannot make this check — the agent runs elsewhere.
-func TestAMissingWorkingDirectoryIsReportedWithItsPath(t *testing.T) {
+// "...could not be made: /srv/app" is actionable; "failed to start" is not.
+// The server cannot make this check — the agent runs elsewhere.
+func TestAWorkingDirectoryThatCannotBeMadeIsReportedWithItsPath(t *testing.T) {
 	// The real starter, so the directory check is the real one.
 	sup := New(realStarter, 0, 0)
 	rep := &recordingReporter{}
@@ -118,7 +118,12 @@ func TestAMissingWorkingDirectoryIsReportedWithItsPath(t *testing.T) {
 	// Join, not concatenation: a "/" pasted onto a Windows path makes a
 	// string that names the right folder and matches nothing, because the
 	// launch reports the cleaned path and this one is not cleaned.
-	missing := filepath.Join(t.TempDir(), "not-checked-out")
+	// Under a file, so it cannot be made.
+	blocker := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(blocker, "not-checked-out")
 	c := control(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: string(KindClaudeCode), Dir: missing,
 		MCPURL: testURL, ServerName: "agentrq-workspace", Workspace: "agentrq-code",

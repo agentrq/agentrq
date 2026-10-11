@@ -7,6 +7,7 @@ package supervisor
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"time"
 
@@ -87,6 +88,9 @@ func ListAcpModels(ctx context.Context, dir, agent string) []wire.AcpModel {
 	ctx, cancel := context.WithTimeout(ctx, listModelsTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "npx", "-y", "@agentrq/acp-gateway@latest", "--list-models", "--agent", agent, "--json")
+	if home, err := os.UserHomeDir(); err == nil {
+		dir = expandTilde(dir, home)
+	}
 	cmd.Dir = dir
 	out, err := cmd.Output()
 	if err != nil {

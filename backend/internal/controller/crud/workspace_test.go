@@ -14,6 +14,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/golang/mock/gomock"
+	"github.com/mustafaturan/monoflake"
 )
 
 func TestCreateWorkspace_WithOptions(t *testing.T) {
@@ -61,6 +62,35 @@ func TestCreateWorkspace_ClearContextDefaultsToTrue(t *testing.T) {
 	}
 	if !captured.ClearContextDefault {
 		t.Errorf("expected ClearContextDefault to default to true on workspace creation")
+	}
+}
+
+// A workspace created without a folder gets ~/.agentrq/<id>; one given a
+// folder keeps it.
+func TestCreateWorkspace_DefaultWorkingDirectory(t *testing.T) {
+	for _, tc := range []struct{ given, want string }{
+		{"", "~/.agentrq/" + monoflake.ID(100).String()},
+		{"  ", "~/.agentrq/" + monoflake.ID(100).String()},
+		{"/srv/app", "/srv/app"},
+	} {
+		e := newTestController(t)
+		e.idgen.EXPECT().NextID().Return(int64(100))
+		var captured model.Workspace
+		e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, p model.Workspace) (model.Workspace, error) {
+				captured = p
+				return p, nil
+			},
+		)
+		if _, err := e.controller.CreateWorkspace(context.Background(), entity.CreateWorkspaceRequest{
+			UserID:    testUserIDStr,
+			Workspace: entity.Workspace{Name: "W", WorkingDirectory: tc.given},
+		}); err != nil {
+			t.Fatalf("given %q: %v", tc.given, err)
+		}
+		if captured.WorkingDirectory != tc.want {
+			t.Errorf("given %q: working directory = %q, want %q", tc.given, captured.WorkingDirectory, tc.want)
+		}
 	}
 }
 
