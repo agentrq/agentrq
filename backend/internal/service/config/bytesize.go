@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -35,13 +36,13 @@ func ParseByteSize(val any) (int, error) {
 		}
 		return v, nil
 	case int64:
-		if v < 0 {
-			return 0, fmt.Errorf("invalid size %d: must be positive", v)
+		if v < 0 || v > math.MaxInt {
+			return 0, fmt.Errorf("invalid size %d: must be between 0 and %d", v, math.MaxInt)
 		}
 		return int(v), nil
 	case float64:
-		if v < 0 {
-			return 0, fmt.Errorf("invalid size %f: must be positive", v)
+		if v < 0 || v > math.MaxInt {
+			return 0, fmt.Errorf("invalid size %f: must be between 0 and %d", v, math.MaxInt)
 		}
 		return int(v), nil
 	case string:
@@ -51,8 +52,8 @@ func ParseByteSize(val any) (int, error) {
 		}
 		// Try plain integer
 		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			if n < 0 {
-				return 0, fmt.Errorf("invalid size %d: must be positive", n)
+			if n < 0 || n > math.MaxInt {
+				return 0, fmt.Errorf("invalid size %d: must be between 0 and %d", n, math.MaxInt)
 			}
 			return int(n), nil
 		}
@@ -97,17 +98,22 @@ func ParseByteSize(val any) (int, error) {
 		n, err := strconv.ParseInt(strings.TrimSpace(numStr), 10, 64)
 		if err != nil {
 			if f, fErr := strconv.ParseFloat(strings.TrimSpace(numStr), 64); fErr == nil {
-				if f < 0 {
-					return 0, fmt.Errorf("invalid size %f: must be positive", f)
+				fTotal := f * float64(mult)
+				if fTotal < 0 || fTotal > math.MaxInt {
+					return 0, fmt.Errorf("invalid size %f: must be between 0 and %d", fTotal, math.MaxInt)
 				}
-				return int(f * float64(mult)), nil
+				return int(fTotal), nil
 			}
 			return 0, fmt.Errorf("invalid size number in %q: %w", s, err)
 		}
-		if n < 0 {
-			return 0, fmt.Errorf("invalid size %d: must be positive", n)
+		if n < 0 || (mult > 0 && n > math.MaxInt/mult) {
+			return 0, fmt.Errorf("invalid size %d with mult %d: exceeds max int", n, mult)
 		}
-		return int(n * mult), nil
+		total := n * mult
+		if total < 0 || total > math.MaxInt {
+			return 0, fmt.Errorf("invalid size %d: exceeds max int", total)
+		}
+		return int(total), nil
 	default:
 		return 0, fmt.Errorf("unsupported size type %T", val)
 	}

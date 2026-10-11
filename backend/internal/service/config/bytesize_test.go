@@ -42,6 +42,9 @@ func TestParseByteSize(t *testing.T) {
 		{name: "invalid number in unit", input: "abcMB", wantErr: true},
 		{name: "negative unit number", input: "-10KB", wantErr: true},
 		{name: "unsupported type", input: []string{"invalid"}, wantErr: true},
+		{name: "float64 overflow", input: float64(1e20), wantErr: true},
+		{name: "mult overflow", input: "999999999999999999GB", wantErr: true},
+		{name: "float mult overflow", input: "1e18GB", wantErr: true},
 	}
 
 	for _, tc := range tests {
