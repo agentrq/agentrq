@@ -65,6 +65,8 @@ const usageFooter = (id) => ({
   createdAt: '2026-09-22T07:01:00Z',
 })
 
+let toolCalls = []
+
 /** A task whose agent is mid-turn: somebody spoke, and no footer has landed. */
 const workingTask = () => ({
   id: 't1',
@@ -73,7 +75,7 @@ const workingTask = () => ({
   assignee: 'agent',
   body: '',
   messages: [fromHuman('h1')],
-  toolCalls: [],
+  toolCalls,
 })
 
 const respondToTask = vi.fn(() => Promise.resolve({ task: workingTask() }))
@@ -190,6 +192,7 @@ async function mount() {
 }
 
 beforeEach(() => {
+  toolCalls = []
   while (mounted.length) mounted.pop().unmount()
   document.body.innerHTML = ''
   // The queue is kept on disk on purpose, so it outlives a test as readily as
@@ -310,6 +313,15 @@ describe('the working indicator', () => {
 
     await endTheTurn()
     expect(indicator()).toBeNull()
+  })
+
+  it('lists the last three tool calls in words while the agent works', async () => {
+    toolCalls = Array.from({ length: 6 }, (_, i) => ({
+      id: `c${i}`, toolName: 'Bash', inputPreview: `{"command":"step ${i}"}`, createdAt: `2026-09-22T07:0${i}:00Z`,
+    }))
+    const { el } = await mount()
+    const rows = [...el.querySelectorAll('[data-testid="agent-working-tools"] li')].map((li) => li.textContent)
+    expect(rows).toEqual(['Ran step 3', 'Ran step 4', 'Ran step 5'])
   })
 })
 

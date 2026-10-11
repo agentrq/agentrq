@@ -310,3 +310,89 @@ export function filterTrajectory(items, { lane = null, query = '' } = {}) {
       .some((field) => field?.toLowerCase().includes(needle));
   });
 }
+
+/** The input fields worth showing, most telling first. */
+const TOOL_INPUT_KEYS = ['command', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern', 'description', 'prompt'];
+
+/** What a tool call was given, as one short string: the field that says it, or the raw preview. */
+function toolInputGist(inputPreview) {
+  if (!inputPreview) return '';
+  let parsed = null;
+  try {
+    parsed = JSON.parse(inputPreview);
+  } catch {
+    // Truncated for storage, so often not JSON at all: shown as it is.
+  }
+  if (parsed && typeof parsed === 'object') {
+    for (const key of TOOL_INPUT_KEYS) {
+      if (typeof parsed[key] === 'string' && parsed[key]) return truncate(parsed[key], 80);
+    }
+    const first = Object.values(parsed).find((v) => typeof v === 'string' && v);
+    return first ? truncate(first, 80) : '';
+  }
+  return truncate(inputPreview, 80);
+}
+
+/** "GetTask" and "get_task" both read "Get task". */
+function humanizeToolName(name) {
+  const words = String(name).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// [name pattern, what it did, icon kind]. WebSearch is before Search-like names
+// so the longer phrase wins.
+const TOOL_VERBS = [
+  [/^websearch/i, 'Searched the web for', 'search'],
+  [/^(bash|shell|exec|execute|run)/i, 'Ran', 'run'],
+  [/^read/i, 'Read', 'read'],
+  [/^(multi)?edit/i, 'Edited', 'edit'],
+  [/^(write|create)/i, 'Wrote', 'edit'],
+  [/^(grep|glob|search|find)/i, 'Searched for', 'search'],
+  [/^(web)?fetch/i, 'Fetched', 'read'],
+  [/^(task|agent)$/i, 'Delegated', 'tool'],
+];
+
+/** Which icon a tool call gets: what kind of thing it did. */
+export function toolCallKind(call) {
+  const raw = String(call?.toolName ?? '').trim();
+  return TOOL_VERBS.find(([pattern]) => pattern.test(raw))?.[2] ?? 'tool';
+}
+
+/**
+ * A tool call as a person would say it: "Ran npm test", "Read src/app.js",
+ * "Get task (agentrq-workspace)". The agent's tool names are for machines.
+ *
+ * @param {{toolName?: string, inputPreview?: string, description?: string}} call
+ * @returns {string}
+ */
+export function describeToolCall(call) {
+  const raw = String(call?.toolName ?? '').trim();
+  if (!raw) return 'Used a tool';
+  const gist = toolInputGist(call.inputPreview) || truncate(call.description, 80);
+
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(raw);
+  if (mcp) return `${humanizeToolName(mcp[2])} (${mcp[1].replace(/^claude_ai_/, '').replace(/_/g, ' ')})`;
+
+  if (/^todowrite$/i.test(raw)) return 'Updated the to-do list';
+  const verb = TOOL_VERBS.find(([pattern]) => pattern.test(raw));
+  if (verb) return gist ? `${verb[1]} ${gist}` : verb[1];
+  return gist ? `${humanizeToolName(raw)}: ${gist}` : humanizeToolName(raw);
+}
+
+/**
+ * The last few tool calls of the turn being worked on, newest last, each
+ * described. Calls from before the turn began are left out, so a quiet start
+ * does not show the previous turn's tools as if they were this one's.
+ *
+ * @param {Array<object>} toolCalls
+ * @param {number|null} since ms timestamp the turn began, or null for all
+ * @param {number} limit
+ */
+export function recentToolCalls(toolCalls, since = null, limit = 5) {
+  const list = Array.isArray(toolCalls) ? toolCalls : [];
+  return list
+    .filter((call) => since === null || new Date(call.createdAt).getTime() >= since)
+    .sort(byCreatedAt)
+    .slice(-limit)
+    .map((call) => ({ id: call.id, text: describeToolCall(call), kind: toolCallKind(call) }));
+}

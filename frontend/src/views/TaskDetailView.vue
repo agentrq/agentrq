@@ -695,6 +695,21 @@
         </span>
         <span>Agent is working · {{ busyElapsed }}</span>
       </div>
+      <ul v-if="agentBusy && busyToolCalls.length" data-testid="agent-working-tools"
+          class="flex flex-col gap-1.5 -mt-3 ml-1 pl-3 border-l-2 border-gray-200 dark:border-zinc-700 min-w-0">
+        <li v-for="(call, i) in busyToolCalls" :key="call.id"
+            class="flex items-center gap-2 min-w-0 text-[11px] text-gray-500 dark:text-zinc-400"
+            :class="i < busyToolCalls.length - 1 ? 'opacity-70' : ''">
+          <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path v-if="call.kind === 'run'" d="M4 17l6-6-6-6M12 19h8" />
+            <g v-else-if="call.kind === 'search'"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></g>
+            <g v-else-if="call.kind === 'read'"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" /><path d="M14 3v5h5" /></g>
+            <path v-else-if="call.kind === 'edit'" d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
+            <path v-else d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z" />
+          </svg>
+          <span class="truncate">{{ call.text }}</span>
+        </li>
+      </ul>
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
@@ -1012,8 +1027,8 @@ import {
   planProgress,
   telemetryText,
 } from '../composables/useAgentTelemetry';
-import { belongsInThread } from '../composables/useTrajectory';
-import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
+import { belongsInThread, recentToolCalls } from '../composables/useTrajectory';
+import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate } from '../composables/useTaskEvents';
@@ -1392,6 +1407,9 @@ watch(agentBusy, (busy) => {
 });
 const busyClockTimer = setInterval(() => { busyClock.value = Date.now(); }, 1000);
 onUnmounted(() => clearInterval(busyClockTimer));
+// What it is doing, in words: its last three tool calls since the turn began or
+// the agent last spoke, newest at the foot. The trajectory has them all, filterable; this is the glance.
+const busyToolCalls = computed(() => recentToolCalls(sortedToolCalls.value, activitySince(sortedMessages.value), 3));
 const busyElapsed = computed(() => formatElapsed(
   busyClock.value - (turnStartedAt(sortedMessages.value) ?? busyFallbackStart.value),
 ));

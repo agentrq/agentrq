@@ -7,6 +7,9 @@ import { describe, it, expect } from 'vitest'
 import {
   TRAJECTORY_LANES,
   belongsInThread,
+  describeToolCall,
+  recentToolCalls,
+  toolCallKind,
   buildTrajectory,
   defaultDetailTab,
   filterTrajectory,
@@ -400,5 +403,76 @@ describe('defaultDetailTab', () => {
   it('falls back to the summary with nothing selected', () => {
     expect(defaultDetailTab(null)).toBe('summary')
     expect(defaultDetailTab(undefined)).toBe('summary')
+  })
+})
+
+describe('describeToolCall', () => {
+  const d = (toolName, inputPreview, description) => describeToolCall({ toolName, inputPreview, description })
+
+  it('says a command, a read and an edit the way a person would', () => {
+    expect(d('Bash', '{"command":"npm test"}')).toBe('Ran npm test')
+    expect(d('Read', '{"file_path":"src/app.js"}')).toBe('Read src/app.js')
+    expect(d('Edit', '{"file_path":"a.js","old_string":"x"}')).toBe('Edited a.js')
+    expect(d('Write', '{"path":"b.md"}')).toBe('Wrote b.md')
+    expect(d('Grep', '{"pattern":"TODO"}')).toBe('Searched for TODO')
+    expect(d('WebFetch', '{"url":"https://example.com"}')).toBe('Fetched https://example.com')
+    expect(d('WebSearch', '{"query":"oauth"}')).toBe('Searched the web for oauth')
+    expect(d('Task', '{"description":"look around"}')).toBe('Delegated look around')
+  })
+
+  it('names the server of an MCP tool and spells the tool out', () => {
+    expect(d('mcp__agentrq-workspace__getTask', '{"taskId":"t1"}')).toBe('Get task (agentrq-workspace)')
+    expect(d('mcp__claude_ai_Google_Docs__read_doc')).toBe('Read doc (Google Docs)')
+  })
+
+  it('handles the to-do list, unknown tools, and bare verbs', () => {
+    expect(d('TodoWrite', '{}')).toBe('Updated the to-do list')
+    expect(d('MultiEdit')).toBe('Edited')
+    expect(d('Foo_bar', '{"x":"hello"}')).toBe('Foo bar: hello')
+    expect(d('FooBar')).toBe('Foo bar')
+    expect(d('Foo', '{"n":1}')).toBe('Foo')
+  })
+
+  it('reads an input that is not JSON, or is cut off, as it is', () => {
+    expect(d('Bash', 'ls -la /tmp')).toBe('Ran ls -la /tmp')
+    expect(d('Bash', '{"command":"echo hi", "tru')).toBe('Ran {"command":"echo hi", "tru')
+    expect(d('Foo', '', 'does a thing')).toBe('Foo: does a thing')
+  })
+
+  it('has a fallback when there is no tool name', () => {
+    expect(describeToolCall({})).toBe('Used a tool')
+    expect(describeToolCall()).toBe('Used a tool')
+  })
+})
+
+describe('recentToolCalls', () => {
+  const call = (id, time) => ({ id, toolName: 'Bash', inputPreview: `{"command":"c${id}"}`, createdAt: `2026-10-11T10:${time}Z` })
+
+  it('keeps the last five of the turn by default, oldest first', () => {
+    const calls = Array.from({ length: 7 }, (_, i) => call(`t${i}`, `0${i}:00`))
+    expect(recentToolCalls(calls).map((c) => c.id)).toEqual(['t2', 't3', 't4', 't5', 't6'])
+    expect(recentToolCalls(calls)[0].text).toBe('Ran ct2')
+  })
+
+  it('leaves out calls from before the turn began', () => {
+    const calls = [call('old', '00:00'), call('new', '05:00')]
+    expect(recentToolCalls(calls, Date.parse('2026-10-11T10:03:00Z')).map((c) => c.id)).toEqual(['new'])
+  })
+
+  it('is empty without calls', () => {
+    expect(recentToolCalls()).toEqual([])
+  })
+})
+
+describe('toolCallKind', () => {
+  it('sorts tools into the kinds that get an icon', () => {
+    expect(toolCallKind({ toolName: 'Bash' })).toBe('run')
+    expect(toolCallKind({ toolName: 'Read' })).toBe('read')
+    expect(toolCallKind({ toolName: 'WebFetch' })).toBe('read')
+    expect(toolCallKind({ toolName: 'Edit' })).toBe('edit')
+    expect(toolCallKind({ toolName: 'WebSearch' })).toBe('search')
+    expect(toolCallKind({ toolName: 'Grep' })).toBe('search')
+    expect(toolCallKind({ toolName: 'mcp__x__y' })).toBe('tool')
+    expect(toolCallKind()).toBe('tool')
   })
 })

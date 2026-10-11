@@ -209,3 +209,22 @@ export function workDurations(messages) {
   }
   return out
 }
+
+/**
+ * Where the "what it is doing" list starts: the turn's beginning, or the
+ * agent's latest message if it has spoken since. A message is the agent
+ * reporting what it did, so the list of what it did clears with it and starts
+ * again from there.
+ */
+export function activitySince(messages) {
+  const list = Array.isArray(messages) ? messages : []
+  let since = turnStartedAt(list)
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (isAPlainReply(list[i]) && list[i].createdAt) {
+      const at = new Date(list[i].createdAt).getTime()
+      if (since === null || at > since) since = at
+      break
+    }
+  }
+  return since
+}

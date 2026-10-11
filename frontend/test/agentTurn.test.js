@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { agentIsWorking, agentIsBusy, turnStartedAt, formatElapsed, workDurations, workingPlaceholder } from '../src/composables/useAgentTurn'
+import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../src/composables/useAgentTurn'
 
 const gateway = { agentSupportsStop: true, agentConnected: true }
 const ongoing = { status: 'ongoing', assignee: 'agent' }
@@ -289,5 +289,26 @@ describe('workDurations', () => {
 
   it('is empty for no messages', () => {
     expect(workDurations()).toEqual({})
+  })
+})
+
+describe('activitySince', () => {
+  const at = (sender, id, time, extra = {}) => ({ id, sender, createdAt: `2026-10-11T10:${time}Z`, ...extra })
+
+  it('starts at the turn, and moves to the agent\'s latest message', () => {
+    expect(activitySince([at('human', 'h', '00:00')])).toBe(Date.parse('2026-10-11T10:00:00Z'))
+    expect(activitySince([at('human', 'h', '00:00'), at('agent', 'a', '01:00')])).toBe(Date.parse('2026-10-11T10:01:00Z'))
+  })
+
+  it('ignores telemetry and undated messages, and keeps the turn start if later', () => {
+    const messages = [
+      at('agent', 'a', '00:00'),
+      at('human', 'h', '02:00'),
+      at('agent', 'u', '03:00', { metadata: { type: 'agent_usage' } }),
+    ]
+    expect(activitySince(messages)).toBe(Date.parse('2026-10-11T10:02:00Z'))
+    expect(activitySince([{ id: 'x', sender: 'agent' }])).toBeNull()
+    expect(activitySince([at('agent', 'a', '01:00')])).toBe(Date.parse('2026-10-11T10:01:00Z'))
+    expect(activitySince()).toBeNull()
   })
 })
