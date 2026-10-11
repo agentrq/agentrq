@@ -242,3 +242,96 @@ func TestSkillsConfig_ResolveMaxSubFileBytes(t *testing.T) {
 		}
 	})
 }
+
+func TestParseCount(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   any
+		want    int
+		wantErr bool
+	}{
+		{name: "nil", input: nil, want: 0},
+		{name: "int", input: 256, want: 256},
+		{name: "int negative", input: -1, wantErr: true},
+		{name: "int64", input: int64(512), want: 512},
+		{name: "int64 negative", input: int64(-5), wantErr: true},
+		{name: "float64", input: float64(100), want: 100},
+		{name: "float64 negative", input: float64(-1.5), wantErr: true},
+		{name: "empty string", input: "   ", want: 0},
+		{name: "plain int string", input: "256", want: 256},
+		{name: "negative int string", input: "-10", wantErr: true},
+		{name: "invalid string", input: "abc", wantErr: true},
+		{name: "unsupported type", input: []string{"bad"}, wantErr: true},
+		{name: "float64 overflow", input: float64(1e20), wantErr: true},
+		{name: "int64 overflow", input: "99999999999999999999999", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseCount(tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ParseCount(%v) err = %v, wantErr = %v", tc.input, err, tc.wantErr)
+			}
+			if !tc.wantErr && got != tc.want {
+				t.Fatalf("ParseCount(%v) = %d, want %d", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSkillsConfig_ResolveMaxFiles(t *testing.T) {
+	t.Run("default when empty and no env", func(t *testing.T) {
+		cfg := SkillsConfig{}
+		got, err := cfg.ResolveMaxFiles()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != DefaultSkillsMaxFiles {
+			t.Fatalf("got %d, want default %d", got, DefaultSkillsMaxFiles)
+		}
+	})
+
+	t.Run("YAML fields precedence", func(t *testing.T) {
+		cfg1 := SkillsConfig{MaxFiles: 100}
+		got, err := cfg1.ResolveMaxFiles()
+		if err != nil || got != 100 {
+			t.Fatalf("got %d, err %v", got, err)
+		}
+
+		cfg2 := SkillsConfig{MaxFileCount: "500"}
+		got, err = cfg2.ResolveMaxFiles()
+		if err != nil || got != 500 {
+			t.Fatalf("got %d, err %v", got, err)
+		}
+
+		badCfg := SkillsConfig{MaxFiles: "invalid"}
+		_, err = badCfg.ResolveMaxFiles()
+		if err == nil {
+			t.Fatal("expected error for invalid count")
+		}
+	})
+
+	t.Run("env var fallback", func(t *testing.T) {
+		envs := []string{
+			"AGENTRQ_SKILLS_MAX_FILES",
+			"AGENTRQ_SKILLS_MAX_FILE_COUNT",
+			"AGENTRQ_MAX_SKILLS_FILES",
+		}
+		for _, e := range envs {
+			t.Setenv(e, "300")
+			cfg := SkillsConfig{}
+			got, err := cfg.ResolveMaxFiles()
+			if err != nil || got != 300 {
+				t.Fatalf("env %s: got %d, err %v", e, got, err)
+			}
+			os.Unsetenv(e)
+		}
+
+		t.Setenv("AGENTRQ_SKILLS_MAX_FILES", "bad")
+		cfg := SkillsConfig{}
+		_, err := cfg.ResolveMaxFiles()
+		if err == nil {
+			t.Fatal("expected error for bad env var value")
+		}
+	})
+}

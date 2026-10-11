@@ -376,6 +376,32 @@ func TestFetch_Limits(t *testing.T) {
 	}
 }
 
+func TestFetch_ConfigurableMaxFilesLimit(t *testing.T) {
+	skill.SetMaxFiles(2)
+	defer skill.SetMaxFiles(0)
+
+	root := "repo-main/"
+	var entries []tarEntry
+	entries = append(entries, tarEntry{name: root + "three/SKILL.md", body: skillMD("three", "Three files.") + "See parts.\n"})
+	entries = append(entries, tarEntry{name: root + "three/parts/f1.md", body: "x"})
+	entries = append(entries, tarEntry{name: root + "three/parts/f2.md", body: "x"})
+
+	gh := &fakeGitHub{commitBody: testSHA, tarball: buildTarball(t, entries)}
+	s, done := gh.server(t)
+	defer done()
+
+	res, err := s.Fetch(context.Background(), "https://github.com/acme/repo/tree/main", nil)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Skills) != 0 {
+		t.Fatalf("expected 0 imported skills, got %+v", names(res.Skills))
+	}
+	if len(res.Skipped) != 1 || !strings.Contains(res.Skipped[0].Reason, "the limit is 2") {
+		t.Fatalf("expected skipped reason with limit 2, got %+v", res.Skipped)
+	}
+}
+
 func names(skills []Skill) []string {
 	var out []string
 	for _, s := range skills {

@@ -466,8 +466,8 @@ func collect(entries []entry, manifests map[string][]byte, src Source, only []st
 		case reason != "":
 		case seen[sk.Name]:
 			reason = fmt.Sprintf("another skill in this import is already called %q", sk.Name)
-		case len(sk.Files) > skill.MaxFiles:
-			reason = fmt.Sprintf("has %d files; the limit is %d", len(sk.Files), skill.MaxFiles)
+		case len(sk.Files) > skill.MaxFilesLimit():
+			reason = fmt.Sprintf("has %d files; the limit is %d", len(sk.Files), skill.MaxFilesLimit())
 		case size(sk) > budget:
 			reason = fmt.Sprintf("would take the import past its %d MB limit; import it on its own with /tree/<ref>/%s", MaxImportBytes/1024/1024, repoPath)
 		}

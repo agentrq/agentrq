@@ -44,6 +44,7 @@ const (
 var (
 	configuredMaxSkillFileBytes = 0
 	configuredMaxSubFileBytes   = 0
+	configuredMaxFiles          = 0
 )
 
 // SetMaxSkillFileBytes sets the maximum allowed size in bytes for SKILL.md.
@@ -56,6 +57,12 @@ func SetMaxSkillFileBytes(n int) {
 // If n <= 0, it resets to the default (MaxSubFileBytes, 64 KiB).
 func SetMaxSubFileBytes(n int) {
 	configuredMaxSubFileBytes = n
+}
+
+// SetMaxFiles sets the maximum allowed number of files in one skill.
+// If n <= 0, it resets to the default (MaxFiles, 256).
+func SetMaxFiles(n int) {
+	configuredMaxFiles = n
 }
 
 // MaxSkillFileLimit returns the active limit for SKILL.md in bytes.
@@ -96,6 +103,25 @@ func MaxSubFileLimit() int {
 		}
 	}
 	return MaxSubFileBytes
+}
+
+// MaxFilesLimit returns the active limit for files in one skill.
+func MaxFilesLimit() int {
+	if configuredMaxFiles > 0 {
+		return configuredMaxFiles
+	}
+	for _, env := range []string{
+		"AGENTRQ_SKILLS_MAX_FILES",
+		"AGENTRQ_SKILLS_MAX_FILE_COUNT",
+		"AGENTRQ_MAX_SKILLS_FILES",
+	} {
+		if val := os.Getenv(env); val != "" {
+			if n, err := config.ParseCount(val); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return MaxFiles
 }
 
 var namePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)

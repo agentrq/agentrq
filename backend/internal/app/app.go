@@ -153,7 +153,7 @@ func New(cfg Config) (*App, error) {
 		if cfg.Memory.MaxSize == nil && cfg.Memory.MaxMemorySize == nil && cfg.Memory.MaxFileSize == nil && cfg.Memory.MaxBytes == nil {
 			_ = cfg.ConfigSvc.Populate("memory", &cfg.Memory)
 		}
-		if cfg.Skills.MaxFileSize == nil && cfg.Skills.MaxSkillFileSize == nil && cfg.Skills.MaxSize == nil && cfg.Skills.MaxBytes == nil {
+		if cfg.Skills.MaxFileSize == nil && cfg.Skills.MaxSkillFileSize == nil && cfg.Skills.MaxSize == nil && cfg.Skills.MaxBytes == nil && cfg.Skills.MaxFiles == nil && cfg.Skills.MaxFileCount == nil {
 			_ = cfg.ConfigSvc.Populate("skills", &cfg.Skills)
 		}
 	}
@@ -165,6 +165,9 @@ func New(cfg Config) (*App, error) {
 	}
 	if subLimit, err := cfg.Skills.ResolveMaxSubFileBytes(); err == nil && subLimit > 0 {
 		skill.SetMaxSubFileBytes(subLimit)
+	}
+	if filesLimit, err := cfg.Skills.ResolveMaxFiles(); err == nil && filesLimit > 0 {
+		skill.SetMaxFiles(filesLimit)
 	}
 
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")

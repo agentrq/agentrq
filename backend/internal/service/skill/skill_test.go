@@ -5,6 +5,7 @@
 package skill
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -251,6 +252,40 @@ func TestCheckContent_ConfigurableLimits(t *testing.T) {
 		}
 		if err := CheckContent("data.txt", filled(50001)); err == nil {
 			t.Error("data.txt over env limit should fail")
+		}
+	})
+}
+
+func TestMaxFilesLimit_Configurable(t *testing.T) {
+	t.Run("default limit", func(t *testing.T) {
+		SetMaxFiles(0)
+		if got := MaxFilesLimit(); got != MaxFiles {
+			t.Fatalf("got %d, want default %d", got, MaxFiles)
+		}
+	})
+
+	t.Run("SetMaxFiles programmatic override", func(t *testing.T) {
+		SetMaxFiles(10)
+		defer SetMaxFiles(0)
+
+		if got := MaxFilesLimit(); got != 10 {
+			t.Fatalf("got %d, want 10", got)
+		}
+	})
+
+	t.Run("env var override", func(t *testing.T) {
+		SetMaxFiles(0)
+		envs := []string{
+			"AGENTRQ_SKILLS_MAX_FILES",
+			"AGENTRQ_SKILLS_MAX_FILE_COUNT",
+			"AGENTRQ_MAX_SKILLS_FILES",
+		}
+		for _, e := range envs {
+			t.Setenv(e, "42")
+			if got := MaxFilesLimit(); got != 42 {
+				t.Fatalf("env %s: got %d, want 42", e, got)
+			}
+			os.Unsetenv(e)
 		}
 	})
 }

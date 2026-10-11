@@ -88,6 +88,7 @@ memory:
 skills:
   storage: ${AGENTRQ_SKILLS_STORAGE:local}
   maxFileSize: ${AGENTRQ_SKILLS_MAX_FILE_SIZE:98304}
+  maxFiles: ${AGENTRQ_SKILLS_MAX_FILES:256}
 
 artifacts:
   storage: ${AGENTRQ_ARTIFACTS_STORAGE:local}
