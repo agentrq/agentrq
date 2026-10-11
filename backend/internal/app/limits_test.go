@@ -40,7 +40,7 @@ func loadLimits(t *testing.T) (Config, error) {
 func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 	resetLimits(t)
 	t.Setenv("ENV", "development")
-	for _, env := range []string{"AGENTRQ_MEMORYMD_MAX_FILE_SIZE", "AGENTRQ_SKILLSMD_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILES"} {
+	for _, env := range []string{"AGENTRQ_MEMORY_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILES"} {
 		t.Setenv(env, "")
 	}
 	cfg, err := loadLimits(t)
@@ -58,8 +58,8 @@ func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 func TestLimitsAreReadFromTheirThreeEnvVars(t *testing.T) {
 	resetLimits(t)
 	t.Setenv("ENV", "development")
-	t.Setenv("AGENTRQ_MEMORYMD_MAX_FILE_SIZE", "32768")
-	t.Setenv("AGENTRQ_SKILLSMD_MAX_FILE_SIZE", "131072")
+	t.Setenv("AGENTRQ_MEMORY_MAX_FILE_SIZE", "32768")
+	t.Setenv("AGENTRQ_SKILLS_MAX_FILE_SIZE", "131072")
 	t.Setenv("AGENTRQ_SKILLS_MAX_FILES", "10")
 	cfg, err := loadLimits(t)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestLimitsAreReadFromTheirThreeEnvVars(t *testing.T) {
 func TestLimitsIgnoreMisspeltEnvVars(t *testing.T) {
 	resetLimits(t)
 	t.Setenv("ENV", "development")
-	t.Setenv("AGENTRQ_MEMORYMD_MAX_FILE_SIZE", "")
+	t.Setenv("AGENTRQ_MEMORY_MAX_FILE_SIZE", "")
 	t.Setenv("AGENTRQ_MAX_MEMORY_SIZE", "32768")
 	t.Setenv("AGENTRQ_MEMORY_MAX_BYTES", "32768")
 	t.Setenv("AGENTRQ_MEMORY_MAX_SIZE", "32768")
