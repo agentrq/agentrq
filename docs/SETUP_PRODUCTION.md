@@ -227,8 +227,8 @@ An attachment's upload type is kept only when a browser cannot run it; anything 
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_MEMORY_MAX_SIZE` | `16384` | Most bytes one workspace memory may hold; at most `131072`. |
-| `AGENTRQ_SKILLS_MAX_FILE_SIZE` | `98304` | Most bytes a skill's `SKILL.md` may hold. Its other files are capped at 64 KiB. |
+| `AGENTRQ_MEMORYMD_MAX_FILE_SIZE` | `16384` | Most bytes one workspace memory may hold; at most `131072`. |
+| `AGENTRQ_SKILLSMD_MAX_FILE_SIZE` | `98304` | Most bytes a skill's `SKILL.md` may hold. Its other files are capped at 64 KiB. |
 | `AGENTRQ_SKILLS_MAX_FILES` | `256` | Most files in one skill, `SKILL.md` included. |
 
 Values are whole numbers. The server refuses to start on anything else, or on a memory size above `131072`.
