@@ -53,3 +53,8 @@ three places, and they must agree". A coremcp resource that needs them should
 template the live values it actually has (this server's own `baseURL`, for an
 enrol command) and point at the docs URL for the rest, rather than adding a
 fourth copy of the same steps.
+
+**An open page hears of a change made here only through its CRUD event**, which
+`app.go`'s forwarder turns into a stream event (`stream_events.go`). A REST
+handler that calls `bus.Publish` itself leaves the same change made by the
+supervisor invisible until a reload — which is how forks and task deletes were.

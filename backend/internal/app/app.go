@@ -743,52 +743,8 @@ func New(cfg Config) (*App, error) {
 				continue
 			}
 
-			// Forward task and message updates to the EventBus in the background
-			go func(ev entity.CRUDEvent) {
-				if publishWorkspaceListChange(bus, ev) {
-					return
-				}
-				ctx := context.Background()
-				ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
-				if err != nil {
-					return
-				}
-				ownerID := monoflake.ID(ws.UserID).String()
-
-				var taskID int64
-				var eventType string
-
-				switch ev.ResourceType {
-				case entity.ResourceTask:
-					taskID = ev.ResourceID
-					switch ev.Action {
-					case entity.ActionTaskCreate:
-						eventType = "task.created"
-					case entity.ActionTaskComplete:
-						eventType = "status.updated"
-					default:
-						eventType = "task.updated"
-					}
-				case entity.ResourceMessage:
-					if ev.Action == entity.ActionMessageCreate {
-						msg, err := repo.SystemGetMessage(ctx, ev.ResourceID)
-						if err == nil {
-							taskID = msg.TaskID
-							eventType = "reply.received"
-						}
-					}
-				}
-
-				if taskID != 0 && eventType != "" {
-					t, err := taskEventPayload(ctx, repo, taskID)
-					if err == nil {
-						bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
-							Type:    eventType,
-							Payload: mapper.FromModelTaskToView(t),
-						})
-					}
-				}
-			}(event)
+			// Forwarded in the background, so a slow read never holds up the topic.
+			go forwardCRUDEvent(context.Background(), repo, bus, event)
 		}
 		zlog.Warn().Msg("[app] central SSE forwarder pubsub channel closed")
 	}()

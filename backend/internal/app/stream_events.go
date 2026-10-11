@@ -1,0 +1,107 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package app
+
+import (
+	"context"
+
+	"github.com/mustafaturan/monoflake"
+
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+)
+
+// forwardCRUDEvent puts a CRUD event on the open pages' streams, as the event
+// the web app reacts to. It is the one way a change made by the supervisor's
+// MCP, which has no stream of its own, reaches the screen.
+func forwardCRUDEvent(ctx context.Context, repo base.Repository, bus *eventbus.Bus, ev entity.CRUDEvent) {
+	if publishWorkspaceListChange(bus, ev) {
+		return
+	}
+	ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
+	if err != nil {
+		return
+	}
+	ownerID := monoflake.ID(ws.UserID).String()
+	if publishTaskDelete(bus, ev, ownerID) {
+		return
+	}
+
+	var taskID int64
+	var eventType string
+
+	switch ev.ResourceType {
+	case entity.ResourceTask:
+		taskID = ev.ResourceID
+		switch ev.Action {
+		case entity.ActionTaskCreate:
+			eventType = "task.created"
+		case entity.ActionTaskComplete:
+			eventType = "status.updated"
+		default:
+			eventType = "task.updated"
+		}
+	case entity.ResourceMessage:
+		if ev.Action == entity.ActionMessageCreate {
+			msg, err := repo.SystemGetMessage(ctx, ev.ResourceID)
+			if err == nil {
+				taskID = msg.TaskID
+				eventType = "reply.received"
+			}
+		}
+	}
+
+	if taskID != 0 && eventType != "" {
+		t, err := taskEventPayload(ctx, repo, taskID)
+		if err == nil {
+			bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
+				Type:    eventType,
+				Payload: mapper.FromModelTaskToView(t),
+			})
+		}
+	}
+}
+
+// workspacesChangedEvent tells the web app to read its workspace list again.
+const workspacesChangedEvent = "workspaces.changed"
+
+// publishWorkspaceListChange puts a workspace being added, changed or removed
+// on its owner's stream, and reports whether ev was a workspace
+// event at all. Without it a workspace created, forked or merged anywhere but
+// the open tab — by the supervisor's MCP, say — shows only after a reload.
+//
+// The owner comes from the event, not the row: a deleted workspace has none.
+// A fork emits a create as well as its fork create, so only the create is sent.
+func publishWorkspaceListChange(bus *eventbus.Bus, ev entity.CRUDEvent) bool {
+	if ev.ResourceType != entity.ResourceWorkspace {
+		return false
+	}
+	switch ev.Action {
+	// An update can archive or rename, which moves or removes the row too.
+	case entity.ActionWorkspaceCreate, entity.ActionWorkspaceUpdate, entity.ActionWorkspaceDelete, entity.ActionWorkspaceForkMerge:
+		bus.Publish(0, monoflake.ID(ev.UserID).String(), eventbus.Event{
+			Type:    workspacesChangedEvent,
+			Payload: map[string]string{"workspaceId": monoflake.ID(ev.ResourceID).String()},
+		})
+	}
+	return true
+}
+
+// publishTaskDelete puts a deleted task on the stream, and reports whether ev
+// was a delete. It is sent from here, not by the REST handler, so a delete by
+// the supervisor's MCP removes the task from open pages too. The task row is
+// gone, so the event carries only its id.
+func publishTaskDelete(bus *eventbus.Bus, ev entity.CRUDEvent, ownerID string) bool {
+	if ev.ResourceType != entity.ResourceTask || ev.Action != entity.ActionTaskDelete {
+		return false
+	}
+	bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
+		Type:    "task.deleted",
+		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String()},
+	})
+	return true
+}

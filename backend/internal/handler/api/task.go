@@ -681,12 +681,8 @@ func (h *handler) deleteTask() fiber.Handler {
 			return c.Send(e)
 		}
 
-		// Broadcast task deletion
-		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
-			Type:    "task.deleted",
-			Payload: map[string]string{"id": monoflake.ID(rq.TaskID).String()},
-		})
-
+		// The stream hears of it from the delete's CRUD event, which an MCP
+		// delete raises too; see app.publishTaskDelete.
 		c.Status(http.StatusNoContent)
 		return c.Send([]byte(""))
 	}
