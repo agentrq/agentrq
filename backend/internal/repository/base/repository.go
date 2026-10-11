@@ -1617,7 +1617,7 @@ func (r *repository) UpsertMemory(ctx context.Context, m model.Memory) (model.Me
 
 // ListMemoriesByWorkspace returns every memory in a workspace, ordered by name.
 //
-// Content comes back with them: the rows are capped at 64 KiB and a workspace
+// Content comes back with them: the rows are capped at 128 KiB and a workspace
 // holds a handful, so a second query per memory would cost more than it saves.
 // Callers that only need the index — the settings list — drop it themselves.
 func (r *repository) ListMemoriesByWorkspace(ctx context.Context, userID, workspaceID int64) ([]model.Memory, error) {

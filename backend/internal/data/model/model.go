@@ -548,7 +548,7 @@ type (
 
 // MaxMemoryContentBytes is the most a memory may hold whatever memory.maxSize
 // says: the repository refuses anything larger.
-const MaxMemoryContentBytes = 64 * 1024
+const MaxMemoryContentBytes = 128 * 1024
 
 const (
 	ActionIDUnknown uint8 = iota

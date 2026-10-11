@@ -77,7 +77,7 @@ storage:
   dir: ${AGENTRQ_STORAGE_DIR:./_storage}
   attachmentRetentionPeriod: ${AGENTRQ_APP_ATTACHMENT_RETENTION:7d}
 
-# Most bytes one workspace memory may hold: 16384 (16 KiB) by default, 65536 at most.
+# Most bytes one workspace memory may hold: 16384 (16 KiB) by default, 131072 at most.
 memory:
   maxSize: ${AGENTRQ_MEMORY_MAX_SIZE:16384}
 

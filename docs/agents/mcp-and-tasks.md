@@ -106,7 +106,7 @@ it, any workspace's token could post into any task.
   per memory (16 KiB by default) and 32 characters per name, both refused rather
   than truncated — an agent told its memory is too large can split it, while one
   silently cut in half cannot know to. The repository also refuses anything over
-  64 KiB, so no setting can grow a memory past that, and the server will not start
+  128 KiB, so no setting can grow a memory past that, and the server will not start
   with one above it.
 - A `loadMemory` miss is **not** an error: every agent's first call on a fresh
   workspace misses, and answering with an error teaches agents to stop asking.
