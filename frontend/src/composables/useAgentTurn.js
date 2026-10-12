@@ -122,18 +122,23 @@ export function agentIsWorking({ task, workspace, messages } = {}) {
   // Whether this agent publishes usage footers at all decides which marker is
   // trusted. One that does gets the accurate answer; one that does not gets the
   // old, loose one rather than a composer that never unlocks.
-  const publishesFooters = list.some(isUsageFooter)
+  return !turnHasEnded(list, !list.some(isUsageFooter))
+}
 
+/**
+ * Whether the latest turn has ended: a footer or a stop-reason note since a
+ * person last spoke, or, with `repliesEnd`, a plain reply. A task that has been
+ * started and has not said anything yet has not ended one: the agent has the
+ * task and is working on it.
+ */
+function turnHasEnded(list, repliesEnd) {
   for (let i = list.length - 1; i >= 0; i -= 1) {
     const message = list[i]
-    if (isUsageFooter(message) || isStopReasonNote(message)) return false
-    if (!publishesFooters && isAPlainReply(message)) return false
-    if (isFromAPerson(message)) return true
+    if (isUsageFooter(message) || isStopReasonNote(message)) return true
+    if (repliesEnd && isAPlainReply(message)) return true
+    if (isFromAPerson(message)) return false
   }
-
-  // Nothing decisive either way: a task that has been started and has not said
-  // anything yet. The agent has the task and is working on it.
-  return true
+  return false
 }
 
 /**
@@ -151,24 +156,20 @@ export function workingPlaceholder() {
  * Whether to tell the person the agent is busy, which is a wider question than
  * `agentIsWorking`: that one decides Send versus Stop and so only holds where
  * the agent can be stopped. This one is only a sign of life, so it also holds
- * for an agent speaking MCP directly — connected, handed the task, and not yet
- * answered. A task waiting on the human, or with nobody connected, is not busy.
+ * for an agent speaking MCP directly.
+ *
+ * A message from the agent does not end it: agents report progress with
+ * `reply` while they work, and say they are done by moving the task out of
+ * `ongoing`. Only a turn's footer or stop-reason note, where the gateway sends
+ * them, is a sign the agent has stopped while the task stays ongoing. A task
+ * that is not the agent's, or with nobody connected, is not busy.
  */
 export function agentIsBusy({ task, workspace, messages } = {}) {
   if (!workspace?.agentConnected) return false
-  if (workspace.agentSupportsStop) return agentIsWorking({ task, workspace, messages })
   if (task?.assignee === 'human') return false
   if (!ACTIVE_STATUSES.has(task?.status)) return false
-
-  const list = Array.isArray(messages) ? messages : []
-  for (let i = list.length - 1; i >= 0; i -= 1) {
-    const message = list[i]
-    // Anything the agent put into the thread but telemetry is it answering or
-    // asking, so the next move is the human's.
-    if (message?.sender === 'agent' && agentTelemetryKind(message) === null) return false
-    if (isFromAPerson(message)) return true
-  }
-  return true
+  if (!workspace.agentSupportsStop) return true
+  return !turnHasEnded(Array.isArray(messages) ? messages : [], false)
 }
 
 /** When the turn being worked on began: the last thing a person said, if any. */

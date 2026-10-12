@@ -221,11 +221,28 @@ describe('agentIsBusy', () => {
     expect(agentIsBusy({ task: ongoing, workspace: direct, messages: [fromHuman()] })).toBe(true)
     expect(agentIsBusy({ task: ongoing, workspace: direct, messages: [] })).toBe(true)
     expect(agentIsBusy({ task: ongoing, workspace: direct })).toBe(true)
+    expect(agentIsBusy({ task: ongoing, workspace: gateway })).toBe(true)
   })
 
-  it('is false once the agent has answered, and for telemetry it is still busy', () => {
-    expect(agentIsBusy({ task: ongoing, workspace: direct, messages: [fromHuman(), fromAgent()] })).toBe(false)
+  // Agents report progress with `reply` while they work, and say they are done
+  // by moving the task out of ongoing, so a message from one does not end it.
+  it('stays busy when the agent sends a message while the task is ongoing', () => {
+    expect(agentIsBusy({ task: ongoing, workspace: direct, messages: [fromHuman(), fromAgent()] })).toBe(true)
     expect(agentIsBusy({ task: ongoing, workspace: direct, messages: [fromHuman(), usageFooter()] })).toBe(true)
+    expect(agentIsBusy({ task: ongoing, workspace: gateway, messages: [fromHuman(), fromAgent()] })).toBe(true)
+  })
+
+  // Unlike agentIsWorking, which unlocks the composer on a reply from an agent
+  // that never sends a footer, the sign of life stays.
+  it('does not take a reply for the end of a turn on a gateway that sends no footers', () => {
+    const messages = [fromHuman(), fromAgent()]
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(false)
+    expect(agentIsBusy({ task: ongoing, workspace: gateway, messages })).toBe(true)
+  })
+
+  it('ends at a turn\'s stop-reason note where the agent can be stopped', () => {
+    const note = { id: 'n1', sender: 'agent', text: '⚠️ The turn was cancelled before the agent finished.' }
+    expect(agentIsBusy({ task: ongoing, workspace: gateway, messages: [fromHuman(), fromAgent(), note] })).toBe(false)
   })
 
   it('is false for a task that is not the agent\'s to work on', () => {

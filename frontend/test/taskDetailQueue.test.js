@@ -315,6 +315,18 @@ describe('the working indicator', () => {
     expect(indicator()).toBeNull()
   })
 
+  it('stays while the agent sends a message mid-turn', async () => {
+    const { el } = await mount()
+    const progress = { id: 'p1', sender: 'agent', text: 'still on it', createdAt: '2026-09-22T07:02:00Z' }
+    events.value = [
+      ...events.value,
+      { type: 'task.updated', payload: { ...workingTask(), messages: [fromHuman('h1'), progress] } },
+    ]
+    await settle()
+
+    expect(el.querySelector('[data-testid="agent-working"]')).not.toBeNull()
+  })
+
   it('lists the last three tool calls in words while the agent works', async () => {
     toolCalls = Array.from({ length: 6 }, (_, i) => ({
       id: `c${i}`, toolName: 'Bash', inputPreview: `{"command":"step ${i}"}`, createdAt: `2026-09-22T07:0${i}:00Z`,
