@@ -1410,8 +1410,15 @@ onUnmounted(() => clearInterval(busyClockTimer));
 // What it is doing, in words: its last three tool calls since the turn began or
 // the agent last spoke, newest at the foot. The trajectory has them all, filterable; this is the glance.
 const busyToolCalls = computed(() => recentToolCalls(sortedToolCalls.value, activitySince(sortedMessages.value), 3));
+// With no person's message to count from, count from the task's own start, not
+// from when this view mounted: that restarted the clock on every visit.
+const taskStartedAt = computed(() => {
+  const at = task.value?.createdAt ?? sortedMessages.value[0]?.createdAt;
+  const ms = at ? new Date(at).getTime() : NaN;
+  return Number.isNaN(ms) ? null : ms;
+});
 const busyElapsed = computed(() => formatElapsed(
-  busyClock.value - (turnStartedAt(sortedMessages.value) ?? busyFallbackStart.value),
+  busyClock.value - (turnStartedAt(sortedMessages.value) ?? taskStartedAt.value ?? busyFallbackStart.value),
 ));
 
 // Everything queued for this task, as bubbles the thread can render. Only the
