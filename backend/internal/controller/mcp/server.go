@@ -201,6 +201,21 @@ type WorkspaceServer struct {
 	lastUpdateCheckAt  time.Time
 	agentConnections   atomic.Int32
 
+	// Native agent links, in attach order (agent_link.go).
+	linksMu sync.RWMutex
+	links   []AgentLink
+	// connected is the value last published as agent.connected, shared by
+	// MCP streams and links so they make one 0↔1 edge between them.
+	connectedMu sync.Mutex
+	connected   bool
+	// pollMu serialises pollOnce: OfferNextTask runs it outside the poller's
+	// goroutine. pollRepo is the repository StartPoller was given.
+	pollMu   sync.Mutex
+	pollRepo taskLister
+	// toolNames is what this server's tools/list answers, read once.
+	toolNamesOnce sync.Once
+	toolNames     map[string]struct{}
+
 	// clearedTaskIDs is which still-notstarted tasks have already had their
 	// `/clear` sent. The clear is the once-only half of a handover and the push
 	// is not: a task is offered again on every tick until the agent takes it,
@@ -215,8 +230,7 @@ type WorkspaceServer struct {
 	// lastOfferedTaskID is the pending task the previous tick handed over, so
 	// the next one can move on to a different one. Without it every tick
 	// offered the oldest pending task and nothing else, and a task the agent
-	// never picked up hid every task created after it. Read and written only
-	// from the poller's own goroutine.
+	// never picked up hid every task created after it. Guarded by pollMu.
 	lastOfferedTaskID int64
 
 	// done is closed by Close to stop the StartPing/StartPoller ticker goroutines, so a
@@ -730,17 +744,16 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 			// gateways attached, "something is connected" cannot say whose
 			// snapshot is still worth serving.
 			ps.addStreamingSession(sessID)
+			ps.refreshConnected()
 			if count == 1 {
-				ps.publishAgentConnected(true)
 				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
 				if ps.removeStreamingSession(sessID) {
 					ps.agentSessionEnded(context.WithoutCancel(r.Context()), sessID)
 				}
-				if ps.agentConnections.Add(-1) == 0 {
-					ps.publishAgentConnected(false)
-				}
+				ps.agentConnections.Add(-1)
+				ps.refreshConnected()
 			}()
 		}
 
@@ -765,8 +778,10 @@ func (ps *WorkspaceServer) publishAgentConnected(connected bool) {
 	})
 }
 
+// IsAgentConnected reports whether an MCP session holds a stream or a native
+// link is attached.
 func (ps *WorkspaceServer) IsAgentConnected() bool {
-	return ps.agentConnections.Load() > 0
+	return ps.agentConnections.Load() > 0 || ps.hasAgentLinks()
 }
 
 // SendChannelNotification delivers a human-originated message to any connected
@@ -778,6 +793,14 @@ func (ps *WorkspaceServer) IsAgentConnected() bool {
 // and moves it to ongoing, rather than deciding from here whether it landed.
 func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
 	zlog.Debug().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Msg("send MCP channel notification")
+
+	// One native link is offered the task, independently of the MCP
+	// broadcast below: links are this process's own connections and need no
+	// MCP server to reach. Exactly one, so two native agents never run the
+	// same task (an MCP gateway is still broadcast to, as before).
+	if link := ps.pickLinkFor(taskID); link != nil {
+		link.DeliverTask(ctx, taskID, content)
+	}
 
 	// A workspace whose server has not been built yet has nothing to notify,
 	// and ranging over its sessions would panic rather than say so.
@@ -906,17 +929,19 @@ func (ps *WorkspaceServer) isStreaming(sessID string) bool {
 // The server's session order is followed rather than the map's, because the
 // readers pick the first session with something to say and two identical calls
 // must not disagree — the reason pickAgentModels iterates this list at all.
+//
+// Native links follow the MCP sessions, in attach order: a link is live for as
+// long as it is attached.
 func (ps *WorkspaceServer) streamingSessionIDs() []string {
-	if ps.mcpServer == nil {
-		return nil
-	}
 	var ids []string
-	for sess := range ps.mcpServer.Sessions() {
-		if ps.isStreaming(sess.ID()) {
-			ids = append(ids, sess.ID())
+	if ps.mcpServer != nil {
+		for sess := range ps.mcpServer.Sessions() {
+			if ps.isStreaming(sess.ID()) {
+				ids = append(ids, sess.ID())
+			}
 		}
 	}
-	return ids
+	return append(ids, ps.linkIDs()...)
 }
 
 // stopCapableSessions lists the connected sessions worth sending a stop to.
@@ -944,8 +969,10 @@ func (ps *WorkspaceServer) stopCapableSessions() []string {
 // every stop-capable session it can find, because attempting delivery to a
 // session that might yet be reachable costs nothing, while refusing to try is
 // how a stop goes missing.
+//
+// Every native link can be stopped.
 func (ps *WorkspaceServer) SupportsStop() bool {
-	return len(ps.stopCapableSessions()) > 0
+	return len(ps.stopCapableSessions()) > 0 || ps.hasAgentLinks()
 }
 
 // StopOutcome reports how much of a stop request could actually be carried out.
@@ -978,6 +1005,12 @@ func (ps *WorkspaceServer) SendCancelNotification(ctx context.Context, taskID in
 	sent := 0
 	for _, sessID := range ps.stopCapableSessions() {
 		if ps.notifySession(ctx, sessID, "notifications/claude/channel/cancel", params) {
+			sent++
+		}
+	}
+	// Every link is asked, and only a link that had the task counts.
+	for _, link := range ps.agentLinks() {
+		if link.CancelTask(ctx, taskID) {
 			sent++
 		}
 	}
@@ -1219,6 +1252,9 @@ var pollInterval = 60 * time.Second
 
 // StartPoller checks for pending tasks periodically and pushes them if no ongoing tasks exist.
 func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
+	ps.pollMu.Lock()
+	ps.pollRepo = repo
+	ps.pollMu.Unlock()
 	go func() {
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
@@ -1237,6 +1273,8 @@ func (ps *WorkspaceServer) StartPoller(repo base.Repository) {
 // agent already working for a status update. It reports the task it offered,
 // or 0 for a tick that offered none.
 func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
+	ps.pollMu.Lock()
+	defer ps.pollMu.Unlock()
 	ps.metadataMu.RLock()
 	isArchived := ps.archivedAt != nil
 	ps.metadataMu.RUnlock()
@@ -2720,8 +2758,11 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 // whether that session was still there to receive it.
 //
 // The official SDK exposes no public API for generic notifications, hence the
-// reflection.
+// reflection. A native link is called instead (notifyLink).
 func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method string, params map[string]any) bool {
+	if link, ok := ps.agentLink(sessID); ok {
+		return notifyLink(ctx, link, method, params)
+	}
 	if ps.mcpServer == nil {
 		return false
 	}
@@ -2924,100 +2965,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 	}
 
 	if msg.Method == "notifications/claude/channel/permission_request" {
-		p := msg.Params
-
-		// The same request arriving again means the agent reconnected while
-		// waiting for an answer, not that it wants to ask twice.
-		if ps.rebindPermissionRequest(ctx, sessionID, p) {
-			return
-		}
-
-		ps.permissionRequestsMu.Lock()
-		ps.permissionRequests[p.RequestID] = sessionID
-		ps.permissionRequestsMu.Unlock()
-
-		ps.requestToolsMu.Lock()
-		ps.requestTools[p.RequestID] = p.ToolName
-		ps.requestToolsMu.Unlock()
-
-		ps.requestParamsMu.Lock()
-		ps.requestParams[p.RequestID] = &p
-		ps.requestParamsMu.Unlock()
-
-		// Check if tool is auto-allowed (same logic as notificationMiddleware)
-		ps.autoAllowedToolsMu.RLock()
-		isAutoAllowed := ps.checkAutoAllow(p.ToolName, p.InputPreview)
-		ps.autoAllowedToolsMu.RUnlock()
-
-		// Resolve taskID: first from the payload, then from the session, then from the DB.
-		taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
-
-		if isAutoAllowed {
-			zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
-			}()
-			// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
-			ps.markAutoDecided(p.RequestID)
-			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
-			if ok {
-				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
-			}
-			return
-		}
-
-		zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Bool("found", ok).Msg("Session to task mapping lookup")
-
-		if ok {
-			task, err := ps.getTask(ctx, taskID)
-			if err == nil && task.AllowAllCommands {
-				zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
-				go func() {
-					time.Sleep(100 * time.Millisecond)
-					_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
-				}()
-				ps.markAutoDecided(p.RequestID)
-				ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
-				ps.persistToolCall(ctx, taskID, p, "auto_allowed")
-				return
-			}
-
-			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
-			metadata := map[string]any{
-				"type":         "permission_request",
-				"requestId":    p.RequestID,
-				"toolName":     p.ToolName,
-				"description":  p.Description,
-				"inputPreview": p.InputPreview,
-				"status":       "pending",
-			}
-			// Store resolved taskID with the request for later use in SendPermissionVerdict
-			ps.requestTaskIDsMu.Lock()
-			ps.requestTaskIDs[p.RequestID] = taskID
-			ps.requestTaskIDsMu.Unlock()
-
-			if tcID := ps.persistToolCall(ctx, taskID, p, "pending"); tcID != 0 {
-				ps.toolCallIDsMu.Lock()
-				ps.toolCallIDs[p.RequestID] = tcID
-				ps.toolCallIDsMu.Unlock()
-			}
-
-			msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), permissionRequestMessageText(p.ToolName, p.Description), nil, metadata)
-			if msgID != 0 {
-				ps.permissionResponsesMu.Lock()
-				ps.permissionResponses[p.RequestID] = msgID
-				ps.permissionResponsesMu.Unlock()
-			}
-		} else {
-			ps.sessionTasksMu.RLock()
-			var currentSessions []string
-			for k := range ps.sessionTasks {
-				currentSessions = append(currentSessions, k)
-			}
-			ps.sessionTasksMu.RUnlock()
-			zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessionID).Strs("active_sessions", currentSessions).Msg("could not relay permission request: no active task (custom notification)")
-		}
+		ps.relayPermissionRequest(ctx, sessionID, msg.Params)
 	}
 }
 
@@ -3066,4 +3014,103 @@ func formatModelAttachments(raw []byte) string {
 		return ""
 	}
 	return "Attachments:\n" + strings.Join(parts, "\n")
+}
+
+// relayPermissionRequest is how an agent's permission request reaches the
+// human: the auto-allow rules, a task's allow-all, the card and the tool_calls
+// row. A gateway's custom notification and a native link both come here.
+func (ps *WorkspaceServer) relayPermissionRequest(ctx context.Context, sessionID string, p PermissionRequestParams) {
+
+	// The same request arriving again means the agent reconnected while
+	// waiting for an answer, not that it wants to ask twice.
+	if ps.rebindPermissionRequest(ctx, sessionID, p) {
+		return
+	}
+
+	ps.permissionRequestsMu.Lock()
+	ps.permissionRequests[p.RequestID] = sessionID
+	ps.permissionRequestsMu.Unlock()
+
+	ps.requestToolsMu.Lock()
+	ps.requestTools[p.RequestID] = p.ToolName
+	ps.requestToolsMu.Unlock()
+
+	ps.requestParamsMu.Lock()
+	ps.requestParams[p.RequestID] = &p
+	ps.requestParamsMu.Unlock()
+
+	// Check if tool is auto-allowed (same logic as notificationMiddleware)
+	ps.autoAllowedToolsMu.RLock()
+	isAutoAllowed := ps.checkAutoAllow(p.ToolName, p.InputPreview)
+	ps.autoAllowedToolsMu.RUnlock()
+
+	// Resolve taskID: first from the payload, then from the session, then from the DB.
+	taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
+
+	if isAutoAllowed {
+		zlog.Info().Str("request_id", p.RequestID).Str("tool", p.ToolName).Msg("auto-allowing permission request (via custom notification)")
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			_ = ps.sendVerdict(context.Background(), 0, p.RequestID, "allow", verdictAutomatic, "")
+		}()
+		// No mcp.Request here (custom out-of-band notification), so client identity is unknown.
+		ps.markAutoDecided(p.RequestID)
+		ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
+		if ok {
+			ps.persistToolCall(ctx, taskID, p, "auto_allowed")
+		}
+		return
+	}
+
+	zlog.Debug().Str("session_id", sessionID).Int64("task_id", taskID).Bool("found", ok).Msg("Session to task mapping lookup")
+
+	if ok {
+		task, err := ps.getTask(ctx, taskID)
+		if err == nil && task.AllowAllCommands {
+			zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("auto-allowing permission request (task level, custom notification)")
+			go func() {
+				time.Sleep(100 * time.Millisecond)
+				_ = ps.sendVerdict(context.Background(), taskID, p.RequestID, "allow", verdictAutomatic, "")
+			}()
+			ps.markAutoDecided(p.RequestID)
+			ps.emitTelemetry(context.Background(), ActionMCPNotification, "permission_auto_allow", clientIdentity{})
+			ps.persistToolCall(ctx, taskID, p, "auto_allowed")
+			return
+		}
+
+		zlog.Info().Str("request_id", p.RequestID).Int64("task_id", taskID).Str("session_id", sessionID).Msg("relaying permission request (custom notification)")
+		metadata := map[string]any{
+			"type":         "permission_request",
+			"requestId":    p.RequestID,
+			"toolName":     p.ToolName,
+			"description":  p.Description,
+			"inputPreview": p.InputPreview,
+			"status":       "pending",
+		}
+		// Store resolved taskID with the request for later use in SendPermissionVerdict
+		ps.requestTaskIDsMu.Lock()
+		ps.requestTaskIDs[p.RequestID] = taskID
+		ps.requestTaskIDsMu.Unlock()
+
+		if tcID := ps.persistToolCall(ctx, taskID, p, "pending"); tcID != 0 {
+			ps.toolCallIDsMu.Lock()
+			ps.toolCallIDs[p.RequestID] = tcID
+			ps.toolCallIDsMu.Unlock()
+		}
+
+		msgID, _ := ps.reply(ctx, monoflake.ID(taskID).String(), permissionRequestMessageText(p.ToolName, p.Description), nil, metadata)
+		if msgID != 0 {
+			ps.permissionResponsesMu.Lock()
+			ps.permissionResponses[p.RequestID] = msgID
+			ps.permissionResponsesMu.Unlock()
+		}
+	} else {
+		ps.sessionTasksMu.RLock()
+		var currentSessions []string
+		for k := range ps.sessionTasks {
+			currentSessions = append(currentSessions, k)
+		}
+		ps.sessionTasksMu.RUnlock()
+		zlog.Warn().Str("request_id", p.RequestID).Str("session_id", sessionID).Strs("active_sessions", currentSessions).Msg("could not relay permission request: no active task (custom notification)")
+	}
 }

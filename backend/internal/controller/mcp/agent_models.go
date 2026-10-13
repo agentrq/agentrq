@@ -303,16 +303,16 @@ func (ps *WorkspaceServer) AgentModels() *AgentModelsSnapshot {
 	return pickAgentModels(ps.agentModels, ps.streamingSessionIDs())
 }
 
-// liveSessionIDs lists the sessions currently connected to this workspace.
+// liveSessionIDs lists the sessions currently connected to this workspace:
+// the MCP sessions, then the native links in attach order.
 func (ps *WorkspaceServer) liveSessionIDs() []string {
-	if ps.mcpServer == nil {
-		return nil
-	}
 	var ids []string
-	for sess := range ps.mcpServer.Sessions() {
-		ids = append(ids, sess.ID())
+	if ps.mcpServer != nil {
+		for sess := range ps.mcpServer.Sessions() {
+			ids = append(ids, sess.ID())
+		}
 	}
-	return ids
+	return append(ids, ps.linkIDs()...)
 }
 
 // pickAgentModels chooses the snapshot to report from what sessions have said.

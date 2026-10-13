@@ -113,24 +113,31 @@ func (ps *WorkspaceServer) reportedAgent(sessionID string) *AgentClientInfo {
 // their stream drops, so without this the workspace would keep naming a gateway
 // that left — beside an "agent offline" indicator when it was the only one, and
 // in place of a gateway that is still there when it was not.
+//
+// Native links come after every MCP session, and are named only by what they
+// reported: a link has no handshake of its own to fall back on.
 func (ps *WorkspaceServer) AgentClient() *AgentClientInfo {
-	if ps.mcpServer == nil {
-		return nil
-	}
-	for sess := range ps.mcpServer.Sessions() {
-		if !ps.isStreaming(sess.ID()) {
-			continue
+	if ps.mcpServer != nil {
+		for sess := range ps.mcpServer.Sessions() {
+			if !ps.isStreaming(sess.ID()) {
+				continue
+			}
+			// What a bridge says it is driving wins over what the bridge calls
+			// itself, because the question is which agent is attached.
+			if agent := ps.reportedAgent(sess.ID()); agent != nil {
+				return agent
+			}
+			info := clientInfoFrom(sess.InitializeParams())
+			if info == nil || isBridge(info.Name) {
+				continue
+			}
+			return info
 		}
-		// What a bridge says it is driving wins over what the bridge calls
-		// itself, because the question is which agent is attached.
-		if agent := ps.reportedAgent(sess.ID()); agent != nil {
+	}
+	for _, id := range ps.linkIDs() {
+		if agent := ps.reportedAgent(id); agent != nil {
 			return agent
 		}
-		info := clientInfoFrom(sess.InitializeParams())
-		if info == nil || isBridge(info.Name) {
-			continue
-		}
-		return info
 	}
 	return nil
 }
@@ -145,11 +152,18 @@ func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAge
 	if req == nil || req.Session == nil {
 		return entity.TaskAgent{}
 	}
-	sess := req.Session
+	return ps.sessionAgent(req.Session.ID(), clientInfoFrom(req.Session.InitializeParams()))
+}
+
+// sessionAgent names the agent behind one session and the model it last said
+// it was running: what the session reported first, else its client's own
+// name unless that is a bridge. info is nil for a native link, which has no
+// handshake.
+func (ps *WorkspaceServer) sessionAgent(id string, info *AgentClientInfo) entity.TaskAgent {
 	var agent entity.TaskAgent
-	if reported := ps.reportedAgent(sess.ID()); reported != nil {
+	if reported := ps.reportedAgent(id); reported != nil {
 		agent.Name = reported.Name
-	} else if info := clientInfoFrom(sess.InitializeParams()); info != nil && !isBridge(info.Name) {
+	} else if info != nil && !isBridge(info.Name) {
 		agent.Name = info.Name
 	}
 	if agent.Name == "" {
@@ -157,7 +171,7 @@ func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAge
 	}
 
 	ps.agentModelsMu.RLock()
-	snapshot, ok := ps.agentModels[sess.ID()]
+	snapshot, ok := ps.agentModels[id]
 	ps.agentModelsMu.RUnlock()
 	if ok {
 		agent.Model = snapshot.currentModelName()
@@ -169,6 +183,16 @@ func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAge
 // record.
 func (ps *WorkspaceServer) withTaskAgent(ctx context.Context, req *mcp.CallToolRequest) context.Context {
 	agent := ps.callingAgent(req)
+	if agent.Name == "" || ps.registerTaskAgent == nil {
+		return ctx
+	}
+	return entity.WithTaskAgent(ctx, ps.registerTaskAgent(ctx, agent))
+}
+
+// linkTaskAgentContext attributes work done for a link to the agent behind
+// it, as withTaskAgent does for an MCP tool call.
+func (ps *WorkspaceServer) linkTaskAgentContext(ctx context.Context, linkID string) context.Context {
+	agent := ps.sessionAgent(linkID, nil)
 	if agent.Name == "" || ps.registerTaskAgent == nil {
 		return ctx
 	}
