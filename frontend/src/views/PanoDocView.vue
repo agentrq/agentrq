@@ -16,7 +16,7 @@ import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
-  panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoItemMenus, panoMentions,
+  panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoItemMenus, panoMentions,
   mentionQuery, mentionMatches, insertMention, mentionedWorkspaces, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
@@ -57,7 +57,9 @@ const preview = ref(false)
 let deleting = false
 
 // Read only inside v-else-if="doc", so a doc is always there.
-const body = computed(() => panoItemMenus(panoAssignees(panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files)))))
+const assigned = computed(() => panoAssignees(panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files))))
+const body = computed(() => panoItemMenus(assigned.value))
+const relatedTasks = computed(() => panoRelatedTasks(assigned.value))
 const draftBody = computed(() => renderMarkdown(draft.value.markdown || '*Nothing written yet.*'))
 const color = computed(() => panoColor(editing.value ? draft.value.color : doc.value?.color))
 const canSave = computed(() => !busy.value && !!draft.value.title.trim() && !!draft.value.markdown.trim())
@@ -469,6 +471,17 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
               <li v-for="f in doc.attachments" :key="f.id" class="flex items-center gap-2 text-[12px] min-w-0">
                 <a :href="f.url" target="_blank" rel="noopener" class="min-w-0 truncate font-mono text-gray-700 dark:text-zinc-300 underline decoration-dotted underline-offset-2">{{ f.filename }}</a>
                 <span class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">{{ formatFileSize(f.size) }} · {{ panoAuthor(f.workspaceId, workspaces) }}</span>
+              </li>
+            </ul>
+          </section>
+
+          <section v-if="relatedTasks.length" data-test="pano-related" class="hidden lg:block space-y-2">
+            <h3 :class="section">Related tasks</h3>
+            <ul class="space-y-1">
+              <li v-for="t in relatedTasks" :key="t.path" class="flex items-center gap-2 text-[12px] min-w-0">
+                <a :href="t.path" data-test="pano-related-task" @click.prevent="openTask(t.path)"
+                  class="min-w-0 truncate font-bold text-gray-700 dark:text-zinc-300 underline decoration-dotted underline-offset-2">{{ t.name }}</a>
+                <span class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">{{ PANO_TASK_STATUSES[t.status] }}</span>
               </li>
             </ul>
           </section>

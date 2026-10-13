@@ -943,6 +943,27 @@ describe('a doc', () => {
       }
     });
 
+    it('lists the tasks a doc points at above its comments, once each, and opens one beside the doc', async () => {
+      vi.stubGlobal('matchMedia', () => ({ matches: true }));
+      try {
+        api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "ongoing")\n\nSee [the fix](/workspaces/ws1/tasks/t9) and [again](/workspaces/ws1/tasks/t9).' } });
+        const { el, router } = await mount('/pano/d1');
+        const links = $$(el, 'pano-related-task');
+        expect(links.map((a) => a.textContent)).toEqual(['@ops', 'the fix']);
+        expect(text($(el, 'pano-related'))).toContain('Ongoing');
+        await click(links[1]);
+        await settle();
+        expect(router.currentRoute.value.path).toBe('/pano/d1/chat/ws1/t9');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('lists no related tasks when the doc points at none', async () => {
+      const { el } = await mount('/pano/d1');
+      expect($(el, 'pano-related')).toBeNull();
+    });
+
     it('offers no workspace to assign to when there is none', async () => {
       const { el } = await mount('/pano/d1');
       useWorkspaceStore().workspaces = [];
