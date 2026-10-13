@@ -14,7 +14,7 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
-  usePanoBoard, panoAuthor, panoColor, panoInitial, timeAgo, expiresLabel, isOwnPanoDoc, recolorPanoDoc, PANO_COLORS,
+  usePanoBoard, panoAuthor, panoColor, panoTilt, panoInitial, timeAgo, expiresLabel, isOwnPanoDoc, recolorPanoDoc, PANO_COLORS,
   panoCheckable, panoCheckboxIndex, checkPanoItem,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
@@ -146,22 +146,24 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
 
         <p v-if="docs.length && !shown.length" data-test="pano-no-match" class="self-center text-[11px] text-gray-500 dark:text-zinc-400">No doc's title matches “{{ query }}”.</p>
 
-        <article v-for="(doc, i) in shown" :key="doc.id" data-test="pano-card"
-          :style="{ '--pano-ink': panoColor(doc.color).inkHex }"
-          :class="[panoColor(doc.color).card, i % 3 === 1 ? 'rotate-[0.6deg]' : i % 3 === 2 ? '-rotate-[0.5deg]' : '']"
-          class="pano-paper group relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_14px_28px_-12px_rgba(0,0,0,0.35)] transition-shadow">
+        <article v-for="doc in shown" :key="doc.id" data-test="pano-card"
+          :style="{ '--pano-ink': panoColor(doc.color).inkHex, '--pano-tilt': `${panoTilt(doc.id)}deg` }"
+          :class="[panoColor(doc.color).card, { 'z-20': recoloring === doc.id }]"
+          class="pano-paper group relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_32px_-12px_rgba(0,0,0,0.45)] rotate-[var(--pano-tilt)] hover:rotate-0 focus-within:rotate-0 hover:z-10 focus-within:z-20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_14px_28px_-12px_rgba(0,0,0,0.35)] transition-[rotate,box-shadow] duration-200">
+          <!-- A leaning card is a stacking context of its own, so the one under it
+               would cover its open menu: hover, focus and an open menu raise it. -->
           <span aria-hidden="true" :class="panoColor(doc.color).tape" class="absolute -top-2.5 left-1/2 -translate-x-1/2 -rotate-2 w-20 h-5 rounded-[2px]"></span>
 
           <router-link :to="`/pano/${doc.id}`" data-test="pano-open" class="flex flex-col flex-1 min-h-0 px-5 pt-6 pb-2 focus:outline-none">
             <h2 :class="panoColor(doc.color).ink" class="text-lg font-black leading-snug line-clamp-2 break-words">{{ doc.title }}</h2>
             <div class="relative mt-2 flex-1 min-h-0 overflow-hidden">
-              <div data-test="pano-excerpt" class="md-body text-[13px] leading-relaxed text-gray-800 [&_img]:hidden"
+              <div data-test="pano-excerpt" class="md-body text-[13px] leading-relaxed [&_img]:hidden"
                 v-html="panoCheckable(renderMarkdown(doc.excerpt))" @click="onExcerptClick(doc, $event)"></div>
             </div>
             <PanoProgress :doc="doc" class="mt-3 shrink-0" />
           </router-link>
 
-          <footer class="flex items-center gap-2 px-5 py-3 border-t border-black/10 text-[11px] text-gray-700 min-w-0">
+          <footer class="flex items-center gap-2 px-5 py-3 border-t border-black/10 text-[11px] text-[#334155] min-w-0">
             <span :class="panoColor(doc.color).inkBg" :title="panoAuthor(doc.updatedByWorkspaceId, workspaces)"
               class="shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black text-white">{{ panoInitial(panoAuthor(doc.updatedByWorkspaceId, workspaces)) }}</span>
             <span class="min-w-0 flex-1 truncate" :title="expiresLabel(doc.expiresAt)">

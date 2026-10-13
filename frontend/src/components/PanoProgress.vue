@@ -12,7 +12,7 @@
       :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100" :aria-label="`${doc.checklistDone} of ${doc.checklistTotal} done`">
       <div :class="color.inkBg" class="h-full rounded-full transition-[width] duration-300" :style="{ width: `${percent}%` }"></div>
     </div>
-    <p class="mt-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-700">
+    <p class="mt-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#334155]">
       <span :class="color.inkBg" class="w-1.5 h-1.5 rounded-full" aria-hidden="true"></span>
       {{ doc.checklistDone }} of {{ doc.checklistTotal }} done
     </p>

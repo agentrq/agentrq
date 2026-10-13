@@ -19,26 +19,37 @@ export const PANO_MAX_FILE_BYTES = 2 * 1024 * 1024
 const LINKED_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
- * The post-it colors, in the server's order, the first the default: Tailwind's
- * 50 tint of each hue on a light page and its 200 on a dark one, always with
- * dark text, so a note reads the same either way. The 200 is the swatch, so
- * the choices tell apart; the 600 marks checkmarks, bars and avatars, and the
- * 800/900 is the title's ink.
+ * The post-it colors, in the server's order, the first the default: archival
+ * pastels, each paper a light wash from its hue's 100 up to its 200, the same
+ * in both themes so dark text stays crisp on it, as on real paper. `ink` is
+ * the title's deep shade, `inkBg`/`inkHex` the 600 that marks checkmarks,
+ * bars and avatars, `tape` its 300 strip, and the swatch its 200.
  */
-// `ink` is the color's own deep shade, for a title and the author's mark;
-// `tape` the strip that holds the note up.
 export const PANO_COLORS = [
-  { name: 'yellow', label: 'Canary yellow', card: 'bg-[#fffbeb] dark:bg-[#fde68a]', swatch: 'bg-[#fde68a]', ink: 'text-[#713f12]', inkBg: 'bg-[#d97706]', inkHex: '#d97706', tape: 'bg-[#fef08a]/80 dark:bg-[#fcd34d]/80' },
-  { name: 'pink', label: 'Blush pink', card: 'bg-[#fff1f2] dark:bg-[#fecdd3]', swatch: 'bg-[#fecdd3]', ink: 'text-[#881337]', inkBg: 'bg-[#e11d48]', inkHex: '#e11d48', tape: 'bg-[#fecdd3]/80 dark:bg-[#fda4af]/80' },
-  { name: 'green', label: 'Mint green', card: 'bg-[#f0fdf4] dark:bg-[#bbf7d0]', swatch: 'bg-[#bbf7d0]', ink: 'text-[#14532d]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#bbf7d0]/80 dark:bg-[#86efac]/80' },
-  { name: 'blue', label: 'Sky blue', card: 'bg-[#eff6ff] dark:bg-[#bfdbfe]', swatch: 'bg-[#bfdbfe]', ink: 'text-[#1e40af]', inkBg: 'bg-[#2563eb]', inkHex: '#2563eb', tape: 'bg-[#bfdbfe]/80 dark:bg-[#93c5fd]/80' },
-  { name: 'orange', label: 'Peach orange', card: 'bg-[#fff7ed] dark:bg-[#fed7aa]', swatch: 'bg-[#fed7aa]', ink: 'text-[#7c2d12]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fed7aa]/80 dark:bg-[#fdba74]/80' },
-  { name: 'purple', label: 'Lilac purple', card: 'bg-[#faf5ff] dark:bg-[#e9d5ff]', swatch: 'bg-[#e9d5ff]', ink: 'text-[#6b21a8]', inkBg: 'bg-[#9333ea]', inkHex: '#9333ea', tape: 'bg-[#e9d5ff]/80 dark:bg-[#d8b4fe]/80' },
+  { name: 'yellow', label: 'Canary yellow', card: 'bg-linear-to-br from-[#fef9c3] to-[#fef08a]', swatch: 'bg-[#fef08a]', ink: 'text-[#713f12]', inkBg: 'bg-[#ca8a04]', inkHex: '#ca8a04', tape: 'bg-[#fde047]/60' },
+  { name: 'pink', label: 'Soft rose', card: 'bg-linear-to-br from-[#fce7f3] to-[#fbcfe8]', swatch: 'bg-[#fbcfe8]', ink: 'text-[#9d174d]', inkBg: 'bg-[#db2777]', inkHex: '#db2777', tape: 'bg-[#f9a8d4]/60' },
+  { name: 'green', label: 'Mint green', card: 'bg-linear-to-br from-[#dcfce7] to-[#bbf7d0]', swatch: 'bg-[#bbf7d0]', ink: 'text-[#166534]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#86efac]/60' },
+  { name: 'blue', label: 'Sky cyan', card: 'bg-linear-to-br from-[#e0f2fe] to-[#bae6fd]', swatch: 'bg-[#bae6fd]', ink: 'text-[#075985]', inkBg: 'bg-[#0284c7]', inkHex: '#0284c7', tape: 'bg-[#7dd3fc]/60' },
+  { name: 'orange', label: 'Peach', card: 'bg-linear-to-br from-[#ffedd5] to-[#fed7aa]', swatch: 'bg-[#fed7aa]', ink: 'text-[#9a3412]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fdba74]/60' },
+  { name: 'purple', label: 'Lilac', card: 'bg-linear-to-br from-[#f3e8ff] to-[#e9d5ff]', swatch: 'bg-[#e9d5ff]', ink: 'text-[#6b21a8]', inkBg: 'bg-[#9333ea]', inkHex: '#9333ea', tape: 'bg-[#d8b4fe]/60' },
 ]
 
 /** A color by name; an unknown one is yellow. */
 export function panoColor(name) {
   return PANO_COLORS.find((c) => c.name === name) || PANO_COLORS[0]
+}
+
+// The angles a note leans at, in degrees, as paper stuck up by hand does.
+const TILTS = [-2, -1.4, -0.8, 0.7, 1.3, 1.9]
+
+/**
+ * How far a doc's post-it leans, picked from its id so a note keeps its angle
+ * wherever the board puts it.
+ */
+export function panoTilt(id) {
+  let h = 0
+  for (const ch of String(id || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return TILTS[h % TILTS.length]
 }
 
 /** The classes of a doc's post-it; an unknown color is yellow. */

@@ -45,7 +45,7 @@ const { default: PanoView } = await import('../src/views/PanoView.vue');
 const { default: PanoDocView } = await import('../src/views/PanoDocView.vue');
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore');
 const { notifyWebMCPChange } = await import('../src/composables/useWebMCPChanges');
-const { PANO_COLORS, PANO_MAX_FILE_BYTES } = await import('../src/composables/usePano');
+const { PANO_COLORS, PANO_MAX_FILE_BYTES, panoTilt } = await import('../src/composables/usePano');
 const { toasts } = (await import('../src/composables/useToasts')).useToasts();
 
 // The app's `v-click-outside`, as `src/app.js` registers it.
@@ -172,13 +172,12 @@ describe('the board', () => {
     expect(text(el)).not.toContain('Loading the Pano…');
     const cards = $$(el, 'pano-card');
     expect(cards.map((c) => text(c.querySelector('h2')))).toEqual(['Release plan', 'Agent notes', 'Odd paper']);
-    expect(cards[0].classList.contains(PANO_COLORS[1].card.split(' ')[0])).toBe(true);
-    expect(cards[2].classList.contains(PANO_COLORS[0].card.split(' ')[0])).toBe(true);
+    expect(cards[0].classList.contains(PANO_COLORS[1].card.split(' ')[1])).toBe(true);
+    expect(cards[2].classList.contains(PANO_COLORS[0].card.split(' ')[1])).toBe(true);
     expect(cards[0].style.getPropertyValue('--pano-ink')).toBe(PANO_COLORS[1].inkHex);
-    // Every other card leans a little, one way or the other.
-    expect(cards[0].className).not.toContain('rotate-');
-    expect(cards[1].className).toContain('rotate-[0.6deg]');
-    expect(cards[2].className).toContain('-rotate-[0.5deg]');
+    // Every card leans by the angle its id picks, and straightens on hover.
+    expect(cards[0].style.getPropertyValue('--pano-tilt')).toBe(`${panoTilt('d1')}deg`);
+    expect(cards[0].className).toContain('rotate-[var(--pano-tilt)] hover:rotate-0');
     expect(text($(el, 'pano-new-card'))).toContain('Pick its paper, or press N');
     expect($(el, 'pano-open').getAttribute('href')).toBe('/pano/d1');
     expect($(el, 'pano-card-edit').getAttribute('href')).toBe('/pano/d1?edit=1');
@@ -632,7 +631,7 @@ describe('a doc', () => {
     it('changes the paper', async () => {
       const { el } = await mount('/pano/d1?edit=1');
       await click($(el, 'pano-color-purple'));
-      expect(text($(el, 'pano-color-label'))).toBe('Lilac purple');
+      expect(text($(el, 'pano-color-label'))).toBe(PANO_COLORS[5].label);
       expect($(el, 'pano-color-purple').getAttribute('aria-checked')).toBe('true');
       expect($(el, 'pano-color-green').getAttribute('aria-checked')).toBe('false');
     });
@@ -786,7 +785,7 @@ describe('a doc', () => {
 
     it('starts in the paper picked on the board', async () => {
       const { el } = await mount('/pano/new?color=pink');
-      expect(text($(el, 'pano-color-label'))).toBe('Blush pink');
+      expect(text($(el, 'pano-color-label'))).toBe(PANO_COLORS[1].label);
       expect($(el, 'pano-color-pink').getAttribute('aria-checked')).toBe('true');
     });
 

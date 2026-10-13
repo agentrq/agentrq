@@ -25,6 +25,7 @@ import {
   panoColorClass,
   panoDate,
   panoInitial,
+  panoTilt,
   panoLinkName,
   panoTaskBody,
   readPanoUpload,
@@ -62,14 +63,14 @@ describe('the post-it colors', () => {
 
   it('gives every color a label, an ink, an ink background, its hex and a tape', () => {
     for (const c of PANO_COLORS) {
-      expect(c.label).toMatch(/^[A-Z][a-z]+ [a-z]+$/);
-      expect(c.label.toLowerCase()).toContain(c.name);
+      expect(c.label).toMatch(/^[A-Z][a-z]+( [a-z]+)?$/);
       expect(c.ink).toMatch(/^text-\[#[0-9a-f]{6}\]$/);
       expect(c.inkBg).toBe(`bg-[${c.inkHex}]`);
       expect(c.inkHex).toMatch(/^#[0-9a-f]{6}$/);
-      expect(c.tape).toMatch(/^bg-\[#[0-9a-f]{6}\]\/80 dark:bg-\[#[0-9a-f]{6}\]\/80$/);
+      expect(c.tape).toMatch(/^bg-\[#[0-9a-f]{6}\]\/60$/);
     }
     expect(new Set(PANO_COLORS.map((c) => c.inkHex)).size).toBe(PANO_COLORS.length);
+    expect(new Set(PANO_COLORS.map((c) => c.label)).size).toBe(PANO_COLORS.length);
   });
 });
 
@@ -638,3 +639,21 @@ describe('one doc', () => {
     expect(d.busy.value).toBe(false);
   });
 });
+
+describe('panoTilt', () => {
+  it('leans a note by an angle its id picks, the same every time', () => {
+    const tilts = new Set()
+    for (const id of ['0kGVgW2hMzR', '0kGYJNfKDfF', '0kGa2kadsxN', 'a', 'b', 'c', 'd', 'e', 'f', 'g']) {
+      const t = panoTilt(id)
+      expect(panoTilt(id)).toBe(t)
+      expect(Math.abs(t)).toBeGreaterThan(0.5)
+      expect(Math.abs(t)).toBeLessThanOrEqual(2)
+      tilts.add(t)
+    }
+    expect(tilts.size).toBeGreaterThan(2)
+  })
+
+  it('leans a note with no id too', () => {
+    expect(typeof panoTilt(undefined)).toBe('number')
+  })
+})

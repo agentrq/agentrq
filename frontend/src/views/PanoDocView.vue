@@ -15,7 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
-  usePanoDoc, panoAuthor, panoColor, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
+  usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
   panoCheckable, panoCheckboxIndex, formatMarkdown, PANO_COLORS,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
@@ -163,8 +163,9 @@ const label = 'block text-[13px] font-black text-gray-800 dark:text-zinc-100 mb-
 const field = 'w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 placeholder-gray-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all'
 const primary = 'px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50'
 const secondary = 'px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50'
+const iconButton = 'flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 !text-gray-600 dark:!text-zinc-300 hover:!text-black dark:hover:!text-white hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors'
 const section = 'text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest'
-const paper = 'pano-paper relative rounded-md border border-black/[0.06] text-gray-900 shadow-[0_1px_2px_rgba(0,0,0,0.06),0_16px_32px_-16px_rgba(0,0,0,0.3)]'
+const paper = 'pano-paper relative rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_16px_32px_-16px_rgba(0,0,0,0.3)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_20px_40px_-16px_rgba(0,0,0,0.45)]'
 const tool = 'flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 hover:text-black dark:hover:text-white transition-colors'
 const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0'
 </script>
@@ -174,9 +175,13 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
     <div class="w-full px-4 py-2 mb-4 shrink-0 flex flex-row items-center justify-between gap-4">
       <router-link to="/pano" class="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">← Pano</router-link>
       <div v-if="doc && !editing" class="flex shrink-0 items-center gap-2">
-        <PanoTaskButton v-if="isOwnPanoDoc(doc)" :doc="doc" button-class="!p-2 border border-gray-200 dark:border-zinc-700 !text-gray-600 dark:!text-zinc-300 hover:!bg-gray-50 dark:hover:!bg-zinc-700" />
-        <button type="button" data-test="pano-edit" :class="secondary" @click="edit">Edit</button>
-        <button type="button" data-test="pano-delete" :class="secondary" @click="pendingDelete = true">Delete</button>
+        <PanoTaskButton v-if="isOwnPanoDoc(doc)" :doc="doc" :button-class="`${iconButton} !rounded-lg`" />
+        <button type="button" data-test="pano-edit" title="Edit" aria-label="Edit" :class="iconButton" @click="edit">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" /></svg>
+        </button>
+        <button type="button" data-test="pano-delete" title="Delete" aria-label="Delete" :class="iconButton" class="hover:!text-red-600 dark:hover:!text-red-400" @click="pendingDelete = true">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" :d="trash" /></svg>
+        </button>
       </div>
     </div>
 
@@ -211,7 +216,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                   :class="preview ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-zinc-400'" class="px-3 py-1 rounded-md">Preview</button>
               </div>
             </div>
-            <div :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
+            <div :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
@@ -219,9 +224,9 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
               <div class="my-3 border-t border-black/10"></div>
               <label for="pano-markdown-input" class="sr-only">Markdown</label>
               <textarea v-show="!preview" id="pano-markdown-input" ref="markdownInput" v-model="draft.markdown" data-test="pano-markdown-input" rows="14"
-                class="w-full min-h-[18rem] bg-transparent text-[14px] leading-relaxed text-gray-900 placeholder-black/35 resize-y focus:outline-none"
+                class="w-full min-h-[18rem] bg-transparent text-[14px] leading-relaxed text-[#1e293b] placeholder-black/35 resize-y focus:outline-none"
                 placeholder="Write in markdown. - [ ] starts a checklist item.&#10;&#10;Files you add are linked here, like ![chart](chart.png)."></textarea>
-              <div v-if="preview" data-test="pano-preview" class="md-body min-h-[18rem] text-[14px] text-gray-900 [&_img]:max-w-full" v-html="draftBody"></div>
+              <div v-if="preview" data-test="pano-preview" class="md-body min-h-[18rem] text-[14px] [&_img]:max-w-full" v-html="draftBody"></div>
             </div>
           </section>
 
@@ -287,15 +292,15 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
       </form>
 
       <div v-else-if="doc" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-        <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
+        <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
           <h1 data-test="pano-title" :class="color.ink" class="text-2xl md:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
-          <p data-test="pano-meta" class="mt-1 text-[11px] text-gray-700">
+          <p data-test="pano-meta" class="mt-1 text-[11px] text-[#334155]">
             By {{ panoAuthor(doc.createdByWorkspaceId, workspaces) }} · updated {{ panoDate(doc.updatedAt) }} by {{ panoAuthor(doc.updatedByWorkspaceId, workspaces) }}
           </p>
           <PanoProgress :doc="doc" class="mt-4 max-w-sm" />
           <div class="my-5 border-t border-black/10"></div>
-          <div data-test="pano-body" class="md-body text-[14px] text-gray-900 break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
+          <div data-test="pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
         </article>
 
         <aside class="space-y-6 min-w-0">
