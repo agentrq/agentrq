@@ -765,8 +765,7 @@ describe('assigning a checklist item', () => {
     const body = panoItemTaskBody({ id: 'd1', title: 'Plan' }, 'ship');
     expect(body).toMatch(/^ship\n\n---\n/);
     expect(body).toContain('`d1` ("Plan")');
-    expect(body).toContain('The item follows this task\'s status, and is ticked when it is completed.');
-    expect(body).not.toContain('save the doc');
+    expect(body).toBe('ship\n\n---\nA checklist item of the Pano doc `d1` ("Plan"). Read the doc with the pano tool for its context, files and comments.');
   });
 });
 

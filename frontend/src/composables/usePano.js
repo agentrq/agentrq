@@ -296,10 +296,10 @@ export function panoItemMenus(html) {
 /**
  * The body of the task a checklist item becomes: what it is, and where it is
  * from. The item follows the task's status on its own, so the agent is not
- * asked to tick it.
+ * asked to tick it: completing the task does.
  */
 export function panoItemTaskBody(doc, item) {
-  return `${item}\n\n---\nA checklist item of the Pano doc \`${doc.id}\` ("${doc.title}"); read it with the pano tool for its context, files and comments. The item follows this task's status, and is ticked when it is completed.`
+  return `${item}\n\n---\nA checklist item of the Pano doc \`${doc.id}\` ("${doc.title}"). Read the doc with the pano tool for its context, files and comments.`
 }
 
 /**
