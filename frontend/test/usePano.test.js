@@ -50,6 +50,7 @@ import {
   mentionQuery,
   mentionedWorkspaces,
   panoAssignees,
+  panoRelatedTasks,
   panoItemMenus,
   panoItemTaskBody,
   panoItemText,
@@ -816,6 +817,16 @@ describe('assigning a checklist item', () => {
     const html = `<li>x → <span class="md-dead-link" title="${PATH}" data-link-title="blocked">@api</span></li>`;
     expect(panoAssignees(html)).toBe(`<li>x <a class="pano-assignee" href="${PATH}" data-pano-task="${PATH}" data-status="blocked" title="Blocked · task t1"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Blocked</span></a></li>`);
     expect(panoAssignees(html, { link: false })).toBe('<li>x <span class="pano-assignee" data-status="blocked" title="Blocked · task t1"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Blocked</span></span></li>');
+  });
+
+  it('lists the tasks a doc points at once each, in order, with their workspace', () => {
+    const chip = (path, name, status) => `<span class="md-dead-link" title="${path}" data-link-title="${status}">${name}</span>`;
+    const html = `<li>${chip(PATH, '@api', 'ongoing')}</li><li>${chip('/workspaces/w2/tasks/t2', '@web', 'done')}</li><p>${chip(PATH, 'again', 'ongoing')}</p>`;
+    expect(panoRelatedTasks(panoAssignees(html))).toEqual([
+      { path: PATH, workspaceId: PATH.split('/')[2], id: 't1', name: '@api', status: 'ongoing' },
+      { path: '/workspaces/w2/tasks/t2', workspaceId: 'w2', id: 't2', name: '@web', status: 'completed' },
+    ]);
+    expect(panoRelatedTasks(panoAssignees(html, { link: false }))).toEqual([]);
   });
 
   it('reads a missing or unknown status as not started, and leaves other dead links', () => {

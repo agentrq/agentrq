@@ -14,7 +14,7 @@ describe('pageKey', () => {
   })
 
   it('keys a route by the key it names', () => {
-    const meta = { remount: true, remountKey: (r) => `/pano/${r.params.docId}` }
+    const { meta } = routes.find(r => r.path === '/pano/:docId/chat/:workspaceId/:taskId')
     expect(pageKey({ path: '/pano/d1/chat/w/t', params: { docId: 'd1' }, meta })).toBe('/pano/d1')
   })
 

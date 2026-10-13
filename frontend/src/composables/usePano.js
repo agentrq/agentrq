@@ -297,13 +297,15 @@ export function panoAssignees(html, { link = true } = {}) {
  */
 export function panoRelatedTasks(html) {
   const page = document.createElement('div')
-  page.innerHTML = String(html || '')
+  page.innerHTML = html
   const seen = new Map()
+  // A chip's path is always a task's, and its name sits between the dot and the
+  // label. The old 'done' reads as the task status it stands for.
   for (const chip of page.querySelectorAll('a.pano-assignee[data-pano-task]')) {
     const path = chip.dataset.panoTask
     if (seen.has(path)) continue
-    const name = chip.childNodes[1]?.textContent ?? ''
-    seen.set(path, { path, id: path.split('/').pop(), name, status: chip.dataset.status })
+    const [, , workspaceId, , id] = path.split('/')
+    seen.set(path, { path, workspaceId, id, name: chip.childNodes[1].textContent, status: chip.dataset.status === 'done' ? 'completed' : chip.dataset.status })
   }
   return [...seen.values()]
 }

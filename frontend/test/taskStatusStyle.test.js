@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   taskAccentClass,
   taskDotClass,
+  taskRingClass,
   taskStatusTone,
   useTaskStatusStyle,
 } from '../src/composables/useTaskStatusStyle'
@@ -132,6 +133,18 @@ describe('taskAccentClass', () => {
   })
 })
 
+describe('taskRingClass', () => {
+  it('outlines a ring in the dot\'s hue, and fills it only once completed', () => {
+    const hue = (cls, part) => cls.match(new RegExp(`${part}-([a-z]+)-`))?.[1]
+    for (const status of ['ongoing', 'notstarted', 'completed', 'rejected', 'blocked', 'cron']) {
+      expect(hue(taskRingClass(status), 'border')).toBe(hue(taskDotClass(status), 'bg'))
+      expect(taskRingClass(status).includes('bg-')).toBe(status === 'completed')
+    }
+    expect(taskRingClass(task({ status: 'notstarted', assignee: 'human' }))).toBe('border-yellow-400')
+    expect(taskRingClass('something-else')).toBeTruthy()
+  })
+})
+
 describe('useTaskStatusStyle', () => {
   it('hands back the same functions, for components that prefer the composable form', () => {
     const style = useTaskStatusStyle()
@@ -139,5 +152,6 @@ describe('useTaskStatusStyle', () => {
     expect(style.taskStatusTone).toBe(taskStatusTone)
     expect(style.taskDotClass).toBe(taskDotClass)
     expect(style.taskAccentClass).toBe(taskAccentClass)
+    expect(style.taskRingClass).toBe(taskRingClass)
   })
 })

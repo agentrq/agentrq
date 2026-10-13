@@ -101,6 +101,20 @@ const ACCENT_CLASSES = {
   unknown: 'bg-gray-200 dark:bg-zinc-700',
 };
 
+// A ring the size of a checklist box, for a task listed beside a checklist:
+// filled with a check once completed, as a ticked box is, and otherwise
+// outlined in the dot's colour.
+const RING_CLASSES = {
+  pending: 'border-yellow-400',
+  ongoing: 'border-green-500 animate-pulse',
+  notstarted: 'border-gray-400 dark:border-zinc-500',
+  completed: 'bg-green-500 border-green-500',
+  rejected: 'border-red-500',
+  blocked: 'border-red-500',
+  cron: 'border-cyan-400',
+  unknown: 'border-gray-300 dark:border-zinc-600',
+};
+
 /**
  * Tailwind classes for a task's status dot.
  *
@@ -121,6 +135,16 @@ export function taskAccentClass(task) {
   return ACCENT_CLASSES[taskStatusTone(task)];
 }
 
+/**
+ * Tailwind classes for a task's status ring, which holds a check once completed.
+ *
+ * @param {object|string} task  a task, or a bare status string
+ * @returns {string}
+ */
+export function taskRingClass(task) {
+  return RING_CLASSES[taskStatusTone(task)];
+}
+
 export function useTaskStatusStyle() {
-  return { taskStatusTone, taskDotClass, taskAccentClass };
+  return { taskStatusTone, taskDotClass, taskAccentClass, taskRingClass };
 }

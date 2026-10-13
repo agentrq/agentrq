@@ -19,6 +19,7 @@ import {
   panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoItemMenus, panoMentions,
   mentionQuery, mentionMatches, insertMention, mentionedWorkspaces, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
+import { taskRingClass } from '../composables/useTaskStatusStyle'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
 import { renderMarkdown } from '../utils/markdown'
@@ -67,10 +68,9 @@ const taskTitles = ref({})
 const fetchedTasks = new Set()
 watch(relatedTasks, (tasks) => {
   for (const t of tasks) {
-    const m = TASK_PATH.exec(t.path)
-    if (!m || fetchedTasks.has(t.path)) continue
+    if (fetchedTasks.has(t.path)) continue
     fetchedTasks.add(t.path)
-    api.getTask(m[1], m[2]).then((res) => {
+    api.getTask(t.workspaceId, t.id).then((res) => {
       if (res?.task?.title) taskTitles.value = { ...taskTitles.value, [t.path]: res.task.title }
     }).catch(() => {})
   }
@@ -492,10 +492,11 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
           <section v-if="relatedTasks.length" data-test="pano-related" class="hidden lg:block space-y-2">
             <h3 :class="section">Related tasks</h3>
             <ul class="space-y-1">
-              <li v-for="t in relatedTasks" :key="t.path" :data-status="t.status" class="flex items-center gap-2 text-[12px] min-w-0">
-                <span class="pano-status shrink-0" data-test="pano-related-status" role="img" :aria-label="PANO_TASK_STATUSES[t.status]" :title="PANO_TASK_STATUSES[t.status]"></span>
+              <li v-for="t in relatedTasks" :key="t.path" class="flex items-center gap-2 text-[12px] min-w-0">
+                <span class="w-3.5 h-3.5 rounded-full shrink-0 flex items-center justify-center border-[1.5px]" :class="taskRingClass(t.status)" data-test="pano-related-status" role="img" :aria-label="PANO_TASK_STATUSES[t.status]" :title="PANO_TASK_STATUSES[t.status]"><svg v-if="t.status === 'completed'" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" class="w-[70%] h-[70%]"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>
                 <a :href="t.path" data-test="pano-related-task" @click.prevent="openTask(t.path)"
                   class="min-w-0 truncate font-bold text-gray-700 dark:text-zinc-300 underline decoration-dotted underline-offset-2" :title="taskTitles[t.path] || t.name">{{ taskTitles[t.path] || t.name }}</a>
+                <span data-test="pano-related-workspace" class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">{{ panoAuthor(t.workspaceId, workspaces) }}</span>
               </li>
             </ul>
           </section>
