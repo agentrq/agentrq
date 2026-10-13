@@ -51,6 +51,7 @@ describe('routes', () => {
       '/pano/chat/:workspaceId/:taskId',
       '/pano/new',
       '/pano/:id',
+      '/pano/:id/chat/:workspaceId/:taskId',
       '/skills',
       '/skills/:name',
       '/sessions/:id',

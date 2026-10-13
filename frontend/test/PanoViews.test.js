@@ -97,6 +97,7 @@ async function mount(at, workspaces = WORKSPACES) {
       { path: '/workspaces/:id', component: { render: () => null } },
       { path: '/pano/new', component: PanoDocView },
       { path: '/pano/:id', component: PanoDocView },
+      { path: '/pano/:id/chat/:workspaceId/:taskId', components: { default: PanoDocView, chat: { render: () => null } } },
       { path: '/workspaces/:id/tasks/:taskId', component: { render: () => null } },
     ],
   });
@@ -922,6 +923,24 @@ describe('a doc', () => {
       await click(chip);
       await settle();
       expect(router.currentRoute.value.path).toBe('/workspaces/ws2/tasks/t7');
+    });
+
+    it('opens an assigned task beside the doc on a large screen, from the chip and from the menu', async () => {
+      vi.stubGlobal('matchMedia', () => ({ matches: true }));
+      try {
+        api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "ongoing")' } });
+        const { el, router } = await mount('/pano/d1');
+        await click($(el, 'pano-body').querySelector('a.pano-assignee'));
+        await settle();
+        expect(router.currentRoute.value.path).toBe('/pano/d1/chat/ws2/t7');
+        expect($(el, 'pano-body')).not.toBeNull();
+        await click($(el, 'pano-body').querySelector('[data-pano-assign]'));
+        await click($(el, 'pano-item-task'));
+        await settle();
+        expect(router.currentRoute.value.path).toBe('/pano/d1/chat/ws2/t7');
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it('offers no workspace to assign to when there is none', async () => {

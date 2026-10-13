@@ -84,6 +84,10 @@ export const routes = [
   { path: '/pano/chat/:workspaceId/:taskId', components: { default: PanoView, chat: () => import('./views/TaskDetailView.vue') } },
   { path: '/pano/new', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
   { path: '/pano/:id', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
+  // A task assigned on a doc, opened beside it on a large screen. Keyed by the
+  // doc, not the path, so opening a task does not rebuild the doc.
+  { path: '/pano/:id/chat/:workspaceId/:taskId', components: { default: () => import('./views/PanoDocView.vue'), chat: () => import('./views/TaskDetailView.vue') },
+    meta: { remount: true, remountKey: (r) => `/pano/${r.params.id}` } },
 
   // Skills belong to the account too; a workspace only turns each on or off.
   { path: '/skills', component: () => import('./views/SkillsView.vue') },

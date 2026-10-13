@@ -139,7 +139,7 @@ async function onBodyClick(event) {
   const chip = event.target.closest('[data-pano-task]')
   if (chip) {
     event.preventDefault()
-    router.push(chip.dataset.panoTask)
+    openTask(chip.dataset.panoTask)
     return
   }
   const button = event.target.closest('[data-pano-assign]')
@@ -151,6 +151,15 @@ async function onBodyClick(event) {
   if (index < 0) return
   event.preventDefault()
   await run(() => checkItem(index, event.target.checked))
+}
+
+// A task opens beside the doc on a large screen, where the Pano chat column
+// has room for it, and as its own page on a small one.
+const TASK_PATH = /^\/workspaces\/([^/]+)\/tasks\/([^/]+)$/
+function openTask(path) {
+  const m = TASK_PATH.exec(path)
+  const wide = globalThis.matchMedia?.('(min-width: 1024px)').matches
+  router.push(m && wide ? `/pano/${id}/chat/${m[1]}/${m[2]}` : path)
 }
 
 // The menu opens under its button, in the paper's own coordinates.
@@ -418,11 +427,11 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             class="absolute z-30 w-64 max-h-72 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 text-left shadow-lg">
             <template v-if="itemMenu.task">
               <p :class="menuHeader">Assigned</p>
-              <router-link :to="itemMenu.task.path" data-test="pano-item-task" role="menuitem" class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 min-w-0">
+              <a :href="itemMenu.task.path" data-test="pano-item-task" role="menuitem" @click.prevent="openTask(itemMenu.task.path)" class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 min-w-0">
                 <span class="min-w-0 truncate font-bold">{{ itemMenu.task.name }}</span>
                 <span class="shrink-0 text-[10px] text-gray-500 dark:text-zinc-400">{{ PANO_TASK_STATUSES[itemMenu.task.status] }}</span>
                 <span class="ml-auto shrink-0 font-mono text-[10px] text-gray-400 dark:text-zinc-500">{{ itemMenu.task.id }}</span>
-              </router-link>
+              </a>
               <div class="my-1 border-t border-gray-100 dark:border-zinc-800"></div>
             </template>
             <p :class="menuHeader">{{ itemMenu.task ? 'Reassign to' : 'Assign to' }}</p>

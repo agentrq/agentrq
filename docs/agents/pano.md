@@ -38,3 +38,6 @@
   `useTaskOptions` and one `TaskOptionsTools` row for both: a control added to
   the form reaches the Pano without a second copy. The row takes no window
   breakpoint, only the nearest `@container`.
+- **A task opened from a doc goes beside it on a large screen**, on
+  `/pano/:id/chat/:workspaceId/:taskId`, whose `remountKey` is the doc's: keying
+  by path would rebuild the doc, and its scroll, on every task opened.
