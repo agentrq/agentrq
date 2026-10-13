@@ -340,30 +340,65 @@ export function mentionMatches(workspaces, query, limit = 6) {
   return [...named.filter((w) => w.name.toLowerCase().startsWith(q)), ...named.filter((w) => !w.name.toLowerCase().startsWith(q))].slice(0, limit)
 }
 
-/** The text with the @mention typed from `start` to `caret` replaced by a workspace's name. */
-export function insertMention(text, start, caret, name) {
+/**
+ * Where a #task is being typed right after a whole @mention: the workspace,
+ * the `#` before the caret, and what follows it. Null when the caret is not in one.
+ */
+export function taskMentionQuery(text, caret, workspaces) {
+  const before = String(text || '').slice(0, caret)
+  for (const w of byLongestName(workspaces)) {
+    const m = new RegExp(`(?:^|\\s)@${escapeRegExp(w.name)} #([A-Za-z0-9]{0,40})$`).exec(before)
+    if (m) return { workspace: w, start: caret - m[1].length - 1, query: m[1] }
+  }
+  return null
+}
+
+/** A workspace's tasks a #task being typed could name, by id or title, ongoing first. */
+export function taskMentionMatches(tasks, query, limit = 6) {
+  const q = String(query || '').toLowerCase()
+  const named = (tasks || []).filter((t) => t.id.toLowerCase().includes(q) || String(t.title || '').toLowerCase().includes(q))
+  return [...named.filter((t) => t.status === 'ongoing'), ...named.filter((t) => t.status !== 'ongoing')].slice(0, limit)
+}
+
+/** The text with the mention typed from `start` to `caret` replaced by a workspace's name, or a task's id after `#`. */
+export function insertMention(text, start, caret, name, sigil = '@') {
   const value = String(text || '')
-  const mention = `@${name} `
+  const mention = `${sigil}${name} `
   return { value: value.slice(0, start) + mention + value.slice(caret), caret: start + mention.length }
 }
 
-/** The workspaces a comment @mentions by their whole name, each once. */
-export function mentionedWorkspaces(text, workspaces) {
+/**
+ * What a comment @mentions: one entry for each `@workspace #task` it names,
+ * and one for each workspace named whole with no task after it.
+ */
+export function commentMentions(text, workspaces) {
   const body = String(text || '')
-  return (workspaces || []).filter((w) => w.name && new RegExp(`(?:^|\\s)@${escapeRegExp(w.name)}(?![\\w-])`).test(body))
+  const mentions = []
+  for (const w of workspaces || []) {
+    if (!w.name) continue
+    const name = escapeRegExp(w.name)
+    const taskIds = new Set([...body.matchAll(new RegExp(`(?:^|\\s)@${name} #([A-Za-z0-9]+)(?![\\w-])`, 'g'))].map((m) => m[1]))
+    for (const taskId of taskIds) mentions.push({ workspace: w, taskId })
+    if (!taskIds.size && new RegExp(`(?:^|\\s)@${name}(?![\\w-])`).test(body)) mentions.push({ workspace: w })
+  }
+  return mentions
+}
+
+function byLongestName(workspaces) {
+  return (workspaces || []).filter((w) => w.name).sort((a, b) => b.name.length - a.name.length)
 }
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** A rendered comment with each workspace it @mentions highlighted, outside its tags. */
+/** A rendered comment with each workspace it @mentions, and the task named after it, highlighted outside its tags. */
 export function panoMentions(html, workspaces) {
-  const names = (workspaces || []).map((w) => w.name).filter(Boolean).sort((a, b) => b.length - a.length)
+  const names = byLongestName(workspaces).map((w) => w.name)
   if (!names.length) return String(html || '')
   const escaped = names.map((n) => escapeRegExp(escapeHtml(n)))
-  const mention = new RegExp(`@(${escaped.join('|')})(?![\\w-])`, 'g')
-  return String(html || '').split(/(<[^>]*>)/).map((part) => (part.startsWith('<') ? part : part.replace(mention, '<span class="pano-mention">@$1</span>'))).join('')
+  const mention = new RegExp(`@(?:${escaped.join('|')})(?: #[A-Za-z0-9]+)?(?![\\w-])`, 'g')
+  return String(html || '').split(/(<[^>]*>)/).map((part) => (part.startsWith('<') ? part : part.replace(mention, '<span class="pano-mention">$&</span>'))).join('')
 }
 
 function escapeHtml(text) {
@@ -381,17 +416,19 @@ const PING_SPACING_MS = 1100
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * Gives each workspace a comment mentions a task to answer it, a second apart
- * as the server allows. Returns the tasks made, and the workspaces it could not
- * ping with why: the comment is posted by then, so one failure stops nothing.
+ * Pings each mention of a comment (see commentMentions), a second apart as the
+ * server allows: a message on the task it names, or else a new task for the
+ * workspace to answer it. Returns the tasks pinged, and the workspaces it could
+ * not ping with why: the comment is posted by then, so one failure stops nothing.
  */
-export async function pingPanoWorkspaces(doc, comment, workspaces, { api, wait = sleep }) {
+export async function pingPanoWorkspaces(doc, comment, mentions, { api, wait = sleep }) {
   const tasks = []
   const failed = []
-  for (const [i, w] of workspaces.entries()) {
+  const body = panoMentionTaskBody(doc, comment)
+  for (const [i, { workspace: w, taskId }] of mentions.entries()) {
     if (i > 0) await wait(PING_SPACING_MS)
     try {
-      const res = await api.createTask(w.id, `Pano: ${doc.title}`, panoMentionTaskBody(doc, comment))
+      const res = taskId ? await api.respondToTask(w.id, taskId, 'text', body) : await api.createTask(w.id, `Pano: ${doc.title}`, body)
       tasks.push(res.task)
     } catch (err) {
       failed.push({ workspace: w, error: err.message || 'failed' })

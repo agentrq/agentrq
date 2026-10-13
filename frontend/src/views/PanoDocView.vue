@@ -17,7 +17,7 @@ import * as api from '../api'
 import {
   usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
   panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoItemMenus, panoMentions,
-  mentionQuery, mentionMatches, insertMention, mentionedWorkspaces, PANO_COLORS, PANO_TASK_STATUSES,
+  mentionQuery, mentionMatches, taskMentionQuery, taskMentionMatches, insertMention, commentMentions, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
 import { taskRingClass } from '../composables/useTaskStatusStyle'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
@@ -42,10 +42,17 @@ const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false 
 
 const commentText = ref('')
 const commentInput = ref(null)
-// The @mention being typed in the comment, and the workspaces it could name.
+// The @mention being typed in the comment, and the workspaces it could name;
+// or the #task typed after one, and that workspace's open tasks.
 const mention = ref(null)
 const mentionIndex = ref(0)
-const mentionOptions = computed(() => (mention.value ? mentionMatches(workspaces.value, mention.value.query) : []))
+const mentionTasks = ref({})
+const mentionOptions = computed(() => {
+  const m = mention.value
+  if (!m) return []
+  if (!m.workspace) return mentionMatches(workspaces.value, m.query).map((w) => ({ key: w.id, name: w.name, sigil: '@', label: `@${w.name}` }))
+  return taskMentionMatches(mentionTasks.value[m.workspace.id], m.query).map((t) => ({ key: t.id, name: t.id, sigil: '#', label: `#${t.id} ${t.title}` }))
+})
 // The open menu of a checklist item: which item, where, and its task if assigned.
 const itemMenu = ref(null)
 let itemMenuButton = null
@@ -210,16 +217,29 @@ async function onAssign(workspace) {
   if (task) notifySuccess(`Assigned to ${workspace.name}`, null, { taskId: task.id, workspaceId: workspace.id })
 }
 
-// Typing @ suggests the workspaces to mention; arrows move, Enter or Tab picks.
+// Typing @ suggests the workspaces to mention, and # after one that workspace's
+// open tasks; arrows move, Enter or Tab picks.
 function onCommentInput() {
   const el = commentInput.value
-  mention.value = mentionQuery(commentText.value, el.selectionStart)
+  const task = taskMentionQuery(commentText.value, el.selectionStart, workspaces.value)
+  if (task && mention.value?.workspace?.id !== task.workspace.id) loadMentionTasks(task.workspace)
+  mention.value = task || mentionQuery(commentText.value, el.selectionStart)
   mentionIndex.value = 0
 }
 
-async function pickMention(workspace) {
+// Read each time a #task starts, so a task made since is there.
+async function loadMentionTasks(workspace) {
+  try {
+    const { tasks } = await api.fetchTasks(workspace.id, { status: 'ongoing,blocked,notstarted', limit: 50 })
+    mentionTasks.value = { ...mentionTasks.value, [workspace.id]: tasks || [] }
+  } catch (err) {
+    notifyError(`Could not read the tasks of ${workspace.name}: ${err.message}`)
+  }
+}
+
+async function pickMention(option) {
   const el = commentInput.value
-  const next = insertMention(commentText.value, mention.value.start, el.selectionStart, workspace.name)
+  const next = insertMention(commentText.value, mention.value.start, el.selectionStart, option.name, option.sigil)
   commentText.value = next.value
   mention.value = null
   await nextTick()
@@ -252,11 +272,12 @@ function onCommentKey(event) {
   }
 }
 
-// A comment pings each workspace it mentions with a task to answer it.
+// A comment pings each task it mentions with a message, and each other
+// workspace it mentions with a task to answer it.
 async function onComment() {
   const text = commentText.value.trim()
   if (!text) return
-  const mentioned = mentionedWorkspaces(text, workspaces.value)
+  const mentioned = commentMentions(text, workspaces.value)
   const pinged = await run(() => comment(text, mentioned))
   if (!pinged) return
   commentText.value = ''
@@ -515,12 +536,12 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
               class="relative flex flex-col bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm focus-within:border-gray-900 dark:focus-within:border-white transition-all min-w-0 shadow-sm">
               <ul v-if="mentionOptions.length" data-test="pano-mention-menu" role="listbox"
                 class="absolute left-0 right-0 bottom-full mb-1 z-30 max-h-56 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 shadow-lg">
-                <li v-for="(w, i) in mentionOptions" :key="w.id" role="option" :aria-selected="i === mentionIndex" data-test="pano-mention-option"
-                  @mousedown.prevent="pickMention(w)" @mouseenter="mentionIndex = i"
+                <li v-for="(o, i) in mentionOptions" :key="o.key" role="option" :aria-selected="i === mentionIndex" data-test="pano-mention-option"
+                  @mousedown.prevent="pickMention(o)" @mouseenter="mentionIndex = i"
                   :class="i === mentionIndex ? 'bg-gray-100 dark:bg-zinc-800' : ''"
-                  class="px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 truncate cursor-pointer">@{{ w.name }}</li>
+                  class="px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 truncate cursor-pointer">{{ o.label }}</li>
               </ul>
-              <textarea ref="commentInput" v-model="commentText" data-test="pano-comment-input" rows="2" placeholder="Comment, @ a workspace to ping its agent (⌘ + Enter to send)"
+              <textarea ref="commentInput" v-model="commentText" data-test="pano-comment-input" rows="2" placeholder="Comment, @ a workspace to ping its agent, # after it for one of its tasks (⌘ + Enter to send)"
                 @input="onCommentInput" @click="onCommentInput" @keydown="onCommentKey" @blur="mention = null"
                 class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"></textarea>
               <div class="flex justify-end px-3 pb-2 pt-1">

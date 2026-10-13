@@ -48,7 +48,9 @@ import {
   insertMention,
   mentionMatches,
   mentionQuery,
-  mentionedWorkspaces,
+  commentMentions,
+  taskMentionMatches,
+  taskMentionQuery,
   panoAssignees,
   panoRelatedTasks,
   panoItemMenus,
@@ -703,7 +705,7 @@ describe('one doc', () => {
     const api = fakeApi({ createTask: vi.fn((ws) => Promise.resolve({ task: { id: `t-${ws}` } })) });
     const d = usePanoDoc('d1', { api });
     const wait = vi.fn(() => Promise.resolve());
-    const pinged = await d.comment('@api please', [{ id: 'w1', name: 'api' }, { id: 'w2', name: 'web' }], { wait });
+    const pinged = await d.comment('@api please', [{ workspace: { id: 'w1', name: 'api' } }, { workspace: { id: 'w2', name: 'web' } }], { wait });
     expect(pinged).toEqual({ tasks: [{ id: 't-w1' }, { id: 't-w2' }], failed: [] });
     expect(wait).toHaveBeenCalledTimes(1);
     expect(api.createTask).toHaveBeenCalledWith('w1', 'Pano: Plan', panoMentionTaskBody(DOC, '@api please'));
@@ -874,13 +876,39 @@ describe('mentioning a workspace in a comment', () => {
   it('puts the picked name in place of what was typed', () => {
     expect(insertMention('hi @ap there', 3, 6, 'api')).toEqual({ value: 'hi @api  there', caret: 8 });
     expect(insertMention(undefined, 0, 0, 'web app')).toEqual({ value: '@web app ', caret: 9 });
+    expect(insertMention('@api #t', 5, 7, 't42', '#')).toEqual({ value: '@api #t42 ', caret: 10 });
+  });
+
+  it('finds a #task being typed right after a whole mention, of the longest name it follows', () => {
+    expect(taskMentionQuery('hi @api #t4', 11, WS)).toEqual({ workspace: WS[0], start: 8, query: 't4' });
+    expect(taskMentionQuery('@api-v2 #', 9, WS)).toEqual({ workspace: WS[1], start: 8, query: '' });
+    expect(taskMentionQuery('@web app #x', 11, WS)).toEqual({ workspace: WS[2], start: 9, query: 'x' });
+    expect(taskMentionQuery('@api #t4 done', 13, WS)).toBeNull();
+    expect(taskMentionQuery('@nobody #', 9, WS)).toBeNull();
+    expect(taskMentionQuery('cc@api #', 8, WS)).toBeNull();
+    expect(taskMentionQuery('@ #', 3, [{ id: 'w', name: '' }])).toBeNull();
+    expect(taskMentionQuery(undefined, 0, undefined)).toBeNull();
+  });
+
+  it('suggests a workspace\'s tasks by id or title, ongoing first', () => {
+    const tasks = [{ id: 'a1', title: 'Docs', status: 'notstarted' }, { id: 'b2', title: 'Fix login', status: 'ongoing' }, { id: 'c3', status: 'blocked' }];
+    expect(taskMentionMatches(tasks, '').map((t) => t.id)).toEqual(['b2', 'a1', 'c3']);
+    expect(taskMentionMatches(tasks, 'DOC').map((t) => t.id)).toEqual(['a1']);
+    expect(taskMentionMatches(tasks, 'c3').map((t) => t.id)).toEqual(['c3']);
+    expect(taskMentionMatches(tasks, '', 1).map((t) => t.id)).toEqual(['b2']);
+    expect(taskMentionMatches(undefined, undefined)).toEqual([]);
   });
 
   it('pings only the workspaces named whole', () => {
-    expect(mentionedWorkspaces('@api-v2 and @web app, cc@rapid', WS).map((w) => w.id)).toEqual(['w2', 'w3']);
-    expect(mentionedWorkspaces('@api.', WS).map((w) => w.id)).toEqual(['w1']);
-    expect(mentionedWorkspaces(undefined, undefined)).toEqual([]);
-    expect(mentionedWorkspaces('@x', [{ id: 'w', name: '' }])).toEqual([]);
+    expect(commentMentions('@api-v2 and @web app, cc@rapid', WS)).toEqual([{ workspace: WS[1] }, { workspace: WS[2] }]);
+    expect(commentMentions('@api.', WS)).toEqual([{ workspace: WS[0] }]);
+    expect(commentMentions(undefined, undefined)).toEqual([]);
+    expect(commentMentions('@x', [{ id: 'w', name: '' }])).toEqual([]);
+  });
+
+  it('names a task only after its own workspace, and then pings no new task for that workspace', () => {
+    expect(commentMentions('@api #t1 and @api again, @api #t1 @api #t2', WS)).toEqual([{ workspace: WS[0], taskId: 't1' }, { workspace: WS[0], taskId: 't2' }]);
+    expect(commentMentions('@web app #t3, @api-v2 #t4-x and #t5', WS)).toEqual([{ workspace: WS[1] }, { workspace: WS[2], taskId: 't3' }]);
   });
 
   it('highlights the mentions in a rendered comment, never inside a tag', () => {
@@ -890,16 +918,28 @@ describe('mentioning a workspace in a comment', () => {
     expect(panoMentions('<p>@api</p>', [])).toBe('<p>@api</p>');
     expect(panoMentions(undefined, undefined)).toBe('');
     expect(panoMentions(undefined, WS)).toBe('');
+    expect(panoMentions('<p>@api #t1, @api-v2 #</p>', WS)).toBe('<p><span class="pano-mention">@api #t1</span>, <span class="pano-mention">@api-v2</span> #</p>');
   });
 
   it('gives each mentioned workspace a task that quotes the comment, a second apart', async () => {
     const api = { createTask: vi.fn((ws) => Promise.resolve({ task: { id: `t-${ws}` } })) };
     const wait = vi.fn(() => Promise.resolve());
     const doc = { id: 'd1', title: 'Plan' };
-    expect(await pingPanoWorkspaces(doc, 'one\ntwo', WS.slice(0, 3), { api, wait })).toEqual({ tasks: [{ id: 't-w1' }, { id: 't-w2' }, { id: 't-w3' }], failed: [] });
+    const mentions = WS.slice(0, 3).map((workspace) => ({ workspace }));
+    expect(await pingPanoWorkspaces(doc, 'one\ntwo', mentions, { api, wait })).toEqual({ tasks: [{ id: 't-w1' }, { id: 't-w2' }, { id: 't-w3' }], failed: [] });
     expect(wait.mock.calls).toEqual([[1100], [1100]]);
     expect(api.createTask).toHaveBeenCalledWith('w1', 'Pano: Plan', panoMentionTaskBody(doc, 'one\ntwo'));
     expect(panoMentionTaskBody(doc, 'one\ntwo')).toMatch(/^> one\n> two\n\n---\nYou were mentioned in a comment on the Pano doc `d1` \("Plan"\)/);
+  });
+
+  it('posts on the task a mention names instead of making one', async () => {
+    const api = { createTask: vi.fn(() => Promise.resolve({ task: { id: 'new' } })), respondToTask: vi.fn((ws, id) => Promise.resolve({ task: { id } })) };
+    const doc = { id: 'd1', title: 'Plan' };
+    const res = await pingPanoWorkspaces(doc, 'hi', [{ workspace: WS[0], taskId: 't1' }, { workspace: WS[1] }], { api, wait: () => Promise.resolve() });
+    expect(res).toEqual({ tasks: [{ id: 't1' }, { id: 'new' }], failed: [] });
+    expect(api.respondToTask).toHaveBeenCalledWith('w1', 't1', 'text', panoMentionTaskBody(doc, 'hi'));
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+    expect(api.createTask).toHaveBeenCalledWith('w2', 'Pano: Plan', panoMentionTaskBody(doc, 'hi'));
   });
 
   it('keeps pinging past a workspace it could not, and says which and why', async () => {
@@ -907,14 +947,14 @@ describe('mentioning a workspace in a comment', () => {
       .mockRejectedValueOnce(new Error('rate limit exceeded'))
       .mockRejectedValueOnce(new Error(''))
       .mockResolvedValueOnce({ task: { id: 't3' } }) };
-    const res = await pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 3), { api, wait: () => Promise.resolve() });
+    const res = await pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 3).map((workspace) => ({ workspace })), { api, wait: () => Promise.resolve() });
     expect(res).toEqual({ tasks: [{ id: 't3' }], failed: [{ workspace: WS[0], error: 'rate limit exceeded' }, { workspace: WS[1], error: 'failed' }] });
   });
 
   it('waits by default, on a real timer', async () => {
     vi.useFakeTimers();
     const api = { createTask: vi.fn(() => Promise.resolve({ task: { id: 't' } })) };
-    const p = pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 2), { api });
+    const p = pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 2).map((workspace) => ({ workspace })), { api });
     await vi.advanceTimersByTimeAsync(1000);
     expect(api.createTask).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(100);

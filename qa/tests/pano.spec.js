@@ -186,7 +186,8 @@ test('agents share docs on the Pano, and the person reads and comments on them',
 
 // The person assigns a checklist item to a workspace from its menu: a task is
 // made there, and the item follows the task's status as it moves, ticked once
-// it is completed. An @mention in a comment pings a workspace's agent.
+// it is completed. An @mention in a comment pings a workspace's agent, or
+// one of its tasks.
 test('a checklist item assigned to a workspace follows its task, and a mention pings one', async ({ page, workspace }) => {
   const traffic = watchTraffic(page)
   const call = await agentSession(page, workspace.id)
@@ -251,6 +252,22 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   expect(ping.title).toBe(`Pano: ${doc.title}`)
   expect(ping.body).toContain(`> Can you take the docs, @${workspace.name}`)
   await expect(page.getByTestId('pano-comments').locator('.pano-mention')).toHaveText(`@${workspace.name}`)
+
+  // A mention naming one of the workspace's open tasks, picked after a #,
+  // posts on that task instead of making another.
+  await input.pressSequentially(`More on the docs, @${workspace.name} #`)
+  await expect(page.getByTestId('pano-mention-option')).toHaveText([`#${ping.id} ${ping.title}`])
+  await page.screenshot({ path: test.info().outputPath('pano-task-mention-light.png'), animations: 'disabled' })
+  await input.press('Enter')
+  await expect(input).toHaveValue(`More on the docs, @${workspace.name} #${ping.id} `)
+  const responded = nextResponse(page, 'POST', `/api/v1/workspaces/${workspace.id}/tasks/${ping.id}/respond`)
+  await input.press('ControlOrMeta+Enter')
+  expect((await responded).status()).toBe(200)
+  await expect(page.getByTestId('pano-comments').locator('.pano-mention').last()).toHaveText(`@${workspace.name} #${ping.id}`)
+  const thread = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks/${ping.id}`)).json()
+  expect(thread.task.messages.at(-1).text, 'the comment is a message on the task').toContain(`> More on the docs, @${workspace.name} #${ping.id}`)
+  const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=notstarted`)).json()
+  expect(open.tasks.map((t) => t.id), 'no task was made for it').toEqual([ping.id])
 
   await page.screenshot({ path: test.info().outputPath('pano-assigned-light.png'), fullPage: true, animations: 'disabled' })
   await page.evaluate(() => document.documentElement.classList.add('dark'))

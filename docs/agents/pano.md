@@ -21,6 +21,9 @@
   uses `UpdateColumns`: stamped as a save, it would reorder the board.
 - **Pings are spaced a second apart**: the server makes one task a second per
   account, so a comment mentioning two workspaces at once would 429 the second.
+- **`@workspace #task` in a comment posts on that task, and makes none**; a
+  plain `@workspace` makes one. The server reads the task within the URL's
+  workspace, so naming another workspace's task is refused, not misdelivered.
 - **There is no agent search, on purpose**: agents pass doc ids. Only the board
   filters, in the browser.
 - **Workspace 0 is the person.** Authors and commenters are a workspace id (the

@@ -25,6 +25,8 @@ const api = vi.hoisted(() => ({
   addPanoComment: vi.fn(),
   attachPanoFiles: vi.fn(),
   createTask: vi.fn(),
+  fetchTasks: vi.fn(),
+  respondToTask: vi.fn(),
   ensureSupervisorWorkspace: vi.fn(),
   fetchEvents: vi.fn(),
   fetchWorkflows: vi.fn(),
@@ -879,10 +881,52 @@ describe('a doc', () => {
       expect(input.value).toBe('');
     });
 
+    it('posts a comment naming a workspace\'s task on that task, picked from its open tasks', async () => {
+      api.fetchTasks.mockResolvedValue({ tasks: [{ id: 't1', title: 'Write docs', status: 'notstarted' }, { id: 't2', title: 'Fix login', status: 'ongoing' }] });
+      api.respondToTask.mockResolvedValue({ task: { id: 't2' } });
+      const { el } = await mount('/pano/d1');
+      const input = $(el, 'pano-comment-input');
+      await type(input, 'ask @ops #');
+      expect(api.fetchTasks).toHaveBeenCalledWith('ws2', { status: 'ongoing,blocked,notstarted', limit: 50 });
+      expect($$(el, 'pano-mention-option').map(text)).toEqual(['#t2 Fix login', '#t1 Write docs']);
+      await type(input, 'ask @ops #doc');
+      expect(api.fetchTasks).toHaveBeenCalledTimes(1);
+      expect($$(el, 'pano-mention-option').map(text)).toEqual(['#t1 Write docs']);
+      await type(input, 'ask @ops #');
+      await key(input, { key: 'Enter' });
+      expect(input.value).toBe('ask @ops #t2 ');
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      await type(input, 'ask @ops #t2 to look');
+      await click($(el, 'pano-comment'));
+      expect(api.respondToTask).toHaveBeenCalledWith('ws2', 't2', 'text', expect.stringContaining('> ask @ops #t2 to look'));
+      expect(api.createTask).not.toHaveBeenCalled();
+      expect(lastToast()).toMatchObject({ type: 'success', message: 'Pinged 1 workspace' });
+    });
+
+    it('says when it cannot read a workspace\'s tasks, and offers none when it has none', async () => {
+      api.fetchTasks.mockRejectedValue(new Error('Failed to fetch tasks'));
+      const { el } = await mount('/pano/d1');
+      await type($(el, 'pano-comment-input'), '@Home #');
+      await settle();
+      expect(lastToast()).toMatchObject({ type: 'error', message: 'Could not read the tasks of Home: Failed to fetch tasks' });
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      // A workspace with no open tasks is answered with none.
+      api.fetchTasks.mockResolvedValue({ tasks: null });
+      await type($(el, 'pano-comment-input'), '@ops #');
+      await settle();
+      expect($(el, 'pano-mention-menu')).toBeNull();
+    });
+
     it('highlights the workspaces a comment mentions', async () => {
       api.getPanoDoc.mockResolvedValueOnce({ doc: { ...DOC, comments: [{ id: 'c1', body: 'thanks @ops', workspaceId: 'ws1', createdAt: '2026-10-13T12:00:00Z' }] } });
       const { el } = await mount('/pano/d1');
       expect($(el, 'pano-comments').querySelector('.pano-mention').textContent).toBe('@ops');
+    });
+
+    it('highlights a task a comment mentions with its workspace', async () => {
+      api.getPanoDoc.mockResolvedValueOnce({ doc: { ...DOC, comments: [{ id: 'c1', body: 'thanks @ops #t2', workspaceId: 'ws1', createdAt: '2026-10-13T12:00:00Z' }] } });
+      const { el } = await mount('/pano/d1');
+      expect($(el, 'pano-comments').querySelector('.pano-mention').textContent).toBe('@ops #t2');
     });
 
     it('assigns a checklist item to a workspace from its menu', async () => {
