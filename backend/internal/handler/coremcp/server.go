@@ -171,14 +171,14 @@ func (s *WorkspaceServer) mcpURL(workspaceID int64) string {
 // ── Params Structs ────────────────────────────────────────────────────────────
 
 type ListWorkspacesParams struct {
-	IncludeArchived bool `json:"includeArchived" jsonschema:"Include archived workspaces"`
+	IncludeArchived bool `json:"includeArchived,omitempty" jsonschema:"Include archived workspaces"`
 }
 
 type CreateWorkspaceParams struct {
-	Name                 string         `json:"name"`
-	Description          *string        `json:"description,omitempty"`
-	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
-	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
+	Name                 string         `json:"name" jsonschema:"The workspace's name, in kebab-case, at most 128 characters."`
+	Description          *string        `json:"description,omitempty" jsonschema:"Its mission: what its agent is for."`
+	NotificationSettings map[string]any `json:"notificationSettings,omitempty" jsonschema:"Its notification settings, as the web app stores them."`
+	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty" jsonschema:"A note its agent is asked to keep, about what it learned."`
 }
 
 type ForkWorkspaceParams struct {
@@ -196,15 +196,15 @@ type GetWorkspaceParams struct {
 }
 
 type UpdateWorkspaceParams struct {
-	ID                   string         `json:"id"`
-	Name                 *string        `json:"name,omitempty"`
-	Description          *string        `json:"description,omitempty"`
-	NotificationSettings map[string]any `json:"notificationSettings,omitempty"`
-	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty"`
+	ID                   string         `json:"id" jsonschema:"Workspace ID (base62)."`
+	Name                 *string        `json:"name,omitempty" jsonschema:"A new name, in kebab-case."`
+	Description          *string        `json:"description,omitempty" jsonschema:"A new mission."`
+	NotificationSettings map[string]any `json:"notificationSettings,omitempty" jsonschema:"New notification settings, as the web app stores them."`
+	SelfLearningLoopNote *string        `json:"selfLearningLoopNote,omitempty" jsonschema:"A new self-learning note."`
 }
 
 type GetWorkspaceStatsParams struct {
-	ID    string `json:"id"`
+	ID    string `json:"id" jsonschema:"Workspace ID (base62)."`
 	Range string `json:"range" jsonschema:"Time range strictly in format '7d' or '30d'"`
 	From  int64  `json:"from,omitempty" jsonschema:"Unix timestamp"`
 	To    int64  `json:"to,omitempty" jsonschema:"Unix timestamp"`
@@ -311,48 +311,42 @@ type GetAttachmentParams struct {
 }
 
 type ListMemoriesParams struct {
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 }
 
 type GetMemoryParams struct {
-	WorkspaceID string `json:"workspaceId"`
-	Name        string `json:"name" jsonschema:"The memory's name, as listMemories reports it."`
+	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
+	Name        string `json:"name" jsonschema:"The memory's name, as memory action list reports it."`
 }
 
 type SearchSkillsParams struct {
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace whose view of the skills to search (base62)."`
 	Q           string `json:"q,omitempty" jsonschema:"Text to find in a skill's name or description, ignoring case; at least 3 characters. Leave it out to list every skill."`
 	Limit       int    `json:"limit,omitempty" jsonschema:"How many skills to return, at most 100. Leave it out to return every match."`
 	Offset      int    `json:"offset,omitempty" jsonschema:"How many matches to skip, for the next page."`
 }
 
 type GetSkillParams struct {
-	WorkspaceID string `json:"workspaceId"`
+	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace whose skill to read (base62)."`
 	URI         string `json:"uri" jsonschema:"The file to read, as skill://<name>/<path>. skill://<name> alone reads its SKILL.md."`
 }
 
 // ── Tool Definitions ──────────────────────────────────────────────────────────
 
 func (s *WorkspaceServer) registerTools() {
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listWorkspaces", Description: "List all workspaces for the authenticated user", Annotations: mcphint.Read("List workspaces")}, s.handleListWorkspaces)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "createWorkspace", Description: "Create a new workspace", Annotations: mcphint.Write("Create a workspace")}, s.handleCreateWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "forkWorkspace", Description: "Fork a workspace: a workspace of its own, with its own queue and agent, that shares the parent's settings, memory and skills and is merged back when its tasks are done. Move tasks into it to have a second agent work on them. A fork, the supervisor workspace and an archived workspace cannot be forked", Annotations: mcphint.Write("Fork a workspace")}, s.handleForkWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "mergeFork", Description: "Merge a fork back into its parent: the fork's agent is stopped, every task moves to the parent with its thread, and the fork is removed. Its folder on the machine is left unless deleteFolder is true. Refused while any task in the fork is not completed or rejected", Annotations: mcphint.Write("Merge a fork back")}, s.handleMergeFork)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspace", Description: "Get a workspace by ID", Annotations: mcphint.Read("Get a workspace")}, s.handleGetWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "updateWorkspace", Description: "Update a workspace", Annotations: mcphint.Update("Update a workspace")}, s.handleUpdateWorkspace)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getWorkspaceStats", Description: "Get statistics for a workspace", Annotations: mcphint.Read("Workspace statistics")}, s.handleGetWorkspaceStats)
-	// Tasks — see task.go.
-	s.registerTaskTool()
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listMemories", Description: "List a workspace's memories: name, size and when each was last changed. Content is not included — get one by name for that.", Annotations: mcphint.Read("List a workspace's memories")}, s.handleListMemories)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getMemory", Description: "Get one of a workspace's memories in full, by name. MEMORY.md is the index the others hang off.", Annotations: mcphint.Read("Get a memory")}, s.handleGetMemory)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "searchSkills", Description: "Find the account's skills, as a workspace sees them: name, description, source and size, plus the total number of matches. With q (at least 3 characters) only skills whose name or description contains it are returned; limit and offset page through the matches. enabled false means turned off for every workspace; workspaceEnabled false means not on in that workspace. That workspace's agent sees only skills with both on. Content is not included — get a file with getSkill.", Annotations: mcphint.Read("Search a workspace's skills")}, s.handleSearchSkills)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "getSkill", Description: "Get one file of a workspace's skill in full, by its skill://<name>/<path> URI; skill://<name> alone gets its SKILL.md, together with the list of the skill's other files.", Annotations: mcphint.Read("Get a skill file")}, s.handleGetSkill)
-
-	// Events and their triggers — see events.go.
-	s.registerEventTools()
-	s.registerWorkflowTools()
-	s.registerMachineTools()
+	// Every tool takes an action and its payload — see tools.go and task.go.
+	// The annotation is the most a tool's actions can do, so a tool with a
+	// delete is destructive even for its reads.
+	mcp.AddTool(s.server, &mcp.Tool{Name: "workspace", Description: workspaceToolDescription, Annotations: mcphint.Overwrite("Manage workspaces")}, s.handleWorkspaceTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "task", Description: taskToolDescription, Annotations: mcphint.Overwrite("Manage tasks")}, s.handleTask)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "memory", Description: memoryToolDescription, Annotations: mcphint.Read("Read a workspace's memory")}, s.handleMemoryTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "skills", Description: skillsToolDescription, Annotations: mcphint.Read("Read a workspace's skills")}, s.handleSkillsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "events", Description: eventsToolDescription, Annotations: mcphint.Overwrite("Manage events and triggers")}, s.handleEventsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "workflows", Description: workflowsToolDescription, Annotations: mcphint.Overwrite("Manage workflows")}, s.handleWorkflowsTool)
+	mcp.AddTool(s.server, &mcp.Tool{Name: "machines", Description: machinesToolDescription, Annotations: mcphint.Overwrite("Manage machines and agents")}, s.handleMachinesTool)
 	s.registerPanoTools()
+	mcp.AddTool(s.server, &mcp.Tool{Name: "help", Description: helpToolDescription, Annotations: mcphint.Read("How to call these tools")}, s.handleHelpTool)
+	s.server.AddReceivingMiddleware(mcpevent.ActionToolsMiddleware(actionToolNames, legacyTools))
 
 	// Resources and prompts — see resources.go and prompts.go.
 	s.registerResources()

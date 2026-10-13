@@ -42,7 +42,7 @@ func TestReadNewWorkspaceGuide(t *testing.T) {
 	s := resourceServer("https://agentrq.example")
 	text := readResource(t, s, s.readNewWorkspaceGuide, newWorkspaceGuideURI)
 
-	for _, want := range []string{"listWorkspaces", "createWorkspace", "getWorkspace", "**task** action `create`"} {
+	for _, want := range []string{"**workspace** action `list`", "**workspace** action `create`", "**workspace** action `get`", "**task** action `create`"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guide is missing a reference to %q:\n%s", want, text)
 		}
@@ -55,8 +55,8 @@ func TestReadAgentrqdSetupGuide_TemplatesTheBaseURL(t *testing.T) {
 	s := resourceServer("https://agentrq.example")
 	text := readResource(t, s, s.readAgentrqdSetupGuide, agentrqdSetupGuideURI)
 
-	if !strings.Contains(text, "createEnrolmentCode") {
-		t.Errorf("guide does not mention the createEnrolmentCode tool:\n%s", text)
+	if !strings.Contains(text, "**machines** tool's `createEnrolmentCode` action") {
+		t.Errorf("guide does not mention the machines tool's createEnrolmentCode action:\n%s", text)
 	}
 	if !strings.Contains(text, "agentrqd enroll --server https://agentrq.example --code <code>") {
 		t.Errorf("guide does not template the server's own base URL into the enrol command:\n%s", text)

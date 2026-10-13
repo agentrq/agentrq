@@ -193,7 +193,7 @@ export const COMMANDS = [
     summary: 'Show the workspace title and mission',
     usage: 'agentrq-ws workspace',
     async run(ctx) {
-      return ctx.client.callTool('getWorkspace', {})
+      return act(ctx, 'workspace', 'get', {}, 'getWorkspace')
     },
   },
   {
@@ -318,7 +318,7 @@ export const COMMANDS = [
     summary: 'Read a workspace memory (defaults to the index)',
     usage: 'agentrq-ws memory load [name]',
     async run(ctx) {
-      return ctx.client.callTool('loadMemory', { name: ctx.positionals[0] })
+      return act(ctx, 'memory', 'load', { name: ctx.positionals[0] }, 'loadMemory')
     },
   },
   {
@@ -331,7 +331,7 @@ export const COMMANDS = [
     async run(ctx) {
       if (ctx.values.content === undefined) throw new UserError('--content is required (use @file or - to read from stdin)')
       const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the memory content' })
-      return ctx.client.callTool('saveMemory', { name: ctx.positionals[0], content })
+      return act(ctx, 'memory', 'save', { name: ctx.positionals[0], content }, 'saveMemory')
     },
   },
   {
@@ -339,7 +339,7 @@ export const COMMANDS = [
     summary: 'Delete a workspace memory',
     usage: 'agentrq-ws memory delete [name]',
     async run(ctx) {
-      return ctx.client.callTool('deleteMemory', { name: ctx.positionals[0] })
+      return act(ctx, 'memory', 'delete', { name: ctx.positionals[0] }, 'deleteMemory')
     },
   },
   {
@@ -353,7 +353,7 @@ export const COMMANDS = [
     async run(ctx) {
       const args = {}
       if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
-      return ctx.client.callTool('searchSkills', withPaging(ctx, args))
+      return act(ctx, 'skills', 'search', withPaging(ctx, args), 'searchSkills')
     },
   },
   {
@@ -361,7 +361,7 @@ export const COMMANDS = [
     summary: 'Read a skill file (skill://<name> reads its SKILL.md)',
     usage: 'agentrq-ws skill load <uri>',
     async run(ctx) {
-      return ctx.client.callTool('loadSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+      return act(ctx, 'skills', 'load', { uri: requirePositional(ctx.positionals, 0, 'uri') }, 'loadSkill')
     },
   },
   {
@@ -375,7 +375,7 @@ export const COMMANDS = [
       const uri = requirePositional(ctx.positionals, 0, 'uri')
       if (ctx.values.content === undefined) throw new UserError('--content is required (use @file or - to read from stdin)')
       const content = await resolveText(ctx.values.content, { stdin: ctx.stdin, what: 'the skill file' })
-      return ctx.client.callTool('saveSkill', { uri, content })
+      return act(ctx, 'skills', 'save', { uri, content }, 'saveSkill')
     },
   },
   {
@@ -383,7 +383,7 @@ export const COMMANDS = [
     summary: 'Delete a skill (skill://<name>) or one of its files',
     usage: 'agentrq-ws skill delete <uri>',
     async run(ctx) {
-      return ctx.client.callTool('deleteSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+      return act(ctx, 'skills', 'delete', { uri: requirePositional(ctx.positionals, 0, 'uri') }, 'deleteSkill')
     },
   },
   {
@@ -493,12 +493,7 @@ export const COMMANDS = [
     async run(ctx) {
       const name = requirePositional(ctx.positionals, 0, 'name')
       const payload = await resolveText(ctx.values.payload, { stdin: ctx.stdin, what: 'the payload' })
-      return ctx.client.callTool('publishEvent', {
-        name,
-        payload,
-        taskId: ctx.values.task,
-        faq: parseFaq(ctx.values),
-      })
+      return act(ctx, 'workspace', 'publishEvent', { name, payload, taskId: ctx.values.task, faq: parseFaq(ctx.values) }, 'publishEvent')
     },
   },
   {
@@ -555,7 +550,7 @@ export const COMMANDS = [
       const args = {}
       if (ctx.positionals.length) args.q = ctx.positionals.join(' ')
       if (ctx.values.pattern !== undefined) args.pattern = ctx.values.pattern
-      return ctx.client.callTool('listSiteTools', withPaging(ctx, args))
+      return act(ctx, 'siteTools', 'search', withPaging(ctx, args), 'listSiteTools')
     },
   },
   {
@@ -565,7 +560,7 @@ export const COMMANDS = [
     async run(ctx) {
       const site = requirePositional(ctx.positionals, 0, 'site')
       const tool = requirePositional(ctx.positionals, 1, 'tool')
-      return ctx.client.callTool('getSiteToolDefinition', { site, tool })
+      return act(ctx, 'siteTools', 'getDefinition', { site, tool }, 'getSiteToolDefinition')
     },
   },
   {
@@ -580,12 +575,16 @@ export const COMMANDS = [
       const site = requirePositional(ctx.positionals, 0, 'site')
       const tool = requirePositional(ctx.positionals, 1, 'tool')
       if (!ctx.values.task) throw new UserError('--task <taskId> is required')
-      return ctx.client.callTool('callSiteTool', {
-        taskId: ctx.values.task,
-        site,
-        tool,
-        arguments: await readArgs(ctx),
-      })
+      const payload = { taskId: ctx.values.task, site, tool, arguments: await readArgs(ctx) }
+      return act(ctx, 'siteTools', 'call', payload, 'callSiteTool')
+    },
+  },
+  {
+    path: ['tools', 'help'],
+    summary: "The server's help: every tool, one tool's actions, or one action's payload with an example",
+    usage: 'agentrq-ws tools help [tool|tool.action]',
+    async run(ctx) {
+      return ctx.client.callTool('help', { action: ctx.positionals[0] })
     },
   },
   {
@@ -615,6 +614,11 @@ export const COMMANDS = [
     },
   },
 ]
+
+/** One action of a tool; an older server gets the tool it had for it, `legacy`. */
+function act(ctx, tool, action, payload, legacy) {
+  return ctx.client.callAction(tool, action, payload, [legacy, payload])
+}
 
 /** The server's own help for an action tool, for one action when named. */
 function actionHelp(ctx, tool) {

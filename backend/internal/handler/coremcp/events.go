@@ -10,7 +10,6 @@ import (
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -40,12 +39,12 @@ type GetEventParams struct {
 }
 
 type UpdateEventParams struct {
-	EventID           string `json:"eventId"`
+	EventID           string `json:"eventId" jsonschema:"Event ID (base62)"`
 	PayloadGuidelines string `json:"payloadGuidelines" jsonschema:"Replaces the current guidelines. The event's name cannot be changed"`
 }
 
 type DeleteEventParams struct {
-	EventID string `json:"eventId"`
+	EventID string `json:"eventId" jsonschema:"Event ID (base62)"`
 }
 
 type CreateEventTriggerParams struct {
@@ -60,7 +59,7 @@ type CreateEventTriggerParams struct {
 }
 
 type ListEventTriggersParams struct {
-	EventID string `json:"eventId"`
+	EventID string `json:"eventId" jsonschema:"Event ID (base62)"`
 }
 
 type GetEventTriggerParams struct {
@@ -68,82 +67,22 @@ type GetEventTriggerParams struct {
 }
 
 type UpdateEventTriggerParams struct {
-	TriggerID        string `json:"triggerId"`
-	WorkspaceID      string `json:"workspaceId"`
-	Title            string `json:"title"`
-	Body             string `json:"body,omitempty"`
+	TriggerID        string `json:"triggerId" jsonschema:"Event trigger ID (base62)"`
+	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace the task is created in"`
+	Title            string `json:"title" jsonschema:"Task title, used exactly as written"`
+	Body             string `json:"body,omitempty" jsonschema:"Task body. {{EVENT_PAYLOAD}} and {{EVENT_FAQ}} are replaced with what the publisher sent"`
 	Assignee         string `json:"assignee,omitempty" jsonschema:"enum: agent, human. Defaults to agent"`
-	CronSchedule     string `json:"cronSchedule,omitempty"`
-	AllowAllCommands bool   `json:"allowAllCommands,omitempty"`
-	EmitEventID      string `json:"emitEventId,omitempty"`
+	CronSchedule     string `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule for the spawned task, hourly at most"`
+	AllowAllCommands bool   `json:"allowAllCommands,omitempty" jsonschema:"Let the spawned task run commands without asking for permission"`
+	EmitEventID      string `json:"emitEventId,omitempty" jsonschema:"Event to publish when the spawned task completes"`
 }
 
 type DeleteEventTriggerParams struct {
-	TriggerID string `json:"triggerId"`
+	TriggerID string `json:"triggerId" jsonschema:"Event trigger ID (base62)"`
 }
 
 type ListEventTasksParams struct {
-	EventID string `json:"eventId"`
-}
-
-// ── Tool definitions ──────────────────────────────────────────────────────────
-
-func (s *WorkspaceServer) registerEventTools() {
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listEvents",
-		Description: "List the events defined for this account. An event is a named signal a workspace publishes when something happens",
-		Annotations: mcphint.Read("List events"),
-	}, s.handleListEvents)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "createEvent",
-		Description: "Define a named signal that workspaces can publish and triggers can react to",
-		Annotations: mcphint.Write("Define an event"),
-	}, s.handleCreateEvent)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "getEvent",
-		Description: "Get an event by ID",
-		Annotations: mcphint.Read("Get an event"),
-	}, s.handleGetEvent)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "updateEvent",
-		Description: "Revise an event's payload guidelines. Its name is fixed once created",
-		Annotations: mcphint.Update("Revise an event"),
-	}, s.handleUpdateEvent)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "deleteEvent",
-		Description: "Delete an event. Its triggers stop firing",
-		Annotations: mcphint.Overwrite("Delete an event"),
-	}, s.handleDeleteEvent)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "createEventTrigger",
-		Description: "React to an event: when it fires, create a task in a workspace. The body may carry {{EVENT_PAYLOAD}} and {{EVENT_FAQ}}, and emitEventId chains a second event to the task's completion",
-		Annotations: mcphint.Write("Add an event trigger"),
-	}, s.handleCreateEventTrigger)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listEventTriggers",
-		Description: "List the triggers attached to an event — everything that happens when it fires",
-		Annotations: mcphint.Read("List an event's triggers"),
-	}, s.handleListEventTriggers)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "getEventTrigger",
-		Description: "Get an event trigger by ID",
-		Annotations: mcphint.Read("Get an event trigger"),
-	}, s.handleGetEventTrigger)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "updateEventTrigger",
-		Description: "Rewrite an event trigger. Every field is written as given, so send the ones to keep as well",
-		Annotations: mcphint.Overwrite("Rewrite an event trigger"),
-	}, s.handleUpdateEventTrigger)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "deleteEventTrigger",
-		Description: "Delete an event trigger, leaving its event in place",
-		Annotations: mcphint.Overwrite("Delete an event trigger"),
-	}, s.handleDeleteEventTrigger)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listEventTasks",
-		Description: "List the tasks an event has spawned, to see whether a system that was wired up is running",
-		Annotations: mcphint.Read("List an event's tasks"),
-	}, s.handleListEventTasks)
+	EventID string `json:"eventId" jsonschema:"Event ID (base62)"`
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

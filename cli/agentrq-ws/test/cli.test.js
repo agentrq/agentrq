@@ -103,7 +103,7 @@ test('a command prints the server text and exits zero', async () => {
 test('--json prints the structured result instead', async () => {
   const { code, out } = await cli(['workspace', '--json'], { createClient: clientSaying('text') })
   assert.equal(code, 0)
-  assert.deepEqual(JSON.parse(out), { content: [{ type: 'text', text: 'text' }], structured: { name: 'getWorkspace' } })
+  assert.deepEqual(JSON.parse(out), { content: [{ type: 'text', text: 'text' }], structured: { name: 'workspace' } })
 })
 
 test('--json falls back to the text when a command returns no raw result', async () => {
@@ -151,7 +151,7 @@ test('a usage mistake is reported as a message, not a stack', async () => {
 
 test('an unexpected error keeps its stack, because that one is a bug', async () => {
   const createClient = () => ({
-    async callTool() {
+    async callAction() {
       throw new TypeError('undefined is not a function')
     },
     async close() {},
@@ -166,7 +166,7 @@ test('the session is closed even when the command fails', async () => {
   // Otherwise every failed invocation leaks a session on the server.
   let closed = 0
   const createClient = () => ({
-    async callTool() {
+    async callAction() {
       throw new Error('server unavailable')
     },
     async close() {
@@ -179,7 +179,7 @@ test('the session is closed even when the command fails', async () => {
 
 test('a client without close is still fine', async () => {
   const createClient = () => ({
-    async callTool() {
+    async callAction() {
       return { text: 'ok' }
     },
   })
@@ -195,7 +195,7 @@ test('a missing .mcp.json is explained before anything is sent', async () => {
     cwd: empty,
     createClient: () => {
       created = true
-      return { async callTool() {}, async close() {} }
+      return { async callAction() {}, async close() {} }
     },
   })
   assert.equal(code, 1)
@@ -232,7 +232,7 @@ test('stdin reaches a command that asks for it', async () => {
     }),
   })
   assert.equal(code, 0)
-  assert.deepEqual(seen, { name: 'notes.md', content: 'remembered' })
+  assert.deepEqual(seen, { action: 'save', payload: { name: 'notes.md', content: 'remembered' } })
 })
 
 test('--server picks between several configured servers', async () => {
@@ -247,7 +247,7 @@ test('--server picks between several configured servers', async () => {
     cwd: dir,
     createClient: (server) => {
       url = server.url
-      return { async callTool() { return { text: 'ok' } }, async close() {} }
+      return { async callAction() { return { text: 'ok' } }, async close() {} }
     },
   })
   assert.equal(code, 0)

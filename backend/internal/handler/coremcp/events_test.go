@@ -584,11 +584,7 @@ func TestEventToolsAreRegistered(t *testing.T) {
 		registered[tool.Name] = tool.Description
 	}
 
-	want := []string{
-		"listEvents", "createEvent", "getEvent", "updateEvent", "deleteEvent",
-		"createEventTrigger", "listEventTriggers", "getEventTrigger",
-		"updateEventTrigger", "deleteEventTrigger", "listEventTasks",
-	}
+	want := []string{"events"}
 	for _, name := range want {
 		description, ok := registered[name]
 		if !ok {

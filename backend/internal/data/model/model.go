@@ -832,6 +832,18 @@ const (
 	// The task tool, on both servers: its help, and calls naming no action it
 	// has. Its actions are recorded under the names of the tools they replaced.
 	SubActionIDMCPTask
+	// The other tools of actions: their help, and calls naming no action they
+	// have. Their actions are recorded under the names of the tools they
+	// replaced. workspace, memory, skills and help are on both servers;
+	// siteTools is the workspace server's, the rest the supervisor's.
+	SubActionIDMCPWorkspace
+	SubActionIDMCPMemory
+	SubActionIDMCPSkills
+	SubActionIDMCPSiteTools
+	SubActionIDMCPEvents
+	SubActionIDMCPWorkflows
+	SubActionIDMCPMachines
+	SubActionIDMCPHelp
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

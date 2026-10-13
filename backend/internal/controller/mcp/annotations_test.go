@@ -92,14 +92,15 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 	}
 }
 
-// The three that decide whether a client may run a tool unattended. A shape
-// asserted in the abstract above is worth nothing if the memory tools are the
-// ones that got it wrong.
+// The ones that decide whether a client may run a tool unattended. A shape
+// asserted in the abstract above is worth nothing if these got it wrong:
+// memory and skills replace and delete, so each is destructive as a whole,
+// and help only reads.
 func TestMemoryToolAnnotations(t *testing.T) {
 	want := map[string]struct{ readOnly, destructive bool }{
-		"loadMemory":   {readOnly: true},
-		"saveMemory":   {destructive: true},
-		"deleteMemory": {destructive: true},
+		"memory": {destructive: true},
+		"skills": {destructive: true},
+		"help":   {readOnly: true},
 	}
 
 	seen := map[string]bool{}

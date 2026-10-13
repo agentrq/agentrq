@@ -13,7 +13,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
-	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -26,7 +25,7 @@ type AgentLauncher interface {
 
 type LaunchAgentParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace to start an agent in (base62)"`
-	MachineID   string `json:"machineId" jsonschema:"The machine to run it on (base62), from listMachines"`
+	MachineID   string `json:"machineId" jsonschema:"The machine to run it on (base62), from machines action list"`
 	Kind        string `json:"kind" jsonschema:"enum: claude-code, acp-gateway"`
 	Model       string `json:"model,omitempty" jsonschema:"The model: an alias such as opus or sonnet for claude-code, or a model the gateway's agent offers for acp-gateway. Leave it out for the default"`
 	Effort      string `json:"effort,omitempty" jsonschema:"claude-code only: low, medium, high, xhigh or max. Leave it out for the default"`
@@ -36,13 +35,6 @@ type LaunchAgentParams struct {
 
 type StopAgentParams struct {
 	WorkspaceID string `json:"workspaceId" jsonschema:"The workspace whose agent to stop (base62)"`
-}
-
-func (s *WorkspaceServer) registerMachineTools() {
-	mcp.AddTool(s.server, &mcp.Tool{Name: "createEnrolmentCode", Description: "Mint a one-time code for enrolling a new machine with agentrqd. It is shown once and expires shortly, so hand it to the human right away — see the agentrq://guides/agentrqd-setup resource for the rest of the setup", Annotations: mcphint.Write("Create an enrolment code")}, s.handleCreateEnrolmentCode)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "listMachines", Description: "List the account's machines running agentrqd: name, OS, agentrqd version, whether each is enabled and online, and how many agents it is running. launchAgent takes a machine's id", Annotations: mcphint.Read("List machines")}, s.handleListMachines)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "launchAgent", Description: "Start an agent for a workspace on one of the account's machines, in the workspace's working directory (a fork's folder is made from its parent's). Refused while the workspace already has an agent, when it has no working directory, or when the machine is disabled, offline or runs an agentrqd too old for what was asked. Returns the session; the agent connects to the workspace a few seconds later and then picks up its tasks", Annotations: mcphint.Write("Launch an agent")}, s.handleLaunchAgent)
-	mcp.AddTool(s.server, &mcp.Tool{Name: "stopAgent", Description: "Stop the agent a workspace is running on a machine, ending whatever it is in the middle of. stopped is false when none was running on a machine", Annotations: mcphint.Overwrite("Stop an agent")}, s.handleStopAgent)
 }
 
 func (s *WorkspaceServer) handleListMachines(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {

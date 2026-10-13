@@ -50,7 +50,7 @@ func TestPromptNewWorkspace_IncludesNamePurposeAndGuide(t *testing.T) {
 	}
 	text := promptText(t, res)
 
-	for _, want := range []string{"billing-agent", "handle invoicing", newWorkspaceGuideURI, "createWorkspace", "listWorkspaces"} {
+	for _, want := range []string{"billing-agent", "handle invoicing", newWorkspaceGuideURI, "workspace action create", "workspace action list"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("prompt text is missing %q:\n%s", want, text)
 		}
@@ -68,7 +68,7 @@ func TestPromptSetupAgentrqd_IncludesGuideAndTool(t *testing.T) {
 	}
 	text := promptText(t, res)
 
-	for _, want := range []string{"linux", agentrqdSetupGuideURI, "createEnrolmentCode", "no remote enrolment"} {
+	for _, want := range []string{"linux", agentrqdSetupGuideURI, "machines action createEnrolmentCode", "no remote enrolment"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("prompt text is missing %q:\n%s", want, text)
 		}
@@ -83,7 +83,7 @@ func TestPromptWorkspaceStatus_CoversEveryWorkspace(t *testing.T) {
 	}
 	text := promptText(t, res)
 
-	for _, want := range []string{"listWorkspaces", "getWorkspaceStats", "task action list"} {
+	for _, want := range []string{"workspace action list", "workspace action stats", "task action list"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("prompt text is missing %q:\n%s", want, text)
 		}

@@ -140,10 +140,11 @@ test('buildRequestedSchema refuses what the protocol will not carry', () => {
 })
 
 test('workspace asks for the mission', async () => {
-  const client = stubClient({ getWorkspace: 'Workspace: agentrq-code' })
+  const client = stubClient({ get: 'Workspace: agentrq-code' })
   const result = await invoke('workspace', { client })
   assert.equal(result.text, 'Workspace: agentrq-code')
-  assert.deepEqual(client.calls[0], { name: 'getWorkspace', args: {} })
+  assert.deepEqual(client.calls[0], { name: 'workspace', args: { action: 'get' } })
+  assert.deepEqual(client.legacy[0], ['getWorkspace', {}])
 })
 
 test('task get passes the id and the conversation options', async () => {
@@ -382,10 +383,11 @@ test('attachment get reports an attachment that is not there', async () => {
 test('memory load defaults to the index', async () => {
   const client = stubClient()
   await invoke('memory load', { client })
-  assert.deepEqual(client.calls[0].args, { name: undefined })
+  assert.deepEqual(client.calls[0], { name: 'memory', args: { action: 'load', name: undefined } })
 
   await invoke('memory load', { positionals: ['toolchain.md'], client })
-  assert.deepEqual(client.calls[1].args, { name: 'toolchain.md' })
+  assert.deepEqual(client.calls[1].args, { action: 'load', name: 'toolchain.md' })
+  assert.deepEqual(client.legacy[1], ['loadMemory', { name: 'toolchain.md' }])
 })
 
 test('memory save needs content and takes it from anywhere', async () => {
@@ -398,13 +400,15 @@ test('memory save needs content and takes it from anywhere', async () => {
     stdin: stdinOf('the whole note'),
     client,
   })
-  assert.deepEqual(client.calls[0].args, { name: 'notes.md', content: 'the whole note' })
+  assert.deepEqual(client.calls[0].args, { action: 'save', name: 'notes.md', content: 'the whole note' })
+  assert.equal(client.legacy[0][0], 'saveMemory')
 })
 
 test('memory delete defaults to the index', async () => {
   const client = stubClient()
   await invoke('memory delete', { client })
-  assert.deepEqual(client.calls[0].args, { name: undefined })
+  assert.deepEqual(client.calls[0].args, { action: 'delete', name: undefined })
+  assert.equal(client.legacy[0][0], 'deleteMemory')
 })
 
 test('skill search passes the query and paging on', async () => {
@@ -413,8 +417,9 @@ test('skill search passes the query and paging on', async () => {
   await invoke('skill search', { positionals: ['pull', 'request'], values: { limit: '20', offset: '40' }, client })
   assert.deepEqual(
     client.calls.map((c) => c.args),
-    [{}, { q: 'pull request', limit: 20, offset: 40 }],
+    [{ action: 'search' }, { action: 'search', q: 'pull request', limit: 20, offset: 40 }],
   )
+  assert.equal(client.legacy[0][0], 'searchSkills')
   await assert.rejects(() => invoke('skill search', { values: { limit: '-1' } }), /--limit must be a whole number/)
   await assert.rejects(() => invoke('skill search', { values: { offset: 'x' } }), /--offset must be a whole number/)
 })
@@ -426,10 +431,11 @@ test('skill load and delete name the skill by URI', async () => {
   assert.deepEqual(
     client.calls.map((c) => [c.name, c.args]),
     [
-      ['loadSkill', { uri: 'skill://tdd' }],
-      ['deleteSkill', { uri: 'skill://tdd/notes.md' }],
+      ['skills', { action: 'load', uri: 'skill://tdd' }],
+      ['skills', { action: 'delete', uri: 'skill://tdd/notes.md' }],
     ],
   )
+  assert.deepEqual(client.legacy.map((l) => l[0]), ['loadSkill', 'deleteSkill'])
   await assert.rejects(() => invoke('skill load', {}), /<uri>/)
   await assert.rejects(() => invoke('skill delete', {}), /<uri>/)
 })
@@ -445,7 +451,8 @@ test('skill save needs a URI and content, and takes the content from anywhere', 
     stdin: stdinOf('---\ndescription: d\n---\n'),
     client,
   })
-  assert.deepEqual(client.calls[0].args, { uri: 'skill://tdd/SKILL.md', content: '---\ndescription: d\n---\n' })
+  assert.deepEqual(client.calls[0].args, { action: 'save', uri: 'skill://tdd/SKILL.md', content: '---\ndescription: d\n---\n' })
+  assert.equal(client.legacy[0][0], 'saveSkill')
 })
 
 test('event publish sends the payload, task and faq', async () => {
@@ -455,7 +462,10 @@ test('event publish sends the payload, task and faq', async () => {
     values: { payload: 'green', task: '0isnjTCkpW5', faq: ['why=it passed'] },
     client,
   })
+  assert.equal(client.calls[0].name, 'workspace')
+  assert.equal(client.legacy[0][0], 'publishEvent')
   assert.deepEqual(client.calls[0].args, {
+    action: 'publishEvent',
     name: 'build.finished',
     payload: 'green',
     taskId: '0isnjTCkpW5',
@@ -584,16 +594,18 @@ test('site-tools passes the query, pattern and paging on', async () => {
     client,
   })
   assert.deepEqual(client.calls, [
-    { name: 'listSiteTools', args: {} },
-    { name: 'listSiteTools', args: { q: 'search issues', pattern: '^search', limit: 20, offset: 40 } },
+    { name: 'siteTools', args: { action: 'search' } },
+    { name: 'siteTools', args: { action: 'search', q: 'search issues', pattern: '^search', limit: 20, offset: 40 } },
   ])
+  assert.equal(client.legacy[0][0], 'listSiteTools')
   await assert.rejects(() => invoke('site-tools', { values: { limit: '2.5' } }), /--limit must be a whole number/)
 })
 
 test('site-tool asks for one tool of one site', async () => {
   const client = stubClient()
   await invoke('site-tool', { positionals: ['https://github.com', 'search'], client })
-  assert.deepEqual(client.calls, [{ name: 'getSiteToolDefinition', args: { site: 'https://github.com', tool: 'search' } }])
+  assert.deepEqual(client.calls, [{ name: 'siteTools', args: { action: 'getDefinition', site: 'https://github.com', tool: 'search' } }])
+  assert.deepEqual(client.legacy, [['getSiteToolDefinition', { site: 'https://github.com', tool: 'search' }]])
   await assert.rejects(() => invoke('site-tool', {}), /<site>/)
   await assert.rejects(() => invoke('site-tool', { positionals: ['https://github.com'] }), /<tool>/)
 })
@@ -606,9 +618,10 @@ test('call-site-tool sends the site, tool, task and parsed arguments', async () 
     client,
   })
   assert.deepEqual(client.calls, [{
-    name: 'callSiteTool',
-    args: { taskId: '0isnjTCkpW5', site: 'https://github.com', tool: 'search', arguments: { q: 'agentrq' } },
+    name: 'siteTools',
+    args: { action: 'call', taskId: '0isnjTCkpW5', site: 'https://github.com', tool: 'search', arguments: { q: 'agentrq' } },
   }])
+  assert.equal(client.legacy[0][0], 'callSiteTool')
 })
 
 test('call-site-tool reads arguments from stdin, and defaults them to {}', async () => {
@@ -637,25 +650,11 @@ test('call-site-tool refuses invalid JSON, a missing task, site or tool', async 
 test('the CLI covers every tool the workspace server offers', () => {
   // The point of the package: anything an agent can do here, a person can do
   // from a shell. `call` is the catch-all, so a tool may be reached that way.
-  const covered = new Set([
-    'task',
-    'getWorkspace',
-    'publishEvent',
-    'loadMemory',
-    'saveMemory',
-    'deleteMemory',
-    'searchSkills',
-    'loadSkill',
-    'saveSkill',
-    'deleteSkill',
-    'listSiteTools',
-    'getSiteToolDefinition',
-    'callSiteTool',
-    'pano',
-  ])
+  const covered = new Set(['task', 'memory', 'skills', 'workspace', 'siteTools', 'pano', 'help'])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')
   for (const tool of covered) {
-    assert.ok(source.includes(`callTool('${tool}'`) || source.includes(`callAction('${tool}'`), `no command calls ${tool}`)
+    const called = [`callTool('${tool}'`, `callAction('${tool}'`, `act(ctx, '${tool}'`, `actionHelp(ctx, '${tool}'`]
+    assert.ok(called.some((c) => source.includes(c)), `no command calls ${tool}`)
   }
 })
 
@@ -798,4 +797,14 @@ test("ask is the task tool's elicit action", async () => {
   assert.equal(client.calls[0].name, 'task')
   assert.equal(client.calls[0].args.action, 'elicit')
   assert.equal(client.legacy[0][0], 'elicit')
+})
+
+test('tools help asks the help tool, about one tool or action when named', async () => {
+  const client = stubClient()
+  await invoke('tools help', { client })
+  await invoke('tools help', { positionals: ['memory.save'], client })
+  assert.deepEqual(client.calls, [
+    { name: 'help', args: { action: undefined } },
+    { name: 'help', args: { action: 'memory.save' } },
+  ])
 })

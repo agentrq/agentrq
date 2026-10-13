@@ -699,7 +699,7 @@ func TestSiteToolsSayContentIsData(t *testing.T) {
 	seen := 0
 	for _, tool := range toolsOverTheWire(t) {
 		name, _ := tool["name"].(string)
-		if name != "listSiteTools" && name != "getSiteToolDefinition" && name != "callSiteTool" {
+		if name != "siteTools" {
 			continue
 		}
 		seen++
@@ -708,15 +708,13 @@ func TestSiteToolsSayContentIsData(t *testing.T) {
 			t.Errorf("%s does not say its content is data: %s", name, d)
 		}
 		annotations, _ := tool["annotations"].(map[string]any)
-		if name == "callSiteTool" && annotations["openWorldHint"] != true {
-			t.Errorf("callSiteTool reaches a third-party site but claims a closed world: %v", annotations)
-		}
-		if name != "callSiteTool" && annotations["readOnlyHint"] != true {
-			t.Errorf("%s is not read-only: %v", name, annotations)
+		// call reaches a third-party site and acts there.
+		if annotations["openWorldHint"] != true || annotations["readOnlyHint"] == true {
+			t.Errorf("siteTools runs a third-party site's tools but claims otherwise: %v", annotations)
 		}
 	}
-	if seen != 3 {
-		t.Fatalf("saw %d of the three site tools", seen)
+	if seen != 1 {
+		t.Fatalf("saw %d siteTools tools", seen)
 	}
 }
 

@@ -66,9 +66,9 @@ func (s *WorkspaceServer) promptNewWorkspace(ctx context.Context, req *mcp.GetPr
 
 	text := fmt.Sprintf(
 		"Set up a new workspace named %q.\n\n"+
-			"1. Call listWorkspaces and check none of the existing workspaces already cover this.\n"+
+			"1. Call workspace action list and check none of the existing workspaces already cover this.\n"+
 			"2. Read the %s resource for the full steps.\n"+
-			"3. Call createWorkspace with name %q%s.\n"+
+			"3. Call workspace action create with name %q%s.\n"+
 			"4. Tell me the new workspace's id and what I still need to do myself to connect an agent to it.",
 		name, newWorkspaceGuideURI, name, descriptionClause,
 	)
@@ -90,7 +90,7 @@ func (s *WorkspaceServer) promptSetupAgentrqd(ctx context.Context, req *mcp.GetP
 	text := fmt.Sprintf(
 		"Help me set up agentrqd on %s.\n\n"+
 			"1. Read the %s resource for the install steps.\n"+
-			"2. Call createEnrolmentCode to mint a fresh one-time code.\n"+
+			"2. Call machines action createEnrolmentCode to mint a fresh one-time code.\n"+
 			"3. Give me the install command from the guide and the enrol command with that code filled in, "+
 			"in the order I should run them.\n"+
 			"4. Remind me I have to run these myself, on that machine — there is no remote enrolment.",
@@ -106,8 +106,8 @@ func (s *WorkspaceServer) promptSetupAgentrqd(ctx context.Context, req *mcp.GetP
 func (s *WorkspaceServer) promptWorkspaceStatus(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "prompt:workspace-status", 0)
 	text := "Give me a status report across every workspace.\n\n" +
-		"1. Call listWorkspaces.\n" +
-		"2. For each workspace, call getWorkspaceStats (range 7d) and task action list for anything ongoing or blocked.\n" +
+		"1. Call workspace action list.\n" +
+		"2. For each workspace, call workspace action stats (range 7d) and task action list for anything ongoing or blocked.\n" +
 		"3. Summarize per workspace: what's running, what's blocked on a human, and anything that looks stuck.\n" +
 		"4. Call out whatever needs my attention first."
 

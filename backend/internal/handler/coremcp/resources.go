@@ -50,9 +50,9 @@ func (s *WorkspaceServer) readNewWorkspaceGuide(ctx context.Context, req *mcp.Re
 	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "resource:new-workspace-guide", 0)
 	text := "# Creating a new workspace\n\n" +
 		"A workspace is where a single agent runs, with its own tasks and memory.\n\n" +
-		"1. Call **listWorkspaces** first — check one for the same purpose doesn't already exist.\n" +
-		"2. Call **createWorkspace** with a short, descriptive `name` (and an optional `description`).\n" +
-		"3. Call **getWorkspace** on the new workspace's id for its `mcpUrl`. A human still has to open that " +
+		"1. Call **workspace** action `list` first — check one for the same purpose doesn't already exist.\n" +
+		"2. Call **workspace** action `create` with a short, descriptive `name` (and an optional `description`).\n" +
+		"3. Call **workspace** action `get` on the new workspace's id for its `mcpUrl`. A human still has to open that " +
 		"workspace's Settings page in the web app to connect an agent to it — creating the workspace here " +
 		"does not by itself start one or write its `.mcp.json`.\n" +
 		"4. Once an agent is connected, hand it its first task with **task** action `create`.\n"
@@ -77,7 +77,7 @@ func (s *WorkspaceServer) readAgentrqdSetupGuide(ctx context.Context, req *mcp.R
 		"at the target machine to run the install and enrol commands themselves; this guide is for telling " +
 		"them what to run, not for running it on their behalf.\n\n" +
 		"1. Install it: the one-line installer for the machine's platform is at " + daemonDocsURL + ".\n" +
-		"2. Get a one-time enrolment code by calling the **createEnrolmentCode** tool. It is shown once and " +
+		"2. Get a one-time enrolment code by calling the **machines** tool's `createEnrolmentCode` action. It is shown once and " +
 		"expires shortly, so mint it right before the human needs it.\n" +
 		"3. Enrol the machine, filling in the code from step 2:\n   `" + enrolCommand + "`\n" +
 		"4. Run it: `agentrqd serve` (see " + daemonDocsURL + " for keeping it running after logout).\n"

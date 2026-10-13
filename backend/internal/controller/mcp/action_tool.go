@@ -25,6 +25,10 @@ import (
 type ToolAction struct {
 	Name    string
 	Summary string
+	// Details is what help adds below the summary of this one action.
+	Details string
+	// Example is a payload for it, as JSON, which help prints as a call.
+	Example string
 	// payload is the type the payload decodes into, nil when it takes none.
 	payload reflect.Type
 	run     func(ctx context.Context, req *mcp.CallToolRequest, payload map[string]any) (*mcp.CallToolResult, any, error)
@@ -40,6 +44,54 @@ func NewToolAction[T any](name, summary string, handler func(context.Context, *m
 		}
 		return handler(ctx, req, p)
 	}}
+}
+
+// WithExample is the action with an example payload, as JSON.
+func (a ToolAction) WithExample(payload string) ToolAction {
+	a.Example = payload
+	return a
+}
+
+// WithDetails is the action with more to say in its own help.
+func (a ToolAction) WithDetails(details string) ToolAction {
+	a.Details = details
+	return a
+}
+
+// ActionTool is a tool of actions, as the server-wide help tool lists it.
+type ActionTool struct {
+	Name    string
+	Summary string
+	Actions []ToolAction
+}
+
+// ToolsHelp is the help tool: with no topic every tool and its actions, with
+// "tool" that tool's actions, and with "tool.action" that action's payload.
+func ToolsHelp(tools []ActionTool, topic string) *mcp.CallToolResult {
+	if topic == "" {
+		var b strings.Builder
+		b.WriteString("Every tool takes {\"action\": \"<action>\", \"payload\": {...}}.\n\nTools:\n")
+		for _, t := range tools {
+			names := make([]string, len(t.Actions))
+			for i, a := range t.Actions {
+				names[i] = a.Name
+			}
+			fmt.Fprintf(&b, "  %-12s %s\n  %-12s actions: %s\n", t.Name, t.Summary, "", strings.Join(names, ", "))
+		}
+		b.WriteString("\nRun help {\"action\": \"<tool>\"} for a tool's actions, or {\"action\": \"<tool>.<action>\"} for one action's payload and an example.")
+		return textResult("%s", b.String())
+	}
+	name, action, _ := strings.Cut(topic, ".")
+	for _, t := range tools {
+		if t.Name == name {
+			return ActionHelp(t.Name, t.Actions, action)
+		}
+	}
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name
+	}
+	return toolError("there is no tool %q: the tools are %s", name, strings.Join(names, ", "))
 }
 
 // RunAction runs one call of the action tool tool: help, or one of actions.
@@ -143,9 +195,15 @@ func ActionHelp(tool string, actions []ToolAction, topic string) *mcp.CallToolRe
 		}
 		if len(fields) == 0 {
 			fmt.Fprintf(&b, "Usage: %s {\"action\": %q}\n\n%s", tool, a.Name, a.Summary)
+			if a.Details != "" {
+				fmt.Fprintf(&b, "\n\n%s", a.Details)
+			}
 			return textResult("%s", b.String())
 		}
 		fmt.Fprintf(&b, "Usage: %s {\"action\": %q, \"payload\": {%s}}\n\n%s\n", tool, a.Name, strings.Join(usage, ", "), a.Summary)
+		if a.Details != "" {
+			fmt.Fprintf(&b, "\n%s\n", a.Details)
+		}
 		for _, required := range []bool{true, false} {
 			title := map[bool]string{true: "Required", false: "Optional"}[required]
 			wrote := false
@@ -160,12 +218,18 @@ func ActionHelp(tool string, actions []ToolAction, topic string) *mcp.CallToolRe
 				fmt.Fprintf(&b, "  %-20s %-8s %s\n", f.name, f.kind, f.desc)
 			}
 		}
+		if a.Example != "" {
+			fmt.Fprintf(&b, "\nExample:\n  %s {\"action\": %q, \"payload\": %s}\n", tool, a.Name, a.Example)
+		}
 		return textResult("%s", strings.TrimRight(b.String(), "\n"))
 	}
 	return toolError("%s has no action %q: run help for the list", tool, topic)
 }
 
 func jsonKind(t reflect.Type) string {
+	for t.Kind() == reflect.Pointer { // an optional field: its value's kind
+		t = t.Elem()
+	}
 	switch t.Kind() {
 	case reflect.String:
 		return "string"

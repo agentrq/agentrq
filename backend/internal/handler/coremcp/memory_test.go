@@ -161,7 +161,7 @@ func TestMemoryToolsAreRegistered(t *testing.T) {
 		registered[tool.Name] = tool.Description
 	}
 
-	for _, name := range []string{"listMemories", "getMemory"} {
+	for _, name := range []string{"memory"} {
 		description, ok := registered[name]
 		if !ok {
 			t.Errorf("tool %q is not registered", name)

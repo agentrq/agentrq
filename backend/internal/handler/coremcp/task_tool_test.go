@@ -139,7 +139,7 @@ func TestTaskTool_OlderCallsStillAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range listed.Tools {
-		if _, retired := legacyTaskTools[tool.Name]; retired {
+		if _, retired := legacyTools[tool.Name]; retired {
 			t.Errorf("the retired %s is still listed", tool.Name)
 		}
 	}

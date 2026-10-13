@@ -10,7 +10,6 @@ import (
 	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	apiMapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
-	"github.com/agentrq/agentrq/backend/internal/service/mcphint"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -51,7 +50,7 @@ import (
 
 type CreateWorkflowParams struct {
 	Name         string `json:"name" jsonschema:"Workflow name"`
-	Description  string `json:"description,omitempty"`
+	Description  string `json:"description,omitempty" jsonschema:"What the workflow is for"`
 	StartEventID string `json:"startEventId,omitempty" jsonschema:"The event that starts this workflow. Its steps hang off this one"`
 }
 
@@ -64,7 +63,7 @@ type GetWorkflowParams struct {
 // edited by different screens, and a full-replacement update would have each
 // blanking the other's work.
 type UpdateWorkflowParams struct {
-	WorkflowID   string  `json:"workflowId"`
+	WorkflowID   string  `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 	Name         *string `json:"name,omitempty" jsonschema:"Only sent if it should change"`
 	Description  *string `json:"description,omitempty" jsonschema:"Only sent if it should change"`
 	StartEventID *string `json:"startEventId,omitempty" jsonschema:"Only sent if it should change"`
@@ -72,11 +71,11 @@ type UpdateWorkflowParams struct {
 }
 
 type DeleteWorkflowParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 }
 
 type CreateWorkflowStepParams struct {
-	WorkflowID       string `json:"workflowId"`
+	WorkflowID       string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 	EventID          string `json:"eventId" jsonschema:"The event this step reacts to"`
 	WorkspaceID      string `json:"workspaceId" jsonschema:"The workspace the step's task is created in"`
 	Title            string `json:"title" jsonschema:"Task title, used exactly as written: placeholders are not substituted here"`
@@ -87,85 +86,25 @@ type CreateWorkflowStepParams struct {
 }
 
 type ListWorkflowStepsParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 }
 
 type DeleteWorkflowStepParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 	StepID     string `json:"stepId" jsonschema:"Workflow step ID (base62)"`
 }
 
 type ListWorkflowTasksParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 }
 
 type GetWorkflowTextParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 }
 
 type ReplaceWorkflowFromTextParams struct {
-	WorkflowID string `json:"workflowId"`
+	WorkflowID string `json:"workflowId" jsonschema:"Workflow ID (base62)"`
 	Text       string `json:"text" jsonschema:"The whole graph as an indented document. Two spaces per level, every list line '- agent:<workspace>' or '- event:<name>', alternating. Events and workspaces are named, so they must already exist"`
-}
-
-// ── Tool definitions ──────────────────────────────────────────────────────────
-
-func (s *WorkspaceServer) registerWorkflowTools() {
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listWorkflows",
-		Description: "List the workflows defined for this account. A workflow is a named graph: a start event, and the steps that react to it and to each other",
-		Annotations: mcphint.Read("List workflows"),
-	}, s.handleListWorkflows)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "createWorkflow",
-		Description: "Create an empty workflow around a start event. Add steps to it afterwards, one at a time or as a whole document",
-		Annotations: mcphint.Write("Create a workflow"),
-	}, s.handleCreateWorkflow)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "getWorkflow",
-		Description: "Get a workflow by ID",
-		Annotations: mcphint.Read("Get a workflow"),
-	}, s.handleGetWorkflow)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "updateWorkflow",
-		Description: "Revise a workflow. Only the fields sent are changed, so leaving one out keeps it",
-		Annotations: mcphint.Update("Revise a workflow"),
-	}, s.handleUpdateWorkflow)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "deleteWorkflow",
-		Description: "Delete a workflow and its steps. The events it named are left alone",
-		Annotations: mcphint.Overwrite("Delete a workflow"),
-	}, s.handleDeleteWorkflow)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "createWorkflowStep",
-		Description: "Add a step: when this event fires, create a task in this workspace, and optionally emit a second event when that task completes",
-		Annotations: mcphint.Write("Add a workflow step"),
-	}, s.handleCreateWorkflowStep)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listWorkflowSteps",
-		Description: "List a workflow's steps — everything that happens once it starts",
-		Annotations: mcphint.Read("List a workflow's steps"),
-	}, s.handleListWorkflowSteps)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "deleteWorkflowStep",
-		Description: "Remove one step from a workflow, leaving the rest of the graph in place",
-		Annotations: mcphint.Overwrite("Delete a workflow step"),
-	}, s.handleDeleteWorkflowStep)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "listWorkflowTasks",
-		Description: "List the tasks a workflow has spawned, to see whether a system that was wired up is running",
-		Annotations: mcphint.Read("List a workflow's tasks"),
-	}, s.handleListWorkflowTasks)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "getWorkflowText",
-		Description: "Read a workflow's whole graph as the indented document the UI's text mode edits. Steps naming a deleted event or workspace are left out, so the document always parses",
-		Annotations: mcphint.Read("Read a workflow's document"),
-	}, s.handleGetWorkflowText)
-	mcp.AddTool(s.server, &mcp.Tool{
-		Name:        "replaceWorkflowFromText",
-		Description: "Replace a workflow's entire graph with a document. Every name is resolved before anything is written, so an unknown one on the last line leaves the workflow untouched",
-		Annotations: mcphint.Overwrite("Replace a workflow's graph"),
-	}, s.handleReplaceWorkflowFromText)
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

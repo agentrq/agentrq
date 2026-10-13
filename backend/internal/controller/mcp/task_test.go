@@ -121,7 +121,7 @@ func assertActionsMatchEnum(t *testing.T, params any, actions []ToolAction) {
 
 func TestTaskAndPano_EnumsMatchTheirActions(t *testing.T) {
 	assertActionsMatchEnum(t, TaskParams{}, (&WorkspaceServer{}).taskActions())
-	assertActionsMatchEnum(t, PanoParams{}, panoActions(nil, "", 0))
+	assertActionsMatchEnum(t, PanoParams{}, PanoActions(nil, "", 0))
 }
 
 func TestPano_Help(t *testing.T) {
@@ -138,6 +138,7 @@ func TestActionHelp_PayloadKinds(t *testing.T) {
 		F    float64  `json:"f"`
 		M    struct{} `json:"m,omitempty"`
 		B    bool     `json:"b,omitempty"`
+		P    *string  `json:"p,omitempty"`
 		Skip string   `json:"-"`
 		None string
 	}
@@ -145,7 +146,7 @@ func TestActionHelp_PayloadKinds(t *testing.T) {
 		return nil, nil, nil
 	}
 	text, _ := taskResult(t, ActionHelp("x", []ToolAction{NewToolAction("do", "Does it.", noop)}, "do"))
-	for _, want := range []string{`"f": <number>, ...`, "  m                    object", "  b                    boolean"} {
+	for _, want := range []string{`"f": <number>, ...`, "  m                    object", "  b                    boolean", "  p                    string"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("help lacks %q:\n%s", want, text)
 		}
@@ -237,7 +238,7 @@ func TestTaskTool_OlderCallsStillAnswer(t *testing.T) {
 	for _, tool := range listed.Tools {
 		names = append(names, tool.Name)
 	}
-	for old := range legacyTaskTools {
+	for old := range legacyTools {
 		if slices.Contains(names, old) {
 			t.Errorf("the retired %s is still listed", old)
 		}
@@ -267,9 +268,9 @@ func TestTaskTool_OlderCallsStillAnswer(t *testing.T) {
 	}
 }
 
-// Anything else passes through untouched: a tool that was never retired, a
-// call already in the two-input shape, and arguments that are not an object,
-// which the SDK refuses.
+// A retired name is rewritten; anything else passes through untouched: a call
+// already in the two-input shape, and arguments that are not an object, which
+// the SDK refuses.
 func TestActionToolsMiddleware_PassesOthersThrough(t *testing.T) {
 	var seen []string
 	next := func(_ context.Context, method string, req mcp.Request) (mcp.Result, error) {
@@ -278,9 +279,10 @@ func TestActionToolsMiddleware_PassesOthersThrough(t *testing.T) {
 		}
 		return nil, nil
 	}
-	h := ActionToolsMiddleware([]string{"task", "pano"}, legacyTaskTools)(next)
+	h := ActionToolsMiddleware(actionToolNames, legacyTools)(next)
 	for _, p := range []*mcp.CallToolParamsRaw{
 		{Name: "loadMemory", Arguments: json.RawMessage(`{"name":"x"}`)},
+		{Name: "help", Arguments: json.RawMessage(`{"action":"task"}`)},
 		{Name: "pano", Arguments: json.RawMessage(`{"action":"help"}`)},
 		{Name: "reply", Arguments: json.RawMessage(`[1]`)},
 		{Name: "elicit"},
@@ -288,7 +290,7 @@ func TestActionToolsMiddleware_PassesOthersThrough(t *testing.T) {
 		h(context.Background(), "tools/call", &mcp.CallToolRequest{Params: p})
 	}
 	h(context.Background(), "tools/list", &mcp.ListToolsRequest{})
-	want := []string{`loadMemory {"name":"x"}`, `pano {"action":"help"}`, `reply [1]`, `task {"action":"elicit"}`}
+	want := []string{`memory {"action":"load","payload":{"name":"x"}}`, `help {"action":"task"}`, `pano {"action":"help"}`, `reply [1]`, `task {"action":"elicit"}`}
 	if !slices.Equal(seen, want) {
 		t.Errorf("calls reached the server as %q, want %q", seen, want)
 	}

@@ -201,9 +201,9 @@ func panoFailure(err error, action string) *mcp.CallToolResult {
 	return toolError("failed to %s the Pano doc: %v", action, err)
 }
 
-// panoActions are the pano tool's actions, for the account userID writing as
+// PanoActions are the pano tool's actions, for the account userID writing as
 // the workspace workspaceID.
-func panoActions(pano crud.PanoController, userID string, workspaceID int64) []ToolAction {
+func PanoActions(pano crud.PanoController, userID string, workspaceID int64) []ToolAction {
 	// docID reads a doc's id; one that is not base62 names no doc.
 	docID := func(id string) (int64, *mcp.CallToolResult) {
 		if n := monoflake.IDFromBase62(id).Int64(); n != 0 {
@@ -227,7 +227,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 			v := panoDocViewOf(rs.Doc)
 			v.Markdown = ""
 			return jsonResult(v), nil, nil
-		}),
+		}).WithExample(`{"title": "Release plan", "markdown": "# Release plan\n\n- [ ] Tag v0.9.20", "color": "green"}`),
 		NewToolAction("read", "Read a doc, with its linked files.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoReadPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
@@ -238,7 +238,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 				return panoFailure(err, "read"), nil, nil
 			}
 			return jsonResult(panoDocViewOf(rs.Doc)), nil, nil
-		}),
+		}).WithExample(`{"id": "0kGpezGeuxt", "includeComments": true}`),
 		NewToolAction("comment", "Add a comment to a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoCommentPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
@@ -249,7 +249,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 				return panoFailure(err, "comment on"), nil, nil
 			}
 			return jsonResult(panoCommentView{ID: monoflake.ID(rs.Comment.ID).String(), Author: panoAuthor(rs.Comment.WorkspaceID), Body: rs.Comment.Body, CreatedAt: rs.Comment.CreatedAt.UTC().Format(time.RFC3339)}), nil, nil
-		}),
+		}).WithExample(`{"id": "0kGpezGeuxt", "comment": "Done on our side."}`),
 		NewToolAction("attach", "Add files to a doc that its markdown need not link.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoAttachPayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
@@ -260,7 +260,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 				return panoFailure(err, "attach to"), nil, nil
 			}
 			return jsonResult(map[string]any{"attachments": panoFileViews(rs.Attachments)}), nil, nil
-		}),
+		}).WithExample(`{"id": "0kGpezGeuxt", "files": [{"filename": "notes.txt", "mimeType": "text/plain", "data": "aGVsbG8="}]}`),
 		NewToolAction("delete", "Delete a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoDeletePayload) (*mcp.CallToolResult, any, error) {
 			id, bad := docID(p.ID)
 			if bad != nil {
@@ -270,7 +270,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 				return panoFailure(err, "delete"), nil, nil
 			}
 			return textResult("Deleted Pano doc %s.", p.ID), nil, nil
-		}),
+		}).WithExample(`{"id": "0kGpezGeuxt"}`),
 	}
 }
 
@@ -278,7 +278,7 @@ func panoActions(pano crud.PanoController, userID string, workspaceID int64) []T
 // workspaceID: what both MCP servers' pano tools run.
 func RunPano(ctx context.Context, pano crud.PanoController, userID string, workspaceID int64, p PanoParams) *mcp.CallToolResult {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
-	res, _, _ := RunAction(ctx, nil, "pano", panoActions(pano, userID, workspaceID), p.Action, p.Payload)
+	res, _, _ := RunAction(ctx, nil, "pano", PanoActions(pano, userID, workspaceID), p.Action, p.Payload)
 	return res
 }
 
