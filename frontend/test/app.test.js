@@ -74,8 +74,11 @@ describe('routes', () => {
   })
 
   it('lazy-loads every view, so no route pulls its component into the entry chunk', () => {
+    // A route with named views (the Pano's chat) lazy-loads each of them.
     for (const route of routes) {
-      expect(typeof route.component).toBe('function')
+      for (const component of Object.values(route.components ?? { default: route.component })) {
+        expect(typeof component).toBe('function')
+      }
     }
   })
 
@@ -95,6 +98,7 @@ describe('routes', () => {
     const collect = (list) => {
       for (const route of list) {
         if (route.component) loaders.push([route.path, route.component])
+        for (const [name, component] of Object.entries(route.components ?? {})) loaders.push([`${route.path} (${name})`, component])
         collect(route.children ?? [])
       }
     }
@@ -111,7 +115,9 @@ describe('routes', () => {
     // Every route in the table got a loader invoked, rather than most of them:
     // a route that somehow carries no component would otherwise be skipped
     // silently, and skipping is the one failure this test cannot report.
-    expect(resolved.length).toBe(flatten(routes).length)
+    // A route with named views (the Pano's chat) has a loader for each.
+    const extraViews = routes.filter((route) => route.components).reduce((n, route) => n + Object.keys(route.components).length - 1, 0)
+    expect(resolved.length).toBe(flatten(routes).length + extraViews)
     for (const [path, module] of resolved) {
       expect(module.default, `${path} resolved to a module with no default export`).toBeTruthy()
     }

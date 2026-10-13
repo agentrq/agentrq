@@ -447,6 +447,10 @@
       </div>
     </nav>
 
+    <!-- A chat opened from the Pano, in a card of its own left of the page.
+         Here, not beside the page's <main>: that one is the v-else of this. -->
+    <PanoChatColumn v-if="!isLoginPage && panoChatOpen" />
+
     <!-- Login View -->
     <main v-if="isLoginPage" class="grow h-full bg-white dark:bg-zinc-950 flex flex-col overflow-hidden">
       <router-view class="grow flex flex-col" />
@@ -455,7 +459,7 @@
     <!-- App Content View -->
     <!-- Hidden, not unmounted, while the side panel takes the whole window:
          the page is still there, scrolled where it was, when it collapses. -->
-    <main v-else :class="['grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex-col relative bg-white md:bg-zinc-100 dark:bg-zinc-950', showSidePanel && sidePanel.state.full ? 'hidden' : 'flex']">
+    <main v-else :class="['grow min-w-0 p-0 md:py-4 md:pr-4 h-full min-h-0 flex-col relative bg-white md:bg-zinc-100 dark:bg-zinc-950', showSidePanel && sidePanel.state.full ? 'hidden' : panoChatOpen ? 'hidden lg:flex' : 'flex']">
       <div class="h-full overflow-y-auto min-w-0 md:rounded-sm scroll-smooth page-surface md:border border-gray-200 dark:border-zinc-800 no-scrollbar">
         <!-- Never unmounted by a route change — router-view is swapped inside
              it — so its size is also the size a page navigated to next is
@@ -546,6 +550,8 @@ import DeleteModal from './components/DeleteModal.vue'
 import SidebarWorkspaces from './components/SidebarWorkspaces.vue'
 import DesktopTitleBar from './components/DesktopTitleBar.vue'
 import SidePanel from './components/SidePanel.vue'
+import PanoChatColumn from './components/PanoChatColumn.vue'
+import { isPanoChatRoute } from './composables/usePano'
 import { useSidePanel } from './composables/useSidePanel'
 import ProfileList from './components/ProfileList.vue'
 import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
@@ -595,6 +601,7 @@ const route = useRoute()
 const router = useRouter()
 const { notifySuccess, notifyInfo, notifyError, notifyEvent } = useToasts()
 const isLoginPage = computed(() => route.path === '/login')
+const panoChatOpen = computed(() => isPanoChatRoute(route))
 const user = ref(null)
 const isUserMenuOpen = ref(false)
 

@@ -765,27 +765,19 @@
       <form @submit.prevent="submitReply">
         <input type="file" ref="fileInput" multiple class="hidden" @change="handleFileUpload" />
 
-        <div class="flex flex-col bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm focus-within:border-gray-900 dark:focus-within:border-white focus-within:ring-0 transition-all group relative min-w-0 shadow-sm">
-          <!-- Textarea on top -->
-          <textarea
-            ref="textareaRef"
-            v-model="replyText"
-            @input="adjustTextareaHeight"
-            @keydown.meta.enter="submitReply"
-            @keydown.ctrl.enter="submitReply"
-            @keydown="onComposerKeydown"
-            rows="1"
-            :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
-            :placeholder="offline ? 'Offline — reconnect to reply' : agentWorking ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
-            class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"
-          ></textarea>
-
-          <!-- Bottom Toolbar -->
-          <div class="flex items-center justify-between px-3 pb-2 pt-1">
+        <ComposerBox v-model="replyText"
+          :input-ref="(el) => { textareaRef = el }"
+          @keydown.meta.enter="submitReply"
+          @keydown.ctrl.enter="submitReply"
+          @keydown="onComposerKeydown"
+          :disabled="offline || (!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending')"
+          :placeholder="offline ? 'Offline — reconnect to reply' : agentWorking ? workingPlaceholder() : ((!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending') ? 'Waiting for agent...' : 'Type instructions... (Cmd ⌘ + Enter to send)')"
+          :send-title="agentWorking ? 'Queue this message until the agent finishes' : 'Send Message'"
+          :send-disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))">
             <!-- Left actions (Attachment paperclip & Mode info badge). The
                  emoji picker opens from this row's left edge rather than from
                  its own button, so it fits a phone's width. -->
-            <div class="relative flex items-center gap-2">
+            <template #tools>
               <button type="button" @click="$refs.fileInput.click()"
                       :disabled="!workspace.agentConnected && task.assignee !== 'human' && task.status !== 'pending'"
                       class="h-6 w-6 rounded-sm text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-105 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center disabled:opacity-30"
@@ -859,7 +851,7 @@
                           class="transition-all duration-500" />
                 </svg>
               </div>
-            </div>
+            </template>
 
             <!-- Right actions: Stop, while the agent is working, and Send,
                  always.
@@ -881,7 +873,7 @@
                  The stop wears the toolbar's own chip surface with a red mark,
                  not Send's filled circle: two filled circles in one corner read
                  as two states of the same control rather than opposite acts. -->
-            <div class="flex items-center gap-2 shrink-0">
+            <template #actions>
               <button v-if="agentWorking"
                       type="button"
                       @click.stop="stopRunningTask"
@@ -891,38 +883,18 @@
                       title="Stop the agent working on this task">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg>
               </button>
-
-              <!-- Right circular send button -->
-              <button type="submit"
-                      :title="agentWorking ? 'Queue this message until the agent finishes' : 'Send Message'"
-                      :disabled="(!replyText.trim() && replyAttachments.length === 0) || (task.assignee !== 'human' && (!workspace.agentConnected || task.status === 'notstarted' || task.status === 'pending'))"
-                      class="h-6 w-6 rounded-full bg-black dark:bg-white text-white dark:text-zinc-900 hover:opacity-90 disabled:opacity-30 transition-all flex items-center justify-center shrink-0 shadow-sm">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
+            </template>
+        </ComposerBox>
 
         <!-- Status Warning Messages -->
-        <div v-if="!workspace.agentConnected && task.assignee !== 'human'" class="flex items-center gap-3 mt-2 px-3 py-2 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-sm">
-             <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
-             <p class="text-[10px] text-red-700 dark:text-red-400 font-bold">Agent Offline. Messages cannot be delivered.</p>
-        </div>
+        <ComposerNotice v-if="!workspace.agentConnected && task.assignee !== 'human'" tone="red" pulse>Agent Offline. Messages cannot be delivered.</ComposerNotice>
 
         <!-- Said rather than left for someone to work out: a Send that does
              not send needs to say where the message went, and the queue is
              only trustworthy if its rule is stated. -->
-        <div v-else-if="agentWorking" class="flex items-center gap-3 mt-2 px-3 py-2 bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-700 rounded-sm">
-             <span class="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-zinc-500 animate-pulse shrink-0"></span>
-             <p class="text-[10px] text-gray-600 dark:text-zinc-400 font-bold">The agent is working. Messages are queued here and sent one at a time, each editable until its turn to go. Press stop to interrupt it.</p>
-        </div>
+        <ComposerNotice v-else-if="agentWorking" tone="gray" pulse>The agent is working. Messages are queued here and sent one at a time, each editable until its turn to go. Press stop to interrupt it.</ComposerNotice>
 
-        <div v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" class="flex items-center gap-3 mt-2 px-3 py-2 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-sm">
-             <span class="w-2.5 h-2.5 rounded-full bg-amber-400 shrink-0"></span>
-             <p class="text-[10px] text-amber-700 dark:text-amber-400 font-bold">Task must be started before messaging.</p>
-        </div>
+        <ComposerNotice v-else-if="task.assignee !== 'human' && (task.status === 'notstarted' || task.status === 'pending')" tone="amber">Task must be started before messaging.</ComposerNotice>
       </form>
     </footer>
 
@@ -1039,6 +1011,8 @@ import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElic
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import EmojiPicker from '../components/EmojiPicker.vue';
+import ComposerBox from '../components/ComposerBox.vue';
+import ComposerNotice from '../components/ComposerNotice.vue';
 import { foldReactions, summarizeReactions, emojiKeyboardHint, openEmojiKeyboard } from '../composables/useEmojiReactions';
 import { insertAtCursor } from '../utils/insertAtCursor';
 import TrajectoryPanel from '../components/TrajectoryPanel.vue';
@@ -1124,7 +1098,6 @@ function onComposerKeydown(event) {
 function setReplyText(text) {
   replyText.value = text;
   nextTick(() => {
-    adjustTextareaHeight();
     textareaRef.value?.focus();
   });
 }
@@ -1496,7 +1469,6 @@ function insertEmoji(emoji) {
   nextTick(() => {
     el?.focus();
     el?.setSelectionRange(caret, caret);
-    adjustTextareaHeight();
   });
 }
 
@@ -1648,9 +1620,6 @@ watch(() => route.params.taskId, (newTaskId, oldTaskId) => {
   flushHeldMessage();
   replyText.value = '';
   replyAttachments.value = [];
-  nextTick(() => {
-    adjustTextareaHeight();
-  });
 
   if (newTaskId && newTaskId !== task.value?.id) {
     disconnect();
@@ -1818,9 +1787,6 @@ async function deliverReply(text, atts, target = null) {
     if (stillViewing()) {
       replyText.value = text;
       replyAttachments.value = atts;
-      nextTick(() => {
-        adjustTextareaHeight();
-      });
     }
   }
 }
@@ -1834,9 +1800,6 @@ async function submitReply() {
   const atts = [...replyAttachments.value];
   replyText.value = '';
   replyAttachments.value = [];
-  nextTick(() => {
-    adjustTextareaHeight();
-  });
   await dispatchReply(text, atts);
 }
 
@@ -1929,17 +1892,8 @@ function cancelPendingSend() {
   replyText.value = held.text;
   replyAttachments.value = held.atts;
   nextTick(() => {
-    adjustTextareaHeight();
     textareaRef.value?.focus();
   });
-}
-
-function adjustTextareaHeight() {
-  const el = textareaRef.value;
-  if (!el) return;
-  el.style.height = '46px';
-  const newHeight = Math.min(el.scrollHeight, 150);
-  el.style.height = newHeight + 'px';
 }
 
 function formatDateTime(dateStr) {

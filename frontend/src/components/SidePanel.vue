@@ -10,17 +10,10 @@
          :style="panel.state.full ? null : { width: `${width}px` }"
          @keydown="onKeydown">
 
-    <!-- The drag handle: the whole gap between the main column and the panel
-         is grabbable, and a grip in the middle of it is always showing, so
-         that the edge can be dragged is visible before anyone hovers it. -->
-    <div v-if="!panel.state.full" data-side-panel-handle role="separator" aria-orientation="vertical" aria-label="Resize side panel"
-         title="Drag to resize · double-click to reset"
-         class="group absolute inset-y-4 -left-4 w-4 cursor-col-resize flex items-center justify-center touch-none"
-         @pointerdown="startDrag" @dblclick="panel.resetWidth()">
-      <div :class="['absolute inset-y-0 w-px transition-colors', dragging ? 'bg-gray-400 dark:bg-zinc-500' : 'bg-transparent group-hover:bg-gray-300 dark:group-hover:bg-zinc-700']"></div>
-      <div data-side-panel-grip
-           :class="['relative w-1 h-10 rounded-full transition-colors', dragging ? 'bg-gray-500 dark:bg-zinc-400' : 'bg-gray-300 dark:bg-zinc-700 group-hover:bg-gray-400 dark:group-hover:bg-zinc-500']"></div>
-    </div>
+    <!-- The drag handle, in the gap between the main column and the panel. -->
+    <ResizeHandle v-if="!panel.state.full" data-side-panel-handle aria-label="Resize side panel" class="flex -left-4"
+                  :width="width" edge="left" v-model:dragging="dragging"
+                  @resize="(w) => panel.setWidth(w, room)" @reset="panel.resetWidth()" />
 
     <div class="flex-1 min-w-0 flex flex-col rounded-sm bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 overflow-hidden">
 
@@ -156,6 +149,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { isPanelUrl, normaliseAddress, panelWidth, useSidePanel } from '../composables/useSidePanel'
 import { describeQuestion, hasDecisions } from '../composables/useSitePermissions'
 import SidePanelPermissions from './SidePanelPermissions.vue'
+import ResizeHandle from './ResizeHandle.vue'
 
 const props = defineProps({
   /** Test seam: what makes the guest element. */
@@ -388,29 +382,6 @@ watch(() => panel.state.url, (url) => {
 // Dragging. Pointer capture keeps the events coming once the pointer is over
 // the guest, and the guest is made transparent to the pointer as well: it is a
 // separate page, and would otherwise swallow the drag the moment it got there.
-let dragStart = null
-
-function startDrag(event) {
-  if (event.button !== 0) return
-  event.preventDefault()
-  dragStart = { x: event.clientX, width: width.value }
-  dragging.value = true
-  event.currentTarget.setPointerCapture?.(event.pointerId)
-  globalThis.addEventListener('pointermove', onDrag)
-  globalThis.addEventListener('pointerup', endDrag)
-}
-
-function onDrag(event) {
-  // The handle is on the panel's left edge: moving left widens it.
-  panel.setWidth(dragStart.width + (dragStart.x - event.clientX), room.value)
-}
-
-function endDrag() {
-  dragging.value = false
-  dragStart = null
-  globalThis.removeEventListener('pointermove', onDrag)
-  globalThis.removeEventListener('pointerup', endDrag)
-}
 
 function onWindowResize() {
   room.value = measure()
@@ -440,7 +411,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  endDrag()
   for (const stop of stops) stop?.()
   observer?.disconnect()
   globalThis.removeEventListener('resize', onWindowResize)

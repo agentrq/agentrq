@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { computed, ref } from 'vue'
+import { clampWidth } from './useSidePanel'
 
 /**
  * The Pano: the account's board of markdown docs, written by every workspace's
@@ -620,6 +621,11 @@ export function panoSupervisor(workspaces = []) {
   return workspaces.find((w) => w.name === 'supervisor')
 }
 
+/** Whether a route shows a Pano chat: the one whose page has a `chat` view. */
+export function isPanoChatRoute(route) {
+  return !!route?.matched?.at(-1)?.components?.chat
+}
+
 /** How long a chat's first line may run as its task's title. */
 export const PANO_CHAT_TITLE_MAX = 80
 
@@ -669,4 +675,59 @@ export function usePanoChat({ api, store }) {
   }
 
   return { supervisor, online, message, sending, ensure, send }
+}
+
+/** Where the chat column's dragged width is remembered, per device. */
+export const PANO_CHAT_WIDTH_KEY = 'agentrq:pano-chat-width'
+/** The chat column before it is dragged: a phone's width. */
+export const PANO_CHAT_DEFAULT_WIDTH = 480
+
+function localStore() {
+  try {
+    return globalThis.localStorage
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The chat column's width, dragged as the desktop side panel's is and held to
+ * the same limits (`clampWidth`): never under its minimum, and never leaving
+ * the page beside it less than a phone's width. `width` is what was dragged,
+ * or null for the default; storage that is missing or refuses only means the
+ * width is not remembered.
+ */
+export function usePanoChatWidth({ storage = localStore() } = {}) {
+  let saved = null
+  try {
+    saved = Number.parseInt(storage?.getItem(PANO_CHAT_WIDTH_KEY) ?? '', 10)
+  } catch {
+    saved = null
+  }
+  const width = ref(Number.isFinite(saved) ? saved : null)
+
+  /** How wide the column is drawn, sharing `available` pixels with the page. */
+  function drawn(available) {
+    return clampWidth(width.value ?? PANO_CHAT_DEFAULT_WIDTH, available)
+  }
+
+  function set(value, available) {
+    width.value = clampWidth(value, available)
+    try {
+      storage?.setItem(PANO_CHAT_WIDTH_KEY, String(width.value))
+    } catch {
+      // Not remembered, and nothing else lost.
+    }
+  }
+
+  function reset() {
+    width.value = null
+    try {
+      storage?.removeItem(PANO_CHAT_WIDTH_KEY)
+    } catch {
+      // As above.
+    }
+  }
+
+  return { width, drawn, set, reset }
 }

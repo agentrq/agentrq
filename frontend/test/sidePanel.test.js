@@ -284,7 +284,7 @@ describe('SidePanel', () => {
 
     it('shows a grip on the edge before anyone hovers it', () => {
       mount()
-      expect(el.querySelector('[data-side-panel-grip]').className).toContain('bg-gray-300')
+      expect(el.querySelector('[data-side-panel-handle] [data-resize-grip]').className).toContain('bg-gray-300')
     })
 
     it('fills the room the main column leaves, until somebody drags it', async () => {
@@ -299,7 +299,7 @@ describe('SidePanel', () => {
       await nextTick()
       expect(gesture.handle.setPointerCapture).toHaveBeenCalled()
       expect(guests[0].parentElement.className).toContain('pointer-events-none')
-      expect(el.querySelector('[data-side-panel-grip]').className).toContain('bg-gray-500')
+      expect(el.querySelector('[data-side-panel-handle] [data-resize-grip]').className).toContain('bg-gray-500')
 
       gesture.move(900)
       await nextTick()
@@ -327,7 +327,7 @@ describe('SidePanel', () => {
       const handle = $('[data-side-panel-handle]')
       handle.dispatchEvent(new MouseEvent('pointerdown', { button: 2, clientX: 500, bubbles: true }))
       await nextTick()
-      expect(el.querySelector('[data-side-panel-grip]').className).not.toContain('bg-gray-500')
+      expect(el.querySelector('[data-side-panel-handle] [data-resize-grip]').className).not.toContain('bg-gray-500')
     })
 
     it('goes back to filling the window on a double-click', async () => {

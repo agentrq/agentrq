@@ -46,7 +46,8 @@ const { default: PanoView } = await import('../src/views/PanoView.vue');
 const { default: PanoDocView } = await import('../src/views/PanoDocView.vue');
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore');
 const { notifyWebMCPChange } = await import('../src/composables/useWebMCPChanges');
-const { PANO_COLORS, PANO_MAX_FILE_BYTES, panoTilt } = await import('../src/composables/usePano');
+const { PANO_COLORS, PANO_MAX_FILE_BYTES, panoTilt, isPanoChatRoute } = await import('../src/composables/usePano');
+const { default: PanoChatColumn } = await import('../src/components/PanoChatColumn.vue');
 const { toasts } = (await import('../src/composables/useToasts')).useToasts();
 
 // The app's `v-click-outside`, as `src/app.js` registers it.
@@ -73,11 +74,8 @@ async function mount(at, workspaces = WORKSPACES) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      {
-        path: '/pano',
-        component: PanoView,
-        children: [{ path: 'chat/:workspaceId/:taskId', component: { render() { return h('p', { 'data-test': 'pano-chat-task' }, `${this.$route.params.workspaceId}/${this.$route.params.taskId}`); } } }],
-      },
+      { path: '/pano', component: PanoView },
+      { path: '/pano/chat/:workspaceId/:taskId', components: { default: PanoView, chat: { render() { return h('p', { 'data-test': 'pano-chat-task' }, `${this.$route.params.workspaceId}/${this.$route.params.taskId}`); } } } },
       { path: '/workspaces/:id', component: { render: () => null } },
       { path: '/pano/new', component: PanoDocView },
       { path: '/pano/:id', component: PanoDocView },
@@ -85,8 +83,14 @@ async function mount(at, workspaces = WORKSPACES) {
     ],
   });
   await router.push(at);
-  // As App.vue does for these routes, a new path is a new page.
-  const app = createApp({ render: () => h(RouterView, null, { default: ({ Component, route }) => Component && h(Component, { key: route.path }) }) });
+  // As App.vue does: a new doc path is a new page, the board and its chats
+  // are one, and a chat gets its own column.
+  const app = createApp({
+    render: () => h('div', [
+      isPanoChatRoute(router.currentRoute.value) ? h(PanoChatColumn) : null,
+      h(RouterView, null, { default: ({ Component, route }) => Component && h(Component, { key: route.path.startsWith('/pano/chat') ? '/pano' : route.path }) }),
+    ]),
+  });
   app.directive('click-outside', clickOutside);
   const pinia = createPinia();
   app.use(pinia);
@@ -451,7 +455,8 @@ describe('the chat with the supervisor', () => {
     const input = $(el, 'pano-chat-input');
     expect(input.disabled).toBe(true);
     expect(input.placeholder).toBe('Connect your supervisor agent to start chatting');
-    expect($(el, 'pano-chat-send')).toBeNull();
+    expect($(el, 'pano-chat').querySelector('button[type=submit]').disabled).toBe(true);
+    expect(text($(el, 'pano-chat-offline'))).toContain('Connect your supervisor agent to start chatting');
     expect($(el, 'pano-chat-connect').getAttribute('href')).toBe('/workspaces/sup');
     expect(api.ensureSupervisorWorkspace).not.toHaveBeenCalled();
   });
@@ -461,8 +466,8 @@ describe('the chat with the supervisor', () => {
     useWorkspaceStore().updateAgentStatus('sup', true);
     await settle();
     expect($(el, 'pano-chat-input').disabled).toBe(false);
-    expect($(el, 'pano-chat-input').placeholder).toContain('Ask supervisor about the Pano');
-    expect($(el, 'pano-chat-connect')).toBeNull();
+    expect($(el, 'pano-chat-input').placeholder).toBe('Ask supervisor about the Pano... (Cmd ⌘ + Enter to send)');
+    expect($(el, 'pano-chat-offline')).toBeNull();
   });
 
   it('makes the supervisor again when it was deleted, and reads the workspaces back', async () => {
@@ -477,10 +482,10 @@ describe('the chat with the supervisor', () => {
     expect(lastToast()).toMatchObject({ type: 'error', message: 'Failed to set up the supervisor workspace' });
   });
 
-  it('sends on Enter as a supervisor task that says where it came from, and opens it beside the board', async () => {
+  it('sends on Cmd+Enter as a supervisor task that says where it came from, and opens it beside the board', async () => {
     const { el, router } = await mount('/pano', ONLINE);
     await type($(el, 'pano-chat-input'), 'Post a release checklist\nfor Friday');
-    const event = await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    const event = await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
     expect(event.defaultPrevented).toBe(true);
     expect(api.createTask).toHaveBeenCalledTimes(1);
     const [workspaceId, title, body] = api.createTask.mock.calls[0];
@@ -495,24 +500,27 @@ describe('the chat with the supervisor', () => {
     expect($$(el, 'pano-new-card')).toHaveLength(1);
   });
 
-  it('sends with the button too, and keeps Shift+Enter for a new line and Enter for an input method', async () => {
-    const { el } = await mount('/pano', ONLINE);
-    expect($(el, 'pano-chat-send').disabled).toBe(true);
+  it('sends with Ctrl+Enter and the button too, and keeps Enter for a new line', async () => {
+    const { el, router } = await mount('/pano', ONLINE);
+    expect($(el, 'pano-chat').querySelector('button[type=submit]').disabled).toBe(true);
     await type($(el, 'pano-chat-input'), 'hello');
-    const event = await key($(el, 'pano-chat-input'), { key: 'Enter', shiftKey: true });
+    expect($(el, 'pano-chat').querySelector('button[type=submit]').disabled).toBe(false);
+    const event = await key($(el, 'pano-chat-input'), { key: 'Enter' });
     expect(event.defaultPrevented).toBe(false);
-    // Enter that picks a word in an input method's candidates is not a send.
-    expect((await key($(el, 'pano-chat-input'), { key: 'Enter', isComposing: true })).defaultPrevented).toBe(false);
-    await key($(el, 'pano-chat-input'), { key: 'a' });
     expect(api.createTask).not.toHaveBeenCalled();
+    await key($(el, 'pano-chat-input'), { key: 'Enter', ctrlKey: true });
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+    await router.push('/pano');
+    await settle();
+    await type($(el, 'pano-chat-input'), 'again');
     $(el, 'pano-chat').dispatchEvent(new Event('submit', { cancelable: true }));
     await settle();
-    expect(api.createTask).toHaveBeenCalledTimes(1);
+    expect(api.createTask).toHaveBeenCalledTimes(2);
   });
 
   it('sends nothing for an empty box', async () => {
     const { el, router } = await mount('/pano', ONLINE);
-    await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
     expect(api.createTask).not.toHaveBeenCalled();
     expect(router.currentRoute.value.fullPath).toBe('/pano');
   });
@@ -521,21 +529,22 @@ describe('the chat with the supervisor', () => {
     api.createTask.mockRejectedValueOnce(new Error('Failed to create task'));
     const { el, router } = await mount('/pano', ONLINE);
     await type($(el, 'pano-chat-input'), 'hello');
-    await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
     expect(lastToast()).toMatchObject({ type: 'error', message: 'Failed to create task' });
     expect($(el, 'pano-chat-input').value).toBe('hello');
     expect(router.currentRoute.value.fullPath).toBe('/pano');
   });
 
-  it('opens a chat from its address, and closes back to the board', async () => {
+  it('opens a chat from its address in a column of its own, and closes back to the same board', async () => {
     const { el, router } = await mount('/pano/chat/sup/t9', ONLINE);
-    expect(text($(el, 'pano-chat-pane'))).toContain('Chat with supervisor');
-    expect(text($(el, 'pano-chat-task'))).toBe('sup/t9');
-    await click($(el, 'pano-chat-close'));
+    expect(text(el.querySelector('[data-pano-chat] [data-test="pano-chat-task"]'))).toBe('sup/t9');
+    expect($(el, 'pano-new-card')).not.toBeNull();
+    expect($(el, 'pano-chat')).toBeNull();
+    await router.push('/pano');
     await settle();
-    expect(router.currentRoute.value.fullPath).toBe('/pano');
-    expect($(el, 'pano-chat-pane')).toBeNull();
+    expect(el.querySelector('[data-pano-chat]')).toBeNull();
     expect($(el, 'pano-chat')).not.toBeNull();
+    expect(api.listPanoDocs).toHaveBeenCalledTimes(1);
   });
 });
 

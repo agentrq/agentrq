@@ -19,6 +19,8 @@ import {
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
+import ComposerBox from '../components/ComposerBox.vue'
+import ComposerNotice from '../components/ComposerNotice.vue'
 import DeleteModal from '../components/DeleteModal.vue'
 import { renderMarkdown } from '../utils/markdown'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -34,8 +36,9 @@ const { workspaces } = storeToRefs(workspaceStore)
 const { notifySuccess, notifyError } = useToasts()
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
-// The chat with the supervisor: a box under the board on a large screen, and
-// once a message is sent, its task in a phone-wide column beside the board.
+// The chat with the supervisor: a box under the board on a large screen. Once
+// a message is sent its task opens in a card of its own beside the page,
+// which App.vue draws (PanoChatColumn), as it does the desktop side panel.
 const chat = usePanoChat({ api, store: workspaceStore })
 const { supervisor, online: chatOnline, message: chatMessage, sending: chatSending } = chat
 const chatOpen = computed(() => !!route.params.taskId)
@@ -47,13 +50,6 @@ async function sendChat() {
   } catch (err) {
     notifyError(err.message)
   }
-}
-
-// Enter sends; Shift+Enter starts a new line.
-function onChatKey(event) {
-  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
-  event.preventDefault()
-  sendChat()
 }
 
 // The doc whose color menu is open, and the one waiting on the delete dialog.
@@ -131,23 +127,8 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
 </script>
 
 <template>
-  <!-- lg:flex-row: App.vue adds flex-col to every page. -->
-  <div class="flex lg:flex-row h-full w-full min-h-0 gap-4">
-    <!-- The conversation, laid out as on a phone; alone on a small screen. -->
-    <section v-if="chatOpen" data-test="pano-chat-pane" class="flex flex-col min-h-0 w-full lg:w-[480px] lg:shrink-0">
-      <div class="flex items-center justify-between gap-2 px-4 pb-2 shrink-0">
-        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Chat with supervisor</span>
-        <router-link to="/pano" data-test="pano-chat-close" title="Close the chat" aria-label="Close the chat"
-          class="p-1 rounded-sm text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </router-link>
-      </div>
-      <div class="flex-1 min-h-0 flex flex-col lg:border-r border-gray-200 dark:border-zinc-800">
-        <router-view />
-      </div>
-    </section>
-
-  <div :class="chatOpen ? 'hidden lg:flex' : 'flex'" class="@container flex-1 min-w-0 min-h-0 flex-col">
+  <!-- The board scrolls above the chat box, which stays at the bottom. -->
+  <div class="@container flex flex-col h-full w-full min-h-0">
   <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-4 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
@@ -253,21 +234,19 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
     <!-- The chat box: large screens only, and only until a chat is open,
          whose own composer takes over. -->
     <form v-if="!chatOpen" data-test="pano-chat" class="hidden lg:block shrink-0 px-4 pt-3" @submit.prevent="sendChat">
-      <div :class="chatOnline ? 'focus-within:border-gray-900 dark:focus-within:border-white' : 'opacity-70'"
-        class="flex items-end gap-2 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm shadow-sm transition-colors">
-        <textarea v-model="chatMessage" data-test="pano-chat-input" rows="1" dir="auto" @keydown="onChatKey"
-          :disabled="!chatOnline || chatSending"
-          :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano… (Enter to send)` : 'Connect your supervisor agent to start chatting'"
-          class="flex-1 min-w-0 px-3.5 py-3 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none max-h-[150px] [field-sizing:content] custom-scrollbar disabled:cursor-not-allowed"></textarea>
-        <router-link v-if="!chatOnline && supervisor" :to="`/workspaces/${supervisor.id}`" data-test="pano-chat-connect"
-          class="shrink-0 m-2 px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest">Connect</router-link>
-        <button v-else-if="chatOnline" type="submit" data-test="pano-chat-send" :disabled="!chatMessage.trim() || chatSending" title="Send" aria-label="Send"
-          class="shrink-0 m-2 h-7 w-7 rounded-sm bg-black dark:bg-white text-white dark:text-black flex items-center justify-center disabled:opacity-30 transition-opacity">
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" /></svg>
-        </button>
-      </div>
+      <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto"
+        @keydown.meta.enter.prevent="sendChat" @keydown.ctrl.enter.prevent="sendChat"
+        :disabled="!chatOnline || chatSending"
+        :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano... (Cmd ⌘ + Enter to send)` : 'Connect your supervisor agent to start chatting'"
+        :send-disabled="!chatOnline || !chatMessage.trim() || chatSending" />
+      <ComposerNotice v-if="!chatOnline" data-test="pano-chat-offline" tone="red" pulse>
+        Supervisor offline. Connect your supervisor agent to start chatting.
+        <template #action>
+          <router-link v-if="supervisor" :to="`/workspaces/${supervisor.id}`" data-test="pano-chat-connect"
+            class="ml-auto text-[10px] font-bold text-red-700 dark:text-red-400 underline underline-offset-2 hover:no-underline">Connect</router-link>
+        </template>
+      </ComposerNotice>
     </form>
-  </div>
 
     <DeleteModal
       :show="!!pendingDelete"

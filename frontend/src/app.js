@@ -22,6 +22,9 @@ import App from './App.vue'
 import { fetchUser } from './api'
 import { usePlatformStore } from './stores/platformStore'
 
+// The Pano's board, shared by its two routes below.
+const PanoView = () => import('./views/PanoView.vue')
+
 // `meta.remount` marks a page that reads its params once, in setup. Vue Router
 // reuses the mounted page when only the params change, so without a fresh
 // instance /events/a → /events/b keeps drawing a — see `pageKey`.
@@ -74,15 +77,11 @@ export const routes = [
 
   // The Pano belongs to the account: every workspace writes to it. "new" is
   // the editor for a doc not written yet, ranked above the doc's own page.
-  // A chat with the supervisor, started from the board's chat box, opens
-  // beside the board.
-  {
-    path: '/pano',
-    component: () => import('./views/PanoView.vue'),
-    children: [
-      { path: 'chat/:workspaceId/:taskId', component: () => import('./views/TaskDetailView.vue') }
-    ]
-  },
+  { path: '/pano', component: PanoView },
+  // A chat with the supervisor, started from the board's chat box: the board,
+  // and the chat in a card of its own beside it (App.vue's `chat` view). One
+  // PanoView for both, so opening a chat does not reload the board.
+  { path: '/pano/chat/:workspaceId/:taskId', components: { default: PanoView, chat: () => import('./views/TaskDetailView.vue') } },
   { path: '/pano/new', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
   { path: '/pano/:id', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
 
