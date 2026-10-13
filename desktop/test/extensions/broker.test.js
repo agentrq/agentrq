@@ -127,10 +127,29 @@ describe('permits', () => {
     expect(reason).toBe('This extension may not call "task.create" on the workspace server.')
   })
 
+  it('holds a tool that takes no action to its own name', () => {
+    // A tool this build does not know as an action tool, like one a newer
+    // server added, is granted by name.
+    const named = grant({ tools: { workspace: ['newTool'], supervisor: [] } })
+
+    expect(permits(named, { surface: 'workspace', tool: 'newTool', workspaceId: 'ws1' }).ok).toBe(true)
+  })
+
   it('lets the bare tool grant every action', () => {
     const everything = grant({ tools: { workspace: ['task'], supervisor: [] } })
 
     expect(permits(everything, { surface: 'workspace', tool: 'task', action: 'create', workspaceId: 'ws1' }).ok).toBe(true)
+  })
+
+  it('allows the help tool to any extension granted something on the surface, since it only reads', () => {
+    const help = { surface: 'workspace', tool: 'help', workspaceId: 'ws1' }
+
+    expect(permits(grant(), help).ok).toBe(true)
+    expect(permits(grant({ tools: { workspace: [], supervisor: ['task.listAll'] } }), help).reason).toBe(
+      'This extension may not call "help" on the workspace server.',
+    )
+    // Still only in a workspace it was granted.
+    expect(permits(grant(), { ...help, workspaceId: 'ws2' }).ok).toBe(false)
   })
 
   it('answers help to an extension granted any action of the tool, and to no other', () => {
@@ -175,18 +194,19 @@ describe('createBroker', () => {
     broker.setGrant('digest', {
       scope: SCOPE.supervisor,
       workspaces: [],
-      tools: { workspace: [], supervisor: ['task.list', 'listMemories'] },
+      tools: { workspace: [], supervisor: ['task.list'] },
     })
     const client = broker.clientFor('digest')
 
     await client.supervisor('task', { workspaceId: 'ws1', action: 'list', payload: { limit: 5 } })
-    await client.supervisor('listMemories', { workspaceId: 'ws1' })
+    await client.supervisor('help', { workspaceId: 'ws1', action: 'task' })
 
     expect(callSupervisor).toHaveBeenNthCalledWith(1, {
       tool: 'task',
       args: { action: 'list', payload: { limit: 5, workspaceId: 'ws1' } },
     })
-    expect(callSupervisor).toHaveBeenNthCalledWith(2, { tool: 'listMemories', args: { workspaceId: 'ws1' } })
+    // help is no action tool: its own arguments, the workspace beside them.
+    expect(callSupervisor).toHaveBeenNthCalledWith(2, { tool: 'help', args: { workspaceId: 'ws1', action: 'task' } })
   })
 
   it('makes the call and hands back the result', async () => {
@@ -344,7 +364,7 @@ describe('createBroker', () => {
     const { broker } = build()
     broker.setGrant('digest', grant({ tools: { workspace: ['getTask', 'task.get'], supervisor: ['listAllTasks', 'listWorkspaces'] } }))
 
-    expect(broker.grantFor('digest').tools).toEqual({ workspace: ['task.get'], supervisor: ['task.listAll', 'listWorkspaces'] })
+    expect(broker.grantFor('digest').tools).toEqual({ workspace: ['task.get'], supervisor: ['task.listAll', 'workspace.list'] })
   })
 
   it('hands out a copy of the grant too', () => {

@@ -32,7 +32,7 @@ const valid = () => ({
   description: 'Create and search Linear issues from tasks.',
   license: 'MIT',
   engines: { agentrq: '^1.4' },
-  mcp: { workspace: ['getWorkspace', 'task.reply'], supervisor: ['task.listAll'] },
+  mcp: { workspace: ['help', 'task.reply'], supervisor: ['task.listAll'] },
   config: [{ key: 'apiKey', type: 'secret', label: 'Linear API key' }],
   provides: { ui: ['workspacePanel'] },
   artifact: { release: 'v1.2.0', asset: 'linear-1.2.0.tgz', sha256: 'a'.repeat(64) },
@@ -220,17 +220,20 @@ describe('parseManifest', () => {
     expect(ok).toBe(true)
     expect(manifest.name).toBe('linear')
     expect(manifest.license).toBe('MIT')
-    expect(manifest.mcp.workspace).toEqual(['getWorkspace', 'task.reply'])
+    expect(manifest.mcp.workspace).toEqual(['help', 'task.reply'])
     expect(manifest.artifact.sha256).toBe('a'.repeat(64))
   })
 
-  it('reads a tool that became a task action as that action', () => {
-    // A manifest written before the task tools merged keeps asking for what it
+  it('reads a tool that became an action as that action', () => {
+    // A manifest written before the tools merged keeps asking for what it
     // always did, and asking for one twice is not a mistake worth refusing.
-    const mcp = { workspace: ['getTask', 'reply', 'task.reply'], supervisor: ['listAllTasks', 'listWorkspaces'] }
+    const mcp = { workspace: ['getTask', 'reply', 'task.reply', 'pano'], supervisor: ['listAllTasks', 'listWorkspaces'] }
     const { manifest } = parseManifest({ ...valid(), mcp })
 
-    expect(manifest.mcp).toEqual({ workspace: ['task.get', 'task.reply'], supervisor: ['task.listAll', 'listWorkspaces'] })
+    expect(manifest.mcp).toEqual({
+      workspace: ['task.get', 'task.reply', 'pano'],
+      supervisor: ['task.listAll', 'workspace.list'],
+    })
   })
 
   it('reads a manifest that arrives as text', () => {
@@ -597,7 +600,7 @@ describe('satisfiesRange', () => {
 describe('checkCompatibility', () => {
   const manifest = () => parseManifest(valid()).manifest
   const tools = {
-    workspaceTools: ['getWorkspace', 'task'],
+    workspaceTools: ['help', 'task'],
     supervisorTools: ['task'],
     workspaceActions: { task: ['reply'] },
     supervisorActions: { task: ['listAll'] },
@@ -621,7 +624,7 @@ describe('checkCompatibility', () => {
     // The real check: a self-hosted backend may be older than the extension.
     const { compatible, reasons } = checkCompatibility(manifest(), {
       appVersion: '1.4.0',
-      workspaceTools: ['getWorkspace'],
+      workspaceTools: ['help'],
       supervisorTools: [],
     })
 

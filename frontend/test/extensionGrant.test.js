@@ -139,7 +139,7 @@ describe('availableScopes, with no workspace in context', () => {
  * nothing.
  */
 describe('an extension whose tools are all account-wide', () => {
-  const accountOnly = () => describeAsk(manifest({ supervisor: ['listWorkspaces', 'task.listAll'] }));
+  const accountOnly = () => describeAsk(manifest({ supervisor: ['workspace.list', 'task.listAll'] }));
 
   it('is offered the account and nothing else', () => {
     expect(availableScopes(accountOnly(), { workspaceId: 'ws1' })).toEqual([SCOPE.supervisor]);
@@ -156,7 +156,7 @@ describe('an extension whose tools are all account-wide', () => {
   it('grants every tool it asked for at the rung it can use', () => {
     const grant = toGrant(accountOnly(), { scope: SCOPE.supervisor, workspaces: [], workspaceId: '' });
 
-    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'task.listAll']);
+    expect(grant.tools.supervisor).toEqual(['workspace.list', 'task.listAll']);
   });
 });
 

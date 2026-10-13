@@ -44,9 +44,9 @@ export function renderGuidanceSection(serverName: string): string {
   const tool = (rawName: string): string => toolName(serverName, rawName)
   return `## AgentRQ workspace
 
-You are connected to an AgentRQ workspace through the \`mcp__${serverName}__*\` tools. The human you work with is REMOTE: they see only what you send with \`${tool('task')}\` action \`reply\`. \`${tool('task')}\` and \`${tool('pano')}\` take two inputs, \`action\` and \`payload\` (the action's fields); action \`help\` lists the actions, and with payload \`{"topic": "<action>"}\` prints one action's payload. Your terminal output, your files, and your reasoning are invisible to them.
+You are connected to an AgentRQ workspace through the \`mcp__${serverName}__*\` tools. The human you work with is REMOTE: they see only what you send with \`${tool('task')}\` action \`reply\`. Every AgentRQ tool takes two inputs, \`action\` and \`payload\` (the action's fields); \`${tool('help')}\` explains them — with \`{"action": "task"}\` one tool's actions, with \`{"action": "task.create"}\` one action's payload and an example. Your terminal output, your files, and your reasoning are invisible to them.
 
-- **Start**: when you pick up a task, call \`${tool('task')}\` action \`updateStatus\` with \`ongoing\` before doing anything else, then \`${tool('getWorkspace')}\` for the mission context.
+- **Start**: when you pick up a task, call \`${tool('task')}\` action \`updateStatus\` with \`ongoing\` before doing anything else, then \`${tool('workspace')}\` action \`get\` for the mission context.
 - **Narrate**: send a \`${tool('task')}\` \`reply\` every few steps — what you are about to do, the paths you are editing, the commands you ran and their output, the trade-offs you chose, and anything unexpected. Do not go silent for long stretches.
 - **Ask through the task**: when you need permission or clarification, ask with \`${tool('task')}\` action \`elicit\` or \`reply\`. A question in your own output reaches nobody.
 - **Finish**: send a summary of every change, then set the status to \`completed\`. Use \`blocked\` when you are stuck and need the human.

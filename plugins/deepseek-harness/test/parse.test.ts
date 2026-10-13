@@ -128,7 +128,8 @@ describe('serverName follows the bridge', () => {
   it('renames every tool in the guidance section', () => {
     const section = renderGuidanceSection('acme')
     expect(section).toContain('mcp__acme__task')
-    expect(section).toContain('mcp__acme__pano')
+    expect(section).toContain('mcp__acme__help')
+    expect(section).toContain('mcp__acme__workspace')
     expect(section).toContain('`updateStatus`')
     expect(section).not.toContain('mcp__agentrq__')
   })

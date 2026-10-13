@@ -102,12 +102,12 @@ func (ps *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.Call
 	}
 	if total == 0 {
 		if strings.TrimSpace(params.Q) != "" {
-			return textResult("No skill's name or description contains %q. Call searchSkills with no q to see them all.", strings.TrimSpace(params.Q)), nil, nil
+			return textResult("No skill's name or description contains %q. Call skills search with no q to see them all.", strings.TrimSpace(params.Q)), nil, nil
 		}
-		return textResult("This workspace has no skills yet. Write one with saveSkill, starting with skill://<name>/%s.", skill.FileName), nil, nil
+		return textResult("This workspace has no skills yet. Write one with skills save, starting with skill://<name>/%s.", skill.FileName), nil, nil
 	}
 	if len(skills) == 0 {
-		return textResult("%d skills match, but none from offset %d; call searchSkills with a smaller offset.", total, params.Offset), nil, nil
+		return textResult("%d skills match, but none from offset %d; call skills search with a smaller offset.", total, params.Offset), nil, nil
 	}
 
 	var b strings.Builder
@@ -117,10 +117,10 @@ func (ps *WorkspaceServer) handleSearchSkills(ctx context.Context, req *mcp.Call
 		next := params.Offset + len(skills)
 		fmt.Fprintf(&b, "Skills %d–%d of %d.", params.Offset+1, next, total)
 		if next < total {
-			fmt.Fprintf(&b, " Call searchSkills with offset %d for more.", next)
+			fmt.Fprintf(&b, " Call skills search with offset %d for more.", next)
 		}
 	}
-	fmt.Fprintf(&b, " Load the %s of any whose description matches your task with loadSkill.\n", skill.FileName)
+	fmt.Fprintf(&b, " Load the %s of any whose description matches your task with skills load.\n", skill.FileName)
 	for _, s := range skills {
 		fmt.Fprintf(&b, "\n- %s: %s\n  %s", s.Name, s.Description, skill.URI(s.Name, skill.FileName))
 	}
@@ -148,7 +148,7 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 	if !found {
 		// Not an error: a stale link or a guessed name, which searchSkills
 		// answers.
-		return textResult("No skill or file at %s. Call searchSkills to see the skills this workspace has.", skill.URI(name, p)), nil, nil
+		return textResult("No skill or file at %s. Call skills search to see the skills this workspace has.", skill.URI(name, p)), nil, nil
 	}
 	if p != skill.FileName {
 		return textResult("%s", content), nil, nil
@@ -163,7 +163,7 @@ func (ps *WorkspaceServer) handleLoadSkill(ctx context.Context, req *mcp.CallToo
 	if len(others) == 0 {
 		return textResult("%s", content), nil, nil
 	}
-	return textResult("%s\n\n---\nFiles in this skill:\n%s\n\nLoad one with loadSkill and its skill:// URI when %s points you to it.",
+	return textResult("%s\n\n---\nFiles in this skill:\n%s\n\nLoad one with skills load and its skill:// URI when %s points you to it.",
 		content, strings.Join(others, "\n"), skill.FileName), nil, nil
 }
 

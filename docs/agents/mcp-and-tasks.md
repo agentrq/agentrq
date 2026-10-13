@@ -9,7 +9,7 @@
 ## A tool on the server is a tool in four other places
 
 The `mcp.AddTool(mcpSrv, …)` block in `server.go` is the source of truth for
-what a workspace offers — 14 tools as of 2026-10-13. Every other list of them
+what a workspace offers — 7 tools as of 2026-10-13 (CoreMCP has 9). Every other list of them
 in this repository is a copy, and the copies are what go stale.
 
 **`cli/agentrq-ws` is the one that is easiest to forget**, because it is a
@@ -47,11 +47,12 @@ names tools in the prompt it gives the model, so a rename is a change there too.
 
 ## Action tools: two inputs, and old names still answer
 
-`task` and `pano`, on both servers, take only `action` and `payload`. Each
-action's payload is the struct its handler takes, and `help` prints that struct,
-so the help cannot drift from what is accepted. A retired tool name is answered,
-unlisted, by `ActionToolsMiddleware` from its legacy map: never drop an entry
-while a gateway, CLI or extension installed before the merge may still call it.
+Every tool on both servers takes only `action` and `payload`, and each server has
+a `help` tool. An action's payload is the struct its handler takes, and `help`
+prints that struct (with the action's example), so it cannot drift from what is
+accepted. A retired tool name is answered, unlisted, by `ActionToolsMiddleware`
+from `legacyTools` in each server's `tools.go`: never drop an entry while a
+gateway, CLI or extension installed before the merge may still call it.
 
 ## What an agent reports leaves with its stream
 
@@ -101,7 +102,7 @@ it, any workspace's token could post into any task.
 
 ## Workspace memory
 
-`loadMemory` / `saveMemory` (`memory.go`) give agents notes that outlive a task.
+`memory.load` / `memory.save` (`memory.go`) give agents notes that outlive a task.
 
 - Stored in `memories`, keyed per **(workspace owner, workspace, name)** — it is
   the *workspace's* memory, so every agent working there shares it. Keying it to
@@ -124,7 +125,7 @@ it, any workspace's token could post into any task.
   silently cut in half cannot know to. The repository also refuses anything over
   128 KiB, so no setting can grow a memory past that, and the server will not start
   with one above it.
-- A `loadMemory` miss is **not** an error: every agent's first call on a fresh
+- A `memory.load` miss is **not** an error: every agent's first call on a fresh
   workspace misses, and answering with an error teaches agents to stop asking.
 
 ## A scheduled run is made once, however many instances tick

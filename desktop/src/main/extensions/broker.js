@@ -100,6 +100,10 @@ export function permits(grant, { surface, tool, action, workspaceId }) {
       allowed.includes(`${tool}.${action}`) ||
       (action === 'help' && allowed.some((entry) => entry.startsWith(`${tool}.`)))
     if (!granted) return deny(`This extension may not call "${tool}.${action}" on the ${surface} server.`)
+  } else if (tool === 'help') {
+    // It only explains how to call the others, so any grant on the surface
+    // allows it — and no grant there means no reason to ask.
+    if (allowed.length === 0) return deny(`This extension may not call "help" on the ${surface} server.`)
   } else if (!allowed.includes(tool)) {
     // Names the surface, because the same tool name can exist on both and
     // "not allowed" would leave an author guessing which one they asked for.

@@ -47,8 +47,8 @@ Each line says what the note will stop you getting wrong.
   place here where getting it wrong cannot be undone.
 - **[The MCP server, and tasks](docs/agents/mcp-and-tasks.md)** — adding or
   renaming a tool on the server is a change in four other places, and only one
-  of them is guarded by a test that really compares the two. `task` and `pano`
-  take an action and its payload, and retired tool names must keep answering.
+  of them is guarded by a test that really compares the two. Every tool
+  takes an action and its payload, and retired tool names must keep answering.
   Also cron granularity, valid task statuses, how workspace memory is keyed,
   and why OAuth authorize must always show the consent page.
 - **[CoreMCP, and the supervisor workspace](docs/agents/coremcp-and-supervisor.md)**

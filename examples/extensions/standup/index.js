@@ -25,7 +25,7 @@
  * is one tool, `task`, whose actions are `create`, `get`, `updateStatus`,
  * `reply`, `elicit` and `getAttachment` — no listing among them.
  *
- * What that constraint produced is a better extension. `getWorkspace` already
+ * What that constraint produced is a better extension. `workspace.get` already
  * answers with counts per status, which is what a standup is actually for; the
  * per-task detail belongs on the task, where the person asking has one in front
  * of them.
@@ -86,7 +86,7 @@ export function memoryName(config) {
 }
 
 /**
- * Reads `getWorkspace`'s answer.
+ * Reads `workspace.get`'s answer.
  *
  * The shape is fixed by the server and looks like:
  *
@@ -235,7 +235,7 @@ export async function collect(ctx, { workspaceId } = {}) {
     }
   }
 
-  const workspace = await ctx.mcp.workspace('getWorkspace', { workspaceId })
+  const workspace = await ctx.mcp.workspace('workspace', { workspaceId, action: 'get' })
   if (!workspace.ok) {
     // The reason the host gave, shown as it came. An author debugging a refused
     // grant needs the sentence that explains it, not a generic failure.
@@ -243,7 +243,7 @@ export async function collect(ctx, { workspaceId } = {}) {
   }
 
   const name = memoryName(ctx.config)
-  const memory = await ctx.mcp.workspace('loadMemory', { workspaceId, name })
+  const memory = await ctx.mcp.workspace('memory', { workspaceId, action: 'load', payload: { name } })
   // A memory that was never written answers with a sentence rather than an
   // error, so a refusal is the only thing worth treating as missing.
   const text = memory.ok ? textOf(memory.result) : ''

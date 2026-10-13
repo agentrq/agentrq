@@ -60,7 +60,7 @@ The account-wide supervisor server has two tools for forks:
 
 | Tool | What it does |
 |---|---|
-| `forkWorkspace` | `{workspaceId, name?}`. Makes a fork and returns it, with its `forkOfId` |
-| `mergeFork` | `{workspaceId, deleteFolder?}`. Merges a fork back, stopping its agent first, and returns `{parentId, movedTasks}`. `deleteFolder` also deletes the fork's folder on its machine |
+| `workspace.fork` | `{workspaceId, name?}`. Makes a fork and returns it, with its `forkOfId` |
+| `workspace.mergeFork` | `{workspaceId, deleteFolder?}`. Merges a fork back, stopping its agent first, and returns `{parentId, movedTasks}`. `deleteFolder` also deletes the fork's folder on its machine |
 
-`listWorkspaces` and `getWorkspace` show a fork's `forkOfId`. A browser agent driving the web app has the same two tools over [WebMCP](WEBMCP.md).
+`workspace.list` and `workspace.get` show a fork's `forkOfId`. A browser agent driving the web app has the same two tools over [WebMCP](WEBMCP.md).

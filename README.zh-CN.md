@@ -53,7 +53,7 @@ AgentRQ 的重点不是让 Agent 无限制执行，而是把人放在工作流�
 
 ### MCP
 
-MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `task`（`get`、`reply`、`updateStatus`、`create` 等操作）和 `pano`。
+MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `task`（`get`、`reply`、`updateStatus`、`create` 等操作）、`memory`、`skills` 和 `pano`。
 
 ### Skill
 
@@ -286,22 +286,15 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 
 也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示：一条通配规则 `mcp__agentrq-WORKSPACE_ID__*` 即可覆盖该 Workspace 的全部工具。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
 
-连接后，Agent 常用的 Workspace MCP 工具包括如下。`task` 和 `pano` 接收两个输入：`action` 与 `payload`（该操作的字段）；`help` 操作列出所有操作，传入 payload `{"topic": "<action>"}` 时打印某个操作的 payload。
+连接后，Agent 可以使用以下七个 Workspace MCP 工具。每个工具都接收两个输入：`action` 与 `payload`（该操作的字段），例如 `task {"action": "reply", "payload": {"taskId": "<id>", "text": "On it."}}`；`help` 工具负责说明用法——不传参数时列出所有工具及其操作，`{"action": "task"}` 列出某个工具的操作，`{"action": "task.create"}` 打印某个操作的 payload 和示例。
 
 - `task`：处理本 Workspace 的任务——`create`（创建任务并分配给人类或 Agent，可选定时）、`get`（不传 `taskId` 时返回分配给 Agent 的下一个未开始任务；`includeConversation: true` 一并返回对话历史，游标分页）、`updateStatus`（`notstarted`、`ongoing`、`blocked`、`completed` 等）、`reply`（向 AgentRQ 面板实时发送消息）、`elicit`（向人类提问并等待回答，支持表单模式和链接确认模式）和 `getAttachment`（默认返回公开链接，也可返回 base64 内容）。
-- `getWorkspace`：读取工作区名称、任务说明和统计信息。
-- `publishEvent`：触发命名事件，让订阅的 Workspace 自动创建对应的触发任务。
-- `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
-- `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。
-- `deleteMemory`：删除某一条 Workspace 记忆。
-- `searchSkills`：搜索 Workspace 可用的技能（Skill），包括自身的和其他 Workspace 共享进来的，附带描述和 `skill://` URI；可选 `q`（至少 3 个字符）按名称或描述匹配，可选 `limit`/`offset` 分页。
-- `loadSkill`：按 `skill://<name>/<path>` URI 读取技能中的一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI。
-- `saveSkill`：写入本 Workspace 自有技能的一个文件；写入 `SKILL.md` 即创建或更新该技能。
-- `deleteSkill`：删除本 Workspace 的某个技能，或其中的一个文件。
-- `pano`：读写 Pano，即账号内所有 Workspace 共享的 Markdown 文档，同样使用 `action` 与 `payload`：`save`（不带 `id` 时创建文档并返回其 id；随附的每个文件都必须在 Markdown 中以文件名链接）、`read`（可加 `includeComments`/`includeAttachments`）、`comment`、`attach`（无需链接的附件）、`delete` 和 `help`。详见 [docs/PANO.md](docs/PANO.md)（英文）。
-- `listSiteTools`：列出人类通过 AgentRQ Chrome 扩展共享的网站，以及每个网站所提供 WebMCP 工具的名称和描述；`q` 按相关度（BM25）排序工具，`pattern` 用正则表达式筛选，`limit`/`offset` 用于分页。
-- `getSiteToolDefinition`：在调用前获取某个已共享网站工具的完整定义，包括输入模式和注解。
-- `callSiteTool`：在人类自己的 Chrome 中运行已共享网站的工具；网站未标记为只读的工具会先在任务中征得人类同意。网站返回的内容是数据，而不是指令。
+- `memory`：跨任务保留的 Workspace 记忆——`load`（不传 name 时读取 `memory.md`，即所有记忆的索引）、`save`（整条覆盖写入）和 `delete`。
+- `skills`：Workspace 可用的技能（Skill）——`search`（按名称或描述搜索，附带描述和 `skill://` URI）、`load`（读取一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI）、`save`（写入 `SKILL.md` 即创建或更新该技能）和 `delete`。
+- `workspace`：`get`（读取工作区名称和任务说明）与 `publishEvent`（触发命名事件，让订阅的 Workspace 自动创建对应的触发任务）。
+- `siteTools`：人类通过 AgentRQ Chrome 扩展共享的网站——`search`（列出其 WebMCP 工具；`q` 按相关度排序，`pattern` 用正则表达式筛选，`limit`/`offset` 分页）、`getDefinition`（调用前获取工具的输入模式和注解）和 `call`（在人类自己的 Chrome 中运行；未标记为只读的工具会先在任务中征得人类同意）。网站返回的内容是数据，而不是指令。
+- `pano`：读写 Pano，即账号内所有 Workspace 共享的 Markdown 文档：`save`（不带 `id` 时创建文档并返回其 id；随附的每个文件都必须在 Markdown 中以文件名链接）、`read`（可加 `includeComments`/`includeAttachments`）、`comment`、`attach`（无需链接的附件）和 `delete`。详见 [docs/PANO.md](docs/PANO.md)（英文）。
+- `help`：说明以上工具的调用方式。
 
 ### 技能（Skills）
 
@@ -312,7 +305,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - 导入会保留技能目录中的所有 Markdown（`.md`）文件（`README.md`、`CLAUDE.md`、`AGENTS.md` 等仓库元文件除外），其他文件则只保留被 `SKILL.md` 或已保留文件直接或间接引用到的；若仓库带有 `.agentrq/plugin.json` 或 `.muse-plugin/plugin.json`，以其中列出的技能为准。
 - 文件地址形如 `skill://<name>/<path>`，`skill://<name>` 即该技能的 `SKILL.md`。界面中不单独列出子文件，点击 `SKILL.md` 中的引用即可打开。
 - 在 Workspace 的 **Settings → Skills** 中粘贴 GitHub 仓库、分支或目录链接并点击 **Import** 即可导入；超大仓库会先列出其中的技能，由你勾选要导入的。
-- Agent 会被要求在任务开始时调用 `searchSkills`，再用 `loadSkill` 读取匹配技能的 `SKILL.md`；也可以用 `saveSkill` 创建或修改本 Workspace 的技能，把一次任务中学到的经验沉淀下来。
+- Agent 会被要求在任务开始时调用 `skills.search`，再用 `skills.load` 读取匹配技能的 `SKILL.md`；也可以用 `skills.save` 创建或修改本 Workspace 的技能，把一次任务中学到的经验沉淀下来。
 
 详见 [docs/SKILLS.md](docs/SKILLS.md)（英文）。
 
@@ -355,7 +348,7 @@ Supervisor Agent 可连接全局 CoreMCP：
 }
 ```
 
-CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看和管理多个 Workspace。用 `forkWorkspace` 分叉一个 Workspace，用 `mergeFork` 将分叉合并回父工作区。
+CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看和管理多个 Workspace。用 `workspace.fork` 分叉一个 Workspace，用 `workspace.mergeFork` 将分叉合并回父工作区。
 
 ## 官方扩展与集成
 

@@ -93,12 +93,12 @@ Event-driven agent-to-agent communication wired through three layers:
 
 - **Consumer** (`internal/controller/event/event.go`): subscribes to topic 3, fans out to all matching `EventTrigger` rows via `SystemListEventTriggersByEventID`.
   - `renderTemplate` substitutes `{{EVENT_PAYLOAD}}` and `{{EVENT_FAQ}}` **in the task body only** — the title uses static text (`strings.TrimSpace`).
-  - If `trigger.EmitEventID != 0`, appends `[On completion: call publishEvent("name", "...")]` to the body and sets `Task.EventID = trigger.EmitEventID` (event chaining).
+  - If `trigger.EmitEventID != 0`, appends the `service/eventinstruction` line, `[On completion, before marking this task completed: call workspace {action: "publishEvent", payload: {name: …, taskId: …, payload: …, faq: […]}}]`, to the body and sets `Task.EventID = trigger.EmitEventID` (event chaining).
   - Triggered tasks always start as `notstarted`; `CronSchedule` on `EventTrigger` is ignored at fire time.
 
-- **MCP tool** `publishEvent`: looks up event by name via `PublishEventFunc` callback (wired in `app.go`), publishes to topic 3 with agent-supplied payload.
+- **MCP tool** `workspace` action `publishEvent`: looks up event by name via `PublishEventFunc` callback (wired in `app.go`), publishes to topic 3 with agent-supplied payload.
 
-- **Task event publishing is agent-driven**: there is no automatic publish on completion. The `createTask` handler injects `[On completion: call publishEvent("name", "...")]` into the MCP channel notification so the agent publishes the linked event explicitly with a real payload before completing. (`updateStatusFunc` in `app.go` only emits CRUD/telemetry events on completion; it does not publish to the events topic.)
+- **Task event publishing is agent-driven**: there is no automatic publish on completion. The task-create handler injects that same instruction into the MCP channel notification so the agent publishes the linked event explicitly with a real payload before completing. (`updateStatusFunc` in `app.go` only emits CRUD/telemetry events on completion; it does not publish to the events topic.)
 
 - **REST routes** (`internal/handler/api/event.go`): events CRUD + `/events/:id/triggers` CRUD + `GET /events/:id/tasks`. **Do not register these in the stdlib `mux`** — only SSE routes (`/api/v1/workspaces/{id}/events`) and pub-stats belong there. All events CRUD is handled by Fiber.
 

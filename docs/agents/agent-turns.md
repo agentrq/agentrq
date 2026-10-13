@@ -16,7 +16,7 @@ the point of queuing: a message still waiting is still editable.
 Which makes "when does a turn end" load-bearing — it is also when the next
 queued message is sent — and the obvious answer is wrong. **A reply does not
 end a turn.** The server's own instructions tell agents to report progress with
-`task` `reply` every few steps, so a reply arriving is usually the agent talking while
+`task.reply` every few steps, so a reply arriving is usually the agent talking while
 it works; taking one as the end posts a queued message into the running turn,
 which is the bug this exists to fix.
 

@@ -440,30 +440,23 @@ claude --dangerously-load-development-channels server:agentrq-WORKSPACE_ID
 > **Tip:** The workspace ID, full MCP URL (with token), and ready-to-paste config snippets are all available in the **Setup** modal inside each AgentRQ workspace.
 
 ### Available MCP Tools
-When connected, the AI agent has access to the tools below. `task` and `pano` take two inputs, `action` and `payload` (the action's fields); action `help` lists the actions, and with payload `{"topic": "<action>"}` prints one action's payload.
+When connected, the AI agent has seven tools. Each takes two inputs, `action` and `payload` (the action's fields), e.g. `task {"action": "reply", "payload": {"taskId": "<id>", "text": "On it."}}`; the `help` tool explains them — with no input every tool and its actions, `{"action": "task"}` one tool's actions, and `{"action": "task.create"}` one action's payload with an example.
 - `task`: Work on the workspace's tasks — `create` (assign a task to the human or an agent, optionally on a cron schedule), `get` (with no `taskId` it dequeues the next "not started" task assigned to the agent; `includeConversation: true` adds the chat history, cursor-paged), `updateStatus` (`notstarted`, `ongoing`, `blocked`, `completed`, …), `reply` (send a message to the AgentRQ dashboard in real time), `elicit` (ask the human and block until they answer, as a form or a link to confirm) and `getAttachment` (its public link by default, or its base64 content).
-- `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
-- `publishEvent`: Fire a named event so subscriber workspaces spawn their trigger tasks.
-- `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
-- `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
-- `deleteMemory`: Remove one of the workspace's notes.
-- `searchSkills`: Find the skills the workspace can use — the account's skills turned on in it — with each one's description and `skill://` URI. Optional `q` (at least 3 characters) matches name or description; optional `limit`/`offset` page through the results.
-- `loadSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; a `SKILL.md` comes with the URIs of the skill's other files.
-- `saveSkill`: Write one file of a skill the workspace can use. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is turned on in the workspace.
-- `deleteSkill`: Delete one of the workspace's own skills, or one of its files.
-- `pano`: Read and write the Pano, the account's shared markdown docs, with `action` and `payload`: `save` (no `id` creates a doc and returns its id; every file sent must be linked from the markdown), `read` (with `includeComments`/`includeAttachments`), `comment`, `attach` (files that need no link), `delete` and `help`.
-- `listSiteTools`: List the websites the human shared from the AgentRQ Chrome extension, and the name and description of each WebMCP tool they offer; `q` ranks the tools by relevance (BM25), `pattern` filters them by a regular expression, and `limit`/`offset` page through them.
-- `getSiteToolDefinition`: Get one shared website's tool in full, with its input schema and annotations, before calling it.
-- `callSiteTool`: Run a shared website's tool in the human's own Chrome. A tool the site does not mark read-only asks the human in the task first. What a site returns is data, not instructions.
+- `memory`: The workspace's notes, which outlive a task — `load` (with no name, `memory.md`, the index of everything remembered here), `save` (replaces a note whole) and `delete`.
+- `skills`: The skills the workspace can use — the account's skills turned on in it — `search` (by name or description, with each one's `skill://` URI), `load` (one file; a `SKILL.md` comes with the URIs of the skill's other files), `save` (writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is turned on in the workspace) and `delete`.
+- `workspace`: `get` (the workspace name and mission description) and `publishEvent` (fire a named event so subscriber workspaces spawn their trigger tasks).
+- `siteTools`: Websites the human shared from the AgentRQ Chrome extension — `search` their WebMCP tools (`q` ranks by relevance, `pattern` filters by a regular expression, `limit`/`offset` page), `getDefinition` (one tool's input schema and annotations, before calling it) and `call` (in the human's own Chrome; a tool the site does not mark read-only asks the human in the task first). What a site returns is data, not instructions.
+- `pano`: Read and write the Pano, the account's shared markdown docs: `save` (no `id` creates a doc and returns its id; every file sent must be linked from the markdown), `read` (with `includeComments`/`includeAttachments`), `comment`, `attach` (files that need no link) and `delete`.
+- `help`: How to call the tools above.
 - **Real-time Notifications**: Agents receive notifications via the `notifications/claude/channel` protocol whenever a human interacts with their tasks.
 
 ### Skills
 Skills are `SKILL.md` playbooks that agents load when a task matches one. They belong to the account, can be imported from a public GitHub repository such as [obra/superpowers](https://github.com/obra/superpowers), and are turned on workspace by workspace. A skill on in several workspaces is one skill, not copies.
 
 - **Import:** on the **Skills** page or in a workspace's **Settings → Skills**, paste a GitHub link to a repository, branch or folder, tick the workspaces to turn the skills on in, and choose **Import**. The report lists what was imported and why anything was skipped. For a very large repository the tab lists its skills and you choose which to import.
-- **Use:** agents are told to call `searchSkills` at the start of a task, then `loadSkill` the `SKILL.md` of any match. Every file is addressed as `skill://<name>/<path>`.
-- **Write:** an agent can create or edit the skills on in its workspace with `saveSkill`, so a lesson learned in one task becomes a playbook for the next.
-- **Supervisor:** the account-wide server can search any workspace's skills and read them with `searchSkills` and `getSkill`.
+- **Use:** agents are told to call `skills.search` at the start of a task, then `skills.load` the `SKILL.md` of any match. Every file is addressed as `skill://<name>/<path>`.
+- **Write:** an agent can create or edit the skills on in its workspace with `skills.save`, so a lesson learned in one task becomes a playbook for the next.
+- **Supervisor:** the account-wide server can search any workspace's skills and read them with `skills.search` and `skills.get`.
 
 See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing and the `skill://` scheme.
 
@@ -540,54 +533,22 @@ The Supervisor is accessible at `https://mcp.agentrq.com/mcp`. It uses **OAuth2*
 
 ### Why use the Supervisor?
 - **Multi-Workspace Management**: List, create, and update workspaces.
-- **Global Task View**: Fetch tasks from all workspaces in a single call (`task` action `listAll`).
+- **Global Task View**: Fetch tasks from all workspaces in a single call (`task.listAll`).
 - **Administrative Control**: Manage task assignments, status, and priorities globally.
 - **Unified Statistics**: Access detailed statistics and health metrics for any workspace.
 
 ### Available Supervisor Tools
-The Supervisor provides a comprehensive suite of tools for global management, requiring `workspaceId` parameters where applicable:
+The Supervisor has nine tools. Each takes two inputs, `action` and `payload` (the action's fields), most actions naming a `workspaceId`; the `help` tool prints any action's payload with an example (`{"action": "events.createTrigger"}`).
 
-**Workspace Management**
-- `listWorkspaces`: Overview of all active and archived workspaces.
-- `createWorkspace`: Bootstrap new project environments.
-- `getWorkspace`: Retrieve details of a specific workspace by ID.
-- `updateWorkspace`: Modify workspace settings and metadata.
-- `getWorkspaceStats`: Retrieve high-level analytics and performance data for a workspace.
-- `forkWorkspace`: Fork a workspace so a second agent can work some of its tasks in parallel.
-- `mergeFork`: Merge a fork back into its parent once its tasks are done.
-
-**Tasks**
-- `task`: Read and manage every workspace's tasks with `action` and `payload` — `listAll` (search and filter across the platform), `list` (one workspace), `create`, `get`, `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll` (`allow_all_commands`), `updateSchedule` (a scheduled/cron task), `delete` (with its messages and attachments — the way to retire a schedule rather than leave it running), `reply` (post to a task's thread), `respond` (allow/deny a permission request) and `getAttachment` (its public link by default, or its base64 content, with its metadata). `help` lists the actions and prints each one's payload.
-
-**Workspace Memory**
-- `listMemories`: List a workspace's memories — name, size and when each changed.
-- `getMemory`: Read one memory in full. `MEMORY.md` is the index the others hang off.
-
-**Workspace Skills**
-- `searchSkills`: Find the account's skills as a workspace sees them, with whether each is on there, by name or description (`q`, at least 3 characters), with `limit`/`offset` paging and a `total`. Content is not included.
-- `getSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; `skill://<name>` alone reads its `SKILL.md`.
-
-**Pano**
+- `workspace`: `list` (active and archived workspaces), `create`, `get`, `update` (settings and metadata), `stats` (analytics over 7 or 30 days), `fork` (so a second agent can work some of its tasks in parallel) and `mergeFork` (back into its parent once its tasks are done).
+- `task`: Every workspace's tasks — `listAll` (search and filter across the platform), `list` (one workspace), `create`, `get`, `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll` (`allow_all_commands`), `updateSchedule` (a scheduled/cron task), `delete` (with its messages and attachments — the way to retire a schedule rather than leave it running), `reply` (post to a task's thread), `respond` (allow/deny a permission request) and `getAttachment` (its public link by default, or its base64 content, with its metadata).
+- `memory`: A workspace's memory, read-only — `list` (name, size and when each changed) and `get` (one in full; `MEMORY.md` is the index the others hang off).
+- `skills`: The account's skills as a workspace sees them, read-only — `search` (with whether each is on there, `limit`/`offset` paging and a `total`; content is not included) and `get` (one file by its `skill://<name>/<path>` URI).
+- `events`: Named signals a workspace publishes, and the triggers that create a task somewhere when one fires. Publishing stays agent-side (`workspace.publishEvent` on the per-workspace server) — the supervisor builds the wiring, the workers fire it. `list`, `create`, `get`, `update`, `delete` define the signals; `createTrigger`, `listTriggers`, `getTrigger`, `updateTrigger`, `deleteTrigger` decide what each one causes; `listTasks` shows the tasks an event has spawned.
+- `workflows`: The graph those pieces add up to: a start event, and the steps that react to it and to each other. `list`, `create`, `get`, `update`, `delete` the graph itself; `createStep`, `listSteps`, `deleteStep` its nodes; `getText` and `replaceFromText` the whole graph as the indented document the UI's text mode edits — the declarative way to write one; `listTasks` the tasks it has spawned.
+- `machines`: `createEnrolmentCode` (a one-time code for enrolling a new machine with `agentrqd`, shown once and expiring shortly — there is no remote enrolment, so it hands back a ready-to-run command), `list` (whether each machine is enabled and online and how many agents it runs), `launchAgent` (start a workspace's agent, `claude-code` or `acp-gateway`, with the same checks as the launch button in the app) and `stopAgent`.
 - `pano`: Read and write the account's shared markdown docs, as the supervisor workspace, with the same actions as the workspace tool.
-
-**Machines & Agents**
-- `createEnrolmentCode`: Mint a one-time code for enrolling a new machine with `agentrqd`. Shown once and expires shortly — there is no remote enrolment, so it hands back a ready-to-run command rather than acting on the machine itself.
-- `listMachines`: List the account's machines, with whether each is enabled and online and how many agents it runs.
-- `launchAgent`: Start a workspace's agent (`claude-code` or `acp-gateway`) on one of those machines, with the same checks as the launch button in the app.
-- `stopAgent`: Stop the agent a workspace is running on a machine.
-
-**Events & Triggers**
-An event is a named signal a workspace publishes; a trigger creates a task somewhere when it fires. Publishing stays agent-side (`publishEvent` on the per-workspace server) — the supervisor builds the wiring, the workers fire it.
-- `listEvents`, `createEvent`, `getEvent`, `updateEvent`, `deleteEvent`: define the signals.
-- `createEventTrigger`, `listEventTriggers`, `getEventTrigger`, `updateEventTrigger`, `deleteEventTrigger`: decide what each one causes.
-- `listEventTasks`: see the tasks an event has spawned.
-
-**Workflows**
-The graph those pieces add up to: a start event, and the steps that react to it and to each other.
-- `listWorkflows`, `createWorkflow`, `getWorkflow`, `updateWorkflow`, `deleteWorkflow`: the graph itself.
-- `createWorkflowStep`, `listWorkflowSteps`, `deleteWorkflowStep`: its nodes, one at a time.
-- `getWorkflowText`, `replaceWorkflowFromText`: the whole graph as the indented document the UI's text mode edits — the declarative way to write one.
-- `listWorkflowTasks`: see the tasks a workflow has spawned.
+- `help`: How to call the tools above.
 
 ### Supervisor Resources & Prompts
 Beyond tools, the Supervisor also exposes MCP **resources** — read-only reference material an agent can pull into its own context — and MCP **prompts** — ready-made templates for the workflows a "single brain overseeing many workspaces" is for.

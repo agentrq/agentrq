@@ -158,7 +158,7 @@ func TestLoadMemoryMissIsNotAnError(t *testing.T) {
 		t.Fatalf("a miss must not be an error: %s", resultText(t, res))
 	}
 	text := resultText(t, res)
-	if !strings.Contains(text, "never-written.md") || !strings.Contains(text, "saveMemory") {
+	if !strings.Contains(text, "never-written.md") || !strings.Contains(text, "memory save") {
 		t.Errorf("a miss should name the memory and point at the fix; got %q", text)
 	}
 }

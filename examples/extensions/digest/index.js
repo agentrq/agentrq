@@ -161,7 +161,7 @@ function payload(result) {
  * retry.
  */
 export async function collect(ctx) {
-  const workspaces = await ctx.mcp.supervisor('listWorkspaces', {})
+  const workspaces = await ctx.mcp.supervisor('workspace', { action: 'list' })
   if (!workspaces.ok) return refusal(workspaces.reason)
 
   const tasks = await ctx.mcp.supervisor('task', { action: 'listAll', payload: { limit: MAX_TASKS } })

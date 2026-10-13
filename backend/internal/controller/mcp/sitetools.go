@@ -95,17 +95,17 @@ type siteToolSummary struct {
 
 // GetSiteToolDefinitionParams names one tool of one shared site.
 type GetSiteToolDefinitionParams struct {
-	Site string `json:"site" jsonschema:"The site's origin, exactly as listSiteTools prints it, e.g. https://github.com."`
-	Tool string `json:"tool" jsonschema:"The tool's name, as listSiteTools prints it."`
+	Site string `json:"site" jsonschema:"The site's origin, exactly as siteTools search prints it, e.g. https://github.com."`
+	Tool string `json:"tool" jsonschema:"The tool's name, as siteTools search prints it."`
 }
 
 // CallSiteToolParams is one call of a shared site's tool. Arguments is a map,
 // not a json.RawMessage, because the SDK infers a RawMessage as a byte array.
 type CallSiteToolParams struct {
 	TaskID    string         `json:"taskId" jsonschema:"The ID of the task you are working on (base62). A tool that is not read-only asks the human there first."`
-	Site      string         `json:"site" jsonschema:"The site's origin, exactly as listSiteTools prints it, e.g. https://github.com."`
-	Tool      string         `json:"tool" jsonschema:"The tool's name, as listSiteTools prints it."`
-	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"The tool's arguments, matching the inputSchema getSiteToolDefinition returns. Omitted means {}."`
+	Site      string         `json:"site" jsonschema:"The site's origin, exactly as siteTools search prints it, e.g. https://github.com."`
+	Tool      string         `json:"tool" jsonschema:"The tool's name, as siteTools search prints it."`
+	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"The tool's arguments, matching the inputSchema siteTools getDefinition returns. Omitted means {}."`
 }
 
 // siteApprovalTimeout is how long a call waits for the human to decide.

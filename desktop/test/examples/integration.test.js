@@ -63,9 +63,9 @@ const SERVERS = serverTools('0.5.21')
 function harness({ workspaceAnswers = {}, supervisorAnswers = {} } = {}) {
   const wrap = (payload) => ({ content: [{ text: JSON.stringify(payload) }] })
   const calls = []
-  // A task action is recorded, and answered, as `task.<action>`, its payload
-  // as the arguments.
-  const named = (tool, args) => (tool === 'task' ? [`task.${args.action}`, args.payload] : [tool, args])
+  // Every call is an action, recorded and answered as `tool.action`, its
+  // payload as the arguments.
+  const named = (tool, args) => [`${tool}.${args.action}`, args.payload ?? {}]
 
   // The workspace server answers in prose, not JSON — it is written for agents
   // to read. Wrapping it in the supervisor's envelope would be a stub that
@@ -246,8 +246,8 @@ describe('task-stats — the extension that asks for nothing', () => {
 
 describe('standup — the workspace case', () => {
   const answers = {
-    getWorkspace: () => 'Workspace: Backend\nDescription: the API\n\nTask Statistics:\n- Not Started: 3\n- Ongoing: 1\n- Completed: 12\n- Rejected: 0\n- Blocked: 2',
-    loadMemory: () => '# memory\n\nnotes',
+    'workspace.get': () => 'Workspace: Backend\nDescription: the API\n\nTask Statistics:\n- Not Started: 3\n- Ongoing: 1\n- Completed: 12\n- Rejected: 0\n- Blocked: 2',
+    'memory.load': () => '# memory\n\nnotes',
     'task.get': () =>
       `Task details:\nID: t1\nTitle: Stuck\n\nConversation:\n${JSON.stringify({
         messages: [{ text: 'Asked on Tuesday' }],
@@ -264,7 +264,7 @@ describe('standup — the workspace case', () => {
     const view = normaliseView(await page.view({ workspaceId: 'ws1' }))
 
     expect(view.ok, view.reason).toBe(true)
-    expect(rig.calls.map((call) => call.tool)).toEqual(['getWorkspace', 'loadMemory'])
+    expect(rig.calls.map((call) => call.tool)).toEqual(['workspace.get', 'memory.load'])
     // The credential never reaches the extension: the host attached it.
     expect(rig.calls.every((call) => call.workspaceId === 'ws1')).toBe(true)
   })
@@ -317,10 +317,10 @@ describe('standup — the workspace case', () => {
 
 describe('digest — the full case', () => {
   const answers = {
-    listWorkspaces: () => ({ workspaces: [{ id: 'ws1', name: 'Backend' }] }),
+    'workspace.list': () => ({ workspaces: [{ id: 'ws1', name: 'Backend' }] }),
     'task.listAll': () => ({ tasks: [{ workspaceId: 'ws1', title: 'Stuck', status: 'blocked' }] }),
     'task.create': (args) => ({ task: { id: 'tk1', ...args } }),
-    listEvents: () => ({ events: [] }),
+    'events.list': () => ({ events: [] }),
   }
 
   const install = (rig) =>
@@ -349,7 +349,7 @@ describe('digest — the full case', () => {
     const view = normaliseView(await page.view())
 
     expect(view.ok, view.reason).toBe(true)
-    expect(rig.calls.map((call) => call.tool)).toEqual(['listWorkspaces', 'task.listAll'])
+    expect(rig.calls.map((call) => call.tool)).toEqual(['workspace.list', 'task.listAll'])
   })
 
   // The end the whole feature was built for: standing work that runs when the
@@ -420,7 +420,7 @@ describe('digest — the full case', () => {
     const page = rig.host.resolve('ui', {}).find((entry) => entry.surface === 'page')
     const view = await page.view()
 
-    expect(view.nodes[0].value).toContain('may not call "listWorkspaces"')
+    expect(view.nodes[0].value).toContain('may not call "workspace.list"')
     expect(normaliseView(view).ok).toBe(true)
     expect(rig.calls).toEqual([])
   })
@@ -429,8 +429,8 @@ describe('digest — the full case', () => {
 describe('all three at once', () => {
   it('coexist without either colliding or reordering each other', async () => {
     const rig = harness({
-      workspaceAnswers: { getWorkspace: () => 'Workspace: Backend', loadMemory: () => '' },
-      supervisorAnswers: { listWorkspaces: () => ({ workspaces: [] }), 'task.listAll': () => ({ tasks: [] }) },
+      workspaceAnswers: { 'workspace.get': () => 'Workspace: Backend', 'memory.load': () => '' },
+      supervisorAnswers: { 'workspace.list': () => ({ workspaces: [] }), 'task.listAll': () => ({ tasks: [] }) },
     })
 
     await rig.install('digest', { scope: SCOPE.supervisor, config: { workspaceId: 'ws1' } })
@@ -464,7 +464,7 @@ describe('all three at once', () => {
   })
 
   it('refuses a second extension asking for a key that is taken', async () => {
-    const rig = harness({ workspaceAnswers: { getWorkspace: () => 'Workspace: Backend' } })
+    const rig = harness({ workspaceAnswers: { 'workspace.get': () => 'Workspace: Backend' } })
     await rig.install('standup', { scope: SCOPE.workspace })
 
     // The registry names the extension already holding it, because "duplicate

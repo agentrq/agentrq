@@ -71,24 +71,17 @@ That allowance is permission to execute this package's code on your machine at i
 
 ## What the model gets
 
-Every tool the workspace server offers — fourteen today — bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
+Every tool the workspace server offers — seven today, each taking an `action` and its `payload` — bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
 
 | Tool | Purpose |
 |---|---|
-| `mcp__agentrq__task` | Work on the workspace's tasks with `action` and `payload`: `get` (with no `taskId`, dequeue the next one assigned to this agent), `create`, `updateStatus` (`ongoing`, `completed`, `blocked`, …), `reply` — the only thing the remote human sees — `elicit` (ask and wait for the answer), `getAttachment`, and `help` |
-| `mcp__agentrq__getWorkspace` | Read the workspace title and mission |
-| `mcp__agentrq__publishEvent` | Fire a named event so subscriber workspaces spawn their trigger tasks |
-| `mcp__agentrq__loadMemory` | Read what the workspace remembers; with no name, `memory.md`, the index |
-| `mcp__agentrq__saveMemory` | Write a memory that outlives the task, replacing it entirely |
-| `mcp__agentrq__deleteMemory` | Delete one of the workspace's memories |
-| `mcp__agentrq__searchSkills` | Find the workspace's skills by name or description, with their `skill://` URIs |
-| `mcp__agentrq__loadSkill` | Read one file of a skill by its `skill://` URI |
-| `mcp__agentrq__saveSkill` | Write one file of a skill the workspace can use |
-| `mcp__agentrq__deleteSkill` | Take a skill out of the workspace, or delete one of its files |
-| `mcp__agentrq__pano` | Read and write the Pano, markdown docs every workspace of the account shares, with `action` and `payload`: `save`, `read`, `comment`, `attach`, `delete`, `help` |
-| `mcp__agentrq__listSiteTools` | List the websites the human shared from the Chrome extension, and their WebMCP tools' names and descriptions; search with `q` (BM25) or `pattern` (regex), page with `limit`/`offset` |
-| `mcp__agentrq__getSiteToolDefinition` | Get one shared website's tool with its input schema, before calling it |
-| `mcp__agentrq__callSiteTool` | Run a shared website's tool in the human's Chrome; a tool not marked read-only asks the human first |
+| `mcp__agentrq__task` | The workspace's tasks: `get` (with no `taskId`, dequeue the next one assigned to this agent), `create`, `updateStatus` (`ongoing`, `completed`, `blocked`, …), `reply` — the only thing the remote human sees — `elicit` (ask and wait for the answer) and `getAttachment` |
+| `mcp__agentrq__memory` | What the workspace remembers: `load` (with no name, `memory.md`, the index), `save` (replaces a memory entirely), `delete` |
+| `mcp__agentrq__skills` | The workspace's skills: `search` (by name or description, with their `skill://` URIs), `load`, `save`, `delete` |
+| `mcp__agentrq__workspace` | `get` (the workspace title and mission) and `publishEvent` (fire a named event so subscriber workspaces spawn their trigger tasks) |
+| `mcp__agentrq__siteTools` | Websites the human shared from the Chrome extension: `search` their WebMCP tools (`q` for BM25, `pattern` for a regex, `limit`/`offset` to page), `getDefinition` (input schema, before calling), `call` (in the human's Chrome; a tool not marked read-only asks the human first) |
+| `mcp__agentrq__pano` | Markdown docs every workspace of the account shares: `save`, `read`, `comment`, `attach`, `delete` |
+| `mcp__agentrq__help` | How to call the others: every tool, one tool's actions, or one action's payload with an example (`{"action": "task.create"}`) |
 
 Plus one tool this package owns:
 
@@ -152,7 +145,7 @@ Each profile gets its own process, sessions, working directory, and workspace co
 Two consequences worth knowing:
 
 - **A single profile cannot serve two workspaces.** Mounting the bundle twice in one profile registers the `agentrq:protocol` prompt section and the `agentrq_autopull` tool twice in the same layer, and both registrations throw on a duplicate name. Namespacing them per instance is deferred until someone needs it.
-- **No cross-workspace view.** AgentRQ's CoreMCP supervisor (`https://mcp.agentrq.com/mcp`) does expose `listWorkspaces` and `listAllTasks`, so a deployment that wants "what is outstanding everywhere" can mount it as an extra `@deepseek-ai/dsh-mcp-client` row. It sends no channel notifications, so it complements per-workspace delivery rather than replacing it.
+- **No cross-workspace view.** AgentRQ's CoreMCP supervisor (`https://mcp.agentrq.com/mcp`) does expose `workspace.list` and `task.listAll`, so a deployment that wants "what is outstanding everywhere" can mount it as an extra `@deepseek-ai/dsh-mcp-client` row. It sends no channel notifications, so it complements per-workspace delivery rather than replacing it.
 
 `serverName` is safe to change: the guidance section and every framing derive their tool names from it, so the namespace the model sees and the namespace the prose describes cannot drift apart.
 

@@ -57,47 +57,21 @@ with a `toolName` and a higher priority for any tool you want to keep asking abo
 
 ## Tools
 
-| Tool | Description |
+Every tool takes two inputs, `action` and `payload` (the action's fields), e.g.
+`task {"action": "create", "payload": {"workspaceId": "<id>", "title": "Ship it"}}`. Ask the
+`help` tool for an action's exact payload and an example.
+
+| Tool | Actions |
 | --- | --- |
-| `listWorkspaces` | List all workspaces for the authenticated user |
-| `createWorkspace` | Create a new workspace |
-| `forkWorkspace` | Fork a workspace, for a second agent to work some of its tasks |
-| `mergeFork` | Merge a fork back: stop its agent and move its tasks to the parent |
-| `getWorkspace` | Get a workspace by ID |
-| `updateWorkspace` | Update a workspace |
-| `getWorkspaceStats` | Get statistics for a workspace |
-| `task` | Read and manage every workspace's tasks with two inputs, `action` and `payload`: `list`, `listAll`, `create`, `get`, `reply`, `respond` (answer a permission request: allow, allow_all, reject, or text), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule`, `delete` (with its messages and attachments; cannot be undone) and `getAttachment`. `help` lists the actions, and with `topic` prints one action's payload |
-| `listMemories` | List a workspace's memories: name, size and when each was last changed |
-| `getMemory` | Get one of a workspace's memories in full, by name |
-| `searchSkills` | Find the account's skills as a workspace sees them, with whether each is on there, by name or description, with paging; content is not included |
-| `getSkill` | Get one file of a workspace's skill in full, by its `skill://<name>/<path>` URI |
-| `listEvents` | List the events defined for this account |
-| `createEvent` | Define a named signal workspaces can publish |
-| `getEvent` | Get an event by ID |
-| `updateEvent` | Revise an event's payload guidelines |
-| `deleteEvent` | Delete an event; its triggers stop firing |
-| `createEventTrigger` | React to an event by creating a task in a workspace |
-| `listEventTriggers` | List everything that happens when an event fires |
-| `getEventTrigger` | Get an event trigger by ID |
-| `updateEventTrigger` | Rewrite an event trigger; every field is written as given |
-| `deleteEventTrigger` | Delete an event trigger, leaving its event in place |
-| `listEventTasks` | List the tasks an event has spawned |
-| `listWorkflows` | List the workflows defined for this account |
-| `createWorkflow` | Create an empty workflow around a start event |
-| `getWorkflow` | Get a workflow by ID |
-| `updateWorkflow` | Revise a workflow; only the fields sent are changed |
-| `deleteWorkflow` | Delete a workflow and its steps |
-| `createWorkflowStep` | Add a step: an event, the task it creates, and the event it emits |
-| `listWorkflowSteps` | List a workflow's steps |
-| `deleteWorkflowStep` | Remove one step, leaving the rest of the graph |
-| `listWorkflowTasks` | List the tasks a workflow has spawned |
-| `getWorkflowText` | Read a workflow's graph as the indented document text mode edits |
-| `replaceWorkflowFromText` | Replace a workflow's entire graph with a document |
-| `createEnrolmentCode` | Mint a one-time code for enrolling a new machine with agentrqd |
-| `listMachines` | List the account's machines, and whether each is online |
-| `launchAgent` | Start a workspace's agent on one of the account's machines |
-| `stopAgent` | Stop the agent a workspace is running on a machine |
-| `pano` | Read and write the Pano, the account's shared markdown docs, with `action` and `payload`: `save`, `read`, `comment`, `attach`, `delete` or `help`. Writes are recorded as the supervisor workspace |
+| `workspace` | The account's workspaces: `list`, `create`, `get` (with its `mcpUrl`), `update` (only the fields sent change), `stats` (over 7 or 30 days), `fork` (its own queue and agent, sharing the parent's settings, memory and skills) and `mergeFork` (back into the parent, once its tasks are done) |
+| `task` | The tasks of every workspace: `list`, `listAll`, `create`, `get`, `reply`, `respond` (answer a permission request: allow, allow_all, reject, or text), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule`, `delete` (with its messages and attachments; cannot be undone) and `getAttachment` |
+| `memory` | A workspace's memory, read-only: `list` (name, size, last change) and `get` (one in full; `MEMORY.md` is the index) |
+| `skills` | The account's skills as a workspace sees them, read-only: `search` and `get` (one file by `skill://` URI) |
+| `events` | Named signals and the triggers that turn them into tasks: `list`, `create`, `get`, `update`, `delete`, `listTasks`, `listTriggers`, `createTrigger`, `getTrigger`, `updateTrigger` and `deleteTrigger` |
+| `workflows` | Graphs of events and the workspaces they hand off to: `list`, `create`, `get`, `getText`, `update`, `delete`, `replaceFromText`, `listSteps`, `createStep`, `deleteStep` and `listTasks` |
+| `machines` | Machines running agentrqd: `list`, `createEnrolmentCode` (one-time, expires shortly), `launchAgent` and `stopAgent` |
+| `pano` | The account's shared markdown docs: `save`, `read`, `comment`, `attach` and `delete`. Writes are recorded as the supervisor workspace |
+| `help` | How to call the other tools: every tool, one tool's actions (`{"action": "task"}`), or one action's payload and an example (`{"action": "task.create"}`) |
 
 **Resources:** `agentrq://guides/new-workspace` and `agentrq://guides/agentrqd-setup`.
 

@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-only",
   "engines": { "agentrq": ">=0.5" },
   "mcp": {
-    "supervisor": ["listWorkspaces", "task.listAll", "task.create"]
+    "supervisor": ["workspace.list", "task.listAll", "task.create"]
   },
   "net": ["hooks.slack.com"],
   "config": [

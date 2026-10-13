@@ -60,8 +60,24 @@ func TestExampleExtensionsAskForToolsThatExist(t *testing.T) {
 
 	workspaceTools := namesUnder(t, filepath.Join(root, "backend/internal/controller/mcp"), workspaceToolRe)
 	supervisorTools := namesUnder(t, filepath.Join(root, "backend/internal/handler/coremcp"), coreToolRe)
-	workspaceActions := map[string][]string{"task": actionsOf(t, mcpevent.TaskParams{}), "pano": actionsOf(t, mcpevent.PanoParams{})}
-	supervisorActions := map[string][]string{"task": actionsOf(t, TaskParams{}), "pano": actionsOf(t, mcpevent.PanoParams{})}
+	workspaceActions := map[string][]string{
+		"task":      actionsOf(t, mcpevent.TaskParams{}),
+		"memory":    actionsOf(t, mcpevent.MemoryParams{}),
+		"skills":    actionsOf(t, mcpevent.SkillsParams{}),
+		"workspace": actionsOf(t, mcpevent.WorkspaceParams{}),
+		"siteTools": actionsOf(t, mcpevent.SiteToolsParams{}),
+		"pano":      actionsOf(t, mcpevent.PanoParams{}),
+	}
+	supervisorActions := map[string][]string{
+		"workspace": actionsOf(t, WorkspaceToolParams{}),
+		"task":      actionsOf(t, TaskParams{}),
+		"memory":    actionsOf(t, MemoryToolParams{}),
+		"skills":    actionsOf(t, SkillsToolParams{}),
+		"events":    actionsOf(t, EventsToolParams{}),
+		"workflows": actionsOf(t, WorkflowsToolParams{}),
+		"machines":  actionsOf(t, MachinesToolParams{}),
+		"pano":      actionsOf(t, mcpevent.PanoParams{}),
+	}
 
 	dir := filepath.Join(root, "examples/extensions")
 	entries, err := os.ReadDir(dir)

@@ -34,7 +34,7 @@ A task is the atomic unit of work. Key fields:
 | `ParentID` | Set when a task is spawned from a cron template |
 | `TriggerID` | ID of the event that caused this task (set by the event consumer) |
 | `EventID` | ID of the event this task should publish on completion |
-| `SortOrder` | Controls queue priority for `task` `get` (next-task dequeue) |
+| `SortOrder` | Controls queue priority for `task.get` (next-task dequeue) |
 | `AllowAllCommands` | Per-task override for permission gating |
 
 ### Message
@@ -58,44 +58,25 @@ The Core MCP server is a **single, stateless server** instance accessible at `/m
 
 **User-scope enforcement**: Every coremcp handler extracts the user ID from the JWT context and passes it to the CRUD controller. The controller validates workspace ownership on every operation via `ensureActiveWorkspace(ctx, workspaceID, userID)`, which issues a DB query requiring both the workspace ID and the user's ID to match. A workspace belonging to another user returns a not-found error — cross-user access is impossible regardless of which tool is called.
 
-The coremcp exposes a broad, cross-workspace tool surface:
+The coremcp exposes a broad, cross-workspace tool surface. Every tool takes two inputs, an `action` and its `payload`; below, an action's payload is written as its arguments:
 
 | Tool | Description |
 |------|-------------|
-| `listWorkspaces(includeArchived?)` | List all user-accessible workspaces; each result includes the workspace's `mcpURL` (the per-workspace MCP endpoint URL) |
-| `createWorkspace(name, description?, ...)` | Create a new workspace |
-| `getWorkspace(id)` | Get a single workspace by ID (with `mcpURL`) |
-| `updateWorkspace(id, ...)` | Update workspace metadata |
-| `getWorkspaceStats(id, range)` | Task statistics for a workspace |
+| `workspace(action, payload?)` | The account's workspaces. `list(includeArchived?)`: List all user-accessible workspaces; each result includes the workspace's `mcpURL` (the per-workspace MCP endpoint URL); `create(name, description?, ...)`: Create a new workspace; `get(id)`: Get a single workspace by ID (with `mcpURL`); `update(id, ...)`: Update workspace metadata; `stats(id, range)`: Task statistics for a workspace; `fork(id)`: a fork with its own queue and agent; `mergeFork(id, deleteFolder?)`: merge a fork back into its parent |
 | `task(action, payload?)` | Every task operation, in **any** workspace by ID. Actions: `list(workspaceId, filter?, status?, limit?)`, `listAll(filter?, status?, limit?)`, `create(workspaceId, title, body?, assignee?, cronSchedule?)`, `get(workspaceId, taskId)`, `reply(workspaceId, taskId, text)`, `respond(workspaceId, taskId, action)` (allow/deny a permission request), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule` (a cron task template), `delete` (with its messages and attachments — the only way to retire a schedule rather than leave it behind), `getAttachment(workspaceId, taskId, attachmentId)`; `help` prints each action's payload |
-| `listEvents()` | List the events defined for the user's account |
-| `createEvent(name, payloadGuidelines?)` | Define a named signal workspaces can publish |
-| `getEvent(eventId)` | Fetch a single event |
-| `updateEvent(eventId, payloadGuidelines)` | Revise an event's payload guidelines (its name is fixed) |
-| `deleteEvent(eventId)` | Delete an event; its triggers stop firing |
-| `createEventTrigger(eventId, workspaceId, title, body?, assignee?, cronSchedule?, allowAllCommands?, emitEventId?)` | Create a task in a workspace whenever the event fires |
-| `listEventTriggers(eventId)` | List everything that happens when an event fires |
-| `getEventTrigger(triggerId)` | Fetch a single trigger by ID |
-| `updateEventTrigger(triggerId, workspaceId, title, ...)` | Rewrite a trigger; every field is written as given |
-| `deleteEventTrigger(triggerId)` | Delete a trigger, leaving its event in place |
-| `listEventTasks(eventId)` | List the tasks an event has spawned |
-| `listWorkflows()` | List the workflows defined for the user's account |
-| `createWorkflow(name, description?, startEventId?)` | Create an empty workflow around a start event |
-| `getWorkflow(workflowId)` | Fetch a single workflow |
-| `updateWorkflow(workflowId, name?, description?, startEventId?, layout?)` | Revise a workflow; omitted fields are left alone |
-| `deleteWorkflow(workflowId)` | Delete a workflow and its steps; the events it named survive |
-| `createWorkflowStep(workflowId, eventId, workspaceId, title, body?, assignee?, allowAllCommands?, emitEventId?)` | Add one node to the graph |
-| `listWorkflowSteps(workflowId)` | List a workflow's steps |
-| `deleteWorkflowStep(workflowId, stepId)` | Remove one step, leaving the rest of the graph |
-| `listWorkflowTasks(workflowId)` | List the tasks a workflow has spawned |
-| `getWorkflowText(workflowId)` | Read the whole graph as the indented document text mode edits |
-| `replaceWorkflowFromText(workflowId, text)` | Replace the entire graph from a document, resolving every name before writing |
+| `memory(action, payload?)` | A workspace's memory, read-only: `list(workspaceId)`, `get(workspaceId, name)` |
+| `skills(action, payload?)` | The account's skills as a workspace sees them, read-only: `search(workspaceId, q?)`, `get(workspaceId, uri)` |
+| `events(action, payload?)` | `list()`: List the events defined for the user's account; `create(name, payloadGuidelines?)`: Define a named signal workspaces can publish; `get(eventId)`: Fetch a single event; `update(eventId, payloadGuidelines)`: Revise an event's payload guidelines (its name is fixed); `delete(eventId)`: Delete an event; its triggers stop firing; `createTrigger(eventId, workspaceId, title, body?, assignee?, cronSchedule?, allowAllCommands?, emitEventId?)`: Create a task in a workspace whenever the event fires; `listTriggers(eventId)`: List everything that happens when an event fires; `getTrigger(triggerId)`: Fetch a single trigger by ID; `updateTrigger(triggerId, workspaceId, title, ...)`: Rewrite a trigger; every field is written as given; `deleteTrigger(triggerId)`: Delete a trigger, leaving its event in place; `listTasks(eventId)`: List the tasks an event has spawned |
+| `workflows(action, payload?)` | `list()`: List the workflows defined for the user's account; `create(name, description?, startEventId?)`: Create an empty workflow around a start event; `get(workflowId)`: Fetch a single workflow; `update(workflowId, name?, description?, startEventId?, layout?)`: Revise a workflow; omitted fields are left alone; `delete(workflowId)`: Delete a workflow and its steps; the events it named survive; `createStep(workflowId, eventId, workspaceId, title, body?, assignee?, allowAllCommands?, emitEventId?)`: Add one node to the graph; `listSteps(workflowId)`: List a workflow's steps; `deleteStep(workflowId, stepId)`: Remove one step, leaving the rest of the graph; `listTasks(workflowId)`: List the tasks a workflow has spawned; `getText(workflowId)`: Read the whole graph as the indented document text mode edits; `replaceFromText(workflowId, text)`: Replace the entire graph from a document, resolving every name before writing |
+| `machines(action, payload?)` | `list()`, `createEnrolmentCode()`, `launchAgent(workspaceId, machineId, kind, ...)`, `stopAgent(workspaceId, machineId)` |
+| `pano(action, payload?)` | The account's shared markdown docs, written as the supervisor workspace |
+| `help(action?)` | Every tool and its actions; with `tool`, its actions; with `tool.action`, that action's payload and an example |
 
 The event tools are what let a supervisor wire workspaces to each other rather
 than relaying every hand-off itself: it defines an event, attaches a trigger
 per workspace that should react, and reads back the tasks the event spawned.
 `emitEventId` chains one system to the next by publishing a second event when
-the spawned task completes. Publishing remains agent-side (`publishEvent` on
+the spawned task completes. Publishing remains agent-side (`workspace.publishEvent` on
 the per-workspace server) — the supervisor builds the wiring, the workers fire
 it.
 
@@ -105,7 +86,7 @@ extension declares the standing work it wants, and the host creates what is
 missing, revises what has drifted and removes what the extension dropped. All
 three are needed, and the third is the one that makes an uninstall clean — the
 tools mirror the REST surface one-to-one for exactly that reason.
-`replaceWorkflowFromText` is the declarative half of the pair: two documents
+`workflows.replaceFromText` is the declarative half of the pair: two documents
 compare where a graph would have to be diffed node by node.
 
 ### Per-Workspace / Agent Worker MCP Servers
@@ -118,13 +99,17 @@ Worker agents connect via:
 
 Authentication uses the workspace's encrypted token (a 16-char secret, AES-GCM encrypted at rest, provided as a bearer token). Once authenticated, the agent communicates with that workspace exclusively — it has no visibility into other workspaces.
 
-Every agent connected to a per-workspace MCP server has access to exactly these tools:
+Every agent connected to a per-workspace MCP server has access to exactly these tools, each taking an `action` and its `payload`:
 
 | Tool | Description |
 |------|-------------|
-| `getWorkspace()` | Returns workspace name, description, and task stats |
 | `task(action, payload?)` | Every task operation in this workspace. `get(taskId?, includeConversation?, cursor?, limit?)`: with no `taskId`, dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`); with a `taskId`, returns that task, `includeConversation` appending paginated message history. `create(title, body, assignee?, attachments?, cronSchedule?, eventId?)`: a new task (or cron template); `eventId` links it to the event it should publish on completion. `updateStatus(taskId, status)`: transitions task state, auto-appending a status message. `reply(taskId, text, attachments?)`: a message in the task's thread. `elicit(taskId, message, mode, ...)`: asks the human and waits. `getAttachment(taskId, attachmentId, format?)`: a file attachment. `help` prints each action's payload |
-| `publishEvent(name, payload, faq?)` | Fires a named event with a payload and optional FAQ; fans out to all matching `EventTrigger` rows, creating tasks in subscribed workspaces |
+| `memory(action, payload?)` | `load(name?)`, `save(name?, content)`, `delete(name?)`: notes that outlive a task; `memory.md` is the index |
+| `skills(action, payload?)` | `search(q?)`, `load(uri)`, `save(uri, content)`, `delete(uri)`: the skills turned on in this workspace |
+| `workspace(action, payload?)` | `get()`: workspace name, description, and task stats. `publishEvent(name, taskId?, payload, faq?)`: fires a named event; fans out to all matching `EventTrigger` rows, creating tasks in subscribed workspaces |
+| `siteTools(action, payload?)` | `search(q?, pattern?)`, `getDefinition(site, tool)`, `call(taskId, site, tool, arguments?)`: websites shared from the Chrome extension |
+| `pano(action, payload?)` | The account's shared markdown docs |
+| `help(action?)` | Every tool and its actions; with `tool`, its actions; with `tool.action`, that action's payload and an example |
 
 All state mutations go through the MCP tool layer — there is no direct database access for agents.
 
@@ -141,7 +126,7 @@ The coordination flow looks like this:
 ```
 Supervisor Agent
 └── MCP Session → coremcp (/mcp)                [OAuth2, user-scoped]
-                  ├── listWorkspaces()           → discovers all workspaces + their mcpURL
+                  ├── workspace list()           → discovers all workspaces + their mcpURL
                   ├── task create(workspaceId=B)  → assigns task to coding agent
                   ├── task create(workspaceId=C)  → assigns task to docs agent
                   ├── task create(workspaceId=D)  → assigns task to publishing agent
@@ -153,19 +138,19 @@ Worker Agents (one per workspace, each with its own MCP session)
 └── MCP Session → /mcp/{workspaceD}             [workspace token, isolated]
 ```
 
-The supervisor never touches per-workspace MCP endpoints. It sees everything through the coremcp and uses `task` action `create(workspaceId, ...)` to delegate subtasks to specialist agents. Each worker agent is entirely isolated within its own workspace MCP server and is unaware of the broader pipeline.
+The supervisor never touches per-workspace MCP endpoints. It sees everything through the coremcp and uses `task.create(workspaceId, ...)` to delegate subtasks to specialist agents. Each worker agent is entirely isolated within its own workspace MCP server and is unaware of the broader pipeline.
 
 ### Step-by-Step: Supervisor Spawning a Cross-Workspace Workflow
 
 1. **Human → Supervisor**: Human creates a task in the supervisor workspace (via the UI or REST API) with a high-level goal (e.g., "Write, document, and publish the new authentication module").
 
-2. **Supervisor picks up task**: The supervisor, connected to `coremcp`, receives the task via the AgentRQ workspace MCP server it also runs in. It calls `task` action `updateStatus(workspaceId, taskId, "ongoing")`.
+2. **Supervisor picks up task**: The supervisor, connected to `coremcp`, receives the task via the AgentRQ workspace MCP server it also runs in. It calls `task.updateStatus(workspaceId, taskId, "ongoing")`.
 
-3. **Supervisor discovers workspaces**: Supervisor calls `listWorkspaces()` on coremcp. The response includes each workspace's ID, name, description, and `mcpURL` — the URL the specialist worker agent in that workspace is connected to.
+3. **Supervisor discovers workspaces**: Supervisor calls `workspace.list` on coremcp. The response includes each workspace's ID, name, description, and `mcpURL` — the URL the specialist worker agent in that workspace is connected to.
 
-4. **Supervisor creates subtasks**: For each specialist workspace (coding, docs, publishing), the supervisor calls `task` action `create(workspaceId="...", title="...", body="...", assignee="agent")` on coremcp. Each call creates a task in the target workspace and returns its ID.
+4. **Supervisor creates subtasks**: For each specialist workspace (coding, docs, publishing), the supervisor calls `task.create(workspaceId="...", title="...", body="...", assignee="agent")` on coremcp. Each call creates a task in the target workspace and returns its ID.
 
-5. **Specialist agents work**: Each specialist workspace agent runs its own `task` `get` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
+5. **Specialist agents work**: Each specialist workspace agent runs its own `task.get` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
 
 6. **Supervisor monitors**: Supervisor calls `task` actions `list(workspaceId, status="completed")` or `get(workspaceId, taskId)` on coremcp to track worker progress. When a worker marks its task `completed`, the supervisor reads the result from the task data and uses it as input for the next stage.
 
@@ -277,13 +262,13 @@ Events are named signals that let one workspace trigger tasks in other workspace
 |--------|-------------|
 | `Event` | A named signal definition owned by a user. Has a `name` (unique per user, lowercase letters/digits/underscores) and an optional `payloadGuidelines` hint for agents publishing it |
 | `EventTrigger` | A subscription: when a named event fires, create a task in `WorkspaceID` using the stored `Title` and `Body` template. Optional `EmitEventID` chains to a second event on the spawned task's completion |
-| `Task.EventID` | Links a task to the event it should publish when completed. The assigned agent receives an explicit `publishEvent` instruction in its task notification |
+| `Task.EventID` | Links a task to the event it should publish when completed. The assigned agent receives an explicit `workspace.publishEvent` instruction in its task notification |
 | `Task.TriggerID` | Records which event caused this task (set by the event consumer at creation time) |
 
 ### Publishing Flow
 
 ```
-Agent calls publishEvent("deploy_done", "v2.3 deployed to prod")
+Agent calls workspace publishEvent {name: "deploy_done", payload: "v2.3 deployed to prod"}
   → WorkspaceServer.handlePublishEvent
   → PublishEventFunc (wired in app.go): looks up event by name + userID
   → pubsubSvc.Publish(PubSubTopicEvents, EventPublishedPayload{...})
@@ -293,7 +278,7 @@ Agent calls publishEvent("deploy_done", "v2.3 deployed to prod")
       body = renderTemplate(trigger.Body, payload, faqText)   ← {{EVENT_PAYLOAD}} / {{EVENT_FAQ}} substituted
       title = trigger.Title                                   ← always static text, no substitution
       if trigger.EmitEventID != 0:
-          body += "[On completion: call publishEvent(\"chain_event\", ...)]"
+          body += "[On completion, before marking this task completed: call workspace {action: \"publishEvent\", ...}]"
           task.EventID = trigger.EmitEventID
       repo.CreateTask(...)
       pubsubSvc.Publish(PubSubTopicCRUD, ActionTaskCreate)    ← SSE push to human UI
@@ -308,7 +293,7 @@ When a task is created with an `EventID` (via REST or triggered by an `EventTrig
 [Task abc123] Review and summarize the latest deploy
 <task body>
 
-[On completion: call publishEvent("deploy_reviewed", "<your output payload>")]
+[On completion, before marking this task completed: call workspace {action: "publishEvent", payload: {name: "deploy_reviewed", taskId: …, payload: "<your output payload>"}}]
 Payload guidelines: Summarise key changes, risks, and sign-off status
 ```
 
@@ -316,12 +301,12 @@ This ensures the agent knows to publish the event explicitly with a meaningful p
 
 ### Event Chaining
 
-`EventTrigger.EmitEventID` enables pipelines: the spawned task inherits an `EventID` pointing to a second event. When the agent completes that task and calls `publishEvent`, the second event fires, triggering its own set of `EventTrigger` rows — and so on.
+`EventTrigger.EmitEventID` enables pipelines: the spawned task inherits an `EventID` pointing to a second event. When the agent completes that task and calls `workspace.publishEvent`, the second event fires, triggering its own set of `EventTrigger` rows — and so on.
 
 ```
 Event A fires
   → Trigger T1 creates Task X in Workspace B (EventID = Event B)
-    → Agent completes Task X, calls publishEvent("event_b", payload)
+    → Agent completes Task X, calls workspace publishEvent("event_b", payload)
       → Event B fires
         → Trigger T2 creates Task Y in Workspace C
 ```
@@ -341,7 +326,7 @@ sequenceDiagram
     participant C as Workspace C
     participant UI as Human UI (SSE)
 
-    A->>MCP: publishEvent("deploy_done", payload)
+    A->>MCP: workspace publishEvent("deploy_done", payload)
     MCP->>DB: GetEventByName("deploy_done", userID)
     DB-->>MCP: Event{id, name}
     MCP->>PS: Publish(EventPublishedPayload)
@@ -373,12 +358,12 @@ sequenceDiagram
     participant PS as PubSub
 
     Note over A: Task has EventID = "event_b"
-    A->>PS: publishEvent("event_a", payload_a)
-    PS->>EC: fan-out → create Task in WS-B<br/>(body includes publishEvent("event_b") instruction)<br/>Task.EventID = event_b
+    A->>PS: workspace publishEvent("event_a", payload_a)
+    PS->>EC: fan-out → create Task in WS-B<br/>(body includes the publishEvent("event_b") instruction)<br/>Task.EventID = event_b
 
     B-->>B: task get() → works on task
-    Note over B: Notification includes:<br/>[On completion: call publishEvent("event_b", ...)]
-    B->>PS: publishEvent("event_b", payload_b)
+    Note over B: Notification includes:<br/>[On completion, before marking this task completed: call workspace {action: "publishEvent", ...}]
+    B->>PS: workspace publishEvent("event_b", payload_b)
 
     PS->>EC: fan-out → create Task in WS-C<br/>(body includes payload_b via {{EVENT_PAYLOAD}})
     C-->>C: task get() → works on task
@@ -397,7 +382,7 @@ All event and trigger operations are scoped to the requesting user at the reposi
 
 Attachments are stored on disk under `./_storage/{attachmentID}` as base64-encoded files:
 - On save: base64 data written to disk; only metadata (ID, filename, mimeType) persisted in the DB
-- On download: `task` action `getAttachment` reads from disk, returns base64 to agent
+- On download: `task.getAttachment` reads from disk, returns base64 to agent
 - On delete: attachment files purged from disk; a cleanup service (`internal/service/cleanup`) runs daily to remove orphaned files older than the configured retention period
 
 ---

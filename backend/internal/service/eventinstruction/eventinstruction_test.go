@@ -28,7 +28,8 @@ func TestBuildPutsFixedArgumentsBeforeAuthoredOnes(t *testing.T) {
 	got := Build(Params{EventName: "blog_published", TaskID: "0hGlYcRCJTV"})
 
 	taskID := strings.Index(got, "taskId:")
-	payload := strings.Index(got, "payload:")
+	// The last one: the first is the tool's own payload, around the call.
+	payload := strings.LastIndex(got, "payload:")
 	faq := strings.Index(got, "faq:")
 
 	if taskID == -1 || payload == -1 || faq == -1 {

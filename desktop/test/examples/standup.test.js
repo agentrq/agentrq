@@ -32,7 +32,7 @@ import manifest from '../../../examples/extensions/standup/agentrq-extension.jso
  * against the server's real list.
  */
 
-/** The shape `getWorkspace` answers with — prose, not JSON. */
+/** The shape `workspace.get` answers with — prose, not JSON. */
 const workspaceText = (over = {}) =>
   [
     `Workspace: ${over.name ?? 'Backend'}`,
@@ -58,18 +58,18 @@ function fakeWorkspace(over = {}) {
   const calls = []
   const wrap = (text) => ({ ok: true, result: { content: [{ text }] } })
   const answers = {
-    getWorkspace: () => wrap(workspaceText()),
-    loadMemory: () => wrap('# memory\n\nnotes'),
+    'workspace.get': () => wrap(workspaceText()),
+    'memory.load': () => wrap('# memory\n\nnotes'),
     'task.get': () => wrap(taskText()),
     ...over,
   }
   return {
     calls,
-    // A task action is recorded as `task.<action>`, its payload beside the
-    // workspace that addresses it.
+    // Every call is an action, recorded as `tool.action`, its payload beside
+    // the workspace that addresses it.
     workspace: async (name, input) => {
-      const tool = name === 'task' ? `task.${input.action}` : name
-      const args = name === 'task' ? { workspaceId: input.workspaceId, ...input.payload } : input
+      const tool = `${name}.${input.action}`
+      const args = { workspaceId: input.workspaceId, ...input.payload }
       calls.push({ tool, args })
       return answers[tool](args)
     },
@@ -240,7 +240,7 @@ describe('collect', () => {
 
     const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 
-    expect(fake.calls.map((call) => call.tool)).toEqual(['getWorkspace', 'loadMemory'])
+    expect(fake.calls.map((call) => call.tool)).toEqual(['workspace.get', 'memory.load'])
     expect(fake.calls.every((call) => call.args.workspaceId === 'ws1')).toBe(true)
     expect(page.nodes.find((node) => node.label === 'Work')).toBeDefined()
   })
@@ -258,7 +258,7 @@ describe('collect', () => {
   // at the user.
   it('treats a memory that was never written as empty', async () => {
     const fake = fakeWorkspace({
-      loadMemory: () => ({ ok: true, result: 'No memory saved under "memory.md" yet. Use saveMemory to write one.' }),
+      'memory.load': () => ({ ok: true, result: 'No memory saved under "memory.md" yet. Use saveMemory to write one.' }),
     })
 
     const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
@@ -267,7 +267,7 @@ describe('collect', () => {
   })
 
   it('carries on without the memory when that one call is refused', async () => {
-    const fake = fakeWorkspace({ loadMemory: () => ({ ok: false, reason: 'refused' }) })
+    const fake = fakeWorkspace({ 'memory.load': () => ({ ok: false, reason: 'refused' }) })
 
     const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 
@@ -278,7 +278,7 @@ describe('collect', () => {
   // A refusal is a value, not a throw. The page says what the host said.
   it('shows the refusal it was given rather than an empty page', async () => {
     const fake = fakeWorkspace({
-      getWorkspace: () => ({ ok: false, reason: 'This extension was not granted access to that workspace.' }),
+      'workspace.get': () => ({ ok: false, reason: 'This extension was not granted access to that workspace.' }),
     })
 
     const page = await collect(ctxWith(fake), { workspaceId: 'ws2' })
@@ -288,7 +288,7 @@ describe('collect', () => {
   })
 
   it('holds up when an answer cannot be read at all', async () => {
-    const fake = fakeWorkspace({ getWorkspace: () => ({ ok: true, result: { content: [{}] } }) })
+    const fake = fakeWorkspace({ 'workspace.get': () => ({ ok: true, result: { content: [{}] } }) })
 
     const page = await collect(ctxWith(fake), { workspaceId: 'ws1' })
 

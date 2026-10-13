@@ -57,7 +57,7 @@ func Build(p Params) string {
 	// The call above lists every argument to pass, so arguments it omits need no
 	// mention: spelling out what not to send would only name the thing the agent
 	// should never have been thinking about.
-	s := fmt.Sprintf("\n\n[On completion, before marking this task completed: call publishEvent(%s)]", args)
+	s := fmt.Sprintf("\n\n[On completion, before marking this task completed: call workspace {action: \"publishEvent\", payload: {%s}}]", args)
 	s += "\nCopy name and taskId exactly as written above — taskId is what tells the server which run this continues."
 	s += "\nWrite the payload yourself. faq is optional: question/answer pairs covering what subscribers are likely to ask —" +
 		" tasks triggered by this event can render both."

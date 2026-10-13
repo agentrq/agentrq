@@ -165,7 +165,7 @@ func (ps *WorkspaceServer) handleLoadMemory(ctx context.Context, req *mcp.CallTo
 		// so plainly is what tells the agent to write one.
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("No memory saved under %q yet. Use saveMemory to write one.", name),
+				Text: fmt.Sprintf("No memory saved under %q yet. Use memory save to write one.", name),
 			}},
 		}, nil, nil
 	}
