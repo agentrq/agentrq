@@ -74,25 +74,24 @@ describe('the post-it colors', () => {
     expect(panoColor(undefined)).toBe(PANO_COLORS[0]);
   });
 
-  it('uses the design\'s paper, label, pin and tape for every color', () => {
-    // [name, paper, label background, label text, pin, tape]
-    const spec = [
-      ['yellow', '#fef08a', '#fde047', '#78350f', '#ca8a04', 'bg-[#fde68a]/60'],
-      ['pink', '#fce7f3', '#fbcfe8', '#9d174d', '#f472b6', 'bg-[#f9a8d4]/60'],
-      ['green', '#dcfce7', '#bbf7d0', '#15803d', '#16a34a', 'bg-[#a7f3d0]/60'],
-      ['blue', '#e0f2fe', '#bae6fd', '#0369a1', '#2563eb', 'bg-[#7dd3fc]/60'],
-      ['orange', '#ffedd5', '#fecdd3', '#9f1239', '#ea580c', 'bg-[#fb7185]/45'],
-      ['purple', '#f3e8ff', '#e9d5ff', '#6b21a8', '#7c3aed', 'bg-[#d8b4fe]/60'],
-      ['amber', '#fef3c7', '#fde68a', '#92400e', '#b45309', 'bg-[#fcd34d]/60'],
+  it('draws every color as the Pano\'s design does', () => {
+    // [name, paper, title, body, footer, label, label text, accent, avatar, track, tape]
+    const design = [
+      ['yellow', '#fffbeb', '#713f12', '#542d0c', '#854d0e', '#fef08a', '#713f12', '#b15f00', '#b15f00', '#fef9c3', '#fef08a'],
+      ['pink', '#fdf2f8', '#9d174d', '#831843', '#be185d', '#fce7f3', '#be185d', '#db2777', '#be185d', '#fce7f3', '#fbcfe8'],
+      ['green', '#f0fdf4', '#166534', '#14532d', '#15803d', '#dcfce7', '#15803d', '#16a34a', '#15803d', '#dcfce7', '#bbf7d0'],
+      ['blue', '#eff6ff', '#1e40af', '#1e3a8a', '#1e40af', '#dbeafe', '#1e40af', '#2563eb', '#1e40af', '#dbeafe', '#bfdbfe'],
+      ['orange', '#fff1f2', '#881337', '#4c0519', '#9f1239', '#ffe4e6', '#be123c', '#e11d48', '#be123c', '#ffe4e6', '#fecdd3'],
+      ['purple', '#faf5ff', '#6b21a8', '#581c87', '#7e22ce', '#f3e8ff', '#7e22ce', '#9333ea', '#7e22ce', '#f3e8ff', '#e9d5ff'],
+      ['amber', '#fef3c7', '#92400e', '#451a03', '#92400e', '#fde68a', '#92400e', '#b45309', '#b45309', '#fde68a', '#fcd34d'],
     ];
-    for (const [name, paper, tag, tagInk, pin, tape] of spec) {
+    for (const [name, paper, title, body, muted, tag, tagInk, accent, avatar, track, tape] of design) {
       const c = panoColor(name);
-      expect(c.card).toContain(`[${paper}]`);
-      expect(c.tag).toBe(`bg-[${tag}] text-[${tagInk}]`);
-      expect([c.tagHex, c.tagInkHex, c.ink]).toEqual([tag, tagInk, `text-[${tagInk}]`]);
-      expect([c.inkHex, c.inkBg]).toEqual([pin, `bg-[${pin}]`]);
-      expect(c.tape).toBe(tape);
+      expect([c.card, c.title, c.body, c.muted]).toEqual([`bg-[${paper}]`, `text-[${title}]`, `text-[${body}]`, `text-[${muted}]`]);
+      expect([c.tag, c.tagHex, c.tagInkHex, c.ink]).toEqual([`bg-[${tag}] text-[${tagInk}]`, tag, tagInk, `text-[${tagInk}]`]);
+      expect([c.inkBg, c.inkHex, c.avatar, c.track, c.tape]).toEqual([`bg-[${accent}]`, accent, `bg-[${avatar}]`, `bg-[${track}]`, `bg-[${tape}]/80`]);
       expect(c.swatch).toMatch(/^bg-\[#[0-9a-f]{6}\]$/);
+      expect(c.dot).toMatch(/^bg-\[#[0-9a-f]{6}\]$/);
       expect(c.label).toMatch(/^[A-Z][a-z]+( [a-z]+)?$/);
     }
     expect(new Set(PANO_COLORS.map((c) => c.label)).size).toBe(PANO_COLORS.length);

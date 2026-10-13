@@ -4,11 +4,11 @@
   SPDX-License-Identifier: AGPL-3.0-only
 -->
 
-<!-- How much of a Pano doc's checklist is done: a bar in the note's pin color,
-     and "4 of 6 done" under it on the note's label. Nothing for a doc without a checklist. -->
+<!-- How much of a Pano doc's checklist is done: a bar in the note's accent on
+     its track, and "4 of 6 done" under it on the note's label. Nothing for a doc without a checklist. -->
 <template>
   <div v-if="doc.checklistTotal" data-test="pano-progress">
-    <div class="h-1.5 rounded-full bg-black/10 overflow-hidden" role="progressbar"
+    <div :class="color.track" class="h-1.5 rounded-full overflow-hidden" role="progressbar"
       :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100" :aria-label="`${doc.checklistDone} of ${doc.checklistTotal} done`">
       <div :class="color.inkBg" class="h-full rounded-full transition-[width] duration-300" :style="{ width: `${percent}%` }"></div>
     </div>

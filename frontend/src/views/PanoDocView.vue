@@ -269,7 +269,7 @@ const secondary = 'px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-z
 const iconButton = 'flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 !text-gray-600 dark:!text-zinc-300 hover:!text-black dark:hover:!text-white hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors'
 const menuHeader = 'px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500'
 const section = 'text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest'
-const paper = 'pano-paper relative rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_16px_32px_-16px_rgba(0,0,0,0.3)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_20px_40px_-16px_rgba(0,0,0,0.45)]'
+const paper = 'pano-paper relative rounded-md border border-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_16px_32px_-16px_rgba(0,0,0,0.3)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_20px_40px_-16px_rgba(0,0,0,0.45)]'
 const tool = 'flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 hover:text-black dark:hover:text-white transition-colors'
 const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0'
 </script>
@@ -320,15 +320,15 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                   :class="preview ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-zinc-400'" class="px-3 py-1 rounded-md">Preview</button>
               </div>
             </div>
-            <div :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
+            <div :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
-                class="w-full bg-transparent text-2xl font-black leading-snug text-[#0f172a] placeholder-black/30 focus:outline-none" />
+                :class="color.title" class="w-full bg-transparent text-2xl font-black leading-snug placeholder-black/30 focus:outline-none" />
               <div class="my-3 border-t border-black/10"></div>
               <label for="pano-markdown-input" class="sr-only">Markdown</label>
               <textarea v-show="!preview" id="pano-markdown-input" ref="markdownInput" v-model="draft.markdown" data-test="pano-markdown-input" rows="14"
-                class="w-full min-h-[18rem] bg-transparent text-[14px] leading-relaxed text-[#1e293b] placeholder-black/35 resize-y focus:outline-none"
+                class="w-full min-h-[18rem] bg-transparent text-[14px] leading-relaxed placeholder-black/35 resize-y focus:outline-none"
                 placeholder="Write in markdown. - [ ] starts a checklist item.&#10;&#10;Files you add are linked here, like ![chart](chart.png)."></textarea>
               <div v-if="preview" data-test="pano-preview" class="md-body min-h-[18rem] text-[14px] [&_img]:max-w-full" v-html="draftBody"></div>
             </div>
@@ -396,10 +396,10 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
       </form>
 
       <div v-else-if="doc" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-        <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
+        <article :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
-          <h1 data-test="pano-title" class="text-2xl md:text-3xl font-black leading-tight break-words text-[#0f172a]">{{ doc.title }}</h1>
-          <p data-test="pano-meta" class="mt-1 text-[11px] text-[#334155]">
+          <h1 data-test="pano-title" :class="color.title" class="text-2xl md:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
+          <p data-test="pano-meta" :class="color.muted" class="mt-1 text-[11px]">
             By {{ panoAuthor(doc.createdByWorkspaceId, workspaces) }} · updated {{ panoDate(doc.updatedAt) }} by {{ panoAuthor(doc.updatedByWorkspaceId, workspaces) }}
           </p>
           <PanoProgress :doc="doc" class="mt-4 max-w-sm" />

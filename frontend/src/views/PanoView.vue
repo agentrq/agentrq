@@ -126,7 +126,7 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
             :class="!color ? pillOn : 'bg-stone-200 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border-transparent'" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-colors">All</button>
           <button v-for="c in PANO_COLORS" :key="c.name" type="button" role="radio" :aria-checked="color === c.name" :data-test="`pano-filter-${c.name}`"
             @click="color = color === c.name ? '' : c.name" :class="color === c.name ? pillOn : pillOff" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-colors">
-            <span :class="c.swatch" class="w-2.5 h-2.5 rounded-full border border-black/10" aria-hidden="true"></span>{{ c.label }}
+            <span :class="c.dot" class="w-2.5 h-2.5 rounded-full" aria-hidden="true"></span>{{ c.label }}
           </button>
         </div>
         <p v-if="(query.trim() || color) && docs.length" data-test="pano-filter-summary" class="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">
@@ -160,14 +160,14 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
 
         <article v-for="doc in shown" :key="doc.id" data-test="pano-card"
           :style="{ '--pano-ink': panoColor(doc.color).inkHex, '--pano-tag': panoColor(doc.color).tagHex, '--pano-tag-ink': panoColor(doc.color).tagInkHex, '--pano-tilt': `${panoTilt(doc.id)}deg` }"
-          :class="[panoColor(doc.color).card, { 'z-20': recoloring === doc.id }]"
-          class="pano-paper group relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_32px_-12px_rgba(0,0,0,0.45)] rotate-[var(--pano-tilt)] hover:rotate-0 focus-within:rotate-0 hover:z-10 focus-within:z-20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_14px_28px_-12px_rgba(0,0,0,0.35)] transition-[rotate,box-shadow] duration-200">
+          :class="[panoColor(doc.color).card, panoColor(doc.color).body, { 'z-20': recoloring === doc.id }]"
+          class="pano-paper group relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_32px_-12px_rgba(0,0,0,0.45)] rotate-[var(--pano-tilt)] hover:rotate-0 focus-within:rotate-0 hover:z-10 focus-within:z-20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_14px_28px_-12px_rgba(0,0,0,0.35)] transition-[rotate,box-shadow] duration-200">
           <!-- A leaning card is a stacking context of its own, so the one under it
                would cover its open menu: hover, focus and an open menu raise it. -->
           <span aria-hidden="true" :class="panoColor(doc.color).tape" class="absolute -top-2.5 left-1/2 -translate-x-1/2 -rotate-2 w-20 h-5 rounded-[2px]"></span>
 
           <router-link :to="`/pano/${doc.id}`" data-test="pano-open" class="flex flex-col flex-1 min-h-0 px-5 pt-6 pb-2 focus:outline-none">
-            <h2 class="text-lg font-black leading-snug line-clamp-2 break-words text-[#0f172a]">{{ doc.title }}</h2>
+            <h2 :class="panoColor(doc.color).title" class="text-lg font-black leading-snug line-clamp-2 break-words">{{ doc.title }}</h2>
             <div class="relative mt-2 flex-1 min-h-0 overflow-hidden">
               <div data-test="pano-excerpt" class="md-body text-[13px] leading-relaxed [&_img]:hidden"
                 v-html="panoAssignees(panoCheckable(renderMarkdown(doc.excerpt)), { link: false })" @click="onExcerptClick(doc, $event)"></div>
@@ -175,8 +175,8 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
             <PanoProgress :doc="doc" class="mt-3 shrink-0" />
           </router-link>
 
-          <footer class="flex items-center gap-2 px-5 py-3 border-t border-black/10 text-[11px] text-[#334155] min-w-0">
-            <span :class="panoColor(doc.color).inkBg" :title="panoAuthor(doc.updatedByWorkspaceId, workspaces)"
+          <footer :class="panoColor(doc.color).muted" class="flex items-center gap-2 px-5 py-3 border-t border-black/10 text-[11px] min-w-0">
+            <span :class="panoColor(doc.color).avatar" :title="panoAuthor(doc.updatedByWorkspaceId, workspaces)"
               class="shrink-0 flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-black text-white">{{ panoInitial(panoAuthor(doc.updatedByWorkspaceId, workspaces)) }}</span>
             <span class="min-w-0 flex-1 truncate" :title="expiresLabel(doc.expiresAt)">
               <span class="font-bold">{{ panoAuthor(doc.updatedByWorkspaceId, workspaces) }}</span> · {{ timeAgo(doc.updatedAt) }}

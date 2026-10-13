@@ -174,7 +174,7 @@ describe('the board', () => {
     const cards = $$(el, 'pano-card');
     expect(cards.map((c) => text(c.querySelector('h2')))).toEqual(['Release plan', 'Agent notes', 'Odd paper']);
     expect(cards[0].classList.contains(PANO_COLORS[1].card.split(' ')[0])).toBe(true);
-    expect(cards[2].classList.contains(PANO_COLORS[0].card.split(' ')[1])).toBe(true);
+    expect(cards[2].classList.contains(PANO_COLORS[0].card)).toBe(true);
     expect(cards[0].style.getPropertyValue('--pano-ink')).toBe(PANO_COLORS[1].inkHex);
     // Every card leans by the angle its id picks, and straightens on hover.
     expect(cards[0].style.getPropertyValue('--pano-tilt')).toBe(`${panoTilt('d1')}deg`);

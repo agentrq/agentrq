@@ -20,19 +20,21 @@ const LINKED_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
  * The post-it colors, in the server's order, the first the default, as the
- * design gives them: the paper (`card`), the same in both themes so dark text
- * stays crisp on it; its label one step deeper (`tag`, and as hex `tagHex`
- * with `tagInkHex` for its text), and the `swatch` that names the color; the pin that marks checkmarks,
- * bars and avatars (`inkBg`/`inkHex`); and the washi `tape` at its top.
+ * Pano's design draws them. Each is a pale paper (`card`), the same in both
+ * themes, written on in its own ink: `title`, `body` and the footer's `muted`.
+ * Its label is one step deeper than the paper (`tag`; as hex `tagHex` and
+ * `tagInkHex`), the bar runs on its `track`, and checkmarks and bars are its
+ * accent (`inkBg`/`inkHex`). `avatar` marks the author, `tape` holds the note
+ * up, `swatch` shows the paper in a picker and `dot` the color in a filter.
  */
 export const PANO_COLORS = [
-  { name: 'yellow', label: 'Canary yellow', card: 'bg-linear-to-br from-[#fef9c3] to-[#fef08a] to-45%', swatch: 'bg-[#fef08a]', tag: 'bg-[#fde047] text-[#78350f]', tagHex: '#fde047', tagInkHex: '#78350f', ink: 'text-[#78350f]', inkBg: 'bg-[#ca8a04]', inkHex: '#ca8a04', tape: 'bg-[#fde68a]/60' },
-  { name: 'pink', label: 'Warm pink', card: 'bg-[#fce7f3]', swatch: 'bg-[#fbcfe8]', tag: 'bg-[#fbcfe8] text-[#9d174d]', tagHex: '#fbcfe8', tagInkHex: '#9d174d', ink: 'text-[#9d174d]', inkBg: 'bg-[#f472b6]', inkHex: '#f472b6', tape: 'bg-[#f9a8d4]/60' },
-  { name: 'green', label: 'Mint green', card: 'bg-[#dcfce7]', swatch: 'bg-[#bbf7d0]', tag: 'bg-[#bbf7d0] text-[#15803d]', tagHex: '#bbf7d0', tagInkHex: '#15803d', ink: 'text-[#15803d]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#a7f3d0]/60' },
-  { name: 'blue', label: 'Sky blue', card: 'bg-[#e0f2fe]', swatch: 'bg-[#bae6fd]', tag: 'bg-[#bae6fd] text-[#0369a1]', tagHex: '#bae6fd', tagInkHex: '#0369a1', ink: 'text-[#0369a1]', inkBg: 'bg-[#2563eb]', inkHex: '#2563eb', tape: 'bg-[#7dd3fc]/60' },
-  { name: 'orange', label: 'Peach', card: 'bg-[#ffedd5]', swatch: 'bg-[#fed7aa]', tag: 'bg-[#fecdd3] text-[#9f1239]', tagHex: '#fecdd3', tagInkHex: '#9f1239', ink: 'text-[#9f1239]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fb7185]/45' },
-  { name: 'purple', label: 'Lilac', card: 'bg-[#f3e8ff]', swatch: 'bg-[#e9d5ff]', tag: 'bg-[#e9d5ff] text-[#6b21a8]', tagHex: '#e9d5ff', tagInkHex: '#6b21a8', ink: 'text-[#6b21a8]', inkBg: 'bg-[#7c3aed]', inkHex: '#7c3aed', tape: 'bg-[#d8b4fe]/60' },
-  { name: 'amber', label: 'Golden amber', card: 'bg-[#fef3c7]', swatch: 'bg-[#fde68a]', tag: 'bg-[#fde68a] text-[#92400e]', tagHex: '#fde68a', tagInkHex: '#92400e', ink: 'text-[#92400e]', inkBg: 'bg-[#b45309]', inkHex: '#b45309', tape: 'bg-[#fcd34d]/60' },
+  { name: 'yellow', label: 'Canary yellow', card: 'bg-[#fffbeb]', swatch: 'bg-[#fef08a]', dot: 'bg-[#facc15]', title: 'text-[#713f12]', body: 'text-[#542d0c]', muted: 'text-[#854d0e]', tag: 'bg-[#fef08a] text-[#713f12]', tagHex: '#fef08a', tagInkHex: '#713f12', ink: 'text-[#713f12]', inkBg: 'bg-[#b15f00]', inkHex: '#b15f00', avatar: 'bg-[#b15f00]', track: 'bg-[#fef9c3]', tape: 'bg-[#fef08a]/80' },
+  { name: 'pink', label: 'Pink', card: 'bg-[#fdf2f8]', swatch: 'bg-[#fbcfe8]', dot: 'bg-[#f472b6]', title: 'text-[#9d174d]', body: 'text-[#831843]', muted: 'text-[#be185d]', tag: 'bg-[#fce7f3] text-[#be185d]', tagHex: '#fce7f3', tagInkHex: '#be185d', ink: 'text-[#be185d]', inkBg: 'bg-[#db2777]', inkHex: '#db2777', avatar: 'bg-[#be185d]', track: 'bg-[#fce7f3]', tape: 'bg-[#fbcfe8]/80' },
+  { name: 'green', label: 'Mint green', card: 'bg-[#f0fdf4]', swatch: 'bg-[#bbf7d0]', dot: 'bg-[#86efac]', title: 'text-[#166534]', body: 'text-[#14532d]', muted: 'text-[#15803d]', tag: 'bg-[#dcfce7] text-[#15803d]', tagHex: '#dcfce7', tagInkHex: '#15803d', ink: 'text-[#15803d]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', avatar: 'bg-[#15803d]', track: 'bg-[#dcfce7]', tape: 'bg-[#bbf7d0]/80' },
+  { name: 'blue', label: 'Sky blue', card: 'bg-[#eff6ff]', swatch: 'bg-[#bfdbfe]', dot: 'bg-[#93c5fd]', title: 'text-[#1e40af]', body: 'text-[#1e3a8a]', muted: 'text-[#1e40af]', tag: 'bg-[#dbeafe] text-[#1e40af]', tagHex: '#dbeafe', tagInkHex: '#1e40af', ink: 'text-[#1e40af]', inkBg: 'bg-[#2563eb]', inkHex: '#2563eb', avatar: 'bg-[#1e40af]', track: 'bg-[#dbeafe]', tape: 'bg-[#bfdbfe]/80' },
+  { name: 'orange', label: 'Coral', card: 'bg-[#fff1f2]', swatch: 'bg-[#fecdd3]', dot: 'bg-[#fda4af]', title: 'text-[#881337]', body: 'text-[#4c0519]', muted: 'text-[#9f1239]', tag: 'bg-[#ffe4e6] text-[#be123c]', tagHex: '#ffe4e6', tagInkHex: '#be123c', ink: 'text-[#be123c]', inkBg: 'bg-[#e11d48]', inkHex: '#e11d48', avatar: 'bg-[#be123c]', track: 'bg-[#ffe4e6]', tape: 'bg-[#fecdd3]/80' },
+  { name: 'purple', label: 'Lavender', card: 'bg-[#faf5ff]', swatch: 'bg-[#e9d5ff]', dot: 'bg-[#d8b4fe]', title: 'text-[#6b21a8]', body: 'text-[#581c87]', muted: 'text-[#7e22ce]', tag: 'bg-[#f3e8ff] text-[#7e22ce]', tagHex: '#f3e8ff', tagInkHex: '#7e22ce', ink: 'text-[#7e22ce]', inkBg: 'bg-[#9333ea]', inkHex: '#9333ea', avatar: 'bg-[#7e22ce]', track: 'bg-[#f3e8ff]', tape: 'bg-[#e9d5ff]/80' },
+  { name: 'amber', label: 'Golden amber', card: 'bg-[#fef3c7]', swatch: 'bg-[#fde68a]', dot: 'bg-[#fbbf24]', title: 'text-[#92400e]', body: 'text-[#451a03]', muted: 'text-[#92400e]', tag: 'bg-[#fde68a] text-[#92400e]', tagHex: '#fde68a', tagInkHex: '#92400e', ink: 'text-[#92400e]', inkBg: 'bg-[#b45309]', inkHex: '#b45309', avatar: 'bg-[#b45309]', track: 'bg-[#fde68a]', tape: 'bg-[#fcd34d]/80' },
 ]
 
 /** A color by name; an unknown one is yellow. */
