@@ -39,7 +39,7 @@ func FromHTTPRequestToSavePanoDocRequestEntity(c *fiber.Ctx) *entity.SavePanoDoc
 	if err := c.BodyParser(&body); err != nil {
 		return nil
 	}
-	return &entity.SavePanoDocRequest{ID: id, Title: body.Title, Markdown: body.Markdown, TTLDays: body.TTLDays, Color: body.Color, Files: fromPanoUploadViews(body.Files)}
+	return &entity.SavePanoDocRequest{ID: id, Version: body.Version, Title: body.Title, Markdown: body.Markdown, TTLDays: body.TTLDays, Color: body.Color, Files: fromPanoUploadViews(body.Files)}
 }
 
 func FromHTTPRequestToDeletePanoDocRequestEntity(c *fiber.Ctx) *entity.DeletePanoDocRequest {
@@ -129,6 +129,7 @@ func fromEntityPanoDocToView(d entity.PanoDoc) view.PanoDoc {
 		Color:                d.Color.String(),
 		ChecklistDone:        d.ChecklistDone,
 		ChecklistTotal:       d.ChecklistTotal,
+		Version:              d.Version,
 		Files:                fromEntityPanoFilesToViews(d.Files),
 		Attachments:          fromEntityPanoFilesToViews(d.Attachments),
 	}

@@ -823,6 +823,7 @@ type PanoDoc struct {
 	Color                string        `json:"color"`
 	ChecklistDone        int           `json:"checklistDone"`
 	ChecklistTotal       int           `json:"checklistTotal"`
+	Version              int64         `json:"version"`
 	Files                []PanoFile    `json:"files,omitempty"`
 	Attachments          []PanoFile    `json:"attachments,omitempty"`
 	Comments             []PanoComment `json:"comments,omitempty"`
@@ -857,8 +858,10 @@ type ListPanoDocsResponse struct {
 }
 
 // SavePanoDocRequest writes a doc; files are linked files. A ttlDays of 0,
-// or a blank color, keeps the doc's own.
+// or a blank color, keeps the doc's own. Replacing a doc needs the version
+// that was read.
 type SavePanoDocRequest struct {
+	Version  int64        `json:"version"`
 	Title    string       `json:"title"`
 	Markdown string       `json:"markdown"`
 	TTLDays  int          `json:"ttlDays"`

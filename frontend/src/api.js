@@ -900,8 +900,10 @@ export async function getPanoDoc(id) {
 // `files` are linked files, `{ filename, mimeType, data }` with data base64:
 // each must be linked from the markdown by its filename. A `ttlDays` of 0,
 // or no `color`, keeps the doc's own: 30 days and yellow for a new doc.
-function panoDocBody({ title, markdown, ttlDays, color, files }) {
-  return JSON.stringify({ title, markdown, ttlDays: ttlDays || 0, color: color || '', files: files || [] });
+// Replacing a doc sends the `version` it was read at; the server refuses (409)
+// a write on a doc that has changed since.
+function panoDocBody({ title, markdown, ttlDays, color, files, version }) {
+  return JSON.stringify({ version: version || 0, title, markdown, ttlDays: ttlDays || 0, color: color || '', files: files || [] });
 }
 
 export async function createPanoDoc(doc) {

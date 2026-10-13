@@ -842,6 +842,8 @@ paths:
       description: >
         A linked file the markdown no longer links is deleted; one sent under
         a name the doc has replaces it. Attachments and comments are kept.
+        The request must carry the `version` that was read; if the doc has
+        changed since, nothing is written and the answer is 409.
       requestBody:
         required: true
         content:
@@ -854,6 +856,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PanoDocResponse' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The doc changed since `version` was read, or no version was sent. Read the doc again and redo the change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
     delete:
       tags: [Pano]
@@ -2791,6 +2798,7 @@ components:
         color: { type: string, enum: [yellow, pink, green, blue, orange, purple, amber] }
         checklistDone: { type: integer, description: Checked items of the markdown's task list. }
         checklistTotal: { type: integer, description: Items of the markdown's task list, outside fenced code. }
+        version: { type: integer, format: int64, description: Changes on every write; an update must send the one it read. }
         files:
           type: array
           description: Linked files, each linked from the markdown by its filename.
@@ -2833,6 +2841,7 @@ components:
       type: object
       required: [title, markdown]
       properties:
+        version: { type: integer, format: int64, description: The doc's version as read. Required to replace a doc, not to create one. }
         title: { type: string, maxLength: 200 }
         markdown: { type: string }
         ttlDays:

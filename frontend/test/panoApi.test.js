@@ -44,9 +44,11 @@ describe('the Pano API', () => {
     const file = { filename: 'a.png', mimeType: 'image/png', data: 'AA==' };
     await expect(createPanoDoc({ title: 'T', markdown: 'M', ttlDays: 7, color: 'pink', files: [file] })).resolves.toEqual({ doc: { id: 'd1' } });
     await updatePanoDoc('d1', { title: 'T', markdown: 'M' });
+    await updatePanoDoc('d1', { title: 'T', markdown: 'M', version: 4 });
     expect(seen).toEqual([
-      ['/api/v1/pano', 'POST', { title: 'T', markdown: 'M', ttlDays: 7, color: 'pink', files: [file] }],
-      ['/api/v1/pano/d1', 'PUT', { title: 'T', markdown: 'M', ttlDays: 0, color: '', files: [] }],
+      ['/api/v1/pano', 'POST', { version: 0, title: 'T', markdown: 'M', ttlDays: 7, color: 'pink', files: [file] }],
+      ['/api/v1/pano/d1', 'PUT', { version: 0, title: 'T', markdown: 'M', ttlDays: 0, color: '', files: [] }],
+      ['/api/v1/pano/d1', 'PUT', { version: 4, title: 'T', markdown: 'M', ttlDays: 0, color: '', files: [] }],
     ]);
   });
 
@@ -65,6 +67,11 @@ describe('the Pano API', () => {
   it('passes the server\'s refusal on, with its status', async () => {
     serve({ error: { message: 'file x.png is not linked from the markdown' } }, 422);
     await expect(createPanoDoc({ title: 'T', markdown: 'M' })).rejects.toMatchObject({ message: 'file x.png is not linked from the markdown', status: 422 });
+  });
+
+  it('passes a stale version on as a 409 with the server\'s sentence', async () => {
+    serve({ error: { message: 'the Pano doc changed since you read it' } }, 409);
+    await expect(updatePanoDoc('d1', { title: 'T', markdown: 'M', version: 1 })).rejects.toMatchObject({ message: 'the Pano doc changed since you read it', status: 409 });
   });
 
   it('says what failed when the server says nothing', async () => {

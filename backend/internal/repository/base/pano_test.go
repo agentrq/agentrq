@@ -111,7 +111,7 @@ func TestPanoRepository_UpdateReplacesFilesInOneGo(t *testing.T) {
 	seedPano(t, r)
 
 	later := panoNow.Add(time.Hour)
-	d := model.PanoDoc{ID: 1, UserID: skUser, Title: "renamed", Excerpt: "e", Markdown: "renamed markdown", SizeBytes: 9, UpdatedAt: later, UpdatedByWorkspaceID: skWS, TTLDays: 7, ExpiresAt: later.AddDate(0, 0, 7)}
+	d := model.PanoDoc{ID: 1, Version: 1, UserID: skUser, Title: "renamed", Excerpt: "e", Markdown: "renamed markdown", SizeBytes: 9, UpdatedAt: later, UpdatedByWorkspaceID: skWS, TTLDays: 7, ExpiresAt: later.AddDate(0, 0, 7)}
 	add := []model.PanoFile{{ID: 12, DocID: 1, Linked: true, Filename: "b.png", StorageID: "file-12", CreatedAt: later}}
 	if err := r.SavePanoDoc(ctx, d, false, add, []int64{11}); err != nil {
 		t.Fatalf("SavePanoDoc returned %v, want the doc updated", err)
@@ -236,7 +236,7 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 5, UserID: skUser, ExpiresAt: later}, true, []model.PanoFile{{ID: 51, DocID: 5}}, nil)
 		}},
 		{"update", func(r Repository) error {
-			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, []model.PanoFile{{ID: 12, DocID: 1}}, []int64{11})
+			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, []model.PanoFile{{ID: 12, DocID: 1}}, []int64{11})
 		}},
 		{"list files", func(r Repository) error { _, err := r.ListPanoFiles(ctx, 1); return err }},
 		{"attach", func(r Repository) error {
@@ -309,5 +309,35 @@ func TestPanoRepository_SyncsTheDocsLinkingATask(t *testing.T) {
 	got, err := r.GetPanoDoc(ctx, skUser, 1, panoNow)
 	if err != nil || got.Markdown != "- [x] done" || got.ChecklistDone != 1 || got.SizeBytes != 10 || got.Title != "linking" || !got.UpdatedAt.Equal(panoNow) {
 		t.Errorf("after the sync the doc is %+v, %v, want the checklist written and the rest kept", got, err)
+	}
+}
+
+// A write is made only on the version its writer read, and moves it on; the
+// checklist sync moves it too, as it changes the markdown.
+func TestPanoRepository_VersionGuardsAnUpdate(t *testing.T) {
+	ctx := context.Background()
+	_, r := panoDB(t)
+	seedPano(t, r)
+	later := panoNow.Add(time.Hour)
+	update := func(version int64) error {
+		return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: version, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil)
+	}
+	if d, err := r.GetPanoDoc(ctx, skUser, 1, panoNow); err != nil || d.Version != 1 {
+		t.Fatalf("a seeded doc is at version %d, %v, want 1", d.Version, err)
+	}
+	if err := update(1); err != nil {
+		t.Fatalf("an update on version 1 returned %v, want it written", err)
+	}
+	if err := update(1); !errors.Is(err, ErrVersionConflict) {
+		t.Errorf("a second update on version 1 returned %v, want ErrVersionConflict", err)
+	}
+	if err := r.SavePanoDoc(ctx, model.PanoDoc{ID: 99, Version: 1, UserID: skUser, UpdatedAt: later}, false, nil, nil); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an update of a doc that is gone returned %v, want ErrNotFound", err)
+	}
+	if err := r.SyncPanoChecklist(ctx, model.PanoDoc{ID: 1, UserID: skUser, Markdown: "synced"}); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := r.GetPanoDoc(ctx, skUser, 1, later); err != nil || d.Version != 3 || d.Markdown != "synced" {
+		t.Errorf("after an update and a sync the doc is %q at %d, %v, want version 3", d.Markdown, d.Version, err)
 	}
 }

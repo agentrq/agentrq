@@ -38,6 +38,8 @@ type PanoController interface {
 	DeleteExpiredPanoDocs(ctx context.Context) (int, error)
 	GetPanoDoc(ctx context.Context, req entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error)
 	SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequest) (*entity.SavePanoDocResponse, error)
+	// EditPanoDoc changes part of a doc's markdown, all or none of the ops.
+	EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequest) (*entity.SavePanoDocResponse, error)
 	DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error
 	AddPanoComment(ctx context.Context, req entity.AddPanoCommentRequest) (*entity.AddPanoCommentResponse, error)
 	AttachPanoFiles(ctx context.Context, req entity.AttachPanoFilesRequest) (*entity.AttachPanoFilesResponse, error)
@@ -68,6 +70,15 @@ const (
 
 // PanoMaxTTLDays is the longest a doc may live, from pano.maxTtlDays.
 var PanoMaxTTLDays = DefaultPanoMaxTTLDays
+
+// panoStale is the refusal of a write made without, or on a stale, version:
+// it names the current one, and what to do about it.
+func panoStale(sent, current int64) error {
+	if sent == 0 {
+		return &entity.PanoError{Conflict: true, Message: fmt.Sprintf("updating a Pano doc needs the version you read, and none was sent: read the doc, apply your change to it and save with its version (now %d)", current)}
+	}
+	return &entity.PanoError{Conflict: true, Message: fmt.Sprintf("the Pano doc changed since you read it (you sent version %d, it is now %d): read it again, apply your change to the new content and save again with the new version", sent, current)}
+}
 
 func panoRefuse(format string, a ...any) error {
 	return &entity.PanoError{Message: fmt.Sprintf(format, a...)}
@@ -249,11 +260,15 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		if d, err = c.repository.GetPanoDoc(ctx, uid, req.ID, now); err != nil {
 			return nil, err
 		}
+		if req.Version != d.Version {
+			return nil, panoStale(req.Version, d.Version)
+		}
 		if existing, err = c.repository.ListPanoFiles(ctx, d.ID); err != nil {
 			return nil, err
 		}
 	} else {
 		d.ID = c.idgen.NextID()
+		d.Version = 1
 	}
 	var drop []int64
 	var dropped []string
@@ -301,7 +316,18 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 	}
 	if err := c.repository.SavePanoDoc(ctx, d, create, add, drop); err != nil {
 		c.purgePano(written)
+		if errors.Is(err, base.ErrVersionConflict) {
+			// Another write got in between the read and this one.
+			current := d.Version
+			if latest, gerr := c.repository.GetPanoDoc(ctx, uid, d.ID, now); gerr == nil {
+				current = latest.Version
+			}
+			return nil, panoStale(req.Version, current)
+		}
 		return nil, err
+	}
+	if !create {
+		d.Version++
 	}
 	c.purgePano(dropped)
 
@@ -317,6 +343,53 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		doc.Files = append(doc.Files, c.fromModelPanoFile(f))
 	}
 	return &entity.SavePanoDocResponse{Doc: doc}, nil
+}
+
+// EditPanoDoc applies the ops to the doc's markdown in order, and saves the
+// result as SavePanoDoc does: the same version check, limits and linked
+// files. An op that cannot apply refuses the whole edit.
+func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequest) (*entity.SavePanoDocResponse, error) {
+	uid, err := c.panoAuthor(ctx, req.UserID, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	d, err := c.repository.GetPanoDoc(ctx, uid, req.ID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	// Checked before the ops: against a stale doc they would fail with a
+	// misleading "not found".
+	if req.Version != d.Version {
+		return nil, panoStale(req.Version, d.Version)
+	}
+	if len(req.Ops) == 0 {
+		return nil, panoRefuse("edit needs at least one op")
+	}
+	markdown := d.Markdown
+	for i, op := range req.Ops {
+		switch op.Op {
+		case "append":
+			if op.Text == "" {
+				return nil, panoRefuse("op %d: append needs text", i+1)
+			}
+			markdown += op.Text
+		case "replace":
+			if op.OldString == "" {
+				return nil, panoRefuse("op %d: replace needs an oldString", i+1)
+			}
+			switch n := strings.Count(markdown, op.OldString); n {
+			case 1:
+				markdown = strings.Replace(markdown, op.OldString, op.NewString, 1)
+			case 0:
+				return nil, panoRefuse("op %d: oldString is not in the markdown, nothing was changed", i+1)
+			default:
+				return nil, panoRefuse("op %d: oldString occurs %d times, it must occur once: add the text around it, nothing was changed", i+1, n)
+			}
+		default:
+			return nil, panoRefuse("op %d: op must be append or replace", i+1)
+		}
+	}
+	return c.SavePanoDoc(ctx, entity.SavePanoDocRequest{UserID: req.UserID, WorkspaceID: req.WorkspaceID, ID: req.ID, Version: req.Version, Title: d.Title, Markdown: markdown})
 }
 
 func (c *controller) DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error {
@@ -630,6 +703,7 @@ func fromModelPanoDoc(d model.PanoDoc) entity.PanoDoc {
 		Color:                entity.PanoColor(d.Color),
 		ChecklistDone:        d.ChecklistDone,
 		ChecklistTotal:       d.ChecklistTotal,
+		Version:              d.Version,
 	}
 }
 

@@ -401,7 +401,7 @@ export function checklistPercent(doc) {
  */
 export async function checkPanoItem(doc, index, checked, { api }) {
   const { doc: full } = await api.getPanoDoc(doc.id)
-  const res = await api.updatePanoDoc(doc.id, { title: full.title, markdown: togglePanoCheckbox(full.markdown, index, checked), ttlDays: 0, color: '', files: [] })
+  const res = await api.updatePanoDoc(doc.id, { title: full.title, markdown: togglePanoCheckbox(full.markdown, index, checked), ttlDays: 0, color: '', files: [], version: full.version })
   return res.doc
 }
 
@@ -411,7 +411,7 @@ export async function checkPanoItem(doc, index, checked, { api }) {
  */
 export async function recolorPanoDoc(doc, color, { api }) {
   const { doc: full } = await api.getPanoDoc(doc.id)
-  const res = await api.updatePanoDoc(doc.id, { title: full.title, markdown: full.markdown, ttlDays: 0, color, files: [] })
+  const res = await api.updatePanoDoc(doc.id, { title: full.title, markdown: full.markdown, ttlDays: 0, color, files: [], version: full.version })
   return res.doc
 }
 
@@ -483,6 +483,26 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
   const busy = ref(false)
   const editing = ref(!id)
   const draft = ref({ title: '', markdown: '', ttlDays: PANO_DEFAULT_TTL_DAYS, color: panoColor(color).name, files: [] })
+  // Set when a write was refused because the doc changed since it was read.
+  const conflict = ref(false)
+  // The version the draft was started from: what its save must match.
+  let draftVersion = 0
+
+  /**
+   * Runs a write on the doc. A refusal for a stale version reads the doc again
+   * and says so, so what is shown is what a retry would change.
+   */
+  async function guarded(write) {
+    try {
+      return await write()
+    } catch (err) {
+      if (err.status === 409) {
+        await load({ quiet: true })
+        throw new Error('This note changed while you were working on it, and has been reloaded. Try again.')
+      }
+      throw err
+    }
+  }
 
   async function load({ quiet = false } = {}) {
     if (!id) return
@@ -501,11 +521,20 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
   function startEditing() {
     const d = doc.value
     draft.value = { title: d.title, markdown: d.markdown, ttlDays: d.ttlDays, color: d.color, files: [] }
+    draftVersion = d.version
+    conflict.value = false
     editing.value = true
   }
 
   function cancelEditing() {
     editing.value = false
+    conflict.value = false
+  }
+
+  /** Reads the doc again and reopens the editor on it, dropping the draft. */
+  async function reloadEditing() {
+    await load({ quiet: true })
+    if (doc.value) startEditing()
   }
 
   /**
@@ -533,7 +562,18 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     try {
       const d = draft.value
       const body = { title: d.title, markdown: d.markdown, ttlDays: Number(d.ttlDays) || 0, color: d.color, files: d.files }
-      const res = await (id ? api.updatePanoDoc(id, body) : api.createPanoDoc(body))
+      let res
+      try {
+        res = await (id ? api.updatePanoDoc(id, { ...body, version: draftVersion }) : api.createPanoDoc(body))
+      } catch (err) {
+        // The draft stays in the editor, so nothing the person wrote is lost.
+        if (err.status === 409) {
+          conflict.value = true
+          throw new Error('This note changed while you were editing it. Your changes are not saved: load the latest version, or copy your text first.')
+        }
+        throw err
+      }
+      conflict.value = false
       editing.value = false
       if (id) {
         await load({ quiet: true })
@@ -549,7 +589,7 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     busy.value = true
     try {
       const d = doc.value
-      await api.updatePanoDoc(id, { title: d.title, markdown: togglePanoCheckbox(d.markdown, index, checked), ttlDays: 0, color: '', files: [] })
+      await guarded(() => api.updatePanoDoc(id, { title: d.title, markdown: togglePanoCheckbox(d.markdown, index, checked), ttlDays: 0, color: '', files: [], version: d.version }))
       await load({ quiet: true })
     } finally {
       busy.value = false
@@ -567,7 +607,7 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
       const item = panoItemText(d.markdown, index)
       const { task } = await api.createTask(workspace.id, item.slice(0, 200), panoItemTaskBody(d, item))
       const markdown = assignPanoItem(d.markdown, index, workspace.name, `/workspaces/${workspace.id}/tasks/${task.id}`)
-      await api.updatePanoDoc(id, { title: d.title, markdown, ttlDays: 0, color: '', files: [] })
+      await guarded(() => api.updatePanoDoc(id, { title: d.title, markdown, ttlDays: 0, color: '', files: [], version: d.version }))
       await load({ quiet: true })
       return task
     } finally {
@@ -611,8 +651,8 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
   }
 
   return {
-    doc, loading, error, busy, editing, draft,
-    load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
+    doc, loading, error, busy, editing, draft, conflict,
+    load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
   }
 }
 

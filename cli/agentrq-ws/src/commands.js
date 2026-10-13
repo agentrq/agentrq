@@ -152,7 +152,8 @@ function panoFiles(paths) {
 
 /**
  * The pano tool answers with the doc as JSON, or with a refusal's text. With
- * idOnly a doc prints as its id, which is all a write needs to hand on.
+ * idOnly a doc prints as its id and version, which is all a write needs to
+ * hand on: the next update must send that version.
  */
 function printPanoDoc(result, { idOnly = false } = {}) {
   let doc
@@ -161,7 +162,41 @@ function printPanoDoc(result, { idOnly = false } = {}) {
   } catch {
     return result
   }
-  return { text: idOnly ? doc.id : result.text, data: doc }
+  return { text: idOnly ? [doc.id, doc.version].filter((x) => x !== undefined).join(' ') : result.text, data: doc }
+}
+
+/** The ops of pano edit: --ops (a JSON array, as the tool takes it), then --replace/--with, then --append. */
+async function panoEditOps(ctx) {
+  const { ops, replace, with: newString, append } = ctx.values
+  const out = []
+  if (ops !== undefined) {
+    let parsed
+    try {
+      parsed = JSON.parse(await resolveText(ops, { stdin: ctx.stdin, what: 'the ops' }))
+    } catch (err) {
+      if (err instanceof UserError) throw err
+      throw new UserError(`--ops is not JSON: ${err.message}`)
+    }
+    if (!Array.isArray(parsed)) throw new UserError('--ops must be a JSON array of {op, ...}')
+    out.push(...parsed)
+  }
+  if (replace !== undefined) {
+    if (newString === undefined) throw new UserError('--replace needs --with, the text it becomes')
+    out.push({ op: 'replace', oldString: replace, newString })
+  } else if (newString !== undefined) {
+    throw new UserError('--with needs --replace, the text to replace')
+  }
+  if (append !== undefined) out.push({ op: 'append', text: await resolveText(append, { stdin: ctx.stdin, what: 'the text to append' }) })
+  if (out.length === 0) throw new UserError('nothing to do: give --ops, --replace and --with, or --append')
+  return out
+}
+
+/** The doc's version, as a flag: required to change a doc that exists. */
+function panoVersion(value) {
+  if (value === undefined) throw new UserError('--version is required to change a doc: the version you read (pano read prints it)')
+  const version = Number(value)
+  if (!Number.isInteger(version) || version < 1) throw new UserError('--version must be a whole number, 1 or more')
+  return version
 }
 
 /**
@@ -184,7 +219,8 @@ async function downloadPanoDoc(ctx, doc, out) {
   if (doc.comments) {
     paths.push(writeAttachment(join(dir, 'comments.json'), Buffer.from(JSON.stringify(doc.comments, null, 2))).path)
   }
-  return { text: paths.join('\n'), data: { ...doc, paths } }
+  const version = doc.version === undefined ? [] : [`version ${doc.version}`]
+  return { text: [...version, ...paths].join('\n'), data: { ...doc, paths } }
 }
 
 export const COMMANDS = [
@@ -388,9 +424,10 @@ export const COMMANDS = [
   },
   {
     path: ['pano', 'save'],
-    summary: 'Create a Pano doc, or replace one; prints its id',
-    usage: 'agentrq-ws pano save [id] --title TEXT --markdown TEXT|@file|- [--file PATH]... [--ttl-days N] [--color NAME]',
+    summary: 'Create a Pano doc, or replace one; prints its id and version',
+    usage: 'agentrq-ws pano save [id --version N] --title TEXT --markdown TEXT|@file|- [--file PATH]... [--ttl-days N] [--color NAME]',
     options: {
+      version: { type: 'string', short: 'v', description: 'The version you read; required with an id, refused if the doc changed since' },
       title: { type: 'string', short: 'T', description: "The doc's title (required)" },
       markdown: { type: 'string', short: 'M', description: "The doc's full markdown (@file or - for stdin; required)" },
       file: { type: 'string', multiple: true, description: 'A linked file, linked from the markdown by its file name (repeatable)' },
@@ -410,14 +447,33 @@ export const COMMANDS = [
         ttlDays = Number(ctx.values['ttl-days'])
         if (!Number.isInteger(ttlDays) || ttlDays < 1) throw new UserError('--ttl-days must be a whole number, 1 or more')
       }
+      const id = ctx.positionals[0]
       return printPanoDoc(await pano(ctx, 'save', {
-        id: ctx.positionals[0],
+        id,
+        version: id === undefined ? undefined : panoVersion(ctx.values.version),
         title: ctx.values.title,
         markdown,
         ttlDays,
         color,
         files: panoFiles(ctx.values.file),
       }), { idOnly: true })
+    },
+  },
+  {
+    path: ['pano', 'edit'],
+    summary: 'Change part of a Pano doc without sending it whole; prints its id and new version',
+    usage: 'agentrq-ws pano edit <id> --version N [--ops JSON|@file|-] [--replace TEXT --with TEXT] [--append TEXT|@file|-]',
+    options: {
+      version: { type: 'string', short: 'v', description: 'The version you read (required); refused if the doc changed since' },
+      ops: { type: 'string', description: 'A JSON array of {op: "append", text} and {op: "replace", oldString, newString}' },
+      replace: { type: 'string', description: 'Text to replace; it must occur exactly once in the markdown' },
+      with: { type: 'string', description: 'What --replace becomes' },
+      append: { type: 'string', description: 'Text added at the end, as is (@file or - for stdin)' },
+    },
+    async run(ctx) {
+      const id = requirePositional(ctx.positionals, 0, 'id')
+      const version = panoVersion(ctx.values.version)
+      return printPanoDoc(await pano(ctx, 'edit', { id, version, ops: await panoEditOps(ctx) }), { idOnly: true })
     },
   },
   {

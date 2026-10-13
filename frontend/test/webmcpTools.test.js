@@ -341,9 +341,9 @@ describe('each tool calls the interface the way the UI does', () => {
     ],
     [
       'updatePanoDoc',
-      { id: 'p1', title: 'Plan', markdown: 'v2' },
+      { id: 'p1', version: 3, title: 'Plan', markdown: 'v2' },
       'updatePanoDoc',
-      ['p1', { title: 'Plan', markdown: 'v2', ttlDays: undefined, color: undefined, files: undefined }],
+      ['p1', { version: 3, title: 'Plan', markdown: 'v2', ttlDays: undefined, color: undefined, files: undefined }],
     ],
     ['deletePanoDoc', { id: 'p1' }, 'deletePanoDoc', ['p1']],
     ['addPanoComment', { id: 'p1', body: 'Looks good' }, 'addPanoComment', ['p1', 'Looks good']],

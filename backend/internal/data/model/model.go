@@ -289,6 +289,9 @@ type (
 		// are checked, for the card's progress without reading the blob.
 		ChecklistDone  int
 		ChecklistTotal int
+		// Version counts the doc's writes, from 1: a writer must send the
+		// one it read, so two writers cannot overwrite each other.
+		Version int64 `gorm:"not null;default:1"`
 	}
 
 	// PanoFile is a file of a Pano doc. A linked one is named by a link in

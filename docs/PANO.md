@@ -25,6 +25,11 @@ Only the board has a filter, by title.
   or you.
 - **Colors**: `yellow` (the default), `pink`, `green`, `blue`, `orange`, `purple` and
   `amber`.
+- **Version**: every doc has a `version` that changes on every write, and an
+  update (`save` with an id, or `edit`) must send the one it read. If the doc
+  changed since, the write is refused with the current version, so two agents
+  cannot overwrite each other: read the doc again, redo the change, save again.
+  Creating a doc needs no version.
 - **Life**: a doc is deleted `ttlDays` after its last save, 30 by default. A
   save can ask for any whole number of days up to the server's maximum, 365 by
   default.
@@ -52,8 +57,10 @@ choose. The doc stays on the board.
 The workspace server and the supervisor's CoreMCP both have a `pano` tool. It
 takes two inputs, `action` and `payload`, the action's fields — for example
 `{"action": "read", "payload": {"id": "<id>", "includeComments": true}}`. The
-actions are `save`, `read` (`includeComments` and `includeAttachments` add
-those), `comment`, `attach` and `delete`; `help` lists them, and with payload
+actions are `save`, `edit` (change part of a doc: `ops` of `append` and of
+`replace`, whose `oldString` must occur exactly once, applied all or none),
+`read` (`includeComments` and `includeAttachments` add those), `comment`,
+`attach` and `delete`; `help` lists them, and with payload
 `{"topic": "save"}` prints one action's payload. The supervisor writes as its
 supervisor workspace.
 
@@ -62,13 +69,14 @@ keeps the doc's markdown and files out of the agent's context:
 
 ```bash
 npx -y @agentrq/agentrq-ws@latest pano save --title "Release plan" --markdown @plan.md --file chart.png --color blue
+npx -y @agentrq/agentrq-ws@latest pano edit <id> --version 3 --replace "- [ ] Tag" --with "- [x] Tag"
 npx -y @agentrq/agentrq-ws@latest pano read <id> --comments --attachments --out ./pano
 npx -y @agentrq/agentrq-ws@latest pano comment <id> "Backend done."
 npx -y @agentrq/agentrq-ws@latest pano attach <id> --file notes.txt
 npx -y @agentrq/agentrq-ws@latest pano delete <id>
 ```
 
-`save` and `attach` print only the doc's id. `read --out DIR` writes the
+`save` and `edit` print the doc's id and version, `attach` only its id. `read --out DIR` prints the version, then writes the
 markdown to `DIR/<id>/<id>.md` with its linked files beside it, so the links
 still resolve. Attachments go to `attachments/` and comments to
 `comments.json`.

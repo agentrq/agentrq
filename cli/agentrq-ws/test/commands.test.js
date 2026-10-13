@@ -665,6 +665,7 @@ const PANO_DOC = {
   files: [{ id: 'f1', filename: 'chart.png', url: 'https://agentrq.test/storage/pano/u-1/pano-0kGVgW2hMzR/f1' }],
   attachments: [{ id: 'a1', filename: 'notes.txt', url: 'https://agentrq.test/storage/pano/u-1/pano-0kGVgW2hMzR/a1' }],
   comments: [{ id: 'c1', author: 'human', body: 'Looks good.' }],
+  version: 3,
 }
 
 test('pano save sends the doc with its linked files, and prints only the id', async () => {
@@ -675,16 +676,17 @@ test('pano save sends the doc with its linked files, and prints only the id', as
   const client = stubClient({ pano: JSON.stringify(PANO_DOC) })
   const result = await invoke('pano save', {
     positionals: ['0kGVgW2hMzR'],
-    values: { title: 'Plan', markdown: `@${join(dir, 'plan.md')}`, file: [chart], 'ttl-days': '14', color: 'blue' },
+    values: { title: 'Plan', markdown: `@${join(dir, 'plan.md')}`, file: [chart], 'ttl-days': '14', color: 'blue', version: '3' },
     client,
   })
-  assert.equal(result.text, '0kGVgW2hMzR')
+  assert.equal(result.text, '0kGVgW2hMzR 3')
   assert.deepEqual(result.data, PANO_DOC)
   assert.deepEqual(client.calls[0], {
     name: 'pano',
     args: {
       action: 'save',
       id: '0kGVgW2hMzR',
+      version: 3,
       title: 'Plan',
       markdown: '# Plan\n\n![chart](chart.png)',
       ttlDays: 14,
@@ -698,7 +700,7 @@ test('pano save creates a doc from stdin, and passes a refusal on as it is', asy
   const client = stubClient({ pano: 'chart.png is not linked from the markdown' })
   const result = await invoke('pano save', { values: { title: 'New', markdown: '-' }, stdin: stdinOf('piped'), client })
   assert.equal(result.text, 'chart.png is not linked from the markdown')
-  assert.deepEqual(client.calls[0].args, { action: 'save', id: undefined, title: 'New', markdown: 'piped', ttlDays: undefined, color: undefined, files: undefined })
+  assert.deepEqual(client.calls[0].args, { action: 'save', id: undefined, version: undefined, title: 'New', markdown: 'piped', ttlDays: undefined, color: undefined, files: undefined })
 })
 
 test('pano save refuses a missing title or markdown, an unknown color and a bad ttl', async () => {
@@ -708,6 +710,55 @@ test('pano save refuses a missing title or markdown, an unknown color and a bad 
   for (const ttl of ['0', '1.5', 'soon']) {
     await assert.rejects(() => invoke('pano save', { values: { title: 'x', markdown: 'x', 'ttl-days': ttl } }), /--ttl-days must be a whole number/)
   }
+})
+
+test('pano save of a doc that exists needs the version it read', async () => {
+  const values = { title: 'x', markdown: 'x' }
+  await assert.rejects(() => invoke('pano save', { positionals: ['d1'], values }), /--version is required/)
+  for (const version of ['0', '1.5', 'abc']) {
+    await assert.rejects(() => invoke('pano save', { positionals: ['d1'], values: { ...values, version } }), /--version must be a whole number/)
+  }
+})
+
+test('pano edit sends the ops, and prints the id and new version', async () => {
+  const dir = scratch()
+  writeFileSync(join(dir, 'ops.json'), JSON.stringify([{ op: 'append', text: '\n- [ ] a' }]))
+  writeFileSync(join(dir, 'more.md'), '\nmore')
+  const client = stubClient({ pano: JSON.stringify({ ...PANO_DOC, version: 4 }) })
+  const result = await invoke('pano edit', {
+    positionals: ['0kGVgW2hMzR'],
+    values: { version: '3', ops: `@${join(dir, 'ops.json')}`, replace: '- [ ] x', with: '- [x] x', append: `@${join(dir, 'more.md')}` },
+    client,
+  })
+  assert.equal(result.text, '0kGVgW2hMzR 4')
+  assert.deepEqual(client.calls[0], {
+    name: 'pano',
+    args: {
+      action: 'edit',
+      id: '0kGVgW2hMzR',
+      version: 3,
+      ops: [
+        { op: 'append', text: '\n- [ ] a' },
+        { op: 'replace', oldString: '- [ ] x', newString: '- [x] x' },
+        { op: 'append', text: '\nmore' },
+      ],
+    },
+  })
+  const piped = await invoke('pano edit', { positionals: ['d1'], values: { version: '1', ops: '-' }, stdin: stdinOf('[{"op":"append","text":"z"}]'), client })
+  assert.equal(piped.text, '0kGVgW2hMzR 4')
+  assert.deepEqual(client.calls[1].args.ops, [{ op: 'append', text: 'z' }])
+})
+
+test('pano edit refuses what cannot be sent', async () => {
+  const v = { version: '1' }
+  await assert.rejects(() => invoke('pano edit', { values: { ...v, append: 'x' } }), /<id>/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { append: 'x' } }), /--version is required/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: v }), /nothing to do/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { ...v, replace: 'a' } }), /--replace needs --with/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { ...v, with: 'a' } }), /--with needs --replace/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { ...v, ops: '{nope' } }), /--ops is not JSON/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { ...v, ops: '{"op":"append"}' } }), /--ops must be a JSON array/)
+  await assert.rejects(() => invoke('pano edit', { positionals: ['d1'], values: { ...v, ops: '@/no/such/ops.json' } }), /cannot read the ops/)
 })
 
 test('pano read prints the doc, with comments and attachments when asked', async () => {
@@ -733,7 +784,7 @@ test('pano read --out writes the markdown and downloads every file beside it', a
   const result = await invoke('pano read', { positionals: ['0kGVgW2hMzR'], values: { out: dir, comments: true, attachments: true }, client, fetch })
   const docDir = join(dir, '0kGVgW2hMzR')
   const paths = [join(docDir, '0kGVgW2hMzR.md'), join(docDir, 'chart.png'), join(docDir, 'attachments', 'notes.txt'), join(docDir, 'comments.json')]
-  assert.equal(result.text, paths.join('\n'))
+  assert.equal(result.text, ['version 3', ...paths].join('\n'))
   assert.equal(readFileSync(paths[0], 'utf8'), PANO_DOC.markdown)
   assert.equal(readFileSync(paths[1], 'utf8'), 'bytes of f1')
   assert.equal(readFileSync(paths[2], 'utf8'), 'bytes of a1')
@@ -760,7 +811,7 @@ test('pano comment, attach and delete', async () => {
   const client = stubClient({ pano: (args) => (args.action === 'attach' ? JSON.stringify(PANO_DOC) : 'ok') })
   await invoke('pano comment', { positionals: ['d1', 'Ship it.'], client })
   const attached = await invoke('pano attach', { positionals: ['d1'], values: { file: notes }, client })
-  assert.equal(attached.text, '0kGVgW2hMzR')
+  assert.equal(attached.text, '0kGVgW2hMzR 3')
   await invoke('pano delete', { positionals: ['d1'], client })
   assert.deepEqual(client.calls.map((c) => c.args), [
     { action: 'comment', id: 'd1', comment: 'Ship it.' },

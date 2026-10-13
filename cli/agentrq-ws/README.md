@@ -57,8 +57,9 @@ Node 20.6 or newer.
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
 | `skill save <uri> --content …` | Replace a file of one of this workspace's skills |
 | `skill delete <uri>` | Take a skill out of this workspace (`skill://<name>`), deleting it when no other workspace uses it, or delete one of its files |
-| `pano save [id] --title … --markdown …` | Create a Pano doc, or replace one, and print its id; `--file` sends a file the markdown links, `--ttl-days` and `--color` set its life and post-it |
-| `pano read <id>` | Read a Pano doc, `--comments`/`--attachments` adding those; `--out DIR` writes its markdown and downloads its files instead, printing only their paths |
+| `pano save [id --version N] --title … --markdown …` | Create a Pano doc, or replace one, and print its id and version; replacing needs the `--version` you read and is refused if the doc changed since; `--file` sends a file the markdown links, `--ttl-days` and `--color` set its life and post-it |
+| `pano edit <id> --version N …` | Change part of a doc without resending it: `--replace TEXT --with TEXT` (the text must occur once), `--append TEXT`, or `--ops` as a JSON array; the ops apply all or none. Prints the id and new version |
+| `pano read <id>` | Read a Pano doc (its `version` included), `--comments`/`--attachments` adding those; `--out DIR` writes its markdown and downloads its files instead, printing its version and their paths |
 | `pano comment <id> <text>` | Comment on a Pano doc |
 | `pano attach <id> --file PATH…` | Attach files to a Pano doc; they need no link |
 | `pano delete <id>` | Delete a Pano doc |

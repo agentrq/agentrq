@@ -235,7 +235,7 @@ func TestPano_UpdateByAnAgent(t *testing.T) {
 		entity.CRUDEvent{Action: entity.ActionPanoAttach, WorkspaceID: skWS, ResourceID: doc.ID, Actor: entity.ActorAgent})
 
 	// b.txt, still linked and not sent, stays.
-	kept := e.save(t, entity.SavePanoDocRequest{WorkspaceID: skWS, ID: doc.ID, Title: "Plan", Markdown: "![a](a.png) [b](b.txt) more"})
+	kept := e.save(t, entity.SavePanoDocRequest{WorkspaceID: skWS, ID: doc.ID, Version: doc.Version, Title: "Plan", Markdown: "![a](a.png) [b](b.txt) more"})
 	if !reflect.DeepEqual(fileNames(kept.Files), []string{"a.png", "b.txt"}) {
 		t.Errorf("the update answered with files %v, want the kept a.png and b.txt", fileNames(kept.Files))
 	}
@@ -244,7 +244,7 @@ func TestPano_UpdateByAnAgent(t *testing.T) {
 	}
 	*e.events = (*e.events)[:0]
 
-	updated := e.save(t, entity.SavePanoDocRequest{WorkspaceID: skWS, ID: doc.ID, Title: "Plan 2", Markdown: "![a](./a.png)", Files: []entity.PanoUpload{{Filename: "a.png", MimeType: "image/png", Data: b64("new a")}}})
+	updated := e.save(t, entity.SavePanoDocRequest{WorkspaceID: skWS, ID: doc.ID, Version: kept.Version, Title: "Plan 2", Markdown: "![a](./a.png)", Files: []entity.PanoUpload{{Filename: "a.png", MimeType: "image/png", Data: b64("new a")}}})
 	if !reflect.DeepEqual(fileNames(updated.Files), []string{"a.png"}) || updated.Files[0].SizeBytes != 5 {
 		t.Errorf("the update answered with files %+v, want only the new a.png", updated.Files)
 	}
@@ -271,7 +271,7 @@ func TestPano_UpdateByAnAgent(t *testing.T) {
 	}
 
 	// A named TTL and color replace the doc's own.
-	again := e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Title: "Plan", Markdown: "text", TTLDays: 90, Color: "yellow"})
+	again := e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: updated.Version, Title: "Plan", Markdown: "text", TTLDays: 90, Color: "yellow"})
 	if again.TTLDays != 90 || again.Color != entity.PanoColorYellow || again.UpdatedByWorkspaceID != 0 {
 		t.Errorf("an update naming 90 days and yellow by the person answered %+v", again)
 	}
@@ -442,7 +442,7 @@ func TestPano_Delete(t *testing.T) {
 	if _, err := e.c.GetPanoDoc(e.ctx, entity.GetPanoDocRequest{UserID: skUserStr, ID: doc.ID}); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("reading the deleted doc returned %v, want ErrNotFound", err)
 	}
-	if _, err := e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Title: "t", Markdown: "m"}); !errors.Is(err, base.ErrNotFound) {
+	if _, err := e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: 1, Title: "t", Markdown: "m"}); !errors.Is(err, base.ErrNotFound) {
 		t.Errorf("updating the deleted doc returned %v, want ErrNotFound", err)
 	}
 }
@@ -732,7 +732,7 @@ func TestPano_SaveCountsTheChecklist(t *testing.T) {
 	if doc.ChecklistDone != 1 || doc.ChecklistTotal != 3 {
 		t.Errorf("a new doc's checklist is %d of %d, want 1 of 3", doc.ChecklistDone, doc.ChecklistTotal)
 	}
-	e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Title: "Launch", Markdown: "- [x] beta\n- [x] docs"})
+	e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: doc.Version, Title: "Launch", Markdown: "- [x] beta\n- [x] docs"})
 	list, err := e.c.ListPanoDocs(e.ctx, entity.ListPanoDocsRequest{UserID: skUserStr})
 	if err != nil || len(list.Docs) != 1 || list.Docs[0].ChecklistDone != 2 || list.Docs[0].ChecklistTotal != 2 {
 		t.Errorf("after an update the list has %+v, %v, want the checklist 2 of 2", list, err)
@@ -801,6 +801,9 @@ func TestPano_SyncTask(t *testing.T) {
 		if !got.UpdatedAt.Equal(before.UpdatedAt) || !got.ExpiresAt.Equal(before.ExpiresAt) {
 			t.Errorf("the sync moved the doc's updated %v → %v, expiry %v → %v, want them kept", before.UpdatedAt, got.UpdatedAt, before.ExpiresAt, got.ExpiresAt)
 		}
+		if got.Version != before.Version+2 {
+			t.Errorf("after two syncs the doc is at version %d, want %d: a writer holding the old one must read again", got.Version, before.Version+2)
+		}
 		if _, ids, _ := e.c.SyncPanoTask(e.ctx, task.ID); len(ids) != 0 {
 			t.Errorf("a second sync changed %v, want nothing", ids)
 		}
@@ -825,5 +828,198 @@ func TestPano_SyncTask(t *testing.T) {
 				t.Error("SyncPanoTask returned no error, want the injected failure")
 			}
 		})
+	}
+}
+
+func (e *panoEnv) wantStale(t *testing.T, err error, contains ...string) {
+	t.Helper()
+	var refusal *entity.PanoError
+	if !errors.As(err, &refusal) || !refusal.Conflict {
+		t.Fatalf("got %v, want a stale-version refusal", err)
+	}
+	for _, s := range contains {
+		if !strings.Contains(refusal.Message, s) {
+			t.Errorf("the refusal %q does not contain %q", refusal.Message, s)
+		}
+	}
+}
+
+// A doc starts at version 1 and every write moves it on; an update must send
+// the version it read, and the refusal names the current one.
+func TestPano_VersionIsCheckedOnUpdate(t *testing.T) {
+	e := newPanoEnv(t)
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: "one"})
+	if doc.Version != 1 || e.get(t, doc.ID).Version != 1 {
+		t.Fatalf("a new doc is at version %d, want 1", doc.Version)
+	}
+	next := e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: 1, Title: "Plan", Markdown: "two"})
+	if next.Version != 2 || e.get(t, doc.ID).Version != 2 {
+		t.Errorf("after a save with the right version the doc is at %d, want 2", next.Version)
+	}
+	*e.events = (*e.events)[:0]
+
+	_, err := e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: 1, Title: "Plan", Markdown: "stale"})
+	e.wantStale(t, err, "changed since you read it", "you sent version 1", "now 2", "read it again")
+	_, err = e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Title: "Plan", Markdown: "no version"})
+	e.wantStale(t, err, "needs the version you read", "now 2")
+	if got := e.get(t, doc.ID); got.Markdown != "two" || got.Version != 2 {
+		t.Errorf("after refused saves the doc is %q at %d, want it untouched", got.Markdown, got.Version)
+	}
+	e.wantEvents(t)
+}
+
+// A write that lands between the controller's read and its own is caught by
+// the repository, and answered like any other stale write.
+func TestPano_ALostRaceIsAStaleWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		failGet bool
+		want    string
+	}{
+		{"names the version the other writer left", false, "now 2"},
+		{"falls back to the version it read when it cannot look", true, "now 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newPanoEnv(t)
+			doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: "one"})
+			rr := &racingRepo{Repository: e.c.repository, hook: func() {
+				e.db.Model(&model.PanoDoc{}).Where("id = ?", doc.ID).Update("version", 2)
+			}, failGet: tc.failGet}
+			e.c.repository = rr
+			_, err := e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: 1, Title: "Plan", Markdown: "mine"})
+			e.wantStale(t, err, tc.want)
+			e.c.repository = rr.Repository
+			if got := e.get(t, doc.ID); got.Markdown != "one" {
+				t.Errorf("the doc is %q, want the other writer's", got.Markdown)
+			}
+		})
+	}
+}
+
+// racingRepo lets another writer in just before the save, optionally making
+// the read that follows the conflict fail.
+type racingRepo struct {
+	base.Repository
+	hook    func()
+	failGet bool
+	raced   bool
+	saveErr error
+}
+
+func (r *racingRepo) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64) error {
+	if r.saveErr != nil {
+		return r.saveErr
+	}
+	r.hook()
+	r.raced = true
+	return r.Repository.SavePanoDoc(ctx, d, create, add, drop)
+}
+
+func (r *racingRepo) GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error) {
+	if r.raced && r.failGet {
+		return model.PanoDoc{}, errors.New("database unavailable")
+	}
+	return r.Repository.GetPanoDoc(ctx, userID, id, now)
+}
+
+func TestPano_Edit(t *testing.T) {
+	const md = "# Plan\n\n- [ ] one\n- [ ] two\n![c](c.png)\n"
+	setup := func(t *testing.T) (*panoEnv, entity.PanoDoc) {
+		e := newPanoEnv(t)
+		doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: md, TTLDays: 7, Color: "blue", Files: []entity.PanoUpload{{Filename: "c.png", Data: b64("c")}}})
+		*e.events = (*e.events)[:0]
+		return e, doc
+	}
+	edit := func(e *panoEnv, doc entity.PanoDoc, ops ...entity.PanoEditOp) (*entity.SavePanoDocResponse, error) {
+		return e.c.EditPanoDoc(e.ctx, entity.EditPanoDocRequest{UserID: skUserStr, WorkspaceID: skWS, ID: doc.ID, Version: doc.Version, Ops: ops})
+	}
+	tick := entity.PanoEditOp{Op: "replace", OldString: "- [ ] one", NewString: "- [x] one"}
+
+	t.Run("ops apply in order, move the version and keep the rest", func(t *testing.T) {
+		e, doc := setup(t)
+		rs, err := edit(e, doc, tick, entity.PanoEditOp{Op: "append", Text: "- [ ] three\n"}, entity.PanoEditOp{Op: "replace", OldString: "- [ ] three", NewString: "- [ ] 3"})
+		if err != nil {
+			t.Fatalf("EditPanoDoc returned %v, want the edit applied", err)
+		}
+		want := "# Plan\n\n- [x] one\n- [ ] two\n![c](c.png)\n- [ ] 3\n"
+		got := e.get(t, doc.ID)
+		if got.Markdown != want || rs.Doc.Markdown != want || got.Version != 2 || rs.Doc.Version != 2 {
+			t.Errorf("the doc is %q at %d, want %q at 2", got.Markdown, got.Version, want)
+		}
+		if got.ChecklistDone != 1 || got.ChecklistTotal != 3 || got.Title != "Plan" || got.TTLDays != 7 || got.Color != entity.PanoColorBlue || !reflect.DeepEqual(fileNames(got.Files), []string{"c.png"}) {
+			t.Errorf("the edit left the doc %+v, want the checklist 1 of 3 and its title, TTL, color and file kept", got)
+		}
+		e.wantEvents(t, entity.CRUDEvent{Action: entity.ActionPanoUpdate, WorkspaceID: skWS, ResourceID: doc.ID, Actor: entity.ActorAgent})
+	})
+
+	t.Run("a stale or missing version is refused before the ops run", func(t *testing.T) {
+		e, doc := setup(t)
+		e.save(t, entity.SavePanoDocRequest{ID: doc.ID, Version: 1, Title: "Plan", Markdown: "- [x] nothing like it"})
+		_, err := edit(e, doc, tick)
+		e.wantStale(t, err, "you sent version 1", "now 2")
+		doc.Version = 0
+		_, err = edit(e, doc, tick)
+		e.wantStale(t, err, "needs the version you read")
+	})
+
+	for _, tc := range []struct {
+		name string
+		ops  []entity.PanoEditOp
+		want string
+	}{
+		{"no ops", nil, "at least one op"},
+		{"an unknown op", []entity.PanoEditOp{{Op: "delete"}}, "op 1: op must be append or replace"},
+		{"an append without text", []entity.PanoEditOp{{Op: "append"}}, "op 1: append needs text"},
+		{"a replace without an oldString", []entity.PanoEditOp{{Op: "replace", NewString: "x"}}, "op 1: replace needs an oldString"},
+		{"a replace that matches nothing", []entity.PanoEditOp{{Op: "replace", OldString: "- [ ] zero", NewString: "x"}}, "not in the markdown, nothing was changed"},
+		{"a replace that matches twice", []entity.PanoEditOp{{Op: "replace", OldString: "- [ ]", NewString: "- [x]"}}, "occurs 2 times"},
+		{"a later op failing undoes the earlier ones", []entity.PanoEditOp{tick, {Op: "append", Text: "more"}, {Op: "replace", OldString: "missing", NewString: "x"}}, "op 3:"},
+		{"a result over the size limit", []entity.PanoEditOp{{Op: "append", Text: strings.Repeat("x", PanoMaxMarkdownBytes)}}, "over the"},
+		{"a result that is not valid UTF-8", []entity.PanoEditOp{{Op: "append", Text: "\xff"}}, "not valid UTF-8"},
+	} {
+		t.Run("refuses "+tc.name+" and changes nothing", func(t *testing.T) {
+			e, doc := setup(t)
+			_, err := edit(e, doc, tc.ops...)
+			var refusal *entity.PanoError
+			if !errors.As(err, &refusal) || refusal.Conflict || !strings.Contains(refusal.Message, tc.want) {
+				t.Fatalf("EditPanoDoc returned %v, want a refusal containing %q", err, tc.want)
+			}
+			if got := e.get(t, doc.ID); got.Markdown != md || got.Version != 1 {
+				t.Errorf("the doc is %q at %d, want it untouched", got.Markdown, got.Version)
+			}
+			e.wantEvents(t)
+		})
+	}
+
+	t.Run("a replace that stops linking a file drops it, as a save does", func(t *testing.T) {
+		e, doc := setup(t)
+		if _, err := edit(e, doc, entity.PanoEditOp{Op: "replace", OldString: "![c](c.png)", NewString: ""}); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.get(t, doc.ID); len(got.Files) != 0 || len(e.blobs(t)) != 0 {
+			t.Errorf("the doc keeps files %v and blobs %v, want the unlinked file gone", fileNames(got.Files), e.blobs(t))
+		}
+	})
+
+	t.Run("a doc that is missing, or another account's, is not found", func(t *testing.T) {
+		e, doc := setup(t)
+		if _, err := e.c.EditPanoDoc(e.ctx, entity.EditPanoDocRequest{UserID: skUserStr, ID: 9999, Version: 1, Ops: []entity.PanoEditOp{tick}}); !errors.Is(err, base.ErrNotFound) {
+			t.Errorf("editing a missing doc returned %v, want ErrNotFound", err)
+		}
+		if _, err := e.c.EditPanoDoc(e.ctx, entity.EditPanoDocRequest{UserID: "", ID: doc.ID, Version: 1, Ops: []entity.PanoEditOp{tick}}); err == nil {
+			t.Error("editing as an invalid user succeeded, want an error")
+		}
+	})
+}
+
+// Any other failure of the write is passed on, not taken for a stale version.
+func TestPano_ASaveFailureIsNotAStaleWrite(t *testing.T) {
+	e := newPanoEnv(t)
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Plan", Markdown: "one"})
+	e.c.repository = &racingRepo{Repository: e.c.repository, saveErr: errors.New("database unavailable")}
+	_, err := e.c.SavePanoDoc(e.ctx, entity.SavePanoDocRequest{UserID: skUserStr, ID: doc.ID, Version: 1, Title: "Plan", Markdown: "two"})
+	var refusal *entity.PanoError
+	if err == nil || errors.As(err, &refusal) {
+		t.Errorf("SavePanoDoc returned %v, want the database failure", err)
 	}
 }

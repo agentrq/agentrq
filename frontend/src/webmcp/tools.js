@@ -520,13 +520,13 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     }),
     tool({
       name: 'updatePanoDoc',
-      description: 'Replace a Pano doc\'s title and markdown, as the user. A linked file the markdown no longer links is dropped.',
-      properties: { id: PANO_ID, ...PANO_DOC },
-      required: ['id', 'title', 'markdown'],
+      description: 'Replace a Pano doc\'s title and markdown, as the user. A linked file the markdown no longer links is dropped. Needs the version from getPanoDoc; refused if the doc changed since, so read it again and redo the change.',
+      properties: { id: PANO_ID, version: int('The doc\'s version, as getPanoDoc returned it.'), ...PANO_DOC },
+      required: ['id', 'version', 'title', 'markdown'],
       // It replaces what agents may have written.
       destructive: true,
       screen: before(panoDocPage),
-      run: ({ id, title, markdown, ttlDays, color, files }) => api.updatePanoDoc(id, { title, markdown, ttlDays, color, files }),
+      run: ({ id, version, title, markdown, ttlDays, color, files }) => api.updatePanoDoc(id, { version, title, markdown, ttlDays, color, files }),
     }),
     tool({
       name: 'deletePanoDoc',

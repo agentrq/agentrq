@@ -397,7 +397,7 @@ describe('how much of a checklist is done', () => {
 });
 
 describe('changing a card\'s doc from the board', () => {
-  const full = { id: 'd1', title: 'Plan', markdown: '- [ ] a\n- [ ] b', color: 'blue' };
+  const full = { id: 'd1', title: 'Plan', markdown: '- [ ] a\n- [ ] b', color: 'blue', version: 8 };
   const fakeApi = () => ({
     getPanoDoc: vi.fn(() => Promise.resolve({ doc: full })),
     updatePanoDoc: vi.fn((id, body) => Promise.resolve({ doc: { id, ...body } })),
@@ -407,14 +407,14 @@ describe('changing a card\'s doc from the board', () => {
     const api = fakeApi();
     const out = await checkPanoItem({ id: 'd1' }, 1, true, { api });
     expect(api.getPanoDoc).toHaveBeenCalledWith('d1');
-    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '- [ ] a\n- [x] b', ttlDays: 0, color: '', files: [] });
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '- [ ] a\n- [x] b', ttlDays: 0, color: '', files: [], version: 8 });
     expect(out.markdown).toBe('- [ ] a\n- [x] b');
   });
 
   it('reads the doc and writes it back in another color', async () => {
     const api = fakeApi();
     const out = await recolorPanoDoc({ id: 'd1' }, 'pink', { api });
-    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: full.markdown, ttlDays: 0, color: 'pink', files: [] });
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: full.markdown, ttlDays: 0, color: 'pink', files: [], version: 8 });
     expect(out.color).toBe('pink');
   });
 
@@ -501,7 +501,7 @@ describe('the board', () => {
 });
 
 describe('one doc', () => {
-  const DOC = { id: 'd1', title: 'Plan', markdown: '# Plan', ttlDays: 7, color: 'blue' };
+  const DOC = { id: 'd1', title: 'Plan', markdown: '# Plan', ttlDays: 7, color: 'blue', version: 5 };
   const fakeApi = (overrides = {}) => ({
     getPanoDoc: vi.fn(() => Promise.resolve({ doc: DOC })),
     createPanoDoc: vi.fn(() => Promise.resolve({ doc: { id: 'new1' } })),
@@ -605,9 +605,73 @@ describe('one doc', () => {
     d.startEditing();
     d.draft.value.ttlDays = '14';
     await expect(d.save()).resolves.toBe('d1');
-    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '# Plan', ttlDays: 14, color: 'blue', files: [] });
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '# Plan', ttlDays: 14, color: 'blue', files: [], version: 5 });
     expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
     expect(d.editing.value).toBe(false);
+  });
+
+  const stale = () => Object.assign(new Error('the Pano doc changed since you read it'), { status: 409 });
+
+  it('sends the version the edit started from, even if the doc was reloaded under it', async () => {
+    let version = 5;
+    const api = fakeApi({ getPanoDoc: vi.fn(() => Promise.resolve({ doc: { ...DOC, version: version++ } })) });
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    d.startEditing();
+    await d.load({ quiet: true });
+    await d.save();
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', expect.objectContaining({ version: 5 }));
+  });
+
+  it('keeps the draft and flags a conflict when the doc changed under the edit, then reloads on request', async () => {
+    const api = fakeApi({ updatePanoDoc: vi.fn(() => Promise.reject(stale())) });
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    d.startEditing();
+    d.draft.value.markdown = 'my words';
+    await expect(d.save()).rejects.toThrow('This note changed while you were editing it');
+    expect(d.conflict.value).toBe(true);
+    expect(d.editing.value).toBe(true);
+    expect(d.draft.value.markdown).toBe('my words');
+    expect(d.busy.value).toBe(false);
+
+    api.getPanoDoc.mockImplementation(() => Promise.resolve({ doc: { ...DOC, markdown: 'theirs', version: 6 } }));
+    await d.reloadEditing();
+    expect(d.conflict.value).toBe(false);
+    expect(d.editing.value).toBe(true);
+    expect(d.draft.value.markdown).toBe('theirs');
+    api.updatePanoDoc.mockImplementation(() => Promise.resolve({ doc: DOC }));
+    await d.save();
+    expect(api.updatePanoDoc).toHaveBeenLastCalledWith('d1', expect.objectContaining({ markdown: 'theirs', version: 6 }));
+  });
+
+  it('does not reopen the editor when the reload finds no doc, and cancelling clears the conflict', async () => {
+    const api = fakeApi({ updatePanoDoc: vi.fn(() => Promise.reject(stale())) });
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    d.startEditing();
+    await expect(d.save()).rejects.toThrow();
+    api.getPanoDoc.mockImplementation(() => Promise.reject(Object.assign(new Error('gone'), { status: 404 })));
+    d.doc.value = null;
+    await d.reloadEditing();
+    expect(d.error.value).toContain('does not exist');
+    d.cancelEditing();
+    expect(d.conflict.value).toBe(false);
+    expect(d.editing.value).toBe(false);
+  });
+
+  it('a tick or an assignment on a stale doc reloads it and says so', async () => {
+    const api = fakeApi({ updatePanoDoc: vi.fn(() => Promise.reject(stale())), createTask: vi.fn(() => Promise.resolve({ task: { id: 't1' } })) });
+    api.getPanoDoc.mockImplementation(() => Promise.resolve({ doc: { ...DOC, markdown: '- [ ] a', version: 5 } }));
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    await expect(d.checkItem(0, true)).rejects.toThrow('This note changed while you were working on it, and has been reloaded');
+    expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', expect.objectContaining({ version: 5 }));
+    await expect(d.assignItem(0, { id: 'ws1', name: 'ops' })).rejects.toThrow('has been reloaded');
+    expect(api.getPanoDoc).toHaveBeenCalledTimes(3);
+    api.updatePanoDoc.mockImplementation(() => Promise.reject(new Error('database unavailable')));
+    await expect(d.checkItem(0, true)).rejects.toThrow('database unavailable');
   });
 
   it('stays in the editor when the save fails', async () => {
@@ -625,7 +689,7 @@ describe('one doc', () => {
     const p = d.checkItem(1, false);
     expect(d.busy.value).toBe(true);
     await p;
-    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '- [ ] a\n- [ ] b', ttlDays: 0, color: '', files: [] });
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', { title: 'Plan', markdown: '- [ ] a\n- [ ] b', ttlDays: 0, color: '', files: [], version: 5 });
     expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
     expect(d.busy.value).toBe(false);
     api.updatePanoDoc.mockRejectedValueOnce(new Error('no'));
@@ -656,7 +720,7 @@ describe('one doc', () => {
     expect(await p).toEqual({ id: 't9' });
     expect(api.createTask).toHaveBeenCalledWith('w1', 'ship it', panoItemTaskBody({ ...DOC, markdown: '- [ ] ship it\n- [ ] docs' }, 'ship it'));
     expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', {
-      title: 'Plan', markdown: '- [ ] ship it → [@api](/workspaces/w1/tasks/t9 "notstarted")\n- [ ] docs', ttlDays: 0, color: '', files: [],
+      title: 'Plan', markdown: '- [ ] ship it → [@api](/workspaces/w1/tasks/t9 "notstarted")\n- [ ] docs', ttlDays: 0, color: '', files: [], version: 5,
     });
     expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
     expect(d.busy.value).toBe(false);

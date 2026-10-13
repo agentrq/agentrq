@@ -36,8 +36,10 @@ func (r *repository) GetPanoDoc(ctx context.Context, userID, id int64, now time.
 }
 
 // SavePanoDoc writes d, adds the linked files in add and drops the files
-// whose ids are in drop, in one transaction. An update of a doc that is gone
-// is ErrNotFound.
+// whose ids are in drop, in one transaction. An update is written only if the
+// doc is still at d.Version, the one its writer read, and moves it to the
+// next: a doc another writer got to first is ErrVersionConflict, one that is
+// gone ErrNotFound.
 func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if create {
@@ -45,7 +47,8 @@ func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bo
 				return err
 			}
 		} else {
-			res := tx.Model(&model.PanoDoc{}).Where("id = ? AND user_id = ? AND expires_at > ?", d.ID, d.UserID, d.UpdatedAt).Updates(map[string]any{
+			res := tx.Model(&model.PanoDoc{}).Where("id = ? AND user_id = ? AND expires_at > ? AND version = ?", d.ID, d.UserID, d.UpdatedAt, d.Version).Updates(map[string]any{
+				"version":                 gorm.Expr("version + 1"),
 				"updated_at":              d.UpdatedAt,
 				"title":                   d.Title,
 				"excerpt":                 d.Excerpt,
@@ -62,7 +65,10 @@ func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bo
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				return ErrNotFound
+				if err := panoDocExists(tx, d.UserID, d.ID, d.UpdatedAt); err != nil {
+					return err
+				}
+				return ErrVersionConflict
 			}
 		}
 		if len(drop) > 0 {
@@ -87,9 +93,11 @@ func (r *repository) ListPanoDocsLinking(ctx context.Context, userID int64, path
 
 // SyncPanoChecklist writes back a doc's markdown changed by an assigned
 // task's status. It is no save: the doc keeps its place, author and life, so
-// the columns are written without GORM stamping updated_at.
+// the columns are written without GORM stamping updated_at. The markdown did
+// change, so the version moves: a writer holding the old one must read again.
 func (r *repository) SyncPanoChecklist(ctx context.Context, d model.PanoDoc) error {
 	return r.conn(ctx).Model(&model.PanoDoc{}).Where("id = ? AND user_id = ?", d.ID, d.UserID).UpdateColumns(map[string]any{
+		"version":         gorm.Expr("version + 1"),
 		"markdown":        d.Markdown,
 		"excerpt":         d.Excerpt,
 		"size_bytes":      d.SizeBytes,

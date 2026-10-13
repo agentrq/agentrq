@@ -38,7 +38,7 @@ var panoNow = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
 
 func testPanoDoc() entity.PanoDoc {
 	return entity.PanoDoc{
-		ID: 7, CreatedAt: panoNow, UpdatedAt: panoNow, Title: "Plan", Excerpt: "# Plan", Markdown: "# Plan\n![chart](chart.png)",
+		ID: 7, CreatedAt: panoNow, UpdatedAt: panoNow, Title: "Plan", Excerpt: "# Plan", Markdown: "# Plan\n![chart](chart.png)", Version: 4,
 		CreatedByWorkspaceID: 4242, TTLDays: 30, ExpiresAt: panoNow.AddDate(0, 0, 30), Color: entity.PanoColorPink,
 		Files:       []entity.PanoFile{{ID: 11, Filename: "chart.png", MimeType: "image/png", SizeBytes: 3, URL: "https://l/chart.png", WorkspaceID: 4242, CreatedAt: panoNow}},
 		Attachments: []entity.PanoFile{{ID: 12, Filename: "notes.txt", MimeType: "text/plain", SizeBytes: 5, CreatedAt: panoNow}},
@@ -121,7 +121,7 @@ func TestPanoRoutes(t *testing.T) {
 			entity.GetPanoDocRequest{UserID: "user-1", ID: 7, IncludeComments: true, IncludeAttachments: true},
 			[]string{
 				`"markdown":"# Plan\n![chart](chart.png)"`,
-				`"ttlDays":30,"expiresAt":"2026-11-12T08:00:00Z"`, `"color":"pink"`,
+				`"version":4`, `"ttlDays":30,"expiresAt":"2026-11-12T08:00:00Z"`, `"color":"pink"`,
 				`"createdByWorkspaceId":"` + panoWS + `"`,
 				`"files":[{"id":"` + monoflake.ID(11).String() + `","filename":"chart.png","mimeType":"image/png","size":3,"url":"https://l/chart.png","workspaceId":"` + panoWS + `"`,
 				`"attachments":[{"id":"` + monoflake.ID(12).String() + `","filename":"notes.txt","mimeType":"text/plain","size":5,"createdAt"`,
@@ -132,8 +132,8 @@ func TestPanoRoutes(t *testing.T) {
 			`{"title":"Plan","markdown":"![c](c.png)","files":[{"filename":"c.png","mimeType":"image/png","data":"` + data + `"}]}`, 201,
 			entity.SavePanoDocRequest{UserID: "user-1", Title: "Plan", Markdown: "![c](c.png)", Files: []entity.PanoUpload{{Filename: "c.png", MimeType: "image/png", Data: data}}},
 			[]string{`"doc":{"id":"` + panoDoc + `","title":"Plan"`, `"markdown":"![c](c.png)"`}},
-		{"the person replaces a doc", http.MethodPut, "/pano/" + panoDoc, `{"title":"Plan 2","markdown":"text","ttlDays":7,"color":"blue"}`, 200,
-			entity.SavePanoDocRequest{UserID: "user-1", ID: 7, Title: "Plan 2", Markdown: "text", TTLDays: 7, Color: "blue", Files: []entity.PanoUpload{}},
+		{"the person replaces a doc", http.MethodPut, "/pano/" + panoDoc, `{"version":3,"title":"Plan 2","markdown":"text","ttlDays":7,"color":"blue"}`, 200,
+			entity.SavePanoDocRequest{UserID: "user-1", ID: 7, Version: 3, Title: "Plan 2", Markdown: "text", TTLDays: 7, Color: "blue", Files: []entity.PanoUpload{}},
 			[]string{`"title":"Plan 2"`}},
 		{"the person deletes a doc", http.MethodDelete, "/pano/" + panoDoc, "", 204,
 			entity.DeletePanoDocRequest{UserID: "user-1", ID: 7}, nil},
@@ -192,6 +192,7 @@ func TestPanoRoutes_RefuseAnInvalidRequest(t *testing.T) {
 // other failure 500.
 func TestPanoRoutes_PassOnTheControllersError(t *testing.T) {
 	refusal := &entity.PanoError{Message: "a Pano doc needs a title"}
+	stale := &entity.PanoError{Message: "the Pano doc changed", Conflict: true}
 	for _, tc := range []struct {
 		name, method, path, body string
 	}{
@@ -209,6 +210,7 @@ func TestPanoRoutes_PassOnTheControllersError(t *testing.T) {
 				msg    string
 			}{
 				{refusal, http.StatusUnprocessableEntity, "a Pano doc needs a title"},
+				{stale, http.StatusConflict, "the Pano doc changed"},
 				{base.ErrNotFound, http.StatusNotFound, "not found"},
 				{errors.New("database unavailable"), http.StatusInternalServerError, ""},
 			} {

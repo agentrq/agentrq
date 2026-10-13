@@ -21,6 +21,9 @@ import (
 
 var (
 	ErrNotFound = errors.New("not found")
+	// ErrVersionConflict is a write made on a version of a doc that has
+	// since changed.
+	ErrVersionConflict = errors.New("version conflict")
 	// ErrMemoryTooLarge is a memory over model.MaxMemoryContentBytes.
 	ErrMemoryTooLarge = errors.New("memory too large")
 )

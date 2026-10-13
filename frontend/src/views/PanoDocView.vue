@@ -32,8 +32,8 @@ const route = useRoute()
 const router = useRouter()
 const id = route.path === '/pano/new' ? null : String(route.params.id)
 const {
-  doc, loading, error, busy, editing, draft,
-  load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
+  doc, loading, error, busy, editing, draft, conflict,
+  load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
 } = usePanoDoc(id, { api, color: route.query.color })
 const { workspaces } = storeToRefs(useWorkspaceStore())
 const { notifySuccess, notifyError } = useToasts()
@@ -308,6 +308,14 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
           </button>
         </header>
+
+        <!-- Someone else saved the note while it was being edited: the draft is kept until the person chooses. -->
+        <div v-if="conflict" data-test="pano-conflict" role="alert" class="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30">
+          <p class="min-w-0 flex-1 text-[12px] font-bold text-amber-800 dark:text-amber-300">
+            This note changed while you were editing it, so your changes were not saved. Copy what you need from your draft, then load the latest version, which replaces it.
+          </p>
+          <button type="button" data-test="pano-conflict-reload" :class="primary" :disabled="busy" @click="run(reloadEditing)">Load latest</button>
+        </div>
 
         <div class="grid lg:grid-cols-[minmax(0,1fr)_340px]">
           <section class="p-5 sm:p-8 bg-gray-50/60 dark:bg-zinc-950/40 min-w-0">

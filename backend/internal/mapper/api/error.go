@@ -38,6 +38,9 @@ func FromErrorToHTTPResponse(err error) ([]byte, int) {
 		msg = launchErr.Message
 	} else if errors.As(err, &panoErr) {
 		code = http.StatusUnprocessableEntity
+		if panoErr.Conflict {
+			code = http.StatusConflict
+		}
 		msg = panoErr.Message
 	} else if errors.Is(err, entity.ErrTaskTitleLocked) {
 		code = http.StatusConflict

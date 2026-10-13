@@ -43,6 +43,14 @@ func (f *fakePano) SavePanoDoc(ctx context.Context, rq entity.SavePanoDocRequest
 	}}, nil
 }
 
+func (f *fakePano) EditPanoDoc(ctx context.Context, rq entity.EditPanoDocRequest) (*entity.SavePanoDocResponse, error) {
+	f.saw, f.origin = rq, entity.GetOrigin(ctx)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &entity.SavePanoDocResponse{Doc: entity.PanoDoc{ID: 7, Version: rq.Version + 1, Title: "Plan", Markdown: "edited", CreatedAt: panoAt, UpdatedAt: panoAt, Files: []entity.PanoFile{}}}, nil
+}
+
 func (f *fakePano) GetPanoDoc(ctx context.Context, rq entity.GetPanoDocRequest) (*entity.GetPanoDocResponse, error) {
 	f.saw, f.origin = rq, entity.GetOrigin(ctx)
 	if f.err != nil {
@@ -97,14 +105,20 @@ func TestRunPano_EveryAction(t *testing.T) {
 			[]string{`"id":"` + docID + `"`, `"createdBy":"` + wsID + `"`, `"ttlDays":30`, `"expiresAt":"2026-11-12T08:00:00Z"`, `"color":"green"`,
 				`"files":[{"id":"` + monoflake.ID(11).String() + `","filename":"chart.png","mimeType":"image/png","size":3,"url":"https://l/c","addedBy":"` + wsID + `","createdAt":"2026-10-13T08:00:00Z"}]`},
 			[]string{`"markdown"`, `"attachments"`, `"comments"`}},
-		{"save with an id replaces the doc",
-			PanoParams{Action: "save", Payload: map[string]any{"id": docID, "title": "Plan", "markdown": "text"}},
-			entity.SavePanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, Title: "Plan", Markdown: "text", Files: []entity.PanoUpload{}},
-			[]string{`"title":"Plan"`}, nil},
+		{"save with an id and a version replaces the doc",
+			PanoParams{Action: "save", Payload: map[string]any{"id": docID, "version": 3, "title": "Plan", "markdown": "text"}},
+			entity.SavePanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, Version: 3, Title: "Plan", Markdown: "text", Files: []entity.PanoUpload{}},
+			[]string{`"title":"Plan"`, `"version":0`}, nil},
+		{"edit applies the ops and answers the new version without the markdown",
+			PanoParams{Action: "edit", Payload: map[string]any{"id": docID, "version": 3, "ops": []PanoEditOp{
+				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}}}},
+			entity.EditPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, Version: 3, Ops: []entity.PanoEditOp{
+				{Op: "replace", OldString: "- [ ] x", NewString: "- [x] x"}, {Op: "append", Text: "\n- [ ] y"}}},
+			[]string{`"id":"` + docID + `"`, `"version":4`}, []string{`"markdown"`}},
 		{"read answers the markdown and linked files only",
 			PanoParams{Action: "read", Payload: map[string]any{"id": docID}},
 			entity.GetPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7},
-			[]string{`"markdown":"# Plan"`, `"files":[]`, `"updatedBy":"human"`, `"color":"yellow"`},
+			[]string{`"markdown":"# Plan"`, `"version":0`, `"files":[]`, `"updatedBy":"human"`, `"color":"yellow"`},
 			[]string{`"attachments"`, `"comments"`}},
 		{"read with comments and attachments adds both, naming their authors",
 			PanoParams{Action: "read", Payload: map[string]any{"id": docID, "includeComments": true, "includeAttachments": true}},
@@ -166,8 +180,9 @@ func TestRunPano_Refusals(t *testing.T) {
 		{"read with an id that is not one is not found", PanoParams{Action: "read", Payload: map[string]any{"id": "00000000000"}}, "Pano doc not found"},
 		{"comment with an id that is not one is not found", PanoParams{Action: "comment", Payload: map[string]any{"id": "00000000000", "comment": "c"}}, "Pano doc not found"},
 		{"attach with an id that is not one is not found", PanoParams{Action: "attach", Payload: map[string]any{"id": "00000000000", "files": []any{}}}, "Pano doc not found"},
+		{"edit with an id that is not one is not found", PanoParams{Action: "edit", Payload: map[string]any{"id": "00000000000", "version": 1, "ops": []any{}}}, "Pano doc not found"},
 		{"save with an id that is not one is not found", PanoParams{Action: "save", Payload: map[string]any{"id": "00000000000", "title": "t", "markdown": "m"}}, "Pano doc not found"},
-		{"an unknown action is refused naming the actions", PanoParams{Action: "list", Payload: map[string]any{"id": docID}}, `unknown action "list": use save, read, comment, attach, delete or help`},
+		{"an unknown action is refused naming the actions", PanoParams{Action: "list", Payload: map[string]any{"id": docID}}, `unknown action "list": use save, edit, read, comment, attach, delete or help`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakePano{}
@@ -190,6 +205,7 @@ func TestRunPano_PassesOnTheControllersError(t *testing.T) {
 		payload    map[string]any
 	}{
 		{"save", "save", map[string]any{"id": docID, "title": "t", "markdown": "m"}},
+		{"edit", "edit", map[string]any{"id": docID, "version": 1, "ops": []any{}}},
 		{"read", "read", map[string]any{"id": docID}},
 		{"comment", "comment on", map[string]any{"id": docID, "comment": "c"}},
 		{"attach", "attach to", map[string]any{"id": docID, "files": []any{}}},

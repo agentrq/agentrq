@@ -928,6 +928,26 @@ describe('a doc', () => {
       expect(api.updatePanoDoc).toHaveBeenCalledTimes(2);
     });
 
+    it('sends the version it read, and on a conflict keeps the draft, says so, and offers the latest', async () => {
+      api.getPanoDoc.mockImplementation((id) => Promise.resolve({ doc: { id, title: 'Release plan', markdown: '- [ ] ship', color: 'green', ttlDays: 7, version: 3 } }));
+      api.updatePanoDoc.mockRejectedValueOnce(Object.assign(new Error('the Pano doc changed since you read it'), { status: 409 }));
+      const { el } = await mount('/pano/d1?edit=1');
+      expect($(el, 'pano-conflict')).toBeNull();
+      await type($(el, 'pano-title-input'), 'My title');
+      await click($(el, 'pano-save'));
+      expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', expect.objectContaining({ title: 'My title', version: 3 }));
+      expect(lastToast()).toMatchObject({ type: 'error', message: expect.stringContaining('This note changed while you were editing it') });
+      expect(text($(el, 'pano-conflict'))).toContain('changed while you were editing it');
+      expect($(el, 'pano-title-input').value).toBe('My title');
+
+      api.getPanoDoc.mockImplementation((id) => Promise.resolve({ doc: { id, title: 'Theirs', markdown: '- [x] ship', color: 'green', ttlDays: 7, version: 4 } }));
+      await click($(el, 'pano-conflict-reload'));
+      expect($(el, 'pano-conflict')).toBeNull();
+      expect($(el, 'pano-title-input').value).toBe('Theirs');
+      await click($(el, 'pano-save'));
+      expect(api.updatePanoDoc).toHaveBeenLastCalledWith('d1', expect.objectContaining({ title: 'Theirs', version: 4 }));
+    });
+
     it('saves with the button, and stays in the editor when it fails', async () => {
       api.updatePanoDoc.mockRejectedValueOnce(new Error('file x.png is not linked'));
       const { el } = await mount('/pano/d1?edit=1');

@@ -263,3 +263,56 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
 
   traffic.expectClean()
 })
+
+// Two writers cannot overwrite each other. An update names the version it
+// read: an agent that is stale is refused, and so is the person whose editor
+// was open while an agent changed the doc, who keeps their draft and can load
+// the latest. An edit changes part of a doc.
+test('a write on a stale version is refused, for an agent and for the person', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const call = await agentSession(page, workspace.id)
+  const created = await pano(call, { action: 'save', title: unique('Versions'), markdown: '# Plan\n\n- [ ] backend\n- [ ] docs' })
+  expect(created.version, 'a new doc starts at version 1').toBe(1)
+
+  const ticked = await pano(call, { action: 'edit', id: created.id, version: 1, ops: [
+    { op: 'replace', oldString: '- [ ] backend', newString: '- [x] backend' },
+    { op: 'append', text: '\n- [ ] demo' },
+  ] })
+  expect(ticked.version, 'an edit moves the version').toBe(2)
+  expect([ticked.checklistDone, ticked.checklistTotal]).toEqual([1, 3])
+  expect((await pano(call, { action: 'read', id: created.id })).markdown).toBe('# Plan\n\n- [x] backend\n- [ ] docs\n- [ ] demo')
+
+  const stale = await pano(call, { action: 'save', id: created.id, version: 1, title: created.title, markdown: 'overwrite' })
+  expect(stale.refused, 'a save on the version before the edit').toContain('changed since you read it')
+  expect(stale.refused).toContain('now 2')
+  const missing = await pano(call, { action: 'edit', id: created.id, ops: [{ op: 'append', text: 'x' }] })
+  expect(missing.refused, 'an edit that sends no version').toContain('version')
+  const twice = await pano(call, { action: 'edit', id: created.id, version: 2, ops: [{ op: 'replace', oldString: '- [ ]', newString: '- [x]' }] })
+  expect(twice.refused, 'a replace that matches more than once').toContain('occurs 2 times')
+
+  // The person opens the editor; an agent changes the doc meanwhile.
+  await page.goto(`/pano/${created.id}?edit=1`)
+  await page.getByTestId('pano-markdown-input').fill('# Plan\n\nMy rewrite of the plan.')
+  const agent = await pano(call, { action: 'edit', id: created.id, version: 2, ops: [{ op: 'append', text: '\n- [ ] announce' }] })
+  expect(agent.version).toBe(3)
+  const refused = nextResponse(page, 'PUT', `/api/v1/pano/${created.id}`)
+  await page.getByTestId('pano-save').click()
+  expect((await refused).status(), 'the person\'s save on version 2').toBe(409)
+  await expect(page.getByTestId('pano-conflict')).toContainText('changed while you were editing it')
+  await expect(page.getByTestId('pano-markdown-input'), 'the draft is kept').toHaveValue('# Plan\n\nMy rewrite of the plan.')
+  await page.screenshot({ path: test.info().outputPath('pano-conflict-light.png'), animations: 'disabled' })
+  await page.evaluate(() => document.documentElement.classList.add('dark'))
+  await page.screenshot({ path: test.info().outputPath('pano-conflict-dark.png'), animations: 'disabled' })
+  await page.evaluate(() => document.documentElement.classList.remove('dark'))
+
+  // Load latest: the agent's text, and a save on it goes through.
+  await page.getByTestId('pano-conflict-reload').click()
+  await expect(page.getByTestId('pano-conflict')).toHaveCount(0)
+  await expect(page.getByTestId('pano-markdown-input')).toHaveValue('# Plan\n\n- [x] backend\n- [ ] docs\n- [ ] demo\n- [ ] announce')
+  const saved = nextResponse(page, 'PUT', `/api/v1/pano/${created.id}`)
+  await page.getByTestId('pano-save').click()
+  expect((await saved).status(), 'a save on the latest version').toBe(200)
+  expect((await pano(call, { action: 'read', id: created.id })).version).toBe(4)
+
+  traffic.expectClean({ allow: ['409 /api/v1/pano/' + created.id] })
+})

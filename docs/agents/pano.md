@@ -6,6 +6,11 @@
 - **A file is stored only if the markdown links it.** `save` refuses an
   unlinked file and drops one the markdown stops linking; `attach` is the only
   way in without a link. Relaxing this leaves blobs nothing points to.
+- **Every write moves `version`, and an update must send the one it read.**
+  The check is a compare-and-swap in `SavePanoDoc`, and `SyncPanoChecklist`
+  bumps it too, since it changes the markdown. `edit` reads, applies its ops
+  and goes through the same save, so it cannot skip the checks; the version is
+  checked before the ops, or a stale doc answers "not found" instead.
 - **The markdown is in the database, the files in storage.** A file's blob is
   written before its row and purged if the row fails, as with skills; the
   other order leaves a row whose file cannot be read. Lists `Omit("markdown")`.

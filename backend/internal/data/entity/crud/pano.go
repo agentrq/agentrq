@@ -27,9 +27,11 @@ type (
 		Color                PanoColor
 		ChecklistDone        int
 		ChecklistTotal       int
-		Files                []PanoFile
-		Attachments          []PanoFile
-		Comments             []PanoComment
+		// Version changes on every write; an update must send the one it read.
+		Version     int64
+		Files       []PanoFile
+		Attachments []PanoFile
+		Comments    []PanoComment
 	}
 
 	// PanoFile is a file of a doc: a linked file, named by a link in its
@@ -84,11 +86,13 @@ type (
 	// a link in Markdown, and replaces a linked file of the same name.
 	// TTLDays is how long the doc lives from this save; 0 keeps the doc's
 	// own, or the default for a new doc. A blank Color, a color's name, keeps
-	// the doc's own, or yellow for a new doc.
+	// the doc's own, or yellow for a new doc. Replacing a doc needs the
+	// Version the caller read; creating one needs none.
 	SavePanoDocRequest struct {
 		UserID      string
 		WorkspaceID int64
 		ID          int64
+		Version     int64
 		Title       string
 		Markdown    string
 		TTLDays     int
@@ -98,6 +102,26 @@ type (
 
 	SavePanoDocResponse struct {
 		Doc PanoDoc
+	}
+
+	// PanoEditOp is one change to a doc's markdown: Op "append" adds Text at
+	// the end; "replace" swaps OldString, which must occur exactly once, for
+	// NewString.
+	PanoEditOp struct {
+		Op        string
+		Text      string
+		OldString string
+		NewString string
+	}
+
+	// EditPanoDocRequest applies Ops, all or none, to the markdown of the doc
+	// at Version.
+	EditPanoDocRequest struct {
+		UserID      string
+		WorkspaceID int64
+		ID          int64
+		Version     int64
+		Ops         []PanoEditOp
 	}
 
 	DeletePanoDocRequest struct {
@@ -133,6 +157,8 @@ type (
 // caller.
 type PanoError struct {
 	Message string
+	// Conflict is a write made on a stale version of the doc.
+	Conflict bool
 }
 
 func (e *PanoError) Error() string { return e.Message }
