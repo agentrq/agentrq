@@ -2,8 +2,10 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { clampWidth } from './useSidePanel'
+import { useTaskOptions } from './useTaskOptions'
+import { useClearContext } from './useClearContext'
 
 /**
  * The Pano: the account's board of markdown docs, written by every workspace's
@@ -687,12 +689,35 @@ export function panoChatTask(message) {
  * The board's chat box. It talks to the supervisor workspace, which `ensure`
  * makes again when it was deleted, and sends only while its agent is
  * connected. A message starts a task there, which `send` returns.
+ *
+ * The task carries the same options as one from the New Task form (`opts`, a
+ * `useTaskOptions`), starting from the supervisor's own defaults; the first
+ * line of the message is its title, as the form's title field would be.
  */
 export function usePanoChat({ api, store }) {
   const supervisor = computed(() => panoSupervisor(store.workspaces))
   const online = computed(() => !!supervisor.value?.agentConnected)
   const message = ref('')
   const sending = ref(false)
+  const opts = useTaskOptions()
+  const clear = useClearContext({
+    workspaceId: computed(() => supervisor.value?.id),
+    fetchWorkspaceSession: api.fetchWorkspaceSession,
+  })
+
+  // The options the form offers, once there is a workspace to offer them for.
+  // Both lists degrade to empty: a task needs no completion trigger.
+  watch(() => supervisor.value?.id, async (id) => {
+    if (!id) return
+    opts.applyWorkspaceDefaults(supervisor.value)
+    clear.load()
+    const [events, workflows] = await Promise.all([
+      Promise.resolve(api.fetchEvents?.()).catch(() => null),
+      Promise.resolve(api.fetchWorkflows?.()).catch(() => null),
+    ])
+    opts.events.value = events?.events ?? []
+    opts.workflows.value = workflows?.workflows ?? []
+  }, { immediate: true })
 
   async function ensure() {
     if (supervisor.value) return
@@ -706,15 +731,22 @@ export function usePanoChat({ api, store }) {
     sending.value = true
     try {
       const { title, body } = panoChatTask(text)
-      const res = await api.createTask(supervisor.value.id, title, body)
+      const res = await api.createTask(
+        supervisor.value.id, title, body,
+        opts.assignee.value, opts.attachments.value,
+        opts.scheduleType.value !== 'none' ? 'cron' : 'notstarted', opts.cronSchedule.value, opts.allowAllCommands.value,
+        opts.selectedEventId.value, opts.selectedWorkflowId.value,
+        clear.offered.value && opts.clearContext.value,
+      )
       message.value = ''
+      opts.reset(supervisor.value)
       return res.task
     } finally {
       sending.value = false
     }
   }
 
-  return { supervisor, online, message, sending, ensure, send }
+  return { supervisor, online, message, sending, opts, clearContextOffered: clear.offered, ensure, send }
 }
 
 /** Where the chat column's dragged width is remembered, per device. */

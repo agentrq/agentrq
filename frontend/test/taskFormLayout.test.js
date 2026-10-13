@@ -13,7 +13,10 @@ import { describe, it, expect } from 'vitest'
 
 import source from '../src/views/TaskFormView.vue?raw'
 
+import tools from '../src/components/TaskOptionsTools.vue?raw'
+
 const template = source.slice(0, source.indexOf('<script'))
+const toolsTemplate = tools.slice(tools.indexOf('<template>'))
 
 describe('TaskFormView layout', () => {
   it('is a container its breakpoints are measured against', () => {
@@ -21,11 +24,11 @@ describe('TaskFormView layout', () => {
   })
 
   it('asks no breakpoint of the window', () => {
-    expect(template.match(/(?<=[\s"'])(sm|md|lg|xl|2xl):[\w[\]-]+/g)).toBeNull()
+    for (const t of [template, toolsTemplate]) expect(t.match(/(?<=[\s"'])(sm|md|lg|xl|2xl):[\w[\]-]+/g)).toBeNull()
   })
 
   it('shows the toggle as icons until the form has room for the words', () => {
-    expect(template).toContain('<span class="hidden @min-[40rem]:inline">Agent</span>')
-    expect(template).toContain('<span class="hidden @min-[40rem]:inline">Human</span>')
+    expect(toolsTemplate).toContain('<span class="hidden @min-[40rem]:inline">Agent</span>')
+    expect(toolsTemplate).toContain('<span class="hidden @min-[40rem]:inline">Human</span>')
   })
 })

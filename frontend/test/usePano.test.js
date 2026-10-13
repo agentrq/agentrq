@@ -974,9 +974,106 @@ describe('the chat with the supervisor', () => {
     const sent = chat.send();
     expect(chat.sending.value).toBe(true);
     expect(await sent).toEqual({ id: 't1', workspaceId: 's' });
-    expect(api.createTask).toHaveBeenCalledWith('s', 'Post the plan', panoChatTask('Post the plan').body);
+    expect(api.createTask).toHaveBeenCalledWith(
+      's', 'Post the plan', panoChatTask('Post the plan').body,
+      'agent', [], 'notstarted', '', false, '', '', false,
+    );
     expect(chat.message.value).toBe('');
     expect(chat.sending.value).toBe(false);
+  });
+
+  describe('with the options of a new task', () => {
+    const SUP = { id: 's', name: 'supervisor', agentConnected: true, allowAllCommands: true, clearContextDefault: true };
+    const settleChat = () => new Promise((r) => setTimeout(r, 0));
+    const apiWith = (extra = {}) => ({
+      createTask: vi.fn().mockResolvedValue({ task: { id: 't1', workspaceId: 's' } }),
+      fetchEvents: vi.fn().mockResolvedValue({ events: [{ id: 'e1', name: 'shipped' }] }),
+      fetchWorkflows: vi.fn().mockResolvedValue({ workflows: [{ id: 'w1', name: 'release' }] }),
+      fetchWorkspaceSession: vi.fn().mockResolvedValue({ id: 'sess', kind: 'claude-code', status: 'running' }),
+      ...extra,
+    });
+
+    it('starts from the supervisor\'s own defaults, and offers its events and workflows', async () => {
+      const { chat } = chatWith([SUP], apiWith());
+      await settleChat();
+      expect(chat.opts.allowAllCommands.value).toBe(true);
+      expect(chat.opts.clearContext.value).toBe(true);
+      expect(chat.opts.events.value).toEqual([{ id: 'e1', name: 'shipped' }]);
+      expect(chat.opts.workflows.value).toEqual([{ id: 'w1', name: 'release' }]);
+      expect(chat.clearContextOffered.value).toBe(true);
+    });
+
+    it('waits for the supervisor to exist before asking for anything', async () => {
+      const api = apiWith();
+      const { store, chat } = chatWith([], api);
+      await settleChat();
+      expect(api.fetchEvents).not.toHaveBeenCalled();
+      store.workspaces = [SUP];
+      await settleChat();
+      expect(api.fetchEvents).toHaveBeenCalledTimes(1);
+      expect(chat.opts.allowAllCommands.value).toBe(true);
+    });
+
+    it('gives each option to the task it creates', async () => {
+      const api = apiWith();
+      const { chat } = chatWith([SUP], api);
+      await settleChat();
+      chat.opts.assignee.value = 'human';
+      chat.opts.attachments.value = [{ filename: 'plan.md', mimeType: 'text/markdown', data: 'IyBwbGFu' }];
+      chat.opts.allowAllCommands.value = false;
+      chat.opts.selectedEventId.value = 'e1';
+      chat.opts.selectedWorkflowId.value = 'w1';
+      chat.opts.scheduleType.value = 'repeated';
+      chat.opts.repeatPreset.value = 'hourly';
+      await settleChat();
+      chat.message.value = 'Post the plan';
+      await chat.send();
+      expect(api.createTask).toHaveBeenCalledWith(
+        's', 'Post the plan', panoChatTask('Post the plan').body,
+        'human', [{ filename: 'plan.md', mimeType: 'text/markdown', data: 'IyBwbGFu' }],
+        'cron', '0 * * * *', false, 'e1', 'w1', true,
+      );
+    });
+
+    it('asks for a clean context only where /clear can reach a session', async () => {
+      const api = apiWith({ fetchWorkspaceSession: vi.fn().mockResolvedValue(null) });
+      const { chat } = chatWith([SUP], api);
+      await settleChat();
+      expect(chat.opts.clearContext.value).toBe(true);
+      chat.message.value = 'hi';
+      await chat.send();
+      expect(api.createTask.mock.calls[0][10]).toBe(false);
+    });
+
+    it('goes back to the supervisor\'s defaults once a task is sent', async () => {
+      const { chat } = chatWith([SUP], apiWith());
+      await settleChat();
+      chat.opts.assignee.value = 'human';
+      chat.opts.allowAllCommands.value = false;
+      chat.opts.attachments.value = [{ filename: 'a' }];
+      chat.message.value = 'hi';
+      await chat.send();
+      expect(chat.opts.assignee.value).toBe('agent');
+      expect(chat.opts.allowAllCommands.value).toBe(true);
+      expect(chat.opts.attachments.value).toEqual([]);
+    });
+
+    it('keeps the options when the task could not be created', async () => {
+      const { chat } = chatWith([SUP], apiWith({ createTask: vi.fn().mockRejectedValue(new Error('Failed to create task')) }));
+      await settleChat();
+      chat.opts.assignee.value = 'human';
+      chat.message.value = 'hi';
+      await expect(chat.send()).rejects.toThrow('Failed to create task');
+      expect(chat.opts.assignee.value).toBe('human');
+    });
+
+    it('offers no events or workflows when they cannot be read', async () => {
+      const api = apiWith({ fetchEvents: vi.fn().mockRejectedValue(new Error('down')), fetchWorkflows: vi.fn().mockRejectedValue(new Error('down')) });
+      const { chat } = chatWith([SUP], api);
+      await settleChat();
+      expect(chat.opts.events.value).toEqual([]);
+      expect(chat.opts.workflows.value).toEqual([]);
+    });
   });
 
   it('sends nothing when empty, offline, or already sending', async () => {

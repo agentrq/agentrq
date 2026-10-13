@@ -25,8 +25,26 @@ const api = vi.hoisted(() => ({
   attachPanoFiles: vi.fn(),
   createTask: vi.fn(),
   ensureSupervisorWorkspace: vi.fn(),
+  fetchEvents: vi.fn(),
+  fetchWorkflows: vi.fn(),
+  fetchWorkspaceSession: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
+
+// Voice input, faked: it dictates a word into the text it was given.
+vi.mock('../src/composables/useSpeechToText', async () => {
+  const { ref } = await import('vue');
+  return {
+    useSpeechToText: (target) => ({
+      isRecording: ref(false),
+      isTranscribing: ref(false),
+      isModelLoading: ref(false),
+      modelProgress: ref(0),
+      isSupported: ref(true),
+      toggleRecording: () => { target.value = `${target.value} dictated`; },
+    }),
+  };
+});
 
 // The event stream, faked: the page's handlers are kept so a test can send
 // them an event.
@@ -438,6 +456,127 @@ describe('the board', () => {
     notifyWebMCPChange();
     await settle();
     expect(api.listPanoDocs).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('the chat box\'s task options', () => {
+  const SUP = { id: 'sup', name: 'supervisor', agentConnected: true };
+  const sent = () => api.createTask.mock.calls[0];
+  const change = async (node, value) => {
+    node.value = value;
+    node.dispatchEvent(new Event('change'));
+    await settle();
+  };
+  const send = async (el, message = 'hello') => {
+    await type($(el, 'pano-chat-input'), message);
+    await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
+  };
+
+  beforeEach(() => {
+    api.listPanoDocs.mockResolvedValue({ docs: [] });
+    api.createTask.mockImplementation((workspaceId, title, body, a, f, status) => Promise.resolve({ task: { id: 't1', workspaceId, status } }));
+    api.fetchEvents.mockResolvedValue({ events: [{ id: 'e1', name: 'shipped' }] });
+    api.fetchWorkflows.mockResolvedValue({ workflows: [{ id: 'w1', name: 'release', startEventId: 'e1' }] });
+    api.fetchWorkspaceSession.mockResolvedValue(null);
+  });
+
+  it('are offered only while the agent is there, and send a plain task as the form does', async () => {
+    const offline = await mount('/pano', [...WORKSPACES, { ...SUP, agentConnected: false }]);
+    expect($(offline.el, 'task-attach')).toBeNull();
+
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    for (const control of ['task-attach', 'task-assignee-agent', 'task-assignee-human', 'task-yolo', 'task-schedule', 'task-completion']) {
+      expect($(el, control)).not.toBeNull();
+    }
+    expect($(el, 'task-clear-context')).toBeNull();
+    await send(el);
+    expect(sent().slice(0, 1)).toEqual(['sup']);
+    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', false, '', '', false]);
+  });
+
+  it('start from the supervisor\'s own settings', async () => {
+    api.fetchWorkspaceSession.mockResolvedValue({ id: 'sess', kind: 'claude-code', status: 'running' });
+    const { el } = await mount('/pano', [...WORKSPACES, { ...SUP, allowAllCommands: true, clearContextDefault: true }]);
+    await send(el);
+    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', true, '', '', true]);
+  });
+
+  it('take what voice input dictates into the message', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await type($(el, 'pano-chat-input'), 'hello');
+    await click([...$(el, 'pano-chat').querySelectorAll('button')].find((b) => b.querySelector('svg path[d^="M19 11"]')));
+    expect($(el, 'pano-chat-input').value).toBe('hello dictated');
+    await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
+    expect(sent()[1]).toBe('hello dictated');
+  });
+
+  it('send the assignee, and drop the agent-only controls for a person', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-assignee-human'));
+    expect($(el, 'task-yolo')).toBeNull();
+    await send(el);
+    expect(sent()[3]).toBe('human');
+  });
+
+  it('send allow-all-commands and clear-context when they are switched on', async () => {
+    api.fetchWorkspaceSession.mockResolvedValue({ id: 'sess', kind: 'claude-code', status: 'running' });
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-yolo'));
+    await click($(el, 'task-clear-context'));
+    await send(el);
+    expect(sent()[7]).toBe(true);
+    expect(sent()[10]).toBe(true);
+  });
+
+  it('send the files chosen, which can be taken back, and clear them with the message', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await pick($(el, 'task-file-input'), [new File(['one'], 'one.txt', { type: 'text/plain' }), new File(['two'], 'two.txt', { type: 'text/plain' })]);
+    await new Promise((r) => setTimeout(r, 30));
+    expect($$(el, 'attachment-chip').map(text)).toEqual(['one.txt', 'two.txt']);
+    await click($$(el, 'attachment-remove')[0]);
+    expect($$(el, 'attachment-chip').map(text)).toEqual(['two.txt']);
+    await send(el);
+    expect(sent()[4]).toEqual([{ filename: 'two.txt', mimeType: 'text/plain', data: btoa('two') }]);
+  });
+
+  it('send a repeated schedule as a scheduled task, and keep the board rather than open a chat', async () => {
+    const { el, router } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-schedule'));
+    await click($(el, 'task-schedule-repeated'));
+    await change($(el, 'task-repeat-preset'), 'hourly');
+    await send(el);
+    expect(sent().slice(5, 7)).toEqual(['cron', '0 * * * *']);
+    expect(lastToast()).toMatchObject({ type: 'success', message: 'Task scheduled' });
+    expect(router.currentRoute.value.fullPath).toBe('/pano');
+  });
+
+  it('send a one-time schedule', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-schedule'));
+    await click($(el, 'task-schedule-onetime'));
+    await type($(el, 'task-onetime-date'), '2030-03-04T05:06');
+    await send(el);
+    const d = new Date('2030-03-04T05:06');
+    expect(sent()[5]).toBe('cron');
+    expect(sent()[6]).toBe(`${d.getUTCMinutes()} ${d.getUTCHours()} ${d.getUTCDate()} ${d.getUTCMonth() + 1} *`);
+  });
+
+  it('send the event to run on completion', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-completion'));
+    await change($(el, 'task-event'), 'e1');
+    await send(el);
+    expect(sent().slice(8, 10)).toEqual(['e1', '']);
+  });
+
+  it('send a workflow instead of the event picked before it, and the reverse', async () => {
+    const { el } = await mount('/pano', [...WORKSPACES, SUP]);
+    await click($(el, 'task-completion'));
+    await change($(el, 'task-event'), 'e1');
+    await click($(el, 'task-completion-workflow'));
+    await change($(el, 'task-workflow'), 'w1');
+    await send(el);
+    expect(sent().slice(8, 10)).toEqual(['', 'w1']);
   });
 });
 

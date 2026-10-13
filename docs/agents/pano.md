@@ -34,3 +34,7 @@
   does not**, because the CLI reads a workspace's `.mcp.json`.
 - **The doc page must not reload on its own delete**: the `pano.changed` it
   causes would GET a deleted doc and 404.
+- **The chat box's task options are the New Task form's**, one
+  `useTaskOptions` and one `TaskOptionsTools` row for both: a control added to
+  the form reaches the Pano without a second copy. The row takes no window
+  breakpoint, only the nearest `@container`.

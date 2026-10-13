@@ -56,8 +56,8 @@ watch(model, () => nextTick(fit))
     <textarea :ref="setInput" v-model="model" rows="1" v-bind="$attrs"
       class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 disabled:opacity-50 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"></textarea>
 
-    <div class="flex items-center justify-between px-3 pb-2 pt-1">
-      <div class="relative flex items-center gap-2">
+    <div class="flex items-center justify-between gap-2 px-3 pb-2 pt-1">
+      <div class="relative flex flex-wrap items-center gap-2 min-w-0">
         <slot name="tools" />
       </div>
       <div class="flex items-center gap-2 shrink-0">

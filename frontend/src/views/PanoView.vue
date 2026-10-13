@@ -21,6 +21,8 @@ import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
 import ComposerBox from '../components/ComposerBox.vue'
 import ComposerNotice from '../components/ComposerNotice.vue'
+import TaskOptionsTools from '../components/TaskOptionsTools.vue'
+import TaskAttachmentChips from '../components/TaskAttachmentChips.vue'
 import DeleteModal from '../components/DeleteModal.vue'
 import { renderMarkdown } from '../utils/markdown'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -40,13 +42,15 @@ const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false 
 // a message is sent its task opens in a card of its own beside the page,
 // which App.vue draws (PanoChatColumn), as it does the desktop side panel.
 const chat = usePanoChat({ api, store: workspaceStore })
-const { supervisor, online: chatOnline, message: chatMessage, sending: chatSending } = chat
+const { supervisor, online: chatOnline, message: chatMessage, sending: chatSending, opts: chatOpts, clearContextOffered } = chat
+const chatInput = ref(null)
 const chatOpen = computed(() => !!route.params.taskId)
 
 async function sendChat() {
   try {
     const task = await chat.send()
-    if (task) router.push(`/pano/chat/${task.workspaceId}/${task.id}`)
+    if (task?.status === 'cron') notifySuccess('Task scheduled')
+    else if (task) router.push(`/pano/chat/${task.workspaceId}/${task.id}`)
   } catch (err) {
     notifyError(err.message)
   }
@@ -233,12 +237,18 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
 
     <!-- The chat box: large screens only, and only until a chat is open,
          whose own composer takes over. -->
-    <form v-if="!chatOpen" data-test="pano-chat" class="hidden lg:block shrink-0 px-4 pt-3" @submit.prevent="sendChat">
-      <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto"
+    <form v-if="!chatOpen" data-test="pano-chat" class="@container hidden lg:block shrink-0 px-4 pt-3" @submit.prevent="sendChat">
+      <TaskAttachmentChips :attachments="chatOpts.attachments.value" @remove="(i) => chatOpts.attachments.value.splice(i, 1)" class="pb-2" />
+      <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto" :input-ref="(el) => { chatInput = el }"
         @keydown.meta.enter.prevent="sendChat" @keydown.ctrl.enter.prevent="sendChat"
         :disabled="!chatOnline || chatSending"
         :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano... (Cmd ⌘ + Enter to send)` : 'Connect your supervisor agent to start chatting'"
-        :send-disabled="!chatOnline || !chatMessage.trim() || chatSending" />
+        :send-disabled="!chatOnline || !chatMessage.trim() || chatSending">
+        <template v-if="chatOnline" #tools>
+          <TaskOptionsTools :opts="chatOpts" v-model:text="chatMessage" :workspace="supervisor" :workspace-id="supervisor.id"
+            :clear-context-offered="clearContextOffered" :input-el="chatInput" />
+        </template>
+      </ComposerBox>
       <ComposerNotice v-if="!chatOnline" data-test="pano-chat-offline" tone="red" pulse>
         Supervisor offline. Connect your supervisor agent to start chatting.
         <template #action>
