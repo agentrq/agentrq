@@ -614,3 +614,59 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
   }
 }
+
+/** The workspace the Pano's chat talks to: the account's supervisor. */
+export function panoSupervisor(workspaces = []) {
+  return workspaces.find((w) => w.name === 'supervisor')
+}
+
+/** How long a chat's first line may run as its task's title. */
+export const PANO_CHAT_TITLE_MAX = 80
+
+/**
+ * The task a chat message starts: its first line is the title, and the body
+ * says where it was written, so the supervisor knows the person is on the
+ * board and what they probably want from it.
+ */
+export function panoChatTask(message) {
+  const text = message.trim()
+  const firstLine = text.split('\n')[0].trim()
+  const title = firstLine.length > PANO_CHAT_TITLE_MAX ? `${firstLine.slice(0, PANO_CHAT_TITLE_MAX - 1).trimEnd()}…` : firstLine
+  const body = `${text}\n\n---\nSent from the Pano chat: the person is looking at the Pano board, the account's shared docs. ` +
+    'They may want a doc posted or changed, or to talk about one: read the board with the pano tool when it helps. Reply in this task.'
+  return { title, body }
+}
+
+/**
+ * The board's chat box. It talks to the supervisor workspace, which `ensure`
+ * makes again when it was deleted, and sends only while its agent is
+ * connected. A message starts a task there, which `send` returns.
+ */
+export function usePanoChat({ api, store }) {
+  const supervisor = computed(() => panoSupervisor(store.workspaces))
+  const online = computed(() => !!supervisor.value?.agentConnected)
+  const message = ref('')
+  const sending = ref(false)
+
+  async function ensure() {
+    if (supervisor.value) return
+    await api.ensureSupervisorWorkspace()
+    await store.fetchWorkspaces()
+  }
+
+  async function send() {
+    const text = message.value.trim()
+    if (!text || !online.value || sending.value) return null
+    sending.value = true
+    try {
+      const { title, body } = panoChatTask(text)
+      const res = await api.createTask(supervisor.value.id, title, body)
+      message.value = ''
+      return res.task
+    } finally {
+      sending.value = false
+    }
+  }
+
+  return { supervisor, online, message, sending, ensure, send }
+}

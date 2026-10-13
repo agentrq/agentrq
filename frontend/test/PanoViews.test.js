@@ -24,6 +24,7 @@ const api = vi.hoisted(() => ({
   addPanoComment: vi.fn(),
   attachPanoFiles: vi.fn(),
   createTask: vi.fn(),
+  ensureSupervisorWorkspace: vi.fn(),
 }));
 vi.mock('../src/api', () => api);
 
@@ -66,13 +67,18 @@ const apps = [];
 const WORKSPACES = [{ id: 'ws1', name: 'Home' }, { id: 'ws2', name: 'ops' }];
 const HOUR = 60 * 60 * 1000;
 
-async function mount(at) {
+async function mount(at, workspaces = WORKSPACES) {
   const el = document.createElement('div');
   document.body.append(el);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/pano', component: PanoView },
+      {
+        path: '/pano',
+        component: PanoView,
+        children: [{ path: 'chat/:workspaceId/:taskId', component: { render() { return h('p', { 'data-test': 'pano-chat-task' }, `${this.$route.params.workspaceId}/${this.$route.params.taskId}`); } } }],
+      },
+      { path: '/workspaces/:id', component: { render: () => null } },
       { path: '/pano/new', component: PanoDocView },
       { path: '/pano/:id', component: PanoDocView },
       { path: '/workspaces/:id/tasks/:taskId', component: { render: () => null } },
@@ -85,7 +91,7 @@ async function mount(at) {
   const pinia = createPinia();
   app.use(pinia);
   app.use(router);
-  useWorkspaceStore(pinia).workspaces = WORKSPACES;
+  useWorkspaceStore(pinia).workspaces = workspaces;
   app.mount(el);
   apps.push(app);
   await settle();
@@ -145,6 +151,8 @@ beforeEach(() => {
   toasts.value = [];
   bus.handlers.length = 0;
   vi.clearAllMocks();
+  api.ensureSupervisorWorkspace.mockResolvedValue({ workspace: { id: 'sup', name: 'supervisor' } });
+  api.fetchWorkspaces.mockResolvedValue({ workspaces: WORKSPACES });
 });
 
 describe('the board', () => {
@@ -426,6 +434,108 @@ describe('the board', () => {
     notifyWebMCPChange();
     await settle();
     expect(api.listPanoDocs).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('the chat with the supervisor', () => {
+  const OFFLINE = [...WORKSPACES, { id: 'sup', name: 'supervisor', agentConnected: false }];
+  const ONLINE = [...WORKSPACES, { id: 'sup', name: 'supervisor', agentConnected: true }];
+
+  beforeEach(() => {
+    api.listPanoDocs.mockResolvedValue({ docs: [] });
+    api.createTask.mockImplementation((workspaceId, title) => Promise.resolve({ task: { id: 't1', workspaceId, title } }));
+  });
+
+  it('is turned off while the supervisor\'s agent is away, and points at connecting it', async () => {
+    const { el } = await mount('/pano', OFFLINE);
+    const input = $(el, 'pano-chat-input');
+    expect(input.disabled).toBe(true);
+    expect(input.placeholder).toBe('Connect your supervisor agent to start chatting');
+    expect($(el, 'pano-chat-send')).toBeNull();
+    expect($(el, 'pano-chat-connect').getAttribute('href')).toBe('/workspaces/sup');
+    expect(api.ensureSupervisorWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('turns on as soon as the agent connects', async () => {
+    const { el } = await mount('/pano', OFFLINE);
+    useWorkspaceStore().updateAgentStatus('sup', true);
+    await settle();
+    expect($(el, 'pano-chat-input').disabled).toBe(false);
+    expect($(el, 'pano-chat-input').placeholder).toContain('Ask supervisor about the Pano');
+    expect($(el, 'pano-chat-connect')).toBeNull();
+  });
+
+  it('makes the supervisor again when it was deleted, and reads the workspaces back', async () => {
+    await mount('/pano');
+    expect(api.ensureSupervisorWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchWorkspaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why the supervisor could not be made', async () => {
+    api.ensureSupervisorWorkspace.mockRejectedValueOnce(new Error('Failed to set up the supervisor workspace'));
+    await mount('/pano');
+    expect(lastToast()).toMatchObject({ type: 'error', message: 'Failed to set up the supervisor workspace' });
+  });
+
+  it('sends on Enter as a supervisor task that says where it came from, and opens it beside the board', async () => {
+    const { el, router } = await mount('/pano', ONLINE);
+    await type($(el, 'pano-chat-input'), 'Post a release checklist\nfor Friday');
+    const event = await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    expect(event.defaultPrevented).toBe(true);
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+    const [workspaceId, title, body] = api.createTask.mock.calls[0];
+    expect(workspaceId).toBe('sup');
+    expect(title).toBe('Post a release checklist');
+    expect(body).toContain('Post a release checklist\nfor Friday');
+    expect(body).toContain('Sent from the Pano chat');
+    await settle();
+    expect(router.currentRoute.value.fullPath).toBe('/pano/chat/sup/t1');
+    expect(text($(el, 'pano-chat-task'))).toBe('sup/t1');
+    expect($(el, 'pano-chat')).toBeNull();
+    expect($$(el, 'pano-new-card')).toHaveLength(1);
+  });
+
+  it('sends with the button too, and keeps Shift+Enter for a new line and Enter for an input method', async () => {
+    const { el } = await mount('/pano', ONLINE);
+    expect($(el, 'pano-chat-send').disabled).toBe(true);
+    await type($(el, 'pano-chat-input'), 'hello');
+    const event = await key($(el, 'pano-chat-input'), { key: 'Enter', shiftKey: true });
+    expect(event.defaultPrevented).toBe(false);
+    // Enter that picks a word in an input method's candidates is not a send.
+    expect((await key($(el, 'pano-chat-input'), { key: 'Enter', isComposing: true })).defaultPrevented).toBe(false);
+    await key($(el, 'pano-chat-input'), { key: 'a' });
+    expect(api.createTask).not.toHaveBeenCalled();
+    $(el, 'pano-chat').dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends nothing for an empty box', async () => {
+    const { el, router } = await mount('/pano', ONLINE);
+    await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    expect(api.createTask).not.toHaveBeenCalled();
+    expect(router.currentRoute.value.fullPath).toBe('/pano');
+  });
+
+  it('says why a message was not sent, and keeps it', async () => {
+    api.createTask.mockRejectedValueOnce(new Error('Failed to create task'));
+    const { el, router } = await mount('/pano', ONLINE);
+    await type($(el, 'pano-chat-input'), 'hello');
+    await key($(el, 'pano-chat-input'), { key: 'Enter' });
+    expect(lastToast()).toMatchObject({ type: 'error', message: 'Failed to create task' });
+    expect($(el, 'pano-chat-input').value).toBe('hello');
+    expect(router.currentRoute.value.fullPath).toBe('/pano');
+  });
+
+  it('opens a chat from its address, and closes back to the board', async () => {
+    const { el, router } = await mount('/pano/chat/sup/t9', ONLINE);
+    expect(text($(el, 'pano-chat-pane'))).toContain('Chat with supervisor');
+    expect(text($(el, 'pano-chat-task'))).toBe('sup/t9');
+    await click($(el, 'pano-chat-close'));
+    await settle();
+    expect(router.currentRoute.value.fullPath).toBe('/pano');
+    expect($(el, 'pano-chat-pane')).toBeNull();
+    expect($(el, 'pano-chat')).not.toBeNull();
   });
 });
 

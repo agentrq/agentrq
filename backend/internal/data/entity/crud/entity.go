@@ -170,6 +170,10 @@ type (
 		Workspace Workspace
 	}
 
+	EnsureSupervisorWorkspaceRequest struct {
+		UserID string
+	}
+
 	ListWorkspacesRequest struct {
 		UserID          string
 		IncludeArchived bool

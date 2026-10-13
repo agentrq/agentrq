@@ -48,6 +48,7 @@ describe('routes', () => {
       '/machines',
       '/machines/:id',
       '/pano',
+      '/pano/chat/:workspaceId/:taskId',
       '/pano/new',
       '/pano/:id',
       '/skills',

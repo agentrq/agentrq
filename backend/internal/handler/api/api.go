@@ -655,6 +655,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r := h.router.Group("/workspaces")
 	r.Post("", h.createWorkspace())
 	r.Get("", h.listWorkspaces())
+	r.Post("/supervisor", h.ensureSupervisorWorkspace())
 	r.Get("/:id", h.getWorkspace())
 	r.Get("/:id/token", h.getWorkspaceToken())
 	r.Delete("/:id", h.deleteWorkspace())
@@ -875,6 +876,30 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
 		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspace.ID))
 		h.enrichWorkspaceSlack(ctx, &rs.Workspace)
+
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromGetWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID)))
+	}
+}
+
+// ensureSupervisorWorkspace answers with the account's supervisor workspace,
+// made with signup's defaults if there is none, so the Pano's chat always has
+// somebody to talk to.
+func (h *handler) ensureSupervisorWorkspace() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.EnsureSupervisorWorkspace(ctx, entity.EnsureSupervisorWorkspaceRequest{
+			UserID: c.Locals("user_id").(string),
+		})
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to ensure the supervisor workspace")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromGetWorkspaceResponseEntityToHTTPResponse(rs, h.mcpURL(rs.Workspace.ID)))

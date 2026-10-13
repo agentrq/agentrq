@@ -266,6 +266,24 @@ paths:
                   workspace: { $ref: '#/components/schemas/Workspace' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /workspaces/supervisor:
+    post:
+      tags: [Workspaces]
+      summary: Get the supervisor workspace, creating it if there is none
+      description: |
+        Answers with the account's `supervisor` workspace. When it has been
+        deleted, it is made again with the defaults a new account gets. The
+        Pano's chat talks to it.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace: { $ref: '#/components/schemas/Workspace' }
+
   /workspaces/{id}:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'

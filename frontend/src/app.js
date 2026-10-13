@@ -74,7 +74,15 @@ export const routes = [
 
   // The Pano belongs to the account: every workspace writes to it. "new" is
   // the editor for a doc not written yet, ranked above the doc's own page.
-  { path: '/pano', component: () => import('./views/PanoView.vue') },
+  // A chat with the supervisor, started from the board's chat box, opens
+  // beside the board.
+  {
+    path: '/pano',
+    component: () => import('./views/PanoView.vue'),
+    children: [
+      { path: 'chat/:workspaceId/:taskId', component: () => import('./views/TaskDetailView.vue') }
+    ]
+  },
   { path: '/pano/new', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
   { path: '/pano/:id', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
 

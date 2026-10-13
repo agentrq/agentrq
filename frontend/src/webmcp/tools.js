@@ -134,7 +134,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Take the user to a page: an in-app path, ' +
+        'Take the user to an in-app path, ' +
         'optionally ?query; IDs from getCurrentPage or list tools. Pages:\n' +
         '- "/" every workspace, "/workspaces/new" creates one.\n' +
         '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
@@ -144,7 +144,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/<id>", "/workflows", "/workflows/<id>", "/skills", "/skills/<name>", "/pano", "/pano/new", "/pano/<id>".\n' +
+        '- "/events", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/pano/new", ' +
+        '"/pano/chat/<workspaceId>/<taskId>".\n' +
         '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
         'Others are refused. Returns the page reached.',
@@ -214,6 +215,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       required: ['workspaceId'],
       screen: before(settingsPage()),
       run: ({ workspaceId, ...fields }) => api.updateWorkspace(workspaceId, fields),
+    }),
+    tool({
+      name: 'ensureSupervisorWorkspace',
+      description:
+        'The account\'s "supervisor" workspace, the one that runs the other workspaces and answers ' +
+        'the Pano\'s chat. Made again with the defaults a new account gets if it was deleted.',
+      screen: after((_, r) => (r?.workspace?.id ? `/workspaces/${seg(r.workspace.id)}` : '/')),
+      run: () => api.ensureSupervisorWorkspace(),
     }),
     tool({
       name: 'archiveWorkspace',

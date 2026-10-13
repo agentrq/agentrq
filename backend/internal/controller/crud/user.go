@@ -12,6 +12,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	"github.com/mustafaturan/monoflake"
 )
 
 // defaultSupervisorWorkspaceDescription and
@@ -121,28 +122,9 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 
 	// Every new account gets a "supervisor" workspace, the one whose
 	// .mcp.json setup snippet also wires in the cross-workspace coremcp tools.
-	supervisorWorkspace := model.Workspace{
-		ID:                    c.idgen.NextID(),
-		CreatedAt:             created.CreatedAt,
-		UpdatedAt:             created.CreatedAt,
-		UserID:                created.ID,
-		Name:                  "supervisor",
-		Description:           defaultSupervisorWorkspaceDescription,
-		SelfLearningLoopNote:  defaultSupervisorWorkspaceSelfLearningLoopNote,
-		InputSendDelaySeconds: defaultInputSendDelaySeconds,
+	if _, err := c.createSupervisorWorkspace(ctx, created.ID, created.CreatedAt); err != nil {
+		return nil, err
 	}
-	createdWorkspace, err := c.repository.CreateWorkspace(ctx, supervisorWorkspace)
-	if err != nil {
-		return nil, fmt.Errorf("create supervisor workspace: %w", err)
-	}
-	c.emitEvent(ctx, entity.CRUDEvent{
-		Action:       entity.ActionWorkspaceCreate,
-		WorkspaceID:  createdWorkspace.ID,
-		UserID:       createdWorkspace.UserID,
-		ResourceType: entity.ResourceWorkspace,
-		ResourceID:   createdWorkspace.ID,
-		Actor:        entity.ActorHuman,
-	})
 
 	return &entity.FindOrCreateUserResponse{
 		User: entity.User{
@@ -154,6 +136,53 @@ func (c *controller) FindOrCreateUser(ctx context.Context, req entity.FindOrCrea
 			Picture:   created.Picture,
 		},
 	}, nil
+}
+
+// createSupervisorWorkspace makes the supervisor workspace with the defaults
+// above: at signup, and again for the Pano's chat when it has since been deleted.
+func (c *controller) createSupervisorWorkspace(ctx context.Context, userID int64, at time.Time) (model.Workspace, error) {
+	created, err := c.repository.CreateWorkspace(ctx, model.Workspace{
+		ID:                    c.idgen.NextID(),
+		CreatedAt:             at,
+		UpdatedAt:             at,
+		UserID:                userID,
+		Name:                  supervisorWorkspaceName,
+		Description:           defaultSupervisorWorkspaceDescription,
+		SelfLearningLoopNote:  defaultSupervisorWorkspaceSelfLearningLoopNote,
+		InputSendDelaySeconds: defaultInputSendDelaySeconds,
+	})
+	if err != nil {
+		return model.Workspace{}, fmt.Errorf("create supervisor workspace: %w", err)
+	}
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceCreate,
+		WorkspaceID:  created.ID,
+		UserID:       created.UserID,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   created.ID,
+		Actor:        entity.ActorHuman,
+	})
+	return created, nil
+}
+
+// EnsureSupervisorWorkspace returns the account's supervisor workspace, and
+// makes it as signup does when there is none: the Pano's chat talks to it.
+func (c *controller) EnsureSupervisorWorkspace(ctx context.Context, req entity.EnsureSupervisorWorkspaceRequest) (*entity.GetWorkspaceResponse, error) {
+	userID := monoflake.IDFromBase62(req.UserID).Int64()
+	workspaces, err := c.repository.ListWorkspaces(ctx, userID, false)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range workspaces {
+		if w.Name == supervisorWorkspaceName {
+			return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(w)}, nil
+		}
+	}
+	created, err := c.createSupervisorWorkspace(ctx, userID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return &entity.GetWorkspaceResponse{Workspace: fromModelWorkspaceToEntity(created)}, nil
 }
 
 func (c *controller) CreateUser(ctx context.Context, u entity.User) (entity.User, error) {

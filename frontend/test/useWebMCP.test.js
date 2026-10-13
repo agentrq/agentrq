@@ -276,6 +276,7 @@ describe('the navigate tool\'s map of the interface', () => {
     '/pano',
     '/pano/new',
     '/pano/p1',
+    '/pano/chat/ws1/t1',
     '/sessions/s1',
     '/extensions',
     '/extensions/acme/home',

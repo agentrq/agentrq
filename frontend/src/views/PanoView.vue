@@ -9,13 +9,13 @@
  * The Pano board: every doc of the account as a post-it, showing only its
  * opening. Thin on purpose: the rules are in `usePano`, where they are tested.
  */
-import { onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoBoard, panoAuthor, panoColor, panoTilt, panoInitial, timeAgo, expiresLabel, isOwnPanoDoc, recolorPanoDoc, PANO_COLORS,
-  panoCheckable, panoCheckboxIndex, checkPanoItem, panoAssignees,
+  panoCheckable, panoCheckboxIndex, checkPanoItem, panoAssignees, usePanoChat,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
@@ -26,11 +26,35 @@ import { useToasts } from '../composables/useToasts'
 import { useEventBus } from '../useEventBus'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 
+const route = useRoute()
 const router = useRouter()
 const { docs, loading, error, query, color, shown, load } = usePanoBoard({ api })
-const { workspaces } = storeToRefs(useWorkspaceStore())
+const workspaceStore = useWorkspaceStore()
+const { workspaces } = storeToRefs(workspaceStore)
 const { notifySuccess, notifyError } = useToasts()
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
+
+// The chat with the supervisor: a box under the board on a large screen, and
+// once a message is sent, its task in a phone-wide column beside the board.
+const chat = usePanoChat({ api, store: workspaceStore })
+const { supervisor, online: chatOnline, message: chatMessage, sending: chatSending } = chat
+const chatOpen = computed(() => !!route.params.taskId)
+
+async function sendChat() {
+  try {
+    const task = await chat.send()
+    if (task) router.push(`/pano/chat/${task.workspaceId}/${task.id}`)
+  } catch (err) {
+    notifyError(err.message)
+  }
+}
+
+// Enter sends; Shift+Enter starts a new line.
+function onChatKey(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  sendChat()
+}
 
 // The doc whose color menu is open, and the one waiting on the delete dialog.
 const recoloring = ref(null)
@@ -47,6 +71,7 @@ function onKey(event) {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKey)
+  chat.ensure().catch((err) => notifyError(err.message))
   await load()
   // Agents write the Pano from every workspace; their docs show as they land.
   onEvent((event) => {
@@ -106,7 +131,24 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
 </script>
 
 <template>
-  <div class="flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
+  <!-- lg:flex-row: App.vue adds flex-col to every page. -->
+  <div class="flex lg:flex-row h-full w-full min-h-0 gap-4">
+    <!-- The conversation, laid out as on a phone; alone on a small screen. -->
+    <section v-if="chatOpen" data-test="pano-chat-pane" class="flex flex-col min-h-0 w-full lg:w-[480px] lg:shrink-0">
+      <div class="flex items-center justify-between gap-2 px-4 pb-2 shrink-0">
+        <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Chat with supervisor</span>
+        <router-link to="/pano" data-test="pano-chat-close" title="Close the chat" aria-label="Close the chat"
+          class="p-1 rounded-sm text-gray-400 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-zinc-50 hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        </router-link>
+      </div>
+      <div class="flex-1 min-h-0 flex flex-col lg:border-r border-gray-200 dark:border-zinc-800">
+        <router-view />
+      </div>
+    </section>
+
+  <div :class="chatOpen ? 'hidden lg:flex' : 'flex'" class="@container flex-1 min-w-0 min-h-0 flex-col">
+  <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-4 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
         <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Pano</h1>
@@ -138,7 +180,8 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
       <p v-if="loading" class="text-[11px] text-gray-400 dark:text-zinc-500">Loading the Pano…</p>
       <p v-else-if="error" data-test="pano-error" class="text-[11px] font-bold text-red-600 dark:text-red-400">{{ error }}</p>
 
-      <div v-else class="grid gap-x-5 gap-y-7 pt-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <!-- Columns follow the board's own width, which the chat narrows. -->
+      <div v-else class="grid gap-x-5 gap-y-7 pt-2 grid-cols-1 @min-[33rem]:grid-cols-2 @min-[57rem]:grid-cols-3 @min-[73rem]:grid-cols-4 @min-[89rem]:grid-cols-5">
         <!-- A new note, first on the board; a dot starts it in that color. -->
         <div data-test="pano-new-card"
           class="relative flex flex-col items-center justify-center gap-3 h-48 sm:h-72 p-5 rounded-md border border-dashed border-gray-300 dark:border-zinc-700 bg-white/60 dark:bg-zinc-900/60 text-center">
@@ -204,6 +247,27 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
         </article>
       </div>
     </div>
+
+  </div>
+
+    <!-- The chat box: large screens only, and only until a chat is open,
+         whose own composer takes over. -->
+    <form v-if="!chatOpen" data-test="pano-chat" class="hidden lg:block shrink-0 px-4 pt-3" @submit.prevent="sendChat">
+      <div :class="chatOnline ? 'focus-within:border-gray-900 dark:focus-within:border-white' : 'opacity-70'"
+        class="flex items-end gap-2 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm shadow-sm transition-colors">
+        <textarea v-model="chatMessage" data-test="pano-chat-input" rows="1" dir="auto" @keydown="onChatKey"
+          :disabled="!chatOnline || chatSending"
+          :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano… (Enter to send)` : 'Connect your supervisor agent to start chatting'"
+          class="flex-1 min-w-0 px-3.5 py-3 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none max-h-[150px] [field-sizing:content] custom-scrollbar disabled:cursor-not-allowed"></textarea>
+        <router-link v-if="!chatOnline && supervisor" :to="`/workspaces/${supervisor.id}`" data-test="pano-chat-connect"
+          class="shrink-0 m-2 px-3 py-1.5 rounded-lg bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest">Connect</router-link>
+        <button v-else-if="chatOnline" type="submit" data-test="pano-chat-send" :disabled="!chatMessage.trim() || chatSending" title="Send" aria-label="Send"
+          class="shrink-0 m-2 h-7 w-7 rounded-sm bg-black dark:bg-white text-white dark:text-black flex items-center justify-center disabled:opacity-30 transition-opacity">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" /></svg>
+        </button>
+      </div>
+    </form>
+  </div>
 
     <DeleteModal
       :show="!!pendingDelete"

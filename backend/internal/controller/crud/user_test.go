@@ -14,6 +14,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/golang/mock/gomock"
+	"github.com/mustafaturan/monoflake"
 )
 
 func TestFindOrCreateUser_FoundByEmail_NoUpdate(t *testing.T) {
@@ -157,5 +158,66 @@ func TestFindOrCreateUser_EmptyEmail(t *testing.T) {
 	}
 	if resp != nil {
 		t.Fatal("expected nil response for empty email")
+	}
+}
+
+func TestEnsureSupervisorWorkspace_ReturnsTheExistingOne(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), int64(999), false).Return([]model.Workspace{
+		{ID: 1, UserID: 999, Name: "website"},
+		{ID: 2, UserID: 999, Name: "supervisor"},
+	}, nil)
+
+	resp, err := e.controller.EnsureSupervisorWorkspace(context.Background(), entity.EnsureSupervisorWorkspaceRequest{UserID: monoflake.ID(999).String()})
+	if err != nil {
+		t.Fatalf("EnsureSupervisorWorkspace failed: %v", err)
+	}
+	if resp.Workspace.ID != 2 {
+		t.Errorf("EnsureSupervisorWorkspace returned workspace %d, want the existing supervisor 2", resp.Workspace.ID)
+	}
+}
+
+func TestEnsureSupervisorWorkspace_MakesOneWithSignupDefaultsWhenThereIsNone(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), int64(999), false).Return([]model.Workspace{{ID: 1, UserID: 999, Name: "website"}}, nil)
+	e.idgen.EXPECT().NextID().Return(int64(1000))
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
+		if w.ID != 1000 || w.UserID != 999 || w.Name != "supervisor" || w.Description != defaultSupervisorWorkspaceDescription ||
+			w.SelfLearningLoopNote != defaultSupervisorWorkspaceSelfLearningLoopNote || w.InputSendDelaySeconds != defaultInputSendDelaySeconds {
+			return model.Workspace{}, fmt.Errorf("the supervisor was made with %+v, want signup's defaults", w)
+		}
+		return w, nil
+	})
+
+	resp, err := e.controller.EnsureSupervisorWorkspace(context.Background(), entity.EnsureSupervisorWorkspaceRequest{UserID: monoflake.ID(999).String()})
+	if err != nil {
+		t.Fatalf("EnsureSupervisorWorkspace failed: %v", err)
+	}
+	if resp.Workspace.ID != 1000 || resp.Workspace.Name != "supervisor" {
+		t.Errorf("EnsureSupervisorWorkspace returned %d %q, want the new supervisor 1000", resp.Workspace.ID, resp.Workspace.Name)
+	}
+}
+
+func TestEnsureSupervisorWorkspace_FailsWhenTheWorkspacesCannotBeListed(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), int64(999), false).Return(nil, fmt.Errorf("database unavailable"))
+
+	if _, err := e.controller.EnsureSupervisorWorkspace(context.Background(), entity.EnsureSupervisorWorkspaceRequest{UserID: monoflake.ID(999).String()}); err == nil {
+		t.Fatal("EnsureSupervisorWorkspace returned no error, want the list failure")
+	}
+}
+
+func TestEnsureSupervisorWorkspace_FailsWhenTheSupervisorCannotBeMade(t *testing.T) {
+	e := newTestController(t)
+
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), int64(999), false).Return(nil, nil)
+	e.idgen.EXPECT().NextID().Return(int64(1000))
+	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).Return(model.Workspace{}, fmt.Errorf("database unavailable"))
+
+	if _, err := e.controller.EnsureSupervisorWorkspace(context.Background(), entity.EnsureSupervisorWorkspaceRequest{UserID: monoflake.ID(999).String()}); err == nil {
+		t.Fatal("EnsureSupervisorWorkspace returned no error, want the create failure")
 	}
 }

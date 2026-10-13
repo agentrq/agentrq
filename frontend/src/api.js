@@ -248,6 +248,14 @@ export async function deleteTask(workspaceId, taskId) {
   return true;
 }
 
+// The account's supervisor workspace, made with signup's defaults when it has
+// been deleted: the Pano's chat talks to it.
+export async function ensureSupervisorWorkspace() {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/supervisor`, { method: 'POST' });
+  if (!res.ok) throw await refusal(res, 'Failed to set up the supervisor workspace');
+  return res.json();
+}
+
 export async function archiveWorkspace(id) {
   const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/archive`, { method: 'POST' });
   if (!res.ok) throw await refusal(res, 'Failed to archive workspace');

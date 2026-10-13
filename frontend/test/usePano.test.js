@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import { describe, it, expect, vi } from 'vitest';
+import { reactive } from 'vue';
 
 import {
+  PANO_CHAT_TITLE_MAX,
   PANO_COLORS,
   PANO_DEFAULT_TTL_DAYS,
   PANO_MAX_FILE_BYTES,
@@ -18,6 +20,9 @@ import {
   formatMarkdown,
   isOwnPanoDoc,
   linkPanoFiles,
+  panoChatTask,
+  panoSupervisor,
+  usePanoChat,
   panoAuthor,
   panoCheckable,
   panoCheckboxIndex,
@@ -836,5 +841,90 @@ describe('mentioning a workspace in a comment', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect((await p).tasks).toHaveLength(2);
     vi.useRealTimers();
+  });
+});
+
+describe('the chat with the supervisor', () => {
+  it('finds the supervisor among the workspaces, by its name', () => {
+    expect(panoSupervisor([{ id: 'a', name: 'website' }, { id: 's', name: 'supervisor' }])).toEqual({ id: 's', name: 'supervisor' });
+    expect(panoSupervisor([{ id: 'a', name: 'website' }])).toBeUndefined();
+    expect(panoSupervisor()).toBeUndefined();
+  });
+
+  it('titles a message by its first line, and says in the body where it was written', () => {
+    const { title, body } = panoChatTask('  What is on the board?\nThe release one.  ');
+    expect(title).toBe('What is on the board?');
+    expect(body.startsWith('What is on the board?\nThe release one.\n\n---\nSent from the Pano chat')).toBe(true);
+    expect(body).toContain('pano tool');
+  });
+
+  it('cuts a long first line short for the title', () => {
+    const { title } = panoChatTask('x'.repeat(200));
+    expect(title).toHaveLength(PANO_CHAT_TITLE_MAX);
+    expect(title.endsWith('…')).toBe(true);
+  });
+
+  function chatWith(workspaces, api = {}) {
+    const store = reactive({ workspaces, fetchWorkspaces: vi.fn() });
+    return { store, api, chat: usePanoChat({ api, store }) };
+  }
+
+  it('follows whether the supervisor is there and connected', () => {
+    const { store, chat } = chatWith([]);
+    expect(chat.supervisor.value).toBeUndefined();
+    expect(chat.online.value).toBe(false);
+    store.workspaces = [{ id: 's', name: 'supervisor', agentConnected: false }];
+    expect(chat.online.value).toBe(false);
+    store.workspaces[0].agentConnected = true;
+    expect(chat.online.value).toBe(true);
+  });
+
+  it('makes the supervisor only when it is missing, then reads the workspaces again', async () => {
+    const api = { ensureSupervisorWorkspace: vi.fn().mockResolvedValue({}) };
+    const missing = chatWith([], api);
+    await missing.chat.ensure();
+    expect(api.ensureSupervisorWorkspace).toHaveBeenCalledTimes(1);
+    expect(missing.store.fetchWorkspaces).toHaveBeenCalledTimes(1);
+
+    const present = chatWith([{ id: 's', name: 'supervisor' }], api);
+    await present.chat.ensure();
+    expect(api.ensureSupervisorWorkspace).toHaveBeenCalledTimes(1);
+    expect(present.store.fetchWorkspaces).not.toHaveBeenCalled();
+  });
+
+  it('sends a message as a task for the supervisor, and clears the box', async () => {
+    const api = { createTask: vi.fn().mockResolvedValue({ task: { id: 't1', workspaceId: 's' } }) };
+    const { chat } = chatWith([{ id: 's', name: 'supervisor', agentConnected: true }], api);
+    chat.message.value = ' Post the plan ';
+    const sent = chat.send();
+    expect(chat.sending.value).toBe(true);
+    expect(await sent).toEqual({ id: 't1', workspaceId: 's' });
+    expect(api.createTask).toHaveBeenCalledWith('s', 'Post the plan', panoChatTask('Post the plan').body);
+    expect(chat.message.value).toBe('');
+    expect(chat.sending.value).toBe(false);
+  });
+
+  it('sends nothing when empty, offline, or already sending', async () => {
+    const api = { createTask: vi.fn(() => new Promise(() => {})) };
+    const offline = chatWith([{ id: 's', name: 'supervisor', agentConnected: false }], api);
+    offline.chat.message.value = 'hi';
+    expect(await offline.chat.send()).toBeNull();
+
+    const { chat } = chatWith([{ id: 's', name: 'supervisor', agentConnected: true }], api);
+    chat.message.value = '   ';
+    expect(await chat.send()).toBeNull();
+    chat.message.value = 'hi';
+    chat.send();
+    expect(await chat.send()).toBeNull();
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the message when it could not be sent', async () => {
+    const api = { createTask: vi.fn().mockRejectedValue(new Error('Failed to create task')) };
+    const { chat } = chatWith([{ id: 's', name: 'supervisor', agentConnected: true }], api);
+    chat.message.value = 'hi';
+    await expect(chat.send()).rejects.toThrow('Failed to create task');
+    expect(chat.message.value).toBe('hi');
+    expect(chat.sending.value).toBe(false);
   });
 });
