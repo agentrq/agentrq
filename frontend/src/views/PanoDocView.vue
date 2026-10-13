@@ -30,7 +30,7 @@ import DeleteModal from '../components/DeleteModal.vue'
 
 const route = useRoute()
 const router = useRouter()
-const id = route.path === '/pano/new' ? null : String(route.params.id)
+const id = route.path === '/pano/new' ? null : String(route.params.docId ?? route.params.id)
 const {
   doc, loading, error, busy, editing, draft, conflict,
   load, startEditing, cancelEditing, reloadEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,

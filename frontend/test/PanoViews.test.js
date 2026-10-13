@@ -97,7 +97,7 @@ async function mount(at, workspaces = WORKSPACES) {
       { path: '/workspaces/:id', component: { render: () => null } },
       { path: '/pano/new', component: PanoDocView },
       { path: '/pano/:id', component: PanoDocView },
-      { path: '/pano/:id/chat/:workspaceId/:taskId', components: { default: PanoDocView, chat: { render: () => null } } },
+      { path: '/pano/:docId/chat/:workspaceId/:taskId', components: { default: PanoDocView, chat: { render: () => null } } },
       { path: '/workspaces/:id/tasks/:taskId', component: { render: () => null } },
     ],
   });

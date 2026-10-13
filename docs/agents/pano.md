@@ -40,4 +40,6 @@
   breakpoint, only the nearest `@container`.
 - **A task opened from a doc goes beside it on a large screen**, on
   `/pano/:id/chat/:workspaceId/:taskId`, whose `remountKey` is the doc's: keying
-  by path would rebuild the doc, and its scroll, on every task opened.
+  by path would rebuild the doc, and its scroll, on every task opened. The
+  doc's param is `docId`, never `id`: the task view reads `id` as a workspace
+  and would GET the doc's id as one.

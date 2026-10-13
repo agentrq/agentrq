@@ -4,7 +4,7 @@
 
 import { crc32, deflateSync } from 'node:zlib'
 import { test, expect } from '../lib/fixtures.js'
-import { agentSession, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
+import { agentSession, createTask, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
 // A solid PNG, so a linked image has something to show.
 function png(width, height, [r, g, b]) {
@@ -315,4 +315,25 @@ test('a write on a stale version is refused, for an agent and for the person', a
   expect((await pano(call, { action: 'read', id: created.id })).version).toBe(4)
 
   traffic.expectClean({ allow: ['409 /api/v1/pano/' + created.id] })
+})
+
+// A task a doc points at opens in the chat column beside the doc on a large
+// screen, from an item's chip and from the related tasks above the comments.
+test('a task linked from a doc opens beside it', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const call = await agentSession(page, workspace.id)
+  const task = await createTask(page, workspace.id, unique('a task for the side column'), 'ongoing')
+  const doc = await pano(call, {
+    action: 'save',
+    payload: { title: unique('related'), markdown: `- [ ] ship it → [@qa](/workspaces/${workspace.id}/tasks/${task.id} "ongoing")\n\nSee also [this task](/workspaces/${workspace.id}/tasks/${task.id}).` },
+  })
+  await page.goto(`/pano/${doc.id}`)
+
+  await expect(page.getByTestId('pano-related-task')).toHaveCount(1)
+  await page.getByTestId('pano-related-task').click()
+  await expect(page).toHaveURL(`/pano/${doc.id}/chat/${workspace.id}/${task.id}`)
+  await expect(page.locator('[data-pano-chat]')).toBeVisible()
+  await expect(page.getByTestId('pano-body')).toBeVisible()
+  if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
+  traffic.expectClean()
 })

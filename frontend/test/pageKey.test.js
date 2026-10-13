@@ -14,8 +14,8 @@ describe('pageKey', () => {
   })
 
   it('keys a route by the key it names', () => {
-    const meta = { remount: true, remountKey: (r) => `/pano/${r.params.id}` }
-    expect(pageKey({ path: '/pano/d1/chat/w/t', params: { id: 'd1' }, meta })).toBe('/pano/d1')
+    const meta = { remount: true, remountKey: (r) => `/pano/${r.params.docId}` }
+    expect(pageKey({ path: '/pano/d1/chat/w/t', params: { docId: 'd1' }, meta })).toBe('/pano/d1')
   })
 
   it('leaves every other route unkeyed', () => {
@@ -32,7 +32,7 @@ describe('pageKey', () => {
       '/machines/:id',
       '/pano/new',
       '/pano/:id',
-      '/pano/:id/chat/:workspaceId/:taskId',
+      '/pano/:docId/chat/:workspaceId/:taskId',
       '/skills/:name',
       '/sessions/:id',
       '/workflows/:id',
