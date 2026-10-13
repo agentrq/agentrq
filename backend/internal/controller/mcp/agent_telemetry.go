@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	zlog "github.com/rs/zerolog/log"
 
@@ -111,14 +112,26 @@ func agentTelemetryMetadata(messageType string, p AgentTelemetryParams) map[stri
 	metadata := map[string]any{"type": messageType, "text": p.Text}
 	for k, v := range p.Data {
 		// The payload describes the telemetry; it does not get to say what
-		// kind of message this is or to replace the rendered text.
-		if k == "type" || k == "text" {
+		// kind of message this is, replace the rendered text, or choose when
+		// the server received it.
+		if k == "type" || k == "text" || k == MessageMetadataReportedAt {
 			continue
 		}
 		metadata[k] = v
 	}
+	if messageType == MessageTypeAgentUsage {
+		metadata[MessageMetadataReportedAt] = nowFunc().UTC().Format(time.RFC3339Nano)
+	}
 	return metadata
 }
+
+// MessageMetadataReportedAt is when a usage footer was last written. The
+// footer is revised in place, so this, not its position, is what tells the
+// composer that a turn ended after the person last spoke.
+const MessageMetadataReportedAt = "reportedAt"
+
+// nowFunc is the clock reportedAt reads; a var so a test can pin it.
+var nowFunc = time.Now
 
 // postAgentTelemetryMessage appends a new chat message and returns its ID, or
 // 0 if it could not be delivered.

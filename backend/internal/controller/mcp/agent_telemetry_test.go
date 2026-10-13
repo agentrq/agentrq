@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -424,5 +425,51 @@ func TestHandleAgentTelemetry_WithoutInPlaceUpdatesPlansAreAppended(t *testing.T
 
 	if len(rec.posted) != 2 {
 		t.Fatalf("expected both plans to be posted, got %d", len(rec.posted))
+	}
+}
+
+// The footer is revised in place, so the time of the revision is what tells
+// the composer a turn ended after the person's last message.
+func TestHandleAgentTelemetry_UsageCarriesWhenItWasReported(t *testing.T) {
+	rec := newTelemetryRecorder(t)
+	ctx := context.Background()
+	defer func(f func() time.Time) { nowFunc = f }(nowFunc)
+	nowFunc = func() time.Time { return time.Date(2026, 10, 12, 10, 1, 9, 500, time.UTC) }
+
+	usage := AgentTelemetryParams{
+		SessionID: "sess-1", Kind: "usage", Text: "Context 1 / 2 tokens (50%)",
+		Data: map[string]any{"used": 1.0, "size": 2.0, "reportedAt": "1999-01-01T00:00:00Z"},
+	}
+	rec.ps.HandleAgentTelemetry(ctx, "sess-1", usage)
+
+	if len(rec.posted) != 1 {
+		t.Fatalf("expected one usage message, got %d", len(rec.posted))
+	}
+	if got, want := rec.posted[0].metadata["reportedAt"], "2026-10-12T10:01:09.0000005Z"; got != want {
+		t.Errorf("reportedAt was %v, want the server's own clock %v (a payload must not choose it)", got, want)
+	}
+
+	nowFunc = func() time.Time { return time.Date(2026, 10, 12, 10, 2, 0, 0, time.FixedZone("CEST", 2*60*60)) }
+	rec.ps.HandleAgentTelemetry(ctx, "sess-1", usage)
+
+	if len(rec.revisions) != 1 {
+		t.Fatalf("expected the footer to be revised once, got %d revisions", len(rec.revisions))
+	}
+	if got, want := rec.revisions[0].metadata["reportedAt"], "2026-10-12T08:02:00Z"; got != want {
+		t.Errorf("revised reportedAt was %v, want the revision's time in UTC %v", got, want)
+	}
+}
+
+// Only the footer is revised in a way its position cannot show, so only the
+// footer carries reportedAt.
+func TestHandleAgentTelemetry_ThoughtCarriesNoReportedAt(t *testing.T) {
+	rec := newTelemetryRecorder(t)
+	rec.ps.HandleAgentTelemetry(context.Background(), "sess-1", thoughtParams("thinking"))
+
+	if len(rec.posted) != 1 {
+		t.Fatalf("expected one thought message, got %d", len(rec.posted))
+	}
+	if got, ok := rec.posted[0].metadata["reportedAt"]; ok {
+		t.Errorf("a thought carried reportedAt %v", got)
 	}
 }

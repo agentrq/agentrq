@@ -150,6 +150,41 @@ describe('agentIsWorking', () => {
     expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: messages.slice(0, 4) })).toBe(false)
   })
 
+  // The server keeps one footer per task and rewrites it in place, so on a
+  // follow-up turn the footer sits above the person's newer message. Its
+  // reportedAt is what says the rewrite came after them.
+  it('is waiting once the task\'s one footer is revised after the follow-up', () => {
+    const messages = [
+      { ...fromHuman('h1'), createdAt: '2026-10-12T10:00:00Z' },
+      { ...usageFooter('u1'), createdAt: '2026-10-12T10:00:05Z', metadata: { type: 'agent_usage', reportedAt: '2026-10-12T10:01:09.5Z' } },
+      { ...fromHuman('h2'), createdAt: '2026-10-12T10:01:00Z' },
+    ]
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(false)
+  })
+
+  it('is still working when the footer was revised before the follow-up', () => {
+    const messages = [
+      { ...fromHuman('h1'), createdAt: '2026-10-12T10:00:00Z' },
+      { ...usageFooter('u1'), createdAt: '2026-10-12T10:00:05Z', metadata: { type: 'agent_usage', reportedAt: '2026-10-12T10:00:50Z' } },
+      { ...fromHuman('h2'), createdAt: '2026-10-12T10:01:00Z' },
+    ]
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(true)
+  })
+
+  it('falls back to the footer\'s position when reportedAt cannot be read', () => {
+    const messages = [
+      { ...fromHuman('h1'), createdAt: '2026-10-12T10:00:00Z' },
+      { ...usageFooter('u1'), createdAt: '2026-10-12T10:00:05Z', metadata: { type: 'agent_usage', reportedAt: 'soon' } },
+      { ...fromHuman('h2'), createdAt: '2026-10-12T10:01:00Z' },
+    ]
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages })).toBe(true)
+
+    // A footer from a server older than reportedAt has none at all.
+    const unstamped = messages.map((m) => (m.id === 'u1' ? { ...m, metadata: { type: 'agent_usage' } } : m))
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: unstamped })).toBe(true)
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: [...unstamped, usageFooter('u2')] })).toBe(false)
+  })
+
   // The bug: a stop pressed before the agent reported any usage has no footer
   // to flush, only the gateway's note on why the turn ended — and an agent
   // that has footed earlier turns no longer counts a plain reply as the end.

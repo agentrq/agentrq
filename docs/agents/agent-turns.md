@@ -26,6 +26,10 @@ snapshot of the turn", one per turn, including a turn cancelled by the Stop
 button, since a cancel resolves the prompt too. That is what drains the queue
 on its own after a stop.
 
+The server keeps one footer per task and revises it in place, so its place in
+the list is where it was first written. Its `reportedAt` is what says a
+revision came after the person's last message.
+
 A turn stopped before the agent reported any usage has no footer to flush:
 its end is the gateway's stop-reason note ("⚠️ The turn was cancelled…",
 `reportStopReason`), sent after `flushReply`. Miss it and an early stop leaves

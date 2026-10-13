@@ -126,12 +126,37 @@ export function agentIsWorking({ task, workspace, messages } = {}) {
 }
 
 /**
- * Whether the latest turn has ended: a footer or a stop-reason note since a
- * person last spoke, or, with `repliesEnd`, a plain reply. A task that has been
- * started and has not said anything yet has not ended one: the agent has the
- * task and is working on it.
+ * When the footer was last rewritten, or null. The server keeps one footer per
+ * task and revises it in place, so its position in the list says when it was
+ * first written, not when it last spoke.
+ */
+function footerReportedAt(message) {
+  if (!isUsageFooter(message)) return null
+  const at = Date.parse(message.metadata.reportedAt ?? '')
+  return Number.isFinite(at) ? at : null
+}
+
+/** When a person last spoke, or null. */
+function lastSpokeAt(list) {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (isFromAPerson(list[i])) {
+      const at = Date.parse(list[i].createdAt ?? '')
+      return Number.isFinite(at) ? at : null
+    }
+  }
+  return null
+}
+
+/**
+ * Whether the latest turn has ended: a footer revised since a person last
+ * spoke, wherever it sits; or a footer or a stop-reason note after their
+ * message, or, with `repliesEnd`, a plain reply. A task that has been started
+ * and has not said anything yet has not ended one: the agent has the task and
+ * is working on it.
  */
 function turnHasEnded(list, repliesEnd) {
+  const spokeAt = lastSpokeAt(list)
+  if (spokeAt !== null && list.some((m) => (footerReportedAt(m) ?? -Infinity) > spokeAt)) return true
   for (let i = list.length - 1; i >= 0; i -= 1) {
     const message = list[i]
     if (isUsageFooter(message) || isStopReasonNote(message)) return true
