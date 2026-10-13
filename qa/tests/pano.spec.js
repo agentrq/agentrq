@@ -238,6 +238,9 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   await page.screenshot({ path: test.info().outputPath('pano-mention-light.png'), animations: 'disabled' })
   await input.press('Enter')
   await expect(input).toHaveValue(`Can you take the docs, @${workspace.name} `)
+  // The server makes one task a second per account, and the item's task was
+  // made a moment ago.
+  await page.waitForTimeout(1100)
   const commented = nextResponse(page, 'POST', `/api/v1/pano/${doc.id}/comments`)
   const pinged = nextResponse(page, 'POST', `/api/v1/workspaces/${workspace.id}/tasks`)
   await input.press('ControlOrMeta+Enter')

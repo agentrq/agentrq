@@ -163,7 +163,7 @@ function openItemMenu(container, button) {
   itemMenu.value = {
     index: panoCheckboxIndex(container, button.previousElementSibling),
     top: at.bottom - paper.top + 4,
-    right: Math.max(paper.right - at.right, 8),
+    left: Math.max(at.left - paper.left, 8),
     task: chip && { path: chip.dataset.panoTask, id: chip.dataset.panoTask.split('/').pop(), status: chip.dataset.status, name: chip.childNodes[1].textContent },
   }
   itemMenuButton = button
@@ -406,7 +406,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
           <div class="my-5 border-t border-black/10"></div>
           <div data-test="pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
           <div v-if="itemMenu" v-click-outside="closeItemMenu" data-test="pano-item-menu" role="menu" @keydown.esc="closeItemMenu()"
-            :style="{ top: `${itemMenu.top}px`, right: `${itemMenu.right}px` }"
+            :style="{ top: `${itemMenu.top}px`, left: `${itemMenu.left}px` }"
             class="absolute z-30 w-64 max-h-72 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 text-left shadow-lg">
             <template v-if="itemMenu.task">
               <p :class="menuHeader">Assigned</p>

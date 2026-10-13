@@ -192,9 +192,9 @@ html, body, #app {
 .pano-paper .md-body li > input[type="checkbox"] { appearance: none; width: 1.05em; height: 1.05em; margin: 0 0.55em 0 0; vertical-align: -0.16em; border: 1.5px solid currentColor; border-radius: 9999px; opacity: 0.55; cursor: pointer; background: transparent center / 70% no-repeat; }
 .pano-paper .md-body li > input[type="checkbox"]:checked { opacity: 1; border-color: var(--pano-ink); background-color: var(--pano-ink); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
 .pano-paper .md-body li > input[type="checkbox"]:hover { opacity: 1; }
-/* A checklist item's menu, shown on hover; its assignee, a chip naming the workspace. */
-.pano-paper .md-body li:has(> .pano-assign) { position: relative; padding-right: 1.75em; }
-.pano-paper .md-body .pano-assign { position: absolute; right: 0; top: 0.1em; display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border-radius: 0.375rem; color: inherit; opacity: 0; cursor: pointer; transition: opacity 0.15s, background-color 0.15s; }
+/* A checklist item's menu, in the margin left of its checkmark, shown on hover; its assignee, a chip naming the workspace. */
+.pano-paper .md-body li:has(> .pano-assign) { position: relative; }
+.pano-paper .md-body .pano-assign { position: absolute; left: -1.55em; top: 0.1em; display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border-radius: 0.375rem; color: inherit; opacity: 0; cursor: pointer; transition: opacity 0.15s, background-color 0.15s; }
 .pano-paper .md-body .pano-assign svg { width: 1em; height: 1em; }
 .pano-paper .md-body li:hover > .pano-assign, .pano-paper .md-body .pano-assign:focus-visible, .pano-paper .md-body .pano-assign[aria-expanded="true"] { opacity: 0.7; }
 .pano-paper .md-body .pano-assign:hover { opacity: 1; background-color: rgba(0,0,0,0.08); }
