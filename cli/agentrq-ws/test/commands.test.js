@@ -22,11 +22,24 @@ import { stdinOf } from './fake-server.js'
 
 const scratch = () => mkdtempSync(join(tmpdir(), 'agentrq-ws-cmd-'))
 
-/** A client that records what the command layer asked the server to do. */
+/**
+ * A client that records what the command layer asked the server to do. An
+ * action call is recorded as its tool with the action beside the payload, and
+ * the call it would make on an older server is kept in `legacy`.
+ */
 function stubClient(replies = {}) {
   const calls = []
+  const legacy = []
   return {
     calls,
+    legacy,
+    async callAction(tool, action, payload, old) {
+      legacy.push(old)
+      const reply = replies[action] ?? replies[tool]
+      calls.push({ name: tool, args: { action, ...payload } })
+      const text = typeof reply === 'function' ? reply({ action, ...payload }) : (reply ?? 'ok')
+      return { text, result: { content: [{ type: 'text', text }] } }
+    },
     async callTool(name, args) {
       calls.push({ name, args })
       const reply = replies[name]
@@ -140,18 +153,19 @@ test('task get passes the id and the conversation options', async () => {
     values: { conversation: true, cursor: '10', limit: '25' },
     client,
   })
-  assert.deepEqual(client.calls[0].args, {
-    taskId: '0isnjTCkpW5',
-    includeConversation: true,
-    cursor: 10,
-    limit: 25,
+  assert.deepEqual(client.calls[0], {
+    name: 'task',
+    args: { action: 'get', taskId: '0isnjTCkpW5', includeConversation: true, cursor: 10, limit: 25 },
   })
+  // An older server is asked with the tool this action used to be.
+  assert.deepEqual(client.legacy[0], ['getTask', { taskId: '0isnjTCkpW5', includeConversation: true, cursor: 10, limit: 25 }])
 })
 
 test('task get leaves the options out when unasked', async () => {
   const client = stubClient()
   await invoke('task get', { positionals: ['0isnjTCkpW5'], client })
   assert.deepEqual(client.calls[0].args, {
+    action: 'get',
     taskId: '0isnjTCkpW5',
     includeConversation: undefined,
     cursor: undefined,
@@ -166,7 +180,9 @@ test('task get requires a task id', async () => {
 test('task next sends no id, which is what dequeues the queue', async () => {
   const client = stubClient()
   await invoke('task next', { values: { conversation: true }, client })
-  assert.equal(client.calls[0].name, 'getTask')
+  assert.equal(client.calls[0].name, 'task')
+  assert.equal(client.calls[0].args.action, 'get')
+  assert.equal(client.legacy[0][0], 'getTask')
   assert.equal(client.calls[0].args.taskId, undefined)
   assert.equal(client.calls[0].args.includeConversation, true)
 })
@@ -190,6 +206,8 @@ test('task create sends every optional field it was given', async () => {
   })
 
   const { args } = client.calls[0]
+  assert.equal(args.action, 'create')
+  assert.equal(client.legacy[0][0], 'createTask')
   assert.equal(args.title, 'Ship the CLI')
   assert.equal(args.body, 'the details')
   assert.equal(args.assignee, 'human')
@@ -223,7 +241,8 @@ test('task status accepts the statuses the backend accepts', async () => {
   for (const status of TASK_STATUSES) {
     const client = stubClient()
     await invoke('task status', { positionals: ['0isnjTCkpW5', status], client })
-    assert.deepEqual(client.calls[0].args, { taskId: '0isnjTCkpW5', status })
+    assert.deepEqual(client.calls[0].args, { action: 'updateStatus', taskId: '0isnjTCkpW5', status })
+    assert.deepEqual(client.legacy[0], ['updateTaskStatus', { taskId: '0isnjTCkpW5', status }])
   }
 })
 
@@ -248,8 +267,12 @@ test('reply sends text and attachments by path', async () => {
   await invoke('reply', { positionals: ['0isnjTCkpW5', 'done'], values: { attach: [log] }, client })
 
   const { args } = client.calls[0]
-  assert.equal(args.chatId, '0isnjTCkpW5')
+  assert.equal(args.action, 'reply')
+  assert.equal(args.taskId, '0isnjTCkpW5')
   assert.equal(args.text, 'done')
+  // The reply tool called the task its chat.
+  assert.equal(client.legacy[0][0], 'reply')
+  assert.equal(client.legacy[0][1].chatId, '0isnjTCkpW5')
   assert.equal(args.attachments.length, 1)
   assert.equal(Buffer.from(args.attachments[0].data, 'base64').toString(), 'log line')
 })
@@ -291,7 +314,8 @@ test('attachment get fetches the link it is given and names the file', async () 
   assert.equal(result.data.bytes, 8)
   assert.equal(readFileSync(result.text, 'utf8'), '%PDF-1.4')
   // One call, with the default format: nothing else is needed for the name.
-  assert.deepEqual(client.calls, [{ name: 'getAttachment', args: { attachmentId: 'att-1', taskId: '0isnjTCkpW5' } }])
+  assert.deepEqual(client.calls, [{ name: 'task', args: { action: 'getAttachment', attachmentId: 'att-1', taskId: '0isnjTCkpW5' } }])
+  assert.deepEqual(client.legacy, [['getAttachment', { attachmentId: 'att-1', taskId: '0isnjTCkpW5' }]])
   assert.deepEqual(fetched, ['https://agentrq.example/storage/artifacts/x'])
 })
 
@@ -614,12 +638,8 @@ test('the CLI covers every tool the workspace server offers', () => {
   // The point of the package: anything an agent can do here, a person can do
   // from a shell. `call` is the catch-all, so a tool may be reached that way.
   const covered = new Set([
-    'createTask',
-    'updateTaskStatus',
-    'reply',
-    'getAttachment',
+    'task',
     'getWorkspace',
-    'getTask',
     'publishEvent',
     'loadMemory',
     'saveMemory',
@@ -628,7 +648,6 @@ test('the CLI covers every tool the workspace server offers', () => {
     'loadSkill',
     'saveSkill',
     'deleteSkill',
-    'elicit',
     'listSiteTools',
     'getSiteToolDefinition',
     'callSiteTool',
@@ -636,7 +655,7 @@ test('the CLI covers every tool the workspace server offers', () => {
   ])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')
   for (const tool of covered) {
-    assert.ok(source.includes(`callTool('${tool}'`), `no command calls ${tool}`)
+    assert.ok(source.includes(`callTool('${tool}'`) || source.includes(`callAction('${tool}'`), `no command calls ${tool}`)
   }
 })
 
@@ -753,4 +772,30 @@ test('pano comment, attach and delete', async () => {
   await assert.rejects(() => invoke('pano attach', { positionals: ['d1'] }), /--file is required/)
   await assert.rejects(() => invoke('pano attach', {}), /<id>/)
   await assert.rejects(() => invoke('pano delete', {}), /<id>/)
+})
+
+test('task help and pano help ask the server, for one action when named', async () => {
+  const client = stubClient()
+  await invoke('task help', { client })
+  await invoke('task help', { positionals: ['create'], client })
+  await invoke('pano help', { positionals: ['save'], client })
+  assert.deepEqual(client.calls, [
+    { name: 'task', args: { action: 'help', payload: undefined } },
+    { name: 'task', args: { action: 'help', payload: { topic: 'create' } } },
+    { name: 'pano', args: { action: 'help', payload: { topic: 'save' } } },
+  ])
+})
+
+test('every pano call keeps its flat form for an older server', async () => {
+  const client = stubClient()
+  await invoke('pano delete', { positionals: ['d1'], client })
+  assert.deepEqual(client.legacy, [['pano', { action: 'delete', id: 'd1' }]])
+})
+
+test("ask is the task tool's elicit action", async () => {
+  const client = stubClient()
+  await invoke('ask', { positionals: ['0isnjTCkpW5', 'Ship it?'], values: { url: 'https://x.test' }, client })
+  assert.equal(client.calls[0].name, 'task')
+  assert.equal(client.calls[0].args.action, 'elicit')
+  assert.equal(client.legacy[0][0], 'elicit')
 })

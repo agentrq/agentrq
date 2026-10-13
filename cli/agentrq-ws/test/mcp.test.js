@@ -244,3 +244,40 @@ test('close with no session does nothing', async () => {
   await client(inner).close()
   assert.equal(inner.calls.length, 0)
 })
+
+test('callAction sends action and payload to a tool that takes a payload', async () => {
+  const seen = []
+  const fetchImpl = fakeFetch({
+    tools: [{ name: 'task', inputSchema: { properties: { action: {}, payload: {} } } }, { name: 'reply' }],
+    onCall: (name, args) => {
+      seen.push([name, args])
+      return 'ok'
+    },
+  })
+  const c = client(fetchImpl)
+  await c.callAction('task', 'reply', { taskId: 't1', text: 'hi', attachments: undefined }, ['reply', { chatId: 't1', text: 'hi' }])
+  await c.callAction('task', 'get', {}, ['getTask', {}])
+  assert.deepEqual(seen, [
+    ['task', { action: 'reply', payload: { taskId: 't1', text: 'hi' } }],
+    ['task', { action: 'get', payload: {} }],
+  ])
+  // The server's tools are asked for once, not per call.
+  assert.equal(fetchImpl.calls.filter((r) => r.body?.method === 'tools/list').length, 1)
+})
+
+test('callAction makes the older call on a server whose tool takes no payload', async () => {
+  const seen = []
+  const c = client(fakeFetch({
+    tools: [{ name: 'pano', inputSchema: { properties: { action: {}, id: {} } } }],
+    onCall: (name, args) => {
+      seen.push([name, args])
+      return 'ok'
+    },
+  }))
+  await c.callAction('task', 'reply', { taskId: 't1', text: 'hi' }, ['reply', { chatId: 't1', text: 'hi' }])
+  await c.callAction('pano', 'delete', { id: 'd1' }, ['pano', { action: 'delete', id: 'd1' }])
+  assert.deepEqual(seen, [
+    ['reply', { chatId: 't1', text: 'hi' }],
+    ['pano', { action: 'delete', id: 'd1' }],
+  ])
+})

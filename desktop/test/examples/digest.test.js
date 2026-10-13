@@ -46,12 +46,15 @@ function fakeSupervisor(over = {}) {
   const wrap = (payload) => ({ ok: true, result: { content: [{ text: JSON.stringify(payload) }] } })
   const answers = {
     listWorkspaces: () => wrap({ workspaces }),
-    listAllTasks: () => wrap({ tasks }),
+    'task.listAll': () => wrap({ tasks }),
     ...over,
   }
   return {
     calls,
-    supervisor: async (tool, args) => {
+    // A task action is recorded as `task.<action>`, with its payload as args.
+    supervisor: async (name, input) => {
+      const tool = name === 'task' ? `task.${input.action}` : name
+      const args = name === 'task' ? input.payload : input
       calls.push({ tool, args })
       return answers[tool](args)
     },
@@ -72,7 +75,7 @@ describe('the manifest', () => {
   it('asks for the account, a secret, and names a host', () => {
     const { manifest: parsed } = parseManifest(manifest)
 
-    expect(parsed.mcp.supervisor).toEqual(['listWorkspaces', 'listAllTasks', 'createTask'])
+    expect(parsed.mcp.supervisor).toEqual(['listWorkspaces', 'task.listAll', 'task.create'])
     expect(parsed.net).toEqual(['hooks.slack.com'])
     expect(parsed.config.find((field) => field.key === 'webhookToken').type).toBe('secret')
   })
@@ -102,13 +105,13 @@ describe('the grant ladder at its top rung', () => {
   })
 
   // "Supervisor, but only this workspace" is the same grant with a misleading
-  // label: listAllTasks spans the platform whatever list sits beside it.
+  // label: task.listAll spans the platform whatever list sits beside it.
   it('carries no workspace list at the supervisor rung', () => {
     const grant = toGrant(ask(), { scope: SCOPE.supervisor, workspaces: ['ws1'], workspaceId: 'ws1' })
 
     expect(grant.workspaces).toEqual([])
     expect(grant.includesFutureWorkspaces).toBe(true)
-    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'listAllTasks', 'createTask'])
+    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'task.listAll', 'task.create'])
   })
 
   it('is a coherent choice at every rung it offers, wherever it is offered from', () => {
@@ -190,7 +193,7 @@ describe('collect', () => {
 
     const summary = await collect(ctxWith(fake))
 
-    expect(fake.calls.map((call) => call.tool)).toEqual(['listWorkspaces', 'listAllTasks'])
+    expect(fake.calls.map((call) => call.tool)).toEqual(['listWorkspaces', 'task.listAll'])
     expect(fake.calls[1].args.limit).toBe(MAX_TASKS)
     expect(summary[0].workspace).toBe('Backend')
   })
@@ -201,7 +204,7 @@ describe('collect', () => {
     })
     expect((await collect(ctxWith(refused))).refused).toContain('not granted')
 
-    const halfway = fakeSupervisor({ listAllTasks: () => ({ ok: false, reason: 'refused' }) })
+    const halfway = fakeSupervisor({ 'task.listAll': () => ({ ok: false, reason: 'refused' }) })
     expect((await collect(ctxWith(halfway))).refused).toBe('refused')
   })
 

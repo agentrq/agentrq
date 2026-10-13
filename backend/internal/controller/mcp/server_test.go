@@ -301,7 +301,7 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := ReplyParams{
-		ChatID:      monoflake.ID(42).String(),
+		TaskID:      monoflake.ID(42).String(),
 		Text:        "hello",
 		Attachments: []AttachmentParam{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}},
 	}
@@ -508,14 +508,14 @@ func TestWorkspaceServer_HandleReply_Errors(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	// Case 1: Archived
-	res, _, _ := ps.handleReply(context.Background(), nil, ReplyParams{ChatID: "1", Text: "hi"})
+	res, _, _ := ps.handleReply(context.Background(), nil, ReplyParams{TaskID: "1", Text: "hi"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "archived") {
 		t.Errorf("expected archived error, got: %v", res)
 	}
 
 	// Case 2: Missing content
 	ps.archivedAt = nil
-	res, _, _ = ps.handleReply(context.Background(), nil, ReplyParams{ChatID: "1"})
+	res, _, _ = ps.handleReply(context.Background(), nil, ReplyParams{TaskID: "1"})
 	if !res.IsError || !contains(res.Content[0].(*mcp.TextContent).Text, "required") {
 		t.Errorf("expected missing content error, got: %v", res)
 	}

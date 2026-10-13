@@ -43,19 +43,7 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `getWorkspace` | Get a workspace by ID |
 | `updateWorkspace` | Update a workspace |
 | `getWorkspaceStats` | Get statistics for a workspace |
-| `listTasks` | List tasks in a specific workspace |
-| `listAllTasks` | List all tasks across all workspaces |
-| `createTask` | Create a new task in a workspace |
-| `getTask` | Get a specific task by ID |
-| `respondToTask` | Answer a permission request: allow, allow_all, reject, or text |
-| `replyToTask` | Post a message to a task thread |
-| `updateTaskStatus` | Update a task's status |
-| `updateTaskOrder` | Update a task's sort order |
-| `updateTaskAssignee` | Update a task's assignee |
-| `updateTaskAllowAll` | Toggle allow_all_commands for a task |
-| `updateScheduledTask` | Update a scheduled/cron task |
-| `deleteTask` | Delete a task, with its messages and attachments |
-| `getAttachment` | Get an attachment of a task: its name, type and public link (`format=url`, the default), or its content as base64 (`format=base64`) |
+| `task` | Read and manage every workspace's tasks with two inputs, `action` and `payload`: `list`, `listAll`, `create`, `get`, `reply`, `respond` (answer a permission request: allow, allow_all, reject, or text), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule`, `delete` (with its messages and attachments; cannot be undone) and `getAttachment`. `help` lists the actions, and with `topic` prints one action's payload |
 | `listMemories` | List a workspace's memories: name, size and when each was last changed |
 | `getMemory` | Get one of a workspace's memories in full, by name |
 | `searchSkills` | Find the account's skills as a workspace sees them, with whether each is on there, by name or description, with paging; content is not included |
@@ -86,7 +74,7 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `listMachines` | List the account's machines, and whether each is online |
 | `launchAgent` | Start a workspace's agent on one of the account's machines |
 | `stopAgent` | Stop the agent a workspace is running on a machine |
-| `pano` | Read and write the Pano, the account's shared markdown docs: `action` is `save`, `read`, `comment`, `attach` or `delete`. Writes are recorded as the supervisor workspace |
+| `pano` | Read and write the Pano, the account's shared markdown docs, with `action` and `payload`: `save`, `read`, `comment`, `attach`, `delete` or `help`. Writes are recorded as the supervisor workspace |
 
 **Resources:** `agentrq://guides/new-workspace` and `agentrq://guides/agentrqd-setup`.
 

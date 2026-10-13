@@ -91,7 +91,7 @@ function renderThrown(value: unknown): string {
  * task — the 60-second reminder, a status check, a human's reply — is routed
  * into that same session instead of whatever else happens to be live. The
  * session closes itself once the task's own status (read back through
- * `getTask`) reaches a terminal state, so a session's lifetime tracks its
+ * `task` `get`) reaches a terminal state, so a session's lifetime tracks its
  * task's lifetime rather than a human's terminal tab.
  */
 export class TaskSessionManager {
@@ -220,7 +220,7 @@ export class TaskSessionManager {
    * Deliver framed text to a task's session, opening one if none is open yet.
    *
    * @param knownTitle - the task's title, when the caller already has it
-   * (avoids an extra `getTask` round trip); fetched on demand otherwise.
+   * (avoids an extra `task` `get` round trip); fetched on demand otherwise.
    */
   private async routeToSession(taskId: string, framed: string, knownTitle?: string): Promise<void> {
     const existing = this.sessions.get(taskId)
@@ -452,7 +452,7 @@ export class TaskSessionManager {
    * Close a task's session once its task reaches a terminal status.
    *
    * The session goes idle both between an in-progress task's steps and while
-   * genuinely done, and only `getTask` tells the two apart — an idle agent
+   * genuinely done, and only `task` `get` tells the two apart — an idle agent
    * that asked the human a question and is waiting for a reply must keep its
    * session so that reply lands in the same conversation, not a new one.
    */

@@ -110,7 +110,7 @@ function withPaging(ctx, args) {
  * content as base64. A link is fetched, so the file arrives either way.
  */
 async function downloadAttachment(ctx, attachmentId, taskId, out) {
-  const { text } = await ctx.client.callTool('getAttachment', { attachmentId, taskId })
+  const { text } = await ctx.client.callAction('task', 'getAttachment', { attachmentId, taskId }, ['getAttachment', { attachmentId, taskId }])
   let attachment
   try {
     attachment = JSON.parse(text)
@@ -206,13 +206,13 @@ export const COMMANDS = [
       limit: { type: 'string', description: 'Maximum messages to return (default 5)' },
     },
     async run(ctx) {
-      const taskId = requirePositional(ctx.positionals, 0, 'taskId')
-      return ctx.client.callTool('getTask', {
-        taskId,
+      const payload = {
+        taskId: requirePositional(ctx.positionals, 0, 'taskId'),
         includeConversation: ctx.values.conversation || undefined,
         cursor: ctx.values.cursor ? Number(ctx.values.cursor) : undefined,
         limit: ctx.values.limit ? Number(ctx.values.limit) : undefined,
-      })
+      }
+      return ctx.client.callAction('task', 'get', payload, ['getTask', payload])
     },
   },
   {
@@ -225,9 +225,8 @@ export const COMMANDS = [
     async run(ctx) {
       // Kept as its own verb rather than a bare `task get`: this call mutates
       // the queue, and a command that silently claims work is a bad surprise.
-      return ctx.client.callTool('getTask', {
-        includeConversation: ctx.values.conversation || undefined,
-      })
+      const payload = { includeConversation: ctx.values.conversation || undefined }
+      return ctx.client.callAction('task', 'get', payload, ['getTask', payload])
     },
   },
   {
@@ -248,7 +247,7 @@ export const COMMANDS = [
     async run(ctx) {
       const title = requirePositional(ctx.positionals, 0, 'title')
       const body = await resolveText(ctx.values.body, { stdin: ctx.stdin, what: 'the task body' })
-      return ctx.client.callTool('createTask', {
+      const payload = {
         title,
         body: body ?? '',
         assignee: ctx.values.assignee,
@@ -259,7 +258,8 @@ export const COMMANDS = [
         // never expressed.
         clearContext: ctx.values['clear-context'] || undefined,
         attachments: collectAttachments(ctx.values),
-      })
+      }
+      return ctx.client.callAction('task', 'create', payload, ['createTask', payload])
     },
   },
   {
@@ -272,7 +272,7 @@ export const COMMANDS = [
       if (!TASK_STATUSES.includes(status)) {
         throw new UserError(`unknown status "${status}" (expected one of: ${TASK_STATUSES.join(', ')})`)
       }
-      return ctx.client.callTool('updateTaskStatus', { taskId, status })
+      return ctx.client.callAction('task', 'updateStatus', { taskId, status }, ['updateTaskStatus', { taskId, status }])
     },
   },
   {
@@ -283,14 +283,19 @@ export const COMMANDS = [
       attach: { type: 'string', multiple: true, description: 'File to attach (repeatable)' },
     },
     async run(ctx) {
-      const chatId = requirePositional(ctx.positionals, 0, 'taskId')
+      const taskId = requirePositional(ctx.positionals, 0, 'taskId')
       const raw = requirePositional(ctx.positionals, 1, 'text')
       const text = await resolveText(raw, { stdin: ctx.stdin, what: 'the reply text' })
-      return ctx.client.callTool('reply', {
-        chatId,
-        text,
-        attachments: collectAttachments(ctx.values),
-      })
+      const attachments = collectAttachments(ctx.values)
+      return ctx.client.callAction('task', 'reply', { taskId, text, attachments }, ['reply', { chatId: taskId, text, attachments }])
+    },
+  },
+  {
+    path: ['task', 'help'],
+    summary: "Show the task tool's actions, or one action's payload",
+    usage: 'agentrq-ws task help [action]',
+    async run(ctx) {
+      return actionHelp(ctx, 'task')
     },
   },
   {
@@ -405,8 +410,7 @@ export const COMMANDS = [
         ttlDays = Number(ctx.values['ttl-days'])
         if (!Number.isInteger(ttlDays) || ttlDays < 1) throw new UserError('--ttl-days must be a whole number, 1 or more')
       }
-      return printPanoDoc(await ctx.client.callTool('pano', {
-        action: 'save',
+      return printPanoDoc(await pano(ctx, 'save', {
         id: ctx.positionals[0],
         title: ctx.values.title,
         markdown,
@@ -427,8 +431,7 @@ export const COMMANDS = [
     },
     async run(ctx) {
       const id = requirePositional(ctx.positionals, 0, 'id')
-      const result = await ctx.client.callTool('pano', {
-        action: 'read',
+      const result = await pano(ctx, 'read', {
         id,
         includeComments: ctx.values.comments || undefined,
         includeAttachments: ctx.values.attachments || undefined,
@@ -445,7 +448,7 @@ export const COMMANDS = [
       const id = requirePositional(ctx.positionals, 0, 'id')
       const raw = requirePositional(ctx.positionals, 1, 'text')
       const comment = await resolveText(raw, { stdin: ctx.stdin, what: 'the comment' })
-      return ctx.client.callTool('pano', { action: 'comment', id, comment })
+      return pano(ctx, 'comment', { id, comment })
     },
   },
   {
@@ -459,7 +462,7 @@ export const COMMANDS = [
       const id = requirePositional(ctx.positionals, 0, 'id')
       const files = panoFiles(ctx.values.file)
       if (!files) throw new UserError('--file is required')
-      return printPanoDoc(await ctx.client.callTool('pano', { action: 'attach', id, files }), { idOnly: true })
+      return printPanoDoc(await pano(ctx, 'attach', { id, files }), { idOnly: true })
     },
   },
   {
@@ -467,7 +470,15 @@ export const COMMANDS = [
     summary: 'Delete a Pano doc',
     usage: 'agentrq-ws pano delete <id>',
     async run(ctx) {
-      return ctx.client.callTool('pano', { action: 'delete', id: requirePositional(ctx.positionals, 0, 'id') })
+      return pano(ctx, 'delete', { id: requirePositional(ctx.positionals, 0, 'id') })
+    },
+  },
+  {
+    path: ['pano', 'help'],
+    summary: "Show the pano tool's actions, or one action's payload",
+    usage: 'agentrq-ws pano help [action]',
+    async run(ctx) {
+      return actionHelp(ctx, 'pano')
     },
   },
   {
@@ -520,14 +531,15 @@ export const COMMANDS = [
       if (mode === 'form' && !requestedSchema) {
         throw new UserError('mode=form needs at least one --field (or --schema)')
       }
-      return ctx.client.callTool('elicit', {
+      const payload = {
         taskId,
         message,
         mode,
         requestedSchema,
         url: ctx.values.url,
         timeoutSeconds: ctx.values.timeout ? Number(ctx.values.timeout) : undefined,
-      })
+      }
+      return ctx.client.callAction('task', 'elicit', payload, ['elicit', payload])
     },
   },
   {
@@ -603,6 +615,17 @@ export const COMMANDS = [
     },
   },
 ]
+
+/** The server's own help for an action tool, for one action when named. */
+function actionHelp(ctx, tool) {
+  const topic = ctx.positionals[0]
+  return ctx.client.callTool(tool, { action: 'help', payload: topic ? { topic } : undefined })
+}
+
+/** One pano call; a server from before payloads takes its fields beside action. */
+function pano(ctx, action, payload) {
+  return ctx.client.callAction('pano', action, payload, ['pano', { action, ...payload }])
+}
 
 /** --args as JSON, from inline, @file or stdin; nothing given is {}. */
 async function readArgs(ctx) {

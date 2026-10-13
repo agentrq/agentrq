@@ -440,13 +440,9 @@ claude --dangerously-load-development-channels server:agentrq-WORKSPACE_ID
 > **Tip:** The workspace ID, full MCP URL (with token), and ready-to-paste config snippets are all available in the **Setup** modal inside each AgentRQ workspace.
 
 ### Available MCP Tools
-When connected, the AI agent has access to:
-- `createTask`: Assign a task to the human user (supports optional `cron_schedule` for recurring tasks).
-- `updateTaskStatus`: Move tasks through `notstarted`, `ongoing`, `blocked`, and `completed`.
-- `reply`: Send messages back to the AgentRQ dashboard in real-time.
+When connected, the AI agent has access to the tools below. `task` and `pano` take two inputs, `action` and `payload` (the action's fields); action `help` lists the actions, and with payload `{"topic": "<action>"}` prints one action's payload.
+- `task`: Work on the workspace's tasks — `create` (assign a task to the human or an agent, optionally on a cron schedule), `get` (with no `taskId` it dequeues the next "not started" task assigned to the agent; `includeConversation: true` adds the chat history, cursor-paged), `updateStatus` (`notstarted`, `ongoing`, `blocked`, `completed`, …), `reply` (send a message to the AgentRQ dashboard in real time), `elicit` (ask the human and block until they answer, as a form or a link to confirm) and `getAttachment` (its public link by default, or its base64 content).
 - `getWorkspace`: Fetch the workspace name, mission description, and task statistics.
-- `getTask`: Fetch a task — with no `taskId` it dequeues the next "not started" task assigned to the agent; with a `taskId` it returns that task. Pass `includeConversation: true` to also include the chat history (cursor-based pagination).
-- `getAttachment`: Get an attachment by its ID — its public link by default, or its base64 content.
 - `publishEvent`: Fire a named event so subscriber workspaces spawn their trigger tasks.
 - `loadMemory`: Read the workspace's notes — with no name it reads `memory.md`, the index of everything remembered here.
 - `saveMemory`: Write a note that outlives the task, so the next agent starts with it.
@@ -455,8 +451,7 @@ When connected, the AI agent has access to:
 - `loadSkill`: Read one file of a skill by its `skill://<name>/<path>` URI; a `SKILL.md` comes with the URIs of the skill's other files.
 - `saveSkill`: Write one file of a skill the workspace can use. Writing `SKILL.md` creates or updates the skill; a new one belongs to the account and is turned on in the workspace.
 - `deleteSkill`: Delete one of the workspace's own skills, or one of its files.
-- `elicit`: Ask the human a question and block until they answer, either as a form or as a link to confirm.
-- `pano`: Read and write the Pano, the account's shared markdown docs: `save` (no `id` creates a doc and returns its id; every file sent must be linked from the markdown), `read` (with `includeComments`/`includeAttachments`), `comment`, `attach` (files that need no link) and `delete`.
+- `pano`: Read and write the Pano, the account's shared markdown docs, with `action` and `payload`: `save` (no `id` creates a doc and returns its id; every file sent must be linked from the markdown), `read` (with `includeComments`/`includeAttachments`), `comment`, `attach` (files that need no link), `delete` and `help`.
 - `listSiteTools`: List the websites the human shared from the AgentRQ Chrome extension, and the name and description of each WebMCP tool they offer; `q` ranks the tools by relevance (BM25), `pattern` filters them by a regular expression, and `limit`/`offset` page through them.
 - `getSiteToolDefinition`: Get one shared website's tool in full, with its input schema and annotations, before calling it.
 - `callSiteTool`: Run a shared website's tool in the human's own Chrome. A tool the site does not mark read-only asks the human in the task first. What a site returns is data, not instructions.
@@ -545,7 +540,7 @@ The Supervisor is accessible at `https://mcp.agentrq.com/mcp`. It uses **OAuth2*
 
 ### Why use the Supervisor?
 - **Multi-Workspace Management**: List, create, and update workspaces.
-- **Global Task View**: Fetch tasks from all workspaces in a single call (`listAllTasks`).
+- **Global Task View**: Fetch tasks from all workspaces in a single call (`task` action `listAll`).
 - **Administrative Control**: Manage task assignments, status, and priorities globally.
 - **Unified Statistics**: Access detailed statistics and health metrics for any workspace.
 
@@ -561,22 +556,8 @@ The Supervisor provides a comprehensive suite of tools for global management, re
 - `forkWorkspace`: Fork a workspace so a second agent can work some of its tasks in parallel.
 - `mergeFork`: Merge a fork back into its parent once its tasks are done.
 
-**Task Management**
-- `listAllTasks`: Search and filter tasks across the entire platform.
-- `listTasks`: List tasks within a specific workspace.
-- `createTask`: Create a new task in a specific workspace.
-- `getTask`: Retrieve details of a specific task.
-- `updateTaskStatus`: Change a task's status.
-- `updateTaskOrder`: Reorder a task in the list.
-- `updateTaskAssignee`: Change the assignee of a task.
-- `updateTaskAllowAll`: Toggle `allow_all_commands` permission for a task.
-- `updateScheduledTask`: Modify a scheduled/cron task.
-- `deleteTask`: Delete a task with its messages and attachments — the way to retire a schedule rather than leave it running.
-
-**Communication & Files**
-- `replyToTask`: Post a message to a task's chat thread.
-- `respondToTask`: Submit an allow/deny verdict for a permission request.
-- `getAttachment`: Get an attachment of a task — its public link by default, or its base64 content — with its metadata.
+**Tasks**
+- `task`: Read and manage every workspace's tasks with `action` and `payload` — `listAll` (search and filter across the platform), `list` (one workspace), `create`, `get`, `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll` (`allow_all_commands`), `updateSchedule` (a scheduled/cron task), `delete` (with its messages and attachments — the way to retire a schedule rather than leave it running), `reply` (post to a task's thread), `respond` (allow/deny a permission request) and `getAttachment` (its public link by default, or its base64 content, with its metadata). `help` lists the actions and prints each one's payload.
 
 **Workspace Memory**
 - `listMemories`: List a workspace's memories — name, size and when each changed.

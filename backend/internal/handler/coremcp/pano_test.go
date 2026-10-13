@@ -47,7 +47,7 @@ func TestPano_WritesAsTheSupervisorWorkspace(t *testing.T) {
 		{ID: testWorkspace, Name: "supervisor"},
 	}}
 	s := &WorkspaceServer{crud: ctrl}
-	body := textOf(t, toolResult(s.handlePano(authedContext(), nil, mcpevent.PanoParams{Action: "delete", ID: base62(7)})))
+	body := textOf(t, toolResult(s.handlePano(authedContext(), nil, mcpevent.PanoParams{Action: "delete", Payload: map[string]any{"id": base62(7)}})))
 
 	if ctrl.listed != (entity.ListWorkspacesRequest{UserID: testUserID, IncludeArchived: true}) {
 		t.Errorf("the workspaces were listed with %+v, want the user's, archived included", ctrl.listed)
@@ -73,7 +73,7 @@ func TestPano_Refusals(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &WorkspaceServer{crud: tc.ctrl}
-			res := toolResult(s.handlePano(tc.ctx, nil, mcpevent.PanoParams{Action: "delete", ID: base62(7)}))
+			res := toolResult(s.handlePano(tc.ctx, nil, mcpevent.PanoParams{Action: "delete", Payload: map[string]any{"id": base62(7)}}))
 			if !res.isError || !strings.Contains(res.text, tc.want) {
 				t.Errorf("the tool answered %+v, want an error containing %q", res, tc.want)
 			}

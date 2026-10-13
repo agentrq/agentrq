@@ -8,9 +8,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
+
+	mcpevent "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 )
 
 // The example extensions declare the MCP tools they intend to call, and the
@@ -29,7 +33,19 @@ import (
 // somebody writing their fourth extension copies one — and an example asking for
 // a tool that does not exist teaches an extension that cannot be installed.
 
-var manifestToolRe = regexp.MustCompile(`^[a-zA-Z]+$`)
+// A tool, or one action of a tool that takes them: `task.create`.
+var manifestToolRe = regexp.MustCompile(`^[a-zA-Z]+(\.[a-zA-Z]+)?$`)
+
+// actionsOf reads the actions an action tool offers from its params' enum.
+func actionsOf(t *testing.T, params any) []string {
+	t.Helper()
+	f, ok := reflect.TypeOf(params).FieldByName("Action")
+	enum, isEnum := strings.CutPrefix(f.Tag.Get("jsonschema"), "enum: ")
+	if !ok || !isEnum {
+		t.Fatalf("%T has no Action enum", params)
+	}
+	return strings.Split(enum, ", ")
+}
 
 type exampleManifest struct {
 	Name string `json:"name"`
@@ -44,6 +60,8 @@ func TestExampleExtensionsAskForToolsThatExist(t *testing.T) {
 
 	workspaceTools := namesUnder(t, filepath.Join(root, "backend/internal/controller/mcp"), workspaceToolRe)
 	supervisorTools := namesUnder(t, filepath.Join(root, "backend/internal/handler/coremcp"), coreToolRe)
+	workspaceActions := map[string][]string{"task": actionsOf(t, mcpevent.TaskParams{}), "pano": actionsOf(t, mcpevent.PanoParams{})}
+	supervisorActions := map[string][]string{"task": actionsOf(t, TaskParams{}), "pano": actionsOf(t, mcpevent.PanoParams{})}
 
 	dir := filepath.Join(root, "examples/extensions")
 	entries, err := os.ReadDir(dir)
@@ -76,19 +94,22 @@ func TestExampleExtensionsAskForToolsThatExist(t *testing.T) {
 				t.Errorf("the folder is %q but the manifest calls itself %q", entry.Name(), manifest.Name)
 			}
 
-			check := func(asked, offered []string, surface string) {
-				for _, tool := range asked {
-					if !manifestToolRe.MatchString(tool) {
-						t.Errorf("%q is not a tool name", tool)
+			check := func(asked, offered []string, actions map[string][]string, surface string) {
+				for _, entry := range asked {
+					if !manifestToolRe.MatchString(entry) {
+						t.Errorf("%q is not a tool name", entry)
 						continue
 					}
+					tool, action, one := strings.Cut(entry, ".")
 					if !slices.Contains(offered, tool) {
 						t.Errorf("asks for %q, which the %s server does not offer", tool, surface)
+					} else if one && !slices.Contains(actions[tool], action) {
+						t.Errorf("asks for %q, but the %s server's %s has no action %q", entry, surface, tool, action)
 					}
 				}
 			}
-			check(manifest.MCP.Workspace, workspaceTools, "workspace")
-			check(manifest.MCP.Supervisor, supervisorTools, "supervisor")
+			check(manifest.MCP.Workspace, workspaceTools, workspaceActions, "workspace")
+			check(manifest.MCP.Supervisor, supervisorTools, supervisorActions, "supervisor")
 		})
 	}
 

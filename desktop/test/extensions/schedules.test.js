@@ -88,13 +88,13 @@ function fakeSupervisor(over = {}) {
       }
       return { ok: true, result: 'trigger deleted' }
     },
-    createTask: async (args) => {
+    'task.create': async (args) => {
       const task = { id: id('tk'), ...args }
       state.tasks[task.id] = task
       return wrap({ task })
     },
-    updateScheduledTask: async (args) => wrap({ task: { id: args.taskId, ...args } }),
-    deleteTask: async ({ taskId }) => {
+    'task.updateSchedule': async (args) => wrap({ task: { id: args.taskId, ...args } }),
+    'task.delete': async ({ taskId }) => {
       delete state.tasks[taskId]
       return { ok: true, result: 'task deleted' }
     },
@@ -102,7 +102,10 @@ function fakeSupervisor(over = {}) {
   }
 
   const calls = []
-  const supervisor = vi.fn(async (tool, args = {}) => {
+  const supervisor = vi.fn(async (name, input = {}) => {
+    // A task action is recorded as `task.<action>`, with its payload as args.
+    const tool = name === 'task' ? `task.${input.action}` : name
+    const args = name === 'task' ? input.payload : input
     calls.push({ tool, args })
     const handler = handlers[tool]
     if (!handler) throw new Error(`the test's supervisor has no ${tool}`)
@@ -313,7 +316,7 @@ describe('reconcile', () => {
 
     expect(result).toMatchObject({ ok: true, created: ['nightly'], updated: [], removed: [] })
     expect(fake.calls[0]).toMatchObject({
-      tool: 'createTask',
+      tool: 'task.create',
       args: { workspaceId: 'ws1', title: 'Nightly digest', cronSchedule: '0 9 * * *', assignee: 'agent' },
     })
     expect(saved().standup.nightly).toMatchObject({ kind: KINDS.task, taskId: 'tk1' })
@@ -339,7 +342,7 @@ describe('reconcile', () => {
 
     expect(result.updated).toEqual(['nightly'])
     expect(fake.calls.at(-1)).toMatchObject({
-      tool: 'updateScheduledTask',
+      tool: 'task.updateSchedule',
       args: { taskId: 'tk1', cronSchedule: '0 10 * * *' },
     })
     // Still one task, not two.
@@ -353,7 +356,7 @@ describe('reconcile', () => {
     const result = await schedules.reconcile('standup', [])
 
     expect(result.removed).toEqual(['nightly'])
-    expect(fake.calls.at(-1)).toMatchObject({ tool: 'deleteTask', args: { taskId: 'tk1' } })
+    expect(fake.calls.at(-1)).toMatchObject({ tool: 'task.delete', args: { taskId: 'tk1' } })
     expect(saved().standup).toEqual({})
   })
 
@@ -439,12 +442,12 @@ describe('reconcile', () => {
     const result = await schedules.reconcile('standup', [taskEntry({ kind: KINDS.trigger, event: 'deploy_done' })])
 
     expect(result.updated).toEqual(['nightly'])
-    expect(fake.toolsCalled()).toContain('deleteTask')
+    expect(fake.toolsCalled()).toContain('task.delete')
     expect(saved().standup.nightly).toMatchObject({ kind: KINDS.trigger })
   })
 
   // The bound that replaces the tool allowlist. The reconciler calls as the
-  // host — it needs `deleteTask`, which no extension would ever declare — so
+  // host — it needs the `task` action `delete`, which no extension would ever declare — so
   // the grant is checked here on the workspace a schedule names.
   it('refuses a schedule in a workspace the grant does not reach', async () => {
     const grant = { scope: SCOPE.workspace, workspaces: ['ws1'] }
@@ -578,7 +581,7 @@ describe('reconcile', () => {
 
   it('reports what could not be created, and keeps going', async () => {
     const fake = fakeSupervisor({
-      createTask: async () => ({ ok: false, reason: 'This extension may not call "createTask".' }),
+      'task.create': async () => ({ ok: false, reason: 'This extension may not call "createTask".' }),
     })
     const { schedules, logger, saved } = build({ supervisor: fake })
 
@@ -593,7 +596,7 @@ describe('reconcile', () => {
   })
 
   it('refuses to record a create that answered with no id', async () => {
-    const fake = fakeSupervisor({ createTask: async () => ({ ok: true, result: '{"task":{}}' }) })
+    const fake = fakeSupervisor({ 'task.create': async () => ({ ok: true, result: '{"task":{}}' }) })
     const { schedules, saved } = build({ supervisor: fake })
 
     const result = await schedules.reconcile('standup', [taskEntry()])
@@ -654,7 +657,7 @@ describe('reconcile', () => {
   // The kind changed, so the old one has to go first — and if it will not go,
   // making the new one anyway would leave two things running.
   it('does not make the replacement when the old one could not be removed', async () => {
-    const fake = fakeSupervisor({ deleteTask: async () => ({ ok: false, reason: 'workspace not found' }) })
+    const fake = fakeSupervisor({ 'task.delete': async () => ({ ok: false, reason: 'workspace not found' }) })
     const { schedules, saved } = build({ supervisor: fake })
     await schedules.reconcile('standup', [taskEntry()])
 
@@ -767,14 +770,14 @@ describe('reconcile', () => {
   // A record pointing at something the user deleted by hand would otherwise be
   // permanently broken, with no way back short of a reinstall.
   it('makes the task again when the update finds nothing to revise', async () => {
-    const fake = fakeSupervisor({ updateScheduledTask: async () => ({ ok: false, reason: 'task not found' }) })
+    const fake = fakeSupervisor({ 'task.updateSchedule': async () => ({ ok: false, reason: 'task not found' }) })
     const { schedules, saved } = build({ supervisor: fake })
     await schedules.reconcile('standup', [taskEntry()])
 
     const result = await schedules.reconcile('standup', [taskEntry({ cron: '0 10 * * *' })])
 
     expect(result.updated).toEqual(['nightly'])
-    expect(fake.toolsCalled().filter((tool) => tool === 'createTask')).toHaveLength(2)
+    expect(fake.toolsCalled().filter((tool) => tool === 'task.create')).toHaveLength(2)
     expect(saved().standup.nightly.taskId).toBe('tk2')
   })
 
@@ -824,7 +827,7 @@ describe('reconcile', () => {
   })
 
   it('reports a removal that failed, and keeps the record so it is tried again', async () => {
-    const fake = fakeSupervisor({ deleteTask: async () => ({ ok: false, reason: 'task not found' }) })
+    const fake = fakeSupervisor({ 'task.delete': async () => ({ ok: false, reason: 'task not found' }) })
     const { schedules, saved, logger } = build({ supervisor: fake })
     await schedules.reconcile('standup', [taskEntry()])
 
@@ -915,7 +918,7 @@ describe('removeOwner', () => {
 
     expect(result.ok).toBe(true)
     expect(result.removed.sort()).toEqual(['nightly', 'on-deploy'])
-    expect(fake.toolsCalled()).toContain('deleteTask')
+    expect(fake.toolsCalled()).toContain('task.delete')
     expect(fake.toolsCalled()).toContain('deleteEventTrigger')
     // The extension is gone from the record entirely, not left as an empty map.
     expect(saved().standup).toBeUndefined()
@@ -989,7 +992,7 @@ describe('removeOwner', () => {
   // The worst outcome available is a cron task still firing that nothing
   // remembers creating, so a failed removal keeps its record.
   it('keeps the record of what it could not remove, and says so', async () => {
-    const fake = fakeSupervisor({ deleteTask: async () => ({ ok: false, reason: 'workspace not found' }) })
+    const fake = fakeSupervisor({ 'task.delete': async () => ({ ok: false, reason: 'workspace not found' }) })
     const { schedules, saved, logger } = build({ supervisor: fake })
     await schedules.reconcile('standup', [taskEntry()])
 

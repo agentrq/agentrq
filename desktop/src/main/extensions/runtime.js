@@ -5,6 +5,7 @@
 import { checkCompatibility, parseManifest } from './manifest.js'
 import { checkShortcuts, requestedKeys } from './shortcuts.js'
 import { releaseSource } from './source.js'
+import { currentToolName } from './servers.js'
 import { entriesFor, invokeEntry, registryFor } from './surfaces.js'
 import { CONSENT_ORDER, availableConsents, narrowConsent } from './tool-calls.js'
 
@@ -82,13 +83,17 @@ export function clampToManifest(grant, manifest) {
     workspace: manifest?.mcp?.workspace ?? [],
     supervisor: manifest?.mcp?.supervisor ?? [],
   }
-  const keep = (granted = [], asked) => granted.filter((tool) => asked.includes(tool))
+  // A grant saved before the task tools merged names the retired tools; read
+  // them as the actions they became, as the manifest now is.
+  const keep = (granted = [], asked, surface) => [
+    ...new Set(granted.map((tool) => currentToolName(surface, tool)).filter((tool) => asked.includes(tool))),
+  ]
 
   return {
     ...grant,
     tools: {
-      workspace: keep(grant.tools?.workspace, declared.workspace),
-      supervisor: keep(grant.tools?.supervisor, declared.supervisor),
+      workspace: keep(grant.tools?.workspace, declared.workspace, 'workspace'),
+      supervisor: keep(grant.tools?.supervisor, declared.supervisor, 'supervisor'),
     },
     // The same intersection, for the consent to be asked about a tool call. It
     // matters more here than anywhere else in this function: the drift it
@@ -109,12 +114,21 @@ export function clampToManifest(grant, manifest) {
  * pass is what keeps the grant screen from being able to offer a grant for
  * something that was never going to load.
  */
-export function describeCandidate(source, { appVersion, workspaceTools, supervisorTools, taken = [] } = {}) {
+export function describeCandidate(
+  source,
+  { appVersion, workspaceTools, supervisorTools, workspaceActions, supervisorActions, taken = [] } = {},
+) {
   const parsed = parseManifest(source)
   if (!parsed.ok) return fail(parsed.reason)
 
   const manifest = parsed.manifest
-  const compatibility = checkCompatibility(manifest, { appVersion, workspaceTools, supervisorTools })
+  const compatibility = checkCompatibility(manifest, {
+    appVersion,
+    workspaceTools,
+    supervisorTools,
+    workspaceActions,
+    supervisorActions,
+  })
 
   // Checked here rather than at load, because a key that is already taken is
   // something a person can act on now — and a shortcut that silently does

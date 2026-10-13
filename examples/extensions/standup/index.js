@@ -21,10 +21,9 @@
  * `checkCompatibility` would have refused the install with "the workspace server
  * does not offer listTasks", but only once a real tool list was in front of it.
  * So the first rule of writing one of these: **read the server's actual tool
- * list before you write the manifest.** For the workspace server that is
- * `createTask`, `updateTaskStatus`, `reply`, `downloadAttachment`,
- * `getWorkspace`, `getTask`, `publishEvent`, `loadMemory`, `saveMemory`,
- * `deleteMemory` and `elicit` — no more.
+ * list before you write the manifest.** For the workspace server's tasks that
+ * is one tool, `task`, whose actions are `create`, `get`, `updateStatus`,
+ * `reply`, `elicit` and `getAttachment` — no listing among them.
  *
  * What that constraint produced is a better extension. `getWorkspace` already
  * answers with counts per status, which is what a standup is actually for; the
@@ -119,7 +118,7 @@ export function readWorkspace(text) {
 }
 
 /**
- * Reads the conversation out of `getTask`'s answer.
+ * Reads the conversation out of `task.get`'s answer.
  *
  * The text carries a `Conversation:` section holding JSON, and `total` in it is
  * the real length of the thread — not the number of messages returned, which is
@@ -260,7 +259,7 @@ export async function collect(ctx, { workspaceId } = {}) {
  *
  * This is the half `task-stats` cannot do. The board's task list carries only
  * the last message per task, so an extension with no permissions can never
- * count a thread — and one that asks for `getTask`, as this does at install,
+ * count a thread — and one that asks for `task.get`, as this does at install,
  * can.
  */
 export async function thread(ctx, task) {
@@ -268,11 +267,10 @@ export async function thread(ctx, task) {
   // keeps it out of the arguments, because the per-workspace server's tools take
   // no such parameter and refuse one.
   const ask = (over) =>
-    ctx.mcp.workspace('getTask', {
+    ctx.mcp.workspace('task', {
       workspaceId: task?.workspaceId,
-      taskId: task?.id,
-      includeConversation: true,
-      ...over,
+      action: 'get',
+      payload: { taskId: task?.id, includeConversation: true, ...over },
     })
 
   // The first call is for `total`, which is the thread's real length whatever

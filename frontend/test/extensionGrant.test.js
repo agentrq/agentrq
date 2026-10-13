@@ -33,14 +33,14 @@ describe('describeAsk', () => {
   });
 
   it('reads a workspace-only ask', () => {
-    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+    const ask = describeAsk(manifest({ workspace: ['task.get'] }));
 
     expect(ask.level).toBe('workspace');
-    expect(ask.workspace).toEqual(['getTask']);
+    expect(ask.workspace).toEqual(['task.get']);
   });
 
   it('reads any supervisor tool as the higher ask', () => {
-    expect(describeAsk(manifest({ supervisor: ['listAllTasks'] })).level).toBe('supervisor');
+    expect(describeAsk(manifest({ supervisor: ['task.listAll'] })).level).toBe('supervisor');
   });
 
   // The field is the author describing their own extension. Nothing enforces it
@@ -48,17 +48,17 @@ describe('describeAsk', () => {
   // read as a restriction, and it is kept out of the permission lists for that
   // reason alone.
   it('reads the declared hosts as a claim by the author, not a permission', () => {
-    const ask = describeAsk({ ...manifest({ workspace: ['getTask'] }), net: ['hooks.slack.com'] });
+    const ask = describeAsk({ ...manifest({ workspace: ['task.get'] }), net: ['hooks.slack.com'] });
 
     expect(ask.net).toEqual(['hooks.slack.com']);
     expect(ask.networkClaim).toBe('Its author says it contacts hooks.slack.com.');
     // Not in either permission list, and not something a grant can narrow.
-    expect(ask.workspace).toEqual(['getTask']);
+    expect(ask.workspace).toEqual(['task.get']);
     expect(toGrant(ask, { scope: SCOPE.workspace, workspaceId: 'ws1' })).not.toHaveProperty('net');
   });
 
   it('says nothing about the network when the manifest claimed nothing', () => {
-    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+    const ask = describeAsk(manifest({ workspace: ['task.get'] }));
 
     expect(ask.net).toEqual([]);
     // An empty sentence rather than "contacts nothing", which would be a promise.
@@ -68,7 +68,7 @@ describe('describeAsk', () => {
   it('always carries the sentence about the machine', () => {
     // The emptiest screen must not describe the least-restrained code: with no
     // permission list at all, this sentence is the whole of what is said.
-    for (const mcp of [undefined, { workspace: ['getTask'] }, { supervisor: ['x'] }]) {
+    for (const mcp of [undefined, { workspace: ['task.get'] }, { supervisor: ['x'] }]) {
       expect(describeAsk(manifest(mcp)).machineAccess).toContain('full access to your computer');
     }
   });
@@ -87,7 +87,7 @@ describe('availableScopes', () => {
   it('does not offer the account to an extension that cannot use it', () => {
     // Offering a grant nothing would use invites somebody to hand over the
     // account for no reason at all.
-    expect(availableScopes(describeAsk(manifest({ workspace: ['getTask'] })), inWorkspace)).toEqual([
+    expect(availableScopes(describeAsk(manifest({ workspace: ['task.get'] })), inWorkspace)).toEqual([
       SCOPE.workspace,
       SCOPE.selected,
     ]);
@@ -95,7 +95,7 @@ describe('availableScopes', () => {
 
   it('offers the whole ladder to one that can use every rung of it', () => {
     // Both kinds of tool, so every rung grants it something it asked for.
-    const both = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
+    const both = describeAsk(manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }));
 
     expect(availableScopes(both, inWorkspace)).toEqual([
       SCOPE.workspace,
@@ -115,8 +115,8 @@ describe('availableScopes', () => {
  */
 describe('availableScopes, with no workspace in context', () => {
   it('does not offer a rung whose name means nothing there', () => {
-    const workspaceAsk = describeAsk(manifest({ workspace: ['getTask'] }));
-    const both = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
+    const workspaceAsk = describeAsk(manifest({ workspace: ['task.get'] }));
+    const both = describeAsk(manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }));
 
     expect(availableScopes(workspaceAsk)).toEqual([SCOPE.selected]);
     expect(availableScopes(both)).toEqual([SCOPE.selected, SCOPE.supervisor]);
@@ -139,7 +139,7 @@ describe('availableScopes, with no workspace in context', () => {
  * nothing.
  */
 describe('an extension whose tools are all account-wide', () => {
-  const accountOnly = () => describeAsk(manifest({ supervisor: ['listWorkspaces', 'listAllTasks'] }));
+  const accountOnly = () => describeAsk(manifest({ supervisor: ['listWorkspaces', 'task.listAll'] }));
 
   it('is offered the account and nothing else', () => {
     expect(availableScopes(accountOnly(), { workspaceId: 'ws1' })).toEqual([SCOPE.supervisor]);
@@ -156,12 +156,12 @@ describe('an extension whose tools are all account-wide', () => {
   it('grants every tool it asked for at the rung it can use', () => {
     const grant = toGrant(accountOnly(), { scope: SCOPE.supervisor, workspaces: [], workspaceId: '' });
 
-    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'listAllTasks']);
+    expect(grant.tools.supervisor).toEqual(['listWorkspaces', 'task.listAll']);
   });
 });
 
 describe('validateGrant', () => {
-  const ask = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
+  const ask = describeAsk(manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }));
 
   it('accepts a rung the extension can use', () => {
     expect(validateGrant(ask, { scope: SCOPE.workspace, workspaceId: 'ws1' }).ok).toBe(true);
@@ -176,7 +176,7 @@ describe('validateGrant', () => {
   });
 
   it('refuses the account to an extension that did not ask for it', () => {
-    const narrow = describeAsk(manifest({ workspace: ['getTask'] }));
+    const narrow = describeAsk(manifest({ workspace: ['task.get'] }));
 
     expect(validateGrant(narrow, { scope: SCOPE.supervisor }).reason).toContain('did not ask');
   });
@@ -201,7 +201,7 @@ describe('validateGrant, with no workspace in context', () => {
   // The case that used to pass, and the reason the bug was invisible: an empty
   // grant looks exactly like a granted one until something is refused by it.
   it('refuses "this workspace" when there is no this workspace', () => {
-    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+    const ask = describeAsk(manifest({ workspace: ['task.get'] }));
 
     const { ok, reason } = validateGrant(ask, { scope: SCOPE.workspace, workspaces: [], workspaceId: '' });
 
@@ -210,14 +210,14 @@ describe('validateGrant, with no workspace in context', () => {
   });
 
   it('accepts naming them instead', () => {
-    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+    const ask = describeAsk(manifest({ workspace: ['task.get'] }));
 
     expect(validateGrant(ask, { scope: SCOPE.selected, workspaces: ['ws1'], workspaceId: '' }).ok).toBe(true);
   });
 });
 
 describe('toGrant', () => {
-  const ask = describeAsk(manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }));
+  const ask = describeAsk(manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }));
 
   it('carries the workspace that was in view at the narrowest rung', () => {
     const grant = toGrant(ask, { scope: SCOPE.workspace, workspaceId: 'ws1' });
@@ -238,7 +238,7 @@ describe('toGrant', () => {
     const grant = toGrant(ask, { scope: SCOPE.supervisor });
 
     expect(grant.workspaces).toEqual([]);
-    expect(grant.tools.supervisor).toEqual(['listAllTasks']);
+    expect(grant.tools.supervisor).toEqual(['task.listAll']);
   });
 
   it('records that the widest rung covers workspaces that do not exist yet', () => {
@@ -282,7 +282,7 @@ describe('useExtensionGrant', () => {
     // A default that pre-selects the widest grant is a default that gets
     // accepted.
     const grant = useExtensionGrant({
-      manifest: manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }),
+      manifest: manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }),
       workspaceId: 'ws1',
     });
 
@@ -291,7 +291,7 @@ describe('useExtensionGrant', () => {
   });
 
   it('reports what is missing rather than silently refusing', () => {
-    const grant = useExtensionGrant({ manifest: manifest({ workspace: ['getTask'] }), workspaceId: 'ws1' });
+    const grant = useExtensionGrant({ manifest: manifest({ workspace: ['task.get'] }), workspaceId: 'ws1' });
 
     grant.scope.value = SCOPE.selected;
 
@@ -315,14 +315,14 @@ describe('useExtensionGrant', () => {
 
   it('follows the chosen rung into the label and the grant', () => {
     const grant = useExtensionGrant({
-      manifest: manifest({ workspace: ['getTask'], supervisor: ['listAllTasks'] }),
+      manifest: manifest({ workspace: ['task.get'], supervisor: ['task.listAll'] }),
       workspaceId: 'ws1',
     });
 
     grant.scope.value = SCOPE.supervisor;
 
     expect(grant.label.value).toContain('including ones you create later');
-    expect(grant.grant.value.tools.supervisor).toEqual(['listAllTasks']);
+    expect(grant.grant.value.tools.supervisor).toEqual(['task.listAll']);
   });
 
   it('copes with being given nothing at all', () => {
@@ -456,7 +456,7 @@ describe('an extension that asks only to review tool calls', () => {
   });
 
   it('records no consent for an extension that never asked to review', () => {
-    const ask = describeAsk(manifest({ workspace: ['getTask'] }));
+    const ask = describeAsk(manifest({ workspace: ['task.get'] }));
 
     expect(toGrant(ask, { scope: SCOPE.selected, workspaces: ['ws1'], consent: CONSENT.decide }).hooks)
       .toEqual({ toolCall: CONSENT.none });

@@ -2,10 +2,10 @@
 // This notice may not be modified or removed.
 
 import { describe, expect, it } from 'vitest'
-import { parseChannelNotification, parseTaskReply } from '../src/client.js'
+import { AgentRqClient, parseChannelNotification, parseTaskReply } from '../src/client.js'
 import { renderGuidanceSection, renderPushFraming, renderTaskFraming, toolName } from '../src/prompt.js'
 
-// The exact rendering AgentRQ's `getTask` produces for a dequeued task; see
+// The exact rendering AgentRQ's `task` `get` produces for a dequeued task; see
 // handleGetTask in backend/internal/controller/mcp/server.go.
 const TASK_REPLY = [
   'Next assigned task:',
@@ -97,7 +97,7 @@ describe('framings', () => {
     const framed = renderTaskFraming(parseTaskReply(TASK_REPLY)!, 'agentrq')
     expect(framed).toContain('[AGENTRQ TASK]')
     expect(framed).toContain('task_id: 0h8b1P7TX5V')
-    expect(framed).toContain('mcp__agentrq__updateTaskStatus')
+    expect(framed).toContain('mcp__agentrq__task')
     expect(framed).toContain('Details: Ship the bundle, then open a PR.')
   })
 
@@ -114,8 +114,8 @@ describe('framings', () => {
       user: 'human',
     }, 'agentrq')
     expect(framed).toContain('chat_id: 0h8b1P7TX5V')
-    expect(framed).toContain('mcp__agentrq__updateTaskStatus')
-    expect(framed).toContain('mcp__agentrq__reply')
+    expect(framed).toContain('mcp__agentrq__task')
+    expect(framed).toContain('"reply"')
   })
 })
 
@@ -127,21 +127,41 @@ describe('serverName follows the bridge', () => {
 
   it('renames every tool in the guidance section', () => {
     const section = renderGuidanceSection('acme')
-    expect(section).toContain('mcp__acme__reply')
-    expect(section).toContain('mcp__acme__updateTaskStatus')
-    expect(section).toContain('mcp__acme__createTask')
+    expect(section).toContain('mcp__acme__task')
+    expect(section).toContain('mcp__acme__pano')
+    expect(section).toContain('`updateStatus`')
     expect(section).not.toContain('mcp__agentrq__')
   })
 
   it('renames every tool in both framings', () => {
-    expect(renderPushFraming(push, 'acme')).toContain('mcp__acme__reply')
+    expect(renderPushFraming(push, 'acme')).toContain('mcp__acme__task')
     expect(renderPushFraming(push, 'acme')).not.toContain('mcp__agentrq__')
     const task = renderTaskFraming(parseTaskReply(TASK_REPLY)!, 'acme')
-    expect(task).toContain('mcp__acme__updateTaskStatus')
+    expect(task).toContain('mcp__acme__task')
     expect(task).not.toContain('mcp__agentrq__')
   })
 
   it('builds the public name the bridge registers', () => {
     expect(toolName('agentrq', 'reply')).toBe('mcp__agentrq__reply')
+  })
+})
+
+describe('fetching a task', () => {
+  // The workspace's task tool takes an action and its payload; the retired
+  // getTask still answers on the server, but nothing new should depend on it.
+  it('calls the task tool with action get', async () => {
+    const client = new AgentRqClient({} as ConstructorParameters<typeof AgentRqClient>[0])
+    const calls: unknown[][] = []
+    client.callTool = async (name: string, args: Record<string, unknown>) => {
+      calls.push([name, args])
+      return TASK_REPLY
+    }
+    const signal = new AbortController().signal
+    expect((await client.fetchNextTask(signal))?.id).toBe('0h8b1P7TX5V')
+    expect((await client.fetchTask('0h8b1P7TX5V', signal))?.id).toBe('0h8b1P7TX5V')
+    expect(calls).toEqual([
+      ['task', { action: 'get' }],
+      ['task', { action: 'get', payload: { taskId: '0h8b1P7TX5V' } }],
+    ])
   })
 })

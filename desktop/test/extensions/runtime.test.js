@@ -145,7 +145,7 @@ describe('clampToManifest', () => {
   const grant = (over = {}) => ({
     scope: 'selected',
     workspaces: ['ws1'],
-    tools: { workspace: ['listTasks', 'getTask'], supervisor: ['listAllTasks'] },
+    tools: { workspace: ['loadMemory', 'task.get'], supervisor: ['task.listAll'] },
     ...over,
   })
 
@@ -181,20 +181,31 @@ describe('clampToManifest', () => {
   })
 
   it('drops a tool the manifest no longer asks for', () => {
-    const narrowed = clampToManifest(grant(), { mcp: { workspace: ['getTask'], supervisor: [] } })
+    const narrowed = clampToManifest(grant(), { mcp: { workspace: ['task.get'], supervisor: [] } })
 
-    expect(narrowed.tools).toEqual({ workspace: ['getTask'], supervisor: [] })
+    expect(narrowed.tools).toEqual({ workspace: ['task.get'], supervisor: [] })
+  })
+
+  // A grant saved before the task tools merged names the old tools, while the
+  // manifest, parsed again, names the actions; read as those, it keeps them.
+  it('keeps a saved grant that names a tool which became a task action', () => {
+    const saved = grant({ tools: { workspace: ['getTask', 'task.get'], supervisor: ['listAllTasks'] } })
+
+    expect(clampToManifest(saved, { mcp: { workspace: ['task.get'], supervisor: ['task.listAll'] } }).tools).toEqual({
+      workspace: ['task.get'],
+      supervisor: ['task.listAll'],
+    })
   })
 
   // Only a person can widen a grant, at an install screen. A manifest edited to
   // ask for more must not be able to help itself.
   it('never widens one, however much the manifest asks for', () => {
     const widened = clampToManifest(
-      grant({ tools: { workspace: ['getTask'], supervisor: [] } }),
-      { mcp: { workspace: ['getTask', 'createTask'], supervisor: ['listAllTasks'] } },
+      grant({ tools: { workspace: ['task.get'], supervisor: [] } }),
+      { mcp: { workspace: ['task.get', 'task.create'], supervisor: ['task.listAll'] } },
     )
 
-    expect(widened.tools).toEqual({ workspace: ['getTask'], supervisor: [] })
+    expect(widened.tools).toEqual({ workspace: ['task.get'], supervisor: [] })
   })
 
   it('leaves the workspaces alone, because that answer came from a person', () => {

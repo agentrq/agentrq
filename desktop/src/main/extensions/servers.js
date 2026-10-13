@@ -50,12 +50,8 @@
  * Deliberately absent: anything that lists tasks. See above.
  */
 export const WORKSPACE_TOOLS = Object.freeze([
-  'createTask',
-  'updateTaskStatus',
-  'reply',
-  'getAttachment',
+  'task',
   'getWorkspace',
-  'getTask',
   'publishEvent',
   'loadMemory',
   'saveMemory',
@@ -65,7 +61,6 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'saveSkill',
   'deleteSkill',
   'pano',
-  'elicit',
   'listSiteTools',
   'getSiteToolDefinition',
   'callSiteTool',
@@ -80,19 +75,7 @@ export const SUPERVISOR_TOOLS = Object.freeze([
   'getWorkspace',
   'updateWorkspace',
   'getWorkspaceStats',
-  'listTasks',
-  'listAllTasks',
-  'createTask',
-  'getTask',
-  'respondToTask',
-  'replyToTask',
-  'updateTaskStatus',
-  'updateTaskOrder',
-  'updateTaskAssignee',
-  'updateTaskAllowAll',
-  'updateScheduledTask',
-  'deleteTask',
-  'getAttachment',
+  'task',
   'listMemories',
   'getMemory',
   'searchSkills',
@@ -126,11 +109,104 @@ export const SUPERVISOR_TOOLS = Object.freeze([
   'pano',
 ])
 
+/**
+ * The tools that take an action and a payload, and their actions, per surface.
+ *
+ * The enums of the Go `TaskParams` and `PanoParams`, which a test compares. A
+ * manifest asks for one of these bare (`"task"`, every action) or for one action
+ * (`"task.create"`), and the broker holds a call to the action it names.
+ */
+const PANO_ACTIONS = Object.freeze(['save', 'read', 'comment', 'attach', 'delete', 'help'])
+
+export const WORKSPACE_ACTIONS = Object.freeze({
+  task: Object.freeze(['create', 'get', 'updateStatus', 'reply', 'elicit', 'getAttachment', 'help']),
+  pano: PANO_ACTIONS,
+})
+
+export const SUPERVISOR_ACTIONS = Object.freeze({
+  task: Object.freeze([
+    'list',
+    'listAll',
+    'create',
+    'get',
+    'reply',
+    'respond',
+    'updateStatus',
+    'updateSortingOrder',
+    'updateAssignee',
+    'updateAllowAll',
+    'updateSchedule',
+    'delete',
+    'getAttachment',
+    'help',
+  ]),
+  pano: PANO_ACTIONS,
+})
+
+/**
+ * The tools that became `task` actions, and the action each became.
+ *
+ * So an extension installed before the merge keeps both its manifest and its
+ * calls: a retired name is read as `task.<action>` wherever it appears. The
+ * servers answer these names too, but a grant has to be checked against what a
+ * call really does, and that is the action.
+ */
+export const RETIRED_TOOLS = Object.freeze({
+  workspace: Object.freeze({
+    createTask: 'create',
+    getTask: 'get',
+    updateTaskStatus: 'updateStatus',
+    reply: 'reply',
+    elicit: 'elicit',
+    getAttachment: 'getAttachment',
+  }),
+  supervisor: Object.freeze({
+    listTasks: 'list',
+    listAllTasks: 'listAll',
+    createTask: 'create',
+    getTask: 'get',
+    respondToTask: 'respond',
+    replyToTask: 'reply',
+    updateTaskStatus: 'updateStatus',
+    updateTaskOrder: 'updateSortingOrder',
+    updateTaskAssignee: 'updateAssignee',
+    updateTaskAllowAll: 'updateAllowAll',
+    updateScheduledTask: 'updateSchedule',
+    deleteTask: 'delete',
+    getAttachment: 'getAttachment',
+  }),
+})
+
+/** A manifest or grant entry as it is now spelled: a retired name becomes `task.<action>`. */
+export function currentToolName(surface, tool) {
+  const action = RETIRED_TOOLS[surface]?.[tool]
+  return action ? `task.${action}` : tool
+}
+
+/**
+ * A call that names a retired tool, as the `task` call it now is.
+ *
+ * The old arguments are the payload, apart from the workspace reply's `chatId`,
+ * which the task tool calls `taskId`. Anything else comes back as it was.
+ */
+export function currentCall(surface, tool, args = {}) {
+  const action = RETIRED_TOOLS[surface]?.[tool]
+  if (!action) return { tool, args }
+  const { workspaceId, ...payload } = args
+  if (surface === 'workspace' && action === 'reply' && 'chatId' in payload) {
+    payload.taskId = payload.chatId
+    delete payload.chatId
+  }
+  return { tool: 'task', args: { ...(workspaceId ? { workspaceId } : {}), action, payload } }
+}
+
 /** What `checkCompatibility` takes, with the running version. */
 export function serverTools(appVersion) {
   return {
     appVersion,
     workspaceTools: [...WORKSPACE_TOOLS],
     supervisorTools: [...SUPERVISOR_TOOLS],
+    workspaceActions: WORKSPACE_ACTIONS,
+    supervisorActions: SUPERVISOR_ACTIONS,
   }
 }

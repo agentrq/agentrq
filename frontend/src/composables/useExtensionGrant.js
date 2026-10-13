@@ -171,8 +171,8 @@ export function availableScopes(ask, { workspaceId = '' } = {}) {
 /**
  * Whether a chosen grant is coherent and complete.
  *
- * The supervisor rung deliberately has no workspace list. `listAllTasks` spans
- * the platform and `createTask(workspaceId)` reaches anywhere, so "supervisor,
+ * The supervisor rung deliberately has no workspace list. `task.listAll` spans
+ * the platform and `task.create(workspaceId)` reaches anywhere, so "supervisor,
  * but only this workspace" is not a narrower grant — it is the same grant with a
  * misleading label. The ladder makes it unrepresentable rather than merely
  * discouraged.

@@ -1,5 +1,8 @@
 # The Pano
 
+- **The tool takes `action` and `payload`** (see
+  [mcp-and-tasks.md](mcp-and-tasks.md)): each action's payload is its own
+  struct in `pano.go`, which is also what `help` prints.
 - **A file is stored only if the markdown links it.** `save` refuses an
   unlinked file and drops one the markdown stops linking; `attach` is the only
   way in without a link. Relaxing this leaves blobs nothing points to.

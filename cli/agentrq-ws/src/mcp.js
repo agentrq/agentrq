@@ -204,6 +204,26 @@ export class McpClient {
   }
 
   /**
+   * Call one action of an action tool — `task`, `pano` — which takes two
+   * inputs, the action and its payload. A server from before those tools took
+   * them gets the call it knows instead: `legacy` is the tool and arguments it
+   * had for this, `[name, args]`.
+   */
+  async callAction(tool, action, payload, legacy) {
+    if (!(await this.takesPayload(tool))) return this.callTool(...legacy)
+    return this.callTool(tool, { action, payload: pruneUndefined(payload) })
+  }
+
+  /** Whether the server's `tool` takes a payload: asked once per client. */
+  async takesPayload(tool) {
+    if (!this.actionTools) {
+      const tools = await this.listTools()
+      this.actionTools = new Set(tools.filter((t) => t.inputSchema?.properties?.payload).map((t) => t.name))
+    }
+    return this.actionTools.has(tool)
+  }
+
+  /**
    * Call a tool and return its text.
    *
    * A tool that answers with `isError` is a refusal by the workspace (a bad

@@ -32,7 +32,7 @@ const valid = () => ({
   description: 'Create and search Linear issues from tasks.',
   license: 'MIT',
   engines: { agentrq: '^1.4' },
-  mcp: { workspace: ['getTask', 'reply'], supervisor: ['listAllTasks'] },
+  mcp: { workspace: ['getWorkspace', 'task.reply'], supervisor: ['task.listAll'] },
   config: [{ key: 'apiKey', type: 'secret', label: 'Linear API key' }],
   provides: { ui: ['workspacePanel'] },
   artifact: { release: 'v1.2.0', asset: 'linear-1.2.0.tgz', sha256: 'a'.repeat(64) },
@@ -220,8 +220,17 @@ describe('parseManifest', () => {
     expect(ok).toBe(true)
     expect(manifest.name).toBe('linear')
     expect(manifest.license).toBe('MIT')
-    expect(manifest.mcp.workspace).toEqual(['getTask', 'reply'])
+    expect(manifest.mcp.workspace).toEqual(['getWorkspace', 'task.reply'])
     expect(manifest.artifact.sha256).toBe('a'.repeat(64))
+  })
+
+  it('reads a tool that became a task action as that action', () => {
+    // A manifest written before the task tools merged keeps asking for what it
+    // always did, and asking for one twice is not a mistake worth refusing.
+    const mcp = { workspace: ['getTask', 'reply', 'task.reply'], supervisor: ['listAllTasks', 'listWorkspaces'] }
+    const { manifest } = parseManifest({ ...valid(), mcp })
+
+    expect(manifest.mcp).toEqual({ workspace: ['task.get', 'task.reply'], supervisor: ['task.listAll', 'listWorkspaces'] })
   })
 
   it('reads a manifest that arrives as text', () => {
@@ -587,7 +596,12 @@ describe('satisfiesRange', () => {
 
 describe('checkCompatibility', () => {
   const manifest = () => parseManifest(valid()).manifest
-  const tools = { workspaceTools: ['getTask', 'reply'], supervisorTools: ['listAllTasks'] }
+  const tools = {
+    workspaceTools: ['getWorkspace', 'task'],
+    supervisorTools: ['task'],
+    workspaceActions: { task: ['reply'] },
+    supervisorActions: { task: ['listAll'] },
+  }
 
   it('passes when the app is new enough and every tool exists', () => {
     const { compatible, reasons } = checkCompatibility(manifest(), { appVersion: '1.4.2', ...tools })
@@ -607,13 +621,20 @@ describe('checkCompatibility', () => {
     // The real check: a self-hosted backend may be older than the extension.
     const { compatible, reasons } = checkCompatibility(manifest(), {
       appVersion: '1.4.0',
-      workspaceTools: ['getTask'],
+      workspaceTools: ['getWorkspace'],
       supervisorTools: [],
     })
 
     expect(compatible).toBe(false)
-    expect(reasons).toContain('The workspace server does not offer "reply".')
-    expect(reasons).toContain('The supervisor server does not offer "listAllTasks".')
+    expect(reasons).toContain('The workspace server does not offer "task".')
+    expect(reasons).toContain('The supervisor server does not offer "task".')
+  })
+
+  it('names an action the tool does not have', () => {
+    const { compatible, reasons } = checkCompatibility(manifest(), { appVersion: '1.4.0', ...tools, workspaceActions: {} })
+
+    expect(compatible).toBe(false)
+    expect(reasons).toEqual(['The workspace server\'s "task" has no action "reply".'])
   })
 
   it('reports every reason, not just the first', () => {

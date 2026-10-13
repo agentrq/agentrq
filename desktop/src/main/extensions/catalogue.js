@@ -22,13 +22,18 @@ import { checkCompatibility } from './manifest.js'
  * A broken entry passes through untouched: there is no manifest to judge, and
  * its parse failure is already the reason it cannot be used.
  */
-export function decorate(index, { appVersion = '', workspaceTools = [], supervisorTools = [] } = {}) {
+export function decorate(
+  index,
+  { appVersion = '', workspaceTools = [], supervisorTools = [], workspaceActions = {}, supervisorActions = {} } = {},
+) {
   const entries = (index?.entries ?? []).map((entry) => {
     if (!entry.ok) return entry
     const { compatible, reasons } = checkCompatibility(entry.manifest, {
       appVersion,
       workspaceTools,
       supervisorTools,
+      workspaceActions,
+      supervisorActions,
     })
     return { ...entry, compatible, reasons }
   })

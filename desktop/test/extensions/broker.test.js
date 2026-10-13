@@ -16,7 +16,7 @@ import { SCOPE, createBroker, permits } from '../../src/main/extensions/broker.j
 const grant = (over = {}) => ({
   scope: SCOPE.workspace,
   workspaces: ['ws1'],
-  tools: { workspace: ['getTask', 'reply'], supervisor: [] },
+  tools: { workspace: ['task.get', 'task.reply'], supervisor: [] },
   ...over,
 })
 
@@ -35,7 +35,7 @@ function build(over = {}) {
 
 describe('permits', () => {
   it('allows a granted tool on a granted workspace', () => {
-    expect(permits(grant(), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws1' }).ok).toBe(true)
+    expect(permits(grant(), { surface: 'workspace', tool: 'task', action: 'get', workspaceId: 'ws1' }).ok).toBe(true)
   })
 
   it('names the surface when refusing a tool', () => {
@@ -58,9 +58,10 @@ describe('permits', () => {
    */
   it('treats a grant that never recorded a list as an empty one', () => {
     // A record written by an older version has no `workspaces` at all.
-    const legacy = permits({ scope: SCOPE.workspace, tools: { workspace: ['getTask'], supervisor: [] } }, {
+    const legacy = permits({ scope: SCOPE.workspace, tools: { workspace: ['task.get'], supervisor: [] } }, {
       surface: 'workspace',
-      tool: 'getTask',
+      tool: 'task',
+      action: 'get',
       workspaceId: 'ws1',
     })
 
@@ -68,8 +69,8 @@ describe('permits', () => {
   })
 
   it('tells an empty grant apart from a workspace left out of one', () => {
-    const nothing = permits(grant({ workspaces: [] }), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws1' })
-    const elsewhere = permits(grant(), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws2' })
+    const nothing = permits(grant({ workspaces: [] }), { surface: 'workspace', tool: 'task', action: 'get', workspaceId: 'ws1' })
+    const elsewhere = permits(grant(), { surface: 'workspace', tool: 'task', action: 'get', workspaceId: 'ws2' })
 
     expect(nothing.reason).toContain('not granted access to any workspace')
     // And says what to do about it, because the user cannot widen a grant.
@@ -79,31 +80,31 @@ describe('permits', () => {
 
   it('refuses a workspace outside the grant', () => {
     // A tool being allowed does not make it allowed everywhere.
-    const denied = permits(grant(), { surface: 'workspace', tool: 'getTask', workspaceId: 'ws2' })
+    const denied = permits(grant(), { surface: 'workspace', tool: 'task', action: 'get', workspaceId: 'ws2' })
 
     expect(denied.reason).toBe('This extension was not granted access to that workspace.')
   })
 
   it('refuses a workspace call that names no workspace', () => {
-    expect(permits(grant(), { surface: 'workspace', tool: 'getTask' }).reason).toBe(
+    expect(permits(grant(), { surface: 'workspace', tool: 'task', action: 'get' }).reason).toBe(
       'This call names no workspace.',
     )
   })
 
   it('refuses the supervisor to anything below that rung', () => {
-    const asked = { surface: 'supervisor', tool: 'listAllTasks' }
-    const withTool = grant({ tools: { workspace: [], supervisor: ['listAllTasks'] } })
+    const asked = { surface: 'supervisor', tool: 'task', action: 'listAll' }
+    const withTool = grant({ tools: { workspace: [], supervisor: ['task.listAll'] } })
 
     expect(permits(withTool, asked).reason).toBe('This extension was not granted access to all workspaces.')
     expect(permits(grant({ ...withTool, scope: SCOPE.selected }), asked).ok).toBe(false)
   })
 
   it('lets the supervisor rung reach a workspace no list mentions', () => {
-    // Because that rung *is* every workspace — listAllTasks spans the platform
-    // and createTask(workspaceId) reaches anywhere.
+    // Because that rung *is* every workspace — task.listAll spans the platform
+    // and task.create(workspaceId) reaches anywhere.
     const supervisor = grant({ scope: SCOPE.supervisor, workspaces: [] })
 
-    expect(permits(supervisor, { surface: 'workspace', tool: 'getTask', workspaceId: 'anything' }).ok).toBe(
+    expect(permits(supervisor, { surface: 'workspace', tool: 'task', action: 'get', workspaceId: 'anything' }).ok).toBe(
       true,
     )
   })
@@ -112,11 +113,31 @@ describe('permits', () => {
     // The widest scope is not a blanket permission.
     const supervisor = grant({ scope: SCOPE.supervisor, tools: { workspace: [], supervisor: [] } })
 
-    expect(permits(supervisor, { surface: 'supervisor', tool: 'listAllTasks' }).ok).toBe(false)
+    expect(permits(supervisor, { surface: 'supervisor', tool: 'task', action: 'listAll' }).ok).toBe(false)
   })
 
   it('refuses when there is no grant to consult', () => {
-    expect(permits(undefined, { surface: 'workspace', tool: 'getTask' }).ok).toBe(false)
+    expect(permits(undefined, { surface: 'workspace', tool: 'task', action: 'get' }).ok).toBe(false)
+  })
+
+  it('holds an action tool to the action a call names, and says which', () => {
+    const { ok, reason } = permits(grant(), { surface: 'workspace', tool: 'task', action: 'create', workspaceId: 'ws1' })
+
+    expect(ok).toBe(false)
+    expect(reason).toBe('This extension may not call "task.create" on the workspace server.')
+  })
+
+  it('lets the bare tool grant every action', () => {
+    const everything = grant({ tools: { workspace: ['task'], supervisor: [] } })
+
+    expect(permits(everything, { surface: 'workspace', tool: 'task', action: 'create', workspaceId: 'ws1' }).ok).toBe(true)
+  })
+
+  it('answers help to an extension granted any action of the tool, and to no other', () => {
+    const help = { surface: 'workspace', tool: 'task', action: 'help', workspaceId: 'ws1' }
+
+    expect(permits(grant(), help).ok).toBe(true)
+    expect(permits(grant({ tools: { workspace: ['pano.read'], supervisor: [] } }), help).ok).toBe(false)
   })
 })
 
@@ -135,27 +156,37 @@ describe('createBroker', () => {
     const { broker } = build({ callWorkspace })
     broker.setGrant('linear', grant())
 
-    await broker.clientFor('linear').workspace('getTask', { workspaceId: 'ws1', taskId: 't1', includeConversation: true })
+    await broker
+      .clientFor('linear')
+      .workspace('task', { workspaceId: 'ws1', action: 'get', payload: { workspaceId: 'ws1', taskId: 't1' } })
 
-    expect(callWorkspace.mock.calls[0][0].args).toEqual({ taskId: 't1', includeConversation: true })
+    // Out of the payload as well, where an action tool's fields are.
+    expect(callWorkspace.mock.calls[0][0].args).toEqual({ action: 'get', payload: { taskId: 't1' } })
     // And is still what decided the call was allowed, and where it goes.
     expect(callWorkspace.mock.calls[0][0].workspaceId).toBe('ws1')
   })
 
   // One endpoint for the whole account, so there it is a real argument:
-  // `listTasks(workspaceId)` means exactly what it says.
+  // `task.list(workspaceId)` means exactly what it says. An action tool takes
+  // it in its payload, so that is where it goes.
   it('keeps it for the supervisor, where it is an argument', async () => {
     const callSupervisor = vi.fn(async () => ({}))
     const { broker } = build({ callSupervisor })
     broker.setGrant('digest', {
       scope: SCOPE.supervisor,
       workspaces: [],
-      tools: { workspace: [], supervisor: ['listTasks'] },
+      tools: { workspace: [], supervisor: ['task.list', 'listMemories'] },
     })
+    const client = broker.clientFor('digest')
 
-    await broker.clientFor('digest').supervisor('listTasks', { workspaceId: 'ws1', limit: 5 })
+    await client.supervisor('task', { workspaceId: 'ws1', action: 'list', payload: { limit: 5 } })
+    await client.supervisor('listMemories', { workspaceId: 'ws1' })
 
-    expect(callSupervisor).toHaveBeenCalledWith({ tool: 'listTasks', args: { workspaceId: 'ws1', limit: 5 } })
+    expect(callSupervisor).toHaveBeenNthCalledWith(1, {
+      tool: 'task',
+      args: { action: 'list', payload: { limit: 5, workspaceId: 'ws1' } },
+    })
+    expect(callSupervisor).toHaveBeenNthCalledWith(2, { tool: 'listMemories', args: { workspaceId: 'ws1' } })
   })
 
   it('makes the call and hands back the result', async () => {
@@ -169,11 +200,40 @@ describe('createBroker', () => {
     // The workspace goes to the *caller*, which turns it into an endpoint, and
     // not to the tool — the per-workspace server has no such parameter and
     // refuses one. See the note at the top of broker.js.
+    // Called by its old name, as an extension written before `task` does, and
+    // made as the action it became.
     expect(callWorkspace).toHaveBeenCalledWith({
       workspaceId: 'ws1',
-      tool: 'getTask',
-      args: { taskId: 't1' },
+      tool: 'task',
+      args: { action: 'get', payload: { taskId: 't1' } },
     })
+  })
+
+  it('sends an action with no payload an empty one', async () => {
+    const callWorkspace = vi.fn(async () => ({}))
+    const { broker } = build({ callWorkspace })
+    broker.setGrant('linear', grant())
+
+    await broker.clientFor('linear').workspace('task', { workspaceId: 'ws1', action: 'help' })
+
+    expect(callWorkspace.mock.calls[0][0].args).toEqual({ action: 'help', payload: {} })
+  })
+
+  it('knows no action tools on a surface that does not exist', () => {
+    expect(permits(grant(), { surface: 'elsewhere', tool: 'task', action: 'get' }).reason).toBe(
+      'This extension may not call "task" on the elsewhere server.',
+    )
+  })
+
+  it('calls an old reply as task.reply, its chatId as the taskId', async () => {
+    const callWorkspace = vi.fn(async () => ({}))
+    const { broker } = build({ callWorkspace })
+    broker.setGrant('linear', grant({ tools: { workspace: ['reply'], supervisor: [] } }))
+
+    const result = await broker.clientFor('linear').workspace('reply', { workspaceId: 'ws1', chatId: 't1', text: 'hi' })
+
+    expect(result.ok).toBe(true)
+    expect(callWorkspace.mock.calls[0][0].args).toEqual({ action: 'reply', payload: { taskId: 't1', text: 'hi' } })
   })
 
   it('hands the extension nothing that could be a credential', async () => {
@@ -208,7 +268,7 @@ describe('createBroker', () => {
     await client.workspace('getTask', { workspaceId: 'ws1' })
     await client.workspace('deleteTask', { workspaceId: 'ws1' })
 
-    expect(record).toHaveBeenNthCalledWith(1, expect.objectContaining({ allowed: true, tool: 'getTask' }))
+    expect(record).toHaveBeenNthCalledWith(1, expect.objectContaining({ allowed: true, tool: 'task', action: 'get' }))
     expect(record).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ allowed: false, tool: 'deleteTask', name: 'linear' }),
@@ -260,12 +320,12 @@ describe('createBroker', () => {
   it('calls the supervisor without a workspace, at that rung', async () => {
     const callSupervisor = vi.fn(async () => ({ tasks: [] }))
     const { broker } = build({ callSupervisor })
-    broker.setGrant('linear', grant({ scope: SCOPE.supervisor, tools: { workspace: [], supervisor: ['listAllTasks'] } }))
+    broker.setGrant('linear', grant({ scope: SCOPE.supervisor, tools: { workspace: [], supervisor: ['task.listAll'] } }))
 
     const result = await broker.clientFor('linear').supervisor('listAllTasks', {})
 
     expect(result.ok).toBe(true)
-    expect(callSupervisor).toHaveBeenCalledWith({ tool: 'listAllTasks', args: {} })
+    expect(callSupervisor).toHaveBeenCalledWith({ tool: 'task', args: { action: 'listAll', payload: {} } })
   })
 
   it('takes a copy of the grant, so a caller cannot widen it afterwards', () => {
@@ -276,8 +336,15 @@ describe('createBroker', () => {
     original.tools.workspace.push('deleteTask')
     original.workspaces.push('ws2')
 
-    expect(broker.grantFor('linear').tools.workspace).toEqual(['getTask', 'reply'])
+    expect(broker.grantFor('linear').tools.workspace).toEqual(['task.get', 'task.reply'])
     expect(broker.grantFor('linear').workspaces).toEqual(['ws1'])
+  })
+
+  it('reads a grant saved before the task tools merged as the actions they became', () => {
+    const { broker } = build()
+    broker.setGrant('digest', grant({ tools: { workspace: ['getTask', 'task.get'], supervisor: ['listAllTasks', 'listWorkspaces'] } }))
+
+    expect(broker.grantFor('digest').tools).toEqual({ workspace: ['task.get'], supervisor: ['task.listAll', 'listWorkspaces'] })
   })
 
   it('hands out a copy of the grant too', () => {

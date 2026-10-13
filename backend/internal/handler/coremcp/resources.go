@@ -55,7 +55,7 @@ func (s *WorkspaceServer) readNewWorkspaceGuide(ctx context.Context, req *mcp.Re
 		"3. Call **getWorkspace** on the new workspace's id for its `mcpUrl`. A human still has to open that " +
 		"workspace's Settings page in the web app to connect an agent to it — creating the workspace here " +
 		"does not by itself start one or write its `.mcp.json`.\n" +
-		"4. Once an agent is connected, hand it its first task with **createTask**.\n"
+		"4. Once an agent is connected, hand it its first task with **task** action `create`.\n"
 
 	return &mcp.ReadResourceResult{
 		Contents: []*mcp.ResourceContents{

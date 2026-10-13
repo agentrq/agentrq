@@ -70,14 +70,14 @@ func TestEveryToolIsAnnotated(t *testing.T) {
 }
 
 // Named one by one, because the shape asserted above is only as good as the
-// tools it was applied to. These four are where getting it wrong costs
-// something: two of them cannot be undone, and the other two are the reads a
-// client is most likely to run unattended.
+// tools it was applied to. These are where getting it wrong costs something:
+// task and deleteWorkflow can destroy what cannot be undone (task's delete
+// action takes its reads down with it), and getMemory is a read a client is
+// likely to run unattended.
 func TestConsequentialToolAnnotations(t *testing.T) {
 	want := map[string]struct{ readOnly, destructive bool }{
-		"deleteTask":     {destructive: true},
+		"task":           {destructive: true},
 		"deleteWorkflow": {destructive: true},
-		"listTasks":      {readOnly: true},
 		"getMemory":      {readOnly: true},
 	}
 

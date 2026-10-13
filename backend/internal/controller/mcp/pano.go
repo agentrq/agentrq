@@ -27,7 +27,8 @@ const PanoCLIHint = " Prefer the shell to save tokens: `npx -y @agentrq/agentrq-
 	"prints only the id, and `pano read <id> --out DIR` writes the markdown and downloads its files there; see `pano --help`."
 
 // PanoToolDescription is the pano tool's description, on both servers.
-var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. One action per call. " +
+var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. Two inputs: action, and payload, the action's fields. " +
+	"Run action help for the actions, and help with payload {\"topic\": \"<action>\"} for one's payload. " +
 	"save: no id creates a doc and returns its id; with an id it replaces the doc's title and markdown. A title and markdown are required. " +
 	"A markdown task list (- [ ] item, - [x] done) shows as a checklist with its progress. " +
 	"An item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link when you save, and the item follows the task's status, ticked once it is completed. " +
@@ -41,17 +42,37 @@ var PanoToolDescription = "Read and write the Pano: markdown docs shared by ever
 
 // PanoParams is the input to the pano tool.
 type PanoParams struct {
-	Action             string          `json:"action" jsonschema:"enum: save, read, comment, attach, delete"`
-	ID                 string          `json:"id,omitempty" jsonschema:"The doc's ID (base62). Leave it out on save to create a doc; required for every other action."`
-	Title              string          `json:"title,omitempty" jsonschema:"save: the doc's title."`
-	Markdown           string          `json:"markdown,omitempty" jsonschema:"save: the doc's full markdown, replacing what it had."`
-	TTLDays            int             `json:"ttlDays,omitempty" jsonschema:"save: how many days the doc lives from this save before it is deleted. Leave it out to keep the doc's own, 30 for a new doc."`
-	Color              string          `json:"color,omitempty" jsonschema:"enum: yellow, pink, green, blue, orange, purple, amber"`
-	Files              []PanoFileParam `json:"files,omitempty" jsonschema:"save: linked files, each linked from the markdown by its filename. attach: the attachments."`
-	Comment            string          `json:"comment,omitempty" jsonschema:"comment: the comment's text."`
-	IncludeComments    bool            `json:"includeComments,omitempty" jsonschema:"read: include the doc's comments."`
-	IncludeAttachments bool            `json:"includeAttachments,omitempty" jsonschema:"read: include the doc's attachments."`
+	Action  string         `json:"action" jsonschema:"enum: save, read, comment, attach, delete, help"`
+	Payload map[string]any `json:"payload,omitempty" jsonschema:"The action's fields, as help prints them."`
 }
+
+// The pano tool's payloads, one per action.
+type (
+	PanoSavePayload struct {
+		ID       string          `json:"id,omitempty" jsonschema:"The doc to replace (base62). Leave it out to create a doc."`
+		Title    string          `json:"title" jsonschema:"The doc's title."`
+		Markdown string          `json:"markdown" jsonschema:"The doc's full markdown, replacing what it had."`
+		TTLDays  int             `json:"ttlDays,omitempty" jsonschema:"How many days the doc lives from this save before it is deleted. Leave it out to keep the doc's own, 30 for a new doc."`
+		Color    string          `json:"color,omitempty" jsonschema:"enum: yellow, pink, green, blue, orange, purple, amber"`
+		Files    []PanoFileParam `json:"files,omitempty" jsonschema:"Linked files, each linked from the markdown by its filename."`
+	}
+	PanoReadPayload struct {
+		ID                 string `json:"id" jsonschema:"The doc's ID (base62)."`
+		IncludeComments    bool   `json:"includeComments,omitempty" jsonschema:"Include the doc's comments."`
+		IncludeAttachments bool   `json:"includeAttachments,omitempty" jsonschema:"Include the doc's attachments."`
+	}
+	PanoCommentPayload struct {
+		ID      string `json:"id" jsonschema:"The doc's ID (base62)."`
+		Comment string `json:"comment" jsonschema:"The comment's text."`
+	}
+	PanoAttachPayload struct {
+		ID    string          `json:"id" jsonschema:"The doc's ID (base62)."`
+		Files []PanoFileParam `json:"files" jsonschema:"The attachments: {filename, mimeType, data (base64)}."`
+	}
+	PanoDeletePayload struct {
+		ID string `json:"id" jsonschema:"The doc's ID (base62)."`
+	}
+)
 
 // PanoFileParam is a file sent to the Pano.
 type PanoFileParam struct {
@@ -180,51 +201,85 @@ func panoFailure(err error, action string) *mcp.CallToolResult {
 	return toolError("failed to %s the Pano doc: %v", action, err)
 }
 
+// panoActions are the pano tool's actions, for the account userID writing as
+// the workspace workspaceID.
+func panoActions(pano crud.PanoController, userID string, workspaceID int64) []ToolAction {
+	// docID reads a doc's id; one that is not base62 names no doc.
+	docID := func(id string) (int64, *mcp.CallToolResult) {
+		if n := monoflake.IDFromBase62(id).Int64(); n != 0 {
+			return n, nil
+		}
+		return 0, toolError("Pano doc not found")
+	}
+	return []ToolAction{
+		NewToolAction("save", "Create a doc (no id) or replace one's title and markdown. Returns the doc without its markdown.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoSavePayload) (*mcp.CallToolResult, any, error) {
+			var id int64
+			if p.ID != "" {
+				var bad *mcp.CallToolResult
+				if id, bad = docID(p.ID); bad != nil {
+					return bad, nil, nil
+				}
+			}
+			rs, err := pano.SavePanoDoc(ctx, entity.SavePanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Title: p.Title, Markdown: p.Markdown, TTLDays: p.TTLDays, Color: p.Color, Files: panoUploads(p.Files)})
+			if err != nil {
+				return panoFailure(err, "save"), nil, nil
+			}
+			v := panoDocViewOf(rs.Doc)
+			v.Markdown = ""
+			return jsonResult(v), nil, nil
+		}),
+		NewToolAction("read", "Read a doc, with its linked files.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoReadPayload) (*mcp.CallToolResult, any, error) {
+			id, bad := docID(p.ID)
+			if bad != nil {
+				return bad, nil, nil
+			}
+			rs, err := pano.GetPanoDoc(ctx, entity.GetPanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, IncludeComments: p.IncludeComments, IncludeAttachments: p.IncludeAttachments})
+			if err != nil {
+				return panoFailure(err, "read"), nil, nil
+			}
+			return jsonResult(panoDocViewOf(rs.Doc)), nil, nil
+		}),
+		NewToolAction("comment", "Add a comment to a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoCommentPayload) (*mcp.CallToolResult, any, error) {
+			id, bad := docID(p.ID)
+			if bad != nil {
+				return bad, nil, nil
+			}
+			rs, err := pano.AddPanoComment(ctx, entity.AddPanoCommentRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Body: p.Comment})
+			if err != nil {
+				return panoFailure(err, "comment on"), nil, nil
+			}
+			return jsonResult(panoCommentView{ID: monoflake.ID(rs.Comment.ID).String(), Author: panoAuthor(rs.Comment.WorkspaceID), Body: rs.Comment.Body, CreatedAt: rs.Comment.CreatedAt.UTC().Format(time.RFC3339)}), nil, nil
+		}),
+		NewToolAction("attach", "Add files to a doc that its markdown need not link.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoAttachPayload) (*mcp.CallToolResult, any, error) {
+			id, bad := docID(p.ID)
+			if bad != nil {
+				return bad, nil, nil
+			}
+			rs, err := pano.AttachPanoFiles(ctx, entity.AttachPanoFilesRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Files: panoUploads(p.Files)})
+			if err != nil {
+				return panoFailure(err, "attach to"), nil, nil
+			}
+			return jsonResult(map[string]any{"attachments": panoFileViews(rs.Attachments)}), nil, nil
+		}),
+		NewToolAction("delete", "Delete a doc.", func(ctx context.Context, _ *mcp.CallToolRequest, p PanoDeletePayload) (*mcp.CallToolResult, any, error) {
+			id, bad := docID(p.ID)
+			if bad != nil {
+				return bad, nil, nil
+			}
+			if err := pano.DeletePanoDoc(ctx, entity.DeletePanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id}); err != nil {
+				return panoFailure(err, "delete"), nil, nil
+			}
+			return textResult("Deleted Pano doc %s.", p.ID), nil, nil
+		}),
+	}
+}
+
 // RunPano does one pano tool call for the account userID, as the workspace
 // workspaceID: what both MCP servers' pano tools run.
 func RunPano(ctx context.Context, pano crud.PanoController, userID string, workspaceID int64, p PanoParams) *mcp.CallToolResult {
 	ctx = entity.WithOrigin(ctx, entity.OriginMCP)
-	id := monoflake.IDFromBase62(p.ID).Int64()
-	if p.Action != "save" && id == 0 {
-		return toolError("%s needs the doc's id", p.Action)
-	}
-	switch p.Action {
-	case "save":
-		if p.ID != "" && id == 0 {
-			return toolError("Pano doc not found")
-		}
-		rs, err := pano.SavePanoDoc(ctx, entity.SavePanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Title: p.Title, Markdown: p.Markdown, TTLDays: p.TTLDays, Color: p.Color, Files: panoUploads(p.Files)})
-		if err != nil {
-			return panoFailure(err, "save")
-		}
-		v := panoDocViewOf(rs.Doc)
-		v.Markdown = ""
-		return jsonResult(v)
-	case "read":
-		rs, err := pano.GetPanoDoc(ctx, entity.GetPanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, IncludeComments: p.IncludeComments, IncludeAttachments: p.IncludeAttachments})
-		if err != nil {
-			return panoFailure(err, "read")
-		}
-		return jsonResult(panoDocViewOf(rs.Doc))
-	case "comment":
-		rs, err := pano.AddPanoComment(ctx, entity.AddPanoCommentRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Body: p.Comment})
-		if err != nil {
-			return panoFailure(err, "comment on")
-		}
-		return jsonResult(panoCommentView{ID: monoflake.ID(rs.Comment.ID).String(), Author: panoAuthor(rs.Comment.WorkspaceID), Body: rs.Comment.Body, CreatedAt: rs.Comment.CreatedAt.UTC().Format(time.RFC3339)})
-	case "attach":
-		rs, err := pano.AttachPanoFiles(ctx, entity.AttachPanoFilesRequest{UserID: userID, WorkspaceID: workspaceID, ID: id, Files: panoUploads(p.Files)})
-		if err != nil {
-			return panoFailure(err, "attach to")
-		}
-		return jsonResult(map[string]any{"attachments": panoFileViews(rs.Attachments)})
-	case "delete":
-		if err := pano.DeletePanoDoc(ctx, entity.DeletePanoDocRequest{UserID: userID, WorkspaceID: workspaceID, ID: id}); err != nil {
-			return panoFailure(err, "delete")
-		}
-		return textResult("Deleted Pano doc %s.", p.ID)
-	}
-	return toolError("unknown action %q: use save, read, comment, attach or delete", p.Action)
+	res, _, _ := RunAction(ctx, nil, "pano", panoActions(pano, userID, workspaceID), p.Action, p.Payload)
+	return res
 }
 
 func (ps *WorkspaceServer) handlePano(ctx context.Context, req *mcp.CallToolRequest, params PanoParams) (*mcp.CallToolResult, any, error) {

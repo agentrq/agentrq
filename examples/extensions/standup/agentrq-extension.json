@@ -5,7 +5,7 @@
   "description": "Where this workspace stands: how much work is in each state, what it remembers, and how long any one task's thread has run.",
   "license": "MIT",
   "engines": { "agentrq": ">=0.5" },
-  "mcp": { "workspace": ["getWorkspace", "loadMemory", "getTask"] },
+  "mcp": { "workspace": ["getWorkspace", "loadMemory", "task.get"] },
   "config": [
     { "key": "memory", "type": "string", "label": "Memory to show (default: memory.md)" }
   ],

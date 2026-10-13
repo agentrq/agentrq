@@ -16,7 +16,8 @@ import {
   readWorkspace,
   thread,
 } from '../../../examples/extensions/standup/index.js'
-import { parseManifest } from '../../src/main/extensions/manifest.js'
+import { checkCompatibility, parseManifest } from '../../src/main/extensions/manifest.js'
+import { WORKSPACE_TOOLS, serverTools } from '../../src/main/extensions/servers.js'
 import { checkShortcuts } from '../../src/main/extensions/shortcuts.js'
 import { normaliseView } from '../../../frontend/src/composables/useExtensionView.js'
 import manifest from '../../../examples/extensions/standup/agentrq-extension.json'
@@ -30,21 +31,6 @@ import manifest from '../../../examples/extensions/standup/agentrq-extension.jso
  * the one that would have caught it: every tool the manifest names is checked
  * against the server's real list.
  */
-
-/** Exactly what `backend/internal/controller/mcp/server.go` registers. */
-const WORKSPACE_TOOLS = [
-  'createTask',
-  'updateTaskStatus',
-  'reply',
-  'downloadAttachment',
-  'getWorkspace',
-  'getTask',
-  'publishEvent',
-  'loadMemory',
-  'saveMemory',
-  'deleteMemory',
-  'elicit',
-]
 
 /** The shape `getWorkspace` answers with — prose, not JSON. */
 const workspaceText = (over = {}) =>
@@ -60,7 +46,7 @@ const workspaceText = (over = {}) =>
     `- Blocked: ${over.blocked ?? 2}`,
   ].join('\n')
 
-/** The shape `getTask` answers with when asked for the conversation. */
+/** The shape `task.get` answers with when asked for the conversation. */
 const taskText = ({ total = 9, last = 'Asked on Tuesday' } = {}) =>
   `Task details:\nID: t1\nTitle: Stuck\nStatus: blocked\nDetails: body\n\nConversation:\n${JSON.stringify({
     messages: [{ id: 'm1', sender: 'human', text: last }],
@@ -74,12 +60,16 @@ function fakeWorkspace(over = {}) {
   const answers = {
     getWorkspace: () => wrap(workspaceText()),
     loadMemory: () => wrap('# memory\n\nnotes'),
-    getTask: () => wrap(taskText()),
+    'task.get': () => wrap(taskText()),
     ...over,
   }
   return {
     calls,
-    workspace: async (tool, args) => {
+    // A task action is recorded as `task.<action>`, its payload beside the
+    // workspace that addresses it.
+    workspace: async (name, input) => {
+      const tool = name === 'task' ? `task.${input.action}` : name
+      const args = name === 'task' ? { workspaceId: input.workspaceId, ...input.payload } : input
       calls.push({ tool, args })
       return answers[tool](args)
     },
@@ -98,9 +88,10 @@ describe('the manifest', () => {
   it('asks only for tools the workspace server actually has', () => {
     const { manifest: parsed } = parseManifest(manifest)
 
-    for (const tool of parsed.mcp.workspace) {
-      expect(WORKSPACE_TOOLS, `"${tool}" is not on the workspace server`).toContain(tool)
-    }
+    // Judged against the lists a test keeps equal to the Go registrations,
+    // actions included.
+    const { compatible, reasons } = checkCompatibility(parsed, serverTools('1.0.0'))
+    expect(compatible, reasons.join(' ')).toBe(true)
     expect(parsed.mcp.supervisor).toEqual([])
   })
 
@@ -309,7 +300,7 @@ describe('thread', () => {
   /** A server that paginates from the oldest, the way the real one does. */
   const paginated = (messages) =>
     fakeWorkspace({
-      getTask: ({ cursor = 0, limit = 5 }) => ({
+      'task.get': ({ cursor = 0, limit = 5 }) => ({
         ok: true,
         result: {
           content: [
@@ -331,7 +322,7 @@ describe('thread', () => {
     const view = await thread(ctxWith(fake), { id: 't1', workspaceId: 'ws1', title: 'Stuck', status: 'blocked' })
 
     expect(fake.calls[0]).toMatchObject({
-      tool: 'getTask',
+      tool: 'task.get',
       args: { workspaceId: 'ws1', taskId: 't1', includeConversation: true, limit: 1 },
     })
     expect(view.nodes[0].items[0].value).toBe('9')
@@ -367,7 +358,7 @@ describe('thread', () => {
   it('keeps the count when the second call is refused', async () => {
     let calls = 0
     const fake = fakeWorkspace({
-      getTask: (args) => {
+      'task.get': (args) => {
         calls += 1
         return calls === 1
           ? { ok: true, result: { content: [{ text: taskText({ total: 9, last: 'from the first page' }) }] } }
@@ -383,7 +374,7 @@ describe('thread', () => {
   })
 
   it('shows a refusal in the same shape as the page does', async () => {
-    const fake = fakeWorkspace({ getTask: () => ({ ok: false, reason: 'refused' }) })
+    const fake = fakeWorkspace({ 'task.get': () => ({ ok: false, reason: 'refused' }) })
 
     const view = await thread(ctxWith(fake), { id: 't1' })
 

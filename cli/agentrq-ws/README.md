@@ -20,7 +20,7 @@ npx -y @agentrq/agentrq-ws@latest workspace
 
 An agent talks to its workspace over MCP, which is the right shape for an agent
 and the wrong shape for a person: every call is a JSON envelope, and every
-answer is tokens the agent pays for. The same nineteen tools are underneath this
+answer is tokens the agent pays for. The same fourteen tools are underneath this
 CLI, but a command is a line of shell and the answer is plain text.
 
 It is also the difference between reading an attachment and *handling* one — see
@@ -47,6 +47,7 @@ Node 20.6 or newer.
 | `task next` | Take the next not-started task — **this dequeues the queue** |
 | `task create <title>` | Create a task, with `--clear-context` to send `/clear` to the agent first |
 | `task status <taskId> <status>` | Set a task's status |
+| `task help [action]` | The server's help for its `task` tool: every action, or one action's payload |
 | `reply <taskId> <text>` | Send a message to a task |
 | `attachment get <id> --task <taskId>` | Download an attachment to a file |
 | `memory load [name]` | Read a workspace memory (defaults to the index) |
@@ -61,6 +62,7 @@ Node 20.6 or newer.
 | `pano comment <id> <text>` | Comment on a Pano doc |
 | `pano attach <id> --file PATH…` | Attach files to a Pano doc; they need no link |
 | `pano delete <id>` | Delete a Pano doc |
+| `pano help [action]` | The server's help for its `pano` tool: every action, or one action's payload |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
 | `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |
@@ -72,7 +74,7 @@ Node 20.6 or newer.
 Every command takes `--help`, and so does every family:
 
 ```bash
-agentrq-ws task --help          # lists task get / next / create / status
+agentrq-ws task --help          # lists task get / next / create / status / help
 agentrq-ws attachment get -h    # the one command, its options and defaults
 ```
 

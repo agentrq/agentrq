@@ -36,6 +36,8 @@
  * index anything until a server is reachable.
  */
 
+import { currentToolName } from './servers.js'
+
 /** Keys a manifest may carry. Anything else is a typo worth reporting. */
 const KNOWN_KEYS = new Set([
   'name',
@@ -329,18 +331,27 @@ function compare(a, b) {
   return a.major - b.major || a.minor - b.minor || a.patch - b.patch
 }
 
-/** The tools an extension asks for, on one of the two MCP surfaces. */
+/**
+ * The tools an extension asks for, on one of the two MCP surfaces.
+ *
+ * An entry is a tool, or one action of a tool that takes them (`task.create`).
+ * A tool that has since become a `task` action is read as that action, so a
+ * manifest written before the merge keeps asking for what it always did.
+ */
 function validateToolList(value, surface) {
   if (value === undefined) return { ok: true, tools: [] }
   if (!Array.isArray(value)) {
     return fail(`"mcp.${surface}" must be a list of tool names.`)
   }
+  const written = []
   const tools = []
   for (const entry of value) {
     const tool = str(entry)
     if (!tool) return fail(`"mcp.${surface}" contains an entry that is not a tool name.`)
-    if (tools.includes(tool)) return fail(`"mcp.${surface}" lists "${tool}" twice.`)
-    tools.push(tool)
+    if (written.includes(tool)) return fail(`"mcp.${surface}" lists "${tool}" twice.`)
+    written.push(tool)
+    const current = currentToolName(surface, tool)
+    if (!tools.includes(current)) tools.push(current)
   }
   return { ok: true, tools }
 }
@@ -590,7 +601,10 @@ export function parseManifest(source) {
  * served by "needs AgentRQ 1.5, you have 1.4" plus the missing tool than by
  * whichever happened to be checked first.
  */
-export function checkCompatibility(manifest, { appVersion, workspaceTools = [], supervisorTools = [] } = {}) {
+export function checkCompatibility(
+  manifest,
+  { appVersion, workspaceTools = [], supervisorTools = [], workspaceActions = {}, supervisorActions = {} } = {},
+) {
   const reasons = []
 
   const range = satisfiesRange(appVersion, manifest.engines.agentrq)
@@ -600,13 +614,19 @@ export function checkCompatibility(manifest, { appVersion, workspaceTools = [], 
     reasons.push(`Needs AgentRQ ${manifest.engines.agentrq}; this is ${appVersion}.`)
   }
 
-  const missing = (asked, offered, surface) =>
-    asked
-      .filter((tool) => !offered.includes(tool))
-      .forEach((tool) => reasons.push(`The ${surface} server does not offer "${tool}".`))
+  const missing = (asked, offered, actions, surface) => {
+    for (const entry of asked) {
+      const [tool, action] = entry.split('.', 2)
+      if (!offered.includes(tool)) {
+        reasons.push(`The ${surface} server does not offer "${tool}".`)
+      } else if (action !== undefined && !(actions[tool] ?? []).includes(action)) {
+        reasons.push(`The ${surface} server's "${tool}" has no action "${action}".`)
+      }
+    }
+  }
 
-  missing(manifest.mcp.workspace, workspaceTools, 'workspace')
-  missing(manifest.mcp.supervisor, supervisorTools, 'supervisor')
+  missing(manifest.mcp.workspace, workspaceTools, workspaceActions, 'workspace')
+  missing(manifest.mcp.supervisor, supervisorTools, supervisorActions, 'supervisor')
 
   return { compatible: reasons.length === 0, reasons }
 }

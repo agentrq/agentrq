@@ -24,7 +24,7 @@
  * know.
  *
  * The count is gone rather than fixed, because fixing it here is impossible:
- * the real number needs `getTask`, which needs a permission this extension
+ * the real number needs `task.get`, which needs a permission this extension
  * deliberately does not ask for. An extension that wants the thread has to say
  * so at install; see `standup`, which does, and can therefore count.
  *

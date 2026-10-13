@@ -603,7 +603,7 @@ func TestEventToolsAreRegistered(t *testing.T) {
 	}
 
 	// The tools an agent already had are untouched.
-	if _, ok := registered["createTask"]; !ok {
-		t.Error("createTask went missing")
+	if _, ok := registered["task"]; !ok {
+		t.Error("task went missing")
 	}
 }

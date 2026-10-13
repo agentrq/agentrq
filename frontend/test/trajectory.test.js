@@ -425,6 +425,11 @@ describe('describeToolCall', () => {
     expect(d('mcp__claude_ai_Google_Docs__read_doc')).toBe('Read doc (Google Docs)')
   })
 
+  it('names the action of a tool that takes one, even from a cut-off input', () => {
+    expect(d('mcp__agentrq-workspace__task', '{"action":"updateStatus","payload":{"taskId":"t1"}}')).toBe('Task update status (agentrq-workspace)')
+    expect(d('mcp__agentrq-workspace__pano', '{"action": "save", "payload": {"title": "Pl')).toBe('Pano save (agentrq-workspace)')
+  })
+
   it('handles the to-do list, unknown tools, and bare verbs', () => {
     expect(d('TodoWrite', '{}')).toBe('Updated the to-do list')
     expect(d('MultiEdit')).toBe('Edited')

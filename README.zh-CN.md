@@ -53,7 +53,7 @@ AgentRQ 的重点不是让 Agent 无限制执行，而是把人放在工作流�
 
 ### MCP
 
-MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `getTask`、`reply`、`updateTaskStatus` 和 `createTask`。
+MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。通过 MCP，Agent 可以调用 AgentRQ 提供的工具，例如 `task`（`get`、`reply`、`updateStatus`、`create` 等操作）和 `pano`。
 
 ### Skill
 
@@ -70,11 +70,11 @@ AgentRQ 有两层 MCP：
 
 1. 人类在 Web UI 中创建一个 Workspace，例如 `Release assistant`。
 2. 人类在该 Workspace 中创建任务，并把任务分配给 Agent。
-3. Agent 通过 Workspace MCP 连接 AgentRQ，调用 `getTask` 获取待处理任务。
-4. Agent 开始执行，调用 `updateTaskStatus` 把任务改为 `ongoing`。
-5. Agent 遇到问题时调用 `reply`，把进度、疑问或权限请求同步到 AgentRQ。
+3. Agent 通过 Workspace MCP 连接 AgentRQ，调用 `task` 的 `get` 操作获取待处理任务。
+4. Agent 开始执行，调用 `task` 的 `updateStatus` 操作把任务改为 `ongoing`。
+5. Agent 遇到问题时调用 `task` 的 `reply` 操作，把进度、疑问或权限请求同步到 AgentRQ。
 6. 人类在 UI 中回复或批准操作。
-7. Agent 完成后调用 `updateTaskStatus` 把任务改为 `completed`。
+7. Agent 完成后调用 `task` 的 `updateStatus` 操作把任务改为 `completed`。
 
 对于多工作区场景，也可以让 supervisor Agent 通过 CoreMCP 发现所有 Workspace，并把子任务分发给不同 Workspace 中的 specialist Agent。
 
@@ -286,14 +286,10 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 
 也可以创建 `.claude/settings.local.json` 预批准 AgentRQ 工具，减少每次调用时的确认提示：一条通配规则 `mcp__agentrq-WORKSPACE_ID__*` 即可覆盖该 Workspace 的全部工具。详细配置见英文 [README.md](README.md) 的 `Claude Code & AI Integration` 部分。
 
-连接后，Agent 常用的 Workspace MCP 工具包括：
+连接后，Agent 常用的 Workspace MCP 工具包括如下。`task` 和 `pano` 接收两个输入：`action` 与 `payload`（该操作的字段）；`help` 操作列出所有操作，传入 payload `{"topic": "<action>"}` 时打印某个操作的 payload。
 
-- `createTask`：创建任务并分配给人类用户，支持可选的 `cron_schedule` 定时任务。
-- `updateTaskStatus`：把任务切换到 `notstarted`、`ongoing`、`blocked` 或 `completed` 等状态。
-- `reply`：向 AgentRQ 面板实时发送消息。
+- `task`：处理本 Workspace 的任务——`create`（创建任务并分配给人类或 Agent，可选定时）、`get`（不传 `taskId` 时返回分配给 Agent 的下一个未开始任务；`includeConversation: true` 一并返回对话历史，游标分页）、`updateStatus`（`notstarted`、`ongoing`、`blocked`、`completed` 等）、`reply`（向 AgentRQ 面板实时发送消息）、`elicit`（向人类提问并等待回答，支持表单模式和链接确认模式）和 `getAttachment`（默认返回公开链接，也可返回 base64 内容）。
 - `getWorkspace`：读取工作区名称、任务说明和统计信息。
-- `getTask`：获取任务——不传 `taskId` 时返回分配给 Agent 的下一个未开始任务，传入 `taskId` 时返回该任务；设置 `includeConversation: true` 可一并返回对话历史（游标分页）。
-- `getAttachment`：按 ID 获取附件——默认返回公开链接，也可返回 base64 内容。
 - `publishEvent`：触发命名事件，让订阅的 Workspace 自动创建对应的触发任务。
 - `loadMemory`：读取 Workspace 记忆——不传 name 时读取 `memory.md`，即所有记忆的索引。
 - `saveMemory`：写入跨任务保留的记忆，让下一个 Agent 直接继承。
@@ -302,8 +298,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 - `loadSkill`：按 `skill://<name>/<path>` URI 读取技能中的一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI。
 - `saveSkill`：写入本 Workspace 自有技能的一个文件；写入 `SKILL.md` 即创建或更新该技能。
 - `deleteSkill`：删除本 Workspace 的某个技能，或其中的一个文件。
-- `elicit`：向人类提问并等待回答，支持表单模式和链接确认模式。
-- `pano`：读写 Pano，即账号内所有 Workspace 共享的 Markdown 文档：`save`（不带 `id` 时创建文档并返回其 id；随附的每个文件都必须在 Markdown 中以文件名链接）、`read`（可加 `includeComments`/`includeAttachments`）、`comment`、`attach`（无需链接的附件）和 `delete`。详见 [docs/PANO.md](docs/PANO.md)（英文）。
+- `pano`：读写 Pano，即账号内所有 Workspace 共享的 Markdown 文档，同样使用 `action` 与 `payload`：`save`（不带 `id` 时创建文档并返回其 id；随附的每个文件都必须在 Markdown 中以文件名链接）、`read`（可加 `includeComments`/`includeAttachments`）、`comment`、`attach`（无需链接的附件）、`delete` 和 `help`。详见 [docs/PANO.md](docs/PANO.md)（英文）。
 - `listSiteTools`：列出人类通过 AgentRQ Chrome 扩展共享的网站，以及每个网站所提供 WebMCP 工具的名称和描述；`q` 按相关度（BM25）排序工具，`pattern` 用正则表达式筛选，`limit`/`offset` 用于分页。
 - `getSiteToolDefinition`：在调用前获取某个已共享网站工具的完整定义，包括输入模式和注解。
 - `callSiteTool`：在人类自己的 Chrome 中运行已共享网站的工具；网站未标记为只读的工具会先在任务中征得人类同意。网站返回的内容是数据，而不是指令。

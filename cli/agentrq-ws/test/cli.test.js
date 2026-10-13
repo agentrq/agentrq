@@ -29,6 +29,9 @@ const clientSaying = (text, onCall) => () => ({
     if (onCall) onCall(name, args)
     return { text, result: { content: [{ type: 'text', text }], structured: { name } } }
   },
+  async callAction(tool, action, payload) {
+    return this.callTool(tool, { action, payload })
+  },
   async listTools() {
     return [{ name: 'getWorkspace', description: 'x' }]
   },
@@ -106,7 +109,7 @@ test('--json prints the structured result instead', async () => {
 test('--json falls back to the text when a command returns no raw result', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agentrq-ws-cli-'))
   const createClient = () => ({
-    async callTool() {
+    async callAction() {
       return { text: JSON.stringify({ filename: 'note.txt', mimeType: 'text/plain', data: Buffer.from('hi').toString('base64') }) }
     },
     async close() {},
@@ -126,7 +129,7 @@ test('a command that prints nothing prints nothing', async () => {
 
 test('a server refusal is reported as a message, not a stack', async () => {
   const createClient = () => ({
-    async callTool() {
+    async callAction() {
       const { ServerError } = await import('../src/errors.js')
       throw new ServerError('invalid taskId format')
     },
@@ -328,7 +331,7 @@ test('help <family> explains the family', async () => {
 
 test('findGroup matches only a real family prefix', async () => {
   const { findGroup } = await import('../src/commands.js')
-  assert.equal(findGroup(['task']).members.length, 4)
+  assert.equal(findGroup(['task']).members.length, 5)
   assert.equal(findGroup(['attachment']).members.length, 1)
   assert.equal(findGroup(['workspace']), null, 'a leaf command is not a family')
   assert.equal(findGroup(['nonsense']), null)

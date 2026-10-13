@@ -34,7 +34,7 @@ A task is the atomic unit of work. Key fields:
 | `ParentID` | Set when a task is spawned from a cron template |
 | `TriggerID` | ID of the event that caused this task (set by the event consumer) |
 | `EventID` | ID of the event this task should publish on completion |
-| `SortOrder` | Controls queue priority for `getTask` (next-task dequeue) |
+| `SortOrder` | Controls queue priority for `task` `get` (next-task dequeue) |
 | `AllowAllCommands` | Per-task override for permission gating |
 
 ### Message
@@ -67,19 +67,7 @@ The coremcp exposes a broad, cross-workspace tool surface:
 | `getWorkspace(id)` | Get a single workspace by ID (with `mcpURL`) |
 | `updateWorkspace(id, ...)` | Update workspace metadata |
 | `getWorkspaceStats(id, range)` | Task statistics for a workspace |
-| `listTasks(workspaceId, filter?, status?, limit?)` | List tasks in a specific workspace |
-| `listAllTasks(filter?, status?, limit?)` | List tasks across all user workspaces |
-| `createTask(workspaceId, title, body?, assignee?, cronSchedule?)` | Create a task in **any** workspace by ID |
-| `getTask(workspaceId, taskId)` | Fetch a single task |
-| `replyToTask(workspaceId, taskId, text)` | Post a message to a task thread |
-| `respondToTask(workspaceId, taskId, action)` | Submit allow/deny for a permission request |
-| `updateTaskStatus(workspaceId, taskId, status)` | Update task status |
-| `updateTaskOrder(workspaceId, taskId, sortOrder)` | Reorder tasks in a workspace queue |
-| `updateTaskAssignee(workspaceId, taskId, assignee)` | Reassign a task between human and agent |
-| `updateTaskAllowAll(workspaceId, taskId, allowAll)` | Toggle unrestricted permission mode for a task |
-| `updateScheduledTask(workspaceId, taskId, ...)` | Modify a cron task template |
-| `deleteTask(workspaceId, taskId)` | Delete a task with its messages and attachments — the only way to retire a schedule rather than leave it behind |
-| `getAttachment(workspaceId, attachmentId)` | Retrieve a file attachment as base64 |
+| `task(action, payload?)` | Every task operation, in **any** workspace by ID. Actions: `list(workspaceId, filter?, status?, limit?)`, `listAll(filter?, status?, limit?)`, `create(workspaceId, title, body?, assignee?, cronSchedule?)`, `get(workspaceId, taskId)`, `reply(workspaceId, taskId, text)`, `respond(workspaceId, taskId, action)` (allow/deny a permission request), `updateStatus`, `updateSortingOrder`, `updateAssignee`, `updateAllowAll`, `updateSchedule` (a cron task template), `delete` (with its messages and attachments — the only way to retire a schedule rather than leave it behind), `getAttachment(workspaceId, taskId, attachmentId)`; `help` prints each action's payload |
 | `listEvents()` | List the events defined for the user's account |
 | `createEvent(name, payloadGuidelines?)` | Define a named signal workspaces can publish |
 | `getEvent(eventId)` | Fetch a single event |
@@ -135,11 +123,7 @@ Every agent connected to a per-workspace MCP server has access to exactly these 
 | Tool | Description |
 |------|-------------|
 | `getWorkspace()` | Returns workspace name, description, and task stats |
-| `getTask(taskId?, includeConversation?, cursor?, limit?)` | With no `taskId`, dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`); with a `taskId`, returns that task. `includeConversation` appends paginated message history |
-| `createTask(title, body, assignee?, attachments?, cronSchedule?, eventId?)` | Creates a new task (or cron template) in this workspace; `eventId` links a task to the event it should publish on completion |
-| `updateTaskStatus(taskId, status)` | Transitions task state; auto-appends a status message |
-| `reply(chatId, text, attachments?)` | Sends a message in a task's conversation thread |
-| `downloadAttachment(attachmentId, taskId)` | Retrieves a file attachment as base64 |
+| `task(action, payload?)` | Every task operation in this workspace. `get(taskId?, includeConversation?, cursor?, limit?)`: with no `taskId`, dequeues the next `notstarted` agent-assigned task (sorted by `SortOrder`); with a `taskId`, returns that task, `includeConversation` appending paginated message history. `create(title, body, assignee?, attachments?, cronSchedule?, eventId?)`: a new task (or cron template); `eventId` links it to the event it should publish on completion. `updateStatus(taskId, status)`: transitions task state, auto-appending a status message. `reply(taskId, text, attachments?)`: a message in the task's thread. `elicit(taskId, message, mode, ...)`: asks the human and waits. `getAttachment(taskId, attachmentId, format?)`: a file attachment. `help` prints each action's payload |
 | `publishEvent(name, payload, faq?)` | Fires a named event with a payload and optional FAQ; fans out to all matching `EventTrigger` rows, creating tasks in subscribed workspaces |
 
 All state mutations go through the MCP tool layer — there is no direct database access for agents.
@@ -158,10 +142,10 @@ The coordination flow looks like this:
 Supervisor Agent
 └── MCP Session → coremcp (/mcp)                [OAuth2, user-scoped]
                   ├── listWorkspaces()           → discovers all workspaces + their mcpURL
-                  ├── createTask(workspaceId=B)  → assigns task to coding agent
-                  ├── createTask(workspaceId=C)  → assigns task to docs agent
-                  ├── createTask(workspaceId=D)  → assigns task to publishing agent
-                  └── listTasks(workspaceId)     → monitors progress across any workspace
+                  ├── task create(workspaceId=B)  → assigns task to coding agent
+                  ├── task create(workspaceId=C)  → assigns task to docs agent
+                  ├── task create(workspaceId=D)  → assigns task to publishing agent
+                  └── task list(workspaceId)     → monitors progress across any workspace
 
 Worker Agents (one per workspace, each with its own MCP session)
 ├── MCP Session → /mcp/{workspaceB}             [workspace token, isolated]
@@ -169,25 +153,25 @@ Worker Agents (one per workspace, each with its own MCP session)
 └── MCP Session → /mcp/{workspaceD}             [workspace token, isolated]
 ```
 
-The supervisor never touches per-workspace MCP endpoints. It sees everything through the coremcp and uses `createTask(workspaceId, ...)` to delegate subtasks to specialist agents. Each worker agent is entirely isolated within its own workspace MCP server and is unaware of the broader pipeline.
+The supervisor never touches per-workspace MCP endpoints. It sees everything through the coremcp and uses `task` action `create(workspaceId, ...)` to delegate subtasks to specialist agents. Each worker agent is entirely isolated within its own workspace MCP server and is unaware of the broader pipeline.
 
 ### Step-by-Step: Supervisor Spawning a Cross-Workspace Workflow
 
 1. **Human → Supervisor**: Human creates a task in the supervisor workspace (via the UI or REST API) with a high-level goal (e.g., "Write, document, and publish the new authentication module").
 
-2. **Supervisor picks up task**: The supervisor, connected to `coremcp`, receives the task via the AgentRQ workspace MCP server it also runs in. It calls `updateTaskStatus(workspaceId, taskId, "ongoing")`.
+2. **Supervisor picks up task**: The supervisor, connected to `coremcp`, receives the task via the AgentRQ workspace MCP server it also runs in. It calls `task` action `updateStatus(workspaceId, taskId, "ongoing")`.
 
 3. **Supervisor discovers workspaces**: Supervisor calls `listWorkspaces()` on coremcp. The response includes each workspace's ID, name, description, and `mcpURL` — the URL the specialist worker agent in that workspace is connected to.
 
-4. **Supervisor creates subtasks**: For each specialist workspace (coding, docs, publishing), the supervisor calls `createTask(workspaceId="...", title="...", body="...", assignee="agent")` on coremcp. Each call creates a task in the target workspace and returns its ID.
+4. **Supervisor creates subtasks**: For each specialist workspace (coding, docs, publishing), the supervisor calls `task` action `create(workspaceId="...", title="...", body="...", assignee="agent")` on coremcp. Each call creates a task in the target workspace and returns its ID.
 
-5. **Specialist agents work**: Each specialist workspace agent runs its own `getTask` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
+5. **Specialist agents work**: Each specialist workspace agent runs its own `task` `get` → `ongoing` → `reply` → `completed` cycle independently, entirely within their workspace MCP server.
 
-6. **Supervisor monitors**: Supervisor calls `listTasks(workspaceId, status="completed")` or `getTask(workspaceId, taskId)` on coremcp to track worker progress. When a worker marks its task `completed`, the supervisor reads the result from the task data and uses it as input for the next stage.
+6. **Supervisor monitors**: Supervisor calls `task` actions `list(workspaceId, status="completed")` or `get(workspaceId, taskId)` on coremcp to track worker progress. When a worker marks its task `completed`, the supervisor reads the result from the task data and uses it as input for the next stage.
 
 7. **Supervisor chains the pipeline**: Once Stage 1 (coding) completes, the supervisor creates the Stage 2 (docs) task in the docs workspace, embedding Stage 1's output in the task body. This continues through each stage of the pipeline.
 
-8. **Supervisor reports back**: When all stages are complete, the supervisor calls `replyToTask(workspaceId, supervisorTaskId, summary)` and `updateTaskStatus(workspaceId, supervisorTaskId, "completed")` via coremcp. The human sees the full result in the UI.
+8. **Supervisor reports back**: When all stages are complete, the supervisor calls `task` actions `reply(workspaceId, supervisorTaskId, summary)` and `updateStatus(workspaceId, supervisorTaskId, "completed")` via coremcp. The human sees the full result in the UI.
 
 ---
 
@@ -210,24 +194,24 @@ Human (UI)
 
 ```
 Agent
-  → MCP tool call: createTask(...)
+  → MCP tool call: task create(...)
   → WorkspaceServer callback
   → CRUD Controller (same validation + persistence path)
   → PubSub event (ActionTaskCreate, ActorAgent, OriginMCP)
   → Central Forwarder → EventBus SSE → Human UI
-  → (if assignee="agent" in another workspace) Supervisor delegates via coremcp createTask(workspaceId, ...)
+  → (if assignee="agent" in another workspace) Supervisor delegates via coremcp task create(workspaceId, ...)
 ```
 
 ### Agent Task Execution Loop
 
 ```
 Agent
-  → getTask()          ← dequeues first notstarted task
-  → updateTaskStatus(ongoing)
+  → task get()        ← dequeues first notstarted task
+  → task updateStatus(ongoing)
   → [work happens]
-  → reply(chatId, "...")   ← intermediate progress updates
-  → reply(chatId, result)  ← final output
-  → updateTaskStatus(completed)
+  → task reply(taskId, "...")   ← intermediate progress updates
+  → task reply(taskId, result)  ← final output
+  → task updateStatus(completed)
 ```
 
 At each step, the MCP server persists the message and emits an SSE event so the human operator can follow along in real time.
@@ -374,8 +358,8 @@ sequenceDiagram
     PS-->>UI: SSE task.created (WS-B)
     PS-->>UI: SSE task.created (WS-C)
 
-    B-->>B: Agent picks up task via getTask()
-    C-->>C: Agent picks up task via getTask()
+    B-->>B: Agent picks up task via task get()
+    C-->>C: Agent picks up task via task get()
 ```
 
 **Event chaining (EmitEventID):**
@@ -392,12 +376,12 @@ sequenceDiagram
     A->>PS: publishEvent("event_a", payload_a)
     PS->>EC: fan-out → create Task in WS-B<br/>(body includes publishEvent("event_b") instruction)<br/>Task.EventID = event_b
 
-    B-->>B: getTask() → works on task
+    B-->>B: task get() → works on task
     Note over B: Notification includes:<br/>[On completion: call publishEvent("event_b", ...)]
     B->>PS: publishEvent("event_b", payload_b)
 
     PS->>EC: fan-out → create Task in WS-C<br/>(body includes payload_b via {{EVENT_PAYLOAD}})
-    C-->>C: getTask() → works on task
+    C-->>C: task get() → works on task
 ```
 
 ### Ownership & Authorization
@@ -413,7 +397,7 @@ All event and trigger operations are scoped to the requesting user at the reposi
 
 Attachments are stored on disk under `./_storage/{attachmentID}` as base64-encoded files:
 - On save: base64 data written to disk; only metadata (ID, filename, mimeType) persisted in the DB
-- On download: `downloadAttachment` tool reads from disk, returns base64 to agent
+- On download: `task` action `getAttachment` reads from disk, returns base64 to agent
 - On delete: attachment files purged from disk; a cleanup service (`internal/service/cleanup`) runs daily to remove orphaned files older than the configured retention period
 
 ---

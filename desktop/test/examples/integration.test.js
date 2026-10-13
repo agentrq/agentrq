@@ -13,6 +13,7 @@ import { createInstaller } from '../../src/main/extensions/install.js'
 import { createSchedules } from '../../src/main/extensions/schedules.js'
 import { entriesFor, invokeEntry } from '../../src/main/extensions/surfaces.js'
 import { checkCompatibility, parseManifest } from '../../src/main/extensions/manifest.js'
+import { serverTools } from '../../src/main/extensions/servers.js'
 import { describeAsk, toGrant, validateGrant, SCOPE } from '../../../frontend/src/composables/useExtensionGrant.js'
 import { menuItemsFor, parseSelection } from '../../../frontend/src/composables/useTaskContextMenu.js'
 import { normaliseView } from '../../../frontend/src/composables/useExtensionView.js'
@@ -44,44 +45,13 @@ const read = (name) => readFile(join(EXAMPLES, name, 'agentrq-extension.json'), 
  * example asked for a tool that has never existed there, and this test agreed
  * with it. A stub that matches the mistake is worse than no stub.
  *
- * They are copied from the Go source now, and a Go test
- * (`example_extensions_test.go`) checks every example manifest against the
+ * They are the app's own lists now, which `servers.test.js` holds equal to the
+ * Go source, and a Go test (`example_extensions_test.go`) checks every example manifest against the
  * registrations directly, so the two cannot drift apart quietly again. The
  * workspace server has no task listing on purpose: an agent connected to a
  * workspace acts on the task it was given rather than enumerating the board.
  */
-const SERVERS = {
-  appVersion: '0.5.21',
-  workspaceTools: [
-    'createTask',
-    'updateTaskStatus',
-    'reply',
-    'downloadAttachment',
-    'getWorkspace',
-    'getTask',
-    'publishEvent',
-    'loadMemory',
-    'saveMemory',
-    'deleteMemory',
-    'elicit',
-  ],
-  supervisorTools: [
-    'listWorkspaces',
-    'createWorkspace',
-    'getWorkspace',
-    'listAllTasks',
-    'listTasks',
-    'createTask',
-    'getTask',
-    'deleteTask',
-    'listEvents',
-    'createEvent',
-    'createEventTrigger',
-    'listEventTriggers',
-    'deleteEventTrigger',
-    'deleteEvent',
-  ],
-}
+const SERVERS = serverTools('0.5.21')
 
 /**
  * Everything an install touches, with the disk and the servers stubbed.
@@ -93,18 +63,23 @@ const SERVERS = {
 function harness({ workspaceAnswers = {}, supervisorAnswers = {} } = {}) {
   const wrap = (payload) => ({ content: [{ text: JSON.stringify(payload) }] })
   const calls = []
+  // A task action is recorded, and answered, as `task.<action>`, its payload
+  // as the arguments.
+  const named = (tool, args) => (tool === 'task' ? [`task.${args.action}`, args.payload] : [tool, args])
 
   // The workspace server answers in prose, not JSON — it is written for agents
   // to read. Wrapping it in the supervisor's envelope would be a stub that
   // teaches the wrong shape.
-  const callWorkspace = vi.fn(async ({ workspaceId, tool, args }) => {
+  const callWorkspace = vi.fn(async ({ workspaceId, tool: called, args: given }) => {
+    const [tool, args] = named(called, given)
     calls.push({ surface: 'workspace', tool, workspaceId, args })
     const answer = workspaceAnswers[tool]
     if (!answer) throw new Error(`the stub workspace server has no ${tool}`)
     return { content: [{ text: answer(args) }] }
   })
 
-  const callSupervisor = vi.fn(async ({ tool, args }) => {
+  const callSupervisor = vi.fn(async ({ tool: called, args: given }) => {
+    const [tool, args] = named(called, given)
     calls.push({ surface: 'supervisor', tool, args })
     const answer = supervisorAnswers[tool]
     if (!answer) throw new Error(`the stub supervisor has no ${tool}`)
@@ -273,7 +248,7 @@ describe('standup — the workspace case', () => {
   const answers = {
     getWorkspace: () => 'Workspace: Backend\nDescription: the API\n\nTask Statistics:\n- Not Started: 3\n- Ongoing: 1\n- Completed: 12\n- Rejected: 0\n- Blocked: 2',
     loadMemory: () => '# memory\n\nnotes',
-    getTask: () =>
+    'task.get': () =>
       `Task details:\nID: t1\nTitle: Stuck\n\nConversation:\n${JSON.stringify({
         messages: [{ text: 'Asked on Tuesday' }],
         total: 9,
@@ -296,7 +271,7 @@ describe('standup — the workspace case', () => {
 
   // The count `task-stats` cannot know, in the example that asked for the
   // permission needed to know it.
-  it('counts a thread properly, because it asked for getTask', async () => {
+  it('counts a thread properly, because it asked for task.get', async () => {
     const rig = harness({ workspaceAnswers: answers })
     await rig.install('standup', { scope: SCOPE.workspace, workspaceId: 'ws1' })
 
@@ -343,8 +318,8 @@ describe('standup — the workspace case', () => {
 describe('digest — the full case', () => {
   const answers = {
     listWorkspaces: () => ({ workspaces: [{ id: 'ws1', name: 'Backend' }] }),
-    listAllTasks: () => ({ tasks: [{ workspaceId: 'ws1', title: 'Stuck', status: 'blocked' }] }),
-    createTask: (args) => ({ task: { id: 'tk1', ...args } }),
+    'task.listAll': () => ({ tasks: [{ workspaceId: 'ws1', title: 'Stuck', status: 'blocked' }] }),
+    'task.create': (args) => ({ task: { id: 'tk1', ...args } }),
     listEvents: () => ({ events: [] }),
   }
 
@@ -374,7 +349,7 @@ describe('digest — the full case', () => {
     const view = normaliseView(await page.view())
 
     expect(view.ok, view.reason).toBe(true)
-    expect(rig.calls.map((call) => call.tool)).toEqual(['listWorkspaces', 'listAllTasks'])
+    expect(rig.calls.map((call) => call.tool)).toEqual(['listWorkspaces', 'task.listAll'])
   })
 
   // The end the whole feature was built for: standing work that runs when the
@@ -389,13 +364,13 @@ describe('digest — the full case', () => {
 
     expect(first.created).toEqual(['daily'])
     expect(second).toMatchObject({ created: [], unchanged: ['daily'] })
-    expect(rig.calls.filter((call) => call.tool === 'createTask')).toHaveLength(1)
+    expect(rig.calls.filter((call) => call.tool === 'task.create')).toHaveLength(1)
     expect(rig.calls.at(-1).args.cronSchedule).toBe('0 6 * * *')
   })
 
   it('leaves nothing behind when it is uninstalled', async () => {
     const rig = harness({
-      supervisorAnswers: { ...answers, deleteTask: () => ({}) },
+      supervisorAnswers: { ...answers, 'task.delete': () => ({}) },
     })
     await install(rig)
     await rig.schedules.reconcile('digest', rig.host.resolve('schedules', {}))
@@ -408,7 +383,7 @@ describe('digest — the full case', () => {
     await rig.installer.uninstall('digest')
 
     expect(removed).toMatchObject({ ok: true, removed: ['daily'] })
-    expect(rig.calls.at(-1)).toMatchObject({ tool: 'deleteTask', args: { taskId: 'tk1' } })
+    expect(rig.calls.at(-1)).toMatchObject({ tool: 'task.delete', args: { taskId: 'tk1' } })
     expect(rig.host.list()).toEqual([])
     expect(rig.listInstalled()).toEqual([])
     // Every registry it held is empty, whether or not it tidied up itself.
@@ -430,7 +405,7 @@ describe('digest — the full case', () => {
     ])
 
     expect(result.problems[0].reason).toContain('not granted access to that workspace')
-    expect(rig.calls.filter((call) => call.tool === 'createTask')).toEqual([])
+    expect(rig.calls.filter((call) => call.tool === 'task.create')).toEqual([])
   })
 
   // The rung below the one it asked for is a coherent choice a user can make,
@@ -455,7 +430,7 @@ describe('all three at once', () => {
   it('coexist without either colliding or reordering each other', async () => {
     const rig = harness({
       workspaceAnswers: { getWorkspace: () => 'Workspace: Backend', loadMemory: () => '' },
-      supervisorAnswers: { listWorkspaces: () => ({ workspaces: [] }), listAllTasks: () => ({ tasks: [] }) },
+      supervisorAnswers: { listWorkspaces: () => ({ workspaces: [] }), 'task.listAll': () => ({ tasks: [] }) },
     })
 
     await rig.install('digest', { scope: SCOPE.supervisor, config: { workspaceId: 'ws1' } })

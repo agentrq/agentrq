@@ -9,12 +9,12 @@
 ## A tool on the server is a tool in four other places
 
 The `mcp.AddTool(mcpSrv, …)` block in `server.go` is the source of truth for
-what a workspace offers — 18 tools as of 2026-09-27. Every other list of them
+what a workspace offers — 14 tools as of 2026-10-13. Every other list of them
 in this repository is a copy, and the copies are what go stale.
 
 **`cli/agentrq-ws` is the one that is easiest to forget**, because it is a
 separate npm package and nothing in the backend mentions it. It is a
-command-line client over exactly these tools — 21 commands for the 18 — so
+command-line client over exactly these tools, with a verb per action, so
 **adding, renaming or removing a tool on the server is a change to the CLI
 too**: `COMMANDS` in `cli/agentrq-ws/src/commands.js`, the command table in its
 `README.md`, and the sentence there that spells the tool count out in words. A
@@ -41,9 +41,17 @@ it allows the server with one `mcp__<server>__*` wildcard.
 The remaining copies are documentation and fail silently: `README.md` (the
 "Available MCP Tools" list), `README.zh-CN.md` (the
 same list, translated), and `plugins/deepseek-harness/README.md`, whose table
-and hard-coded count are **stale at seven today** — worth knowing because the
-plugin filters nothing, so every server tool reaches the model whatever that
-table says.
+spells the count out — worth knowing because the plugin filters nothing, so
+every server tool reaches the model whatever that table says. Its `src/prompt.ts`
+names tools in the prompt it gives the model, so a rename is a change there too.
+
+## Action tools: two inputs, and old names still answer
+
+`task` and `pano`, on both servers, take only `action` and `payload`. Each
+action's payload is the struct its handler takes, and `help` prints that struct,
+so the help cannot drift from what is accepted. A retired tool name is answered,
+unlisted, by `ActionToolsMiddleware` from its legacy map: never drop an entry
+while a gateway, CLI or extension installed before the merge may still call it.
 
 ## What an agent reports leaves with its stream
 

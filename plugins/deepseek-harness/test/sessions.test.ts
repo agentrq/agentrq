@@ -659,7 +659,7 @@ describe('TaskSessionManager', () => {
     await manager.dispose()
   })
 
-  it('pins a push-opened session\'s title to the task\'s title, fetched via getTask', async () => {
+  it('pins a push-opened session\'s title to the task\'s title, fetched via task get', async () => {
     const h = harness()
     h.statuses.set('t1', 'notstarted')
     const manager = h.manager()
@@ -674,7 +674,7 @@ describe('TaskSessionManager', () => {
     await manager.dispose()
   })
 
-  it('pins a startup-caught-up task\'s session title from its own task, with no extra getTask call', async () => {
+  it('pins a startup-caught-up task\'s session title from its own task, with no extra task get call', async () => {
     const h = harness()
     h.queue.push(task('t1'))
     const manager = h.manager()

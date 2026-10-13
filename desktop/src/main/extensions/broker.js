@@ -47,6 +47,8 @@
  * `grant.js` exists so that it cannot be expressed.
  */
 
+import { SUPERVISOR_ACTIONS, WORKSPACE_ACTIONS, currentCall, currentToolName } from './servers.js'
+
 /** The three rungs a grant can sit on. Ordered, because they escalate. */
 export const SCOPE = {
   workspace: 'workspace',
@@ -62,15 +64,43 @@ function withoutWorkspaceId(args) {
   return rest
 }
 
+const ACTIONS = { workspace: WORKSPACE_ACTIONS, supervisor: SUPERVISOR_ACTIONS }
+
+/** Whether a tool takes an action and a payload on a surface, like `task`. */
+const takesActions = (surface, tool) => Object.hasOwn(ACTIONS[surface] ?? {}, tool)
+
+/**
+ * The arguments a server is sent, for one call.
+ *
+ * The workspace a call names is addressing on the workspace server, so it is
+ * dropped, from the payload too. On the supervisor it is an argument: an action
+ * tool takes it inside its payload, where it is put.
+ */
+function argsFor(surface, tool, args, workspaceId) {
+  if (!takesActions(surface, tool)) return surface === 'supervisor' ? args : withoutWorkspaceId(args)
+  const rest = withoutWorkspaceId(args)
+  const payload = withoutWorkspaceId(rest.payload ?? {})
+  if (surface === 'supervisor' && workspaceId) payload.workspaceId = workspaceId
+  return { ...rest, payload }
+}
+
 /**
  * Whether a grant permits one call.
  *
  * Split out from the calling because it is the rule, and a rule that can be
  * read on its own is one that can be checked on its own.
  */
-export function permits(grant, { surface, tool, workspaceId }) {
+export function permits(grant, { surface, tool, action, workspaceId }) {
   const allowed = grant?.tools?.[surface] ?? []
-  if (!allowed.includes(tool)) {
+  if (takesActions(surface, tool)) {
+    // The bare tool grants every action, `tool.action` one; and asking how to
+    // call it is no more than any one of its actions already allows.
+    const granted =
+      allowed.includes(tool) ||
+      allowed.includes(`${tool}.${action}`) ||
+      (action === 'help' && allowed.some((entry) => entry.startsWith(`${tool}.`)))
+    if (!granted) return deny(`This extension may not call "${tool}.${action}" on the ${surface} server.`)
+  } else if (!allowed.includes(tool)) {
     // Names the surface, because the same tool name can exist on both and
     // "not allowed" would leave an author guessing which one they asked for.
     return deny(`This extension may not call "${tool}" on the ${surface} server.`)
@@ -131,9 +161,10 @@ export function createBroker({ callWorkspace, callSupervisor, record = () => {},
       grants.set(name, {
         scope: grant?.scope ?? SCOPE.workspace,
         workspaces: [...(grant?.workspaces ?? [])],
+        // A grant saved before the task tools merged names retired tools.
         tools: {
-          workspace: [...(grant?.tools?.workspace ?? [])],
-          supervisor: [...(grant?.tools?.supervisor ?? [])],
+          workspace: [...new Set((grant?.tools?.workspace ?? []).map((tool) => currentToolName('workspace', tool)))],
+          supervisor: [...new Set((grant?.tools?.supervisor ?? []).map((tool) => currentToolName('supervisor', tool)))],
         },
         // Consent to be *asked* something, which is the other direction from
         // everything above and is enforced elsewhere — `tool-calls.js` reads it
@@ -162,27 +193,32 @@ export function createBroker({ callWorkspace, callSupervisor, record = () => {},
      * arrangement.
      */
     clientFor(name) {
-      const call = async (surface, tool, args = {}) => {
+      const call = async (surface, named, given = {}) => {
         const grant = grants.get(name)
         if (!grant) return deny('This extension has not been granted any access.')
 
-        const workspaceId = args.workspaceId ?? ''
+        // An extension written before the task tools merged calls them by
+        // their old names: called, and judged, as the action each became.
+        const { tool, args } = currentCall(surface, named, given)
+        const workspaceId = args.workspaceId ?? args.payload?.workspaceId ?? ''
         // Kept for the supervisor, where it is a real parameter; removed for the
         // workspace server, whose endpoint already names the workspace and whose
         // tools reject it. See the note at the top of this file.
-        const toolArgs = surface === 'supervisor' ? args : withoutWorkspaceId(args)
+        const toolArgs = argsFor(surface, tool, args, workspaceId)
 
-        const allowed = permits(grant, { surface, tool, workspaceId })
+        const allowed = permits(grant, { surface, tool, action: args.action, workspaceId })
+        // The action is what an action tool call does, so the audit says which.
+        const audit = { name, surface, tool, ...(takesActions(surface, tool) ? { action: args.action } : {}), workspaceId }
         if (!allowed.ok) {
           // Recorded as well as refused: a refusal is the interesting half of an
           // audit trail, and it is what tells a user an extension is asking for
           // more than they gave it.
-          record({ name, surface, tool, workspaceId, allowed: false, reason: allowed.reason })
+          record({ ...audit, allowed: false, reason: allowed.reason })
           logger.warn?.(`[${name}] refused ${surface}.${tool}: ${allowed.reason}`)
           return allowed
         }
 
-        record({ name, surface, tool, workspaceId, allowed: true })
+        record({ ...audit, allowed: true })
         try {
           const result =
             surface === 'supervisor'

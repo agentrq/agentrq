@@ -83,7 +83,7 @@ func TestPromptWorkspaceStatus_CoversEveryWorkspace(t *testing.T) {
 	}
 	text := promptText(t, res)
 
-	for _, want := range []string{"listWorkspaces", "getWorkspaceStats", "listTasks"} {
+	for _, want := range []string{"listWorkspaces", "getWorkspaceStats", "task action list"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("prompt text is missing %q:\n%s", want, text)
 		}

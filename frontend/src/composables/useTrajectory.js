@@ -371,7 +371,14 @@ export function describeToolCall(call) {
   const gist = toolInputGist(call.inputPreview) || truncate(call.description, 80);
 
   const mcp = /^mcp__(.+?)__(.+)$/.exec(raw);
-  if (mcp) return `${humanizeToolName(mcp[2])} (${mcp[1].replace(/^claude_ai_/, '').replace(/_/g, ' ')})`;
+  if (mcp) {
+    // A tool that takes an action, like AgentRQ's task and pano, is named
+    // with it: "Task update status", not just "Task". Read from the text, as
+    // the preview may be cut off.
+    const action = /"action"\s*:\s*"([A-Za-z]+)"/.exec(call.inputPreview ?? '')?.[1];
+    const tool = action ? `${mcp[2]} ${action}` : mcp[2];
+    return `${humanizeToolName(tool)} (${mcp[1].replace(/^claude_ai_/, '').replace(/_/g, ' ')})`;
+  }
 
   if (/^todowrite$/i.test(raw)) return 'Updated the to-do list';
   const verb = TOOL_VERBS.find(([pattern]) => pattern.test(raw));

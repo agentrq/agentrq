@@ -107,7 +107,7 @@ func (s *WorkspaceServer) promptWorkspaceStatus(ctx context.Context, req *mcp.Ge
 	s.emitTelemetry(ctx, mcpevent.ActionMCPMethodCall, "prompt:workspace-status", 0)
 	text := "Give me a status report across every workspace.\n\n" +
 		"1. Call listWorkspaces.\n" +
-		"2. For each workspace, call getWorkspaceStats (range 7d) and listTasks for anything ongoing or blocked.\n" +
+		"2. For each workspace, call getWorkspaceStats (range 7d) and task action list for anything ongoing or blocked.\n" +
 		"3. Summarize per workspace: what's running, what's blocked on a human, and anything that looks stuck.\n" +
 		"4. Call out whatever needs my attention first."
 

@@ -42,7 +42,7 @@ func TestReadNewWorkspaceGuide(t *testing.T) {
 	s := resourceServer("https://agentrq.example")
 	text := readResource(t, s, s.readNewWorkspaceGuide, newWorkspaceGuideURI)
 
-	for _, want := range []string{"listWorkspaces", "createWorkspace", "getWorkspace", "createTask"} {
+	for _, want := range []string{"listWorkspaces", "createWorkspace", "getWorkspace", "**task** action `create`"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guide is missing a reference to %q:\n%s", want, text)
 		}

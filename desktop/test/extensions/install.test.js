@@ -411,7 +411,7 @@ describe('install', () => {
 })
 
 describe('update', () => {
-  const widerManifest = manifestFor('thing', { workspace: ['getTask'], supervisor: ['listAllTasks'] })
+  const widerManifest = manifestFor('thing', { workspace: ['task.get'], supervisor: ['task.listAll'] })
 
   it('installs quietly when the ask has not changed', async () => {
     const { installer, moved } = build()
@@ -436,7 +436,7 @@ describe('update', () => {
     expect(ok).toBe(false)
     expect(needsGrant).toBe(true)
     expect(scopes.reachesAllWorkspaces).toBe(true)
-    expect(scopes.supervisor).toEqual(['listAllTasks'])
+    expect(scopes.supervisor).toEqual(['task.listAll'])
     // Nothing moved into place: the second move never happened.
     expect(moved).toHaveLength(1)
   })
@@ -445,7 +445,7 @@ describe('update', () => {
     const { installer, setManifest } = build({ manifest: widerManifest })
     await installer.install(releaseSource())
 
-    setManifest(manifestFor('thing', { workspace: ['getTask'], supervisor: [] }))
+    setManifest(manifestFor('thing', { workspace: ['task.get'], supervisor: [] }))
     const { ok, needsGrant } = await installer.update('thing', releaseSource())
 
     expect(ok).toBe(true)

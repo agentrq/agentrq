@@ -92,36 +92,36 @@ func TestRunPano_EveryAction(t *testing.T) {
 		lacks    []string
 	}{
 		{"save with no id creates a doc and answers without its markdown",
-			PanoParams{Action: "save", Title: "Plan", Markdown: "![c](chart.png)", TTLDays: 30, Color: "green", Files: []PanoFileParam{{Filename: "chart.png", MimeType: "image/png", Data: "YWJj"}}},
+			PanoParams{Action: "save", Payload: map[string]any{"title": "Plan", "markdown": "![c](chart.png)", "ttlDays": 30, "color": "green", "files": []PanoFileParam{{Filename: "chart.png", MimeType: "image/png", Data: "YWJj"}}}},
 			entity.SavePanoDocRequest{UserID: user, WorkspaceID: ws, Title: "Plan", Markdown: "![c](chart.png)", TTLDays: 30, Color: "green", Files: []entity.PanoUpload{{Filename: "chart.png", MimeType: "image/png", Data: "YWJj"}}},
 			[]string{`"id":"` + docID + `"`, `"createdBy":"` + wsID + `"`, `"ttlDays":30`, `"expiresAt":"2026-11-12T08:00:00Z"`, `"color":"green"`,
 				`"files":[{"id":"` + monoflake.ID(11).String() + `","filename":"chart.png","mimeType":"image/png","size":3,"url":"https://l/c","addedBy":"` + wsID + `","createdAt":"2026-10-13T08:00:00Z"}]`},
 			[]string{`"markdown"`, `"attachments"`, `"comments"`}},
 		{"save with an id replaces the doc",
-			PanoParams{Action: "save", ID: docID, Title: "Plan", Markdown: "text"},
+			PanoParams{Action: "save", Payload: map[string]any{"id": docID, "title": "Plan", "markdown": "text"}},
 			entity.SavePanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, Title: "Plan", Markdown: "text", Files: []entity.PanoUpload{}},
 			[]string{`"title":"Plan"`}, nil},
 		{"read answers the markdown and linked files only",
-			PanoParams{Action: "read", ID: docID},
+			PanoParams{Action: "read", Payload: map[string]any{"id": docID}},
 			entity.GetPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7},
 			[]string{`"markdown":"# Plan"`, `"files":[]`, `"updatedBy":"human"`, `"color":"yellow"`},
 			[]string{`"attachments"`, `"comments"`}},
 		{"read with comments and attachments adds both, naming their authors",
-			PanoParams{Action: "read", ID: docID, IncludeComments: true, IncludeAttachments: true},
+			PanoParams{Action: "read", Payload: map[string]any{"id": docID, "includeComments": true, "includeAttachments": true}},
 			entity.GetPanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7, IncludeComments: true, IncludeAttachments: true},
 			[]string{`"attachments":[{"id":"` + monoflake.ID(12).String() + `","filename":"notes.txt","mimeType":"text/plain","size":5,"addedBy":"human"`,
 				`"comments":[{"id":"` + monoflake.ID(13).String() + `","author":"human","body":"Agreed."`, `"author":"` + wsID + `","body":"Done."`},
 			nil},
 		{"comment adds a comment as the workspace",
-			PanoParams{Action: "comment", ID: docID, Comment: "Agreed."},
+			PanoParams{Action: "comment", Payload: map[string]any{"id": docID, "comment": "Agreed."}},
 			entity.AddPanoCommentRequest{UserID: user, WorkspaceID: ws, ID: 7, Body: "Agreed."},
 			[]string{`{"id":"` + monoflake.ID(13).String() + `","author":"` + wsID + `","body":"Agreed.","createdAt":"2026-10-13T08:00:00Z"}`}, nil},
 		{"attach adds attachments",
-			PanoParams{Action: "attach", ID: docID, Files: []PanoFileParam{{Filename: "notes.txt", Data: "YWJj"}}},
+			PanoParams{Action: "attach", Payload: map[string]any{"id": docID, "files": []PanoFileParam{{Filename: "notes.txt", Data: "YWJj"}}}},
 			entity.AttachPanoFilesRequest{UserID: user, WorkspaceID: ws, ID: 7, Files: []entity.PanoUpload{{Filename: "notes.txt", Data: "YWJj"}}},
 			[]string{`{"attachments":[{"id":"` + monoflake.ID(12).String() + `","filename":"notes.txt"`, `"addedBy":"` + wsID + `"`}, nil},
 		{"delete deletes the doc",
-			PanoParams{Action: "delete", ID: docID},
+			PanoParams{Action: "delete", Payload: map[string]any{"id": docID}},
 			entity.DeletePanoDocRequest{UserID: user, WorkspaceID: ws, ID: 7},
 			[]string{"Deleted Pano doc " + docID + "."}, nil},
 	} {
@@ -161,10 +161,13 @@ func TestRunPano_Refusals(t *testing.T) {
 		params PanoParams
 		want   string
 	}{
-		{"read with no id is refused", PanoParams{Action: "read"}, "read needs the doc's id"},
-		{"delete with an id that is not one is refused", PanoParams{Action: "delete", ID: "00000000000"}, "delete needs the doc's id"},
-		{"save with an id that is not one is not found", PanoParams{Action: "save", ID: "00000000000", Title: "t", Markdown: "m"}, "Pano doc not found"},
-		{"an unknown action is refused naming the actions", PanoParams{Action: "list", ID: docID}, `unknown action "list": use save, read, comment, attach or delete`},
+		{"read with no id is refused", PanoParams{Action: "read"}, "read: payload needs id"},
+		{"delete with an id that is not one is not found", PanoParams{Action: "delete", Payload: map[string]any{"id": "00000000000"}}, "Pano doc not found"},
+		{"read with an id that is not one is not found", PanoParams{Action: "read", Payload: map[string]any{"id": "00000000000"}}, "Pano doc not found"},
+		{"comment with an id that is not one is not found", PanoParams{Action: "comment", Payload: map[string]any{"id": "00000000000", "comment": "c"}}, "Pano doc not found"},
+		{"attach with an id that is not one is not found", PanoParams{Action: "attach", Payload: map[string]any{"id": "00000000000", "files": []any{}}}, "Pano doc not found"},
+		{"save with an id that is not one is not found", PanoParams{Action: "save", Payload: map[string]any{"id": "00000000000", "title": "t", "markdown": "m"}}, "Pano doc not found"},
+		{"an unknown action is refused naming the actions", PanoParams{Action: "list", Payload: map[string]any{"id": docID}}, `unknown action "list": use save, read, comment, attach, delete or help`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := &fakePano{}
@@ -182,8 +185,15 @@ func TestRunPano_Refusals(t *testing.T) {
 // Every action passes on a refusal as written, a missing doc as such, and
 // any other failure with what was being attempted.
 func TestRunPano_PassesOnTheControllersError(t *testing.T) {
-	for _, action := range []struct{ name, verb string }{
-		{"save", "save"}, {"read", "read"}, {"comment", "comment on"}, {"attach", "attach to"}, {"delete", "delete"},
+	for _, action := range []struct {
+		name, verb string
+		payload    map[string]any
+	}{
+		{"save", "save", map[string]any{"id": docID, "title": "t", "markdown": "m"}},
+		{"read", "read", map[string]any{"id": docID}},
+		{"comment", "comment on", map[string]any{"id": docID, "comment": "c"}},
+		{"attach", "attach to", map[string]any{"id": docID, "files": []any{}}},
+		{"delete", "delete", map[string]any{"id": docID}},
 	} {
 		t.Run(action.name+" passes on a refusal, a missing doc and a failure", func(t *testing.T) {
 			for _, e := range []struct {
@@ -194,7 +204,7 @@ func TestRunPano_PassesOnTheControllersError(t *testing.T) {
 				{base.ErrNotFound, "Pano doc not found"},
 				{errors.New("database unavailable"), "failed to " + action.verb + " the Pano doc: database unavailable"},
 			} {
-				text, isErr := call(RunPano(context.Background(), &fakePano{err: e.err}, "user-1", 100, PanoParams{Action: action.name, ID: docID}), nil, nil)
+				text, isErr := call(RunPano(context.Background(), &fakePano{err: e.err}, "user-1", 100, PanoParams{Action: action.name, Payload: action.payload}), nil, nil)
 				if !isErr || text != e.want {
 					t.Errorf("for %v RunPano answered %q (error %v), want the error %q", e.err, text, isErr, e.want)
 				}
@@ -208,7 +218,7 @@ func TestHandlePano(t *testing.T) {
 		ps, tools := skillServer(t, nil)
 		f := &fakePano{}
 		ps.pano, ps.userID, ps.contentWorkspaceID = f, "user-1", 99
-		if text, isErr := call(ps.handlePano(context.Background(), nil, PanoParams{Action: "delete", ID: docID})); isErr {
+		if text, isErr := call(ps.handlePano(context.Background(), nil, PanoParams{Action: "delete", Payload: map[string]any{"id": docID}})); isErr {
 			t.Fatalf("handlePano answered the error %q, want the doc deleted", text)
 		}
 		if want := (entity.DeletePanoDocRequest{UserID: "user-1", WorkspaceID: 99, ID: 7}); f.saw != want {
@@ -221,7 +231,7 @@ func TestHandlePano(t *testing.T) {
 
 	t.Run("a server with no Pano says so", func(t *testing.T) {
 		ps, _ := skillServer(t, nil)
-		text, isErr := call(ps.handlePano(context.Background(), nil, PanoParams{Action: "read", ID: docID}))
+		text, isErr := call(ps.handlePano(context.Background(), nil, PanoParams{Action: "read", Payload: map[string]any{"id": docID}}))
 		if !isErr || text != "the Pano is not available on this server" {
 			t.Errorf("handlePano answered %q (error %v), want the Pano reported unavailable", text, isErr)
 		}
@@ -231,16 +241,16 @@ func TestHandlePano(t *testing.T) {
 // The colors the tool's schema offers are the colors the Pano keeps: one
 // added to either and not the other is refused, or never offered.
 func TestPanoParams_ColorEnumIsThePanosColors(t *testing.T) {
-	f, _ := reflect.TypeOf(PanoParams{}).FieldByName("Color")
+	f, _ := reflect.TypeOf(PanoSavePayload{}).FieldByName("Color")
 	tag, ok := strings.CutPrefix(f.Tag.Get("jsonschema"), "enum:")
 	if !ok {
-		t.Fatalf("PanoParams.Color's jsonschema tag is %q, want an enum", f.Tag.Get("jsonschema"))
+		t.Fatalf("PanoSavePayload.Color's jsonschema tag is %q, want an enum", f.Tag.Get("jsonschema"))
 	}
 	var got []string
 	for _, v := range strings.Split(tag, ",") {
 		got = append(got, strings.TrimSpace(v))
 	}
 	if !reflect.DeepEqual(got, entity.PanoColors) {
-		t.Errorf("PanoParams.Color offers %v, want the Pano's colors %v", got, entity.PanoColors)
+		t.Errorf("PanoSavePayload.Color offers %v, want the Pano's colors %v", got, entity.PanoColors)
 	}
 }

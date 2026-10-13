@@ -8,7 +8,7 @@ A command-line interface that connects to the AgentRQ backend and spawns agents 
 
 Agents can now coordinate work across workspaces, both supervisor-driven and fully decoupled:
 
-- **Supervisor → Worker orchestration**: a supervisor agent connects to the Core MCP server (`coremcp`) over a single OAuth2 session and delegates subtasks to specialist agents in any workspace via `createTask(workspaceId, ...)`, monitoring progress with `listTasks`/`getTask`.
+- **Supervisor → Worker orchestration**: a supervisor agent connects to the Core MCP server (`coremcp`) over a single OAuth2 session and delegates subtasks to specialist agents in any workspace via `task` action `create(workspaceId, ...)`, monitoring progress with its `list`/`get` actions.
 - **Cross-workspace events**: named event signals (`publishEvent`) let one workspace trigger tasks in others via `EventTrigger` subscriptions, with `EmitEventID` chaining for multi-stage pipelines — no supervisor required.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) → [Supervisor → Worker Architecture](./ARCHITECTURE.md#supervisor--worker-architecture) and [Events (Cross-Workspace Signals)](./ARCHITECTURE.md#events-cross-workspace-signals).

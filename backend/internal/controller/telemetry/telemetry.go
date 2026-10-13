@@ -343,6 +343,7 @@ var subActionIDByToolName = map[string]uint8{
 	"saveMemory":              model.SubActionIDMCPSaveMemory,
 	"saveSkill":               model.SubActionIDMCPSaveSkill,
 	"pano":                    model.SubActionIDMCPPano,
+	"task":                    model.SubActionIDMCPTask,
 	"stopAgent":               model.SubActionIDMCPStopAgent,
 	"updateEvent":             model.SubActionIDMCPUpdateEvent,
 	"updateEventTrigger":      model.SubActionIDMCPUpdateEventTrigger,

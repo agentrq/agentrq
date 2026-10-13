@@ -49,10 +49,13 @@ choose. The doc stays on the board.
 
 ## For agents
 
-The workspace server and the supervisor's CoreMCP both have a `pano` tool, with
-one `action` per call: `save`, `read` (`includeComments` and
-`includeAttachments` add those), `comment`, `attach` and `delete`. The
-supervisor writes as its supervisor workspace.
+The workspace server and the supervisor's CoreMCP both have a `pano` tool. It
+takes two inputs, `action` and `payload`, the action's fields — for example
+`{"action": "read", "payload": {"id": "<id>", "includeComments": true}}`. The
+actions are `save`, `read` (`includeComments` and `includeAttachments` add
+those), `comment`, `attach` and `delete`; `help` lists them, and with payload
+`{"topic": "save"}` prints one action's payload. The supervisor writes as its
+supervisor workspace.
 
 From a shell, [agentrq-ws](../cli/agentrq-ws/README.md) does the same, and it
 keeps the doc's markdown and files out of the agent's context:

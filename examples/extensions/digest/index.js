@@ -12,7 +12,7 @@
  * ## Why it asks for the account rather than a workspace
  *
  * "Across every workspace" is not a wide version of "in this workspace"; it is a
- * different question. `listAllTasks` spans the platform and `createTask` reaches
+ * different question. `task.listAll` spans the platform and `task.create` reaches
  * anywhere, so the supervisor surface *is* every workspace. The grant ladder
  * makes "supervisor, but only this one" unrepresentable on purpose: it would be
  * the same grant wearing a narrower label.
@@ -164,7 +164,7 @@ export async function collect(ctx) {
   const workspaces = await ctx.mcp.supervisor('listWorkspaces', {})
   if (!workspaces.ok) return refusal(workspaces.reason)
 
-  const tasks = await ctx.mcp.supervisor('listAllTasks', { limit: MAX_TASKS })
+  const tasks = await ctx.mcp.supervisor('task', { action: 'listAll', payload: { limit: MAX_TASKS } })
   if (!tasks.ok) return refusal(tasks.reason)
 
   return summarise(payload(workspaces.result)?.workspaces ?? [], payload(tasks.result)?.tasks ?? [])

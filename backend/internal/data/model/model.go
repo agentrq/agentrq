@@ -829,6 +829,9 @@ const (
 	SubActionIDMCPStopAgent
 	// The Pano tool, on both servers.
 	SubActionIDMCPPano
+	// The task tool, on both servers: its help, and calls naming no action it
+	// has. Its actions are recorded under the names of the tools they replaced.
+	SubActionIDMCPTask
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

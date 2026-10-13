@@ -29,7 +29,7 @@ export const CHANNEL_NOTIFICATION_METHOD = 'notifications/claude/channel'
 /** Server reply when the queue holds nothing for this agent. */
 const EMPTY_QUEUE_REPLY = 'no pending tasks exist'
 
-/** One task dequeued from the workspace queue by an explicit `getTask`. */
+/** One task dequeued from the workspace queue by an explicit `task` `get`. */
 export interface AgentRqTask {
   /** Base62 task id, as AgentRQ reports it. */
   readonly id: string
@@ -53,7 +53,7 @@ export interface AgentRqTask {
  * content as written and lets the model read it.
  */
 export interface ChannelMessage {
-  /** Task id the push belongs to; also the `chat_id` the `reply` tool wants. */
+  /** Task id the push belongs to; also the `taskId` the `task` tool's `reply` wants. */
   readonly chatId: string
   /** Content as the workspace wrote it. */
   readonly text: string
@@ -106,7 +106,7 @@ function readField(text: string, field: string): string {
 }
 
 /**
- * Interpret a `getTask` reply.
+ * Interpret a `task` `get` reply.
  *
  * @param text - joined text content of the tool result.
  * @returns the task, or undefined when the queue is empty or unparseable.
@@ -186,12 +186,12 @@ export class AgentRqClient {
 
   /** Dequeue the next task assigned to this agent, if any. */
   async fetchNextTask(signal: AbortSignal): Promise<AgentRqTask | undefined> {
-    return parseTaskReply(await this.callTool('getTask', {}, signal))
+    return parseTaskReply(await this.callTool('task', { action: 'get' }, signal))
   }
 
   /** Fetch one task by id, without dequeuing anything. */
   async fetchTask(taskId: string, signal: AbortSignal): Promise<AgentRqTask | undefined> {
-    return parseTaskReply(await this.callTool('getTask', { taskId }, signal))
+    return parseTaskReply(await this.callTool('task', { action: 'get', payload: { taskId } }, signal))
   }
 
   /**
