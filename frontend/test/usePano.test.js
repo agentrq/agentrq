@@ -59,7 +59,7 @@ function fakeFile(name, { type = 'text/plain', bytes = [104, 105], size } = {}) 
 
 describe('the post-it colors', () => {
   it('names each color in the server\'s order, yellow first', () => {
-    expect(PANO_COLORS.map((c) => c.name)).toEqual(['yellow', 'pink', 'green', 'blue', 'orange', 'purple']);
+    expect(PANO_COLORS.map((c) => c.name)).toEqual(['yellow', 'pink', 'green', 'blue', 'orange', 'purple', 'amber']);
   });
 
   it('gives a known color its classes and an unknown one yellow\'s', () => {
@@ -74,15 +74,27 @@ describe('the post-it colors', () => {
     expect(panoColor(undefined)).toBe(PANO_COLORS[0]);
   });
 
-  it('gives every color a label, an ink, an ink background, its hex and a tape', () => {
-    for (const c of PANO_COLORS) {
+  it('uses the design\'s paper, label, pin and tape for every color', () => {
+    // [name, paper, label background, label text, pin, tape]
+    const spec = [
+      ['yellow', '#fef08a', '#fde047', '#78350f', '#ca8a04', 'bg-[#fde68a]/60'],
+      ['pink', '#fce7f3', '#fbcfe8', '#9d174d', '#f472b6', 'bg-[#f9a8d4]/60'],
+      ['green', '#dcfce7', '#bbf7d0', '#15803d', '#16a34a', 'bg-[#a7f3d0]/60'],
+      ['blue', '#e0f2fe', '#bae6fd', '#0369a1', '#2563eb', 'bg-[#7dd3fc]/60'],
+      ['orange', '#ffedd5', '#fecdd3', '#9f1239', '#ea580c', 'bg-[#fb7185]/45'],
+      ['purple', '#f3e8ff', '#e9d5ff', '#6b21a8', '#7c3aed', 'bg-[#d8b4fe]/60'],
+      ['amber', '#fef3c7', '#fde68a', '#92400e', '#b45309', 'bg-[#fcd34d]/60'],
+    ];
+    for (const [name, paper, tag, tagInk, pin, tape] of spec) {
+      const c = panoColor(name);
+      expect(c.card).toContain(`[${paper}]`);
+      expect(c.tag).toBe(`bg-[${tag}] text-[${tagInk}]`);
+      expect([c.tagHex, c.tagInkHex, c.ink]).toEqual([tag, tagInk, `text-[${tagInk}]`]);
+      expect([c.inkHex, c.inkBg]).toEqual([pin, `bg-[${pin}]`]);
+      expect(c.tape).toBe(tape);
+      expect(c.swatch).toMatch(/^bg-\[#[0-9a-f]{6}\]$/);
       expect(c.label).toMatch(/^[A-Z][a-z]+( [a-z]+)?$/);
-      expect(c.ink).toMatch(/^text-\[#[0-9a-f]{6}\]$/);
-      expect(c.inkBg).toBe(`bg-[${c.inkHex}]`);
-      expect(c.inkHex).toMatch(/^#[0-9a-f]{6}$/);
-      expect(c.tape).toMatch(/^bg-\[#[0-9a-f]{6}\]\/60$/);
     }
-    expect(new Set(PANO_COLORS.map((c) => c.inkHex)).size).toBe(PANO_COLORS.length);
     expect(new Set(PANO_COLORS.map((c) => c.label)).size).toBe(PANO_COLORS.length);
   });
 });
@@ -94,6 +106,13 @@ describe('filtering the board', () => {
     expect(filterPanoDocs(docs, '')).toBe(docs);
     expect(filterPanoDocs(docs, null)).toBe(docs);
     expect(filterPanoDocs(docs, '   ')).toBe(docs);
+  });
+
+  it('keeps only the docs in the color picked, a doc with no color counting as yellow', () => {
+    const colored = [{ title: 'a', color: 'blue' }, { title: 'b' }, { title: 'ab', color: 'blue' }];
+    expect(filterPanoDocs(colored, '', 'blue').map((d) => d.title)).toEqual(['a', 'ab']);
+    expect(filterPanoDocs(colored, '', 'yellow').map((d) => d.title)).toEqual(['b']);
+    expect(filterPanoDocs(colored, 'b', 'blue').map((d) => d.title)).toEqual(['ab']);
   });
 
   it('keeps the docs whose title holds the query, ignoring case', () => {

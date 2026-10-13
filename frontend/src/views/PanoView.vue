@@ -27,7 +27,7 @@ import { useEventBus } from '../useEventBus'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 
 const router = useRouter()
-const { docs, loading, error, query, shown, load } = usePanoBoard({ api })
+const { docs, loading, error, query, color, shown, load } = usePanoBoard({ api })
 const { workspaces } = storeToRefs(useWorkspaceStore())
 const { notifySuccess, notifyError } = useToasts()
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
@@ -99,6 +99,9 @@ async function onDelete() {
   }
 }
 
+// The filter pills: amber when picked, quiet otherwise.
+const pillOn = 'bg-[#d97706] text-white border-transparent'
+const pillOff = 'bg-white dark:bg-zinc-800/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-zinc-700 hover:border-stone-300 dark:hover:border-zinc-600'
 const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 transition-opacity'
 </script>
 
@@ -117,9 +120,18 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <input v-model="query" type="search" data-test="pano-search" placeholder="Filter by title"
           class="w-full sm:max-w-sm px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
-        <p v-if="query.trim() && docs.length" data-test="pano-filter-summary" class="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">
+        <!-- Quick filter pills: every color, or one. -->
+        <div class="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Filter by color">
+          <button type="button" role="radio" :aria-checked="!color" data-test="pano-filter-all" @click="color = ''"
+            :class="!color ? pillOn : 'bg-stone-200 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border-transparent'" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-colors">All</button>
+          <button v-for="c in PANO_COLORS" :key="c.name" type="button" role="radio" :aria-checked="color === c.name" :data-test="`pano-filter-${c.name}`"
+            @click="color = color === c.name ? '' : c.name" :class="color === c.name ? pillOn : pillOff" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold transition-colors">
+            <span :class="c.swatch" class="w-2.5 h-2.5 rounded-full border border-black/10" aria-hidden="true"></span>{{ c.label }}
+          </button>
+        </div>
+        <p v-if="(query.trim() || color) && docs.length" data-test="pano-filter-summary" class="flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-zinc-500">
           <span>Showing {{ shown.length }} of {{ docs.length }}</span>
-          <button type="button" data-test="pano-filter-reset" class="normal-case tracking-normal text-[11px] text-gray-600 dark:text-zinc-300 hover:underline" @click="query = ''">Reset</button>
+          <button type="button" data-test="pano-filter-reset" class="normal-case tracking-normal text-[11px] text-gray-600 dark:text-zinc-300 hover:underline" @click="query = ''; color = ''">Reset</button>
         </p>
       </div>
 
@@ -144,10 +156,10 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
           </div>
         </div>
 
-        <p v-if="docs.length && !shown.length" data-test="pano-no-match" class="self-center text-[11px] text-gray-500 dark:text-zinc-400">No doc's title matches “{{ query }}”.</p>
+        <p v-if="docs.length && !shown.length" data-test="pano-no-match" class="self-center text-[11px] text-gray-500 dark:text-zinc-400">{{ query.trim() ? `No doc's title matches “${query}”${color ? ' in this color' : ''}.` : 'No doc in this color.' }}</p>
 
         <article v-for="doc in shown" :key="doc.id" data-test="pano-card"
-          :style="{ '--pano-ink': panoColor(doc.color).inkHex, '--pano-tilt': `${panoTilt(doc.id)}deg` }"
+          :style="{ '--pano-ink': panoColor(doc.color).inkHex, '--pano-tag': panoColor(doc.color).tagHex, '--pano-tag-ink': panoColor(doc.color).tagInkHex, '--pano-tilt': `${panoTilt(doc.id)}deg` }"
           :class="[panoColor(doc.color).card, { 'z-20': recoloring === doc.id }]"
           class="pano-paper group relative flex flex-col min-w-0 h-72 rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_10px_20px_-12px_rgba(0,0,0,0.25)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_32px_-12px_rgba(0,0,0,0.45)] rotate-[var(--pano-tilt)] hover:rotate-0 focus-within:rotate-0 hover:z-10 focus-within:z-20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_14px_28px_-12px_rgba(0,0,0,0.35)] transition-[rotate,box-shadow] duration-200">
           <!-- A leaning card is a stacking context of its own, so the one under it

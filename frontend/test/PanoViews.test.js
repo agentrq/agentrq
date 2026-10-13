@@ -173,7 +173,7 @@ describe('the board', () => {
     expect(text(el)).not.toContain('Loading the Pano…');
     const cards = $$(el, 'pano-card');
     expect(cards.map((c) => text(c.querySelector('h2')))).toEqual(['Release plan', 'Agent notes', 'Odd paper']);
-    expect(cards[0].classList.contains(PANO_COLORS[1].card.split(' ')[1])).toBe(true);
+    expect(cards[0].classList.contains(PANO_COLORS[1].card.split(' ')[0])).toBe(true);
     expect(cards[2].classList.contains(PANO_COLORS[0].card.split(' ')[1])).toBe(true);
     expect(cards[0].style.getPropertyValue('--pano-ink')).toBe(PANO_COLORS[1].inkHex);
     // Every card leans by the angle its id picks, and straightens on hover.
@@ -236,6 +236,29 @@ describe('the board', () => {
     expect($$(el, 'pano-card')).toHaveLength(3);
   });
 
+  it('filters by color with the pills, with the title too, and resets both', async () => {
+    const { el } = await mount('/pano');
+    expect($(el, 'pano-filter-all').getAttribute('aria-checked')).toBe('true');
+    await click($(el, 'pano-filter-blue'));
+    expect($(el, 'pano-filter-blue').getAttribute('aria-checked')).toBe('true');
+    expect($(el, 'pano-filter-blue').className).toContain('bg-[#d97706]');
+    expect($(el, 'pano-filter-all').getAttribute('aria-checked')).toBe('false');
+    expect($$(el, 'pano-card').map((c) => text(c.querySelector('h2')))).toEqual(['Agent notes']);
+    expect(text($(el, 'pano-filter-summary'))).toContain('Showing 1 of 3');
+    await type($(el, 'pano-search'), 'plan');
+    expect(text($(el, 'pano-no-match'))).toBe('No doc\'s title matches “plan” in this color.');
+    await click($(el, 'pano-filter-reset'));
+    expect($$(el, 'pano-card')).toHaveLength(3);
+    await click($(el, 'pano-filter-amber'));
+    expect(text($(el, 'pano-no-match'))).toBe('No doc in this color.');
+    // A picked pill unpicks on a second click; All picks every color.
+    await click($(el, 'pano-filter-amber'));
+    expect($$(el, 'pano-card')).toHaveLength(3);
+    await click($(el, 'pano-filter-pink'));
+    await click($(el, 'pano-filter-all'));
+    expect($$(el, 'pano-card')).toHaveLength(3);
+  });
+
   it('starts a note on N, either case', async () => {
     const { el, router } = await mount('/pano');
     const event = await key(document.body, { key: 'n' });
@@ -286,7 +309,7 @@ describe('the board', () => {
     await click(button);
     expect(button.getAttribute('aria-expanded')).toBe('true');
     const menu = first.querySelector('[data-test="pano-card-colors"]');
-    expect([...menu.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false', 'false', 'false']);
+    expect([...menu.querySelectorAll('button')].map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false', 'false', 'false', 'false']);
     await click(button);
     expect(first.querySelector('[data-test="pano-card-colors"]')).toBeNull();
     await click(button);

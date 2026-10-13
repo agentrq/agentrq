@@ -320,7 +320,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                   :class="preview ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-zinc-400'" class="px-3 py-1 rounded-md">Preview</button>
               </div>
             </div>
-            <div :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
+            <div :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
@@ -340,7 +340,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                 <span :class="label">Paper</span>
                 <span data-test="pano-color-label" class="text-[11px] font-bold text-gray-500 dark:text-zinc-400">{{ color.label }}</span>
               </div>
-              <div class="grid grid-cols-6 gap-2" role="radiogroup" aria-label="Color">
+              <div class="grid grid-cols-7 gap-2" role="radiogroup" aria-label="Color">
                 <button v-for="c in PANO_COLORS" :key="c.name" type="button" role="radio" :aria-checked="draft.color === c.name" :title="c.label" :aria-label="c.label"
                   :data-test="`pano-color-${c.name}`" @click="draft.color = c.name"
                   :class="[c.swatch, draft.color === c.name ? `ring-2 ring-offset-2 ring-black dark:ring-white dark:ring-offset-zinc-900 ${c.ink}` : 'text-transparent']"
@@ -396,7 +396,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
       </form>
 
       <div v-else-if="doc" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-        <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
+        <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
           <h1 data-test="pano-title" class="text-2xl md:text-3xl font-black leading-tight break-words text-[#0f172a]">{{ doc.title }}</h1>
           <p data-test="pano-meta" class="mt-1 text-[11px] text-[#334155]">

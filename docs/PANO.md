@@ -23,8 +23,8 @@ Only the board has a filter, by title.
   doc is deleted, like a task's attachments.
 - **Comments** record who wrote them: the workspace, or for a fork its parent,
   or you.
-- **Colors**: `yellow` (the default), `pink`, `green`, `blue`, `orange` and
-  `purple`.
+- **Colors**: `yellow` (the default), `pink`, `green`, `blue`, `orange`, `purple` and
+  `amber`.
 - **Life**: a doc is deleted `ttlDays` after its last save, 30 by default. A
   save can ask for any whole number of days up to the server's maximum, 365 by
   default.

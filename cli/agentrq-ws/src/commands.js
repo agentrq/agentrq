@@ -138,7 +138,7 @@ async function fetchAttachment(ctx, url) {
 }
 
 /** The Pano's post-it colors, mirrored from the backend. */
-export const PANO_COLORS = ['yellow', 'pink', 'green', 'blue', 'orange', 'purple']
+export const PANO_COLORS = ['yellow', 'pink', 'green', 'blue', 'orange', 'purple', 'amber']
 
 /** Files for the pano tool from repeated --file flags: an attachment without its id. */
 function panoFiles(paths) {

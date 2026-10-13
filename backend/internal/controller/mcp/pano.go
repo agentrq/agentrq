@@ -46,7 +46,7 @@ type PanoParams struct {
 	Title              string          `json:"title,omitempty" jsonschema:"save: the doc's title."`
 	Markdown           string          `json:"markdown,omitempty" jsonschema:"save: the doc's full markdown, replacing what it had."`
 	TTLDays            int             `json:"ttlDays,omitempty" jsonschema:"save: how many days the doc lives from this save before it is deleted. Leave it out to keep the doc's own, 30 for a new doc."`
-	Color              string          `json:"color,omitempty" jsonschema:"enum: yellow, pink, green, blue, orange, purple"`
+	Color              string          `json:"color,omitempty" jsonschema:"enum: yellow, pink, green, blue, orange, purple, amber"`
 	Files              []PanoFileParam `json:"files,omitempty" jsonschema:"save: linked files, each linked from the markdown by its filename. attach: the attachments."`
 	Comment            string          `json:"comment,omitempty" jsonschema:"comment: the comment's text."`
 	IncludeComments    bool            `json:"includeComments,omitempty" jsonschema:"read: include the doc's comments."`

@@ -2770,7 +2770,7 @@ components:
         updatedAt: { type: string, format: date-time }
         ttlDays: { type: integer, description: Days the doc lives after its last save. }
         expiresAt: { type: string, format: date-time }
-        color: { type: string, enum: [yellow, pink, green, blue, orange, purple] }
+        color: { type: string, enum: [yellow, pink, green, blue, orange, purple, amber] }
         checklistDone: { type: integer, description: Checked items of the markdown's task list. }
         checklistTotal: { type: integer, description: Items of the markdown's task list, outside fenced code. }
         files:
@@ -2823,7 +2823,7 @@ components:
           description: Days the doc lives after this save, capped by the server's maximum. 0 keeps the doc's own, 30 for a new doc.
         color:
           type: string
-          enum: ['', yellow, pink, green, blue, orange, purple]
+          enum: ['', yellow, pink, green, blue, orange, purple, amber]
           description: Blank keeps the doc's own, yellow for a new doc.
         files:
           type: array

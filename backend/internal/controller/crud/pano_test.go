@@ -315,7 +315,7 @@ func TestPano_SaveRefusals(t *testing.T) {
 		{"markdown that is not UTF-8 is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "bad \xff"}, "not valid UTF-8"},
 		{"a negative TTL is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "m", TTLDays: -1}, "ttlDays must be between 1 and"},
 		{"a TTL over the maximum is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "m", TTLDays: PanoMaxTTLDays + 1}, "ttlDays must be between 1 and"},
-		{"an unknown color is refused, naming the colors", entity.SavePanoDocRequest{Title: "t", Markdown: "m", Color: "red"}, "color must be one of yellow, pink, green, blue, orange, purple"},
+		{"an unknown color is refused, naming the colors", entity.SavePanoDocRequest{Title: "t", Markdown: "m", Color: "red"}, "color must be one of yellow, pink, green, blue, orange, purple, amber"},
 		{"a file with no name is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "m", Files: []entity.PanoUpload{{Filename: " "}}}, "every file needs a filename"},
 		{"a linked file whose name a link cannot name is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "[a](a b.png)", Files: []entity.PanoUpload{{Filename: "a b.png"}}}, `"a b.png" cannot be linked`},
 		{"a file that is not base64 is refused", entity.SavePanoDocRequest{Title: "t", Markdown: "[a](a.png)", Files: []entity.PanoUpload{{Filename: "a.png", Data: "!!"}}}, "a.png: data is not base64"},

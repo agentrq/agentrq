@@ -19,19 +19,20 @@ export const PANO_MAX_FILE_BYTES = 2 * 1024 * 1024
 const LINKED_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
- * The post-it colors, in the server's order, the first the default: archival
- * pastels, each paper a light wash from its hue's 100 up to its 200, the same
- * in both themes so dark text stays crisp on it, as on real paper. `ink` is
- * the title's deep shade, `inkBg`/`inkHex` the 600 that marks checkmarks,
- * bars and avatars, `tape` its 300 strip, and the swatch its 200.
+ * The post-it colors, in the server's order, the first the default, as the
+ * design gives them: the paper (`card`), the same in both themes so dark text
+ * stays crisp on it; its label one step deeper (`tag`, and as hex `tagHex`
+ * with `tagInkHex` for its text), and the `swatch` that names the color; the pin that marks checkmarks,
+ * bars and avatars (`inkBg`/`inkHex`); and the washi `tape` at its top.
  */
 export const PANO_COLORS = [
-  { name: 'yellow', label: 'Canary yellow', card: 'bg-linear-to-br from-[#fef9c3] to-[#fef08a]', swatch: 'bg-[#fef08a]', ink: 'text-[#713f12]', inkBg: 'bg-[#ca8a04]', inkHex: '#ca8a04', tape: 'bg-[#fde047]/60' },
-  { name: 'pink', label: 'Soft rose', card: 'bg-linear-to-br from-[#fce7f3] to-[#fbcfe8]', swatch: 'bg-[#fbcfe8]', ink: 'text-[#9d174d]', inkBg: 'bg-[#db2777]', inkHex: '#db2777', tape: 'bg-[#f9a8d4]/60' },
-  { name: 'green', label: 'Mint green', card: 'bg-linear-to-br from-[#dcfce7] to-[#bbf7d0]', swatch: 'bg-[#bbf7d0]', ink: 'text-[#166534]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#86efac]/60' },
-  { name: 'blue', label: 'Sky cyan', card: 'bg-linear-to-br from-[#e0f2fe] to-[#bae6fd]', swatch: 'bg-[#bae6fd]', ink: 'text-[#075985]', inkBg: 'bg-[#0284c7]', inkHex: '#0284c7', tape: 'bg-[#7dd3fc]/60' },
-  { name: 'orange', label: 'Peach', card: 'bg-linear-to-br from-[#ffedd5] to-[#fed7aa]', swatch: 'bg-[#fed7aa]', ink: 'text-[#9a3412]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fdba74]/60' },
-  { name: 'purple', label: 'Lilac', card: 'bg-linear-to-br from-[#f3e8ff] to-[#e9d5ff]', swatch: 'bg-[#e9d5ff]', ink: 'text-[#6b21a8]', inkBg: 'bg-[#9333ea]', inkHex: '#9333ea', tape: 'bg-[#d8b4fe]/60' },
+  { name: 'yellow', label: 'Canary yellow', card: 'bg-linear-to-br from-[#fef9c3] to-[#fef08a] to-45%', swatch: 'bg-[#fef08a]', tag: 'bg-[#fde047] text-[#78350f]', tagHex: '#fde047', tagInkHex: '#78350f', ink: 'text-[#78350f]', inkBg: 'bg-[#ca8a04]', inkHex: '#ca8a04', tape: 'bg-[#fde68a]/60' },
+  { name: 'pink', label: 'Warm pink', card: 'bg-[#fce7f3]', swatch: 'bg-[#fbcfe8]', tag: 'bg-[#fbcfe8] text-[#9d174d]', tagHex: '#fbcfe8', tagInkHex: '#9d174d', ink: 'text-[#9d174d]', inkBg: 'bg-[#f472b6]', inkHex: '#f472b6', tape: 'bg-[#f9a8d4]/60' },
+  { name: 'green', label: 'Mint green', card: 'bg-[#dcfce7]', swatch: 'bg-[#bbf7d0]', tag: 'bg-[#bbf7d0] text-[#15803d]', tagHex: '#bbf7d0', tagInkHex: '#15803d', ink: 'text-[#15803d]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#a7f3d0]/60' },
+  { name: 'blue', label: 'Sky blue', card: 'bg-[#e0f2fe]', swatch: 'bg-[#bae6fd]', tag: 'bg-[#bae6fd] text-[#0369a1]', tagHex: '#bae6fd', tagInkHex: '#0369a1', ink: 'text-[#0369a1]', inkBg: 'bg-[#2563eb]', inkHex: '#2563eb', tape: 'bg-[#7dd3fc]/60' },
+  { name: 'orange', label: 'Peach', card: 'bg-[#ffedd5]', swatch: 'bg-[#fed7aa]', tag: 'bg-[#fecdd3] text-[#9f1239]', tagHex: '#fecdd3', tagInkHex: '#9f1239', ink: 'text-[#9f1239]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fb7185]/45' },
+  { name: 'purple', label: 'Lilac', card: 'bg-[#f3e8ff]', swatch: 'bg-[#e9d5ff]', tag: 'bg-[#e9d5ff] text-[#6b21a8]', tagHex: '#e9d5ff', tagInkHex: '#6b21a8', ink: 'text-[#6b21a8]', inkBg: 'bg-[#7c3aed]', inkHex: '#7c3aed', tape: 'bg-[#d8b4fe]/60' },
+  { name: 'amber', label: 'Golden amber', card: 'bg-[#fef3c7]', swatch: 'bg-[#fde68a]', tag: 'bg-[#fde68a] text-[#92400e]', tagHex: '#fde68a', tagInkHex: '#92400e', ink: 'text-[#92400e]', inkBg: 'bg-[#b45309]', inkHex: '#b45309', tape: 'bg-[#fcd34d]/60' },
 ]
 
 /** A color by name; an unknown one is yellow. */
@@ -57,11 +58,11 @@ export function panoColorClass(color) {
   return panoColor(color).card
 }
 
-/** Docs whose title holds the query, ignoring case; every doc for none. */
-export function filterPanoDocs(docs, query) {
+/** Docs whose title holds the query, ignoring case, in the color picked; every doc for neither. */
+export function filterPanoDocs(docs, query, color = '') {
   const q = String(query || '').trim().toLowerCase()
-  if (!q) return docs
-  return docs.filter((d) => String(d.title || '').toLowerCase().includes(q))
+  if (!q && !color) return docs
+  return docs.filter((d) => String(d.title || '').toLowerCase().includes(q) && (!color || panoColor(d.color).name === color))
 }
 
 /** Who wrote something: "You" for the person, else the workspace's name. */
@@ -438,13 +439,14 @@ export async function convertPanoDocToTask(doc, workspaceId, { api }) {
   return res.task
 }
 
-/** The board: every doc of the account, filtered by title as the person types. */
+/** The board: every doc of the account, filtered by title as the person types, and by color. */
 export function usePanoBoard({ api }) {
   const docs = ref([])
   const loading = ref(false)
   const error = ref('')
   const query = ref('')
-  const shown = computed(() => filterPanoDocs(docs.value, query.value))
+  const color = ref('')
+  const shown = computed(() => filterPanoDocs(docs.value, query.value, color.value))
 
   // quiet reloads behind a live update without the loading state.
   async function load({ quiet = false } = {}) {
@@ -460,7 +462,7 @@ export function usePanoBoard({ api }) {
     }
   }
 
-  return { docs, loading, error, query, shown, load }
+  return { docs, loading, error, query, color, shown, load }
 }
 
 /**

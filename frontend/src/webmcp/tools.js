@@ -93,7 +93,7 @@ const PANO_DOC = {
   title: str('The doc\'s title.'),
   markdown: str('The doc\'s full markdown, replacing what it had.'),
   ttlDays: int('Days the doc lives from this save before it is deleted. Leave it out to keep its own, 30 for a new doc.'),
-  color: { type: 'string', enum: ['yellow', 'pink', 'green', 'blue', 'orange', 'purple'], description: 'The post-it\'s color. Leave it out to keep its own, yellow for a new doc.' },
+  color: { type: 'string', enum: ['yellow', 'pink', 'green', 'blue', 'orange', 'purple', 'amber'], description: 'The post-it\'s color. Leave it out to keep its own, yellow for a new doc.' },
   files: PANO_FILES('Linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name).'),
 }
 

@@ -150,10 +150,11 @@ const (
 	PanoColorBlue
 	PanoColorOrange
 	PanoColorPurple
+	PanoColorAmber
 )
 
 // PanoColors are the colors' names, indexed by PanoColor.
-var PanoColors = []string{"yellow", "pink", "green", "blue", "orange", "purple"}
+var PanoColors = []string{"yellow", "pink", "green", "blue", "orange", "purple", "amber"}
 
 func (c PanoColor) String() string {
 	if int(c) < len(PanoColors) {
