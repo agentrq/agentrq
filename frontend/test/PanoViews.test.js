@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   fetchWorkspaces: vi.fn(),
   listPanoDocs: vi.fn(),
   getPanoDoc: vi.fn(),
+  getTask: vi.fn(),
   createPanoDoc: vi.fn(),
   updatePanoDoc: vi.fn(),
   deletePanoDoc: vi.fn(),
@@ -174,6 +175,7 @@ beforeEach(() => {
   toasts.value = [];
   bus.handlers.length = 0;
   vi.clearAllMocks();
+  api.getTask.mockRejectedValue(new Error('not read'));
   api.ensureSupervisorWorkspace.mockResolvedValue({ workspace: { id: 'sup', name: 'supervisor' } });
   api.fetchWorkspaces.mockResolvedValue({ workspaces: WORKSPACES });
 });
@@ -947,9 +949,16 @@ describe('a doc', () => {
       vi.stubGlobal('matchMedia', () => ({ matches: true }));
       try {
         api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "ongoing")\n\nSee [the fix](/workspaces/ws1/tasks/t9) and [again](/workspaces/ws1/tasks/t9).' } });
+        api.getTask.mockImplementation(async (ws, id) => {
+          if (id === 't7') throw new Error('gone');
+          return { task: { id, title: 'Fix the long thing' } };
+        });
         const { el, router } = await mount('/pano/d1');
+        await settle();
         const links = $$(el, 'pano-related-task');
-        expect(links.map((a) => a.textContent)).toEqual(['@ops', 'the fix']);
+        // The title of a task that can be read; the link's own text for one that cannot.
+        expect(links.map((a) => a.textContent)).toEqual(['@ops', 'Fix the long thing']);
+        expect(api.getTask).toHaveBeenCalledTimes(2);
         expect(text($(el, 'pano-related'))).toContain('Ongoing');
         await click(links[1]);
         await settle();

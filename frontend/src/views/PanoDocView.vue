@@ -10,7 +10,7 @@
  * editor for it — or, at /pano/new, for a doc not written yet. Thin on purpose:
  * the rules are in `usePano`, where they are tested.
  */
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
@@ -57,9 +57,24 @@ const preview = ref(false)
 let deleting = false
 
 // Read only inside v-else-if="doc", so a doc is always there.
+const TASK_PATH = /^\/workspaces\/([^/]+)\/tasks\/([^/]+)$/
 const assigned = computed(() => panoAssignees(panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files))))
 const body = computed(() => panoItemMenus(assigned.value))
-const relatedTasks = computed(() => panoRelatedTasks(assigned.value))
+const relatedTasks = computed(() => (doc.value ? panoRelatedTasks(assigned.value) : []))
+// The related tasks' own titles, by path, read once each; a task that cannot be
+// read keeps the name its link carries.
+const taskTitles = ref({})
+const fetchedTasks = new Set()
+watch(relatedTasks, (tasks) => {
+  for (const t of tasks) {
+    const m = TASK_PATH.exec(t.path)
+    if (!m || fetchedTasks.has(t.path)) continue
+    fetchedTasks.add(t.path)
+    api.getTask(m[1], m[2]).then((res) => {
+      if (res?.task?.title) taskTitles.value = { ...taskTitles.value, [t.path]: res.task.title }
+    }).catch(() => {})
+  }
+})
 const draftBody = computed(() => renderMarkdown(draft.value.markdown || '*Nothing written yet.*'))
 const color = computed(() => panoColor(editing.value ? draft.value.color : doc.value?.color))
 const canSave = computed(() => !busy.value && !!draft.value.title.trim() && !!draft.value.markdown.trim())
@@ -157,7 +172,6 @@ async function onBodyClick(event) {
 
 // A task opens beside the doc on a large screen, where the Pano chat column
 // has room for it, and as its own page on a small one.
-const TASK_PATH = /^\/workspaces\/([^/]+)\/tasks\/([^/]+)$/
 function openTask(path) {
   const m = TASK_PATH.exec(path)
   const wide = globalThis.matchMedia?.('(min-width: 1024px)').matches
@@ -480,7 +494,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             <ul class="space-y-1">
               <li v-for="t in relatedTasks" :key="t.path" class="flex items-center gap-2 text-[12px] min-w-0">
                 <a :href="t.path" data-test="pano-related-task" @click.prevent="openTask(t.path)"
-                  class="min-w-0 truncate font-bold text-gray-700 dark:text-zinc-300 underline decoration-dotted underline-offset-2">{{ t.name }}</a>
+                  class="min-w-0 truncate font-bold text-gray-700 dark:text-zinc-300 underline decoration-dotted underline-offset-2" :title="taskTitles[t.path] || t.name">{{ taskTitles[t.path] || t.name }}</a>
                 <span class="shrink-0 text-[10px] text-gray-400 dark:text-zinc-500">{{ PANO_TASK_STATUSES[t.status] }}</span>
               </li>
             </ul>
