@@ -66,7 +66,7 @@ export const SUPERVISOR_TOOLS = Object.freeze([
 ])
 
 const actions = (...names) => Object.freeze([...names, 'help'])
-const PANO_ACTIONS = actions('save', 'read', 'comment', 'attach', 'delete')
+const PANO_ACTIONS = actions('save', 'edit', 'read', 'comment', 'attach', 'delete')
 
 /**
  * Each tool's actions, per surface: the enums of the Go params, which a test
