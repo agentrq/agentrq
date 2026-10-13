@@ -19,20 +19,21 @@ export const PANO_MAX_FILE_BYTES = 2 * 1024 * 1024
 const LINKED_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
 /**
- * The post-it colors, in the server's order, the first the default. Each is a
- * pale tint on a light page and a deeper pastel on a dark page, always with
- * dark text, so a note reads the same either way; its swatch is the stronger
- * pastel, so the choices tell apart.
+ * The post-it colors, in the server's order, the first the default: Tailwind's
+ * 50 tint of each hue on a light page and its 200 on a dark one, always with
+ * dark text, so a note reads the same either way. The 200 is the swatch, so
+ * the choices tell apart; the 600 marks checkmarks, bars and avatars, and the
+ * 800/900 is the title's ink.
  */
 // `ink` is the color's own deep shade, for a title and the author's mark;
 // `tape` the strip that holds the note up.
 export const PANO_COLORS = [
-  { name: 'yellow', label: 'Canary yellow', card: 'bg-[#fffbe3] dark:bg-[#e8d97a]', swatch: 'bg-[#fff7b1]', ink: 'text-[#6b4f00]', inkBg: 'bg-[#8a6a00]', inkHex: '#8a6a00', tape: 'bg-[#f4dd5e]/70' },
-  { name: 'pink', label: 'Blush pink', card: 'bg-[#fff0f4] dark:bg-[#e3a8bf]', swatch: 'bg-[#ffd6e5]', ink: 'text-[#8a1c45]', inkBg: 'bg-[#a3234f]', inkHex: '#a3234f', tape: 'bg-[#f7a8c4]/70' },
-  { name: 'green', label: 'Mint green', card: 'bg-[#ebfaee] dark:bg-[#a6cf98]', swatch: 'bg-[#d4f5c9]', ink: 'text-[#1f5c1a]', inkBg: 'bg-[#2e7d27]', inkHex: '#2e7d27', tape: 'bg-[#9fdc8c]/70' },
-  { name: 'blue', label: 'Sky blue', card: 'bg-[#edf5ff] dark:bg-[#9fc2e3]', swatch: 'bg-[#cfe8ff]', ink: 'text-[#1b4a7a]', inkBg: 'bg-[#25609c]', inkHex: '#25609c', tape: 'bg-[#98c8f2]/70' },
-  { name: 'orange', label: 'Peach orange', card: 'bg-[#fff3e6] dark:bg-[#e3b182]', swatch: 'bg-[#ffdcb5]', ink: 'text-[#7a3d06]', inkBg: 'bg-[#a1520a]', inkHex: '#a1520a', tape: 'bg-[#f5b878]/70' },
-  { name: 'purple', label: 'Lilac purple', card: 'bg-[#f5effe] dark:bg-[#bba7e3]', swatch: 'bg-[#e6d9ff]', ink: 'text-[#4b2a8a]', inkBg: 'bg-[#5d37a8]', inkHex: '#5d37a8', tape: 'bg-[#c5b0f5]/70' },
+  { name: 'yellow', label: 'Canary yellow', card: 'bg-[#fffbeb] dark:bg-[#fde68a]', swatch: 'bg-[#fde68a]', ink: 'text-[#713f12]', inkBg: 'bg-[#d97706]', inkHex: '#d97706', tape: 'bg-[#fef08a]/80 dark:bg-[#fcd34d]/80' },
+  { name: 'pink', label: 'Blush pink', card: 'bg-[#fff1f2] dark:bg-[#fecdd3]', swatch: 'bg-[#fecdd3]', ink: 'text-[#881337]', inkBg: 'bg-[#e11d48]', inkHex: '#e11d48', tape: 'bg-[#fecdd3]/80 dark:bg-[#fda4af]/80' },
+  { name: 'green', label: 'Mint green', card: 'bg-[#f0fdf4] dark:bg-[#bbf7d0]', swatch: 'bg-[#bbf7d0]', ink: 'text-[#14532d]', inkBg: 'bg-[#16a34a]', inkHex: '#16a34a', tape: 'bg-[#bbf7d0]/80 dark:bg-[#86efac]/80' },
+  { name: 'blue', label: 'Sky blue', card: 'bg-[#eff6ff] dark:bg-[#bfdbfe]', swatch: 'bg-[#bfdbfe]', ink: 'text-[#1e40af]', inkBg: 'bg-[#2563eb]', inkHex: '#2563eb', tape: 'bg-[#bfdbfe]/80 dark:bg-[#93c5fd]/80' },
+  { name: 'orange', label: 'Peach orange', card: 'bg-[#fff7ed] dark:bg-[#fed7aa]', swatch: 'bg-[#fed7aa]', ink: 'text-[#7c2d12]', inkBg: 'bg-[#ea580c]', inkHex: '#ea580c', tape: 'bg-[#fed7aa]/80 dark:bg-[#fdba74]/80' },
+  { name: 'purple', label: 'Lilac purple', card: 'bg-[#faf5ff] dark:bg-[#e9d5ff]', swatch: 'bg-[#e9d5ff]', ink: 'text-[#6b21a8]', inkBg: 'bg-[#9333ea]', inkHex: '#9333ea', tape: 'bg-[#e9d5ff]/80 dark:bg-[#d8b4fe]/80' },
 ]
 
 /** A color by name; an unknown one is yellow. */

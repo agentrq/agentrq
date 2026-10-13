@@ -67,7 +67,7 @@ describe('the post-it colors', () => {
       expect(c.ink).toMatch(/^text-\[#[0-9a-f]{6}\]$/);
       expect(c.inkBg).toBe(`bg-[${c.inkHex}]`);
       expect(c.inkHex).toMatch(/^#[0-9a-f]{6}$/);
-      expect(c.tape).toMatch(/^bg-\[#[0-9a-f]{6}\]\/70$/);
+      expect(c.tape).toMatch(/^bg-\[#[0-9a-f]{6}\]\/80 dark:bg-\[#[0-9a-f]{6}\]\/80$/);
     }
     expect(new Set(PANO_COLORS.map((c) => c.inkHex)).size).toBe(PANO_COLORS.length);
   });
