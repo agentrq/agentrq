@@ -53,6 +53,9 @@ func main() {
 	if err := cfgSvc.Populate("skills", &cfg.Skills); err != nil {
 		zlog.Fatal().Err(err).Msg("config skills")
 	}
+	if err := cfgSvc.Populate("pano", &cfg.Pano); err != nil {
+		zlog.Fatal().Err(err).Msg("config pano")
+	}
 	if err := cfgSvc.Populate("idgen", &cfg.Idgen); err != nil {
 		zlog.Fatal().Err(err).Msg("config idgen")
 	}

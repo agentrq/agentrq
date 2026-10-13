@@ -1,0 +1,23 @@
+# The Pano
+
+- **A file is stored only if the markdown links it.** `save` refuses an
+  unlinked file and drops one the markdown stops linking; `attach` is the only
+  way in without a link. Relaxing this leaves blobs nothing points to.
+- **The markdown is in the database, the files in storage.** A file's blob is
+  written before its row and purged if the row fails, as with skills; the
+  other order leaves a row whose file cannot be read. Lists `Omit("markdown")`.
+- **The checklist count is stored at save** (`panoChecklist`), and the board's
+  `togglePanoCheckbox` must find the same items: both skip fenced code.
+- **There is no agent search, on purpose**: agents pass doc ids. Only the board
+  filters, in the browser.
+- **Workspace 0 is the person.** Authors and commenters are a workspace id (the
+  parent, for a fork) or 0; the board puts 0's docs first, and only they get the
+  to-task button.
+- **Expired docs are hidden by every query**, not only swept: the hourly sweep
+  can be up to an hour late.
+- **Color is a uint8 in the database and a name everywhere else.** Append new
+  colors; never reorder them.
+- **The workspace tool's description ends with the agentrq-ws hint; CoreMCP's
+  does not**, because the CLI reads a workspace's `.mcp.json`.
+- **The doc page must not reload on its own delete**: the `pano.changed` it
+  causes would GET a deleted doc and 404.

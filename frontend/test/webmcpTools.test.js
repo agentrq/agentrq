@@ -153,6 +153,9 @@ describe('the catalogue as a whole', () => {
         'deleteWorkflowStep',
         'deleteWorkspace',
         'deleteSkill',
+        'deletePanoDoc',
+        // Not a delete, but it replaces what agents wrote.
+        'updatePanoDoc',
         // Not deletes, but each can take away what an agent relied on: an
         // import with overwrite replaces skills the account already had, and
         // a skill turned off, for the account or in a workspace, is hidden
@@ -328,6 +331,23 @@ describe('each tool calls the interface the way the UI does', () => {
     ['getWorkspaceSkill', { workspaceId: 'ws1', name: 'tdd' }, 'getWorkspaceSkill', ['ws1', 'tdd']],
     ['getWorkspaceSkillFile', { workspaceId: 'ws1', name: 'tdd', path: 'SKILL.md' }, 'getWorkspaceSkillFile', ['ws1', 'tdd', 'SKILL.md']],
     ['setWorkspaceSkillEnabled', { workspaceId: 'ws1', name: 'tdd', enabled: true }, 'setWorkspaceSkillEnabled', ['ws1', 'tdd', true]],
+    ['listPanoDocs', {}, 'listPanoDocs', []],
+    ['getPanoDoc', { id: 'p1' }, 'getPanoDoc', ['p1']],
+    [
+      'createPanoDoc',
+      { title: 'Plan', markdown: '![c](c.png)', ttlDays: 7, color: 'pink', files: [{ filename: 'c.png', data: 'AA==' }] },
+      'createPanoDoc',
+      [{ title: 'Plan', markdown: '![c](c.png)', ttlDays: 7, color: 'pink', files: [{ filename: 'c.png', data: 'AA==' }] }],
+    ],
+    [
+      'updatePanoDoc',
+      { id: 'p1', title: 'Plan', markdown: 'v2' },
+      'updatePanoDoc',
+      ['p1', { title: 'Plan', markdown: 'v2', ttlDays: undefined, color: undefined, files: undefined }],
+    ],
+    ['deletePanoDoc', { id: 'p1' }, 'deletePanoDoc', ['p1']],
+    ['addPanoComment', { id: 'p1', body: 'Looks good' }, 'addPanoComment', ['p1', 'Looks good']],
+    ['attachPanoFiles', { id: 'p1', files: [{ filename: 'a.txt', data: 'AA==' }] }, 'attachPanoFiles', ['p1', [{ filename: 'a.txt', data: 'AA==' }]]],
     [
       'setWorkspaceSlackChannel',
       { workspaceId: 'ws1', channelId: 'C1', channelName: 'general' },
@@ -608,6 +628,16 @@ describe('the page every write tool shows', () => {
     expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, {})).toBe('/workspaces/w1/tasks/t1');
     expect(by('createEvent').after({}, {})).toBe('/events');
     expect(by('createWorkflow').after({}, {})).toBe('/workflows');
+  });
+
+  it('opens the Pano doc a change is about, or the board for a delete', () => {
+    const by = (name) => writes.find((t) => t.name === name).screen;
+
+    expect(by('createPanoDoc').after({}, { doc: { id: 'p1' } })).toBe('/pano/p1');
+    expect(by('updatePanoDoc').before({ id: 'p1' })).toBe('/pano/p1');
+    expect(by('addPanoComment').before({ id: '../x' })).toBe('/pano/..%2Fx');
+    expect(by('attachPanoFiles').before({ id: 'p1' })).toBe('/pano/p1');
+    expect(by('deletePanoDoc').before({ id: 'p1' })).toBe('/pano');
   });
 
   it('opens the Skills page, or the skill, for an account-wide skill change', () => {

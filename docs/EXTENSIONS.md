@@ -127,7 +127,7 @@ than an oversight to route around.
 ```
 createTask  updateTaskStatus  reply  getAttachment  getWorkspace
 getTask  publishEvent  loadMemory  saveMemory  deleteMemory  searchSkills
-loadSkill  saveSkill  deleteSkill  elicit
+loadSkill  saveSkill  deleteSkill  elicit  pano
 ```
 
 It answers in **prose, not JSON** — it is written for agents to read.

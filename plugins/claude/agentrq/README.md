@@ -86,6 +86,7 @@ Human-in-the-loop task manager for agents. Connects to the AgentRQ supervisor MC
 | `listMachines` | List the account's machines, and whether each is online |
 | `launchAgent` | Start a workspace's agent on one of the account's machines |
 | `stopAgent` | Stop the agent a workspace is running on a machine |
+| `pano` | Read and write the Pano, the account's shared markdown docs: `action` is `save`, `read`, `comment`, `attach` or `delete`. Writes are recorded as the supervisor workspace |
 
 **Resources:** `agentrq://guides/new-workspace` and `agentrq://guides/agentrqd-setup`.
 

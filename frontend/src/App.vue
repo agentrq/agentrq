@@ -159,6 +159,19 @@
             <span v-if="!isCollapsed || isMobileMenuOpen">Machines</span>
           </router-link>
 
+          <router-link to="/pano"
+              @mouseenter="showTooltip($event, 'Pano')" @mouseleave="hideTooltip"
+              class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
+              :class="[
+                (isCollapsed && !isMobileMenuOpen) ? 'justify-center' : '',
+                $route.path.startsWith('/pano') ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
+              ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5zM7 7.5h4v4H7zM13 7.5h4v2.5h-4zM13 12.5h4v4h-4zM7 14h4v2.5H7z" />
+            </svg>
+            <span v-if="!isCollapsed || isMobileMenuOpen">Pano</span>
+          </router-link>
+
           <router-link to="/skills"
               @mouseenter="showTooltip($event, 'Skills')" @mouseleave="hideTooltip"
               class="flex items-center gap-2.5 px-2 py-1.5 text-xs transition-all duration-150 rounded-md"
@@ -1167,6 +1180,7 @@ watch(() => route.fullPath, (fullPath) => {
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';
   else if (path.startsWith('/machines')) document.title = 'Machines | AgentRQ';
+  else if (path.startsWith('/pano')) document.title = 'Pano | AgentRQ';
   else if (path.startsWith('/skills')) document.title = 'Skills | AgentRQ';
   else if (path.startsWith('/sessions/')) document.title = 'Terminal | AgentRQ';
   else if (path.startsWith('/tasks/')) {

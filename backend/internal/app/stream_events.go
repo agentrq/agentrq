@@ -19,7 +19,7 @@ import (
 // the web app reacts to. It is the one way a change made by the supervisor's
 // MCP, which has no stream of its own, reaches the screen.
 func forwardCRUDEvent(ctx context.Context, repo base.Repository, bus *eventbus.Bus, ev entity.CRUDEvent) {
-	if publishWorkspaceListChange(bus, ev) {
+	if publishWorkspaceListChange(bus, ev) || publishPanoChange(bus, ev) {
 		return
 	}
 	ws, err := repo.SystemGetWorkspace(ctx, ev.WorkspaceID)
@@ -102,6 +102,24 @@ func publishTaskDelete(bus *eventbus.Bus, ev entity.CRUDEvent, ownerID string) b
 	bus.Publish(ev.WorkspaceID, ownerID, eventbus.Event{
 		Type:    "task.deleted",
 		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String()},
+	})
+	return true
+}
+
+// panoChangedEvent tells an open Pano board to read the Pano again.
+const panoChangedEvent = "pano.changed"
+
+// publishPanoChange puts a Pano doc written, deleted, commented on or given
+// attachments on its owner's stream, and reports whether ev was a Pano event.
+// Agents write the Pano from other workspaces, so without it the board shows
+// their docs only after a reload.
+func publishPanoChange(bus *eventbus.Bus, ev entity.CRUDEvent) bool {
+	if ev.ResourceType != entity.ResourcePano {
+		return false
+	}
+	bus.Publish(0, monoflake.ID(ev.UserID).String(), eventbus.Event{
+		Type:    panoChangedEvent,
+		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String(), "action": ev.Action.String()},
 	})
 	return true
 }

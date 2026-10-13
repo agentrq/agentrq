@@ -1337,6 +1337,7 @@ const (
 	ResourceMachine
 	ResourceSession
 	ResourceSkill
+	ResourcePano
 )
 
 func (r ResourceType) String() string {
@@ -1355,6 +1356,8 @@ func (r ResourceType) String() string {
 		return "session"
 	case ResourceSkill:
 		return "skill"
+	case ResourcePano:
+		return "pano"
 	}
 	return "unknown"
 }
@@ -1588,6 +1591,13 @@ const (
 	// An agent picked from the ACP registry's list in a launch form, reported
 	// by the browser: the launch itself carries only the id, typed or picked.
 	ActionUIAcpAgentPick Action = 93
+	// A Pano doc written, deleted, commented on or given attachments, by the
+	// person or by an agent.
+	ActionPanoCreate  Action = 94
+	ActionPanoUpdate  Action = 95
+	ActionPanoDelete  Action = 96
+	ActionPanoComment Action = 97
+	ActionPanoAttach  Action = 98
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1766,6 +1776,16 @@ func (a Action) String() string {
 		return "ui_message_react"
 	case ActionUIAcpAgentPick:
 		return "ui_acp_agent_pick"
+	case ActionPanoCreate:
+		return "pano_create"
+	case ActionPanoUpdate:
+		return "pano_update"
+	case ActionPanoDelete:
+		return "pano_delete"
+	case ActionPanoComment:
+		return "pano_comment"
+	case ActionPanoAttach:
+		return "pano_attach"
 	}
 	return "unknown"
 }
@@ -2146,6 +2166,7 @@ type (
 const (
 	PublicFileArtifacts = "artifacts"
 	PublicFileSkills    = "skills"
+	PublicFilePano      = "pano"
 )
 
 // Why a fork, or a merge, was refused. Each one reaches the caller wrapped in a

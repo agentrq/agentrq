@@ -17,6 +17,7 @@ const (
 	PublicFilesPrefix    = "/storage"
 	PublicFilesArtifacts = entity.PublicFileArtifacts
 	PublicFilesSkills    = entity.PublicFileSkills
+	PublicFilesPano      = entity.PublicFilePano
 )
 
 // _routePathPublicFile takes every path under the prefix, so that none of
@@ -30,9 +31,10 @@ const _routePathPublicFile = PublicFilesPrefix + "/*"
 var publicFilePath = regexp.MustCompile(`^` + PublicFilesPrefix + `/(?:` +
 	`(artifacts)/(w-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
 	`|(skills)/(u-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
+	`|(pano)/(u-[0-9A-Za-z]{11}/pano-[0-9A-Za-z]{11}/[0-9A-Za-z]{11})` +
 	`)$`)
 
-// registerPublicFileRoutes serves attachments and skill files by their
+// registerPublicFileRoutes serves attachments, skill files and Pano files by their
 // public link, with no session: the link is the only credential. It goes on
 // the root router, outside /api/v1 and its auth, so that a
 // static file server can take the same paths over.
@@ -47,7 +49,7 @@ func (h *handler) getPublicFile() fiber.Handler {
 		if m == nil {
 			return c.Status(fiber.StatusNotFound).SendString("Not Found")
 		}
-		kind, key := string(m[1])+string(m[3]), string(m[2])+string(m[4])
+		kind, key := string(m[1])+string(m[3])+string(m[5]), string(m[2])+string(m[4])+string(m[6])
 		ctx, cancel := newContext(c)
 		defer cancel()
 		res, err := h.crud.GetPublicFile(ctx, entity.GetPublicFileRequest{Kind: kind, Key: key})

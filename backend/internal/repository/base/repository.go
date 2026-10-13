@@ -94,6 +94,20 @@ type Repository interface {
 	MoveLegacySkill(ctx context.Context, fromWorkspaceID int64, s model.Skill, files []model.SkillFile, on []model.WorkspaceSkill) (bool, error)
 	MergeLegacySkill(ctx context.Context, from model.Skill, into int64, on []model.WorkspaceSkill) ([]string, error)
 
+	// Pano — an account's board of markdown docs, written by every workspace
+	// of the account. Metadata only, like skills: the methods that drop files
+	// return the storage ids the caller must purge once they have committed.
+	// A doc expired by now is not there for any of them but the sweep's.
+	ListPanoDocs(ctx context.Context, userID int64, now time.Time) ([]model.PanoDoc, error)
+	GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error)
+	ListExpiredPanoDocs(ctx context.Context, now time.Time, limit int) ([]model.PanoDoc, error)
+	SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64) error
+	ListPanoFiles(ctx context.Context, docID int64) ([]model.PanoFile, error)
+	AddPanoFiles(ctx context.Context, userID, docID int64, files []model.PanoFile) error
+	ListPanoComments(ctx context.Context, docID int64) ([]model.PanoComment, error)
+	AddPanoComment(ctx context.Context, userID int64, c model.PanoComment) error
+	DeletePanoDoc(ctx context.Context, userID, id int64) ([]string, error)
+
 	// SiteShare — a website shared from the Chrome extension into a
 	// workspace. Unique on (user, origin): one site, one workspace.
 	UpsertSiteShare(ctx context.Context, s model.SiteShare) (model.SiteShare, error)

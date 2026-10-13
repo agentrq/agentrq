@@ -244,7 +244,7 @@ func TestHandler_ClosedStreamWithdrawsConcurrency(t *testing.T) {
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
 		nil, nil, nil, nil, listTasks, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		bus, nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)
 	ps.agentConcurrency["gw"] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}

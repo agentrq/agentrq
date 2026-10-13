@@ -84,6 +84,11 @@ func TestActionString(t *testing.T) {
 		{ActionSkillDisable, "skill_disable"},
 		{ActionUIMessageReact, "ui_message_react"},
 		{ActionUIAcpAgentPick, "ui_acp_agent_pick"},
+		{ActionPanoCreate, "pano_create"},
+		{ActionPanoUpdate, "pano_update"},
+		{ActionPanoDelete, "pano_delete"},
+		{ActionPanoComment, "pano_comment"},
+		{ActionPanoAttach, "pano_attach"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

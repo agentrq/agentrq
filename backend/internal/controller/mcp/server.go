@@ -130,6 +130,7 @@ type WorkspaceServer struct {
 	saveMemory            SaveMemoryFunc
 	deleteMemory          DeleteMemoryFunc
 	skills                SkillStore
+	pano                  crud.PanoController
 	siteTools             SiteToolsBackend
 	recordToolCall        RecordToolCallFunc
 	updateToolCallStatus  UpdateToolCallStatusFunc
@@ -437,6 +438,7 @@ func NewWorkspaceServer(
 	saveMemory SaveMemoryFunc,
 	deleteMemory DeleteMemoryFunc,
 	skills SkillStore,
+	pano crud.PanoController,
 	siteTools SiteToolsBackend,
 	recordToolCall RecordToolCallFunc,
 	updateToolCallStatus UpdateToolCallStatusFunc,
@@ -472,6 +474,7 @@ func NewWorkspaceServer(
 		saveMemory:             saveMemory,
 		deleteMemory:           deleteMemory,
 		skills:                 skills,
+		pano:                   pano,
 		siteTools:              siteTools,
 		recordToolCall:         recordToolCall,
 		updateToolCallStatus:   updateToolCallStatus,
@@ -647,6 +650,12 @@ func NewWorkspaceServer(
 			"Deleting something that does not exist is not an error.",
 		Annotations: mcphint.Overwrite("Delete a skill"),
 	}, ps.handleDeleteSkill)
+
+	mcp.AddTool(mcpSrv, &mcp.Tool{
+		Name:        "pano",
+		Description: PanoToolDescription + PanoCLIHint,
+		Annotations: mcphint.Overwrite("Read and write Pano docs"),
+	}, ps.handlePano)
 
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "elicit",

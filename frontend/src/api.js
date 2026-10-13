@@ -870,6 +870,79 @@ export async function setWorkspaceSkillEnabled(workspaceId, name, enabled) {
   return res.json();
 }
 
+// The Pano: markdown docs every workspace of the account reads and writes,
+// and the person too. What the person writes is recorded as theirs, not a
+// workspace's. A refusal says what was wrong — a file not linked from the
+// markdown, a title too long — and is shown as it is, like a skill's.
+const panoPath = (id) => `${API_BASE_URL}/pano${id ? `/${encodeURIComponent(id)}` : ''}`;
+const panoError = skillError;
+
+export async function listPanoDocs() {
+  const res = await apiFetch(panoPath());
+  if (!res.ok) throw await panoError(res, 'Failed to fetch the Pano');
+  return res.json();
+}
+
+export async function getPanoDoc(id) {
+  const res = await apiFetch(panoPath(id));
+  if (!res.ok) throw await panoError(res, 'Failed to fetch the Pano doc');
+  return res.json();
+}
+
+// `files` are linked files, `{ filename, mimeType, data }` with data base64:
+// each must be linked from the markdown by its filename. A `ttlDays` of 0,
+// or no `color`, keeps the doc's own: 30 days and yellow for a new doc.
+function panoDocBody({ title, markdown, ttlDays, color, files }) {
+  return JSON.stringify({ title, markdown, ttlDays: ttlDays || 0, color: color || '', files: files || [] });
+}
+
+export async function createPanoDoc(doc) {
+  const res = await apiFetch(panoPath(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: panoDocBody(doc),
+  });
+  if (!res.ok) throw await panoError(res, 'Failed to create the Pano doc');
+  return res.json();
+}
+
+export async function updatePanoDoc(id, doc) {
+  const res = await apiFetch(panoPath(id), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: panoDocBody(doc),
+  });
+  if (!res.ok) throw await panoError(res, 'Failed to save the Pano doc');
+  return res.json();
+}
+
+export async function deletePanoDoc(id) {
+  const res = await apiFetch(panoPath(id), { method: 'DELETE' });
+  if (!res.ok) throw await panoError(res, 'Failed to delete the Pano doc');
+  return true;
+}
+
+export async function addPanoComment(id, body) {
+  const res = await apiFetch(`${panoPath(id)}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw await panoError(res, 'Failed to comment on the Pano doc');
+  return res.json();
+}
+
+// Attachments are listed with the doc and need no link from its markdown.
+export async function attachPanoFiles(id, files) {
+  const res = await apiFetch(`${panoPath(id)}/attachments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: files || [] }),
+  });
+  if (!res.ok) throw await panoError(res, 'Failed to attach files to the Pano doc');
+  return res.json();
+}
+
 export async function fetchGlobalTaskStats() {
   const res = await apiFetch(`${API_BASE_URL}/tasks/stats`);
   if (!res.ok) throw new Error('Failed to fetch global task stats');

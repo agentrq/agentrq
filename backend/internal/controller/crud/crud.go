@@ -24,9 +24,12 @@ type (
 		Storage    storage.Service
 		// SkillStorage holds skill file content. Nil falls back to Storage.
 		SkillStorage storage.Service
-		Image        image.Service
-		PubSub       pubsub.Service
-		Limiter      ratelimit.Limiter
+		// PanoStorage holds Pano docs and their files. Nil falls back to
+		// Storage.
+		PanoStorage storage.Service
+		Image       image.Service
+		PubSub      pubsub.Service
+		Limiter     ratelimit.Limiter
 		// SkillImport reads skills from GitHub. Nil turns importing off.
 		SkillImport skillimport.Service
 		// TaskAgents names the agents in a task's history. Nil leaves them
@@ -47,6 +50,7 @@ type (
 		EventController
 		MemoryController
 		SkillController
+		PanoController
 		SiteShareController
 		OAuthConsentController
 		EventTriggerController
@@ -69,6 +73,7 @@ type (
 		limiter    ratelimit.Limiter
 
 		skillStorage storage.Service
+		panoStorage  storage.Service
 		skillImport  skillimport.Service
 		taskAgents   TaskAgentNames
 	}
@@ -79,6 +84,10 @@ func New(p Params) Controller {
 	if skillStorage == nil {
 		skillStorage = p.Storage
 	}
+	panoStorage := p.PanoStorage
+	if panoStorage == nil {
+		panoStorage = p.Storage
+	}
 	return &controller{
 		idgen:      p.IDGen,
 		repository: p.Repository,
@@ -88,6 +97,7 @@ func New(p Params) Controller {
 		limiter:    p.Limiter,
 
 		skillStorage: skillStorage,
+		panoStorage:  panoStorage,
 		skillImport:  p.SkillImport,
 		taskAgents:   p.TaskAgents,
 	}

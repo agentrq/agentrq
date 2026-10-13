@@ -7,6 +7,7 @@ package mcp
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -125,4 +126,19 @@ func TestMemoryToolAnnotations(t *testing.T) {
 			t.Errorf("tool %q was not advertised at all", name)
 		}
 	}
+}
+
+// The workspace's pano tool sends its agent to agentrq-ws, which keeps a doc's
+// markdown and files out of the agent's context.
+func TestPanoToolPointsAtTheCLI(t *testing.T) {
+	for _, tool := range toolsOverTheWire(t) {
+		if tool["name"] != "pano" {
+			continue
+		}
+		if d, _ := tool["description"].(string); !strings.HasSuffix(d, PanoCLIHint) {
+			t.Errorf("the pano tool's description %q does not end with the agentrq-ws hint", d)
+		}
+		return
+	}
+	t.Error("the workspace server offers no pano tool")
 }

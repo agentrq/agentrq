@@ -24,9 +24,10 @@ type PublicFileController interface {
 var publicFileKeys = map[string]*regexp.Regexp{
 	entity.PublicFileArtifacts: regexp.MustCompile(`^w-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
 	entity.PublicFileSkills:    regexp.MustCompile(`^u-[0-9A-Za-z]{11}/skill-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
+	entity.PublicFilePano:      regexp.MustCompile(`^u-[0-9A-Za-z]{11}/pano-[0-9A-Za-z]{11}/[0-9A-Za-z]{11}$`),
 }
 
-// GetPublicFile reads an attachment or a skill file by the key in its public
+// GetPublicFile reads an attachment, a skill file or a Pano file by the key in its public
 // link. Anything that is not such a key is not found, whatever is on disk.
 func (c *controller) GetPublicFile(_ context.Context, req entity.GetPublicFileRequest) (*entity.GetPublicFileResponse, error) {
 	pattern, ok := publicFileKeys[req.Kind]
@@ -34,15 +35,18 @@ func (c *controller) GetPublicFile(_ context.Context, req entity.GetPublicFileRe
 		return nil, base.ErrNotFound
 	}
 	store := c.storage
-	if req.Kind == entity.PublicFileSkills {
+	switch req.Kind {
+	case entity.PublicFileSkills:
 		store = c.skillStorage
+	case entity.PublicFilePano:
+		store = c.panoStorage
 	}
 	data, err := store.LoadRaw(req.Key)
 	if err != nil {
 		return nil, base.ErrNotFound
 	}
 	contentType := skillContentType
-	if req.Kind == entity.PublicFileArtifacts {
+	if req.Kind != entity.PublicFileSkills {
 		// Nothing but the bytes is known here, so the type is sniffed, and only a harmless one is kept.
 		contentType = storage.SafeContentType(http.DetectContentType(data))
 	}

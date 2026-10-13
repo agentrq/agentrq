@@ -69,6 +69,8 @@ services:
       # Skill and attachment storage: local (default) or s3
       AGENTRQ_SKILLS_STORAGE: ${AGENTRQ_SKILLS_STORAGE:-local}
       AGENTRQ_ARTIFACTS_STORAGE: ${AGENTRQ_ARTIFACTS_STORAGE:-local}
+      AGENTRQ_PANO_STORAGE: ${AGENTRQ_PANO_STORAGE:-local}
+      AGENTRQ_PANO_MAX_TTL_DAYS: ${AGENTRQ_PANO_MAX_TTL_DAYS:-365}
 
       # Memory and skill size limits
       AGENTRQ_MEMORY_MAX_FILE_SIZE: ${AGENTRQ_MEMORY_MAX_FILE_SIZE:-16384}

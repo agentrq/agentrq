@@ -72,6 +72,12 @@ export const routes = [
   { path: '/machines', component: () => import('./views/MachinesView.vue') },
   { path: '/machines/:id', component: () => import('./views/MachineDetailView.vue'), meta: { remount: true } },
 
+  // The Pano belongs to the account: every workspace writes to it. "new" is
+  // the editor for a doc not written yet, ranked above the doc's own page.
+  { path: '/pano', component: () => import('./views/PanoView.vue') },
+  { path: '/pano/new', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
+  { path: '/pano/:id', component: () => import('./views/PanoDocView.vue'), meta: { remount: true } },
+
   // Skills belong to the account too; a workspace only turns each on or off.
   { path: '/skills', component: () => import('./views/SkillsView.vue') },
   { path: '/skills/:name', component: () => import('./views/SkillsView.vue'), meta: { remount: true } },

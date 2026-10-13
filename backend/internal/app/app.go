@@ -138,6 +138,9 @@ type (
 			MaxFileSize int `yaml:"maxFileSize"`
 			MaxFiles    int `yaml:"maxFiles"`
 		} `yaml:"skills"`
+		Pano struct {
+			MaxTTLDays int `yaml:"maxTtlDays"`
+		} `yaml:"pano"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
 	}
 
@@ -280,6 +283,11 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("skill storage: %w", err)
 	}
 
+	panoStorageSvc, err := newPanoStorage(cfg.ConfigSvc, filepath.Join(cfg.Storage.StorageDir, handlerapi.PublicFilesPano), filesURL+"/"+handlerapi.PublicFilesPano)
+	if err != nil {
+		return nil, fmt.Errorf("pano storage: %w", err)
+	}
+
 	cleanupSvc, err := cleanup.New(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("cleanup: %w", err)
@@ -341,6 +349,7 @@ func New(cfg Config) (*App, error) {
 		Repository:   repo,
 		Storage:      storageSvc,
 		SkillStorage: skillStorageSvc,
+		PanoStorage:  panoStorageSvc,
 		Image:        imgSvc,
 		PubSub:       pubsubSvc,
 		Limiter:      rateLimiter,
@@ -348,6 +357,7 @@ func New(cfg Config) (*App, error) {
 		TaskAgents:   taskAgentCtrl,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
+	startPanoSweep(appCtx, crudCtrl, panoSweepInterval)
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
 	pubStatsCtrl := pub.NewStatsController(pub.Params{
@@ -641,6 +651,7 @@ func New(cfg Config) (*App, error) {
 			memory.save,
 			memory.delete,
 			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
+			crudCtrl,
 			siteToolsBackend{repo: repo, hub: siteHub},
 			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
 				if _, err := workspaceTask(ctx, repo, workspaceID, workspaceOwner, tc.TaskID); err != nil {
@@ -1404,6 +1415,9 @@ func migratedModels() []any {
 		&model.SkillFile{},
 		&model.SkillShare{},
 		&model.WorkspaceSkill{},
+		&model.PanoDoc{},
+		&model.PanoFile{},
+		&model.PanoComment{},
 		&model.SiteShare{},
 		&model.Machine{},
 		&model.EnrolmentCode{},
@@ -1430,9 +1444,12 @@ func applyLimits(cfg Config) error {
 		return fmt.Errorf("skills.maxFileSize: %d is negative", cfg.Skills.MaxFileSize)
 	case cfg.Skills.MaxFiles < 0:
 		return fmt.Errorf("skills.maxFiles: %d is negative", cfg.Skills.MaxFiles)
+	case cfg.Pano.MaxTTLDays < 0:
+		return fmt.Errorf("pano.maxTtlDays: %d is negative", cfg.Pano.MaxTTLDays)
 	}
 	mcp.MaxMemoryBytes = cmp.Or(cfg.Memory.MaxFileSize, mcp.DefaultMaxMemoryBytes)
 	skill.MaxSkillFileBytes = cmp.Or(cfg.Skills.MaxFileSize, skill.DefaultMaxSkillFileBytes)
 	skill.MaxFiles = cmp.Or(cfg.Skills.MaxFiles, skill.DefaultMaxFiles)
+	crud.PanoMaxTTLDays = cmp.Or(cfg.Pano.MaxTTLDays, crud.DefaultPanoMaxTTLDays)
 	return nil
 }

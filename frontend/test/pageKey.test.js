@@ -25,6 +25,8 @@ describe('pageKey', () => {
       '/workspaces/:id/tasks/:taskId/edit',
       '/events/:id',
       '/machines/:id',
+      '/pano/new',
+      '/pano/:id',
       '/skills/:name',
       '/sessions/:id',
       '/workflows/:id',

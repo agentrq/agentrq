@@ -259,6 +259,63 @@ type (
 		StorageID string `gorm:"type:varchar(64)"`
 	}
 
+	// PanoDoc is a markdown document on an account's Pano, the board every
+	// workspace of the account reads and writes. The markdown is kept here,
+	// its files in the Pano storage; the board lists docs without the
+	// markdown, by Excerpt, its opening.
+	//
+	// CreatedByWorkspaceID and UpdatedByWorkspaceID are the workspace that
+	// wrote it, a fork's parent for a fork; 0 is the person, from the
+	// interface.
+	//
+	// A doc lives TTLDays from its last save, until ExpiresAt; it is hidden
+	// from then on and deleted by the next sweep.
+	PanoDoc struct {
+		ID                   int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt            time.Time
+		UpdatedAt            time.Time
+		UserID               int64  `gorm:"index:idx_pano_docs_user_id"`
+		Title                string `gorm:"type:varchar(200)"`
+		Excerpt              string `gorm:"type:varchar(1024)"`
+		Markdown             string `gorm:"type:text"`
+		SizeBytes            int
+		CreatedByWorkspaceID int64
+		UpdatedByWorkspaceID int64
+		TTLDays              int
+		ExpiresAt            time.Time `gorm:"index:idx_pano_docs_expires_at"`
+		// Color is the post-it's, an entity.PanoColor.
+		Color uint8
+		// ChecklistDone of ChecklistTotal of the markdown's task-list items
+		// are checked, for the card's progress without reading the blob.
+		ChecklistDone  int
+		ChecklistTotal int
+	}
+
+	// PanoFile is a file of a Pano doc. A linked one is named by a link in
+	// the markdown and goes when the markdown stops naming it; an attachment
+	// is listed with the doc and needs no link. Its content is in storage.
+	PanoFile struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		DocID       int64 `gorm:"index:idx_pano_files_doc_id"`
+		WorkspaceID int64
+		Linked      bool
+		Filename    string `gorm:"type:varchar(255)"`
+		MimeType    string `gorm:"type:varchar(255)"`
+		SizeBytes   int
+		StorageID   string `gorm:"type:varchar(64)"`
+	}
+
+	// PanoComment is a comment on a Pano doc, by a workspace (a fork's
+	// parent, for a fork) or, with WorkspaceID 0, by the person.
+	PanoComment struct {
+		ID          int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt   time.Time
+		DocID       int64 `gorm:"index:idx_pano_comments_doc_id"`
+		WorkspaceID int64
+		Body        string `gorm:"type:text"`
+	}
+
 	// WorkspaceSkill turns an account's skill on in one of its workspaces:
 	// that workspace's agent sees it. A fork's is filed under its parent.
 	WorkspaceSkill struct {
@@ -673,6 +730,12 @@ const (
 	ActionIDUIMessageReact
 	// An agent picked from the ACP registry's list in a launch form.
 	ActionIDUIAcpAgentPick
+	// A Pano doc written, deleted, commented on or given attachments.
+	ActionIDPanoCreate
+	ActionIDPanoUpdate
+	ActionIDPanoDelete
+	ActionIDPanoComment
+	ActionIDPanoAttach
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or
@@ -764,6 +827,8 @@ const (
 	SubActionIDMCPListMachines
 	SubActionIDMCPLaunchAgent
 	SubActionIDMCPStopAgent
+	// The Pano tool, on both servers.
+	SubActionIDMCPPano
 )
 
 // ForkSettings is the one list of what a workspace fork inherits from its

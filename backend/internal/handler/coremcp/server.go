@@ -363,6 +363,7 @@ func (s *WorkspaceServer) registerTools() {
 	s.registerEventTools()
 	s.registerWorkflowTools()
 	s.registerMachineTools()
+	s.registerPanoTools()
 
 	// Resources and prompts — see resources.go and prompts.go.
 	s.registerResources()

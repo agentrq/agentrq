@@ -96,6 +96,13 @@ skills:
 artifacts:
   storage: ${AGENTRQ_ARTIFACTS_STORAGE:local}
 
+# Where Pano docs and their files are kept: "local" (<storage dir>/pano) or "s3", which
+# must then allow public reads under pano/. A doc lives 30 days from its last save
+# unless its writer asks otherwise, and maxTtlDays at most.
+pano:
+  storage: ${AGENTRQ_PANO_STORAGE:local}
+  maxTtlDays: ${AGENTRQ_PANO_MAX_TTL_DAYS:365}
+
 # Any S3-compatible store. Objects are addressed path-style.
 s3:
   endpoint: "${AGENTRQ_S3_ENDPOINT:}"

@@ -804,3 +804,84 @@ type (
 		Runtimes    []string `json:"runtimes"`
 	}
 )
+
+// ── Pano ────────────────────────────────────────────────────────────────────
+
+// PanoDoc is a Pano doc. A blank workspace id is the person. Markdown, files,
+// attachments and comments come only with one doc.
+type PanoDoc struct {
+	ID                   string        `json:"id"`
+	Title                string        `json:"title"`
+	Excerpt              string        `json:"excerpt"`
+	Markdown             string        `json:"markdown,omitempty"`
+	CreatedByWorkspaceID string        `json:"createdByWorkspaceId,omitempty"`
+	UpdatedByWorkspaceID string        `json:"updatedByWorkspaceId,omitempty"`
+	CreatedAt            time.Time     `json:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt"`
+	TTLDays              int           `json:"ttlDays"`
+	ExpiresAt            time.Time     `json:"expiresAt"`
+	Color                string        `json:"color"`
+	ChecklistDone        int           `json:"checklistDone"`
+	ChecklistTotal       int           `json:"checklistTotal"`
+	Files                []PanoFile    `json:"files,omitempty"`
+	Attachments          []PanoFile    `json:"attachments,omitempty"`
+	Comments             []PanoComment `json:"comments,omitempty"`
+}
+
+type PanoFile struct {
+	ID          string    `json:"id"`
+	Filename    string    `json:"filename"`
+	MimeType    string    `json:"mimeType"`
+	Size        int       `json:"size"`
+	URL         string    `json:"url,omitempty"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type PanoComment struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	Body        string    `json:"body"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// PanoUpload is a file sent to a doc, its content base64.
+type PanoUpload struct {
+	Filename string `json:"filename"`
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"`
+}
+
+type ListPanoDocsResponse struct {
+	Docs []PanoDoc `json:"docs"`
+}
+
+// SavePanoDocRequest writes a doc; files are linked files. A ttlDays of 0,
+// or a blank color, keeps the doc's own.
+type SavePanoDocRequest struct {
+	Title    string       `json:"title"`
+	Markdown string       `json:"markdown"`
+	TTLDays  int          `json:"ttlDays"`
+	Color    string       `json:"color"`
+	Files    []PanoUpload `json:"files"`
+}
+
+type PanoDocResponse struct {
+	Doc PanoDoc `json:"doc"`
+}
+
+type AddPanoCommentRequest struct {
+	Body string `json:"body"`
+}
+
+type AddPanoCommentResponse struct {
+	Comment PanoComment `json:"comment"`
+}
+
+type AttachPanoFilesRequest struct {
+	Files []PanoUpload `json:"files"`
+}
+
+type AttachPanoFilesResponse struct {
+	Attachments []PanoFile `json:"attachments"`
+}

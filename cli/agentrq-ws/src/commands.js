@@ -2,6 +2,7 @@
 // This notice may not be modified or removed.
 
 import { readFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 
 import { readAttachment, resolveOutputPath, writeAttachment } from './attachments.js'
 import { UserError } from './errors.js'
@@ -134,6 +135,56 @@ async function fetchAttachment(ctx, url) {
   }
   if (!response.ok) throw new UserError(`cannot download ${url}: HTTP ${response.status}`)
   return Buffer.from(await response.arrayBuffer())
+}
+
+/** The Pano's post-it colors, mirrored from the backend. */
+export const PANO_COLORS = ['yellow', 'pink', 'green', 'blue', 'orange', 'purple']
+
+/** Files for the pano tool from repeated --file flags: an attachment without its id. */
+function panoFiles(paths) {
+  const list = asArray(paths)
+  if (list.length === 0) return undefined
+  return list.map((path) => {
+    const { filename, mimeType, data } = readAttachment(path)
+    return { filename, mimeType, data }
+  })
+}
+
+/**
+ * The pano tool answers with the doc as JSON, or with a refusal's text. With
+ * idOnly a doc prints as its id, which is all a write needs to hand on.
+ */
+function printPanoDoc(result, { idOnly = false } = {}) {
+  let doc
+  try {
+    doc = JSON.parse(result.text)
+  } catch {
+    return result
+  }
+  return { text: idOnly ? doc.id : result.text, data: doc }
+}
+
+/**
+ * Writes a doc's markdown to <out>/<id>/<id>.md and downloads its linked files
+ * beside it, so the markdown's links resolve on disk, and its attachments to
+ * <out>/<id>/attachments/. Comments go to comments.json. Prints the paths only.
+ */
+async function downloadPanoDoc(ctx, doc, out) {
+  if (!doc?.id) throw new UserError('unexpected answer from the pano tool')
+  const dir = resolveOutputPath(doc.id, out.endsWith('/') ? out : `${out}/`, { cwd: ctx.cwd })
+  const paths = [writeAttachment(join(dir, `${doc.id}.md`), Buffer.from(doc.markdown || '')).path]
+  const downloads = [
+    ...(doc.files || []).map((f) => [f, dir]),
+    ...(doc.attachments || []).map((f) => [f, join(dir, 'attachments')]),
+  ]
+  for (const [file, into] of downloads) {
+    if (!file.url) continue
+    paths.push(writeAttachment(join(into, basename(file.filename)), await fetchAttachment(ctx, file.url)).path)
+  }
+  if (doc.comments) {
+    paths.push(writeAttachment(join(dir, 'comments.json'), Buffer.from(JSON.stringify(doc.comments, null, 2))).path)
+  }
+  return { text: paths.join('\n'), data: { ...doc, paths } }
 }
 
 export const COMMANDS = [
@@ -328,6 +379,95 @@ export const COMMANDS = [
     usage: 'agentrq-ws skill delete <uri>',
     async run(ctx) {
       return ctx.client.callTool('deleteSkill', { uri: requirePositional(ctx.positionals, 0, 'uri') })
+    },
+  },
+  {
+    path: ['pano', 'save'],
+    summary: 'Create a Pano doc, or replace one; prints its id',
+    usage: 'agentrq-ws pano save [id] --title TEXT --markdown TEXT|@file|- [--file PATH]... [--ttl-days N] [--color NAME]',
+    options: {
+      title: { type: 'string', short: 'T', description: "The doc's title (required)" },
+      markdown: { type: 'string', short: 'M', description: "The doc's full markdown (@file or - for stdin; required)" },
+      file: { type: 'string', multiple: true, description: 'A linked file, linked from the markdown by its file name (repeatable)' },
+      'ttl-days': { type: 'string', description: 'Days the doc lives after this save (default: 30, or its own)' },
+      color: { type: 'string', description: `Its post-it's color: ${PANO_COLORS.join(', ')}` },
+    },
+    async run(ctx) {
+      if (ctx.values.title === undefined) throw new UserError('--title is required')
+      if (ctx.values.markdown === undefined) throw new UserError('--markdown is required (use @file or - to read from stdin)')
+      const markdown = await resolveText(ctx.values.markdown, { stdin: ctx.stdin, what: 'the markdown' })
+      const color = ctx.values.color
+      if (color !== undefined && !PANO_COLORS.includes(color)) {
+        throw new UserError(`unknown color "${color}" (expected one of: ${PANO_COLORS.join(', ')})`)
+      }
+      let ttlDays
+      if (ctx.values['ttl-days'] !== undefined) {
+        ttlDays = Number(ctx.values['ttl-days'])
+        if (!Number.isInteger(ttlDays) || ttlDays < 1) throw new UserError('--ttl-days must be a whole number, 1 or more')
+      }
+      return printPanoDoc(await ctx.client.callTool('pano', {
+        action: 'save',
+        id: ctx.positionals[0],
+        title: ctx.values.title,
+        markdown,
+        ttlDays,
+        color,
+        files: panoFiles(ctx.values.file),
+      }), { idOnly: true })
+    },
+  },
+  {
+    path: ['pano', 'read'],
+    summary: 'Read a Pano doc, or download it with its files to a directory',
+    usage: 'agentrq-ws pano read <id> [--comments] [--attachments] [--out DIR]',
+    options: {
+      comments: { type: 'boolean', short: 'c', description: "Include the doc's comments" },
+      attachments: { type: 'boolean', short: 'a', description: "Include the doc's attachments" },
+      out: { type: 'string', short: 'o', description: 'Write the markdown and download every file here; prints only their paths' },
+    },
+    async run(ctx) {
+      const id = requirePositional(ctx.positionals, 0, 'id')
+      const result = await ctx.client.callTool('pano', {
+        action: 'read',
+        id,
+        includeComments: ctx.values.comments || undefined,
+        includeAttachments: ctx.values.attachments || undefined,
+      })
+      if (!ctx.values.out) return result
+      return downloadPanoDoc(ctx, printPanoDoc(result).data, ctx.values.out)
+    },
+  },
+  {
+    path: ['pano', 'comment'],
+    summary: 'Comment on a Pano doc',
+    usage: 'agentrq-ws pano comment <id> <text|@file|->',
+    async run(ctx) {
+      const id = requirePositional(ctx.positionals, 0, 'id')
+      const raw = requirePositional(ctx.positionals, 1, 'text')
+      const comment = await resolveText(raw, { stdin: ctx.stdin, what: 'the comment' })
+      return ctx.client.callTool('pano', { action: 'comment', id, comment })
+    },
+  },
+  {
+    path: ['pano', 'attach'],
+    summary: 'Attach files to a Pano doc; they need no link',
+    usage: 'agentrq-ws pano attach <id> --file PATH...',
+    options: {
+      file: { type: 'string', multiple: true, description: 'A file to attach (repeatable)' },
+    },
+    async run(ctx) {
+      const id = requirePositional(ctx.positionals, 0, 'id')
+      const files = panoFiles(ctx.values.file)
+      if (!files) throw new UserError('--file is required')
+      return printPanoDoc(await ctx.client.callTool('pano', { action: 'attach', id, files }), { idOnly: true })
+    },
+  },
+  {
+    path: ['pano', 'delete'],
+    summary: 'Delete a Pano doc',
+    usage: 'agentrq-ws pano delete <id>',
+    async run(ctx) {
+      return ctx.client.callTool('pano', { action: 'delete', id: requirePositional(ctx.positionals, 0, 'id') })
     },
   },
   {

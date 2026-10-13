@@ -190,20 +190,23 @@ Skill files are not attachments: cleanup never deletes them.
 
 ### Skill and Attachment Storage
 
-Skill files and attachments are kept under `AGENTRQ_STORAGE_DIR` by default (`/storage` in docker-compose, `./_storage` otherwise), in `skills/` and `artifacts/` (where attachments live). Set `AGENTRQ_SKILLS_STORAGE=s3` or `AGENTRQ_ARTIFACTS_STORAGE=s3` to keep either in any S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), under the same two prefixes; the server refuses to start on any value other than `local` or `s3`.
+Skill files, attachments and the [Pano](PANO.md)'s files are kept under `AGENTRQ_STORAGE_DIR` by default (`/storage` in docker-compose, `./_storage` otherwise), in `skills/`, `artifacts/` (where attachments live) and `pano/`. Set `AGENTRQ_SKILLS_STORAGE=s3`, `AGENTRQ_ARTIFACTS_STORAGE=s3` or `AGENTRQ_PANO_STORAGE=s3` to keep any of them in an S3-compatible bucket instead (AWS S3, MinIO, Cloudflare R2…), under the same prefixes; the server refuses to start on any value other than `local` or `s3`.
 
 Every file is kept at a key that names its workspace and task, or its account and skill, and ends in a fresh id:
 
 - attachments: `artifacts/w-<workspace id>/<task id>/<id>`
 - skill files: `skills/u-<account id>/skill-<skill id>/<id>`
+- Pano docs' files: `pano/u-<account id>/pano-<doc id>/<id>` (the markdown itself is in the database)
 
-**Each file has a public link, and the link is the only credential needed to read it.** Without knowing both the workspace id and the task id (or the account id and the skill id), a link is nearly impossible to guess. Ids are time-ordered, though, so someone who holds one link has both, and can work out the links of the other files on that task or skill: share a link only with someone who may see everything there. The web app's Download button, the agents' `getAttachment` tool (by default) and `agentrq-ws attachment get` all use it. Local files are served by the server itself at `<AGENTRQ_BASE_URL>/storage/artifacts/...` and `/storage/skills/...`, with no sign-in; files in S3 are read from the bucket, at `<AGENTRQ_S3_PUBLIC_URL>/artifacts/...` and `/skills/...`.
+**Each file has a public link, and the link is the only credential needed to read it.** Without knowing both the workspace id and the task id (or the account id and the skill id), a link is nearly impossible to guess. Ids are time-ordered, though, so someone who holds one link has both, and can work out the links of the other files on that task or skill: share a link only with someone who may see everything there. The web app's Download button, the agents' `getAttachment` tool (by default) and `agentrq-ws attachment get` all use it. Local files are served by the server itself at `<AGENTRQ_BASE_URL>/storage/artifacts/...` and `/storage/skills/...` and `/storage/pano/...`, with no sign-in; files in S3 are read from the bucket, at `<AGENTRQ_S3_PUBLIC_URL>/artifacts/...`, `/skills/...` and `/pano/...`.
 
 | Variable | Default | Description |
 |---|---|---|
 | `AGENTRQ_STORAGE_DIR` | `./_storage` | Writable directory for local files. Its root also holds the SQLite database and older attachments. |
 | `AGENTRQ_SKILLS_STORAGE` | `local` | `local` or `s3`. |
 | `AGENTRQ_ARTIFACTS_STORAGE` | `local` | `local` or `s3`, for attachments. |
+| `AGENTRQ_PANO_STORAGE` | `local` | `local` or `s3`, for the files of the Pano's docs. |
+| `AGENTRQ_PANO_MAX_TTL_DAYS` | `365` | Most days a Pano doc may live after its last save; a doc asks for 30 by default. A whole number; 0 means the default. |
 | `AGENTRQ_S3_ENDPOINT` | | The S3 endpoint URL, e.g. `https://s3.us-east-1.amazonaws.com`. Addressed path-style. |
 | `AGENTRQ_S3_ACCESS_KEY` | | Access key id. |
 | `AGENTRQ_S3_SECRET_ACCESS_KEY` | | Secret access key. |
@@ -211,9 +214,9 @@ Every file is kept at a key that names its workspace and task, or its account an
 | `AGENTRQ_S3_BUCKET` | | Bucket name. It must already exist. |
 | `AGENTRQ_S3_PUBLIC_URL` | `<endpoint>/<bucket>` | Base of public links to the bucket, e.g. a CDN in front of it. |
 
-**Serving local files.** The server answers `/storage/...` only for a path of exactly the shape above — 11-character base62 ids, nothing else — and reads only from `skills/` and `artifacts/`, never following a link out of them. Do not serve the storage directory any other way (a static file handler, a proxy `alias`): its root holds the database. A file that could run in a browser, such as HTML or SVG, is sent as a download.
+**Serving local files.** The server answers `/storage/...` only for a path of exactly the shape above — 11-character base62 ids, nothing else — and reads only from `skills/`, `artifacts/` and `pano/`, never following a link out of them. Do not serve the storage directory any other way (a static file handler, a proxy `alias`): its root holds the database. A file that could run in a browser, such as HTML or SVG, is sent as a download.
 
-**Serving from S3.** No object ACL is set, since new AWS buckets and several S3-compatible stores refuse them, so allow anonymous reads of the two prefixes, and nothing else, with a bucket policy (AWS example):
+**Serving from S3.** No object ACL is set, since new AWS buckets and several S3-compatible stores refuse them, so allow anonymous reads of those prefixes, and nothing else, with a bucket policy (AWS example):
 
 ```json
 {
@@ -222,14 +225,14 @@ Every file is kept at a key that names its workspace and task, or its account an
     "Effect": "Allow",
     "Principal": "*",
     "Action": "s3:GetObject",
-    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*"]
+    "Resource": ["arn:aws:s3:::<bucket>/artifacts/*", "arn:aws:s3:::<bucket>/skills/*", "arn:aws:s3:::<bucket>/pano/*"]
   }]
 }
 ```
 
 An attachment's upload type is kept only when a browser cannot run it; anything else is stored as `application/octet-stream`.
 
-**Retention.** The daily cleanup deletes local attachments, in `artifacts/` and flat in the storage directory where they were kept before, once they pass `AGENTRQ_APP_ATTACHMENT_RETENTION`. With S3, add a lifecycle rule that expires `artifacts/` after the same period.
+**Retention.** The daily cleanup deletes local attachments, in `artifacts/` and flat in the storage directory where they were kept before, once they pass `AGENTRQ_APP_ATTACHMENT_RETENTION`. With S3, add a lifecycle rule that expires `artifacts/` after the same period. Pano docs need no rule: the server deletes each one, with its files, from either store within the hour after it expires.
 
 **Switching** does not move files already saved. Attachments kept flat in the storage directory before this layout are still found there, whichever store is in use, but have no public link. Copy skills' `w-*` directories from `<storage dir>/skills/` to `skills/` in the bucket, or re-import them.
 

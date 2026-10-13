@@ -20,7 +20,7 @@ npx -y @agentrq/agentrq-ws@latest workspace
 
 An agent talks to its workspace over MCP, which is the right shape for an agent
 and the wrong shape for a person: every call is a JSON envelope, and every
-answer is tokens the agent pays for. The same eighteen tools are underneath this
+answer is tokens the agent pays for. The same nineteen tools are underneath this
 CLI, but a command is a line of shell and the answer is plain text.
 
 It is also the difference between reading an attachment and *handling* one — see
@@ -56,6 +56,11 @@ Node 20.6 or newer.
 | `skill load <uri>` | Read a skill file (`skill://<name>` reads its `SKILL.md`) |
 | `skill save <uri> --content …` | Replace a file of one of this workspace's skills |
 | `skill delete <uri>` | Take a skill out of this workspace (`skill://<name>`), deleting it when no other workspace uses it, or delete one of its files |
+| `pano save [id] --title … --markdown …` | Create a Pano doc, or replace one, and print its id; `--file` sends a file the markdown links, `--ttl-days` and `--color` set its life and post-it |
+| `pano read <id>` | Read a Pano doc, `--comments`/`--attachments` adding those; `--out DIR` writes its markdown and downloads its files instead, printing only their paths |
+| `pano comment <id> <text>` | Comment on a Pano doc |
+| `pano attach <id> --file PATH…` | Attach files to a Pano doc; they need no link |
+| `pano delete <id>` | Delete a Pano doc |
 | `event publish <name>` | Publish a named event |
 | `ask <taskId> <message>` | Ask the human a question and wait |
 | `site-tools [q]` | List the websites shared with this workspace from the Chrome extension, and their tools' names and descriptions; `q` ranks the tools, `--pattern` filters them by a regular expression, `--limit`/`--offset` page |

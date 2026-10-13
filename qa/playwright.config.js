@@ -66,6 +66,8 @@ export default defineConfig({
         AGENTRQ_SQLITE_DSN: join(dataDir, 'agentrq.db'),
         AGENTRQ_STORAGE_DIR: dataDir,
         AGENTRQ_RATELIMIT_ENABLED: 'false',
+        // Public file links are made from it, so they point at this server.
+        AGENTRQ_BASE_URL: `http://localhost:${apiPort}`,
       },
     },
     {

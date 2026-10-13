@@ -68,6 +68,7 @@ func registeredRoutes(t *testing.T) map[string]bool {
 	}
 	h.registerPushRoutes(nil)
 	h.registerBrowserRoutes()
+	h.registerPanoRoutes()
 
 	routes := map[string]bool{}
 	for _, r := range app.GetRoutes(true) {

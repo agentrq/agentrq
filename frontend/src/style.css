@@ -182,6 +182,16 @@ html, body, #app {
 /* MarkdownBody wraps each segment in a div, so the edge margins sit one level down. */
 .md-body > *:first-child, .md-body > :first-child > :first-child { margin-top: 0; }
 .md-body > *:last-child, .md-body > :last-child > :last-child { margin-bottom: 0; }
+/* A Pano post-it is pastel paper in both themes, so its markdown keeps light
+   ink and code tints in dark mode; a task list reads as checkboxes, done ones
+   struck through. */
+.pano-paper .md-body code, .dark .pano-paper .md-body code { background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.12); color: inherit; }
+.pano-paper .md-body pre, .dark .pano-paper .md-body pre { background: rgba(255,255,255,0.45); color: inherit; border-color: rgba(0,0,0,0.1); }
+.pano-paper .md-body blockquote { border-left-color: rgba(0,0,0,0.25); color: inherit; opacity: 0.8; font-style: italic; }
+.pano-paper .md-body li:has(> input[type="checkbox"]) { list-style: none; margin-left: -1.5em; }
+.pano-paper .md-body li > input[type="checkbox"] { appearance: none; width: 1.05em; height: 1.05em; margin: 0 0.55em 0 0; vertical-align: -0.16em; border: 1.5px solid currentColor; border-radius: 9999px; opacity: 0.55; cursor: pointer; background: transparent center / 70% no-repeat; }
+.pano-paper .md-body li > input[type="checkbox"]:checked { opacity: 1; border-color: var(--pano-ink); background-color: var(--pano-ink); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
+.pano-paper .md-body li > input[type="checkbox"]:hover { opacity: 1; }
 .md-body a { text-decoration: underline; }
 .md-body a:hover { opacity: 0.75; }
 /* A link to a local file carries no href — the app opens it rather than the

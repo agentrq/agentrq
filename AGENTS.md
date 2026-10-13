@@ -74,6 +74,9 @@ Each line says what the note will stop you getting wrong.
   reads as zero, and the machine actions carry no workspace on purpose.
 - **[Events](docs/agents/events.md)** — experimental. Named signals that let one
   workspace trigger tasks in another; publishing is agent-driven, not automatic.
+- **[The Pano](docs/agents/pano.md)** — the account's shared markdown docs.
+  Why a file must be linked to be stored, why agents have no search, and
+  what workspace 0 means.
 - **[Storage and public links](docs/agents/storage.md)** — every attachment and
   skill file has a public link that is its only credential, predictable by
   design. Why the three checks on the unauthenticated `/storage/` route must

@@ -71,7 +71,7 @@ That allowance is permission to execute this package's code on your machine at i
 
 ## What the model gets
 
-Every tool the workspace server offers — eighteen today — bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
+Every tool the workspace server offers — nineteen today — bridged by `@deepseek-ai/dsh-mcp-client` under the `agentrq` namespace:
 
 | Tool | Purpose |
 |---|---|
@@ -89,6 +89,7 @@ Every tool the workspace server offers — eighteen today — bridged by `@deeps
 | `mcp__agentrq__loadSkill` | Read one file of a skill by its `skill://` URI |
 | `mcp__agentrq__saveSkill` | Write one file of a skill the workspace can use |
 | `mcp__agentrq__deleteSkill` | Take a skill out of the workspace, or delete one of its files |
+| `mcp__agentrq__pano` | Read and write the Pano, markdown docs every workspace of the account shares: `save`, `read`, `comment`, `attach`, `delete` |
 | `mcp__agentrq__elicit` | Ask the human a question and wait for the answer |
 | `mcp__agentrq__listSiteTools` | List the websites the human shared from the Chrome extension, and their WebMCP tools' names and descriptions; search with `q` (BM25) or `pattern` (regex), page with `limit`/`offset` |
 | `mcp__agentrq__getSiteToolDefinition` | Get one shared website's tool with its input schema, before calling it |

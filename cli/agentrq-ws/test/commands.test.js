@@ -632,9 +632,125 @@ test('the CLI covers every tool the workspace server offers', () => {
     'listSiteTools',
     'getSiteToolDefinition',
     'callSiteTool',
+    'pano',
   ])
   const source = readFileSync(new URL('../src/commands.js', import.meta.url), 'utf8')
   for (const tool of covered) {
     assert.ok(source.includes(`callTool('${tool}'`), `no command calls ${tool}`)
   }
+})
+
+const PANO_DOC = {
+  id: '0kGVgW2hMzR',
+  title: 'Plan',
+  markdown: '# Plan\n\n![chart](chart.png)',
+  files: [{ id: 'f1', filename: 'chart.png', url: 'https://agentrq.test/storage/pano/u-1/pano-0kGVgW2hMzR/f1' }],
+  attachments: [{ id: 'a1', filename: 'notes.txt', url: 'https://agentrq.test/storage/pano/u-1/pano-0kGVgW2hMzR/a1' }],
+  comments: [{ id: 'c1', author: 'human', body: 'Looks good.' }],
+}
+
+test('pano save sends the doc with its linked files, and prints only the id', async () => {
+  const dir = scratch()
+  const chart = join(dir, 'chart.png')
+  writeFileSync(chart, 'png-bytes')
+  writeFileSync(join(dir, 'plan.md'), '# Plan\n\n![chart](chart.png)')
+  const client = stubClient({ pano: JSON.stringify(PANO_DOC) })
+  const result = await invoke('pano save', {
+    positionals: ['0kGVgW2hMzR'],
+    values: { title: 'Plan', markdown: `@${join(dir, 'plan.md')}`, file: [chart], 'ttl-days': '14', color: 'blue' },
+    client,
+  })
+  assert.equal(result.text, '0kGVgW2hMzR')
+  assert.deepEqual(result.data, PANO_DOC)
+  assert.deepEqual(client.calls[0], {
+    name: 'pano',
+    args: {
+      action: 'save',
+      id: '0kGVgW2hMzR',
+      title: 'Plan',
+      markdown: '# Plan\n\n![chart](chart.png)',
+      ttlDays: 14,
+      color: 'blue',
+      files: [{ filename: 'chart.png', mimeType: 'image/png', data: Buffer.from('png-bytes').toString('base64') }],
+    },
+  })
+})
+
+test('pano save creates a doc from stdin, and passes a refusal on as it is', async () => {
+  const client = stubClient({ pano: 'chart.png is not linked from the markdown' })
+  const result = await invoke('pano save', { values: { title: 'New', markdown: '-' }, stdin: stdinOf('piped'), client })
+  assert.equal(result.text, 'chart.png is not linked from the markdown')
+  assert.deepEqual(client.calls[0].args, { action: 'save', id: undefined, title: 'New', markdown: 'piped', ttlDays: undefined, color: undefined, files: undefined })
+})
+
+test('pano save refuses a missing title or markdown, an unknown color and a bad ttl', async () => {
+  await assert.rejects(() => invoke('pano save', { values: { markdown: 'x' } }), /--title is required/)
+  await assert.rejects(() => invoke('pano save', { values: { title: 'x' } }), /--markdown is required/)
+  await assert.rejects(() => invoke('pano save', { values: { title: 'x', markdown: 'x', color: 'red' } }), /unknown color "red"/)
+  for (const ttl of ['0', '1.5', 'soon']) {
+    await assert.rejects(() => invoke('pano save', { values: { title: 'x', markdown: 'x', 'ttl-days': ttl } }), /--ttl-days must be a whole number/)
+  }
+})
+
+test('pano read prints the doc, with comments and attachments when asked', async () => {
+  const client = stubClient({ pano: JSON.stringify(PANO_DOC) })
+  const result = await invoke('pano read', { positionals: ['0kGVgW2hMzR'], values: { comments: true, attachments: true }, client })
+  assert.equal(result.text, JSON.stringify(PANO_DOC))
+  await invoke('pano read', { positionals: ['0kGVgW2hMzR'], client })
+  assert.deepEqual(client.calls.map((c) => c.args), [
+    { action: 'read', id: '0kGVgW2hMzR', includeComments: true, includeAttachments: true },
+    { action: 'read', id: '0kGVgW2hMzR', includeComments: undefined, includeAttachments: undefined },
+  ])
+  await assert.rejects(() => invoke('pano read', {}), /<id>/)
+})
+
+test('pano read --out writes the markdown and downloads every file beside it', async () => {
+  const dir = scratch()
+  const fetched = []
+  const fetch = async (url) => {
+    fetched.push(url)
+    return { ok: true, arrayBuffer: async () => Buffer.from(`bytes of ${url.slice(-2)}`) }
+  }
+  const client = stubClient({ pano: JSON.stringify(PANO_DOC) })
+  const result = await invoke('pano read', { positionals: ['0kGVgW2hMzR'], values: { out: dir, comments: true, attachments: true }, client, fetch })
+  const docDir = join(dir, '0kGVgW2hMzR')
+  const paths = [join(docDir, '0kGVgW2hMzR.md'), join(docDir, 'chart.png'), join(docDir, 'attachments', 'notes.txt'), join(docDir, 'comments.json')]
+  assert.equal(result.text, paths.join('\n'))
+  assert.equal(readFileSync(paths[0], 'utf8'), PANO_DOC.markdown)
+  assert.equal(readFileSync(paths[1], 'utf8'), 'bytes of f1')
+  assert.equal(readFileSync(paths[2], 'utf8'), 'bytes of a1')
+  assert.deepEqual(JSON.parse(readFileSync(paths[3], 'utf8')), PANO_DOC.comments)
+  assert.equal(fetched.length, 2)
+})
+
+test('pano read --out skips a file without a link, and refuses an answer that is no doc', async () => {
+  const dir = scratch()
+  const doc = { id: 'd1', title: 't', files: [{ filename: 'gone.png' }] }
+  const result = await invoke('pano read', { positionals: ['d1'], values: { out: `${dir}/` }, client: stubClient({ pano: JSON.stringify(doc) }) })
+  assert.equal(result.text, join(dir, 'd1', 'd1.md'))
+  assert.equal(readFileSync(join(dir, 'd1', 'd1.md'), 'utf8'), '')
+  await assert.rejects(
+    () => invoke('pano read', { positionals: ['d1'], values: { out: dir }, client: stubClient({ pano: 'Pano doc not found' }) }),
+    /unexpected answer from the pano tool/,
+  )
+})
+
+test('pano comment, attach and delete', async () => {
+  const dir = scratch()
+  const notes = join(dir, 'notes.txt')
+  writeFileSync(notes, 'release notes')
+  const client = stubClient({ pano: (args) => (args.action === 'attach' ? JSON.stringify(PANO_DOC) : 'ok') })
+  await invoke('pano comment', { positionals: ['d1', 'Ship it.'], client })
+  const attached = await invoke('pano attach', { positionals: ['d1'], values: { file: notes }, client })
+  assert.equal(attached.text, '0kGVgW2hMzR')
+  await invoke('pano delete', { positionals: ['d1'], client })
+  assert.deepEqual(client.calls.map((c) => c.args), [
+    { action: 'comment', id: 'd1', comment: 'Ship it.' },
+    { action: 'attach', id: 'd1', files: [{ filename: 'notes.txt', mimeType: 'text/plain', data: Buffer.from('release notes').toString('base64') }] },
+    { action: 'delete', id: 'd1' },
+  ])
+  await assert.rejects(() => invoke('pano comment', { positionals: ['d1'] }), /<text>/)
+  await assert.rejects(() => invoke('pano attach', { positionals: ['d1'] }), /--file is required/)
+  await assert.rejects(() => invoke('pano attach', {}), /<id>/)
+  await assert.rejects(() => invoke('pano delete', {}), /<id>/)
 })

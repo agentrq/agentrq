@@ -257,6 +257,16 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDUIMessageReact
 	case entity.ActionUIAcpAgentPick:
 		action = model.ActionIDUIAcpAgentPick
+	case entity.ActionPanoCreate:
+		action = model.ActionIDPanoCreate
+	case entity.ActionPanoUpdate:
+		action = model.ActionIDPanoUpdate
+	case entity.ActionPanoDelete:
+		action = model.ActionIDPanoDelete
+	case entity.ActionPanoComment:
+		action = model.ActionIDPanoComment
+	case entity.ActionPanoAttach:
+		action = model.ActionIDPanoAttach
 	default:
 		return
 	}
@@ -332,6 +342,7 @@ var subActionIDByToolName = map[string]uint8{
 	"respondToTask":           model.SubActionIDMCPRespondToTask,
 	"saveMemory":              model.SubActionIDMCPSaveMemory,
 	"saveSkill":               model.SubActionIDMCPSaveSkill,
+	"pano":                    model.SubActionIDMCPPano,
 	"stopAgent":               model.SubActionIDMCPStopAgent,
 	"updateEvent":             model.SubActionIDMCPUpdateEvent,
 	"updateEventTrigger":      model.SubActionIDMCPUpdateEventTrigger,

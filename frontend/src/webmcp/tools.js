@@ -78,6 +78,24 @@ const machinePage = ({ machineId }) => `/machines/${seg(machineId)}`
 const eventPage = ({ eventId }) => `/events/${seg(eventId)}`
 const workflowPage = ({ workflowId }) => `/workflows/${seg(workflowId)}`
 const skillPage = ({ name }) => `/skills/${seg(name)}`
+const panoDocPage = ({ id }) => `/pano/${seg(id)}`
+const PANO_ID = str('The Pano doc\'s ID (base62), as listPanoDocs reports it.')
+const PANO_FILES = (description) => ({
+  type: 'array',
+  description,
+  items: {
+    type: 'object',
+    properties: { filename: str('The file\'s name.'), mimeType: str('Its MIME type.'), data: str('Its content, base64.') },
+    required: ['filename', 'data'],
+  },
+})
+const PANO_DOC = {
+  title: str('The doc\'s title.'),
+  markdown: str('The doc\'s full markdown, replacing what it had.'),
+  ttlDays: int('Days the doc lives from this save before it is deleted. Leave it out to keep its own, 30 for a new doc.'),
+  color: { type: 'string', enum: ['yellow', 'pink', 'green', 'blue', 'orange', 'purple'], description: 'The post-it\'s color. Leave it out to keep its own, yellow for a new doc.' },
+  files: PANO_FILES('Linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name).'),
+}
 
 /**
  * The page a write tool acts on, so the person sees what the agent did.
@@ -116,8 +134,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     tool({
       name: 'navigate',
       description:
-        'Take the user to a page. Pass the in-app path, ' +
-        'optionally ?query; IDs come from getCurrentPage or list tools. Pages:\n' +
+        'Take the user to a page: an in-app path, ' +
+        'optionally ?query; IDs from getCurrentPage or list tools. Pages:\n' +
         '- "/" every workspace, "/workspaces/new" creates one.\n' +
         '- "/kanban" or "/tasks/<filter>" tasks in all workspaces; <filter> is active, notstarted, pending ' +
         '(on the user), ongoing, completed or scheduled. Add "/<workspaceId>/<taskId>" to ' +
@@ -126,8 +144,8 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"/analytics", "/settings", "/settings/skills/<name>", "/tasks/new", "/tasks/<taskId>", and that plus "/instances" or ' +
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack, input, storage or danger.\n' +
-        '- "/events", "/events/<eventId>", "/workflows", "/workflows/<workflowId>", "/skills", "/skills/<name>".\n' +
-        '- "/machines", "/machines/<machineId>", "/sessions/<sessionId>" (a terminal).\n' +
+        '- "/events", "/events/<id>", "/workflows", "/workflows/<id>", "/skills", "/skills/<name>", "/pano", "/pano/new", "/pano/<id>".\n' +
+        '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
         '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
         'Others are refused. Returns the page reached.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
@@ -466,6 +484,65 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       destructive: true,
       screen: before(settingsPage('skills')),
       run: ({ workspaceId, name, enabled }) => api.setWorkspaceSkillEnabled(workspaceId, name, enabled),
+    }),
+    // The Pano: markdown docs every workspace of the account shares. What the
+    // user writes is recorded as theirs.
+    tool({
+      name: 'listPanoDocs',
+      description: 'Every doc on the account\'s Pano, most recently updated first: title, opening excerpt, color, who wrote it (a workspace id, or none for the user) and when it expires.',
+      readOnly: true,
+      run: () => api.listPanoDocs(),
+    }),
+    tool({
+      name: 'getPanoDoc',
+      description: 'One Pano doc in full: its markdown, linked files, attachments and comments.',
+      properties: { id: PANO_ID },
+      required: ['id'],
+      readOnly: true,
+      run: ({ id }) => api.getPanoDoc(id),
+    }),
+    tool({
+      name: 'createPanoDoc',
+      description: 'Post a new doc to the Pano, as the user. Returns it with its id.',
+      properties: PANO_DOC,
+      required: ['title', 'markdown'],
+      screen: after((_, result) => panoDocPage({ id: result?.doc?.id })),
+      run: ({ title, markdown, ttlDays, color, files }) => api.createPanoDoc({ title, markdown, ttlDays, color, files }),
+    }),
+    tool({
+      name: 'updatePanoDoc',
+      description: 'Replace a Pano doc\'s title and markdown, as the user. A linked file the markdown no longer links is dropped.',
+      properties: { id: PANO_ID, ...PANO_DOC },
+      required: ['id', 'title', 'markdown'],
+      // It replaces what agents may have written.
+      destructive: true,
+      screen: before(panoDocPage),
+      run: ({ id, title, markdown, ttlDays, color, files }) => api.updatePanoDoc(id, { title, markdown, ttlDays, color, files }),
+    }),
+    tool({
+      name: 'deletePanoDoc',
+      description: 'Delete a Pano doc with its files and comments; every workspace loses it. Cannot be undone.',
+      properties: { id: PANO_ID },
+      required: ['id'],
+      destructive: true,
+      screen: before(() => '/pano'),
+      run: ({ id }) => api.deletePanoDoc(id),
+    }),
+    tool({
+      name: 'addPanoComment',
+      description: 'Comment on a Pano doc, as the user.',
+      properties: { id: PANO_ID, body: str('The comment, markdown.') },
+      required: ['id', 'body'],
+      screen: before(panoDocPage),
+      run: ({ id, body }) => api.addPanoComment(id, body),
+    }),
+    tool({
+      name: 'attachPanoFiles',
+      description: 'Attach files to a Pano doc, as the user. Attachments are listed with the doc and need no link from its markdown.',
+      properties: { id: PANO_ID, files: PANO_FILES('The files to attach.') },
+      required: ['id', 'files'],
+      screen: before(panoDocPage),
+      run: ({ id, files }) => api.attachPanoFiles(id, files),
     }),
     tool({
       name: 'setWorkspaceSlackChannel',

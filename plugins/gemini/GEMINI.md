@@ -69,6 +69,14 @@ hand each to the workspace whose agent is suited to it, and keep the human in th
 13. **A clean slate**: `createTask` with `clearContext` sends `/clear` to the agent's
     terminal first, so the task starts without the previous one's context.
 
+14. **The Pano** is the account's shared markdown docs. `pano` with `action` `save`
+    creates a doc (no `id`; it returns one) or replaces it; every file sent with a save
+    must be linked from the markdown by its filename, while `attach` adds files that need
+    no link. `read`, `comment` and `delete` take the doc's `id`. There is no search:
+    pass a doc's `id` in the task that needs it.
+    From a shell, `npx -y @agentrq/agentrq-ws@latest pano save|read|comment|attach|delete`
+    moves the markdown and files through disk rather than your context, saving tokens.
+
 The server also offers the guides `agentrq://guides/new-workspace` and
 `agentrq://guides/agentrqd-setup`, and the prompts `new-workspace`, `setup-agentrqd` and
 `workspace-status`.

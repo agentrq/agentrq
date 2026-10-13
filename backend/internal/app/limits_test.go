@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	"github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -19,6 +20,7 @@ func resetLimits(t *testing.T) {
 		mcp.MaxMemoryBytes = mcp.DefaultMaxMemoryBytes
 		skill.MaxSkillFileBytes = skill.DefaultMaxSkillFileBytes
 		skill.MaxFiles = skill.DefaultMaxFiles
+		crud.PanoMaxTTLDays = crud.DefaultPanoMaxTTLDays
 	})
 }
 
@@ -34,13 +36,16 @@ func loadLimits(t *testing.T) (Config, error) {
 	if err := svc.Populate("memory", &cfg.Memory); err != nil {
 		return cfg, err
 	}
-	return cfg, svc.Populate("skills", &cfg.Skills)
+	if err := svc.Populate("skills", &cfg.Skills); err != nil {
+		return cfg, err
+	}
+	return cfg, svc.Populate("pano", &cfg.Pano)
 }
 
 func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 	resetLimits(t)
 	t.Setenv("ENV", "development")
-	for _, env := range []string{"AGENTRQ_MEMORY_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILES"} {
+	for _, env := range []string{"AGENTRQ_MEMORY_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILE_SIZE", "AGENTRQ_SKILLS_MAX_FILES", "AGENTRQ_PANO_MAX_TTL_DAYS"} {
 		t.Setenv(env, "")
 	}
 	cfg, err := loadLimits(t)
@@ -52,6 +57,25 @@ func TestLimitsDefaultWhenNoEnvIsSet(t *testing.T) {
 	}
 	if mcp.MaxMemoryBytes != 16*1024 || skill.MaxSkillFileBytes != 96*1024 || skill.MaxFiles != 256 {
 		t.Errorf("limits = %d, %d, %d; want 16 KiB, 96 KiB, 256", mcp.MaxMemoryBytes, skill.MaxSkillFileBytes, skill.MaxFiles)
+	}
+	if crud.PanoMaxTTLDays != 365 {
+		t.Errorf("the longest a Pano doc may live is %d days, want the default 365", crud.PanoMaxTTLDays)
+	}
+}
+
+func TestPanoMaxTTLDaysIsReadFromItsEnvVar(t *testing.T) {
+	resetLimits(t)
+	t.Setenv("ENV", "development")
+	t.Setenv("AGENTRQ_PANO_MAX_TTL_DAYS", "90")
+	cfg, err := loadLimits(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyLimits(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if crud.PanoMaxTTLDays != 90 {
+		t.Errorf("the longest a Pano doc may live is %d days, want the 90 set in AGENTRQ_PANO_MAX_TTL_DAYS", crud.PanoMaxTTLDays)
 	}
 }
 
@@ -104,16 +128,17 @@ func TestLimitsRefuseAValueThatIsNotANumber(t *testing.T) {
 func TestApplyLimitsRefusesValuesItCannotHonour(t *testing.T) {
 	resetLimits(t)
 	for name, tc := range map[string]struct {
-		mem, size, files int
-		want             string
+		mem, size, files, ttl int
+		want                  string
 	}{
 		"memory over the database cap": {mem: model.MaxMemoryContentBytes + 1, want: "memory.maxFileSize"},
 		"negative memory":              {mem: -1, want: "memory.maxFileSize"},
 		"negative skill file size":     {size: -1, want: "skills.maxFileSize"},
 		"negative skill file count":    {files: -1, want: "skills.maxFiles"},
+		"negative Pano TTL":            {ttl: -1, want: "pano.maxTtlDays"},
 	} {
 		var cfg Config
-		cfg.Memory.MaxFileSize, cfg.Skills.MaxFileSize, cfg.Skills.MaxFiles = tc.mem, tc.size, tc.files
+		cfg.Memory.MaxFileSize, cfg.Skills.MaxFileSize, cfg.Skills.MaxFiles, cfg.Pano.MaxTTLDays = tc.mem, tc.size, tc.files, tc.ttl
 		if err := applyLimits(cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
 		}

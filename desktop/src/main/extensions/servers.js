@@ -64,6 +64,7 @@ export const WORKSPACE_TOOLS = Object.freeze([
   'loadSkill',
   'saveSkill',
   'deleteSkill',
+  'pano',
   'elicit',
   'listSiteTools',
   'getSiteToolDefinition',
@@ -122,6 +123,7 @@ export const SUPERVISOR_TOOLS = Object.freeze([
   'listMachines',
   'launchAgent',
   'stopAgent',
+  'pano',
 ])
 
 /** What `checkCompatibility` takes, with the running version. */
