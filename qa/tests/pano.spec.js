@@ -91,7 +91,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await expect(planCard.getByTestId('pano-progress')).toContainText('2 of 3 done')
   expect((await pano(call, { action: 'read', id: plan.id })).markdown, 'the tick, in the markdown').toContain('- [x] frontend')
   await expect(page).toHaveURL(/\/pano$/)
-  await page.screenshot({ path: test.info().outputPath('pano-board-light.png') })
+  await page.screenshot({ path: test.info().outputPath('pano-board-light.png'), animations: 'disabled' })
 
   // A doc an agent posts while the board is open appears without a reload.
   const late = unique('Posted while you watched')
@@ -103,7 +103,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await page.getByTestId('pano-search').fill('')
 
   await page.evaluate(() => { localStorage.setItem('theme', 'dark'); document.documentElement.classList.add('dark') })
-  await page.screenshot({ path: test.info().outputPath('pano-board-dark.png') })
+  await page.screenshot({ path: test.info().outputPath('pano-board-dark.png'), animations: 'disabled' })
   await page.evaluate(() => { localStorage.setItem('theme', 'light'); document.documentElement.classList.remove('dark') })
 
   // The doc, with its linked image drawn from its public link.
@@ -120,9 +120,9 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   expect((await commented).status(), 'the person\'s comment').toBe(201)
   await expect(page.getByTestId('pano-comments')).toContainText('You')
   await expect(page.getByTestId('pano-comments')).toContainText('Looks good to me.')
-  await page.screenshot({ path: test.info().outputPath('pano-doc-light.png'), fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('pano-doc-light.png'), fullPage: true, animations: 'disabled' })
   await page.evaluate(() => document.documentElement.classList.add('dark'))
-  await page.screenshot({ path: test.info().outputPath('pano-doc-dark.png'), fullPage: true })
+  await page.screenshot({ path: test.info().outputPath('pano-doc-dark.png'), fullPage: true, animations: 'disabled' })
   await page.evaluate(() => document.documentElement.classList.remove('dark'))
 
   // The person edits a doc: its new color and markdown are saved as theirs.
@@ -134,7 +134,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await page.getByTestId('pano-markdown-input').evaluate((el) => el.setSelectionRange(el.value.length - 2, el.value.length))
   await page.getByTestId('pano-format-checkbox').click()
   await expect(page.getByTestId('pano-markdown-input')).toHaveValue('Rewritten by the person.\n\n- [ ] ship it')
-  await page.screenshot({ path: test.info().outputPath('pano-editor-light.png') })
+  await page.screenshot({ path: test.info().outputPath('pano-editor-light.png'), animations: 'disabled' })
   const saved = nextResponse(page, 'PUT', `/api/v1/pano/${notes.id}`)
   await page.getByTestId('pano-save').click()
   expect((await saved).status(), 'saving the edit').toBe(200)
@@ -167,7 +167,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await expect(page.getByTestId('pano-card').first(), 'the person\'s doc comes first').toContainText(mine)
   await expect(page.getByTestId('pano-card').nth(1).getByTestId('pano-to-task'), 'an agent\'s doc has no task button').toHaveCount(0)
   await page.getByTestId('pano-card').first().getByTestId('pano-to-task').click()
-  await page.screenshot({ path: test.info().outputPath('pano-to-task-light.png') })
+  await page.screenshot({ path: test.info().outputPath('pano-to-task-light.png'), animations: 'disabled' })
   const tasked = nextResponse(page, 'POST', `/api/v1/workspaces/${workspace.id}/tasks`)
   await page.getByTestId('pano-to-task-workspace').filter({ hasText: workspace.name }).click()
   const taskRes = await tasked
@@ -179,7 +179,7 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/pano')
   await expect(page.getByTestId('pano-card').first()).toBeVisible()
-  await page.screenshot({ path: test.info().outputPath('pano-board-phone.png') })
+  await page.screenshot({ path: test.info().outputPath('pano-board-phone.png'), animations: 'disabled' })
 
   traffic.expectClean()
 })
