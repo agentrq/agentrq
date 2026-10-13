@@ -38,6 +38,12 @@ export async function run({
   const write = (stream, text) => stream.write(`${text}\n`)
 
   try {
+    // `--help "memory load"` reads as `help memory load`: a leading help flag
+    // asks for the help of whatever follows, rather than being an unknown command.
+    // A quoted "memory load" is one argument, so split it into words.
+    if (argv[0] === '--help' || argv[0] === '-h') {
+      argv = ['help', ...argv.slice(1).flatMap((arg) => arg.split(/\s+/).filter(Boolean))]
+    }
     if (argv.length === 0 || argv[0] === 'help') {
       const target = argv.slice(1)
       if (target.length > 0) {

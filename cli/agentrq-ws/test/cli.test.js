@@ -67,6 +67,17 @@ test('help for an unknown command fails rather than showing nothing', async () =
   assert.match(err, /unknown command "nonsense"/)
 })
 
+test('a leading --help asks for the help of what follows', async () => {
+  for (const argv of [['--help', 'memory', 'load'], ['--help', 'memory load'], ['-h', 'memory', 'load']]) {
+    const { code, out } = await cli(argv)
+    assert.equal(code, 0)
+    assert.match(out, /Usage: agentrq-ws memory load/)
+  }
+  const { code, out } = await cli(['--help'])
+  assert.equal(code, 0)
+  assert.equal(out.trim(), mainHelp().trim())
+})
+
 test('--help on a command shows that command', async () => {
   const { code, out } = await cli(['task', 'create', '--help'])
   assert.equal(code, 0)
