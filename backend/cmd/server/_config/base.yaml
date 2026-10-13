@@ -31,6 +31,9 @@ auth:
   rootAccessToken: ${AGENTRQ_AUTH_ROOT_ACCESS_TOKEN:agentrq}
   rootLoginEnabled: ${AGENTRQ_AUTH_ROOT_LOGIN_ENABLED:false}
   workspaceTokenKey: ${AGENTRQ_AUTH_WORKSPACE_TOKEN_KEY:agentrq-token-key-change-me-32by}
+  # Other hosts a sign-in may return to through ?redirect_url=, comma separated
+  # (or a yaml list), e.g. app.example.com,docs.example.com
+  allowedRedirectDomains: ${AGENTRQ_AUTH_ALLOWED_REDIRECT_DOMAINS:}
   google:
     clientId: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_ID}
     clientSecret: ${AGENTRQ_ACCOUNTS_OAUTH2_CLI_GOOGLE_CLIENT_SECRET}

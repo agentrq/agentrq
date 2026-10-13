@@ -31,6 +31,21 @@ describe('loginRedirect', () => {
     expect(loginRedirect(raw, origin)).toBeNull()
   })
 
+  it('keeps an http(s) address whose host is an allowed domain', () => {
+    const domains = ['App.Example.com', 'localhost:8080']
+    expect(loginRedirect('https://app.example.com/after?x=1', origin, domains)).toBe('https://app.example.com/after?x=1')
+    expect(loginRedirect('http://localhost:8080/cb', origin, domains)).toBe('http://localhost:8080/cb')
+  })
+
+  it.each([
+    ['a longer host that starts with it', 'https://app.example.com.evil.example/'],
+    ['the domain only in the query', 'https://evil.example/?https://app.example.com'],
+    ['another port', 'https://app.example.com:444/'],
+    ['another scheme', 'javascript://app.example.com/%0aalert(1)'],
+  ])('refuses %s, though a domain is allowed', (_, raw) => {
+    expect(loginRedirect(raw, origin, ['app.example.com'])).toBeNull()
+  })
+
   it.each([
     ['nothing', undefined],
     ['an empty value', ''],
@@ -110,6 +125,25 @@ describe('the login page', () => {
   it('drops a return address on another site', async () => {
     const el = await mount({ query: { redirect_url: 'https://evil.example/' }, config: { githubLoginEnabled: true } })
     expect(links(el)).toEqual(['/api/v1/auth/google/login', '/api/v1/auth/github/login'])
+  })
+
+  it('sends sign-ins to an allowed domain once the config has loaded', async () => {
+    const away = 'https://app.example.com/after-login'
+    const assign = vi.fn()
+    vi.stubGlobal('location', { origin: window.location.origin, assign })
+    const el = await mount({
+      query: { redirect_url: away },
+      config: { rootLoginEnabled: false, allowedRedirectDomains: ['app.example.com'] },
+    })
+    expect(links(el)).toEqual([`/api/v1/auth/google/login?redirect_url=${encodeURIComponent(away)}`])
+    app.unmount()
+
+    const root = await mount({
+      query: { redirect_url: away },
+      config: { rootLoginEnabled: true, allowedRedirectDomains: ['app.example.com'] },
+    })
+    await signInWithToken(root)
+    expect(assign).toHaveBeenCalledWith(away)
   })
 
   it('returns a root-token sign-in to the authorize step', async () => {

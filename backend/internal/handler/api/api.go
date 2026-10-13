@@ -59,7 +59,9 @@ type (
 		BasePath         string
 		RootLoginEnabled bool
 		RootToken        string
-		Router           fiber.Router
+		// RedirectDomains are the hosts besides BaseURL's a sign-in may return to.
+		RedirectDomains []string
+		Router          fiber.Router
 		// Root is the router outside Router's prefix, for the public file routes.
 		Root      fiber.Router
 		SlackCtrl slackctrl.Controller // optional; nil = Slack disabled
@@ -99,6 +101,8 @@ type (
 		basePath         string
 		rootLoginEnabled bool
 		rootToken        string
+		redirectDomains  []string
+		redirectHosts    map[string]struct{}
 		router           fiber.Router
 		slackCtrl        slackctrl.Controller
 		pushCtrl         pushctrl.Controller
@@ -144,10 +148,16 @@ func New(p Params) (Handler, error) {
 		basePath:         p.BasePath,
 		rootLoginEnabled: p.RootLoginEnabled,
 		rootToken:        p.RootToken,
+		redirectDomains:  p.RedirectDomains,
 		router:           p.Router,
 		slackCtrl:        p.SlackCtrl,
 		pushCtrl:         p.PushCtrl,
 	}
+	hosts, err := redirectHosts(p.RedirectDomains)
+	if err != nil {
+		return nil, err
+	}
+	h.redirectHosts = hosts
 
 	h.registerPublicAuthRoutes()
 	// Enrolment cannot be authenticated: a daemon enrolling for the first time
@@ -395,6 +405,8 @@ func (h *handler) authConfig() fiber.Handler {
 			"rootLoginEnabled":   h.rootLoginEnabled,
 			"githubLoginEnabled": h.githubClientID != "",
 			"basePath":           h.basePath,
+			// Never null, so the login page can read it as a list.
+			"allowedRedirectDomains": append([]string{}, h.redirectDomains...),
 		})
 	}
 }
@@ -603,8 +615,11 @@ func (h *handler) githubCallback() fiber.Handler {
 }
 
 // sanitizeRedirectURL validates a redirect URL to prevent open redirect attacks.
-// Only same-origin relative paths (starting with /) or absolute URLs matching
-// the configured baseURL are accepted; everything else falls back to /.
+// Only same-origin relative paths (starting with /), absolute URLs matching
+// the configured baseURL, or http(s) URLs whose host is exactly one of
+// auth.allowedRedirectDomains are accepted; everything else falls back to /.
+// The host is compared, not the text, so app.example.com.evil.com is not
+// let through by app.example.com.
 func (h *handler) sanitizeRedirectURL(raw string) string {
 	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") && !strings.HasPrefix(raw, "/\\") {
 		return raw
@@ -612,6 +627,11 @@ func (h *handler) sanitizeRedirectURL(raw string) string {
 	if pRedirect, err := url.Parse(raw); err == nil && pRedirect.IsAbs() {
 		if pBase, err := url.Parse(h.baseURL); err == nil {
 			if pRedirect.Host == pBase.Host && pRedirect.Scheme == pBase.Scheme {
+				return raw
+			}
+		}
+		if pRedirect.Scheme == "http" || pRedirect.Scheme == "https" {
+			if _, ok := h.redirectHosts[strings.ToLower(pRedirect.Host)]; ok {
 				return raw
 			}
 		}

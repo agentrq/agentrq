@@ -7,15 +7,17 @@
  * `redirect_url` an MCP client's authorize step put on it, so a sign-in with
  * any provider returns to the consent page.
  *
- * Only an address on this same origin is kept; anything else is null, so the
- * page cannot be used to bounce someone to another site. The backend checks
- * the provider logins' copy again.
+ * Only an address on this same origin, or an http(s) one whose host is exactly
+ * one of the server's `allowedRedirectDomains`, is kept; anything else is null,
+ * so the page cannot be used to bounce someone to another site. The backend
+ * checks the provider logins' copy again.
  *
  * @param {unknown} raw the `redirect_url` query value
  * @param {string} origin this page's origin
+ * @param {string[]} [allowedDomains] from the server's auth config
  * @returns {string|null}
  */
-export function loginRedirect(raw, origin) {
+export function loginRedirect(raw, origin, allowedDomains = []) {
   if (typeof raw !== 'string' || raw === '') return null
   let target
   try {
@@ -23,7 +25,10 @@ export function loginRedirect(raw, origin) {
   } catch {
     return null
   }
-  return target.origin === origin ? target.href : null
+  if (target.origin === origin) return target.href
+  const web = target.protocol === 'https:' || target.protocol === 'http:'
+  const allowed = allowedDomains.some((d) => d.toLowerCase() === target.host)
+  return web && allowed ? target.href : null
 }
 
 /**

@@ -103,6 +103,8 @@ type (
 			RootAccessToken   string `yaml:"rootAccessToken"`
 			RootLoginEnabled  bool   `yaml:"rootLoginEnabled"`
 			WorkspaceTokenKey string `yaml:"workspaceTokenKey"`
+			// Hosts besides baseUrl's a sign-in may return to via redirect_url.
+			AllowedRedirectDomains handlerapi.RedirectDomains `yaml:"allowedRedirectDomains"`
 		} `yaml:"auth"`
 		// Idgen's node id doubles as this process's instance id, because the
 		// two need exactly the same property: monoflake ids collide unless
@@ -856,6 +858,7 @@ func New(cfg Config) (*App, error) {
 		BasePath:         cfg.App.BasePath,
 		RootLoginEnabled: cfg.Auth.RootLoginEnabled,
 		RootToken:        cfg.Auth.RootAccessToken,
+		RedirectDomains:  cfg.Auth.AllowedRedirectDomains,
 		GithubClientID:   cfg.Auth.GitHub.ClientID,
 		Router:           apiGroup,
 		Root:             fiberApp,

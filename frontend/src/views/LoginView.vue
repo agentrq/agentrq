@@ -93,14 +93,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API_BASE_URL } from '../api'
 import { loginRedirect, providerLoginUrl } from '../utils/loginRedirect'
 
 const router = useRouter()
-// Set when an MCP client's authorize step sent the person here to sign in.
-const redirect = loginRedirect(useRoute().query.redirect_url, window.location.origin)
+// Set when an MCP client's authorize step, or a site on the server's
+// allowedRedirectDomains, sent the person here to sign in.
+const rawRedirect = useRoute().query.redirect_url
+const allowedRedirectDomains = ref([])
+const redirect = computed(() => loginRedirect(rawRedirect, window.location.origin, allowedRedirectDomains.value))
 const rootLoginEnabled = ref(false)
 const githubLoginEnabled = ref(false)
 const loadingConfig = ref(true)
@@ -118,6 +121,9 @@ onMounted(async () => {
     }
     if (data && typeof data.githubLoginEnabled === 'boolean') {
       githubLoginEnabled.value = data.githubLoginEnabled
+    }
+    if (data && Array.isArray(data.allowedRedirectDomains)) {
+      allowedRedirectDomains.value = data.allowedRedirectDomains
     }
   } catch (err) {
     console.warn('Failed to fetch auth config:', err)
@@ -140,7 +146,7 @@ const submitRootLogin = async () => {
 
     if (res.ok) {
       localStorage.setItem('request_fullscreen', 'true')
-      if (redirect) window.location.assign(redirect)
+      if (redirect.value) window.location.assign(redirect.value)
       else router.push('/')
     } else {
       const data = await res.json()

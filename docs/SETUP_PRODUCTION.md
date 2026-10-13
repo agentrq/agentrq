@@ -88,7 +88,17 @@ Make sure in `.env`:
 AGENTRQ_AUTH_ROOT_LOGIN_ENABLED=false
 ```
 
-### 2. Strong Secrets
+### 2. Where a Sign-in May Return To
+
+`/login?redirect_url=<address>` sends the person back to that address once they
+have signed in. Addresses on this server always work. Other hosts must be
+listed, comma separated, and must match exactly; any other address goes to the
+app instead. A malformed entry (with `https://` or a path) stops startup.
+```env
+AGENTRQ_AUTH_ALLOWED_REDIRECT_DOMAINS=app.example.com,docs.example.com
+```
+
+### 3. Strong Secrets
 
 Verify secrets are strong (32+ characters):
 ```bash
@@ -96,7 +106,7 @@ openssl rand -base64 32  # JWT secret
 openssl rand -hex 16     # Token key (32 bytes)
 ```
 
-### 3. Backup Strategy
+### 4. Backup Strategy
 
 ```bash
 # Backup PostgreSQL
@@ -109,14 +119,14 @@ tar -czf storage-backup.tar.gz storage/
 cp .env .env.backup
 ```
 
-### 4. Network Security
+### 5. Network Security
 
 - Place behind a reverse proxy (Nginx, Traefik, Cloudflare)
 - Enable rate limiting (default: 60 req/IP, 100 req/user per minute)
 - Enable DDoS protection (default: 20 req/sec)
 - Use firewall rules to restrict non-HTTP(S) traffic
 
-### 5. Regular Updates
+### 6. Regular Updates
 
 ```bash
 # Pull latest image
