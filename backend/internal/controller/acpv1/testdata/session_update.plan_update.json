@@ -1,0 +1,1 @@
+{"sessionId":"sess-1","update":{"sessionUpdate":"plan_update","plan":{"type":"items","planId":"p1","entries":[{"content":"Read the code","priority":"high","status":"completed"},{"content":"Write the fix","priority":"medium","status":"in_progress"}]}}}

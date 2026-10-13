@@ -1,0 +1,1 @@
+{"sessionId":"sess-1","toolCall":{"toolCallId":"call-2"},"options":[{"optionId":"approved-always","name":"Always","kind":"allow_always"},{"optionId":"approved","name":"Yes","kind":"allow_once"},{"optionId":"abort","name":"No, and tell the agent what to do differently","kind":"reject_once"}]}
