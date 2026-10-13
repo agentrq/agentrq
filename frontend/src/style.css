@@ -202,11 +202,11 @@ html, body, #app {
 .pano-paper .md-body .pano-assignee { display: inline-flex; align-items: center; gap: 0.35em; margin-left: 0.3em; padding: 0 0.55em; border-radius: 9999px; background: var(--pano-tag, rgba(255,255,255,0.65)); color: var(--pano-tag-ink, #0f172a); font-size: 0.78em; font-weight: 700; line-height: 1.7; text-decoration: none; vertical-align: 0.05em; white-space: nowrap; }
 a.pano-assignee { cursor: pointer; }
 .pano-paper .md-body a.pano-assignee:hover { filter: brightness(0.96); }
-.pano-assignee .pano-status { width: 0.55em; height: 0.55em; border-radius: 9999px; background: #94a3b8; }
-.pano-assignee[data-status="ongoing"] .pano-status { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.25); }
-.pano-assignee[data-status="blocked"] .pano-status { background: #d97706; }
-.pano-assignee[data-status="completed"] .pano-status, .pano-assignee[data-status="done"] .pano-status { background: #16a34a; }
-.pano-assignee[data-status="rejected"] .pano-status { background: #dc2626; }
+.pano-status { width: 0.55em; height: 0.55em; border-radius: 9999px; background: #94a3b8; }
+[data-status="ongoing"] > .pano-status { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.25); }
+[data-status="blocked"] > .pano-status { background: #d97706; }
+[data-status="completed"] > .pano-status, [data-status="done"] > .pano-status { background: #16a34a; }
+[data-status="rejected"] > .pano-status { background: #dc2626; }
 .pano-assignee .pano-status-label { font-weight: 500; opacity: 0.8; }
 .pano-mention { font-weight: 700; color: rgb(37 99 235); }
 .dark .pano-mention { color: rgb(96 165 250); }

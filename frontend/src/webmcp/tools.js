@@ -145,9 +145,9 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         '"/edit". "/settings" takes "?tab=" general, setup, automations, notifications, memories, ' +
         'skills, slack, input, storage or danger.\n' +
         '- "/events", "/workflows", "/pano", each plus "/<id>"; "/skills", "/skills/<name>", "/pano/new", ' +
-        '"/pano/chat/<workspaceId>/<taskId>".\n' +
+        '"/pano/[<id>/]chat/<workspaceId>/<taskId>".\n' +
         '- "/machines", "/machines/<id>", "/sessions/<id>" (a terminal).\n' +
-        '- "/extensions", "/extensions/<name>/<pageId>" (desktop only).\n' +
+        '- "/extensions", "/extensions/<name>/<pageId>" (desktop).\n' +
         'Others are refused. Returns the page reached.',
       properties: { path: str('An in-app path beginning with "/", e.g. "/workspaces/<workspaceId>/board".') },
       required: ['path'],

@@ -959,7 +959,10 @@ describe('a doc', () => {
         // The title of a task that can be read; the link's own text for one that cannot.
         expect(links.map((a) => a.textContent)).toEqual(['@ops', 'Fix the long thing']);
         expect(api.getTask).toHaveBeenCalledTimes(2);
-        expect(text($(el, 'pano-related'))).toContain('Ongoing');
+        // A status shows as its dot, named for screen readers, not as a word.
+        expect(text($(el, 'pano-related'))).not.toContain('Ongoing');
+        expect($$(el, 'pano-related-status').map((d) => [d.closest('li').dataset.status, d.getAttribute('aria-label')]))
+          .toEqual([['ongoing', 'Ongoing'], ['notstarted', 'Not started']]);
         await click(links[1]);
         await settle();
         expect(router.currentRoute.value.path).toBe('/pano/d1/chat/ws1/t9');
