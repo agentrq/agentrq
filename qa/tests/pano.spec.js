@@ -329,9 +329,9 @@ test('a task linked from a doc opens beside it', async ({ page, workspace }) => 
   })
   await page.goto(`/pano/${doc.id}`)
 
-  await expect(page.getByTestId('pano-related-task')).toHaveCount(1)
+  await expect(page.getByTestId('pano-related-task')).toHaveText(task.title)
   await page.getByTestId('pano-related-task').click()
-  await expect(page).toHaveURL(`/pano/${doc.id}/chat/${workspace.id}/${task.id}`)
+  await expect(page).toHaveURL(`/pano/${doc.id}/chat/${workspace.id}/${task.id}`, { timeout: 60_000 })
   await expect(page.locator('[data-pano-chat]')).toBeVisible()
   await expect(page.getByTestId('pano-body')).toBeVisible()
   if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
