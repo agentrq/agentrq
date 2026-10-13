@@ -163,6 +163,8 @@ describe('matchShortcut', () => {
     expect(matchShortcut(press('m')).id).toBe('switch-machine')
     expect(matchShortcut(press('M')).id).toBe('switch-machine')
     expect(matchShortcut(press('w')).id).toBe('switch-workspace')
+    expect(matchShortcut(press('p')).id).toBe('open-pano')
+    expect(matchShortcut(press('P')).id).toBe('open-pano')
     expect(matchShortcut(press('c')).id).toBe('chat-view')
     expect(matchShortcut(press('t')).id).toBe('trajectory-view')
     expect(matchShortcut(press('?')).id).toBe('show-help')

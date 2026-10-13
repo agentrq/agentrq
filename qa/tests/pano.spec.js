@@ -337,3 +337,27 @@ test('a task linked from a doc opens beside it', async ({ page, workspace }) => 
   if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
   traffic.expectClean()
 })
+
+// P opens the Pano from anywhere, but a P typed into a field stays text.
+test('P opens the Pano, except while typing', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  await page.goto(`/workspaces/${workspace.id}/tasks/new`)
+  const description = page.locator('#taskForm textarea').first()
+  await expect(description, 'the focused description').toBeFocused()
+  await page.keyboard.press('p')
+  await expect(description, 'the description after typing P').toHaveValue('p')
+  await expect(page, 'the form, still open').toHaveURL(/\/tasks\/new$/)
+
+  await page.goto(`/workspaces/${workspace.id}`)
+  const listed = nextResponse(page, 'GET', '/api/v1/pano')
+  await page.keyboard.press('p')
+  expect((await listed).status(), 'the Pano list request').toBe(200)
+  await expect(page).toHaveURL(/\/pano$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Pano' })).toBeVisible()
+
+  await page.keyboard.press('?')
+  const sheet = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+  await expect(sheet.getByRole('listitem').filter({ hasText: 'Open the Pano' }), 'the help sheet row').toContainText('P')
+  await sheet.screenshot({ path: test.info().outputPath('shortcuts-help.png'), animations: 'disabled' })
+  traffic.expectClean()
+})

@@ -92,6 +92,14 @@ export const SHORTCUTS = [
     scope: 'global',
   },
   {
+    // `P` for the Pano, bare like the rest: Cmd/Ctrl+P is the browser's Print.
+    id: 'open-pano',
+    key: 'p',
+    label: 'Open the Pano',
+    hint: "Your account's shared docs",
+    scope: 'global',
+  },
+  {
     id: 'show-help',
     key: '?',
     label: 'Show keyboard shortcuts',

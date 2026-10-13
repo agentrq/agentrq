@@ -816,6 +816,7 @@ useShortcuts(
     'new-task': () => router.push(newTaskRoute(currentWorkspaceId.value, workspaces.value)),
     'switch-workspace': () => openOverlay('switcher'),
     'switch-machine': () => openOverlay('machines'),
+    'open-pano': () => router.push('/pano'),
     'show-help': () => openOverlay('help'),
   },
   { mac: () => isMacKeyboard.value, onUse: recordShortcutUse }
