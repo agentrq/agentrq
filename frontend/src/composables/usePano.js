@@ -293,9 +293,13 @@ export function panoItemMenus(html) {
   return String(html || '').replace(/<input\b[^>]*type="checkbox"[^>]*>/g, (tag) => `${tag}<button type="button" class="pano-assign" data-pano-assign="" title="Assign to a workspace" aria-label="Assign to a workspace" aria-haspopup="menu">${DOTS}</button>`)
 }
 
-/** The body of the task a checklist item becomes: what it is, and how to tick it. */
+/**
+ * The body of the task a checklist item becomes: what it is, and where it is
+ * from. The item follows the task's status on its own, so the agent is not
+ * asked to tick it.
+ */
 export function panoItemTaskBody(doc, item) {
-  return `${item}\n\n---\nA checklist item of the Pano doc \`${doc.id}\` ("${doc.title}"). Read the doc with the pano tool for its context, files and comments. When the item is done, tick it (\`- [x]\`) and save the doc with the pano tool.`
+  return `${item}\n\n---\nA checklist item of the Pano doc \`${doc.id}\` ("${doc.title}"); read it with the pano tool for its context, files and comments. The item follows this task's status, and is ticked when it is completed.`
 }
 
 /**

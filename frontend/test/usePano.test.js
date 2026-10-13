@@ -761,11 +761,12 @@ describe('assigning a checklist item', () => {
     expect(panoItemMenus(null)).toBe('');
   });
 
-  it('tells the agent which doc the item is from and how to tick it', () => {
+  it('tells the agent which doc the item is from, and that completing the task ticks it', () => {
     const body = panoItemTaskBody({ id: 'd1', title: 'Plan' }, 'ship');
     expect(body).toMatch(/^ship\n\n---\n/);
     expect(body).toContain('`d1` ("Plan")');
-    expect(body).toContain('tick it (`- [x]`)');
+    expect(body).toContain('The item follows this task\'s status, and is ticked when it is completed.');
+    expect(body).not.toContain('save the doc');
   });
 });
 
