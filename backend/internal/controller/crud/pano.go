@@ -41,6 +41,9 @@ type PanoController interface {
 	DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error
 	AddPanoComment(ctx context.Context, req entity.AddPanoCommentRequest) (*entity.AddPanoCommentResponse, error)
 	AttachPanoFiles(ctx context.Context, req entity.AttachPanoFilesRequest) (*entity.AttachPanoFilesResponse, error)
+	// SyncPanoTask writes a task's status into the checklist items assigned
+	// to it, and returns the account and the ids of the docs it changed.
+	SyncPanoTask(ctx context.Context, taskID int64) (userID int64, docIDs []int64, err error)
 }
 
 // Limits on what a Pano doc holds. Anything over one is refused, never cut,
@@ -533,6 +536,75 @@ func panoChecklist(markdown string) (done, total int) {
 		}
 	}
 	return done, total
+}
+
+// panoAssignee ends a checklist item assigned to a task: a link to the task,
+// titled with its status, as the web app writes it.
+var panoAssignee = regexp.MustCompile(`\]\((/workspaces/[0-9A-Za-z]+/tasks/[0-9A-Za-z]+)(?: "[a-z]*")?\)[ \t]*$`)
+
+// syncPanoAssignee gives the checklist items assigned to the task at path its
+// status, ticked once it is completed, and reports whether anything changed.
+func syncPanoAssignee(markdown, path, status string) (string, bool) {
+	lines := strings.Split(markdown, "\n")
+	done := status == "completed" || status == "done"
+	fence := ""
+	changed := false
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if fence != "" {
+			if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fence = trimmed[:3]
+			continue
+		}
+		item := panoTaskItem.FindStringSubmatchIndex(line)
+		link := panoAssignee.FindStringSubmatchIndex(line)
+		if item == nil || link == nil || line[link[2]:link[3]] != path {
+			continue
+		}
+		box := " "
+		if done {
+			box = "x"
+		}
+		next := line[:item[2]] + box + line[item[3]:link[0]] + `](` + path + ` "` + status + `")`
+		if next != line {
+			lines[i] = next
+			changed = true
+		}
+	}
+	return strings.Join(lines, "\n"), changed
+}
+
+func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []int64, error) {
+	t, err := c.repository.SystemGetTask(ctx, taskID)
+	if err != nil {
+		return 0, nil, err
+	}
+	path := "/workspaces/" + monoflake.ID(t.WorkspaceID).String() + "/tasks/" + monoflake.ID(t.ID).String()
+	docs, err := c.repository.ListPanoDocsLinking(ctx, t.UserID, path, time.Now())
+	if err != nil {
+		return t.UserID, nil, err
+	}
+	var changed []int64
+	for _, d := range docs {
+		markdown, ok := syncPanoAssignee(d.Markdown, path, t.Status)
+		if !ok {
+			continue
+		}
+		d.Markdown = markdown
+		d.Excerpt = panoExcerpt(markdown)
+		d.SizeBytes = len(markdown)
+		d.ChecklistDone, d.ChecklistTotal = panoChecklist(markdown)
+		if err := c.repository.SyncPanoChecklist(ctx, d); err != nil {
+			return t.UserID, changed, err
+		}
+		changed = append(changed, d.ID)
+	}
+	return t.UserID, changed, nil
 }
 
 // panoExcerpt is the opening of a doc's markdown, shown on its card.

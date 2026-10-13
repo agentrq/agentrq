@@ -771,6 +771,7 @@ func New(cfg Config) (*App, error) {
 
 			// Forwarded in the background, so a slow read never holds up the topic.
 			go forwardCRUDEvent(context.Background(), repo, bus, event)
+			go syncPanoAssignees(context.Background(), crudCtrl, bus, event)
 		}
 		zlog.Warn().Msg("[app] central SSE forwarder pubsub channel closed")
 	}()

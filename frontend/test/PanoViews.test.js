@@ -75,6 +75,7 @@ async function mount(at) {
       { path: '/pano', component: PanoView },
       { path: '/pano/new', component: PanoDocView },
       { path: '/pano/:id', component: PanoDocView },
+      { path: '/workspaces/:id/tasks/:taskId', component: { render: () => null } },
     ],
   });
   await router.push(at);
@@ -526,6 +527,127 @@ describe('a doc', () => {
       await click($(el, 'pano-comment'));
       expect(lastToast()).toMatchObject({ type: 'error', message: 'cannot comment' });
       expect($(el, 'pano-comment-input').value).toBe('hello');
+    });
+
+    it('pings a workspace @mentioned in a comment, picked from the suggestions', async () => {
+      api.createTask.mockResolvedValue({ task: { id: 't1' } });
+      const { el } = await mount('/pano/d1');
+      const input = $(el, 'pano-comment-input');
+      await type(input, 'ask @o');
+      expect($$(el, 'pano-mention-option').map(text)).toEqual(['@ops', '@Home']);
+      expect($$(el, 'pano-mention-option')[0].getAttribute('aria-selected')).toBe('true');
+      await key(input, { key: 'ArrowDown' });
+      expect($$(el, 'pano-mention-option')[1].getAttribute('aria-selected')).toBe('true');
+      await key(input, { key: 'ArrowUp' });
+      await key(input, { key: 'ArrowUp' });
+      expect($$(el, 'pano-mention-option')[1].getAttribute('aria-selected')).toBe('true');
+      $$(el, 'pano-mention-option')[0].dispatchEvent(new MouseEvent('mouseenter'));
+      await settle();
+      expect((await key(input, { key: 'Enter' })).defaultPrevented).toBe(true);
+      expect(input.value).toBe('ask @ops ');
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      await type(input, 'ask @ops to look');
+      await key(input, { key: 'Enter', metaKey: true });
+      expect(api.addPanoComment).toHaveBeenCalledWith('d1', 'ask @ops to look');
+      expect(api.createTask).toHaveBeenCalledWith('ws2', 'Pano: Release plan', expect.stringContaining('> ask @ops to look'));
+      expect(lastToast()).toMatchObject({ type: 'success', message: 'Pinged 1 workspace' });
+      expect(input.value).toBe('');
+    });
+
+    it('picks a mention with Tab or a click, closes on Esc or blur, and pings several', async () => {
+      api.createTask.mockResolvedValue({ task: { id: 't1' } });
+      const { el } = await mount('/pano/d1');
+      const input = $(el, 'pano-comment-input');
+      await type(input, '@H');
+      expect((await key(input, { key: 'o' })).defaultPrevented).toBe(false);
+      await key(input, { key: 'Tab' });
+      expect(input.value).toBe('@Home ');
+      await type(input, '@Home @');
+      $$(el, 'pano-mention-option')[1].dispatchEvent(new MouseEvent('mousedown', { cancelable: true }));
+      await settle();
+      expect(input.value).toBe('@Home @ops ');
+      await type(input, '@Home @ops @');
+      await key(input, { key: 'Escape' });
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      await type(input, '@Home @ops @');
+      input.dispatchEvent(new Event('blur'));
+      await settle();
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      await type(input, '@Home @ops @nobody');
+      expect($(el, 'pano-mention-menu')).toBeNull();
+      expect((await key(input, { key: 'Enter' })).defaultPrevented).toBe(false);
+      await key(input, { key: 'Enter', ctrlKey: true });
+      // The server makes one task a second, so the second ping waits.
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(api.createTask).toHaveBeenCalledTimes(2);
+      expect(lastToast()).toMatchObject({ type: 'success', message: 'Pinged 2 workspaces' });
+    });
+
+    it('says which workspace it could not ping, and still clears the posted comment', async () => {
+      api.createTask.mockRejectedValueOnce(new Error('rate limit exceeded'));
+      const { el } = await mount('/pano/d1');
+      const input = $(el, 'pano-comment-input');
+      await type(input, 'hey @ops');
+      await key(input, { key: 'Escape' });
+      await click($(el, 'pano-comment'));
+      expect(lastToast()).toMatchObject({ type: 'error', message: 'Could not ping ops: rate limit exceeded' });
+      expect(input.value).toBe('');
+    });
+
+    it('highlights the workspaces a comment mentions', async () => {
+      api.getPanoDoc.mockResolvedValueOnce({ doc: { ...DOC, comments: [{ id: 'c1', body: 'thanks @ops', workspaceId: 'ws1', createdAt: '2026-10-13T12:00:00Z' }] } });
+      const { el } = await mount('/pano/d1');
+      expect($(el, 'pano-comments').querySelector('.pano-mention').textContent).toBe('@ops');
+    });
+
+    it('assigns a checklist item to a workspace from its menu', async () => {
+      api.createTask.mockResolvedValue({ task: { id: 't7' } });
+      const { el, router } = await mount('/pano/d1');
+      const buttons = $(el, 'pano-body').querySelectorAll('[data-pano-assign]');
+      expect(buttons).toHaveLength(2);
+      await click(buttons[0]);
+      expect(buttons[0].getAttribute('aria-expanded')).toBe('true');
+      expect(text($(el, 'pano-item-menu'))).toBe('Assign toHomeops');
+      // Another item's button moves the menu there.
+      await click(buttons[1]);
+      expect(buttons[0].getAttribute('aria-expanded')).toBe('false');
+      expect($$(el, 'pano-item-menu')).toHaveLength(1);
+      await click($$(el, 'pano-item-assign')[1]);
+      expect(api.createTask).toHaveBeenCalledWith('ws2', 'test', expect.stringContaining('A checklist item of the Pano doc `d1`'));
+      expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', expect.objectContaining({ markdown: expect.stringContaining('- [x] test → [@ops](/workspaces/ws2/tasks/t7 "notstarted")') }));
+      expect(lastToast()).toMatchObject({ type: 'success', message: 'Assigned to ops' });
+      expect($(el, 'pano-item-menu')).toBeNull();
+      expect(router.currentRoute.value.path).toBe('/pano/d1');
+    });
+
+    it('shows an assigned item\'s task and status, opens it, and says why an assignment failed', async () => {
+      api.getPanoDoc.mockResolvedValue({ doc: { ...DOC, markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "ongoing")' } });
+      const { el, router } = await mount('/pano/d1');
+      const chip = $(el, 'pano-body').querySelector('a.pano-assignee');
+      expect(chip.dataset.status).toBe('ongoing');
+      expect(chip.title).toBe('Ongoing · task t7');
+      await click($(el, 'pano-body').querySelector('[data-pano-assign]'));
+      expect(text($(el, 'pano-item-task'))).toBe('@opsOngoingt7');
+      expect(text($(el, 'pano-item-menu'))).toContain('Reassign to');
+      await key($(el, 'pano-item-menu'), { key: 'Escape' });
+      expect($(el, 'pano-item-menu')).toBeNull();
+      await click($(el, 'pano-body').querySelector('[data-pano-assign]'));
+      await click($(el, 'pano-title'));
+      expect($(el, 'pano-item-menu')).toBeNull();
+      await click($(el, 'pano-body').querySelector('[data-pano-assign]'));
+      api.createTask.mockRejectedValueOnce(new Error('cannot assign'));
+      await click($$(el, 'pano-item-assign')[0]);
+      expect(lastToast()).toMatchObject({ type: 'error', message: 'cannot assign' });
+      await click(chip);
+      await settle();
+      expect(router.currentRoute.value.path).toBe('/workspaces/ws2/tasks/t7');
+    });
+
+    it('offers no workspace to assign to when there is none', async () => {
+      const { el } = await mount('/pano/d1');
+      useWorkspaceStore().workspaces = [];
+      await click($(el, 'pano-body').querySelector('[data-pano-assign]'));
+      expect(text($(el, 'pano-item-menu'))).toBe('Assign toNo workspaces yet.');
     });
 
     it('attaches one file or several, and says so', async () => {

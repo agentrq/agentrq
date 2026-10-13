@@ -30,6 +30,7 @@ const PanoCLIHint = " Prefer the shell to save tokens: `npx -y @agentrq/agentrq-
 var PanoToolDescription = "Read and write the Pano: markdown docs shared by every workspace of this account. One action per call. " +
 	"save: no id creates a doc and returns its id; with an id it replaces the doc's title and markdown. A title and markdown are required. " +
 	"A markdown task list (- [ ] item, - [x] done) shows as a checklist with its progress. " +
+	"An item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link when you save, and the item follows the task's status, ticked once it is completed. " +
 	"A doc is deleted ttlDays after its last save: 30 by default, or as long as it last asked for. color is its post-it's color, yellow by default. " +
 	"files are linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name), or the save is refused; " +
 	"a linked file the markdown stops linking is dropped. " +

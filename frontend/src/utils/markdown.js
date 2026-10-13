@@ -92,7 +92,10 @@ marked.use({
       // messages as much as in memories, because agents write relative paths
       // constantly. The target is kept as a tooltip so nothing is lost.
       if (href && !FOLLOWABLE_SCHEME.test(href)) {
-        return `<span class="md-dead-link" title="${escapeHtml(href)}">${this.parser.parseInline(token.tokens)}</span>`;
+        // A link's own title rides along, for a page that reads it (the Pano's
+        // assignees keep their task's status there).
+        const linkTitle = token.title ? ` data-link-title="${escapeHtml(token.title)}"` : '';
+        return `<span class="md-dead-link" title="${escapeHtml(href)}"${linkTitle}>${this.parser.parseInline(token.tokens)}</span>`;
       }
 
       return false;

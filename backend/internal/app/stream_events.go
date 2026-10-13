@@ -6,8 +6,10 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -122,4 +124,29 @@ func publishPanoChange(bus *eventbus.Bus, ev entity.CRUDEvent) bool {
 		Payload: map[string]string{"id": monoflake.ID(ev.ResourceID).String(), "action": ev.Action.String()},
 	})
 	return true
+}
+
+// panoTaskSyncer keeps the checklist items assigned to a task in step with it.
+type panoTaskSyncer interface {
+	SyncPanoTask(ctx context.Context, taskID int64) (int64, []int64, error)
+}
+
+// syncPanoAssignees writes a task's new status into the Pano checklist items
+// assigned to it, wherever the status was changed — by the person, the agent
+// or the supervisor — and tells open boards. The pubsub is in-process, so
+// only the instance that changed the task writes the docs.
+func syncPanoAssignees(ctx context.Context, pano panoTaskSyncer, bus *eventbus.Bus, ev entity.CRUDEvent) {
+	if ev.ResourceType != entity.ResourceTask || (ev.Action != entity.ActionTaskUpdate && ev.Action != entity.ActionTaskComplete) {
+		return
+	}
+	uid, ids, err := pano.SyncPanoTask(ctx, ev.ResourceID)
+	if err != nil && !errors.Is(err, base.ErrNotFound) {
+		zlog.Warn().Err(err).Int64("task", ev.ResourceID).Msg("[pano] failed to sync an assigned task's status")
+	}
+	for _, id := range ids {
+		bus.Publish(0, monoflake.ID(uid).String(), eventbus.Event{
+			Type:    panoChangedEvent,
+			Payload: map[string]string{"id": monoflake.ID(id).String(), "action": entity.ActionPanoUpdate.String()},
+		})
+	}
 }

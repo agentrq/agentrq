@@ -107,6 +107,8 @@ type Repository interface {
 	ListPanoComments(ctx context.Context, docID int64) ([]model.PanoComment, error)
 	AddPanoComment(ctx context.Context, userID int64, c model.PanoComment) error
 	DeletePanoDoc(ctx context.Context, userID, id int64) ([]string, error)
+	ListPanoDocsLinking(ctx context.Context, userID int64, path string, now time.Time) ([]model.PanoDoc, error)
+	SyncPanoChecklist(ctx context.Context, d model.PanoDoc) error
 
 	// SiteShare — a website shared from the Chrome extension into a
 	// workspace. Unique on (user, origin): one site, one workspace.

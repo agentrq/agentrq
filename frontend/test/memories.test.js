@@ -173,6 +173,12 @@ describe('memory links in rendered markdown', () => {
     expect(root.querySelector('.md-dead-link')?.textContent).toBe('notes');
     // The target is kept where it can still be read.
     expect(root.querySelector('.md-dead-link')?.getAttribute('title')).toBe('deploys.md');
+    expect(root.querySelector('.md-dead-link')?.hasAttribute('data-link-title')).toBe(false);
+  });
+
+  it('keeps a dead link\'s own title, for a page that reads it', () => {
+    const root = render('[@ops](/workspaces/w/tasks/t "ongoing")');
+    expect(root.querySelector('.md-dead-link')?.dataset.linkTitle).toBe('ongoing');
   });
 
   it('leaves links that do work alone', () => {

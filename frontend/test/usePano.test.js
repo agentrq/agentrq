@@ -34,6 +34,19 @@ import {
   togglePanoCheckbox,
   usePanoBoard,
   usePanoDoc,
+  PANO_TASK_STATUSES,
+  assignPanoItem,
+  insertMention,
+  mentionMatches,
+  mentionQuery,
+  mentionedWorkspaces,
+  panoAssignees,
+  panoItemMenus,
+  panoItemTaskBody,
+  panoItemText,
+  panoMentionTaskBody,
+  panoMentions,
+  pingPanoWorkspaces,
 } from '../src/composables/usePano';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -594,6 +607,38 @@ describe('one doc', () => {
     expect(d.busy.value).toBe(false);
   });
 
+  it('pings each workspace a comment mentions, after posting it', async () => {
+    const api = fakeApi({ createTask: vi.fn((ws) => Promise.resolve({ task: { id: `t-${ws}` } })) });
+    const d = usePanoDoc('d1', { api });
+    const wait = vi.fn(() => Promise.resolve());
+    const pinged = await d.comment('@api please', [{ id: 'w1', name: 'api' }, { id: 'w2', name: 'web' }], { wait });
+    expect(pinged).toEqual({ tasks: [{ id: 't-w1' }, { id: 't-w2' }], failed: [] });
+    expect(wait).toHaveBeenCalledTimes(1);
+    expect(api.createTask).toHaveBeenCalledWith('w1', 'Pano: Plan', panoMentionTaskBody(DOC, '@api please'));
+  });
+
+  it('assigns a checklist item: a task for the workspace, linked from the item', async () => {
+    const api = fakeApi({
+      getPanoDoc: vi.fn(() => Promise.resolve({ doc: { ...DOC, markdown: '- [ ] ship it\n- [ ] docs' } })),
+      createTask: vi.fn(() => Promise.resolve({ task: { id: 't9' } })),
+    });
+    const d = usePanoDoc('d1', { api });
+    await d.load();
+    const p = d.assignItem(0, { id: 'w1', name: 'api' });
+    expect(d.busy.value).toBe(true);
+    expect(await p).toEqual({ id: 't9' });
+    expect(api.createTask).toHaveBeenCalledWith('w1', 'ship it', panoItemTaskBody({ ...DOC, markdown: '- [ ] ship it\n- [ ] docs' }, 'ship it'));
+    expect(api.updatePanoDoc).toHaveBeenCalledWith('d1', {
+      title: 'Plan', markdown: '- [ ] ship it → [@api](/workspaces/w1/tasks/t9 "notstarted")\n- [ ] docs', ttlDays: 0, color: '', files: [],
+    });
+    expect(api.getPanoDoc).toHaveBeenCalledTimes(2);
+    expect(d.busy.value).toBe(false);
+    api.createTask.mockRejectedValueOnce(new Error('no'));
+    await expect(d.assignItem(0, { id: 'w1', name: 'api' })).rejects.toThrow('no');
+    expect(api.updatePanoDoc).toHaveBeenCalledTimes(1);
+    expect(d.busy.value).toBe(false);
+  });
+
   it('deletes the doc', async () => {
     const api = fakeApi();
     const d = usePanoDoc('d1', { api });
@@ -608,7 +653,7 @@ describe('one doc', () => {
   it('comments and reads the doc back', async () => {
     const api = fakeApi();
     const d = usePanoDoc('d1', { api });
-    await d.comment('looks good');
+    expect(await d.comment('looks good')).toEqual({ tasks: [], failed: [] });
     expect(api.addPanoComment).toHaveBeenCalledWith('d1', 'looks good');
     expect(api.getPanoDoc).toHaveBeenCalledTimes(1);
     api.addPanoComment.mockRejectedValueOnce(new Error('no'));
@@ -657,3 +702,121 @@ describe('panoTilt', () => {
     expect(typeof panoTilt(undefined)).toBe('number')
   })
 })
+
+describe('assigning a checklist item', () => {
+  const PATH = '/workspaces/w1/tasks/t1';
+
+  it('reads an item\'s text without its assignee, skipping fenced code', () => {
+    const md = '```\n- [ ] code\n```\n- [ ] first → [@a](/workspaces/w/tasks/t "ongoing")\n* [x] second';
+    expect(panoItemText(md, 0)).toBe('first');
+    expect(panoItemText(md, 1)).toBe('second');
+    expect(panoItemText(md, 2)).toBe('');
+    expect(panoItemText(undefined, 0)).toBe('');
+  });
+
+  it('ends the item with its assignee, replacing an earlier one, and leaves others', () => {
+    expect(assignPanoItem('- [ ] a\n- [ ] b', 1, 'api', PATH)).toBe(`- [ ] a\n- [ ] b → [@api](${PATH} "notstarted")`);
+    expect(assignPanoItem('- [x] a → [@old](/workspaces/w0/tasks/t0 "completed")', 0, 'new [x]', PATH)).toBe(`- [x] a → [@new x](${PATH} "notstarted")`);
+    expect(assignPanoItem('- [ ] a', 3, 'api', PATH)).toBe('- [ ] a');
+    expect(assignPanoItem(null, 0, 'api', PATH)).toBe('');
+  });
+
+  it('makes an assignee a chip with its task\'s status, linked or not', () => {
+    const html = `<li>x → <span class="md-dead-link" title="${PATH}" data-link-title="blocked">@api</span></li>`;
+    expect(panoAssignees(html)).toBe(`<li>x <a class="pano-assignee" href="${PATH}" data-pano-task="${PATH}" data-status="blocked" title="Blocked · task t1"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Blocked</span></a></li>`);
+    expect(panoAssignees(html, { link: false })).toBe('<li>x <span class="pano-assignee" data-status="blocked" title="Blocked · task t1"><span class="pano-status" aria-hidden="true"></span>@api<span class="pano-status-label">Blocked</span></span></li>');
+  });
+
+  it('reads a missing or unknown status as not started, and leaves other dead links', () => {
+    expect(panoAssignees(`<span class="md-dead-link" title="${PATH}">@a</span>`)).toContain('data-status="notstarted"');
+    expect(panoAssignees(`<span class="md-dead-link" title="${PATH}" data-link-title="nope">@a</span>`)).toContain('title="Not started · task t1"');
+    const other = '→ <span class="md-dead-link" title="notes.md">notes</span>';
+    expect(panoAssignees(other)).toBe(other);
+    expect(panoAssignees(undefined)).toBe('');
+    expect(PANO_TASK_STATUSES.done).toBe('Completed');
+  });
+
+  it('puts a menu button after each checkbox', () => {
+    const html = panoItemMenus('<li><input type="checkbox"> a</li><li><input type="text"></li>');
+    expect(html.match(/data-pano-assign/g)).toHaveLength(1);
+    expect(html).toMatch(/^<li><input type="checkbox"><button type="button" class="pano-assign"[^>]*aria-label="Assign to a workspace"[^>]*><svg/);
+    expect(panoItemMenus(null)).toBe('');
+  });
+
+  it('tells the agent which doc the item is from and how to tick it', () => {
+    const body = panoItemTaskBody({ id: 'd1', title: 'Plan' }, 'ship');
+    expect(body).toMatch(/^ship\n\n---\n/);
+    expect(body).toContain('`d1` ("Plan")');
+    expect(body).toContain('tick it (`- [x]`)');
+  });
+});
+
+describe('mentioning a workspace in a comment', () => {
+  const WS = [{ id: 'w1', name: 'api' }, { id: 'w2', name: 'api-v2' }, { id: 'w3', name: 'web app' }, { id: 'w4', name: 'rapid' }];
+
+  it('finds the mention being typed at the caret', () => {
+    expect(mentionQuery('hi @ap', 6)).toEqual({ start: 3, query: 'ap' });
+    expect(mentionQuery('@', 1)).toEqual({ start: 0, query: '' });
+    expect(mentionQuery('mail a@b', 8)).toBeNull();
+    expect(mentionQuery('hi @api done', 12)).toBeNull();
+    expect(mentionQuery(undefined, 0)).toBeNull();
+  });
+
+  it('suggests the workspaces starting with it first, then containing it', () => {
+    expect(mentionMatches(WS, 'AP').map((w) => w.id)).toEqual(['w1', 'w2', 'w3', 'w4']);
+    expect(mentionMatches(WS, 'app').map((w) => w.id)).toEqual(['w3']);
+    expect(mentionMatches(WS, '', 2).map((w) => w.id)).toEqual(['w1', 'w2']);
+    expect(mentionMatches(undefined, undefined)).toEqual([]);
+  });
+
+  it('puts the picked name in place of what was typed', () => {
+    expect(insertMention('hi @ap there', 3, 6, 'api')).toEqual({ value: 'hi @api  there', caret: 8 });
+    expect(insertMention(undefined, 0, 0, 'web app')).toEqual({ value: '@web app ', caret: 9 });
+  });
+
+  it('pings only the workspaces named whole', () => {
+    expect(mentionedWorkspaces('@api-v2 and @web app, cc@rapid', WS).map((w) => w.id)).toEqual(['w2', 'w3']);
+    expect(mentionedWorkspaces('@api.', WS).map((w) => w.id)).toEqual(['w1']);
+    expect(mentionedWorkspaces(undefined, undefined)).toEqual([]);
+    expect(mentionedWorkspaces('@x', [{ id: 'w', name: '' }])).toEqual([]);
+  });
+
+  it('highlights the mentions in a rendered comment, never inside a tag', () => {
+    const html = '<p>@api-v2 and <a title="@api">@api</a> &amp; @web app</p>';
+    expect(panoMentions(html, WS)).toBe('<p><span class="pano-mention">@api-v2</span> and <a title="@api"><span class="pano-mention">@api</span></a> &amp; <span class="pano-mention">@web app</span></p>');
+    expect(panoMentions('<p>@a&lt;b</p>', [{ id: 'x', name: 'a<b' }])).toBe('<p><span class="pano-mention">@a&lt;b</span></p>');
+    expect(panoMentions('<p>@api</p>', [])).toBe('<p>@api</p>');
+    expect(panoMentions(undefined, undefined)).toBe('');
+    expect(panoMentions(undefined, WS)).toBe('');
+  });
+
+  it('gives each mentioned workspace a task that quotes the comment, a second apart', async () => {
+    const api = { createTask: vi.fn((ws) => Promise.resolve({ task: { id: `t-${ws}` } })) };
+    const wait = vi.fn(() => Promise.resolve());
+    const doc = { id: 'd1', title: 'Plan' };
+    expect(await pingPanoWorkspaces(doc, 'one\ntwo', WS.slice(0, 3), { api, wait })).toEqual({ tasks: [{ id: 't-w1' }, { id: 't-w2' }, { id: 't-w3' }], failed: [] });
+    expect(wait.mock.calls).toEqual([[1100], [1100]]);
+    expect(api.createTask).toHaveBeenCalledWith('w1', 'Pano: Plan', panoMentionTaskBody(doc, 'one\ntwo'));
+    expect(panoMentionTaskBody(doc, 'one\ntwo')).toMatch(/^> one\n> two\n\n---\nYou were mentioned in a comment on the Pano doc `d1` \("Plan"\)/);
+  });
+
+  it('keeps pinging past a workspace it could not, and says which and why', async () => {
+    const api = { createTask: vi.fn()
+      .mockRejectedValueOnce(new Error('rate limit exceeded'))
+      .mockRejectedValueOnce(new Error(''))
+      .mockResolvedValueOnce({ task: { id: 't3' } }) };
+    const res = await pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 3), { api, wait: () => Promise.resolve() });
+    expect(res).toEqual({ tasks: [{ id: 't3' }], failed: [{ workspace: WS[0], error: 'rate limit exceeded' }, { workspace: WS[1], error: 'failed' }] });
+  });
+
+  it('waits by default, on a real timer', async () => {
+    vi.useFakeTimers();
+    const api = { createTask: vi.fn(() => Promise.resolve({ task: { id: 't' } })) };
+    const p = pingPanoWorkspaces({ id: 'd1', title: 'Plan' }, 'hi', WS.slice(0, 2), { api });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(api.createTask).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100);
+    expect((await p).tasks).toHaveLength(2);
+    vi.useRealTimers();
+  });
+});

@@ -15,7 +15,7 @@ import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoBoard, panoAuthor, panoColor, panoTilt, panoInitial, timeAgo, expiresLabel, isOwnPanoDoc, recolorPanoDoc, PANO_COLORS,
-  panoCheckable, panoCheckboxIndex, checkPanoItem,
+  panoCheckable, panoCheckboxIndex, checkPanoItem, panoAssignees,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
@@ -155,10 +155,10 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
           <span aria-hidden="true" :class="panoColor(doc.color).tape" class="absolute -top-2.5 left-1/2 -translate-x-1/2 -rotate-2 w-20 h-5 rounded-[2px]"></span>
 
           <router-link :to="`/pano/${doc.id}`" data-test="pano-open" class="flex flex-col flex-1 min-h-0 px-5 pt-6 pb-2 focus:outline-none">
-            <h2 :class="panoColor(doc.color).ink" class="text-lg font-black leading-snug line-clamp-2 break-words">{{ doc.title }}</h2>
+            <h2 class="text-lg font-black leading-snug line-clamp-2 break-words text-[#0f172a]">{{ doc.title }}</h2>
             <div class="relative mt-2 flex-1 min-h-0 overflow-hidden">
               <div data-test="pano-excerpt" class="md-body text-[13px] leading-relaxed [&_img]:hidden"
-                v-html="panoCheckable(renderMarkdown(doc.excerpt))" @click="onExcerptClick(doc, $event)"></div>
+                v-html="panoAssignees(panoCheckable(renderMarkdown(doc.excerpt)), { link: false })" @click="onExcerptClick(doc, $event)"></div>
             </div>
             <PanoProgress :doc="doc" class="mt-3 shrink-0" />
           </router-link>

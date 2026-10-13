@@ -193,13 +193,9 @@ export function formatMarkdown(value, start, end, kind) {
 // A task-list item, as the server counts one: a list marker, then [ ] or [x].
 const TASK_ITEM = /^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)([ xX])(\](?:[ \t]|$))/
 
-/**
- * The markdown with its task-list item number `index` (from 0, in the order
- * they render) checked or unchecked; fenced code holds none, as on the server.
- * Unchanged when there is no such item.
- */
-export function togglePanoCheckbox(markdown, index, checked) {
-  const lines = String(markdown || '').split('\n')
+// The line of task-list item number `index` (from 0, in the order they
+// render) and its match, or null; fenced code holds none, as on the server.
+function findTaskItem(lines, index) {
   let fence = ''
   let seen = 0
   for (let i = 0; i < lines.length; i++) {
@@ -213,13 +209,166 @@ export function togglePanoCheckbox(markdown, index, checked) {
       continue
     }
     const m = TASK_ITEM.exec(lines[i])
-    if (!m) continue
-    if (seen++ === index) {
-      lines[i] = m[1] + (checked ? 'x' : ' ') + m[3] + lines[i].slice(m[0].length)
-      return lines.join('\n')
-    }
+    if (m && seen++ === index) return { line: i, match: m }
+  }
+  return null
+}
+
+/**
+ * The markdown with its task-list item number `index` checked or unchecked.
+ * Unchanged when there is no such item.
+ */
+export function togglePanoCheckbox(markdown, index, checked) {
+  const lines = String(markdown || '').split('\n')
+  const item = findTaskItem(lines, index)
+  if (item) {
+    const { line, match: m } = item
+    lines[line] = m[1] + (checked ? 'x' : ' ') + m[3] + lines[line].slice(m[0].length)
   }
   return lines.join('\n')
+}
+
+// Who a checklist item is assigned to: a link to the task, titled with its
+// status, closing its line. The server keeps the status and the box in step.
+const ASSIGNEE = /[ \t]*→ \[@[^\]\n]*\]\(\/workspaces\/[^/)\s]+\/tasks\/[^/)\s]+(?: "[a-z]*")?\)[ \t]*$/
+const TASK_PATH = /^\/workspaces\/[^/"\s]+\/tasks\/[^/"\s]+$/
+
+/** The text of task-list item number `index`, without its assignee; '' when there is none. */
+export function panoItemText(markdown, index) {
+  const lines = String(markdown || '').split('\n')
+  const item = findTaskItem(lines, index)
+  return item ? lines[item.line].slice(item.match[0].length).replace(ASSIGNEE, '').trim() : ''
+}
+
+/**
+ * The markdown with task-list item number `index` assigned to a workspace's
+ * task: ` → [@name](/workspaces/<id>/tasks/<id> "notstarted")` ends its line,
+ * in place of an earlier assignee. An agent reading the doc sees who has it, and where.
+ */
+export function assignPanoItem(markdown, index, name, path) {
+  const lines = String(markdown || '').split('\n')
+  const item = findTaskItem(lines, index)
+  if (item) {
+    const label = String(name).replace(/[[\]\n]/g, '')
+    lines[item.line] = `${lines[item.line].replace(ASSIGNEE, '')} → [@${label}](${path} "notstarted")`
+  }
+  return lines.join('\n')
+}
+
+// The desktop top bar's menu icon.
+const DOTS = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.75"></circle><circle cx="12" cy="12" r="1.75"></circle><circle cx="12" cy="19" r="1.75"></circle></svg>'
+
+/** What a task's status reads as, on an assignee. */
+export const PANO_TASK_STATUSES = {
+  notstarted: 'Not started',
+  ongoing: 'Ongoing',
+  blocked: 'Blocked',
+  completed: 'Completed',
+  done: 'Completed',
+  rejected: 'Rejected',
+}
+
+/**
+ * Rendered markdown with each assignee — a link to a task, which the renderer
+ * leaves as text — made a chip with the task's status: a link that opens the
+ * task, or with `link: false` (inside a card that is a link) a plain chip.
+ */
+export function panoAssignees(html, { link = true } = {}) {
+  return String(html || '').replace(/(?:→ )?<span class="md-dead-link" title="([^"]*)"(?: data-link-title="([^"]*)")?>([^<]*)<\/span>/g, (span, href, status = '', text) => {
+    if (!TASK_PATH.test(href)) return span
+    const known = Object.hasOwn(PANO_TASK_STATUSES, status) ? status : 'notstarted'
+    const title = `${PANO_TASK_STATUSES[known]} · task ${href.split('/').pop()}`
+    const inner = `<span class="pano-status" aria-hidden="true"></span>${text}<span class="pano-status-label">${PANO_TASK_STATUSES[known]}</span>`
+    return link
+      ? `<a class="pano-assignee" href="${href}" data-pano-task="${href}" data-status="${known}" title="${title}">${inner}</a>`
+      : `<span class="pano-assignee" data-status="${known}" title="${title}">${inner}</span>`
+  })
+}
+
+/** Rendered markdown with a menu button on each checklist item, to assign it. */
+export function panoItemMenus(html) {
+  return String(html || '').replace(/<input\b[^>]*type="checkbox"[^>]*>/g, (tag) => `${tag}<button type="button" class="pano-assign" data-pano-assign="" title="Assign to a workspace" aria-label="Assign to a workspace" aria-haspopup="menu">${DOTS}</button>`)
+}
+
+/** The body of the task a checklist item becomes: what it is, and how to tick it. */
+export function panoItemTaskBody(doc, item) {
+  return `${item}\n\n---\nA checklist item of the Pano doc \`${doc.id}\` ("${doc.title}"). Read the doc with the pano tool for its context, files and comments. When the item is done, tick it (\`- [x]\`) and save the doc with the pano tool.`
+}
+
+/**
+ * Where an @mention is being typed: the `@` before the caret, at a word's
+ * start, and what follows it. Null when the caret is not in one.
+ */
+export function mentionQuery(text, caret) {
+  const m = /(?:^|\s)@([^\s@]{0,40})$/.exec(String(text || '').slice(0, caret))
+  return m ? { start: caret - m[1].length - 1, query: m[1] } : null
+}
+
+/** The workspaces an @mention being typed could name, those starting with it first. */
+export function mentionMatches(workspaces, query, limit = 6) {
+  const q = String(query || '').toLowerCase()
+  const named = (workspaces || []).filter((w) => w.name.toLowerCase().includes(q))
+  return [...named.filter((w) => w.name.toLowerCase().startsWith(q)), ...named.filter((w) => !w.name.toLowerCase().startsWith(q))].slice(0, limit)
+}
+
+/** The text with the @mention typed from `start` to `caret` replaced by a workspace's name. */
+export function insertMention(text, start, caret, name) {
+  const value = String(text || '')
+  const mention = `@${name} `
+  return { value: value.slice(0, start) + mention + value.slice(caret), caret: start + mention.length }
+}
+
+/** The workspaces a comment @mentions by their whole name, each once. */
+export function mentionedWorkspaces(text, workspaces) {
+  const body = String(text || '')
+  return (workspaces || []).filter((w) => w.name && new RegExp(`(?:^|\\s)@${escapeRegExp(w.name)}(?![\\w-])`).test(body))
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** A rendered comment with each workspace it @mentions highlighted, outside its tags. */
+export function panoMentions(html, workspaces) {
+  const names = (workspaces || []).map((w) => w.name).filter(Boolean).sort((a, b) => b.length - a.length)
+  if (!names.length) return String(html || '')
+  const escaped = names.map((n) => escapeRegExp(escapeHtml(n)))
+  const mention = new RegExp(`@(${escaped.join('|')})(?![\\w-])`, 'g')
+  return String(html || '').split(/(<[^>]*>)/).map((part) => (part.startsWith('<') ? part : part.replace(mention, '<span class="pano-mention">@$1</span>'))).join('')
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** The body of the task an @mention in a comment becomes. */
+export function panoMentionTaskBody(doc, comment) {
+  const quoted = comment.split('\n').map((line) => `> ${line}`).join('\n')
+  return `${quoted}\n\n---\nYou were mentioned in a comment on the Pano doc \`${doc.id}\` ("${doc.title}"). Read the doc with the pano tool and \`includeComments\`, then answer with a comment on it.`
+}
+
+// The server makes at most one task a second for an account.
+const PING_SPACING_MS = 1100
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Gives each workspace a comment mentions a task to answer it, a second apart
+ * as the server allows. Returns the tasks made, and the workspaces it could not
+ * ping with why: the comment is posted by then, so one failure stops nothing.
+ */
+export async function pingPanoWorkspaces(doc, comment, workspaces, { api, wait = sleep }) {
+  const tasks = []
+  const failed = []
+  for (const [i, w] of workspaces.entries()) {
+    if (i > 0) await wait(PING_SPACING_MS)
+    try {
+      const res = await api.createTask(w.id, `Pano: ${doc.title}`, panoMentionTaskBody(doc, comment))
+      tasks.push(res.task)
+    } catch (err) {
+      failed.push({ workspace: w, error: err.message || 'failed' })
+    }
+  }
+  return { tasks, failed }
 }
 
 /** Rendered markdown with its task-list checkboxes made clickable. */
@@ -398,6 +547,25 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     }
   }
 
+  /**
+   * Assigns checklist item number `index` to a workspace: a task for its agent,
+   * linked from the item. Returns the task.
+   */
+  async function assignItem(index, workspace) {
+    busy.value = true
+    try {
+      const d = doc.value
+      const item = panoItemText(d.markdown, index)
+      const { task } = await api.createTask(workspace.id, item.slice(0, 200), panoItemTaskBody(d, item))
+      const markdown = assignPanoItem(d.markdown, index, workspace.name, `/workspaces/${workspace.id}/tasks/${task.id}`)
+      await api.updatePanoDoc(id, { title: d.title, markdown, ttlDays: 0, color: '', files: [] })
+      await load({ quiet: true })
+      return task
+    } finally {
+      busy.value = false
+    }
+  }
+
   async function remove() {
     busy.value = true
     try {
@@ -407,11 +575,13 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
     }
   }
 
-  async function comment(body) {
+  /** Posts a comment, then pings each workspace it mentions; see pingPanoWorkspaces. */
+  async function comment(body, mentions = [], { wait } = {}) {
     busy.value = true
     try {
       await api.addPanoComment(id, body)
       await load({ quiet: true })
+      return await pingPanoWorkspaces(doc.value, body, mentions, { api, wait })
     } finally {
       busy.value = false
     }
@@ -433,6 +603,6 @@ export function usePanoDoc(id, { api, color = PANO_COLORS[0].name }) {
 
   return {
     doc, loading, error, busy, editing, draft,
-    load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, remove, comment, attach,
+    load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
   }
 }

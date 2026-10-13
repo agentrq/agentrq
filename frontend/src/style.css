@@ -192,6 +192,24 @@ html, body, #app {
 .pano-paper .md-body li > input[type="checkbox"] { appearance: none; width: 1.05em; height: 1.05em; margin: 0 0.55em 0 0; vertical-align: -0.16em; border: 1.5px solid currentColor; border-radius: 9999px; opacity: 0.55; cursor: pointer; background: transparent center / 70% no-repeat; }
 .pano-paper .md-body li > input[type="checkbox"]:checked { opacity: 1; border-color: var(--pano-ink); background-color: var(--pano-ink); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
 .pano-paper .md-body li > input[type="checkbox"]:hover { opacity: 1; }
+/* A checklist item's menu, shown on hover; its assignee, a chip naming the workspace. */
+.pano-paper .md-body li:has(> .pano-assign) { position: relative; padding-right: 1.75em; }
+.pano-paper .md-body .pano-assign { position: absolute; right: 0; top: 0.1em; display: inline-flex; align-items: center; justify-content: center; width: 1.4em; height: 1.4em; border-radius: 0.375rem; color: inherit; opacity: 0; cursor: pointer; transition: opacity 0.15s, background-color 0.15s; }
+.pano-paper .md-body .pano-assign svg { width: 1em; height: 1em; }
+.pano-paper .md-body li:hover > .pano-assign, .pano-paper .md-body .pano-assign:focus-visible, .pano-paper .md-body .pano-assign[aria-expanded="true"] { opacity: 0.7; }
+.pano-paper .md-body .pano-assign:hover { opacity: 1; background-color: rgba(0,0,0,0.08); }
+@media (hover: none) { .pano-paper .md-body .pano-assign { opacity: 0.6; } }
+.pano-paper .md-body .pano-assignee { display: inline-flex; align-items: center; gap: 0.35em; margin-left: 0.3em; padding: 0 0.55em; border-radius: 9999px; background: rgba(255,255,255,0.65); border: 1px solid rgba(0,0,0,0.12); color: #0f172a; font-size: 0.78em; font-weight: 700; line-height: 1.7; text-decoration: none; vertical-align: 0.05em; white-space: nowrap; }
+a.pano-assignee { cursor: pointer; }
+.pano-paper .md-body a.pano-assignee:hover { background: rgba(255,255,255,0.95); }
+.pano-assignee .pano-status { width: 0.55em; height: 0.55em; border-radius: 9999px; background: #94a3b8; }
+.pano-assignee[data-status="ongoing"] .pano-status { background: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.25); }
+.pano-assignee[data-status="blocked"] .pano-status { background: #d97706; }
+.pano-assignee[data-status="completed"] .pano-status, .pano-assignee[data-status="done"] .pano-status { background: #16a34a; }
+.pano-assignee[data-status="rejected"] .pano-status { background: #dc2626; }
+.pano-assignee .pano-status-label { font-weight: 500; opacity: 0.65; }
+.pano-mention { font-weight: 700; color: rgb(37 99 235); }
+.dark .pano-mention { color: rgb(96 165 250); }
 .md-body a { text-decoration: underline; }
 .md-body a:hover { opacity: 0.75; }
 /* A link to a local file carries no href — the app opens it rather than the

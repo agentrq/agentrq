@@ -279,3 +279,35 @@ func TestPanoRepository_AddNoFiles(t *testing.T) {
 		t.Errorf("AddPanoFiles with no files returned %v, want nil", err)
 	}
 }
+
+// The docs linking a task are the account's live ones whose markdown holds
+// its path, and a sync writes their checklist without saving them.
+func TestPanoRepository_SyncsTheDocsLinkingATask(t *testing.T) {
+	ctx := context.Background()
+	_, r := panoDB(t)
+	const path = "/workspaces/a/tasks/b"
+	for _, d := range []model.PanoDoc{
+		{ID: 1, UserID: skUser, Title: "linking", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
+		{ID: 2, UserID: skUser, Title: "expired", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(-time.Hour)},
+		{ID: 3, UserID: skUser + 1, Title: "theirs", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
+		{ID: 4, UserID: skUser, Title: "unlinked", Markdown: "- [ ] x", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
+	} {
+		if err := r.SavePanoDoc(ctx, d, true, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	docs, err := r.ListPanoDocsLinking(ctx, skUser, path, panoNow)
+	if err != nil || len(docs) != 1 || docs[0].ID != 1 || docs[0].Markdown == "" {
+		t.Fatalf("ListPanoDocsLinking = %+v, %v, want doc 1 with its markdown", docs, err)
+	}
+	d := docs[0]
+	d.Markdown, d.Excerpt, d.SizeBytes, d.ChecklistDone, d.ChecklistTotal = "- [x] done", "- [x] done", 10, 1, 1
+	d.UpdatedAt, d.Title = panoNow.Add(time.Minute), "ignored"
+	if err := r.SyncPanoChecklist(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.GetPanoDoc(ctx, skUser, 1, panoNow)
+	if err != nil || got.Markdown != "- [x] done" || got.ChecklistDone != 1 || got.SizeBytes != 10 || got.Title != "linking" || !got.UpdatedAt.Equal(panoNow) {
+		t.Errorf("after the sync the doc is %+v, %v, want the checklist written and the rest kept", got, err)
+	}
+}

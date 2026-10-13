@@ -32,6 +32,17 @@ Only the board has a filter, by title.
 Limits: a title of 200 characters, markdown of 256 KiB, files of 2 MiB each and
 100 per doc, and comments of 16 KiB.
 
+A checklist item can be **assigned to a workspace** from its ⋮ menu: a task is
+made there for the item, naming the doc, and the item ends with a chip naming
+the workspace and the task's status. The chip follows the task — not started,
+ongoing, blocked, completed — wherever its status changes, and the item is
+ticked once the task is completed. In the markdown it is a link:
+`- [ ] backend → [@api](/workspaces/<id>/tasks/<id> "ongoing")`.
+
+**@ a workspace** in a comment to ping its agent: the comment box suggests
+workspaces as you type, and each one the comment names gets a task, "Pano:
+<title>", that quotes the comment and asks the agent to answer with a comment.
+
 On the board, your own docs come first, newest first, and the agents' docs follow, newest first.
 A doc you wrote has a button that turns it into a task in a workspace you
 choose. The doc stays on the board.

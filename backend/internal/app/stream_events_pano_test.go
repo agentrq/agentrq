@@ -7,12 +7,14 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/mustafaturan/monoflake"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -83,5 +85,61 @@ func TestForwardCRUDEvent_PanoNeedsNoWorkspace(t *testing.T) {
 		}
 	default:
 		t.Fatal("the owner's stream got nothing, want pano.changed")
+	}
+}
+
+type fakePanoSync struct {
+	calls []int64
+	uid   int64
+	ids   []int64
+	err   error
+}
+
+func (f *fakePanoSync) SyncPanoTask(_ context.Context, taskID int64) (int64, []int64, error) {
+	f.calls = append(f.calls, taskID)
+	return f.uid, f.ids, f.err
+}
+
+// A task's update or completion syncs the Pano items assigned to it, and each
+// doc changed reaches its owner's board; other events sync nothing.
+func TestSyncPanoAssignees(t *testing.T) {
+	const owner = int64(7)
+	for _, tc := range []struct {
+		name  string
+		ev    entity.CRUDEvent
+		sync  fakePanoSync
+		calls int
+		sent  int
+	}{
+		{"an update syncs and announces each doc", entity.CRUDEvent{Action: entity.ActionTaskUpdate, ResourceType: entity.ResourceTask, ResourceID: 5}, fakePanoSync{uid: owner, ids: []int64{11, 12}}, 1, 2},
+		{"a completion syncs", entity.CRUDEvent{Action: entity.ActionTaskComplete, ResourceType: entity.ResourceTask, ResourceID: 5}, fakePanoSync{uid: owner}, 1, 0},
+		{"a failure is logged, and what changed is still announced", entity.CRUDEvent{Action: entity.ActionTaskUpdate, ResourceType: entity.ResourceTask, ResourceID: 5}, fakePanoSync{uid: owner, ids: []int64{11}, err: errors.New("boom")}, 1, 1},
+		{"a deleted task is quiet", entity.CRUDEvent{Action: entity.ActionTaskUpdate, ResourceType: entity.ResourceTask, ResourceID: 5}, fakePanoSync{err: base.ErrNotFound}, 1, 0},
+		{"a created task links nothing yet", entity.CRUDEvent{Action: entity.ActionTaskCreate, ResourceType: entity.ResourceTask, ResourceID: 5}, fakePanoSync{}, 0, 0},
+		{"a Pano event is not a task's", entity.CRUDEvent{Action: entity.ActionPanoUpdate, ResourceType: entity.ResourcePano, ResourceID: 5}, fakePanoSync{}, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := eventbus.New()
+			ch := bus.Subscribe(0, monoflake.ID(owner).String())
+			syncPanoAssignees(context.Background(), &tc.sync, bus, tc.ev)
+			if len(tc.sync.calls) != tc.calls {
+				t.Fatalf("synced %d times, want %d", len(tc.sync.calls), tc.calls)
+			}
+			for i := 0; i < tc.sent; i++ {
+				select {
+				case line := <-ch:
+					if !strings.Contains(string(line), `"pano.changed"`) || !strings.Contains(string(line), monoflake.ID(tc.sync.ids[i]).String()) {
+						t.Fatalf("the owner's stream got %s, want pano.changed for doc %d", line, tc.sync.ids[i])
+					}
+				default:
+					t.Fatalf("the owner's stream got %d events, want %d", i, tc.sent)
+				}
+			}
+			select {
+			case line := <-ch:
+				t.Fatalf("the owner's stream got an extra %s", line)
+			default:
+			}
+		})
 	}
 }

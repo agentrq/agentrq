@@ -738,3 +738,92 @@ func TestPano_SaveCountsTheChecklist(t *testing.T) {
 		t.Errorf("after an update the list has %+v, %v, want the checklist 2 of 2", list, err)
 	}
 }
+
+func TestSyncPanoAssignee(t *testing.T) {
+	const path = "/workspaces/ws1/tasks/t1"
+	for _, tc := range []struct {
+		name, markdown, status, want string
+		changed                      bool
+	}{
+		{"a new assignee takes the status", "- [ ] ship → [@api](" + path + ")", "ongoing", "- [ ] ship → [@api](" + path + ` "ongoing")`, true},
+		{"completed ticks the box", "- [ ] ship → [@api](" + path + ` "ongoing")`, "completed", "- [x] ship → [@api](" + path + ` "completed")`, true},
+		{"done ticks it too", "* [ ] ship → [@api](" + path + ")", "done", "* [x] ship → [@api](" + path + ` "done")`, true},
+		{"reopened unticks it", "1. [X] ship → [@api](" + path + ` "completed")`, "blocked", "1. [ ] ship → [@api](" + path + ` "blocked")`, true},
+		{"the same status is no change", "- [ ] ship → [@api](" + path + ` "ongoing")`, "ongoing", "- [ ] ship → [@api](" + path + ` "ongoing")`, false},
+		{"another task's item is left", "- [ ] ship → [@api](/workspaces/ws1/tasks/t2)", "completed", "- [ ] ship → [@api](/workspaces/ws1/tasks/t2)", false},
+		{"a link that is not an item is left", "see [@api](" + path + ")", "completed", "see [@api](" + path + ")", false},
+		{"fenced code is text", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~", "completed", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~", false},
+	} {
+		got, changed := syncPanoAssignee(tc.markdown, path, tc.status)
+		if got != tc.want || changed != tc.changed {
+			t.Errorf("%s: syncPanoAssignee = %q, %v, want %q, %v", tc.name, got, changed, tc.want, tc.changed)
+		}
+	}
+}
+
+// A task's status reaches the checklist items assigned to it, in every doc of
+// its account, without the doc counting as saved.
+func TestPano_SyncTask(t *testing.T) {
+	setup := func(t *testing.T) (*panoEnv, model.Task, string) {
+		e := newPanoEnv(t)
+		if err := e.db.AutoMigrate(&model.Task{}); err != nil {
+			t.Fatal(err)
+		}
+		task := model.Task{ID: 7001, WorkspaceID: skWS, UserID: skUser, Title: "ship", Status: "ongoing"}
+		if err := e.db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		return e, task, "/workspaces/" + monoflake.ID(skWS).String() + "/tasks/" + monoflake.ID(task.ID).String()
+	}
+
+	t.Run("the status is written into the item, and completed ticks it", func(t *testing.T) {
+		e, task, path := setup(t)
+		doc := e.save(t, entity.SavePanoDocRequest{Title: "Launch", Markdown: "- [ ] ship → [@alpha](" + path + ")\n- [ ] docs"})
+		other := e.save(t, entity.SavePanoDocRequest{Title: "Other", Markdown: "- [ ] nothing assigned"})
+		before := e.get(t, doc.ID)
+
+		uid, ids, err := e.c.SyncPanoTask(e.ctx, task.ID)
+		if err != nil || uid != skUser || !reflect.DeepEqual(ids, []int64{doc.ID}) {
+			t.Fatalf("SyncPanoTask = %d, %v, %v, want the owner and the one doc", uid, ids, err)
+		}
+		if got := e.get(t, doc.ID); got.Markdown != "- [ ] ship → [@alpha]("+path+` "ongoing")`+"\n- [ ] docs" {
+			t.Errorf("the doc reads %q, want the status in the item", got.Markdown)
+		}
+
+		e.db.Model(&model.Task{}).Where("id = ?", task.ID).Update("status", "completed")
+		if _, ids, err := e.c.SyncPanoTask(e.ctx, task.ID); err != nil || len(ids) != 1 {
+			t.Fatalf("SyncPanoTask after completing = %v, %v, want the doc", ids, err)
+		}
+		got := e.get(t, doc.ID)
+		if !strings.HasPrefix(got.Markdown, "- [x] ship") || got.ChecklistDone != 1 || got.ChecklistTotal != 2 {
+			t.Errorf("after completing, the doc is %q, %d of %d, want the item ticked, 1 of 2", got.Markdown, got.ChecklistDone, got.ChecklistTotal)
+		}
+		if !got.UpdatedAt.Equal(before.UpdatedAt) || !got.ExpiresAt.Equal(before.ExpiresAt) {
+			t.Errorf("the sync moved the doc's updated %v → %v, expiry %v → %v, want them kept", before.UpdatedAt, got.UpdatedAt, before.ExpiresAt, got.ExpiresAt)
+		}
+		if _, ids, _ := e.c.SyncPanoTask(e.ctx, task.ID); len(ids) != 0 {
+			t.Errorf("a second sync changed %v, want nothing", ids)
+		}
+		if got := e.get(t, other.ID); got.Markdown != "- [ ] nothing assigned" {
+			t.Errorf("a doc without the task became %q", got.Markdown)
+		}
+	})
+
+	t.Run("a deleted task is not found", func(t *testing.T) {
+		e, _, _ := setup(t)
+		if _, _, err := e.c.SyncPanoTask(e.ctx, 404); !errors.Is(err, base.ErrNotFound) {
+			t.Errorf("SyncPanoTask of a missing task returned %v, want ErrNotFound", err)
+		}
+	})
+
+	for _, tc := range []struct{ name, op string }{{"the read", "query"}, {"the write", "update"}} {
+		t.Run(tc.name+" failing is passed on", func(t *testing.T) {
+			e, task, path := setup(t)
+			e.save(t, entity.SavePanoDocRequest{Title: "Launch", Markdown: "- [ ] ship → [@alpha](" + path + ")"})
+			failOn(e.db, tc.op, "pano_docs")
+			if _, _, err := e.c.SyncPanoTask(e.ctx, task.ID); err == nil {
+				t.Error("SyncPanoTask returned no error, want the injected failure")
+			}
+		})
+	}
+}

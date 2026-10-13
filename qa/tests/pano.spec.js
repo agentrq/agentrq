@@ -4,7 +4,7 @@
 
 import { crc32, deflateSync } from 'node:zlib'
 import { test, expect } from '../lib/fixtures.js'
-import { agentSession, nextResponse, unique, watchTraffic } from '../lib/app.js'
+import { agentSession, nextResponse, setTaskStatus, unique, watchTraffic } from '../lib/app.js'
 
 // A solid PNG, so a linked image has something to show.
 function png(width, height, [r, g, b]) {
@@ -180,6 +180,83 @@ test('agents share docs on the Pano, and the person reads and comments on them',
   await page.goto('/pano')
   await expect(page.getByTestId('pano-card').first()).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('pano-board-phone.png'), animations: 'disabled' })
+
+  traffic.expectClean()
+})
+
+// The person assigns a checklist item to a workspace from its menu: a task is
+// made there, and the item follows the task's status as it moves, ticked once
+// it is completed. An @mention in a comment pings a workspace's agent.
+test('a checklist item assigned to a workspace follows its task, and a mention pings one', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const call = await agentSession(page, workspace.id)
+  const doc = await pano(call, { action: 'save', title: unique('Launch'), color: 'purple', markdown: 'Who does what:\n\n- [ ] backend\n- [ ] frontend\n- [ ] docs' })
+
+  await page.goto(`/pano/${doc.id}`)
+  const item = page.getByTestId('pano-body').locator('li').first()
+  await item.hover()
+  await item.locator('[data-pano-assign]').click()
+  await expect(page.getByTestId('pano-item-menu')).toContainText('Assign to')
+  await page.screenshot({ path: test.info().outputPath('pano-assign-light.png'), animations: 'disabled' })
+  const tasked = nextResponse(page, 'POST', `/api/v1/workspaces/${workspace.id}/tasks`)
+  const saved = nextResponse(page, 'PUT', `/api/v1/pano/${doc.id}`)
+  await page.getByTestId('pano-item-assign').filter({ hasText: workspace.name }).click()
+  const task = (await (await tasked).json()).task
+  expect(task.title, 'the task is the item').toBe('backend')
+  expect(task.body, 'the task names the doc').toContain(doc.id)
+  expect((await saved).status(), 'the item linked to its task').toBe(200)
+
+  const chip = item.locator('a.pano-assignee')
+  await expect(chip).toContainText(`@${workspace.name}Not started`)
+  await expect(chip).toHaveAttribute('data-status', 'notstarted')
+
+  // The status moves wherever it is changed, and the open note follows.
+  for (const status of ['ongoing', 'blocked']) {
+    await setTaskStatus(page, workspace.id, task.id, status)
+    await expect(chip, `the item shows the task ${status}`).toHaveAttribute('data-status', status)
+  }
+  await expect(item.locator('input[type="checkbox"]')).not.toBeChecked()
+  await setTaskStatus(page, workspace.id, task.id, 'completed')
+  await expect(chip).toHaveAttribute('data-status', 'completed')
+  await expect(item.locator('input[type="checkbox"]'), 'a completed task ticks its item').toBeChecked()
+  await expect(page.getByTestId('pano-progress')).toContainText('1 of 3 done')
+  const read = await pano(call, { action: 'read', id: doc.id })
+  expect(read.markdown, 'agents read the assignee and its status').toContain(`- [x] backend → [@${workspace.name}](/workspaces/${workspace.id}/tasks/${task.id} "completed")`)
+
+  // The menu of an assigned item names its task.
+  await item.hover()
+  await item.locator('[data-pano-assign]').click()
+  await expect(page.getByTestId('pano-item-task')).toContainText(task.id)
+  await page.keyboard.press('Escape')
+  await page.getByTestId('pano-title').click()
+
+  // A mention, picked from the suggestions, pings the workspace's agent.
+  const input = page.getByTestId('pano-comment-input')
+  await input.click()
+  await input.pressSequentially(`Can you take the docs, @${workspace.name.slice(0, 4)}`)
+  await expect(page.getByTestId('pano-mention-option').first()).toHaveText(`@${workspace.name}`)
+  await page.screenshot({ path: test.info().outputPath('pano-mention-light.png'), animations: 'disabled' })
+  await input.press('Enter')
+  await expect(input).toHaveValue(`Can you take the docs, @${workspace.name} `)
+  const commented = nextResponse(page, 'POST', `/api/v1/pano/${doc.id}/comments`)
+  const pinged = nextResponse(page, 'POST', `/api/v1/workspaces/${workspace.id}/tasks`)
+  await input.press('ControlOrMeta+Enter')
+  expect((await commented).status()).toBe(201)
+  const pingRes = await pinged
+  expect(pingRes.status(), await pingRes.text()).toBe(201)
+  const ping = (await pingRes.json()).task
+  expect(ping.title).toBe(`Pano: ${doc.title}`)
+  expect(ping.body).toContain(`> Can you take the docs, @${workspace.name}`)
+  await expect(page.getByTestId('pano-comments').locator('.pano-mention')).toHaveText(`@${workspace.name}`)
+
+  await page.screenshot({ path: test.info().outputPath('pano-assigned-light.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => document.documentElement.classList.add('dark'))
+  await page.screenshot({ path: test.info().outputPath('pano-assigned-dark.png'), fullPage: true, animations: 'disabled' })
+  await page.evaluate(() => document.documentElement.classList.remove('dark'))
+
+  // The board shows the assignee too.
+  await page.goto('/pano')
+  await expect(page.getByTestId('pano-card').filter({ hasText: doc.title }).locator('.pano-assignee')).toHaveAttribute('data-status', 'completed')
 
   traffic.expectClean()
 })

@@ -8,6 +8,11 @@
   other order leaves a row whose file cannot be read. Lists `Omit("markdown")`.
 - **The checklist count is stored at save** (`panoChecklist`), and the board's
   `togglePanoCheckbox` must find the same items: both skip fenced code.
+- **An assigned item ends `→ [@name](/workspaces/<id>/tasks/<id> "status")`**;
+  `assignPanoItem` and `syncPanoAssignee` must agree on it. The status sync
+  uses `UpdateColumns`: stamped as a save, it would reorder the board.
+- **Pings are spaced a second apart**: the server makes one task a second per
+  account, so a comment mentioning two workspaces at once would 429 the second.
 - **There is no agent search, on purpose**: agents pass doc ids. Only the board
   filters, in the browser.
 - **Workspace 0 is the person.** Authors and commenters are a workspace id (the

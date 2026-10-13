@@ -77,6 +77,27 @@ func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bo
 	})
 }
 
+// ListPanoDocsLinking returns an account's live docs, with their markdown,
+// whose markdown holds path: the docs with a checklist item assigned to it.
+func (r *repository) ListPanoDocsLinking(ctx context.Context, userID int64, path string, now time.Time) ([]model.PanoDoc, error) {
+	var docs []model.PanoDoc
+	err := r.conn(ctx).Where("user_id = ? AND expires_at > ? AND markdown LIKE ?", userID, now, "%"+path+"%").Find(&docs).Error
+	return docs, err
+}
+
+// SyncPanoChecklist writes back a doc's markdown changed by an assigned
+// task's status. It is no save: the doc keeps its place, author and life, so
+// the columns are written without GORM stamping updated_at.
+func (r *repository) SyncPanoChecklist(ctx context.Context, d model.PanoDoc) error {
+	return r.conn(ctx).Model(&model.PanoDoc{}).Where("id = ? AND user_id = ?", d.ID, d.UserID).UpdateColumns(map[string]any{
+		"markdown":        d.Markdown,
+		"excerpt":         d.Excerpt,
+		"size_bytes":      d.SizeBytes,
+		"checklist_done":  d.ChecklistDone,
+		"checklist_total": d.ChecklistTotal,
+	}).Error
+}
+
 // ListPanoFiles returns a doc's files, linked and attached, oldest first.
 func (r *repository) ListPanoFiles(ctx context.Context, docID int64) ([]model.PanoFile, error) {
 	var files []model.PanoFile

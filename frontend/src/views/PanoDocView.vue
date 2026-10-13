@@ -16,7 +16,8 @@ import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
-  panoCheckable, panoCheckboxIndex, formatMarkdown, PANO_COLORS,
+  panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoItemMenus, panoMentions,
+  mentionQuery, mentionMatches, insertMention, mentionedWorkspaces, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
@@ -32,13 +33,21 @@ const router = useRouter()
 const id = route.path === '/pano/new' ? null : String(route.params.id)
 const {
   doc, loading, error, busy, editing, draft,
-  load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, remove, comment, attach,
+  load, startEditing, cancelEditing, addDraftFile, removeDraftFile, save, checkItem, assignItem, remove, comment, attach,
 } = usePanoDoc(id, { api, color: route.query.color })
 const { workspaces } = storeToRefs(useWorkspaceStore())
 const { notifySuccess, notifyError } = useToasts()
 const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false })
 
 const commentText = ref('')
+const commentInput = ref(null)
+// The @mention being typed in the comment, and the workspaces it could name.
+const mention = ref(null)
+const mentionIndex = ref(0)
+const mentionOptions = computed(() => (mention.value ? mentionMatches(workspaces.value, mention.value.query) : []))
+// The open menu of a checklist item: which item, where, and its task if assigned.
+const itemMenu = ref(null)
+let itemMenuButton = null
 const pendingDelete = ref(false)
 const draftFileInput = ref(null)
 const attachInput = ref(null)
@@ -48,7 +57,7 @@ const preview = ref(false)
 let deleting = false
 
 // Read only inside v-else-if="doc", so a doc is always there.
-const body = computed(() => panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files)))
+const body = computed(() => panoItemMenus(panoAssignees(panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files)))))
 const draftBody = computed(() => renderMarkdown(draft.value.markdown || '*Nothing written yet.*'))
 const color = computed(() => panoColor(editing.value ? draft.value.color : doc.value?.color))
 const canSave = computed(() => !busy.value && !!draft.value.title.trim() && !!draft.value.markdown.trim())
@@ -122,20 +131,114 @@ async function format(kind) {
   el.setSelectionRange(next.start, next.end)
 }
 
-// A checkbox in the note checks its item off, and saves.
+// A checkbox in the note checks its item off, and saves; an item's menu button
+// opens its menu, and an assignee opens its task.
 // By the time a click is handled the box shows its new state; preventing the
 // default puts it back until the save comes through.
 async function onBodyClick(event) {
+  const chip = event.target.closest('[data-pano-task]')
+  if (chip) {
+    event.preventDefault()
+    router.push(chip.dataset.panoTask)
+    return
+  }
+  const button = event.target.closest('[data-pano-assign]')
+  if (button) {
+    openItemMenu(event.currentTarget, button)
+    return
+  }
   const index = panoCheckboxIndex(event.currentTarget, event.target)
   if (index < 0) return
   event.preventDefault()
   await run(() => checkItem(index, event.target.checked))
 }
 
+// The menu opens under its button, in the paper's own coordinates.
+function openItemMenu(container, button) {
+  closeItemMenu()
+  const item = button.parentElement
+  const chip = [...item.querySelectorAll('a.pano-assignee')].find((a) => a.closest('li') === item)
+  const paper = container.closest('article').getBoundingClientRect()
+  const at = button.getBoundingClientRect()
+  itemMenu.value = {
+    index: panoCheckboxIndex(container, button.previousElementSibling),
+    top: at.bottom - paper.top + 4,
+    right: Math.max(paper.right - at.right, 8),
+    task: chip && { path: chip.dataset.panoTask, id: chip.dataset.panoTask.split('/').pop(), status: chip.dataset.status, name: chip.childNodes[1].textContent },
+  }
+  itemMenuButton = button
+  button.setAttribute('aria-expanded', 'true')
+}
+
+// Another item's button opens that item's menu instead.
+function closeItemMenu(event) {
+  if (event?.target?.closest?.('[data-pano-assign]')) return
+  itemMenuButton?.setAttribute('aria-expanded', 'false')
+  itemMenuButton = null
+  itemMenu.value = null
+}
+
+async function onAssign(workspace) {
+  const { index } = itemMenu.value
+  closeItemMenu()
+  const task = await run(() => assignItem(index, workspace))
+  if (task) notifySuccess(`Assigned to ${workspace.name}`, null, { taskId: task.id, workspaceId: workspace.id })
+}
+
+// Typing @ suggests the workspaces to mention; arrows move, Enter or Tab picks.
+function onCommentInput() {
+  const el = commentInput.value
+  mention.value = mentionQuery(commentText.value, el.selectionStart)
+  mentionIndex.value = 0
+}
+
+async function pickMention(workspace) {
+  const el = commentInput.value
+  const next = insertMention(commentText.value, mention.value.start, el.selectionStart, workspace.name)
+  commentText.value = next.value
+  mention.value = null
+  await nextTick()
+  el.focus()
+  el.setSelectionRange(next.caret, next.caret)
+}
+
+function onCommentKey(event) {
+  const options = mentionOptions.value
+  if (options.length) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      mentionIndex.value = (mentionIndex.value + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length
+      return
+    }
+    if ((event.key === 'Enter' && !event.metaKey && !event.ctrlKey) || event.key === 'Tab') {
+      event.preventDefault()
+      pickMention(options[mentionIndex.value])
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      mention.value = null
+      return
+    }
+  }
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault()
+    onComment()
+  }
+}
+
+// A comment pings each workspace it mentions with a task to answer it.
 async function onComment() {
   const text = commentText.value.trim()
   if (!text) return
-  if (await run(() => comment(text).then(() => true))) commentText.value = ''
+  const mentioned = mentionedWorkspaces(text, workspaces.value)
+  const pinged = await run(() => comment(text, mentioned))
+  if (!pinged) return
+  commentText.value = ''
+  mention.value = null
+  const { tasks, failed } = pinged
+  if (tasks.length) notifySuccess(tasks.length === 1 ? 'Pinged 1 workspace' : `Pinged ${tasks.length} workspaces`)
+  for (const f of failed) notifyError(`Could not ping ${f.workspace.name}: ${f.error}`)
 }
 
 async function onAttach(event) {
@@ -164,6 +267,7 @@ const field = 'w-full px-3 py-2 text-sm border border-gray-200 dark:border-zinc-
 const primary = 'px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[11px] font-black uppercase tracking-widest rounded-lg hover:opacity-80 transition-all active:scale-95 disabled:opacity-50'
 const secondary = 'px-4 py-2 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-zinc-700 text-[11px] font-black uppercase tracking-widest rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-700 transition-all active:scale-95 disabled:opacity-50'
 const iconButton = 'flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 !text-gray-600 dark:!text-zinc-300 hover:!text-black dark:hover:!text-white hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors'
+const menuHeader = 'px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500'
 const section = 'text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase tracking-widest'
 const paper = 'pano-paper relative rounded-md border border-black/[0.06] text-[#1e293b] shadow-[0_1px_2px_rgba(0,0,0,0.06),0_16px_32px_-16px_rgba(0,0,0,0.3)] dark:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_20px_40px_-16px_rgba(0,0,0,0.45)]'
 const tool = 'flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 hover:text-black dark:hover:text-white transition-colors'
@@ -220,7 +324,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
-                :class="color.ink" class="w-full bg-transparent text-2xl font-black leading-snug placeholder-black/30 focus:outline-none" />
+                class="w-full bg-transparent text-2xl font-black leading-snug text-[#0f172a] placeholder-black/30 focus:outline-none" />
               <div class="my-3 border-t border-black/10"></div>
               <label for="pano-markdown-input" class="sr-only">Markdown</label>
               <textarea v-show="!preview" id="pano-markdown-input" ref="markdownInput" v-model="draft.markdown" data-test="pano-markdown-input" rows="14"
@@ -294,13 +398,30 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
       <div v-else-if="doc" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
         <article :class="[paper, color.card]" :style="{ '--pano-ink': color.inkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
-          <h1 data-test="pano-title" :class="color.ink" class="text-2xl md:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
+          <h1 data-test="pano-title" class="text-2xl md:text-3xl font-black leading-tight break-words text-[#0f172a]">{{ doc.title }}</h1>
           <p data-test="pano-meta" class="mt-1 text-[11px] text-[#334155]">
             By {{ panoAuthor(doc.createdByWorkspaceId, workspaces) }} · updated {{ panoDate(doc.updatedAt) }} by {{ panoAuthor(doc.updatedByWorkspaceId, workspaces) }}
           </p>
           <PanoProgress :doc="doc" class="mt-4 max-w-sm" />
           <div class="my-5 border-t border-black/10"></div>
           <div data-test="pano-body" class="md-body text-[14px] break-words [&_img]:max-w-full [&_img]:rounded" v-html="body" @click="onBodyClick"></div>
+          <div v-if="itemMenu" v-click-outside="closeItemMenu" data-test="pano-item-menu" role="menu" @keydown.esc="closeItemMenu()"
+            :style="{ top: `${itemMenu.top}px`, right: `${itemMenu.right}px` }"
+            class="absolute z-30 w-64 max-h-72 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 text-left shadow-lg">
+            <template v-if="itemMenu.task">
+              <p :class="menuHeader">Assigned</p>
+              <router-link :to="itemMenu.task.path" data-test="pano-item-task" role="menuitem" class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 min-w-0">
+                <span class="min-w-0 truncate font-bold">{{ itemMenu.task.name }}</span>
+                <span class="shrink-0 text-[10px] text-gray-500 dark:text-zinc-400">{{ PANO_TASK_STATUSES[itemMenu.task.status] }}</span>
+                <span class="ml-auto shrink-0 font-mono text-[10px] text-gray-400 dark:text-zinc-500">{{ itemMenu.task.id }}</span>
+              </router-link>
+              <div class="my-1 border-t border-gray-100 dark:border-zinc-800"></div>
+            </template>
+            <p :class="menuHeader">{{ itemMenu.task ? 'Reassign to' : 'Assign to' }}</p>
+            <p v-if="!workspaces.length" class="px-3 py-1.5 text-[11px] text-gray-500 dark:text-zinc-400">No workspaces yet.</p>
+            <button v-for="w in workspaces" :key="w.id" type="button" role="menuitem" data-test="pano-item-assign" :disabled="busy" @click="onAssign(w)"
+              class="block w-full truncate px-3 py-1.5 text-left text-xs text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-800 disabled:opacity-50">{{ w.name }}</button>
+          </div>
         </article>
 
         <aside class="space-y-6 min-w-0">
@@ -341,14 +462,21 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             <ul v-else data-test="pano-comments" class="space-y-3">
               <li v-for="c in doc.comments" :key="c.id" class="border-l-2 border-gray-200 dark:border-zinc-700 pl-3 min-w-0">
                 <p class="text-[10px] text-gray-500 dark:text-zinc-400"><span class="font-bold text-gray-700 dark:text-zinc-200">{{ panoAuthor(c.workspaceId, workspaces) }}</span> · {{ panoDate(c.createdAt) }}</p>
-                <div class="md-body text-[13px] text-gray-800 dark:text-zinc-200 break-words" v-html="renderMarkdown(c.body)"></div>
+                <div class="md-body text-[13px] text-gray-800 dark:text-zinc-200 break-words" v-html="panoMentions(renderMarkdown(c.body), workspaces)"></div>
               </li>
             </ul>
             <!-- The task chat's composer: a quiet box, the send button inside it. -->
             <form @submit.prevent="onComment"
-              class="flex flex-col bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm focus-within:border-gray-900 dark:focus-within:border-white transition-all min-w-0 shadow-sm">
-              <textarea v-model="commentText" data-test="pano-comment-input" rows="2" placeholder="Add a comment (⌘ + Enter to send)"
-                @keydown.meta.enter.prevent="onComment" @keydown.ctrl.enter.prevent="onComment"
+              class="relative flex flex-col bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-sm focus-within:border-gray-900 dark:focus-within:border-white transition-all min-w-0 shadow-sm">
+              <ul v-if="mentionOptions.length" data-test="pano-mention-menu" role="listbox"
+                class="absolute left-0 right-0 bottom-full mb-1 z-30 max-h-56 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 shadow-lg">
+                <li v-for="(w, i) in mentionOptions" :key="w.id" role="option" :aria-selected="i === mentionIndex" data-test="pano-mention-option"
+                  @mousedown.prevent="pickMention(w)" @mouseenter="mentionIndex = i"
+                  :class="i === mentionIndex ? 'bg-gray-100 dark:bg-zinc-800' : ''"
+                  class="px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 truncate cursor-pointer">@{{ w.name }}</li>
+              </ul>
+              <textarea ref="commentInput" v-model="commentText" data-test="pano-comment-input" rows="2" placeholder="Comment, @ a workspace to ping its agent (⌘ + Enter to send)"
+                @input="onCommentInput" @click="onCommentInput" @keydown="onCommentKey" @blur="mention = null"
                 class="w-full px-3.5 pt-3 pb-1.5 text-[13px] font-medium text-gray-800 dark:text-zinc-200 bg-transparent outline-none border-none focus:outline-none focus:ring-0 resize-none min-h-[46px] max-h-[150px] custom-scrollbar"></textarea>
               <div class="flex justify-end px-3 pb-2 pt-1">
                 <button type="submit" data-test="pano-comment" title="Comment" aria-label="Comment" :disabled="busy || !commentText.trim()"
