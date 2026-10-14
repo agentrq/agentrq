@@ -29,6 +29,7 @@ func (l *link) CancelTask(_ context.Context, taskID int64) bool {
 	if s := l.e.busySession(taskID); s != nil {
 		_ = l.e.peer.notify(methodSessionCancel, sessionIDParams{SessionID: s.id})
 		l.e.settlePermissions(s.id)
+		l.e.settleAfterCancel(s)
 		had = true
 	}
 	return had

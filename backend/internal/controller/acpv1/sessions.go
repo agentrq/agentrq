@@ -28,6 +28,7 @@ type session struct {
 	current    string
 	models     []mcpctrl.AgentModel
 	proj       *projector
+	stopTurn   context.CancelFunc // gives up on the running turn's prompt; nil between turns
 }
 
 // sessionSet finds a session by its id or its task in O(1), and keeps them in
@@ -77,10 +78,10 @@ func (ss *sessionSet) evict(limit int) []*session {
 	return out
 }
 
-// mcpServers is the workspace's own MCP server, handed to every session, unless
-// the agent said it cannot take an http one.
+// mcpServers is the workspace's own MCP server, handed to every session when
+// the agent advertised http MCP: the spec forbids an http server otherwise.
 func (e *engineV1) mcpServers() []mcpServerHTTP {
-	if h := e.caps.MCPCapabilities.HTTP; h != nil && !*h {
+	if !e.caps.MCPCapabilities.HTTP {
 		return nil
 	}
 	return []mcpServerHTTP{{Type: "http", Name: mcpServerName, URL: e.deps.MCPURL(e.c.WorkspaceID()),
@@ -143,7 +144,10 @@ func (e *engineV1) newSession(ctx context.Context, taskID int64) (*session, erro
 	if err != nil {
 		return nil, err
 	}
-	s := &session{id: resp.SessionID, taskID: taskID, modes: resp.Modes,
+	// A task's session is busy from the moment it is registered: marked any
+	// later, another session registering past the limit could evict it
+	// before its first turn runs.
+	s := &session{id: resp.SessionID, taskID: taskID, busy: taskID != 0, modes: resp.Modes,
 		proj: newProjector(e.lim.reply, e.lim.thought, e.lim.tool)}
 	s.configID, s.current, s.models, _ = modelsFrom(resp.ConfigOptions)
 	registered := make(chan []*session, 1)
@@ -222,14 +226,7 @@ func (e *engineV1) sessionFor(ctx context.Context, taskID int64) (*session, erro
 	if s != nil {
 		return s, nil
 	}
-	s, err := e.newSession(ctx, taskID)
-	if err != nil {
-		return nil, err
-	}
-	e.mu.Lock()
-	s.busy = true
-	e.mu.Unlock()
-	return s, nil
+	return e.newSession(ctx, taskID) // registered busy
 }
 
 // sessionByID is a session by its ACP id, nil when unknown.

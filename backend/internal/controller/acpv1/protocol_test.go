@@ -29,11 +29,11 @@ func TestWireTypes(t *testing.T) {
 		if r.ProtocolVersion != 1 || !r.AgentCapabilities.LoadSession {
 			t.Errorf("got version %d and loadSession %v, want 1 and true", r.ProtocolVersion, r.AgentCapabilities.LoadSession)
 		}
-		if h := r.AgentCapabilities.MCPCapabilities.HTTP; h == nil || !*h {
-			t.Errorf("mcp http was %v, want an explicit true", h)
+		if !r.AgentCapabilities.MCPCapabilities.HTTP {
+			t.Error("mcp http read as unsupported, want supported")
 		}
-		if a := r.AgentCapabilities.MCPCapabilities.ACP; a != nil {
-			t.Errorf("mcp acp was %v, want unstated (nil)", *a)
+		if r.AgentCapabilities.MCPCapabilities.ACP {
+			t.Error("mcp acp read as supported, want unsupported (it was not offered)")
 		}
 		if !supported(r.AgentCapabilities.SessionCapabilities.Close) {
 			t.Error("session close read as unsupported, want supported ({} means yes)")
@@ -65,7 +65,7 @@ func TestWireTypes(t *testing.T) {
 		if err := r.decode([]byte(`{"protocolVersion":1,"agentCapabilities":null}`)); err != nil {
 			t.Fatalf("decode returned %v, want nil", err)
 		}
-		if r.AgentCapabilities.LoadSession || r.AgentCapabilities.MCPCapabilities.HTTP != nil || r.AuthMethods != nil || r.AgentInfo != nil {
+		if r.AgentCapabilities.LoadSession || r.AgentCapabilities.MCPCapabilities.HTTP || r.AuthMethods != nil || r.AgentInfo != nil {
 			t.Errorf("got %+v, want no capabilities, no logins and no identity", r)
 		}
 	})

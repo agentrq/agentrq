@@ -53,13 +53,13 @@ type update struct {
 // taken when it is created, so that a test shrinking one never races an
 // older connection.
 type engineLimits struct {
-	initialize, idleSession, call, permission time.Duration
-	sessions, reply, thought, tool, early     int
+	initialize, idleSession, call, permission, cancelSettle time.Duration
+	sessions, reply, thought, tool, early                   int
 }
 
 func currentLimits() engineLimits {
 	return engineLimits{initialize: initializeTimeout, idleSession: idleSessionWait, call: callTimeout, permission: defaultPermissionWait,
-		sessions: maxSessions, reply: maxReplyBytes, thought: maxThoughtBytes, tool: maxToolCallsKept, early: maxEarlyUpdates}
+		cancelSettle: cancelSettleWait, sessions: maxSessions, reply: maxReplyBytes, thought: maxThoughtBytes, tool: maxToolCallsKept, early: maxEarlyUpdates}
 }
 
 // engineV1 is the ACP client for one bridge connection: the agent behind it,

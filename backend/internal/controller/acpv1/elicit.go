@@ -7,6 +7,7 @@ package acpv1
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 )
@@ -20,10 +21,12 @@ func (e *engineV1) createElicitation(ctx context.Context, params json.RawMessage
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "the question could not be read"}
 	}
-	cancel := createElicitationResponse{Action: "cancel"}
+	// AgentRQ advertised form and url; the spec answers any other mode
+	// -32602.
 	if req.Mode != "form" && req.Mode != "url" {
-		return cancel, nil
+		return nil, &rpcError{Code: codeInvalidParams, Message: "elicitation mode " + strconv.Quote(req.Mode) + " was not advertised"}
 	}
+	cancel := createElicitationResponse{Action: "cancel"}
 	var taskID int64
 	if s := e.sessionByID(req.SessionID); s != nil {
 		taskID = e.taskOf(s)

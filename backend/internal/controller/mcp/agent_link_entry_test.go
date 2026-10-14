@@ -465,6 +465,29 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		}
 	})
 
+	t.Run("ToolNames reads again after a listing that failed", func(t *testing.T) {
+		rec := newEntryServer(t)
+		srv := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
+		mcp.AddTool(srv, &mcp.Tool{Name: "reply"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{}, nil, nil
+		})
+		rec.ps.mcpServer = srv
+
+		restore := toolNameTransports
+		defer func() { toolNameTransports = restore }()
+		toolNameTransports = func() (mcp.Transport, mcp.Transport) {
+			c, _ := mcp.NewInMemoryTransports()
+			return c, unreachableTransport{}
+		}
+		if got := rec.ps.ToolNames(); len(got) != 0 {
+			t.Fatalf("with the server unreachable, ToolNames returned %v, want none", got)
+		}
+		toolNameTransports = restore
+		if _, ok := rec.ps.ToolNames()["reply"]; !ok {
+			t.Fatal("ToolNames kept the failed listing, want it read again")
+		}
+	})
+
 	t.Run("ToolNames with no server lists nothing", func(t *testing.T) {
 		rec := newEntryServer(t)
 		if got := rec.ps.ToolNames(); len(got) != 0 {

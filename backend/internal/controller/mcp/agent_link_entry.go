@@ -170,9 +170,19 @@ func (ps *WorkspaceServer) OfferNextTask(ctx context.Context) int64 {
 }
 
 // ToolNames is what this workspace's tools/list answers. Read on first use
-// rather than at construction, which runs under the manager's lock.
+// rather than at construction, which runs under the manager's lock, and kept
+// only once a listing succeeds: an empty one is a failed read, and keeping it
+// would send every call to the workspace's own tools to the human.
 func (ps *WorkspaceServer) ToolNames() map[string]struct{} {
-	ps.toolNamesOnce.Do(func() { ps.toolNames = listToolNames(ps.mcpServer) })
+	ps.toolNamesMu.Lock()
+	defer ps.toolNamesMu.Unlock()
+	if ps.toolNames == nil {
+		if names := listToolNames(ps.mcpServer); len(names) > 0 {
+			ps.toolNames = names
+		} else {
+			return names
+		}
+	}
 	return ps.toolNames
 }
 

@@ -212,9 +212,9 @@ type WorkspaceServer struct {
 	// goroutine. pollRepo is the repository StartPoller was given.
 	pollMu   sync.Mutex
 	pollRepo taskLister
-	// toolNames is what this server's tools/list answers, read once.
-	toolNamesOnce sync.Once
-	toolNames     map[string]struct{}
+	// toolNames is what this server's tools/list answers, kept once read.
+	toolNamesMu sync.Mutex
+	toolNames   map[string]struct{}
 
 	// clearedTaskIDs is which still-notstarted tasks have already had their
 	// `/clear` sent. The clear is the once-only half of a handover and the push

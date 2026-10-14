@@ -83,8 +83,15 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	case <-timeout:
 		// The turn is cancelled as well as the call: "cancelled" is the answer
 		// a client gives because it cancelled, and answering alone would leave
-		// the agent free to carry on and ask again.
+		// the agent free to carry on and ask again. Having cancelled, the spec
+		// has every other request waiting on the session answered "cancelled".
 		_ = e.peer.notify(methodSessionCancel, sessionIDParams{SessionID: req.SessionID})
+		e.settleAfterCancel(s)
+		for _, id := range e.settlePermissions(req.SessionID) {
+			if id != requestID {
+				e.ws.ClosePermissionRequest(context.WithoutCancel(ctx), id)
+			}
+		}
 		e.ws.ClosePermissionRequest(context.WithoutCancel(ctx), requestID)
 		return cancelled, nil
 	case <-ctx.Done():
@@ -135,10 +142,25 @@ func deref(s *string) string {
 	return *s
 }
 
-// looksLikeAllow is an option that grants the call, by its kind or its name.
+// looksLikeAllow is an option that grants the call: by its kind, or by its
+// name when the kind is not one ACP defines. A name never overrides a kind.
 func looksLikeAllow(o permissionOption) bool {
+	if strings.HasPrefix(o.Kind, "reject") {
+		return false
+	}
 	name := strings.ToLower(o.Name)
 	return strings.HasPrefix(o.Kind, "allow") || strings.Contains(name, "allow") || strings.Contains(name, "yes") || strings.Contains(name, "approve")
+}
+
+var denyWords = regexp.MustCompile(`(?i)deny|reject|\bno\b`)
+
+// looksLikeReject is an option that refuses the call, the same way: an allow
+// kind is never one, whatever its name says ("Allow now" is not a "no").
+func looksLikeReject(o permissionOption) bool {
+	if strings.HasPrefix(o.Kind, "allow") {
+		return false
+	}
+	return strings.HasPrefix(o.Kind, "reject") || denyWords.MatchString(o.Name)
 }
 
 // allowOwnTool picks the option for one of the workspace's own tools, as the
@@ -185,9 +207,7 @@ func outcomeFor(options []permissionOption, behavior string) permissionOutcome {
 	}
 	allow := behavior == "allow"
 	for _, o := range once {
-		name := strings.ToLower(o.Name)
-		if allow && looksLikeAllow(o) ||
-			!allow && (strings.HasPrefix(o.Kind, "reject") || strings.Contains(name, "deny") || strings.Contains(name, "reject") || strings.Contains(name, "no")) {
+		if allow && looksLikeAllow(o) || !allow && looksLikeReject(o) {
 			return permissionOutcome{Outcome: "selected", OptionID: o.OptionID}
 		}
 	}

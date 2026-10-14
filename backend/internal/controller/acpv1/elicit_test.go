@@ -106,11 +106,11 @@ func TestElicitation(t *testing.T) {
 		}
 	})
 
-	t.Run("an unknown mode is answered cancel", func(t *testing.T) {
+	t.Run("a mode AgentRQ did not advertise is answered -32602", func(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		a.request(5, methodElicitationCreate, `{"sessionId":"sess-1","mode":"voice","message":"Say it"}`)
-		if got := a.answerTo(5); string(got.Result) != `{"action":"cancel"}` {
-			t.Fatalf("the agent was answered %s, want cancel", got.Result)
+		if got := a.answerTo(5); got.Error == nil || got.Error.Code != codeInvalidParams {
+			t.Fatalf("the agent was answered %+v, want error -32602", got)
 		}
 		rec.read(func() {
 			if len(rec.questions) != 0 {

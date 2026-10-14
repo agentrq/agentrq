@@ -88,6 +88,9 @@ func TestVerdicts(t *testing.T) {
 		{"allow falls back to the first once option", []permissionOption{{OptionID: "go", Name: "Go", Kind: "other"}}, "allow", permissionOutcome{Outcome: "selected", OptionID: "go"}},
 		{"deny never falls back to an allow option", []permissionOption{{OptionID: "a", Name: "Proceed", Kind: "allow_once"}}, "deny", permissionOutcome{Outcome: "cancelled"}},
 		{"deny falls back to a once option that is not an allow", []permissionOption{{OptionID: "a", Name: "Proceed", Kind: "allow_once"}, {OptionID: "s", Name: "Skip", Kind: "other"}}, "deny", permissionOutcome{Outcome: "selected", OptionID: "s"}},
+		{"deny never picks an allow option whose name has a no in it", []permissionOption{{OptionID: "a", Name: "Allow now", Kind: "allow_once"}, {OptionID: "r", Name: "Reject", Kind: "reject_once"}}, "deny", permissionOutcome{Outcome: "selected", OptionID: "r"}},
+		{"allow never picks a reject option whose name mentions allowing", []permissionOption{{OptionID: "r", Name: "Reject: allow nothing", Kind: "reject_once"}, {OptionID: "a", Name: "Run it", Kind: "allow_once"}}, "allow", permissionOutcome{Outcome: "selected", OptionID: "a"}},
+		{"deny reads a no in the name of an option of no known kind", []permissionOption{{OptionID: "k", Name: "Know more", Kind: "other"}, {OptionID: "n", Name: "No", Kind: "other"}}, "deny", permissionOutcome{Outcome: "selected", OptionID: "n"}},
 		{"only persistent options cancel", []permissionOption{{OptionID: "r", Name: "Remember this", Kind: "allow_once"}}, "allow", permissionOutcome{Outcome: "cancelled"}},
 		{"only persistent options offered: allow cancels", []permissionOption{{OptionID: "aa", Name: "Allow always", Kind: "allow_always"}, {OptionID: "ra", Name: "Reject always", Kind: "reject_always"}}, "allow", permissionOutcome{Outcome: "cancelled"}},
 	}
@@ -229,6 +232,41 @@ func TestPermissions(t *testing.T) {
 		}
 		id := rec.permissionRequests(t, 1)[0].RequestID
 		rec.wait(t, func() bool { return slices.Contains(rec.closed, id) })
+	})
+
+	t.Run("a timeout answers the session's other waiting requests cancelled and closes their cards", func(t *testing.T) {
+		shrink(t, &defaultPermissionWait, 50*time.Millisecond)
+		rec, a, l := midTurn(t, agentOpts{})
+		e := l.(*link).e
+		got := make(chan permissionOutcome, 2)
+		e.mu.Lock()
+		e.permissions["same-session"] = &pendingPermission{sessionID: "sess-1", settle: func(o permissionOutcome) { got <- o }}
+		e.permissions["other-session"] = &pendingPermission{sessionID: "sess-9", settle: func(o permissionOutcome) { got <- o }}
+		e.mu.Unlock()
+		a.request(5, methodRequestPermission, request)
+		a.expectParams(methodSessionCancel, `{"sessionId":"sess-1"}`)
+		if got := a.answerTo(5); string(got.Result) != answerCancelled {
+			t.Fatalf("the agent was answered %s, want %s", got.Result, answerCancelled)
+		}
+		select {
+		case o := <-got:
+			if o.Outcome != "cancelled" {
+				t.Fatalf("the session's other request was answered %+v, want cancelled", o)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("the session's other request was left waiting after the turn was cancelled")
+		}
+		rec.wait(t, func() bool { return slices.Contains(rec.closed, "same-session") })
+		select {
+		case o := <-got:
+			t.Fatalf("another session's request was answered %+v, want it left waiting", o)
+		default:
+		}
+		rec.read(func() {
+			if slices.Contains(rec.closed, "other-session") {
+				t.Fatal("another session's card was closed")
+			}
+		})
 	})
 
 	t.Run("a verdict that arrives after Stop answers nothing and leaves the card cancelled", func(t *testing.T) {

@@ -484,6 +484,12 @@ func TestEngine(t *testing.T) {
 		a.expectParams("session/new", `{"cwd":"/home/me/work","mcpServers":[]}`)
 	})
 
+	t.Run("an agent that does not mention http MCP gets no MCP servers", func(t *testing.T) {
+		a := startAgent(t, &recorder{})
+		a.answer(a.expect("initialize"), `{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"sse":true}}}`)
+		a.expectParams("session/new", `{"cwd":"/home/me/work","mcpServers":[]}`)
+	})
+
 	t.Run("chunks that arrive just before the prompt answer are in the reply", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
@@ -916,6 +922,29 @@ func TestEngine(t *testing.T) {
 		})
 		if l.CancelTask(context.Background(), 99) {
 			t.Fatal("CancelTask reported a turn for a task the link never had")
+		}
+	})
+
+	t.Run("a Stop the agent never answers ends the turn after the settle wait", func(t *testing.T) {
+		shrink(t, &cancelSettleWait, 50*time.Millisecond)
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "go")
+		a.expect("session/prompt")
+		if !l.CancelTask(context.Background(), 42) {
+			t.Fatal("CancelTask reported no turn for a task mid-turn")
+		}
+		a.expectParams("session/cancel", `{"sessionId":"idle-1"}`)
+		a.expect(methodCancelRequest) // the prompt is given up on
+		rec.wait(t, func() bool { return len(rec.replies) == 1 })
+		rec.read(func() {
+			if rec.replies[0] != "42|"+noteCancelled {
+				t.Fatalf("reply was %q, want the cancelled note", rec.replies[0])
+			}
+		})
+		if l.CancelTask(context.Background(), 42) {
+			t.Fatal("the given-up turn left its task running")
 		}
 	})
 

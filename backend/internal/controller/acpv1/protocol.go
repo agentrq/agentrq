@@ -142,14 +142,12 @@ type promptCapabilities struct {
 	EmbeddedContext bool `json:"embeddedContext"`
 }
 
-// mcpCapabilities keeps "said no" apart from "said nothing": an agent that
-// advertises no MCP capabilities is far more likely to be terse than unable,
-// and dropping the workspace's own server on that reading would cost it its
-// tools.
+// mcpCapabilities: an absent transport is an unsupported one (session setup:
+// "false or not present").
 type mcpCapabilities struct {
-	HTTP *bool `json:"http"`
-	SSE  *bool `json:"sse"`
-	ACP  *bool `json:"acp"`
+	HTTP bool `json:"http"`
+	SSE  bool `json:"sse"`
+	ACP  bool `json:"acp"`
 }
 
 // sessionCapabilities: an optional capability is supported when the agent

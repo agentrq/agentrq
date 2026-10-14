@@ -6,10 +6,12 @@ package acpv1
 
 import (
 	"container/list"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -208,10 +210,23 @@ func (e *engineV1) runTurn(d delivery) {
 		zlog.Warn().Err(err).Int64("task_id", d.taskID).Msg("acp v1: could not mark the task ongoing; prompting anyway")
 	}
 	var resp promptResponse
-	err = e.peer.call(e.ctx, methodSessionPrompt, promptRequest{
+	turnCtx, stopTurn := context.WithCancel(e.ctx)
+	defer stopTurn()
+	e.mu.Lock()
+	s.stopTurn = stopTurn
+	e.mu.Unlock()
+	err = e.peer.call(turnCtx, methodSessionPrompt, promptRequest{
 		SessionID: s.id,
 		Prompt:    []contentBlock{{Type: "text", Text: d.content}},
 	}, &resp)
+	e.mu.Lock()
+	s.stopTurn = nil
+	e.mu.Unlock()
+	if err != nil && turnCtx.Err() != nil && e.ctx.Err() == nil {
+		// Cancelled, and the agent never answered within cancelSettleWait:
+		// the turn ends as cancelled rather than holding its slot for ever.
+		resp.StopReason, err = "cancelled", nil
+	}
 	e.barrier() // every update that came before the answer is applied now
 	e.endTurn(s, d.taskID, resp.StopReason, err)
 	if e.deps.OnTurn != nil {
@@ -223,6 +238,17 @@ func (e *engineV1) isEnding() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.cause != nil
+}
+
+// settleAfterCancel gives a cancelled turn cancelSettleWait for the agent to
+// answer its prompt, then stops waiting for it.
+func (e *engineV1) settleAfterCancel(s *session) {
+	e.mu.Lock()
+	stop := s.stopTurn
+	e.mu.Unlock()
+	if stop != nil {
+		time.AfterFunc(e.lim.cancelSettle, stop)
+	}
 }
 
 func (e *engineV1) setIdle(s *session) {
