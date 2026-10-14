@@ -153,6 +153,7 @@ type connection struct {
 	id          string
 	workspaceID int64
 	userID      string
+	token       string // the bridge's bearer token: handed to the agent, never logged
 	meta        bridgeMeta
 	timing      timing
 
@@ -194,6 +195,7 @@ func (c *connection) ID() string                 { return c.id }
 func (c *connection) Meta() bridgeMeta           { return c.meta }
 func (c *connection) WorkspaceID() int64         { return c.workspaceID }
 func (c *connection) UserID() string             { return c.userID }
+func (c *connection) Token() string              { return c.token }
 func (c *connection) OnFrame(fn func([]byte))    { c.onFrame = fn }
 func (c *connection) OnControl(fn func(control)) { c.onControl = fn }
 func (c *connection) Done() <-chan struct{}      { return c.done }

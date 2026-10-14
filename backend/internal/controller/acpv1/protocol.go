@@ -253,8 +253,12 @@ func (o configOption) selectOptions() []selectOption {
 	var out []selectOption
 	for _, it := range items {
 		if it.Options != nil {
+			group := it.Name
+			if group == "" {
+				group = it.Group
+			}
 			for _, opt := range it.Options {
-				opt.Group = it.Name
+				opt.Group = group
 				out = append(out, opt)
 			}
 			continue

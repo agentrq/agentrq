@@ -68,6 +68,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a workspace access token", http.StatusUnauthorized)
 		return
 	}
+	token = strings.Clone(token) // the connection keeps it past the request
 	if !websocket.IsWebSocketUpgrade(r) {
 		w.Header().Set("Upgrade", "websocket")
 		http.Error(w, "this endpoint only speaks WebSocket", http.StatusUpgradeRequired)
@@ -94,7 +95,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if resumeFrom == nil {
-		if fresh, err = h.Hub.admit(workspaceID, userID, meta); err != nil {
+		if fresh, err = h.Hub.admit(workspaceID, userID, token, meta); err != nil {
 			http.Error(w, err.Error(), http.StatusTooManyRequests)
 			return
 		}
@@ -115,7 +116,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Too much was missed, or it ended meanwhile: the old connection is
 		// over, and the bridge starts its agent again on a fresh one.
 		resumeFrom.End(errReplaced)
-		fresh = h.Hub.replace(resumeFrom, meta)
+		fresh = h.Hub.replace(resumeFrom, token, meta)
 	}
 	h.start(fresh, ws)
 }

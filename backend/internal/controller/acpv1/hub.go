@@ -31,26 +31,29 @@ func NewHub() *Hub {
 
 // admit creates and registers a connection, or refuses past the limits. The
 // check and the registration share one lock so two upgrades cannot both pass.
-func (h *Hub) admit(workspaceID int64, userID string, meta bridgeMeta) (*connection, error) {
+// token is the bearer token the bridge presented, which the engine hands on to
+// the agent for the workspace's MCP server.
+func (h *Hub) admit(workspaceID int64, userID, token string, meta bridgeMeta) (*connection, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.perWS[workspaceID] >= maxConnsPerWS || h.perUser[userID] >= maxConnsPerUser {
 		return nil, errTooManyConnections
 	}
-	return h.registerLocked(workspaceID, userID, meta), nil
+	return h.registerLocked(workspaceID, userID, token, meta), nil
 }
 
 // replace swaps a connection that could not be resumed for a fresh one in the
 // same place. The resume was let in past the limits, so its replacement is.
-func (h *Hub) replace(old *connection, meta bridgeMeta) *connection {
+func (h *Hub) replace(old *connection, token string, meta bridgeMeta) *connection {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.removeLocked(old)
-	return h.registerLocked(old.workspaceID, old.userID, meta)
+	return h.registerLocked(old.workspaceID, old.userID, token, meta)
 }
 
-func (h *Hub) registerLocked(workspaceID int64, userID string, meta bridgeMeta) *connection {
+func (h *Hub) registerLocked(workspaceID int64, userID, token string, meta bridgeMeta) *connection {
 	c := newConnection(rand.Text(), workspaceID, userID, meta)
+	c.token = token
 	h.byID[c.id] = c
 	h.perWS[workspaceID]++
 	h.perUser[userID]++

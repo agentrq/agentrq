@@ -22,14 +22,14 @@ func TestHub(t *testing.T) {
 	t.Run("the fifth connection to one workspace is refused", func(t *testing.T) {
 		h := NewHub()
 		for i := range maxConnsPerWS {
-			if _, err := h.admit(100, fmt.Sprintf("user-%d", i), bridgeMeta{}); err != nil {
+			if _, err := h.admit(100, fmt.Sprintf("user-%d", i), "t", bridgeMeta{}); err != nil {
 				t.Fatalf("connection %d was refused: %v", i+1, err)
 			}
 		}
-		if _, err := h.admit(100, "user-9", bridgeMeta{}); !errors.Is(err, errTooManyConnections) {
+		if _, err := h.admit(100, "user-9", "t", bridgeMeta{}); !errors.Is(err, errTooManyConnections) {
 			t.Fatalf("the fifth connection returned %v, want %v", err, errTooManyConnections)
 		}
-		if _, err := h.admit(200, "user-9", bridgeMeta{}); err != nil {
+		if _, err := h.admit(200, "user-9", "t", bridgeMeta{}); err != nil {
 			t.Fatalf("a connection to another workspace was refused: %v", err)
 		}
 	})
@@ -37,11 +37,11 @@ func TestHub(t *testing.T) {
 	t.Run("the seventeenth connection for one user is refused across workspaces", func(t *testing.T) {
 		h := NewHub()
 		for i := range maxConnsPerUser {
-			if _, err := h.admit(int64(i/maxConnsPerWS), "user-1", bridgeMeta{}); err != nil {
+			if _, err := h.admit(int64(i/maxConnsPerWS), "user-1", "t", bridgeMeta{}); err != nil {
 				t.Fatalf("connection %d was refused: %v", i+1, err)
 			}
 		}
-		if _, err := h.admit(999, "user-1", bridgeMeta{}); !errors.Is(err, errTooManyConnections) {
+		if _, err := h.admit(999, "user-1", "t", bridgeMeta{}); !errors.Is(err, errTooManyConnections) {
 			t.Fatalf("the seventeenth connection returned %v, want %v", err, errTooManyConnections)
 		}
 	})
@@ -50,12 +50,12 @@ func TestHub(t *testing.T) {
 		h := NewHub()
 		var conns []*connection
 		for range maxConnsPerWS {
-			c, _ := h.admit(100, "user-1", bridgeMeta{})
+			c, _ := h.admit(100, "user-1", "t", bridgeMeta{})
 			conns = append(conns, c)
 		}
 		conns[0].End(errBridgeBye)
 		waitFor(t, func() bool { all, _, _ := h.count(); return all == maxConnsPerWS-1 })
-		if _, err := h.admit(100, "user-1", bridgeMeta{}); err != nil {
+		if _, err := h.admit(100, "user-1", "t", bridgeMeta{}); err != nil {
 			t.Fatalf("a connection after one ended was refused: %v", err)
 		}
 		for _, c := range conns {
@@ -69,7 +69,7 @@ func TestHub(t *testing.T) {
 
 	t.Run("another workspace's connection id resumes nothing", func(t *testing.T) {
 		h := NewHub()
-		c, _ := h.admit(100, "user-1", bridgeMeta{})
+		c, _ := h.admit(100, "user-1", "t", bridgeMeta{})
 		if _, ok := h.lookup(c.ID(), 200, "user-1"); ok {
 			t.Error("lookup from another workspace found the connection, want unknown")
 		}
@@ -85,11 +85,11 @@ func TestHub(t *testing.T) {
 		h := NewHub()
 		var conns []*connection
 		for range maxConnsPerWS {
-			c, _ := h.admit(100, "user-1", bridgeMeta{})
+			c, _ := h.admit(100, "user-1", "t", bridgeMeta{})
 			conns = append(conns, c)
 		}
 		conns[0].End(errReplaced)
-		fresh := h.replace(conns[0], bridgeMeta{Agent: "codex"})
+		fresh := h.replace(conns[0], "t", bridgeMeta{Agent: "codex"})
 		h.remove(conns[0]) // what the old connection's own watcher does
 		if all, ws, user := h.count(); all != maxConnsPerWS || ws != maxConnsPerWS || user != maxConnsPerWS {
 			t.Fatalf("after a replace the hub held %d (%d in the workspace, %d for the user), want %d each", all, ws, user, maxConnsPerWS)
@@ -104,7 +104,7 @@ func TestHub(t *testing.T) {
 		ws := dial(t, srv, "")
 		welcomeOf(t, readFrame(t, ws))
 		e := <-engines
-		idle, _ := h.Hub.admit(100, "user-1", bridgeMeta{}) // one with no socket
+		idle, _ := h.Hub.admit(100, "user-1", "t", bridgeMeta{}) // one with no socket
 
 		h.Hub.CloseAll("the server is shutting down")
 		got, err := decodeControl([]byte(readFrame(t, ws)))
