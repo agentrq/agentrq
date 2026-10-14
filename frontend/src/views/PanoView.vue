@@ -29,6 +29,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
 import { useEventBus } from '../useEventBus'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
+import { useShortcuts } from '../composables/useKeyboardShortcuts'
 
 const route = useRoute()
 const router = useRouter()
@@ -97,17 +98,12 @@ async function sendChat() {
 const recoloring = ref(null)
 const pendingDelete = ref(null)
 
-// N starts a note, unless the person is typing somewhere.
-function onKey(event) {
-  if (event.key !== 'n' && event.key !== 'N') return
-  if (event.metaKey || event.ctrlKey || event.altKey) return
-  if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
-  event.preventDefault()
-  router.push('/pano/new')
-}
+// N starts a note here. It takes over the shell's new-task shortcut through the
+// shared stack: a listener of its own would run alongside the shell's, which
+// sends N to the workspace list.
+useShortcuts({ 'new-task': () => router.push('/pano/new') })
 
 onMounted(async () => {
-  window.addEventListener('keydown', onKey)
   chat.ensure().catch((err) => notifyError(err.message))
   await load()
   // Agents write the Pano from every workspace; their docs show as they land.
@@ -117,7 +113,6 @@ onMounted(async () => {
   connect()
 })
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKey)
   disconnect()
 })
 onWebMCPChange(() => load({ quiet: true }))

@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createApp, h, nextTick } from 'vue';
 import { createPinia } from 'pinia';
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router';
+import { useShortcuts, resetShortcuts } from '../src/composables/useKeyboardShortcuts';
 
 const api = vi.hoisted(() => ({
   fetchWorkspaces: vi.fn(),
@@ -308,11 +309,28 @@ describe('the board', () => {
     expect(el).toBeDefined();
   });
 
+  it('starts a note on N where the shell sends it to the workspace list', async () => {
+    // App.vue registers the global new-task shortcut before any view mounts.
+    const shell = vi.fn();
+    const { onKeydown } = useShortcuts({ 'new-task': shell }, { onMounted: (f) => f(), onUnmounted: () => {} });
+    try {
+      const { router } = await mount('/pano');
+      await key(document.body, { key: 'n' });
+      expect(router.currentRoute.value.path).toBe('/pano/new');
+      expect(shell).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', onKeydown);
+      resetShortcuts();
+    }
+  });
+
   it('ignores N while typing, with a modifier, and any other key', async () => {
     const { el, router } = await mount('/pano');
     const editable = document.createElement('div');
     editable.setAttribute('contenteditable', 'true');
     const inner = document.createElement('span');
+    // jsdom does not implement isContentEditable; a browser reports it inside one.
+    Object.defineProperty(inner, 'isContentEditable', { value: true });
     editable.append(inner);
     document.body.append(editable);
     for (const target of [$(el, 'pano-search'), inner]) {
