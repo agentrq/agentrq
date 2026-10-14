@@ -148,7 +148,10 @@ describe('answering a question', () => {
     await settle()
     expect(respondToElicitation).toHaveBeenCalledWith('ws1', 't1', 'r1', 'accept', { choice: 'B' })
     expect(button(el, 'Submit')).toBeUndefined()
-    expect(el.textContent).toContain('Answered — B')
+    const question = [...el.querySelectorAll('li p')].find((p) => p.textContent.trim() === 'Reading')
+    expect(question.nextElementSibling.textContent.trim()).toBe('B')
+    expect(el.textContent).not.toContain('Input Requested')
+    expect(el.textContent).not.toContain('Answered')
   })
 
   it('shows a declined question declined', async () => {
@@ -172,6 +175,21 @@ describe('answering a question', () => {
     await settle()
     expect(button(el, "I'm Done")).toBeUndefined()
     expect(el.textContent).toContain('Cancelled')
+    expect(lastToast()).toBe('Failed to send response: closed now')
+  })
+
+  it('shows a form the server closed as not answered in time, not as cancelled by you', async () => {
+    card = formQuestion()
+    respondToElicitation.mockRejectedValue(Object.assign(new Error('closed now'), { closed: true }))
+    const el = await mount()
+
+    button(el, 'Submit').click()
+    await settle()
+    expect(button(el, 'Submit')).toBeUndefined()
+    expect(el.textContent).not.toContain('Cancelled')
+    const question = [...el.querySelectorAll('li p')].find((p) => p.textContent.trim() === 'Reading')
+    expect(question.nextElementSibling.textContent.trim()).toBe('No answer')
+    expect(el.textContent).toContain('Not answered in time')
     expect(lastToast()).toBe('Failed to send response: closed now')
   })
 

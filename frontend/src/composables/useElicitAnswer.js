@@ -15,14 +15,25 @@ export function formatElicitAnswerValue(value) {
   return String(value);
 }
 
-// One line for the collapsed card: the bare value when there is one field,
-// "Label: value" pairs otherwise. Empty when there is nothing to show.
-export function elicitAnswerSummary(m) {
-  const entries = Object.entries(m.metadata?.content || {});
-  if (entries.length === 1) return formatElicitAnswerValue(entries[0][1]);
-  return entries
-    .map(([key, value]) => `${elicitAnswerLabel(m, key)}: ${formatElicitAnswerValue(value)}`)
-    .join(' · ');
+// How a closed question ended. The server closes one nobody answered in time
+// as "cancel", and a form offers no Cancel button, so a cancelled form was
+// missed rather than cancelled by the human.
+export function elicitOutcome(m) {
+  const { status, mode, content } = m.metadata || {};
+  if (status === 'accept') return Object.keys(content || {}).length ? 'answered' : 'done';
+  if (status === 'decline') return 'declined';
+  return mode === 'form' ? 'missed' : 'cancelled';
+}
+
+// One row per question: what was answered, or, for a missed form, each field
+// it asked with a null answer.
+export function elicitRows(m) {
+  if (elicitOutcome(m) === 'answered') {
+    return Object.entries(m.metadata.content)
+      .map(([key, value]) => ({ key, label: elicitAnswerLabel(m, key), answer: formatElicitAnswerValue(value) }));
+  }
+  return Object.keys(m.metadata?.requestedSchema?.properties || {})
+    .map((key) => ({ key, label: elicitAnswerLabel(m, key), answer: null }));
 }
 
 // The longest the server waits for an answer. Questions asked before they

@@ -359,7 +359,7 @@
                </div>
 
                <!-- Elicitation Request (agent message) -->
-               <div v-else-if="m.metadata?.type === 'elicitation_request'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
+               <div v-else-if="m.metadata?.type === 'elicitation_request' && m.metadata.status === 'pending'" class="mt-4 border border-gray-200 dark:border-zinc-700 rounded-sm bg-white dark:bg-zinc-900 overflow-hidden shadow-sm">
                  <div class="bg-gray-50 dark:bg-zinc-800/80 border-b border-gray-200 dark:border-zinc-700 px-3 py-2 flex items-center justify-between gap-3">
                    <div class="flex items-center gap-2">
                      <svg class="w-3.5 h-3.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -377,7 +377,7 @@
                         </button>
                      </div>
                    </template>
-                   <template v-else-if="m.metadata.status === 'pending'">
+                   <template v-else>
                      <template v-if="m.metadata.mode === 'form'">
                        <div v-for="field in schemaFields(m)" :key="field.name" class="min-w-0">
                          <label class="text-[10px] font-semibold text-gray-700 dark:text-zinc-300">
@@ -462,26 +462,38 @@
                        </div>
                      </template>
                    </template>
-                   <div v-else
-                        @click="m.metadata.content && (m._detailsExpanded = !m._detailsExpanded)"
-                        class="border rounded-sm select-none overflow-hidden min-w-0 transition-all"
-                        :class="[m.metadata.content ? 'cursor-pointer' : '', m.metadata.status === 'accept' ? 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/5']">
-                     <div class="flex items-center gap-2.5 px-3 py-2 min-w-0">
-                       <svg v-if="m.metadata.status === 'accept'" class="w-3.5 h-3.5 text-gray-700 dark:text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                       <svg v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                       <span class="text-[10px] font-semibold flex-1 min-w-0 truncate" :class="m.metadata.status === 'accept' ? 'text-gray-700 dark:text-zinc-100' : 'text-red-700 dark:text-red-500'">
-                         {{ m.metadata.status === 'accept' ? 'Answered' : m.metadata.status === 'decline' ? 'Declined' : 'Cancelled' }}<template v-if="!m._detailsExpanded && elicitAnswerSummary(m)"><span class="font-normal text-gray-400 dark:text-zinc-500"> — </span><span class="font-normal text-gray-600 dark:text-zinc-300">{{ elicitAnswerSummary(m) }}</span></template>
-                       </span>
-                       <svg v-if="m.metadata.content" class="w-3 h-3 text-gray-500 shrink-0 transition-transform duration-200" :class="m._detailsExpanded ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                     </div>
-                     <div v-if="m._detailsExpanded && m.metadata.content" class="px-3 pb-3 pt-1 border-t border-dashed border-gray-200 dark:border-zinc-700 min-w-0 flex flex-col gap-1.5">
-                       <div v-for="(value, key) in m.metadata.content" :key="key" class="text-[10px] flex items-start gap-2 min-w-0">
-                         <span class="font-semibold text-gray-500 dark:text-zinc-400 shrink-0">{{ elicitAnswerLabel(m, key) }}:</span>
-                         <span class="text-gray-800 dark:text-zinc-200 break-all min-w-0">{{ formatElicitAnswerValue(value) }}</span>
-                       </div>
-                     </div>
-                   </div>
                  </div>
+               </div>
+
+               <!-- Elicitation closed: a checklist of what was asked, no card -->
+               <div v-else-if="m.metadata?.type === 'elicitation_request'" class="mt-4 min-w-0">
+                 <template v-if="elicitOutcome(m) === 'answered' || elicitOutcome(m) === 'missed'">
+                   <ol class="min-w-0">
+                     <li v-for="(row, i) in elicitRows(m)" :key="row.key" class="relative grid grid-cols-[15px_minmax(0,1fr)] gap-x-2.5 min-w-0" :class="i < elicitRows(m).length - 1 ? 'pb-3' : ''">
+                       <span v-if="i < elicitRows(m).length - 1" class="absolute left-[7px] top-[18px] bottom-0 w-px bg-gray-200 dark:bg-zinc-700"></span>
+                       <span class="h-[18px] flex items-center">
+                         <span v-if="row.answer !== null" class="w-[15px] h-[15px] rounded-full bg-gray-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center">
+                           <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.75"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                         </span>
+                         <span v-else class="w-[15px] h-[15px] rounded-full border-2 border-dashed border-gray-300 dark:border-zinc-600"></span>
+                       </span>
+                       <p class="text-[11px] leading-[18px] text-gray-500 dark:text-zinc-400 break-words">{{ row.label }}</p>
+                       <p v-if="row.answer !== null" class="col-start-2 text-[12px] leading-[18px] font-medium text-gray-900 dark:text-zinc-100 break-words">{{ row.answer }}</p>
+                       <p v-else class="col-start-2 text-[12px] leading-[18px] italic text-gray-400 dark:text-zinc-500">No answer</p>
+                     </li>
+                   </ol>
+                   <p v-if="elicitOutcome(m) === 'missed'" class="mt-2 flex items-center gap-x-2.5 text-[11px] leading-[18px] text-gray-500 dark:text-zinc-400">
+                     <svg class="w-[15px] h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.25"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7v5l3 2" /></svg>
+                     Not answered in time — the agent stopped waiting
+                   </p>
+                 </template>
+                 <p v-else class="flex items-center gap-x-2.5 text-[11px] leading-[18px] font-medium" :class="elicitOutcome(m) === 'done' ? 'text-gray-700 dark:text-zinc-200' : 'text-red-600 dark:text-red-400'">
+                   <span class="w-[15px] h-[15px] rounded-full flex items-center justify-center shrink-0" :class="elicitOutcome(m) === 'done' ? 'bg-gray-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'bg-red-600 dark:bg-red-500 text-white'">
+                     <svg v-if="elicitOutcome(m) === 'done'" class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.75"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                     <svg v-else class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.75"><path stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M7 7l10 10" /></svg>
+                   </span>
+                   {{ elicitOutcome(m) === 'done' ? 'Answered' : elicitOutcome(m) === 'declined' ? 'Declined' : 'Cancelled' }}
+                 </p>
                </div>
 
                <!-- Attachments on agent message -->
@@ -1007,7 +1019,7 @@ import { mergeTaskUpdate } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
-import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElicitExpired } from '../composables/useElicitAnswer';
+import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
 import EmojiPicker from '../components/EmojiPicker.vue';

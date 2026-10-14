@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { elicitAnswerLabel, formatElicitAnswerValue, elicitAnswerSummary, isElicitExpired } from '../src/composables/useElicitAnswer';
+import { elicitAnswerLabel, formatElicitAnswerValue, elicitOutcome, elicitRows, isElicitExpired } from '../src/composables/useElicitAnswer';
 
 const msg = (content, properties) => ({ metadata: { content, requestedSchema: properties && { properties } } });
 
@@ -30,19 +30,39 @@ describe('formatElicitAnswerValue', () => {
   });
 });
 
-describe('elicitAnswerSummary', () => {
-  it('shows a single answer bare', () => {
-    expect(elicitAnswerSummary(msg({ transport: 'stdio' }, { transport: { title: 'Transport' } }))).toBe('stdio');
+describe('elicitOutcome', () => {
+  const closed = (metadata) => ({ metadata });
+  it('names how a closed question ended', () => {
+    expect(elicitOutcome(closed({ status: 'accept', content: { a: 1 } }))).toBe('answered');
+    expect(elicitOutcome(closed({ status: 'accept', content: {} }))).toBe('done');
+    expect(elicitOutcome(closed({ status: 'accept', mode: 'url' }))).toBe('done');
+    expect(elicitOutcome(closed({ status: 'decline', mode: 'form' }))).toBe('declined');
+    expect(elicitOutcome(closed({ status: 'cancel', mode: 'form' }))).toBe('missed');
+    expect(elicitOutcome(closed({ status: 'cancel', mode: 'url' }))).toBe('cancelled');
+    expect(elicitOutcome({})).toBe('cancelled');
+  });
+});
+
+describe('elicitRows', () => {
+  const props = { transport: { title: 'Transport' }, retry: {} };
+  it('lists what was answered, labelled and formatted', () => {
+    const m = { metadata: { status: 'accept', content: { transport: 'http', retry: true }, requestedSchema: { properties: props } } };
+    expect(elicitRows(m)).toEqual([
+      { key: 'transport', label: 'Transport', answer: 'http' },
+      { key: 'retry', label: 'retry', answer: 'Yes' },
+    ]);
   });
 
-  it('labels several answers', () => {
-    const m = msg({ transport: 'http', retry: true }, { transport: { title: 'Transport' } });
-    expect(elicitAnswerSummary(m)).toBe('Transport: http · retry: Yes');
+  it('lists every question of a missed form with no answer', () => {
+    const m = { metadata: { status: 'cancel', mode: 'form', requestedSchema: { properties: props } } };
+    expect(elicitRows(m)).toEqual([
+      { key: 'transport', label: 'Transport', answer: null },
+      { key: 'retry', label: 'retry', answer: null },
+    ]);
   });
 
-  it('is empty with no content', () => {
-    expect(elicitAnswerSummary({ metadata: {} })).toBe('');
-    expect(elicitAnswerSummary({})).toBe('');
+  it('is empty when a missed form carried no schema', () => {
+    expect(elicitRows({ metadata: { status: 'cancel', mode: 'form' } })).toEqual([]);
   });
 });
 

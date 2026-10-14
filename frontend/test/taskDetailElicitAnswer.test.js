@@ -4,8 +4,8 @@
 
 /**
  * An answered elicitation, mounted for real: the coverage gate does not see
- * `.vue` files, and the promise — the answer is readable without expanding the
- * card — lives in the wiring.
+ * `.vue` files, and the promise — each question with its answer under it, and no
+ * card around them — lives in the wiring.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -96,7 +96,7 @@ beforeEach(() => {
 })
 
 describe('an answered elicitation', () => {
-  it('shows the answer on the collapsed card, and the breakdown once expanded', async () => {
+  it('lists each question with its answer under it', async () => {
     const el = document.createElement('div')
     document.body.appendChild(el)
     app = createApp({ render: () => h(TaskDetailView) })
@@ -106,12 +106,8 @@ describe('an answered elicitation', () => {
     app.mount(el)
     await settle()
 
-    const card = [...el.querySelectorAll('div.cursor-pointer')].find((d) => d.textContent.includes('Answered'))
-    expect(card.textContent.replace(/\s+/g, ' ')).toContain('Answered — streamable HTTP')
-
-    card.click()
-    await settle()
-    expect(card.textContent).not.toContain('—')
-    expect(card.textContent).toMatch(/Transport:\s*streamable HTTP/)
+    const question = [...el.querySelectorAll('li p')].find((p) => p.textContent.trim() === 'Transport')
+    expect(question.nextElementSibling.textContent.trim()).toBe('streamable HTTP')
+    expect(el.textContent).not.toContain('Input Requested')
   })
 })
