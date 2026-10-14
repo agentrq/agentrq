@@ -128,8 +128,8 @@ async function start() {
       v-if="open"
       class="@container border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-300"
     >
-      <!-- Two columns once the card is wide enough: where and what on the
-           left, the chosen kind's options on the right. One column, the
+      <!-- Two columns once the card is wide enough: where on the left,
+           what to run and its options on the right. One column, the
            gateway's agent list alone ran off a large screen. -->
       <div class="grid gap-4 @3xl:grid-cols-2 @3xl:gap-6">
       <div class="space-y-4 min-w-0">
@@ -212,12 +212,12 @@ async function start() {
         </div>
       </div>
 
-      <!-- Its own row: sharing one with the machine picker meant two columns,
-           and in a 420px card neither was wide enough to read. -->
-      <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
       </div>
 
       <div class="space-y-4 min-w-0">
+      <!-- Its own row: sharing one with the machine picker meant two columns,
+           and in a 420px card neither was wide enough to read. -->
+      <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
 
       <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" :models="claudeModels" />
 
