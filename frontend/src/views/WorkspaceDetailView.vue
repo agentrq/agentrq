@@ -180,7 +180,7 @@
       <router-view v-if="selectedTaskId || isFullPane" />
       
       <!-- Empty state when no task is selected -->
-      <div v-else class="flex-1 flex flex-col items-center justify-center m-4 p-8 text-center h-full bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-500">
+      <div v-else class="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col items-center justify-center-safe m-4 p-8 text-center h-full bg-gray-50 dark:bg-zinc-900/50 rounded-sm border border-dashed border-gray-200 dark:border-zinc-800 animate-in fade-in zoom-in-95 duration-500">
         
         <template v-if="!isAgentConnected">
            <div class="w-16 h-16 bg-white dark:bg-zinc-800 rounded-sm border border-gray-100 dark:border-zinc-700 flex items-center justify-center mb-5 shadow-sm">
@@ -196,7 +196,7 @@
                 than a guide to go and read. The setup guide stays either way:
                 it is still the answer for connecting an agent from somewhere
                 this control panel cannot reach. -->
-           <div class="mt-8 w-full max-w-[420px] flex flex-col items-center gap-3">
+           <div class="mt-8 w-full max-w-4xl flex flex-col items-center gap-3">
              <StartAgentPanel
                :workspace="workspace"
                variant="hero"
@@ -206,7 +206,7 @@
                @click="router.push({ path: `/workspaces/${workspaceId}/settings`, query: { tab: 'setup' } })"
                :class="canStartAgent
                  ? 'text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200 transition-all'
-                 : 'w-full px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all'">
+                 : 'w-full max-w-[420px] px-8 py-3 bg-black dark:bg-white text-white dark:text-zinc-900 rounded-sm text-[10px] font-black uppercase tracking-widest shadow-lg hover:shadow-xl active:scale-95 transition-all'">
                Open Setup Guide
              </button>
            </div>

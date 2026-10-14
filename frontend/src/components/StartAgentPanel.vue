@@ -107,7 +107,7 @@ async function start() {
 </script>
 
 <template>
-  <div v-if="offered" :class="variant === 'card' ? 'w-full' : 'w-full max-w-[420px]'">
+  <div v-if="offered" :class="variant === 'card' ? 'w-full' : open ? 'w-full max-w-4xl' : 'w-full max-w-[420px]'">
     <!-- Folded: one action, and what it will do. -->
     <button
       v-if="!open"
@@ -128,6 +128,11 @@ async function start() {
       v-if="open"
       class="@container border border-gray-100 dark:border-zinc-800 rounded-xl p-5 bg-white dark:bg-zinc-900 space-y-4 text-left animate-in fade-in slide-in-from-bottom-2 duration-300"
     >
+      <!-- Two columns once the card is wide enough: where and what on the
+           left, the chosen kind's options on the right. One column, the
+           gateway's agent list alone ran off a large screen. -->
+      <div class="grid gap-4 @3xl:grid-cols-2 @3xl:gap-6">
+      <div class="space-y-4 min-w-0">
       <div>
         <h2 class="text-sm font-bold text-gray-800 dark:text-zinc-200">Start an agent</h2>
         <!-- Says where it will run and on what. With one machine there is
@@ -210,6 +215,9 @@ async function start() {
       <!-- Its own row: sharing one with the machine picker meant two columns,
            and in a 420px card neither was wide enough to read. -->
       <AgentKindPicker id-prefix="start-agent-kind" v-model="kind" />
+      </div>
+
+      <div class="space-y-4 min-w-0">
 
       <ClaudeOptionsPicker v-if="kind === 'claude-code'" id-prefix="start-agent" v-model="params" :models="claudeModels" />
 
@@ -256,8 +264,10 @@ async function start() {
         </div>
       <!-- The list only ever suggests: any other id typed in the field is
            still sent, so an agent the list does not know can still run. -->
-      <AcpAgentList v-if="kind === 'acp-gateway'" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />
+      <AcpAgentList v-if="kind === 'acp-gateway'" class="@md:col-span-2" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />
       <UnverifiedAgentConsent v-if="unverifiedAgent" v-model="params.allowUnverified" class="@md:col-span-2" id-prefix="start-agent" :agent="params.agent" />
+      </div>
+      </div>
       </div>
 
       <!-- Said before the button rather than after it is pressed. -->
