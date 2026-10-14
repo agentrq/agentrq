@@ -255,9 +255,9 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 			_, err := r.LinkPanoDocTasks(ctx, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81}})
 			return err
 		}},
-		{"list doc tasks", func(r Repository) error { _, err := r.ListPanoDocTasks(ctx, []int64{1}); return err }},
+		{"list doc tasks", func(r Repository) error { _, err := r.ListPanoDocTasks(ctx, skUser, []int64{1}); return err }},
 		{"list task statuses", func(r Repository) error { _, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{81}); return err }},
-		{"list docs of a task", func(r Repository) error { _, err := r.ListPanoDocIDsOfTask(ctx, 81); return err }},
+		{"list docs of a task", func(r Repository) error { _, err := r.ListPanoDocIDsOfTask(ctx, skUser, 81); return err }},
 		{"list ongoing tasks", func(r Repository) error { _, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); return err }},
 		{"set the count", func(r Repository) error { return r.SetPanoChecklistDone(ctx, skUser, 1, 1) }},
 		{"list docs naming tasks", func(r Repository) error { _, err := r.ListPanoDocsNamingTasks(ctx, 0, 10); return err }},
@@ -298,7 +298,7 @@ func TestPanoRepository_AddNoFiles(t *testing.T) {
 }
 
 // A doc's links name each task once, read back with the task's status while
-// the task exists, and a task's docs are found by the task alone.
+// the task exists, and a task's docs are found by the task, within one account.
 func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	ctx := context.Background()
 	db, r := panoDB(t)
@@ -328,15 +328,23 @@ func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	if n, err := r.LinkPanoDocTasks(ctx, nil); err != nil || n != 0 {
 		t.Errorf("linking nothing = %d, %v", n, err)
 	}
-	got, err := r.ListPanoDocTasks(ctx, []int64{2, 1})
+	// A link of another account's, on the same doc id, is never read as this
+	// account's, though its task is that account's own.
+	if err := db.Create(&model.PanoDocTask{ID: 45, CreatedAt: panoNow, UserID: skUser + 1, DocID: 1, TaskID: 35, WorkspaceID: 7}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ids, err := r.ListPanoDocIDsOfTask(ctx, skUser, 35); err != nil || len(ids) != 0 {
+		t.Errorf("ListPanoDocIDsOfTask of another account's task = %v, %v, want none", ids, err)
+	}
+	got, err := r.ListPanoDocTasks(ctx, skUser, []int64{2, 1})
 	want := []PanoTaskStatus{{DocID: 1, TaskID: 32, WorkspaceID: 7, Status: "completed"}, {DocID: 1, TaskID: 31, WorkspaceID: 7, Status: "ongoing"}, {DocID: 2, TaskID: 31, WorkspaceID: 7, Status: "ongoing"}}
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("ListPanoDocTasks = %+v, %v, want %+v, by doc, the oldest link first", got, err, want)
 	}
-	if got, err := r.ListPanoDocTasks(ctx, nil); err != nil || len(got) != 0 {
+	if got, err := r.ListPanoDocTasks(ctx, skUser, nil); err != nil || len(got) != 0 {
 		t.Errorf("ListPanoDocTasks of no doc = %+v, %v", got, err)
 	}
-	if ids, err := r.ListPanoDocIDsOfTask(ctx, 31); err != nil || !reflect.DeepEqual(ids, []int64{1, 2}) {
+	if ids, err := r.ListPanoDocIDsOfTask(ctx, skUser, 31); err != nil || !reflect.DeepEqual(ids, []int64{1, 2}) {
 		t.Errorf("ListPanoDocIDsOfTask = %v, %v, want docs 1 and 2", ids, err)
 	}
 	statuses, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{31, 35, 99})
@@ -354,7 +362,7 @@ func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	if err := r.DeleteTask(ctx, 7, 32, skUser); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := r.ListPanoDocTasks(ctx, []int64{1}); len(got) != 1 || got[0].TaskID != 31 {
+	if got, _ := r.ListPanoDocTasks(ctx, skUser, []int64{1}); len(got) != 1 || got[0].TaskID != 31 {
 		t.Errorf("after deleting task 32 the doc's tasks are %+v, want only 31", got)
 	}
 	var left int64
@@ -415,7 +423,7 @@ func TestPanoRepository_CreateTaskLinkingPanoDoc(t *testing.T) {
 	if err != nil || created.ID != 51 {
 		t.Fatalf("CreateTaskLinkingPanoDoc = %+v, %v", created, err)
 	}
-	if got, _ := r.ListPanoDocTasks(ctx, []int64{1}); len(got) != 1 || got[0].TaskID != 51 {
+	if got, _ := r.ListPanoDocTasks(ctx, skUser, []int64{1}); len(got) != 1 || got[0].TaskID != 51 {
 		t.Errorf("the doc's tasks are %+v, want the new task", got)
 	}
 	for _, docID := range []int64{2, 99} {

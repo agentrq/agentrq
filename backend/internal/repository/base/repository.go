@@ -111,9 +111,9 @@ type Repository interface {
 	AddPanoComment(ctx context.Context, userID int64, c model.PanoComment) error
 	DeletePanoDoc(ctx context.Context, userID, id int64) ([]string, error)
 	LinkPanoDocTasks(ctx context.Context, links []model.PanoDocTask) (int64, error)
-	ListPanoDocTasks(ctx context.Context, docIDs []int64) ([]PanoTaskStatus, error)
+	ListPanoDocTasks(ctx context.Context, userID int64, docIDs []int64) ([]PanoTaskStatus, error)
 	ListPanoTaskStatuses(ctx context.Context, userID int64, ids []int64) ([]PanoTaskStatus, error)
-	ListPanoDocIDsOfTask(ctx context.Context, taskID int64) ([]int64, error)
+	ListPanoDocIDsOfTask(ctx context.Context, userID, taskID int64) ([]int64, error)
 	ListOngoingAgentTaskIDs(ctx context.Context, userID, workspaceID int64, limit int) ([]int64, error)
 	SetPanoChecklistDone(ctx context.Context, userID, docID int64, done int) error
 	ListPanoDocsNamingTasks(ctx context.Context, afterID int64, limit int) ([]model.PanoDoc, error)

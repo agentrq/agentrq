@@ -1006,7 +1006,7 @@ func TestPano_SyncTask(t *testing.T) {
 // failingDocTasks fails reading a doc's tasks, and nothing else.
 type failingDocTasks struct{ base.Repository }
 
-func (f *failingDocTasks) ListPanoDocTasks(context.Context, []int64) ([]base.PanoTaskStatus, error) {
+func (f *failingDocTasks) ListPanoDocTasks(context.Context, int64, []int64) ([]base.PanoTaskStatus, error) {
 	return nil, errors.New("database unavailable")
 }
 

@@ -174,7 +174,7 @@ func (c *controller) ListPanoDocs(ctx context.Context, req entity.ListPanoDocsRe
 	for i, d := range docs {
 		ids[i] = d.ID
 	}
-	linked, err := c.repository.ListPanoDocTasks(ctx, ids)
+	linked, err := c.repository.ListPanoDocTasks(ctx, uid, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (c *controller) GetPanoDoc(ctx context.Context, req entity.GetPanoDocReques
 		return nil, err
 	}
 	doc := fromModelPanoDoc(d)
-	tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{d.ID})
+	tasks, err := c.repository.ListPanoDocTasks(ctx, uid, []int64{d.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +410,7 @@ func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequ
 	}
 	// The ops apply to the markdown as a read returns it, with each assigned
 	// item showing its task's status now.
-	tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{d.ID})
+	tasks, err := c.repository.ListPanoDocTasks(ctx, uid, []int64{d.ID})
 	if err != nil {
 		return nil, err
 	}
@@ -754,7 +754,7 @@ func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []i
 	if err != nil {
 		return 0, nil, err
 	}
-	ids, err := c.repository.ListPanoDocIDsOfTask(ctx, taskID)
+	ids, err := c.repository.ListPanoDocIDsOfTask(ctx, t.UserID, taskID)
 	if err != nil {
 		return t.UserID, nil, err
 	}
@@ -768,7 +768,7 @@ func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []i
 		if err != nil {
 			return t.UserID, linked, err
 		}
-		tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{id})
+		tasks, err := c.repository.ListPanoDocTasks(ctx, t.UserID, []int64{id})
 		if err != nil {
 			return t.UserID, linked, err
 		}

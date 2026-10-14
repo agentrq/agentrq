@@ -112,10 +112,9 @@ func (r *repository) LinkPanoDocTasks(ctx context.Context, links []model.PanoDoc
 	return linkPanoDocTasks(r.conn(ctx), links)
 }
 
-// ListPanoDocTasks returns the tasks linked to the docs that still exist,
-// with their doc and status, each doc's oldest link first: one query for a
-// whole board.
-func (r *repository) ListPanoDocTasks(ctx context.Context, docIDs []int64) ([]PanoTaskStatus, error) {
+// ListPanoDocTasks returns the account's tasks linked to its docs, with their
+// doc and status, each doc's oldest link first: one query for a whole board.
+func (r *repository) ListPanoDocTasks(ctx context.Context, userID int64, docIDs []int64) ([]PanoTaskStatus, error) {
 	var out []PanoTaskStatus
 	if len(docIDs) == 0 {
 		return out, nil
@@ -123,7 +122,7 @@ func (r *repository) ListPanoDocTasks(ctx context.Context, docIDs []int64) ([]Pa
 	err := r.conn(ctx).Table("pano_doc_tasks").
 		Select("pano_doc_tasks.doc_id, pano_doc_tasks.task_id, tasks.workspace_id, tasks.status").
 		Joins("JOIN tasks ON tasks.id = pano_doc_tasks.task_id AND tasks.user_id = pano_doc_tasks.user_id").
-		Where("pano_doc_tasks.doc_id IN ?", docIDs).
+		Where("pano_doc_tasks.doc_id IN ? AND pano_doc_tasks.user_id = ?", docIDs, userID).
 		Order("pano_doc_tasks.doc_id, pano_doc_tasks.created_at asc, pano_doc_tasks.id asc").
 		Scan(&out).Error
 	return out, err
@@ -141,10 +140,11 @@ func (r *repository) ListPanoTaskStatuses(ctx context.Context, userID int64, ids
 	return out, err
 }
 
-// ListPanoDocIDsOfTask returns the ids of the docs a task is linked to.
-func (r *repository) ListPanoDocIDsOfTask(ctx context.Context, taskID int64) ([]int64, error) {
+// ListPanoDocIDsOfTask returns the ids of the account's docs a task is linked
+// to.
+func (r *repository) ListPanoDocIDsOfTask(ctx context.Context, userID, taskID int64) ([]int64, error) {
 	var ids []int64
-	err := r.conn(ctx).Model(&model.PanoDocTask{}).Where("task_id = ?", taskID).Order("doc_id").Pluck("doc_id", &ids).Error
+	err := r.conn(ctx).Model(&model.PanoDocTask{}).Where("task_id = ? AND user_id = ?", taskID, userID).Order("doc_id").Pluck("doc_id", &ids).Error
 	return ids, err
 }
 

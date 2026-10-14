@@ -37,8 +37,8 @@ func TestPanoDocTaskQueriesUseAnIndex(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"a doc's tasks, with their status", func() error { _, err := r.ListPanoDocTasks(ctx, []int64{1, 2}); return err }},
-		{"the docs of a task", func() error { _, err := r.ListPanoDocIDsOfTask(ctx, 31); return err }},
+		{"a doc's tasks, with their status", func() error { _, err := r.ListPanoDocTasks(ctx, skUser, []int64{1, 2}); return err }},
+		{"the docs of a task", func() error { _, err := r.ListPanoDocIDsOfTask(ctx, skUser, 31); return err }},
 		{"the statuses of an item's tasks", func() error { _, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{31, 32}); return err }},
 		{"a workspace's ongoing agent tasks", func() error { _, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); return err }},
 	} {
