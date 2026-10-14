@@ -173,7 +173,7 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
   <div class="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-4 shrink-0 flex flex-row items-start justify-between gap-4">
       <div class="flex flex-col min-w-0 flex-1">
-        <h1 class="text-lg md:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Pano</h1>
+        <h1 class="text-lg @min-[48rem]:text-2xl font-black text-gray-800 dark:text-zinc-200 truncate leading-tight">Pano</h1>
         <p class="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
           Docs every workspace's agents share. An agent posts one and passes its id to the agents that need it.
         </p>
@@ -183,7 +183,7 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
     <div class="px-4 pb-10 space-y-5 rounded-xl [background-image:radial-gradient(rgba(0,0,0,0.13)_1px,transparent_1px)] dark:[background-image:radial-gradient(rgba(255,255,255,0.09)_1px,transparent_1px)] [background-size:18px_18px]">
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
         <input v-model="query" type="search" data-test="pano-search" placeholder="Filter by title"
-          class="w-full sm:max-w-sm px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
+          class="w-full @min-[40rem]:max-w-sm px-3 py-2 text-xs bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg text-gray-900 dark:text-zinc-100 placeholder-gray-300 dark:placeholder-zinc-600 focus:outline-none focus:border-gray-400 dark:focus:border-zinc-500" />
         <!-- Quick filter pills: every color, or one. -->
         <div class="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="Filter by color">
           <button type="button" role="radio" :aria-checked="!color" data-test="pano-filter-all" @click="color = ''"
@@ -206,7 +206,7 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
       <div v-else class="grid gap-x-5 gap-y-7 pt-2 grid-cols-1 @min-[33rem]:grid-cols-2 @min-[57rem]:grid-cols-3 @min-[73rem]:grid-cols-4 @min-[89rem]:grid-cols-5">
         <!-- A new note, first on the board; a dot starts it in that color. -->
         <div data-test="pano-new-card"
-          class="relative flex flex-col items-center justify-center gap-3 h-48 sm:h-72 p-5 rounded-md border border-dashed border-gray-300 dark:border-zinc-700 bg-white/60 dark:bg-zinc-900/60 text-center">
+          class="relative flex flex-col items-center justify-center gap-3 h-48 @min-[40rem]:h-72 p-5 rounded-md border border-dashed border-gray-300 dark:border-zinc-700 bg-white/60 dark:bg-zinc-900/60 text-center">
           <router-link to="/pano/new" data-test="pano-new" class="flex flex-col items-center gap-3 group">
             <span class="flex items-center justify-center w-12 h-12 rounded-xl bg-[#ffdcb5] text-[#7a3d06] group-hover:scale-105 transition-transform">
               <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>

@@ -321,7 +321,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
 </script>
 
 <template>
-  <div class="flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
+  <div class="@container flex flex-col h-full w-full overflow-y-auto custom-scrollbar">
     <div class="w-full px-4 py-2 mb-4 shrink-0 flex flex-row items-center justify-between gap-4">
       <router-link to="/pano" class="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-100">← Pano</router-link>
       <div v-if="doc && !editing" class="flex shrink-0 items-center gap-2">
@@ -363,8 +363,8 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
           <button type="button" data-test="pano-conflict-reload" :class="primary" :disabled="busy" @click="run(reloadEditing)">Load latest</button>
         </div>
 
-        <div class="grid lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section class="p-5 sm:p-8 bg-gray-50/60 dark:bg-zinc-950/40 min-w-0">
+        <div class="grid @min-[64rem]:grid-cols-[minmax(0,1fr)_340px]">
+          <section class="p-5 @min-[40rem]:p-8 bg-gray-50/60 dark:bg-zinc-950/40 min-w-0">
             <div class="flex items-center justify-between mb-6">
               <span :class="section">Note surface</span>
               <div class="flex p-0.5 rounded-lg bg-gray-100 dark:bg-zinc-800 text-[11px] font-bold" role="tablist">
@@ -374,7 +374,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                   :class="preview ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-zinc-400'" class="px-3 py-1 rounded-md">Preview</button>
               </div>
             </div>
-            <div :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 sm:px-8 pt-9 pb-6">
+            <div :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 @min-[40rem]:px-8 pt-9 pb-6">
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
@@ -388,7 +388,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             </div>
           </section>
 
-          <aside class="p-5 sm:p-6 space-y-6 border-t lg:border-t-0 lg:border-l border-gray-100 dark:border-zinc-800 min-w-0">
+          <aside class="p-5 @min-[40rem]:p-6 space-y-6 border-t @min-[64rem]:border-t-0 @min-[64rem]:border-l border-gray-100 dark:border-zinc-800 min-w-0">
             <div>
               <div class="flex items-baseline justify-between">
                 <span :class="label">Paper</span>
@@ -449,10 +449,10 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
         </div>
       </form>
 
-      <div v-else-if="doc" class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-        <article :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 sm:px-10 pt-10 pb-8 min-w-0">
+      <div v-else-if="doc" class="grid gap-8 @min-[64rem]:grid-cols-[minmax(0,1fr)_320px] items-start">
+        <article :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 @min-[40rem]:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
-          <h1 data-test="pano-title" :class="color.title" class="text-2xl md:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
+          <h1 data-test="pano-title" :class="color.title" class="text-2xl @min-[48rem]:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
           <p data-test="pano-meta" :class="color.muted" class="mt-1 text-[11px]">
             By {{ panoAuthor(doc.createdByWorkspaceId, workspaces) }} · updated {{ panoDate(doc.updatedAt) }} by {{ panoAuthor(doc.updatedByWorkspaceId, workspaces) }}
           </p>
@@ -510,7 +510,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
             </ul>
           </section>
 
-          <section v-if="relatedTasks.length" data-test="pano-related" class="hidden lg:block space-y-2">
+          <section v-if="relatedTasks.length" data-test="pano-related" class="hidden @min-[64rem]:block space-y-2">
             <h3 :class="section">Related tasks</h3>
             <ul class="space-y-1">
               <li v-for="t in relatedTasks" :key="t.path" class="flex items-center gap-2 text-[12px] min-w-0">
