@@ -105,4 +105,7 @@ func TestForkFolderErrors(t *testing.T) {
 	if _, err := repo.ForkFolderMachines(ctx, 7, memUserID); err == nil {
 		t.Error("no sessions table, and no error")
 	}
+	if err := repo.DeleteMachine(ctx, 3, memUserID); err == nil {
+		t.Error("no sessions table, and no error")
+	}
 }

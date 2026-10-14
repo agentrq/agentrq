@@ -143,6 +143,10 @@ func SecretMatches(storedHash, presented string) bool {
 // machine does not flap the UI between online and offline.
 const OnlineThreshold = 90 * time.Second
 
+// StaleThreshold is how long a machine can stay away before its agents are no
+// longer counted as running in its workspaces.
+const StaleThreshold = 30 * time.Minute
+
 // IsOnline reports whether a machine was heard from recently enough.
 //
 // Derived rather than stored, and that is the whole point: a stored flag says

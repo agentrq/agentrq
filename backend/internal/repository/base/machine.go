@@ -119,11 +119,16 @@ func (r *repository) UpdateMachine(ctx context.Context, m model.Machine) (model.
 }
 
 // DeleteMachine removes a machine, which is how a token is revoked.
-// DeleteMachine deletes a machine, and with it the record of the fork
-// folders it holds: nothing can reach them to delete them any more.
+// DeleteMachine deletes a machine, and with it its sessions and the record of
+// the fork folders it holds: nothing can reach them any more.
 func (r *repository) DeleteMachine(ctx context.Context, id, userID int64) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("machine_id = ? AND user_id = ?", id, userID).Delete(&model.ForkFolder{}).Error; err != nil {
+			return err
+		}
+		// Its sessions go too: nothing could reach them to stop them, and a
+		// workspace with one left "running" can never be merged.
+		if err := tx.Where("machine_id = ? AND user_id = ?", id, userID).Delete(&model.Session{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("id = ? AND user_id = ?", id, userID).Delete(&model.Machine{}).Error
@@ -368,6 +373,21 @@ func (r *repository) ReconcileSessions(ctx context.Context, machineID int64, run
 	// removed when it ends: these are rows for agents that are definitely not
 	// running, on a page whose question is "what is running here".
 	return q.Delete(&model.Session{}).Error
+}
+
+// DeleteStaleSessions deletes the live sessions of every machine not heard
+// from since seenBefore, or deleted, and says how many it deleted.
+//
+// Nothing else ever ends them: the daemon that would report or reconcile them
+// is gone, and a kill cannot reach it, so they block the workspace's merge and
+// next launch for as long as the machine stays away.
+func (r *repository) DeleteStaleSessions(ctx context.Context, seenBefore time.Time) (int64, error) {
+	seen := r.conn(ctx).Model(&model.Machine{}).Select("id").
+		Where("last_seen_at >= ?", seenBefore)
+	res := r.conn(ctx).
+		Where("status IN ? AND machine_id NOT IN (?)", []string{"starting", "running"}, seen).
+		Delete(&model.Session{})
+	return res.RowsAffected, res.Error
 }
 
 // CountLiveSessionsByUser counts the sessions still running, per machine.

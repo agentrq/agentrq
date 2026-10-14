@@ -5,6 +5,7 @@
 package crud
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"gorm.io/datatypes"
 
+	machinerules "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -183,5 +185,24 @@ func TestReconcileSessionsRefusesAnEmptyMachine(t *testing.T) {
 	env := newTestController(t)
 	if err := env.controller.ReconcileSessions(t.Context(), entity.ReconcileSessionsRequest{}); err == nil {
 		t.Error("sessions were reconciled against no machine at all")
+	}
+}
+
+// A machine away longer than the threshold loses its live sessions.
+func TestDeleteStaleSessions(t *testing.T) {
+	env := newTestController(t)
+	before := time.Now().Add(-machinerules.StaleThreshold)
+	env.repo.EXPECT().
+		DeleteStaleSessions(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, seenBefore time.Time) (int64, error) {
+			if seenBefore.Before(before) || seenBefore.After(time.Now().Add(-machinerules.StaleThreshold)) {
+				t.Errorf("seenBefore = %v, want %v ago", seenBefore, machinerules.StaleThreshold)
+			}
+			return 2, nil
+		})
+
+	n, err := env.controller.DeleteStaleSessions(t.Context())
+	if err != nil || n != 2 {
+		t.Errorf("DeleteStaleSessions = %d, %v; want 2, nil", n, err)
 	}
 }

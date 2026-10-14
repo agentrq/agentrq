@@ -149,6 +149,7 @@ type Repository interface {
 	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
 	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
 	DeleteFinishedSession(ctx context.Context, id int64) error
+	DeleteStaleSessions(ctx context.Context, seenBefore time.Time) (int64, error)
 	ListSessionsByMachine(ctx context.Context, machineID, userID int64) ([]model.Session, error)
 	ActiveSessionForWorkspace(ctx context.Context, workspaceID, userID int64) (model.Session, error)
 	RecordForkFolder(ctx context.Context, workspaceID, machineID, userID int64) error

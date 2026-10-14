@@ -496,6 +496,11 @@ happened is the audit log; the rows are not it, and keeping them turns the
 machine page into a list of everything that has ever run and the table into one
 that grows forever.
 
+**A machine away for 30 minutes, or deleted, loses its live session rows**
+(`DeleteStaleSessions`, swept every 5 minutes, and `DeleteMachine`): no daemon
+is left to end them, and a row left "running" blocks the workspace's merge and
+next launch forever.
+
 The consequence to keep in mind: a failure is visible in the moment, over the
 event stream, and not afterwards. If that needs to change, add a retention
 window rather than keeping every row indefinitely.

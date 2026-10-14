@@ -25,6 +25,7 @@ type SessionController interface {
 	GetSession(ctx context.Context, req entity.GetSessionRequest) (*entity.GetSessionResponse, error)
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
+	DeleteStaleSessions(ctx context.Context) (int64, error)
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
 	ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
@@ -301,6 +302,13 @@ func (c *controller) ReconcileSessions(ctx context.Context, req entity.Reconcile
 		return fmt.Errorf("invalid machine id")
 	}
 	return c.repository.ReconcileSessions(ctx, req.MachineID, req.Running, time.Now())
+}
+
+// DeleteStaleSessions ends the agents of every machine away for longer than
+// machinerules.StaleThreshold, of every account, so their workspaces can be
+// merged and launched again. The machines stay enrolled.
+func (c *controller) DeleteStaleSessions(ctx context.Context) (int64, error) {
+	return c.repository.DeleteStaleSessions(ctx, time.Now().Add(-machinerules.StaleThreshold))
 }
 
 // RecordTerminalView counts somebody opening or closing a session's terminal.
