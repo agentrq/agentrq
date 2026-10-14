@@ -21,7 +21,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const workspaces = ref([]);
   const loading = ref(false);
 
-  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  // The account's supervisor workspace leads the list; the rest follow by name.
+  const isSupervisor = (w) => w.name === 'supervisor';
+  const byName = (a, b) => isSupervisor(b) - isSupervisor(a)
+    || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
   // Reads overlap — a form re-reads the list after its own change, and the
   // stream's `workspaces.changed` asks for the same — so only the latest one

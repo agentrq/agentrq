@@ -38,6 +38,15 @@ describe('workspaceStore', () => {
       expect(store.workspaces.map(w => w.name)).toEqual(['agent-2', 'agent-10'])
     })
 
+    it('puts the supervisor workspace first, ahead of names that sort before it', async () => {
+      fetchWorkspaces.mockResolvedValue({ workspaces: [ws('c', 'zeta'), ws('s', 'supervisor'), ws('a', 'alpha'), ws('b', 'Supervisor-2')] })
+      const store = useWorkspaceStore()
+
+      await store.fetchWorkspaces()
+
+      expect(store.workspaces.map(w => w.name)).toEqual(['supervisor', 'alpha', 'Supervisor-2', 'zeta'])
+    })
+
     it('treats a response with no list as an empty one', async () => {
       fetchWorkspaces.mockResolvedValue({})
       const store = useWorkspaceStore()
@@ -435,6 +444,15 @@ describe('workspaceStore', () => {
       store.updateWorkspaceMetadata({ id: 'a', name: 'zulu' })
 
       expect(store.workspaces.map(w => w.name)).toEqual(['beta', 'zulu'])
+    })
+
+    it('keeps the supervisor first after a rename', () => {
+      const store = useWorkspaceStore()
+      store.workspaces.push({ id: 's', name: 'supervisor' })
+
+      store.updateWorkspaceMetadata({ id: 'a', name: 'aardvark' })
+
+      expect(store.workspaces.map(w => w.name)).toEqual(['supervisor', 'aardvark', 'beta'])
     })
 
     it('ignores a workspace it does not hold', () => {
