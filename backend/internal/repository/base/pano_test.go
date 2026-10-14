@@ -25,7 +25,7 @@ func panoDB(t *testing.T) (*gorm.DB, Repository) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}); err != nil {
+	if err := db.AutoMigrate(&model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db, New(&mockDB{db: db})
@@ -37,14 +37,14 @@ func seedPano(t *testing.T, r Repository) {
 	t.Helper()
 	ctx := context.Background()
 	live := model.PanoDoc{ID: 1, UserID: skUser, Title: "live", Markdown: "live markdown", CreatedAt: panoNow, UpdatedAt: panoNow, TTLDays: 1, ExpiresAt: panoNow.Add(24 * time.Hour)}
-	if err := r.SavePanoDoc(ctx, live, true, []model.PanoFile{{ID: 11, DocID: 1, Linked: true, Filename: "a.png", StorageID: "file-11", CreatedAt: panoNow}}, nil); err != nil {
+	if err := r.SavePanoDoc(ctx, live, true, []model.PanoFile{{ID: 11, DocID: 1, Linked: true, Filename: "a.png", StorageID: "file-11", CreatedAt: panoNow}}, nil, nil); err != nil {
 		t.Fatalf("seed live doc: %v", err)
 	}
 	if err := r.AddPanoComment(ctx, skUser, model.PanoComment{ID: 21, DocID: 1, Body: "first", CreatedAt: panoNow}); err != nil {
 		t.Fatalf("seed comment: %v", err)
 	}
 	expired := model.PanoDoc{ID: 2, UserID: skUser, Title: "expired", Markdown: "expired", CreatedAt: panoNow, UpdatedAt: panoNow.Add(-2 * time.Hour), ExpiresAt: panoNow.Add(-time.Hour)}
-	if err := r.SavePanoDoc(ctx, expired, true, nil, nil); err != nil {
+	if err := r.SavePanoDoc(ctx, expired, true, nil, nil, nil); err != nil {
 		t.Fatalf("seed expired doc: %v", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestPanoRepository_ListsThePersonsDocsFirst(t *testing.T) {
 		age    time.Duration
 	}{{1, 0, 3 * time.Hour}, {2, 5, time.Hour}, {3, 0, 2 * time.Hour}, {4, 6, 0}} {
 		doc := model.PanoDoc{ID: d.id, UserID: skUser, CreatedByWorkspaceID: d.ws, Markdown: "m", CreatedAt: panoNow, UpdatedAt: panoNow.Add(-d.age), ExpiresAt: panoNow.Add(time.Hour)}
-		if err := r.SavePanoDoc(ctx, doc, true, nil, nil); err != nil {
+		if err := r.SavePanoDoc(ctx, doc, true, nil, nil, nil); err != nil {
 			t.Fatalf("seed doc %d: %v", d.id, err)
 		}
 	}
@@ -113,7 +113,7 @@ func TestPanoRepository_UpdateReplacesFilesInOneGo(t *testing.T) {
 	later := panoNow.Add(time.Hour)
 	d := model.PanoDoc{ID: 1, Version: 1, UserID: skUser, Title: "renamed", Excerpt: "e", Markdown: "renamed markdown", SizeBytes: 9, UpdatedAt: later, UpdatedByWorkspaceID: skWS, TTLDays: 7, ExpiresAt: later.AddDate(0, 0, 7)}
 	add := []model.PanoFile{{ID: 12, DocID: 1, Linked: true, Filename: "b.png", StorageID: "file-12", CreatedAt: later}}
-	if err := r.SavePanoDoc(ctx, d, false, add, []int64{11}); err != nil {
+	if err := r.SavePanoDoc(ctx, d, false, add, []int64{11}, nil); err != nil {
 		t.Fatalf("SavePanoDoc returned %v, want the doc updated", err)
 	}
 	got, err := r.GetPanoDoc(ctx, skUser, 1, later)
@@ -131,7 +131,7 @@ func TestPanoRepository_UpdateReplacesFilesInOneGo(t *testing.T) {
 		{ID: 2, UserID: skUser, UpdatedAt: later},
 		{ID: 1, UserID: skOther, UpdatedAt: later},
 	} {
-		if err := r.SavePanoDoc(ctx, gone, false, nil, nil); !errors.Is(err, ErrNotFound) {
+		if err := r.SavePanoDoc(ctx, gone, false, nil, nil, nil); !errors.Is(err, ErrNotFound) {
 			t.Errorf("updating doc %d of user %d returned %v, want ErrNotFound", gone.ID, gone.UserID, err)
 		}
 	}
@@ -208,7 +208,7 @@ func TestPanoRepository_ListExpiredPanoDocs(t *testing.T) {
 	_, r := panoDB(t)
 	seedPano(t, r)
 	older := model.PanoDoc{ID: 3, UserID: skOther, Markdown: "older", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(-2 * time.Hour)}
-	if err := r.SavePanoDoc(ctx, older, true, nil, nil); err != nil {
+	if err := r.SavePanoDoc(ctx, older, true, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,10 +233,10 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 		{"list", func(r Repository) error { _, err := r.ListPanoDocs(ctx, skUser, panoNow); return err }},
 		{"get", func(r Repository) error { _, err := r.GetPanoDoc(ctx, skUser, 1, panoNow); return err }},
 		{"create", func(r Repository) error {
-			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 5, UserID: skUser, ExpiresAt: later}, true, []model.PanoFile{{ID: 51, DocID: 5}}, nil)
+			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 5, UserID: skUser, ExpiresAt: later}, true, []model.PanoFile{{ID: 51, DocID: 5}}, nil, nil)
 		}},
 		{"update", func(r Repository) error {
-			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, []model.PanoFile{{ID: 12, DocID: 1}}, []int64{11})
+			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, []model.PanoFile{{ID: 12, DocID: 1}}, []int64{11}, nil)
 		}},
 		{"list files", func(r Repository) error { _, err := r.ListPanoFiles(ctx, 1); return err }},
 		{"attach", func(r Repository) error {
@@ -248,6 +248,23 @@ func TestPanoRepository_EveryStatementFailure(t *testing.T) {
 		}},
 		{"delete", func(r Repository) error { _, err := r.DeletePanoDoc(ctx, skUser, 1); return err }},
 		{"list expired", func(r Repository) error { _, err := r.ListExpiredPanoDocs(ctx, panoNow, 10); return err }},
+		{"update with links", func(r Repository) error {
+			return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81}})
+		}},
+		{"link", func(r Repository) error {
+			_, err := r.LinkPanoDocTasks(ctx, []model.PanoDocTask{{ID: 71, DocID: 1, TaskID: 81}})
+			return err
+		}},
+		{"list doc tasks", func(r Repository) error { _, err := r.ListPanoDocTasks(ctx, []int64{1}); return err }},
+		{"list task statuses", func(r Repository) error { _, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{81}); return err }},
+		{"list docs of a task", func(r Repository) error { _, err := r.ListPanoDocIDsOfTask(ctx, 81); return err }},
+		{"list ongoing tasks", func(r Repository) error { _, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); return err }},
+		{"set the count", func(r Repository) error { return r.SetPanoChecklistDone(ctx, skUser, 1, 1) }},
+		{"list docs naming tasks", func(r Repository) error { _, err := r.ListPanoDocsNamingTasks(ctx, 0, 10); return err }},
+		{"create a task for a doc", func(r Repository) error {
+			_, err := r.CreateTaskLinkingPanoDoc(ctx, model.Task{ID: 81, UserID: skUser, WorkspaceID: 7, Status: "notstarted"}, model.PanoDocTask{ID: 71, UserID: skUser, DocID: 1, TaskID: 81}, panoNow)
+			return err
+		}},
 	} {
 		t.Run(tc.name+" passes on a failure of any of its statements", func(t *testing.T) {
 			for n := 1; ; n++ {
@@ -280,47 +297,148 @@ func TestPanoRepository_AddNoFiles(t *testing.T) {
 	}
 }
 
-// The docs linking a task are the account's live ones whose markdown holds
-// its path, and a sync writes their checklist without saving them.
-func TestPanoRepository_SyncsTheDocsLinkingATask(t *testing.T) {
+// A doc's links name each task once, read back with the task's status while
+// the task exists, and a task's docs are found by the task alone.
+func TestPanoRepository_DocTaskLinks(t *testing.T) {
 	ctx := context.Background()
-	_, r := panoDB(t)
-	const path = "/workspaces/a/tasks/b"
-	for _, d := range []model.PanoDoc{
-		{ID: 1, UserID: skUser, Title: "linking", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
-		{ID: 2, UserID: skUser, Title: "expired", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(-time.Hour)},
-		{ID: 3, UserID: skUser + 1, Title: "theirs", Markdown: "- [ ] x → [@w](" + path + ")", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
-		{ID: 4, UserID: skUser, Title: "unlinked", Markdown: "- [ ] x", UpdatedAt: panoNow, ExpiresAt: panoNow.Add(time.Hour)},
+	db, r := panoDB(t)
+	seedPano(t, r)
+	for _, task := range []model.Task{
+		{ID: 31, UserID: skUser, WorkspaceID: 7, Status: "ongoing", Assignee: "agent"},
+		{ID: 32, UserID: skUser, WorkspaceID: 7, Status: "completed", Assignee: "agent"},
+		{ID: 33, UserID: skUser, WorkspaceID: 7, Status: "ongoing", Assignee: "human"},
+		{ID: 34, UserID: skUser, WorkspaceID: 8, Status: "ongoing", Assignee: "agent"},
+		{ID: 35, UserID: skUser + 1, WorkspaceID: 7, Status: "ongoing", Assignee: "agent"},
 	} {
-		if err := r.SavePanoDoc(ctx, d, true, nil, nil); err != nil {
+		if err := db.Create(&task).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	docs, err := r.ListPanoDocsLinking(ctx, skUser, path, panoNow)
-	if err != nil || len(docs) != 1 || docs[0].ID != 1 || docs[0].Markdown == "" {
-		t.Fatalf("ListPanoDocsLinking = %+v, %v, want doc 1 with its markdown", docs, err)
+	link := func(id, doc, task int64, at time.Time) model.PanoDocTask {
+		return model.PanoDocTask{ID: id, CreatedAt: at, UserID: skUser, DocID: doc, TaskID: task, WorkspaceID: 7}
 	}
-	d := docs[0]
-	d.Markdown, d.Excerpt, d.SizeBytes, d.ChecklistDone, d.ChecklistTotal = "- [x] done", "- [x] done", 10, 1, 1
-	d.UpdatedAt, d.Title = panoNow.Add(time.Minute), "ignored"
-	if err := r.SyncPanoChecklist(ctx, d); err != nil {
+	later := panoNow.Add(time.Hour)
+	if err := r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: 1, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, []model.PanoDocTask{link(41, 1, 32, later)}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := r.GetPanoDoc(ctx, skUser, 1, panoNow)
-	if err != nil || got.Markdown != "- [x] done" || got.ChecklistDone != 1 || got.SizeBytes != 10 || got.Title != "linking" || !got.UpdatedAt.Equal(panoNow) {
-		t.Errorf("after the sync the doc is %+v, %v, want the checklist written and the rest kept", got, err)
+	added, err := r.LinkPanoDocTasks(ctx, []model.PanoDocTask{link(42, 1, 31, later.Add(time.Minute)), link(43, 1, 32, later), link(44, 2, 31, later)})
+	if err != nil || added != 2 {
+		t.Fatalf("LinkPanoDocTasks = %d, %v, want the two new links added and the repeated one skipped", added, err)
+	}
+	if n, err := r.LinkPanoDocTasks(ctx, nil); err != nil || n != 0 {
+		t.Errorf("linking nothing = %d, %v", n, err)
+	}
+	got, err := r.ListPanoDocTasks(ctx, []int64{2, 1})
+	want := []PanoTaskStatus{{DocID: 1, TaskID: 32, WorkspaceID: 7, Status: "completed"}, {DocID: 1, TaskID: 31, WorkspaceID: 7, Status: "ongoing"}, {DocID: 2, TaskID: 31, WorkspaceID: 7, Status: "ongoing"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("ListPanoDocTasks = %+v, %v, want %+v, by doc, the oldest link first", got, err, want)
+	}
+	if got, err := r.ListPanoDocTasks(ctx, nil); err != nil || len(got) != 0 {
+		t.Errorf("ListPanoDocTasks of no doc = %+v, %v", got, err)
+	}
+	if ids, err := r.ListPanoDocIDsOfTask(ctx, 31); err != nil || !reflect.DeepEqual(ids, []int64{1, 2}) {
+		t.Errorf("ListPanoDocIDsOfTask = %v, %v, want docs 1 and 2", ids, err)
+	}
+	statuses, err := r.ListPanoTaskStatuses(ctx, skUser, []int64{31, 35, 99})
+	if err != nil || len(statuses) != 1 || statuses[0] != (PanoTaskStatus{TaskID: 31, WorkspaceID: 7, Status: "ongoing"}) {
+		t.Errorf("ListPanoTaskStatuses = %+v, %v, want only the account's task 31", statuses, err)
+	}
+	if statuses, err := r.ListPanoTaskStatuses(ctx, skUser, nil); err != nil || len(statuses) != 0 {
+		t.Errorf("ListPanoTaskStatuses of nothing = %+v, %v", statuses, err)
+	}
+	if ids, err := r.ListOngoingAgentTaskIDs(ctx, skUser, 7, 2); err != nil || !reflect.DeepEqual(ids, []int64{31}) {
+		t.Errorf("ListOngoingAgentTaskIDs = %v, %v, want the workspace's one ongoing agent task", ids, err)
+	}
+
+	// A deleted task drops out of the doc's tasks, and its links go with it.
+	if err := r.DeleteTask(ctx, 7, 32, skUser); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.ListPanoDocTasks(ctx, []int64{1}); len(got) != 1 || got[0].TaskID != 31 {
+		t.Errorf("after deleting task 32 the doc's tasks are %+v, want only 31", got)
+	}
+	var left int64
+	db.Model(&model.PanoDocTask{}).Where("task_id = ?", 32).Count(&left)
+	if left != 0 {
+		t.Errorf("%d links to the deleted task are left, want none", left)
 	}
 }
 
-// A write is made only on the version its writer read, and moves it on; the
-// checklist sync moves it too, as it changes the markdown.
+// The count of ticked items is written alone: the markdown, version and
+// updated_at stay.
+func TestPanoRepository_SetChecklistDone(t *testing.T) {
+	ctx := context.Background()
+	_, r := panoDB(t)
+	seedPano(t, r)
+	if err := r.SetPanoChecklistDone(ctx, skUser, 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.GetPanoDoc(ctx, skUser, 1, panoNow)
+	if err != nil || got.ChecklistDone != 3 || got.Version != 1 || got.Markdown != "live markdown" || !got.UpdatedAt.Equal(panoNow) {
+		t.Errorf("after setting the count the doc is %+v, %v, want 3 done and the rest kept", got, err)
+	}
+}
+
+// The backfill reads docs of any account that name a task, by id, a page at
+// a time.
+func TestPanoRepository_ListPanoDocsNamingTasks(t *testing.T) {
+	ctx := context.Background()
+	_, r := panoDB(t)
+	for _, d := range []model.PanoDoc{
+		{ID: 1, UserID: skUser, Markdown: "- [ ] x → [@w](/workspaces/a/tasks/b)", ExpiresAt: panoNow},
+		{ID: 2, UserID: skUser, Markdown: "nothing", ExpiresAt: panoNow},
+		{ID: 3, UserID: skUser + 1, Markdown: "see /workspaces/a/tasks/c", ExpiresAt: panoNow},
+		{ID: 4, UserID: skUser, Markdown: "- [ ] /tasks/d", ExpiresAt: panoNow},
+	} {
+		if err := r.SavePanoDoc(ctx, d, true, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := r.ListPanoDocsNamingTasks(ctx, 0, 2)
+	if err != nil || len(page) != 2 || page[0].ID != 1 || page[1].ID != 3 || page[0].Markdown == "" {
+		t.Fatalf("the first page = %+v, %v, want docs 1 and 3 with their markdown", page, err)
+	}
+	if page, err := r.ListPanoDocsNamingTasks(ctx, 3, 2); err != nil || len(page) != 1 || page[0].ID != 4 {
+		t.Errorf("the next page = %+v, %v, want doc 4", page, err)
+	}
+}
+
+// A task made for a doc is created with its link, in one transaction: for a
+// doc that is gone, neither is written.
+func TestPanoRepository_CreateTaskLinkingPanoDoc(t *testing.T) {
+	ctx := context.Background()
+	db, r := panoDB(t)
+	seedPano(t, r)
+	task := model.Task{ID: 51, UserID: skUser, WorkspaceID: 7, Status: "notstarted", CreatedAt: panoNow}
+	link := model.PanoDocTask{ID: 61, UserID: skUser, DocID: 1, TaskID: 51, WorkspaceID: 7}
+	created, err := r.CreateTaskLinkingPanoDoc(ctx, task, link, panoNow)
+	if err != nil || created.ID != 51 {
+		t.Fatalf("CreateTaskLinkingPanoDoc = %+v, %v", created, err)
+	}
+	if got, _ := r.ListPanoDocTasks(ctx, []int64{1}); len(got) != 1 || got[0].TaskID != 51 {
+		t.Errorf("the doc's tasks are %+v, want the new task", got)
+	}
+	for _, docID := range []int64{2, 99} {
+		task.ID, link.ID, link.DocID, link.TaskID = 52, 62, docID, 52
+		if _, err := r.CreateTaskLinkingPanoDoc(ctx, task, link, panoNow); !errors.Is(err, ErrNotFound) {
+			t.Errorf("for doc %d CreateTaskLinkingPanoDoc returned %v, want ErrNotFound", docID, err)
+		}
+	}
+	var n int64
+	db.Model(&model.Task{}).Where("id = ?", 52).Count(&n)
+	if n != 0 {
+		t.Error("a task was created for a doc that is gone")
+	}
+}
+
+// A write is made only on the version its writer read, and moves it on.
 func TestPanoRepository_VersionGuardsAnUpdate(t *testing.T) {
 	ctx := context.Background()
 	_, r := panoDB(t)
 	seedPano(t, r)
 	later := panoNow.Add(time.Hour)
 	update := func(version int64) error {
-		return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: version, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil)
+		return r.SavePanoDoc(ctx, model.PanoDoc{ID: 1, Version: version, UserID: skUser, UpdatedAt: later, ExpiresAt: later.Add(time.Hour)}, false, nil, nil, nil)
 	}
 	if d, err := r.GetPanoDoc(ctx, skUser, 1, panoNow); err != nil || d.Version != 1 {
 		t.Fatalf("a seeded doc is at version %d, %v, want 1", d.Version, err)
@@ -331,13 +449,10 @@ func TestPanoRepository_VersionGuardsAnUpdate(t *testing.T) {
 	if err := update(1); !errors.Is(err, ErrVersionConflict) {
 		t.Errorf("a second update on version 1 returned %v, want ErrVersionConflict", err)
 	}
-	if err := r.SavePanoDoc(ctx, model.PanoDoc{ID: 99, Version: 1, UserID: skUser, UpdatedAt: later}, false, nil, nil); !errors.Is(err, ErrNotFound) {
+	if err := r.SavePanoDoc(ctx, model.PanoDoc{ID: 99, Version: 1, UserID: skUser, UpdatedAt: later}, false, nil, nil, nil); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an update of a doc that is gone returned %v, want ErrNotFound", err)
 	}
-	if err := r.SyncPanoChecklist(ctx, model.PanoDoc{ID: 1, UserID: skUser, Markdown: "synced"}); err != nil {
-		t.Fatal(err)
-	}
-	if d, err := r.GetPanoDoc(ctx, skUser, 1, later); err != nil || d.Version != 3 || d.Markdown != "synced" {
-		t.Errorf("after an update and a sync the doc is %q at %d, %v, want version 3", d.Markdown, d.Version, err)
+	if d, err := r.GetPanoDoc(ctx, skUser, 1, later); err != nil || d.Version != 2 {
+		t.Errorf("after an update the doc is at %d, %v, want version 2", d.Version, err)
 	}
 }

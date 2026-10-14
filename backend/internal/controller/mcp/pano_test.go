@@ -27,6 +27,7 @@ type fakePano struct {
 	err    error
 	saw    any
 	origin entity.Origin
+	agent  int64
 }
 
 var panoAt = time.Date(2026, 10, 13, 8, 0, 0, 0, time.UTC)
@@ -83,7 +84,7 @@ func (f *fakePano) AttachPanoFiles(ctx context.Context, rq entity.AttachPanoFile
 }
 
 func (f *fakePano) DeletePanoDoc(ctx context.Context, rq entity.DeletePanoDocRequest) error {
-	f.saw, f.origin = rq, entity.GetOrigin(ctx)
+	f.saw, f.origin, f.agent = rq, entity.GetOrigin(ctx), entity.GetAgentWorkspace(ctx)
 	return f.err
 }
 
@@ -239,6 +240,10 @@ func TestHandlePano(t *testing.T) {
 		}
 		if want := (entity.DeletePanoDocRequest{UserID: "user-1", WorkspaceID: 99, ID: 7}); f.saw != want {
 			t.Errorf("the controller was asked %+v, want %+v", f.saw, want)
+		}
+		// A fork's doc is the parent's, but its agent's task is the fork's.
+		if f.agent != ps.workspaceID || f.agent == 99 {
+			t.Errorf("the agent's workspace was %d, want the server's own %d, not the parent", f.agent, ps.workspaceID)
 		}
 		if strings.Join(*tools, ",") != "pano" {
 			t.Errorf("telemetry counted %v, want one pano call", *tools)

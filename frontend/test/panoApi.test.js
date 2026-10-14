@@ -8,6 +8,7 @@ import {
   addPanoComment,
   attachPanoFiles,
   createPanoDoc,
+  createTask,
   deletePanoDoc,
   getPanoDoc,
   listPanoDocs,
@@ -26,6 +27,16 @@ function serve(body, status = 200) {
 
 describe('the Pano API', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('creates a task linked to a doc, and sends no doc id for one that is not', async () => {
+    const seen = serve({ task: { id: 't1' } });
+    await createTask('w1', 'Plan', 'body', 'agent', [], 'notstarted', '', false, '', '', false, 'd1');
+    await createTask('w1', 'Plan', 'body');
+    expect(seen[0][0]).toBe('/api/v1/workspaces/w1/tasks');
+    expect(seen[0][2].panoDocId).toBe('d1');
+    expect(seen[1][2]).not.toHaveProperty('panoDocId');
+    expect(seen[1][2].task.title).toBe('Plan');
+  });
 
   it('lists, reads and deletes docs at relative URLs, the id encoded', async () => {
     const seen = serve({ docs: [] });

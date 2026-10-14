@@ -131,9 +131,9 @@ type panoTaskSyncer interface {
 	SyncPanoTask(ctx context.Context, taskID int64) (int64, []int64, error)
 }
 
-// syncPanoAssignees writes a task's new status into the Pano checklist items
-// assigned to it, wherever the status was changed — by the person, the agent
-// or the supervisor — and tells open boards. The pubsub is in-process, so
+// syncPanoAssignees recounts the checklists of the Pano docs linked to a task
+// when its status changes — by the person, the agent or the supervisor — and
+// tells open boards, which read the new status from the task. The pubsub is in-process, so
 // only the instance that changed the task writes the docs.
 func syncPanoAssignees(ctx context.Context, pano panoTaskSyncer, bus *eventbus.Bus, ev entity.CRUDEvent) {
 	if ev.ResourceType != entity.ResourceTask || (ev.Action != entity.ActionTaskUpdate && ev.Action != entity.ActionTaskComplete) {

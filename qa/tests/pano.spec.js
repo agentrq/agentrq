@@ -217,6 +217,7 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
     await expect(chip, `the item shows the task ${status}`).toHaveAttribute('data-status', status)
   }
   await expect(item.locator('input[type="checkbox"]')).not.toBeChecked()
+  await expect(item.locator('input[type="checkbox"]'), 'an assigned item\'s box follows its task alone').toBeDisabled()
   await setTaskStatus(page, workspace.id, task.id, 'completed')
   await expect(chip).toHaveAttribute('data-status', 'completed')
   await expect(item.locator('input[type="checkbox"]'), 'a completed task ticks its item').toBeChecked()
@@ -256,7 +257,8 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   // A mention naming one of the workspace's open tasks, picked after a #,
   // posts on that task instead of making another.
   await input.pressSequentially(`More on the docs, @${workspace.name} #`)
-  await expect(page.getByTestId('pano-mention-option')).toHaveText([`#${ping.id} ${ping.title}`])
+  // The workspace is shared by the run, so earlier tests' open tasks are offered too.
+  await expect(page.getByTestId('pano-mention-option').first()).toHaveText(`#${ping.id} ${ping.title}`)
   await page.screenshot({ path: test.info().outputPath('pano-task-mention-light.png'), animations: 'disabled' })
   await input.press('Enter')
   await expect(input).toHaveValue(`More on the docs, @${workspace.name} #${ping.id} `)
@@ -267,7 +269,7 @@ test('a checklist item assigned to a workspace follows its task, and a mention p
   const thread = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks/${ping.id}`)).json()
   expect(thread.task.messages.at(-1).text, 'the comment is a message on the task').toContain(`> More on the docs, @${workspace.name} #${ping.id}`)
   const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=notstarted`)).json()
-  expect(open.tasks.map((t) => t.id), 'no task was made for it').toEqual([ping.id])
+  expect(open.tasks.filter((t) => t.title === ping.title).map((t) => t.id), 'no task was made for it').toEqual([ping.id])
 
   await page.screenshot({ path: test.info().outputPath('pano-assigned-light.png'), fullPage: true, animations: 'disabled' })
   await page.evaluate(() => document.documentElement.classList.add('dark'))
@@ -352,6 +354,46 @@ test('a task linked from a doc opens beside it', async ({ page, workspace }) => 
   await expect(page.locator('[data-pano-chat]')).toBeVisible()
   await expect(page.getByTestId('pano-body')).toBeVisible()
   if (process.env.QA_SCREENSHOT) await page.screenshot({ path: process.env.QA_SCREENSHOT })
+  traffic.expectClean()
+})
+
+// A doc is linked to the tasks that worked on it without the agent writing a
+// link: a task the Pano chat made about it, and the one task its agent was on
+// when it wrote it. Both show under Related tasks with their status now, and
+// a status change moves no version.
+test('a doc is linked to the chat about it and to the task its agent was on', async ({ page, workspace }) => {
+  const traffic = watchTraffic(page)
+  const call = await agentSession(page, workspace.id)
+  // The agent is on one task only, so that is the task a doc it writes is for.
+  const open = await (await page.request.get(`/api/v1/workspaces/${workspace.id}/tasks?status=ongoing`)).json()
+  for (const t of open.tasks || []) await setTaskStatus(page, workspace.id, t.id, 'completed')
+  const onIt = await createTask(page, workspace.id, unique('the agent is on this'), 'ongoing')
+  const doc = await pano(call, { action: 'save', payload: { title: unique('written on a task'), markdown: '- [ ] my own step' } })
+
+  // The Pano chat sends the doc's id with the task it makes.
+  await page.waitForTimeout(1100)
+  const res = await page.request.post(`/api/v1/workspaces/${workspace.id}/tasks`, {
+    data: { task: { title: unique('a chat about it'), body: 'from the chat', createdBy: 'human', assignee: 'human', status: 'notstarted' }, panoDocId: doc.id },
+  })
+  expect(res.status(), 'the chat\'s task, linked to the doc').toBe(201)
+  const chat = (await res.json()).task
+
+  await page.goto(`/pano/${doc.id}`)
+  await expect(page.getByTestId('pano-related-task')).toHaveText([onIt.title, chat.title])
+  await expect(page.getByTestId('pano-related-status').first()).toHaveAttribute('aria-label', 'Ongoing')
+  await expect(page.getByTestId('pano-body').locator('input[type="checkbox"]'), 'the agent\'s own step stays its to tick').toBeEnabled()
+
+  await setTaskStatus(page, workspace.id, onIt.id, 'completed')
+  await expect(page.getByTestId('pano-related-status').first()).toHaveAttribute('aria-label', 'Completed')
+  const read = await pano(call, { action: 'read', payload: { id: doc.id } })
+  expect(read.version, 'a task\'s status change is no write').toBe(doc.version)
+
+  // A doc that is not the account's gets no task.
+  const refused = await page.request.post(`/api/v1/workspaces/${workspace.id}/tasks`, {
+    data: { task: { title: 'never', createdBy: 'human', assignee: 'human' }, panoDocId: 'nosuchdoc1' },
+  })
+  expect(refused.status(), 'a task about a doc that is not there').toBe(404)
+  await page.screenshot({ path: test.info().outputPath('pano-linked-tasks-light.png'), animations: 'disabled' })
   traffic.expectClean()
 })
 

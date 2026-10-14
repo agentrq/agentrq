@@ -54,6 +54,7 @@ func FromHTTPRequestToCreateTaskRequestEntity(c *fiber.Ctx) *entity.CreateTaskRe
 			EventID:          monoflake.IDFromBase62(payload.Task.EventID).Int64(),
 			WorkflowID:       monoflake.IDFromBase62(payload.Task.WorkflowID).Int64(),
 		},
+		PanoDocID: monoflake.IDFromBase62(payload.PanoDocID).Int64(),
 	}
 }
 

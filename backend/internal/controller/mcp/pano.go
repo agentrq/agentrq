@@ -34,6 +34,7 @@ var PanoToolDescription = "Read and write the Pano: markdown docs shared by ever
 	"edit: changes part of a doc without sending it whole, from id, version and ops: {op: append, text} adds text at the end, {op: replace, oldString, newString} swaps oldString, which must occur exactly once. The ops apply all or none; ticking an item is a replace of \"- [ ] x\" with \"- [x] x\". " +
 	"A markdown task list (- [ ] item, - [x] done) shows as a checklist with its progress. " +
 	"An item ending → [@workspace](/workspaces/<id>/tasks/<id> \"status\") is assigned to that task: keep the link when you save, and the item follows the task's status, ticked once it is completed. " +
+	"Tick the steps of your own work as plain items; assign an item only when it stands for a whole task. A doc you write while on a task is linked to that task. " +
 	"A doc is deleted ttlDays after its last save: 30 by default, or as long as it last asked for. color is its post-it's color, yellow by default. " +
 	"files are linked files: each must be linked from the markdown by its filename, as [text](name) or ![alt](name), or the save is refused; " +
 	"a linked file the markdown stops linking is dropped. " +
@@ -322,5 +323,8 @@ func (ps *WorkspaceServer) handlePano(ctx context.Context, req *mcp.CallToolRequ
 	if ps.pano == nil {
 		return toolError("the Pano is not available on this server"), nil, nil
 	}
+	// A doc this agent writes is linked to its own task: the fork's, for a
+	// fork, though the doc's author is the parent.
+	ctx = entity.WithAgentWorkspace(ctx, ps.workspaceID)
 	return RunPano(ctx, ps.pano, ps.userID, ps.contentID(), params), nil, nil
 }

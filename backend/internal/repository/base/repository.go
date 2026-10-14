@@ -104,14 +104,20 @@ type Repository interface {
 	ListPanoDocs(ctx context.Context, userID int64, now time.Time) ([]model.PanoDoc, error)
 	GetPanoDoc(ctx context.Context, userID, id int64, now time.Time) (model.PanoDoc, error)
 	ListExpiredPanoDocs(ctx context.Context, now time.Time, limit int) ([]model.PanoDoc, error)
-	SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64) error
+	SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64, links []model.PanoDocTask) error
 	ListPanoFiles(ctx context.Context, docID int64) ([]model.PanoFile, error)
 	AddPanoFiles(ctx context.Context, userID, docID int64, files []model.PanoFile) error
 	ListPanoComments(ctx context.Context, docID int64) ([]model.PanoComment, error)
 	AddPanoComment(ctx context.Context, userID int64, c model.PanoComment) error
 	DeletePanoDoc(ctx context.Context, userID, id int64) ([]string, error)
-	ListPanoDocsLinking(ctx context.Context, userID int64, path string, now time.Time) ([]model.PanoDoc, error)
-	SyncPanoChecklist(ctx context.Context, d model.PanoDoc) error
+	LinkPanoDocTasks(ctx context.Context, links []model.PanoDocTask) (int64, error)
+	ListPanoDocTasks(ctx context.Context, docIDs []int64) ([]PanoTaskStatus, error)
+	ListPanoTaskStatuses(ctx context.Context, userID int64, ids []int64) ([]PanoTaskStatus, error)
+	ListPanoDocIDsOfTask(ctx context.Context, taskID int64) ([]int64, error)
+	ListOngoingAgentTaskIDs(ctx context.Context, userID, workspaceID int64, limit int) ([]int64, error)
+	SetPanoChecklistDone(ctx context.Context, userID, docID int64, done int) error
+	ListPanoDocsNamingTasks(ctx context.Context, afterID int64, limit int) ([]model.PanoDoc, error)
+	CreateTaskLinkingPanoDoc(ctx context.Context, t model.Task, link model.PanoDocTask, now time.Time) (model.Task, error)
 
 	// SiteShare — a website shared from the Chrome extension into a
 	// workspace. Unique on (user, origin): one site, one workspace.
@@ -496,6 +502,10 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.TaskStateTransition{}).Error; err != nil {
 		return err
 	}
+	// Docs belong to the account and stay; only their links to its tasks go.
+	if err := tx.Where("workspace_id = ?", id).Delete(&model.PanoDocTask{}).Error; err != nil {
+		return err
+	}
 	// Skills belong to the account and stay; only their being on here goes.
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.WorkspaceSkill{}).Error; err != nil {
 		return err
@@ -819,6 +829,9 @@ func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, 
 			return err
 		}
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.TaskStateTransition{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.PanoDocTask{}).Error; err != nil {
 			return err
 		}
 

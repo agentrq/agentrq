@@ -310,6 +310,24 @@ export function panoRelatedTasks(html) {
   return [...seen.values()]
 }
 
+/**
+ * The doc's related tasks: those its markdown points at, then the other tasks
+ * linked to it (a chat about it, or the task its agent was on), once each.
+ * Every one takes its status from the doc's tasks, read with the doc, and a
+ * linked task with no chip is named after its workspace.
+ */
+export function panoLinkedTasks(related, docTasks = [], workspaces = []) {
+  const live = new Map((docTasks || []).map((t) => [`/workspaces/${t.workspaceId}/tasks/${t.taskId}`, t]))
+  const out = (related || []).map((t) => (live.has(t.path) ? { ...t, status: live.get(t.path).status } : t))
+  const seen = new Set(out.map((t) => t.path))
+  for (const [path, t] of live) {
+    if (seen.has(path)) continue
+    const name = (workspaces || []).find((w) => w.id === t.workspaceId)?.name || ''
+    out.push({ path, workspaceId: t.workspaceId, id: t.taskId, name: name && `@${name}`, status: t.status })
+  }
+  return out
+}
+
 /** Rendered markdown with a menu button on each checklist item, to assign it. */
 export function panoItemMenus(html) {
   return String(html || '').replace(/<input\b[^>]*type="checkbox"[^>]*>/g, (tag) => `${tag}<button type="button" class="pano-assign" data-pano-assign="" title="Assign to a workspace" aria-label="Assign to a workspace" aria-haspopup="menu">${DOTS}</button>`)
@@ -437,9 +455,28 @@ export async function pingPanoWorkspaces(doc, comment, mentions, { api, wait = s
   return { tasks, failed }
 }
 
-/** Rendered markdown with its task-list checkboxes made clickable. */
+/**
+ * Rendered markdown with its task-list checkboxes made clickable, except an
+ * item's assigned to a task: its box follows the task, so it stays as the
+ * task's status says.
+ */
 export function panoCheckable(html) {
-  return String(html || '').replace(/<input\b[^>]*>/g, (tag) => (tag.includes('type="checkbox"') ? tag.replace(/ disabled(="[^"]*")?/, '') : tag))
+  let n = 0
+  const locked = new Set()
+  if (String(html || '').includes('md-dead-link')) {
+    const page = document.createElement('div')
+    page.innerHTML = html
+    page.querySelectorAll('input[type="checkbox"]').forEach((box, i) => {
+      const item = box.closest('li')
+      const link = item && [...item.querySelectorAll('.md-dead-link')].find((a) => a.closest('li') === item && TASK_PATH.test(a.title))
+      if (link) locked.add(i)
+    })
+  }
+  return String(html || '').replace(/<input\b[^>]*>/g, (tag) => {
+    if (!tag.includes('type="checkbox"')) return tag
+    if (locked.has(n++)) return tag.replace('<input', '<input title="Follows its task"')
+    return tag.replace(/ disabled(="[^"]*")?/, '')
+  })
 }
 
 /** Which of a container's checkboxes was clicked, from 0, or -1 for none. */
@@ -730,15 +767,34 @@ export const PANO_CHAT_TITLE_MAX = 80
 /**
  * The task a chat message starts: its first line is the title, and the body
  * says where it was written, so the supervisor knows the person is on the
- * board and what they probably want from it.
+ * board and what they probably want from it. A `doc` the person tagged is
+ * named, for the agent to read first; the task is linked to it as it is made.
  */
-export function panoChatTask(message) {
+export function panoChatTask(message, doc = null) {
   const text = message.trim()
   const firstLine = text.split('\n')[0].trim()
   const title = firstLine.length > PANO_CHAT_TITLE_MAX ? `${firstLine.slice(0, PANO_CHAT_TITLE_MAX - 1).trimEnd()}…` : firstLine
-  const body = `${text}\n\n---\nSent from the Pano chat: the person is looking at the Pano board, the account's shared docs. ` +
+  const about = doc ? `It is about the Pano doc \`${doc.id}\` ("${doc.title}"): read it with the pano tool first. ` : ''
+  const body = `${text}\n\n---\nSent from the Pano chat: the person is looking at the Pano board, the account's shared docs. ${about}` +
     'They may want a doc posted or changed, or to talk about one: read the board with the pano tool when it helps. Reply in this task.'
   return { title, body }
+}
+
+/**
+ * Where a #doc is being typed in the chat box: the `#` before the caret, at a
+ * word's start, and what follows it. Null when the caret is not in one.
+ */
+export function docMentionQuery(text, caret) {
+  const m = /(?:^|\s)#([^\s#]{0,40})$/.exec(String(text || '').slice(0, caret))
+  return m ? { start: caret - m[1].length - 1, query: m[1] } : null
+}
+
+/** The docs a #doc being typed could name, by title, those starting with it first. */
+export function docMentionMatches(docs, query, limit = 6) {
+  const q = String(query || '').toLowerCase()
+  const named = (docs || []).filter((d) => String(d.title || '').toLowerCase().includes(q))
+  const starts = (d) => d.title.toLowerCase().startsWith(q)
+  return [...named.filter(starts), ...named.filter((d) => !starts(d))].slice(0, limit)
 }
 
 /**
@@ -754,6 +810,8 @@ export function usePanoChat({ api, store }) {
   const supervisor = computed(() => panoSupervisor(store.workspaces))
   const online = computed(() => !!supervisor.value?.agentConnected)
   const message = ref('')
+  // The doc the person tagged with #, which the task is linked to.
+  const doc = ref(null)
   const sending = ref(false)
   const opts = useTaskOptions()
   const clear = useClearContext({
@@ -786,15 +844,17 @@ export function usePanoChat({ api, store }) {
     if (!text || !online.value || sending.value) return null
     sending.value = true
     try {
-      const { title, body } = panoChatTask(text)
+      const { title, body } = panoChatTask(text, doc.value)
       const res = await api.createTask(
         supervisor.value.id, title, body,
         opts.assignee.value, opts.attachments.value,
         opts.scheduleType.value !== 'none' ? 'cron' : 'notstarted', opts.cronSchedule.value, opts.allowAllCommands.value,
         opts.selectedEventId.value, opts.selectedWorkflowId.value,
         clear.offered.value && opts.clearContext.value,
+        doc.value?.id || '',
       )
       message.value = ''
+      doc.value = null
       opts.reset(supervisor.value)
       return res.task
     } finally {
@@ -802,7 +862,7 @@ export function usePanoChat({ api, store }) {
     }
   }
 
-  return { supervisor, online, message, sending, opts, clearContextOffered: clear.offered, ensure, send }
+  return { supervisor, online, message, doc, sending, opts, clearContextOffered: clear.offered, ensure, send }
 }
 
 /** Where the chat column's dragged width is remembered, per device. */

@@ -34,7 +34,7 @@ func (s *WorkspaceServer) handlePano(ctx context.Context, req *mcp.CallToolReque
 	}
 	for _, w := range res.Workspaces {
 		if w.Name == agentlaunch.SupervisorWorkspaceName && w.ForkOfID == 0 {
-			return mcpevent.RunPano(ctx, s.crud, userID, w.ID, args), nil, nil
+			return mcpevent.RunPano(entity.WithAgentWorkspace(ctx, w.ID), s.crud, userID, w.ID, args), nil, nil
 		}
 	}
 	return errorResponse(errors.New("this account has no supervisor workspace to write the Pano as")), nil, nil

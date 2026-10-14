@@ -16,7 +16,7 @@ import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
-  panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoItemMenus, panoMentions,
+  panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoLinkedTasks, panoItemMenus, panoMentions,
   mentionQuery, mentionMatches, taskMentionQuery, taskMentionMatches, insertMention, commentMentions, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
 import { taskRingClass } from '../composables/useTaskStatusStyle'
@@ -68,7 +68,7 @@ let deleting = false
 const TASK_PATH = /^\/workspaces\/([^/]+)\/tasks\/([^/]+)$/
 const assigned = computed(() => panoAssignees(panoCheckable(linkPanoFiles(renderMarkdown(doc.value.markdown), doc.value.files))))
 const body = computed(() => panoItemMenus(assigned.value))
-const relatedTasks = computed(() => (doc.value ? panoRelatedTasks(assigned.value) : []))
+const relatedTasks = computed(() => (doc.value ? panoLinkedTasks(panoRelatedTasks(assigned.value), doc.value.tasks, workspaces.value) : []))
 // The related tasks' own titles, by path, read once each; a task that cannot be
 // read keeps the name its link carries.
 const taskTitles = ref({})

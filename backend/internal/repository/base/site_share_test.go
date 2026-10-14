@@ -29,7 +29,7 @@ func siteShareDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}); err != nil {
+	if err := db.AutoMigrate(&model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -231,7 +231,7 @@ func TestSiteShareRepository_EveryStatementFailure(t *testing.T) {
 // A deleted workspace takes its site shares with it, and nobody else's.
 func TestDeleteWorkspace_DeletesItsSiteShares(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	now := time.Now()

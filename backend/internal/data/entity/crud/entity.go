@@ -338,6 +338,9 @@ type (
 	CreateTaskRequest struct {
 		Task   Task
 		UserID string
+		// PanoDocID, when set, is the Pano doc the task is about: the two are
+		// linked as the task is created, or neither is written.
+		PanoDocID int64
 	}
 
 	CreateTaskResponse struct {
@@ -1437,6 +1440,23 @@ func GetTaskAgent(ctx context.Context) TaskAgent {
 	return a
 }
 
+const AgentWorkspaceContextKey contextKey = "agent_workspace"
+
+// WithAgentWorkspace says which workspace's agent made the request: the
+// workspace itself, a fork and not its parent, since a fork runs its own tasks.
+func WithAgentWorkspace(ctx context.Context, workspaceID int64) context.Context {
+	return context.WithValue(ctx, AgentWorkspaceContextKey, workspaceID)
+}
+
+// GetAgentWorkspace is the workspace WithAgentWorkspace attached, or 0.
+func GetAgentWorkspace(ctx context.Context) int64 {
+	if ctx == nil {
+		return 0
+	}
+	id, _ := ctx.Value(AgentWorkspaceContextKey).(int64)
+	return id
+}
+
 const (
 	ActionUserCreate Action = iota + 1
 	ActionUserUpdate
@@ -1602,6 +1622,9 @@ const (
 	ActionPanoDelete  Action = 96
 	ActionPanoComment Action = 97
 	ActionPanoAttach  Action = 98
+	// A Pano doc linked to a task: by a chat that named the doc, or by the
+	// one task its agent was on when it wrote the doc.
+	ActionPanoLink Action = 99
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1790,6 +1813,8 @@ func (a Action) String() string {
 		return "pano_comment"
 	case ActionPanoAttach:
 		return "pano_attach"
+	case ActionPanoLink:
+		return "pano_link"
 	}
 	return "unknown"
 }

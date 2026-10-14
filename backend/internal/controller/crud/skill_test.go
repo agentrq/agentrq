@@ -701,6 +701,9 @@ func failOn(db *gorm.DB, op, table string) {
 				}
 			}
 		})
+	case "row":
+		// A read scanned into a struct of another shape, like a join.
+		db.Callback().Row().Before("gorm:row").Register(name, fail)
 	case "create":
 		db.Callback().Create().Before("gorm:create").Register(name, fail)
 	case "update":

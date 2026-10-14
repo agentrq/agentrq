@@ -473,6 +473,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionPanoDelete, model.ActionIDPanoDelete, "pano delete"},
 		{entity.ActionPanoComment, model.ActionIDPanoComment, "pano comment"},
 		{entity.ActionPanoAttach, model.ActionIDPanoAttach, "pano attach"},
+		{entity.ActionPanoLink, model.ActionIDPanoLink, "pano link"},
 	}
 
 	for _, tc := range cases {

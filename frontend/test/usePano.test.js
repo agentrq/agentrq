@@ -53,6 +53,9 @@ import {
   taskMentionQuery,
   panoAssignees,
   panoRelatedTasks,
+  panoLinkedTasks,
+  docMentionQuery,
+  docMentionMatches,
   panoItemMenus,
   panoItemTaskBody,
   panoItemText,
@@ -364,6 +367,16 @@ describe('clickable checkboxes', () => {
     expect(panoCheckable('<input type="checkbox" disabled>')).toBe('<input type="checkbox">');
     expect(panoCheckable('<input disabled="" type="text">')).toBe('<input disabled="" type="text">');
     expect(panoCheckable('<p>x</p>')).toBe('<p>x</p>');
+  });
+
+  it('keeps an assigned item\'s box as its task says, and only that item\'s', () => {
+    const assigned = '<li><input disabled="" type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span></li>';
+    expect(panoCheckable(assigned)).toBe('<li><input title="Follows its task" disabled="" type="checkbox"> a → <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span></li>');
+    const nested = '<li><input disabled="" type="checkbox"> parent<ul><li><input disabled="" type="checkbox"> child → <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span></li></ul></li>';
+    expect(panoCheckable(nested)).toBe('<li><input type="checkbox"> parent<ul><li><input title="Follows its task" disabled="" type="checkbox"> child → <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span></li></ul></li>');
+    const notATask = '<li><input disabled="" type="checkbox"> a <span class="md-dead-link" title="notes.md">notes</span></li>';
+    expect(panoCheckable(notATask)).toBe('<li><input type="checkbox"> a <span class="md-dead-link" title="notes.md">notes</span></li>');
+    expect(panoCheckable('<input disabled="" type="checkbox"> <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span>')).toBe('<input type="checkbox"> <span class="md-dead-link" title="/workspaces/w/tasks/t">@api</span>');
   });
 
   it('takes no html as none', () => {
@@ -831,6 +844,23 @@ describe('assigning a checklist item', () => {
     expect(panoRelatedTasks(panoAssignees(html, { link: false }))).toEqual([]);
   });
 
+  it('adds the doc\'s linked tasks to its related ones, each with its status now', () => {
+    const related = [{ path: '/workspaces/w1/tasks/t1', workspaceId: 'w1', id: 't1', name: '@api', status: 'notstarted' }];
+    const docTasks = [
+      { taskId: 't1', workspaceId: 'w1', status: 'completed' },
+      { taskId: 't2', workspaceId: 'w2', status: 'ongoing' },
+      { taskId: 't3', workspaceId: 'gone', status: 'blocked' },
+    ];
+    expect(panoLinkedTasks(related, docTasks, [{ id: 'w2', name: 'supervisor' }])).toEqual([
+      { path: '/workspaces/w1/tasks/t1', workspaceId: 'w1', id: 't1', name: '@api', status: 'completed' },
+      { path: '/workspaces/w2/tasks/t2', workspaceId: 'w2', id: 't2', name: '@supervisor', status: 'ongoing' },
+      { path: '/workspaces/gone/tasks/t3', workspaceId: 'gone', id: 't3', name: '', status: 'blocked' },
+    ]);
+    expect(panoLinkedTasks(related, undefined, undefined)).toEqual(related);
+    expect(panoLinkedTasks([], [docTasks[1]], null)[0].name).toBe('');
+    expect(panoLinkedTasks(undefined, null)).toEqual([]);
+  });
+
   it('reads a missing or unknown status as not started, and leaves other dead links', () => {
     expect(panoAssignees(`<span class="md-dead-link" title="${PATH}">@a</span>`)).toContain('data-status="notstarted"');
     expect(panoAssignees(`<span class="md-dead-link" title="${PATH}" data-link-title="nope">@a</span>`)).toContain('title="Not started · task t1"');
@@ -1027,10 +1057,43 @@ describe('the chat with the supervisor', () => {
     expect(await sent).toEqual({ id: 't1', workspaceId: 's' });
     expect(api.createTask).toHaveBeenCalledWith(
       's', 'Post the plan', panoChatTask('Post the plan').body,
-      'agent', [], 'notstarted', '', false, '', '', false,
+      'agent', [], 'notstarted', '', false, '', '', false, '',
     );
     expect(chat.message.value).toBe('');
     expect(chat.sending.value).toBe(false);
+  });
+
+  it('links the task to a tagged doc, names it in the body, and untags it once sent', async () => {
+    const api = { createTask: vi.fn().mockResolvedValue({ task: { id: 't1', workspaceId: 's' } }) };
+    const { chat } = chatWith([{ id: 's', name: 'supervisor', agentConnected: true }], api);
+    const doc = { id: 'd1', title: 'Release plan' };
+    chat.message.value = 'Add the tag step';
+    chat.doc.value = doc;
+    await chat.send();
+    expect(api.createTask).toHaveBeenCalledWith(
+      's', 'Add the tag step', panoChatTask('Add the tag step', doc).body,
+      'agent', [], 'notstarted', '', false, '', '', false, 'd1',
+    );
+    expect(chat.doc.value).toBeNull();
+  });
+
+  it('names a tagged doc for the agent to read first', () => {
+    const { body } = panoChatTask('Add the tag step', { id: 'd1', title: 'Release plan' });
+    expect(body).toContain('It is about the Pano doc `d1` ("Release plan"): read it with the pano tool first.');
+    expect(panoChatTask('Add the tag step').body).not.toContain('It is about');
+  });
+
+  it('finds a #doc being typed at a word start, and the docs it could name, starts first', () => {
+    expect(docMentionQuery('Update #rel', 11)).toEqual({ start: 7, query: 'rel' });
+    expect(docMentionQuery('#', 1)).toEqual({ start: 0, query: '' });
+    expect(docMentionQuery('a#rel', 5)).toBeNull();
+    expect(docMentionQuery('#rel done', 9)).toBeNull();
+    expect(docMentionQuery(null, 0)).toBeNull();
+    const docs = [{ id: '1', title: 'Old release notes' }, { id: '2', title: 'Release plan' }, { id: '3', title: 'Roadmap' }];
+    expect(docMentionMatches(docs, 'rel').map((d) => d.id)).toEqual(['2', '1']);
+    expect(docMentionMatches(docs, '', 2).map((d) => d.id)).toEqual(['1', '2']);
+    expect(docMentionMatches(null, 'x')).toEqual([]);
+    expect(docMentionMatches([{ id: '4' }, docs[2]], 'road').map((d) => d.id)).toEqual(['3']);
   });
 
   describe('with the options of a new task', () => {
@@ -1082,7 +1145,7 @@ describe('the chat with the supervisor', () => {
       expect(api.createTask).toHaveBeenCalledWith(
         's', 'Post the plan', panoChatTask('Post the plan').body,
         'human', [{ filename: 'plan.md', mimeType: 'text/markdown', data: 'IyBwbGFu' }],
-        'cron', '0 * * * *', false, 'e1', 'w1', true,
+        'cron', '0 * * * *', false, 'e1', 'w1', true, '',
       );
     });
 

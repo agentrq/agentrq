@@ -89,6 +89,7 @@ func TestActionString(t *testing.T) {
 		{ActionPanoDelete, "pano_delete"},
 		{ActionPanoComment, "pano_comment"},
 		{ActionPanoAttach, "pano_attach"},
+		{ActionPanoLink, "pano_link"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},
@@ -120,5 +121,18 @@ func TestTaskAgentContext(t *testing.T) {
 	want := TaskAgent{Name: "claude-code", Model: "Opus"}
 	if got := GetTaskAgent(WithTaskAgent(context.Background(), want)); got != want {
 		t.Errorf("GetTaskAgent = %+v, want %+v", got, want)
+	}
+}
+
+func TestAgentWorkspaceContext(t *testing.T) {
+	//nolint:staticcheck // a nil context is what GetAgentWorkspace guards against
+	if got := GetAgentWorkspace(nil); got != 0 {
+		t.Errorf("GetAgentWorkspace(nil) = %d, want 0", got)
+	}
+	if got := GetAgentWorkspace(context.Background()); got != 0 {
+		t.Errorf("GetAgentWorkspace(empty) = %d, want 0", got)
+	}
+	if got := GetAgentWorkspace(WithAgentWorkspace(context.Background(), 42)); got != 42 {
+		t.Errorf("GetAgentWorkspace = %d, want 42", got)
 	}
 }

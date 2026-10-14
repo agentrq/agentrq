@@ -136,6 +136,9 @@ func fromEntityPanoDocToView(d entity.PanoDoc) view.PanoDoc {
 	for _, c := range d.Comments {
 		v.Comments = append(v.Comments, fromEntityPanoCommentToView(c))
 	}
+	for _, t := range d.Tasks {
+		v.Tasks = append(v.Tasks, view.PanoDocTask{TaskID: monoflake.ID(t.TaskID).String(), WorkspaceID: monoflake.ID(t.WorkspaceID).String(), Status: t.Status})
+	}
 	return v
 }
 

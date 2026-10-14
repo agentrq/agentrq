@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -35,12 +36,12 @@ func (r *repository) GetPanoDoc(ctx context.Context, userID, id int64, now time.
 	return d, err
 }
 
-// SavePanoDoc writes d, adds the linked files in add and drops the files
-// whose ids are in drop, in one transaction. An update is written only if the
+// SavePanoDoc writes d, adds the linked files in add, drops the files whose
+// ids are in drop and links the tasks in links, in one transaction. An update is written only if the
 // doc is still at d.Version, the one its writer read, and moves it to the
 // next: a doc another writer got to first is ErrVersionConflict, one that is
 // gone ErrNotFound.
-func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64) error {
+func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bool, add []model.PanoFile, drop []int64, links []model.PanoDocTask) error {
 	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if create {
 			if err := tx.Create(&d).Error; err != nil {
@@ -77,33 +78,123 @@ func (r *repository) SavePanoDoc(ctx context.Context, d model.PanoDoc, create bo
 			}
 		}
 		if len(add) > 0 {
-			return tx.Create(&add).Error
+			if err := tx.Create(&add).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		_, err := linkPanoDocTasks(tx, links)
+		return err
 	})
 }
 
-// ListPanoDocsLinking returns an account's live docs, with their markdown,
-// whose markdown holds path: the docs with a checklist item assigned to it.
-func (r *repository) ListPanoDocsLinking(ctx context.Context, userID int64, path string, now time.Time) ([]model.PanoDoc, error) {
+// PanoTaskStatus is a task linked to a doc, with its status now. DocID is
+// set only where several docs' tasks are read at once.
+type PanoTaskStatus struct {
+	DocID       int64
+	TaskID      int64
+	WorkspaceID int64
+	Status      string
+}
+
+// linkPanoDocTasks adds the links not already there, and returns how many it
+// added.
+func linkPanoDocTasks(tx *gorm.DB, links []model.PanoDocTask) (int64, error) {
+	if len(links) == 0 {
+		return 0, nil
+	}
+	res := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "doc_id"}, {Name: "task_id"}}, DoNothing: true}).Create(&links)
+	return res.RowsAffected, res.Error
+}
+
+// LinkPanoDocTasks adds the links not already there, and returns how many it
+// added.
+func (r *repository) LinkPanoDocTasks(ctx context.Context, links []model.PanoDocTask) (int64, error) {
+	return linkPanoDocTasks(r.conn(ctx), links)
+}
+
+// ListPanoDocTasks returns the tasks linked to the docs that still exist,
+// with their doc and status, each doc's oldest link first: one query for a
+// whole board.
+func (r *repository) ListPanoDocTasks(ctx context.Context, docIDs []int64) ([]PanoTaskStatus, error) {
+	var out []PanoTaskStatus
+	if len(docIDs) == 0 {
+		return out, nil
+	}
+	err := r.conn(ctx).Table("pano_doc_tasks").
+		Select("pano_doc_tasks.doc_id, pano_doc_tasks.task_id, tasks.workspace_id, tasks.status").
+		Joins("JOIN tasks ON tasks.id = pano_doc_tasks.task_id AND tasks.user_id = pano_doc_tasks.user_id").
+		Where("pano_doc_tasks.doc_id IN ?", docIDs).
+		Order("pano_doc_tasks.doc_id, pano_doc_tasks.created_at asc, pano_doc_tasks.id asc").
+		Scan(&out).Error
+	return out, err
+}
+
+// ListPanoTaskStatuses returns those of ids that are an account's tasks, with
+// their status.
+func (r *repository) ListPanoTaskStatuses(ctx context.Context, userID int64, ids []int64) ([]PanoTaskStatus, error) {
+	var out []PanoTaskStatus
+	if len(ids) == 0 {
+		return out, nil
+	}
+	err := r.conn(ctx).Model(&model.Task{}).Select("id AS task_id, workspace_id, status").
+		Where("user_id = ? AND id IN ?", userID, ids).Scan(&out).Error
+	return out, err
+}
+
+// ListPanoDocIDsOfTask returns the ids of the docs a task is linked to.
+func (r *repository) ListPanoDocIDsOfTask(ctx context.Context, taskID int64) ([]int64, error) {
+	var ids []int64
+	err := r.conn(ctx).Model(&model.PanoDocTask{}).Where("task_id = ?", taskID).Order("doc_id").Pluck("doc_id", &ids).Error
+	return ids, err
+}
+
+// ListOngoingAgentTaskIDs returns up to limit ids of a workspace's ongoing
+// tasks assigned to its agent.
+func (r *repository) ListOngoingAgentTaskIDs(ctx context.Context, userID, workspaceID int64, limit int) ([]int64, error) {
+	var ids []int64
+	err := r.conn(ctx).Model(&model.Task{}).
+		Where("workspace_id = ? AND user_id = ? AND status = ? AND assignee = ?", workspaceID, userID, "ongoing", "agent").
+		Limit(limit).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// SetPanoChecklistDone writes how many of a doc's checklist items are ticked,
+// after a task its items are assigned to changed status. It is no save: the
+// markdown, the version and updated_at stay as they are.
+func (r *repository) SetPanoChecklistDone(ctx context.Context, userID, docID int64, done int) error {
+	return r.conn(ctx).Model(&model.PanoDoc{}).Where("id = ? AND user_id = ?", docID, userID).UpdateColumn("checklist_done", done).Error
+}
+
+// ListPanoDocsNamingTasks returns up to limit docs of any account, with their
+// markdown, whose markdown holds a link to a task, from the id after afterID
+// on: what the backfill of their links reads, a page at a time.
+func (r *repository) ListPanoDocsNamingTasks(ctx context.Context, afterID int64, limit int) ([]model.PanoDoc, error) {
 	var docs []model.PanoDoc
-	err := r.conn(ctx).Where("user_id = ? AND expires_at > ? AND markdown LIKE ?", userID, now, "%"+path+"%").Find(&docs).Error
+	err := r.conn(ctx).Where("id > ? AND markdown LIKE ?", afterID, "%/tasks/%").Order("id").Limit(limit).Find(&docs).Error
 	return docs, err
 }
 
-// SyncPanoChecklist writes back a doc's markdown changed by an assigned
-// task's status. It is no save: the doc keeps its place, author and life, so
-// the columns are written without GORM stamping updated_at. The markdown did
-// change, so the version moves: a writer holding the old one must read again.
-func (r *repository) SyncPanoChecklist(ctx context.Context, d model.PanoDoc) error {
-	return r.conn(ctx).Model(&model.PanoDoc{}).Where("id = ? AND user_id = ?", d.ID, d.UserID).UpdateColumns(map[string]any{
-		"version":         gorm.Expr("version + 1"),
-		"markdown":        d.Markdown,
-		"excerpt":         d.Excerpt,
-		"size_bytes":      d.SizeBytes,
-		"checklist_done":  d.ChecklistDone,
-		"checklist_total": d.ChecklistTotal,
-	}).Error
+// CreateTaskLinkingPanoDoc creates a task linked to one of its account's
+// docs, in one transaction: a doc that is gone or expired by now is
+// ErrNotFound, and no task is created.
+func (r *repository) CreateTaskLinkingPanoDoc(ctx context.Context, t model.Task, link model.PanoDocTask, now time.Time) (model.Task, error) {
+	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := panoDocExists(tx, t.UserID, link.DocID, now); err != nil {
+			return err
+		}
+		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		if err := recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status)); err != nil {
+			return err
+		}
+		_, err := linkPanoDocTasks(tx, []model.PanoDocTask{link})
+		return err
+	})
+	if err != nil {
+		return model.Task{}, err
+	}
+	return t, nil
 }
 
 // ListPanoFiles returns a doc's files, linked and attached, oldest first.
@@ -166,6 +257,9 @@ func (r *repository) DeletePanoDoc(ctx context.Context, userID, id int64) ([]str
 			return err
 		}
 		if err := tx.Where("doc_id = ?", id).Delete(&model.PanoComment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("doc_id = ?", id).Delete(&model.PanoDocTask{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(&model.PanoDoc{}, id).Error; err != nil {

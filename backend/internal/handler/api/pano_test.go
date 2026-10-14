@@ -43,6 +43,7 @@ func testPanoDoc() entity.PanoDoc {
 		Files:       []entity.PanoFile{{ID: 11, Filename: "chart.png", MimeType: "image/png", SizeBytes: 3, URL: "https://l/chart.png", WorkspaceID: 4242, CreatedAt: panoNow}},
 		Attachments: []entity.PanoFile{{ID: 12, Filename: "notes.txt", MimeType: "text/plain", SizeBytes: 5, CreatedAt: panoNow}},
 		Comments:    []entity.PanoComment{{ID: 13, WorkspaceID: 4242, Body: "Looks right.", CreatedAt: panoNow}, {ID: 14, Body: "Agreed.", CreatedAt: panoNow}},
+		Tasks:       []entity.PanoDocTask{{TaskID: 15, WorkspaceID: 4242, Status: "ongoing"}},
 	}
 }
 
@@ -127,6 +128,7 @@ func TestPanoRoutes(t *testing.T) {
 				`"attachments":[{"id":"` + monoflake.ID(12).String() + `","filename":"notes.txt","mimeType":"text/plain","size":5,"createdAt"`,
 				`"comments":[{"id":"` + monoflake.ID(13).String() + `","workspaceId":"` + panoWS + `","body":"Looks right."`,
 				`{"id":"` + monoflake.ID(14).String() + `","body":"Agreed."`,
+				`"tasks":[{"taskId":"` + monoflake.ID(15).String() + `","workspaceId":"` + panoWS + `","status":"ongoing"}]`,
 			}},
 		{"the person creates a doc with a linked file", http.MethodPost, "/pano",
 			`{"title":"Plan","markdown":"![c](c.png)","files":[{"filename":"c.png","mimeType":"image/png","data":"` + data + `"}]}`, 201,

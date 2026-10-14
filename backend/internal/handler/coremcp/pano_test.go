@@ -24,6 +24,7 @@ type mockPanoCrud struct {
 	listErr    error
 	listed     entity.ListWorkspacesRequest
 	deleted    *entity.DeletePanoDocRequest
+	agent      int64
 }
 
 func (m *mockPanoCrud) ListWorkspaces(_ context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error) {
@@ -34,8 +35,8 @@ func (m *mockPanoCrud) ListWorkspaces(_ context.Context, req entity.ListWorkspac
 	return &entity.ListWorkspacesResponse{Workspaces: m.workspaces}, nil
 }
 
-func (m *mockPanoCrud) DeletePanoDoc(_ context.Context, req entity.DeletePanoDocRequest) error {
-	m.deleted = &req
+func (m *mockPanoCrud) DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error {
+	m.deleted, m.agent = &req, entity.GetAgentWorkspace(ctx)
 	return nil
 }
 
@@ -54,6 +55,9 @@ func TestPano_WritesAsTheSupervisorWorkspace(t *testing.T) {
 	}
 	if ctrl.deleted == nil || *ctrl.deleted != (entity.DeletePanoDocRequest{UserID: testUserID, WorkspaceID: testWorkspace, ID: 7}) {
 		t.Errorf("the controller was asked to delete %+v, want doc 7 as the supervisor workspace %d", ctrl.deleted, testWorkspace)
+	}
+	if ctrl.agent != testWorkspace {
+		t.Errorf("the agent's workspace was %d, want the supervisor's %d, whose task a doc is linked to", ctrl.agent, testWorkspace)
 	}
 	if !strings.Contains(body, "Deleted Pano doc "+base62(7)) {
 		t.Errorf("the tool answered %q, want it to say the doc was deleted", body)

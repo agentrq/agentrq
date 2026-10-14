@@ -43,9 +43,14 @@ type PanoController interface {
 	DeletePanoDoc(ctx context.Context, req entity.DeletePanoDocRequest) error
 	AddPanoComment(ctx context.Context, req entity.AddPanoCommentRequest) (*entity.AddPanoCommentResponse, error)
 	AttachPanoFiles(ctx context.Context, req entity.AttachPanoFilesRequest) (*entity.AttachPanoFilesResponse, error)
-	// SyncPanoTask writes a task's status into the checklist items assigned
-	// to it, and returns the account and the ids of the docs it changed.
+	// SyncPanoTask recounts the ticked items of the docs linked to a task
+	// whose status changed, and returns the account and the ids of the docs
+	// linked to it, whose items and tasks now read differently.
 	SyncPanoTask(ctx context.Context, taskID int64) (userID int64, docIDs []int64, err error)
+	// BackfillPanoDocTasks links every doc to the tasks its checklist items
+	// were assigned to before links were stored, and returns how many it
+	// added.
+	BackfillPanoDocTasks(ctx context.Context) (int64, error)
 }
 
 // Limits on what a Pano doc holds. Anything over one is refused, never cut,
@@ -66,6 +71,8 @@ const (
 	DefaultPanoMaxTTLDays = 365
 	// panoSweepBatch is how many expired docs one sweep query takes.
 	panoSweepBatch = 100
+	// panoBackfillBatch is how many docs one backfill query takes.
+	panoBackfillBatch = 100
 )
 
 // PanoMaxTTLDays is the longest a doc may live, from pano.maxTtlDays.
@@ -161,9 +168,24 @@ func (c *controller) ListPanoDocs(ctx context.Context, req entity.ListPanoDocsRe
 	if err != nil {
 		return nil, err
 	}
+	// A card's excerpt shows its assigned items with their tasks' status
+	// now, as a read of the doc does.
+	ids := make([]int64, len(docs))
+	for i, d := range docs {
+		ids[i] = d.ID
+	}
+	linked, err := c.repository.ListPanoDocTasks(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	tasks := map[int64][]base.PanoTaskStatus{}
+	for _, t := range linked {
+		tasks[t.DocID] = append(tasks[t.DocID], t)
+	}
 	out := make([]entity.PanoDoc, len(docs))
 	for i, d := range docs {
 		out[i] = fromModelPanoDoc(d)
+		out[i].Excerpt = panoOverlay(d.Excerpt, tasks[d.ID])
 	}
 	return &entity.ListPanoDocsResponse{Docs: out}, nil
 }
@@ -178,7 +200,15 @@ func (c *controller) GetPanoDoc(ctx context.Context, req entity.GetPanoDocReques
 		return nil, err
 	}
 	doc := fromModelPanoDoc(d)
-	doc.Markdown = d.Markdown
+	tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{d.ID})
+	if err != nil {
+		return nil, err
+	}
+	doc.Markdown = panoOverlay(d.Markdown, tasks)
+	doc.Tasks = make([]entity.PanoDocTask, len(tasks))
+	for i, t := range tasks {
+		doc.Tasks[i] = entity.PanoDocTask{TaskID: t.TaskID, WorkspaceID: t.WorkspaceID, Status: t.Status}
+	}
 	files, err := c.repository.ListPanoFiles(ctx, d.ID)
 	if err != nil {
 		return nil, err
@@ -291,11 +321,23 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		return nil, panoRefuse("a Pano doc holds at most %d files", PanoMaxFiles)
 	}
 
+	// The items assigned to tasks are written with each task's status now,
+	// and the doc is linked to those tasks.
+	assigned, err := c.repository.ListPanoTaskStatuses(ctx, uid, panoAssignedTaskIDs(req.Markdown))
+	if err != nil {
+		return nil, err
+	}
+	markdown := panoOverlay(req.Markdown, assigned)
+	taskLinks := make([]model.PanoDocTask, len(assigned))
+	for i, t := range assigned {
+		taskLinks[i] = model.PanoDocTask{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, DocID: d.ID, TaskID: t.TaskID, WorkspaceID: t.WorkspaceID}
+	}
+
 	d.Title = title
-	d.Markdown = req.Markdown
-	d.Excerpt = panoExcerpt(req.Markdown)
-	d.ChecklistDone, d.ChecklistTotal = panoChecklist(req.Markdown)
-	d.SizeBytes = len(req.Markdown)
+	d.Markdown = markdown
+	d.Excerpt = panoExcerpt(markdown)
+	d.ChecklistDone, d.ChecklistTotal = panoChecklist(markdown)
+	d.SizeBytes = len(markdown)
 	d.UpdatedAt = now
 	d.UpdatedByWorkspaceID = req.WorkspaceID
 	// A save restarts the doc's clock, for as long as it asks or as long as
@@ -314,7 +356,7 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		c.purgePano(written)
 		return nil, err
 	}
-	if err := c.repository.SavePanoDoc(ctx, d, create, add, drop); err != nil {
+	if err := c.repository.SavePanoDoc(ctx, d, create, add, drop, taskLinks); err != nil {
 		c.purgePano(written)
 		if errors.Is(err, base.ErrVersionConflict) {
 			// Another write got in between the read and this one.
@@ -336,8 +378,9 @@ func (c *controller) SavePanoDoc(ctx context.Context, req entity.SavePanoDocRequ
 		action = entity.ActionPanoCreate
 	}
 	c.emitPanoEvent(ctx, action, uid, req.WorkspaceID, d.ID)
+	c.linkPanoDocToAgentTask(ctx, uid, d.ID, now)
 	doc := fromModelPanoDoc(d)
-	doc.Markdown = req.Markdown
+	doc.Markdown = markdown
 	doc.Files = []entity.PanoFile{}
 	for _, f := range append(linked, add...) {
 		doc.Files = append(doc.Files, c.fromModelPanoFile(f))
@@ -365,7 +408,13 @@ func (c *controller) EditPanoDoc(ctx context.Context, req entity.EditPanoDocRequ
 	if len(req.Ops) == 0 {
 		return nil, panoRefuse("edit needs at least one op")
 	}
-	markdown := d.Markdown
+	// The ops apply to the markdown as a read returns it, with each assigned
+	// item showing its task's status now.
+	tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{d.ID})
+	if err != nil {
+		return nil, err
+	}
+	markdown := panoOverlay(d.Markdown, tasks)
 	for i, op := range req.Ops {
 		switch op.Op {
 		case "append":
@@ -588,40 +637,24 @@ var panoTaskItem = regexp.MustCompile(`^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[([ xX
 // outside fenced code, where they render as text. The board mirrors this
 // count when it checks one off, so the two must agree.
 func panoChecklist(markdown string) (done, total int) {
-	fence := ""
-	for _, line := range strings.Split(markdown, "\n") {
-		trimmed := strings.TrimLeft(line, " ")
-		if fence != "" {
-			if strings.HasPrefix(trimmed, fence) {
-				fence = ""
-			}
-			continue
+	lines := strings.Split(markdown, "\n")
+	panoItems(lines, func(i int, item []int) {
+		total++
+		if lines[i][item[2]:item[3]] != " " {
+			done++
 		}
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			fence = trimmed[:3]
-			continue
-		}
-		if m := panoTaskItem.FindStringSubmatch(line); m != nil {
-			total++
-			if m[1] != " " {
-				done++
-			}
-		}
-	}
+	})
 	return done, total
 }
 
 // panoAssignee ends a checklist item assigned to a task: a link to the task,
 // titled with its status, as the web app writes it.
-var panoAssignee = regexp.MustCompile(`\]\((/workspaces/[0-9A-Za-z]+/tasks/[0-9A-Za-z]+)(?: "[a-z]*")?\)[ \t]*$`)
+var panoAssignee = regexp.MustCompile(`\]\((/workspaces/([0-9A-Za-z]+)/tasks/([0-9A-Za-z]+))(?: "[a-z]*")?\)[ \t]*$`)
 
-// syncPanoAssignee gives the checklist items assigned to the task at path its
-// status, ticked once it is completed, and reports whether anything changed.
-func syncPanoAssignee(markdown, path, status string) (string, bool) {
-	lines := strings.Split(markdown, "\n")
-	done := status == "completed" || status == "done"
+// panoItems calls fn with each checklist item of the lines, outside fenced
+// code, and the index of its box in the item's match.
+func panoItems(lines []string, fn func(i int, item []int)) {
 	fence := ""
-	changed := false
 	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
 		if fence != "" {
@@ -634,22 +667,86 @@ func syncPanoAssignee(markdown, path, status string) (string, bool) {
 			fence = trimmed[:3]
 			continue
 		}
-		item := panoTaskItem.FindStringSubmatchIndex(line)
-		link := panoAssignee.FindStringSubmatchIndex(line)
-		if item == nil || link == nil || line[link[2]:link[3]] != path {
-			continue
-		}
-		box := " "
-		if done {
-			box = "x"
-		}
-		next := line[:item[2]] + box + line[item[3]:link[0]] + `](` + path + ` "` + status + `")`
-		if next != line {
-			lines[i] = next
-			changed = true
+		if item := panoTaskItem.FindStringSubmatchIndex(line); item != nil {
+			fn(i, item)
 		}
 	}
-	return strings.Join(lines, "\n"), changed
+}
+
+// panoAssignedTaskIDs is the ids of the tasks the markdown's checklist items
+// are assigned to, once each.
+func panoAssignedTaskIDs(markdown string) []int64 {
+	seen := map[int64]bool{}
+	var ids []int64
+	lines := strings.Split(markdown, "\n")
+	panoItems(lines, func(i int, _ []int) {
+		m := panoAssignee.FindStringSubmatch(lines[i])
+		if m == nil {
+			return
+		}
+		if id := monoflake.IDFromBase62(m[3]).Int64(); id != 0 && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	})
+	return ids
+}
+
+// panoTaskPath is the web app's path of a task, which an assigned item links.
+func panoTaskPath(workspaceID, taskID int64) string {
+	return "/workspaces/" + monoflake.ID(workspaceID).String() + "/tasks/" + monoflake.ID(taskID).String()
+}
+
+// panoOverlay gives every checklist item assigned to one of tasks that task's
+// status, ticked once it is completed. However many items one task has, all
+// of them follow it. An item linking a task that is not in tasks is left as
+// it is.
+func panoOverlay(markdown string, tasks []base.PanoTaskStatus) string {
+	if len(tasks) == 0 {
+		return markdown
+	}
+	status := make(map[string]string, len(tasks))
+	for _, t := range tasks {
+		status[panoTaskPath(t.WorkspaceID, t.TaskID)] = t.Status
+	}
+	lines := strings.Split(markdown, "\n")
+	panoItems(lines, func(i int, item []int) {
+		line := lines[i]
+		link := panoAssignee.FindStringSubmatchIndex(line)
+		if link == nil {
+			return
+		}
+		path := line[link[2]:link[3]]
+		st, ok := status[path]
+		if !ok {
+			return
+		}
+		box := " "
+		if st == "completed" || st == "done" {
+			box = "x"
+		}
+		lines[i] = line[:item[2]] + box + line[item[3]:link[0]] + `](` + path + ` "` + st + `")`
+	})
+	return strings.Join(lines, "\n")
+}
+
+// linkPanoDocToAgentTask links a doc an agent wrote to the task it is on: the
+// one ongoing task of the workspace that wrote it. With several ongoing it is
+// not linked, as a missing link costs less than a wrong one. Best effort: the
+// doc is saved either way.
+func (c *controller) linkPanoDocToAgentTask(ctx context.Context, uid, docID int64, now time.Time) {
+	workspaceID := entity.GetAgentWorkspace(ctx)
+	if workspaceID == 0 {
+		return
+	}
+	ids, err := c.repository.ListOngoingAgentTaskIDs(ctx, uid, workspaceID, 2)
+	if err != nil || len(ids) != 1 {
+		return
+	}
+	added, err := c.repository.LinkPanoDocTasks(ctx, []model.PanoDocTask{{ID: c.idgen.NextID(), CreatedAt: now, UserID: uid, DocID: docID, TaskID: ids[0], WorkspaceID: workspaceID}})
+	if err == nil && added > 0 {
+		c.emitPanoEvent(ctx, entity.ActionPanoLink, uid, workspaceID, docID)
+	}
 }
 
 func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []int64, error) {
@@ -657,27 +754,64 @@ func (c *controller) SyncPanoTask(ctx context.Context, taskID int64) (int64, []i
 	if err != nil {
 		return 0, nil, err
 	}
-	path := "/workspaces/" + monoflake.ID(t.WorkspaceID).String() + "/tasks/" + monoflake.ID(t.ID).String()
-	docs, err := c.repository.ListPanoDocsLinking(ctx, t.UserID, path, time.Now())
+	ids, err := c.repository.ListPanoDocIDsOfTask(ctx, taskID)
 	if err != nil {
 		return t.UserID, nil, err
 	}
-	var changed []int64
-	for _, d := range docs {
-		markdown, ok := syncPanoAssignee(d.Markdown, path, t.Status)
-		if !ok {
+	now := time.Now().UTC()
+	var linked []int64
+	for _, id := range ids {
+		d, err := c.repository.GetPanoDoc(ctx, t.UserID, id, now)
+		if errors.Is(err, base.ErrNotFound) {
 			continue
 		}
-		d.Markdown = markdown
-		d.Excerpt = panoExcerpt(markdown)
-		d.SizeBytes = len(markdown)
-		d.ChecklistDone, d.ChecklistTotal = panoChecklist(markdown)
-		if err := c.repository.SyncPanoChecklist(ctx, d); err != nil {
-			return t.UserID, changed, err
+		if err != nil {
+			return t.UserID, linked, err
 		}
-		changed = append(changed, d.ID)
+		tasks, err := c.repository.ListPanoDocTasks(ctx, []int64{id})
+		if err != nil {
+			return t.UserID, linked, err
+		}
+		if done, _ := panoChecklist(panoOverlay(d.Markdown, tasks)); done != d.ChecklistDone {
+			if err := c.repository.SetPanoChecklistDone(ctx, t.UserID, id, done); err != nil {
+				return t.UserID, linked, err
+			}
+		}
+		linked = append(linked, id)
 	}
-	return t.UserID, changed, nil
+	return t.UserID, linked, nil
+}
+
+// BackfillPanoDocTasks reads the docs a page at a time and links each to the
+// account's tasks its checklist items are assigned to.
+func (c *controller) BackfillPanoDocTasks(ctx context.Context) (int64, error) {
+	var added int64
+	var after int64
+	for {
+		docs, err := c.repository.ListPanoDocsNamingTasks(ctx, after, panoBackfillBatch)
+		if err != nil {
+			return added, err
+		}
+		for _, d := range docs {
+			after = d.ID
+			tasks, err := c.repository.ListPanoTaskStatuses(ctx, d.UserID, panoAssignedTaskIDs(d.Markdown))
+			if err != nil {
+				return added, err
+			}
+			links := make([]model.PanoDocTask, len(tasks))
+			for i, t := range tasks {
+				links[i] = model.PanoDocTask{ID: c.idgen.NextID(), CreatedAt: d.UpdatedAt, UserID: d.UserID, DocID: d.ID, TaskID: t.TaskID, WorkspaceID: t.WorkspaceID}
+			}
+			n, err := c.repository.LinkPanoDocTasks(ctx, links)
+			if err != nil {
+				return added, err
+			}
+			added += n
+		}
+		if len(docs) < panoBackfillBatch {
+			return added, nil
+		}
+	}
 }
 
 // panoExcerpt is the opening of a doc's markdown, shown on its card.

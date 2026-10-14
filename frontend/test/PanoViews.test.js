@@ -497,14 +497,14 @@ describe('the chat box\'s task options', () => {
     expect($(el, 'task-clear-context')).toBeNull();
     await send(el);
     expect(sent().slice(0, 1)).toEqual(['sup']);
-    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', false, '', '', false]);
+    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', false, '', '', false, '']);
   });
 
   it('start from the supervisor\'s own settings', async () => {
     api.fetchWorkspaceSession.mockResolvedValue({ id: 'sess', kind: 'claude-code', status: 'running' });
     const { el } = await mount('/pano', [...WORKSPACES, { ...SUP, allowAllCommands: true, clearContextDefault: true }]);
     await send(el);
-    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', true, '', '', true]);
+    expect(sent().slice(3)).toEqual(['agent', [], 'notstarted', '', true, '', '', true, '']);
   });
 
   it('take what voice input dictates into the message', async () => {
@@ -611,7 +611,7 @@ describe('the chat with the supervisor', () => {
     useWorkspaceStore().updateAgentStatus('sup', true);
     await settle();
     expect($(el, 'pano-chat-input').disabled).toBe(false);
-    expect($(el, 'pano-chat-input').placeholder).toBe('Ask supervisor about the Pano... (Cmd ⌘ + Enter to send)');
+    expect($(el, 'pano-chat-input').placeholder).toBe('Ask supervisor about the Pano, # to tag a doc... (Cmd ⌘ + Enter to send)');
     expect($(el, 'pano-chat-offline')).toBeNull();
   });
 
@@ -678,6 +678,81 @@ describe('the chat with the supervisor', () => {
     expect(lastToast()).toMatchObject({ type: 'error', message: 'Failed to create task' });
     expect($(el, 'pano-chat-input').value).toBe('hello');
     expect(router.currentRoute.value.fullPath).toBe('/pano');
+  });
+
+  describe('tagging a doc with #', () => {
+    const DOCS = [
+      { id: 'd1', title: 'Old release notes', color: 'yellow', excerpt: '' },
+      { id: 'd2', title: 'Release plan', color: 'pink', excerpt: '' },
+      { id: 'd3', title: 'Roadmap', color: 'green', excerpt: '' },
+    ];
+    beforeEach(() => api.listPanoDocs.mockResolvedValue({ docs: DOCS }));
+    const options = (el) => $$(el, 'pano-chat-doc-option').map(text);
+
+    it('suggests the docs by title, picks one with the keys, and links the task to it', async () => {
+      const { el } = await mount('/pano', ONLINE);
+      const input = $(el, 'pano-chat-input');
+      await type(input, 'Update #rel');
+      expect(options(el)).toEqual(['#Release plan', '#Old release notes']);
+      await key(input, { key: 'ArrowDown' });
+      await key(input, { key: 'ArrowUp' });
+      await key(input, { key: 'ArrowUp' });
+      expect($$(el, 'pano-chat-doc-option')[1].getAttribute('aria-selected')).toBe('true');
+      await key(input, { key: 'ArrowDown' });
+      const picked = await key(input, { key: 'Enter' });
+      expect(picked.defaultPrevented).toBe(true);
+      expect($(el, 'pano-chat-doc-menu')).toBeNull();
+      expect(input.value).toBe('Update ');
+      expect(text($(el, 'pano-chat-doc'))).toBe('#Release plan');
+      await type(input, 'Update the tag step');
+      await key(input, { key: 'Enter', metaKey: true });
+      const call = api.createTask.mock.calls[0];
+      expect(call[11]).toBe('d2');
+      expect(call[2]).toContain('It is about the Pano doc `d2` ("Release plan")');
+    });
+
+    it('picks with Tab or the mouse, untags with the chip\'s button, and closes on Escape', async () => {
+      const { el } = await mount('/pano', ONLINE);
+      const input = $(el, 'pano-chat-input');
+      await type(input, '#road');
+      await key(input, { key: 'Tab' });
+      expect(text($(el, 'pano-chat-doc'))).toBe('#Roadmap');
+      await click($(el, 'pano-chat-doc-remove'));
+      expect($(el, 'pano-chat-doc')).toBeNull();
+
+      await type(input, '#');
+      expect(options(el)).toHaveLength(3);
+      const option = $$(el, 'pano-chat-doc-option')[2];
+      option.dispatchEvent(new MouseEvent('mouseenter'));
+      await settle();
+      expect(option.getAttribute('aria-selected')).toBe('true');
+      option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      await settle();
+      expect(text($(el, 'pano-chat-doc'))).toBe('#Roadmap');
+
+      await type(input, 'x #old');
+      const other = await key(input, { key: 'a' });
+      expect(other.defaultPrevented).toBe(false);
+      expect($(el, 'pano-chat-doc-menu')).not.toBeNull();
+      const closed = await key(input, { key: 'Escape' });
+      expect(closed.defaultPrevented).toBe(true);
+      expect($(el, 'pano-chat-doc-menu')).toBeNull();
+      await type(input, 'x #nothing-matches');
+      expect($(el, 'pano-chat-doc-menu')).toBeNull();
+      const plain = await key(input, { key: 'ArrowDown' });
+      expect(plain.defaultPrevented).toBe(false);
+      await type(input, '#old');
+      input.dispatchEvent(new Event('blur'));
+      await settle();
+      expect($(el, 'pano-chat-doc-menu')).toBeNull();
+    });
+
+    it('sends no doc when none is tagged', async () => {
+      const { el } = await mount('/pano', ONLINE);
+      await type($(el, 'pano-chat-input'), 'hello');
+      await key($(el, 'pano-chat-input'), { key: 'Enter', metaKey: true });
+      expect(api.createTask.mock.calls[0][11]).toBe('');
+    });
   });
 
   it('opens a chat from its address in a column of its own, and closes back to the same board', async () => {
@@ -1029,6 +1104,20 @@ describe('a doc', () => {
       } finally {
         vi.unstubAllGlobals();
       }
+    });
+
+    it('adds the chats linked to the doc to its related tasks, with their status now, and keeps an assigned item\'s box as its task says', async () => {
+      api.getPanoDoc.mockResolvedValue({ doc: { ...DOC,
+        markdown: '- [ ] ship → [@ops](/workspaces/ws2/tasks/t7 "notstarted")\n- [ ] mine',
+        tasks: [{ taskId: 't7', workspaceId: 'ws2', status: 'ongoing' }, { taskId: 't5', workspaceId: 'sup', status: 'completed' }] } });
+      const { el } = await mount('/pano/d1', [...WORKSPACES, { id: 'sup', name: 'supervisor' }]);
+      await settle();
+      expect($$(el, 'pano-related-status').map((d) => d.getAttribute('aria-label'))).toEqual(['Ongoing', 'Completed']);
+      expect($$(el, 'pano-related-task').map((a) => a.textContent)).toEqual(['@ops', '@supervisor']);
+      const [assigned, mine] = $(el, 'pano-body').querySelectorAll('input[type="checkbox"]');
+      expect(assigned.disabled).toBe(true);
+      expect(assigned.title).toBe('Follows its task');
+      expect(mine.disabled).toBe(false);
     });
 
     it('lists no related tasks when the doc points at none', async () => {

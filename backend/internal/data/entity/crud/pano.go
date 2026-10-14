@@ -32,6 +32,16 @@ type (
 		Files       []PanoFile
 		Attachments []PanoFile
 		Comments    []PanoComment
+		// Tasks are the tasks linked to the doc, oldest link first, each with
+		// its status now. Filled only when one doc is read.
+		Tasks []PanoDocTask
+	}
+
+	// PanoDocTask is a task linked to a doc.
+	PanoDocTask struct {
+		TaskID      int64
+		WorkspaceID int64
+		Status      string
 	}
 
 	// PanoFile is a file of a doc: a linked file, named by a link in its

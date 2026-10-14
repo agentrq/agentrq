@@ -7,8 +7,8 @@
   unlinked file and drops one the markdown stops linking; `attach` is the only
   way in without a link. Relaxing this leaves blobs nothing points to.
 - **Every write moves `version`, and an update must send the one it read.**
-  The check is a compare-and-swap in `SavePanoDoc`, and `SyncPanoChecklist`
-  bumps it too, since it changes the markdown. `edit` reads, applies its ops
+  The check is a compare-and-swap in `SavePanoDoc`. A task's status change is
+  not a write: `SyncPanoTask` stores only `checklist_done`. `edit` reads, applies its ops
   and goes through the same save, so it cannot skip the checks; the version is
   checked before the ops, or a stale doc answers "not found" instead.
 - **The markdown is in the database, the files in storage.** A file's blob is
@@ -17,8 +17,15 @@
 - **The checklist count is stored at save** (`panoChecklist`), and the board's
   `togglePanoCheckbox` must find the same items: both skip fenced code.
 - **An assigned item ends `→ [@name](/workspaces/<id>/tasks/<id> "status")`**;
-  `assignPanoItem` and `syncPanoAssignee` must agree on it. The status sync
-  uses `UpdateColumns`: stamped as a save, it would reorder the board.
+  `assignPanoItem` and `panoAssignee` must agree on it. Its status and tick are
+  the task's, laid over the markdown on read, list, edit and save
+  (`panoOverlay`), so the stored text can be stale and its box is read-only. The
+  count sync uses `UpdateColumn`: stamped as a save, it would reorder the board.
+- **A doc's tasks are rows in `pano_doc_tasks`, never markdown**: from an
+  assigned item, a `#`-tagged chat (`panoDocId`), or an agent's write while it
+  has exactly one ongoing task, since a guess between two would mislink. The
+  write's workspace is the agent's own, not the fork's parent. Every query on
+  it is checked for full scans by `pano_doc_tasks_plan_test.go`.
 - **Pings are spaced a second apart**: the server makes one task a second per
   account, so a comment mentioning two workspaces at once would 429 the second.
 - **`@workspace #task` in a comment posts on that task, and makes none**; a

@@ -107,3 +107,50 @@ func TestStartPanoSweep(t *testing.T) {
 		t.Errorf("the sweep ran %d more times after its context ended, want none", f.calls-stopped)
 	}
 }
+
+type fakeBackfill struct {
+	claimed  bool
+	claimErr error
+	claim    [2]string
+	n        int64
+	err      error
+	runs     int
+}
+
+func (f *fakeBackfill) ClaimTelemetryAggregation(_ context.Context, typ, key string) (bool, error) {
+	f.claim = [2]string{typ, key}
+	return f.claimed, f.claimErr
+}
+
+func (f *fakeBackfill) BackfillPanoDocTasks(context.Context) (int64, error) {
+	f.runs++
+	return f.n, f.err
+}
+
+// The doc-task backfill runs once per deployment: only by the instance that
+// claims it, and a failure is logged, not retried.
+func TestBackfillPanoDocTasks(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		f       fakeBackfill
+		runs    int
+		wantLog string
+	}{
+		{"claimed: it runs", fakeBackfill{claimed: true, n: 3}, 1, `"linked":3`},
+		{"claimed elsewhere: it does not", fakeBackfill{}, 0, ""},
+		{"the claim failing: it does not", fakeBackfill{claimErr: errors.New("database unavailable")}, 0, "failed to claim"},
+		{"the run failing is logged", fakeBackfill{claimed: true, err: errors.New("database unavailable")}, 1, "backfill failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := captureLog(t)
+			f := tc.f
+			backfillPanoDocTasks(context.Background(), &f, &f)
+			if f.runs != tc.runs || f.claim != [2]string{panoBackfillClaim, panoBackfillKey} {
+				t.Errorf("ran %d times under claim %v, want %d under %s/%s", f.runs, f.claim, tc.runs, panoBackfillClaim, panoBackfillKey)
+			}
+			if tc.wantLog != "" && !strings.Contains(buf.String(), tc.wantLog) {
+				t.Errorf("logged %q, want it to say %q", buf.String(), tc.wantLog)
+			}
+		})
+	}
+}

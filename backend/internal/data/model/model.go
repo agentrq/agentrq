@@ -319,6 +319,21 @@ type (
 		Body        string `gorm:"type:text"`
 	}
 
+	// PanoDocTask links a Pano doc to a task that worked on it: a task a chat
+	// named the doc for, the one task its agent was on when it wrote the doc,
+	// or a task one of its checklist items is assigned to. The link is kept
+	// out of the markdown, so making one never moves the doc's version.
+	PanoDocTask struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		// Every read reaches a link by its doc, its task or its workspace,
+		// each indexed; the account is checked, never searched by.
+		UserID      int64
+		DocID       int64 `gorm:"uniqueIndex:uk_pano_doc_tasks_doc_id_task_id,priority:1;index:idx_pano_doc_tasks_task_id_doc_id,priority:2"`
+		TaskID      int64 `gorm:"uniqueIndex:uk_pano_doc_tasks_doc_id_task_id,priority:2;index:idx_pano_doc_tasks_task_id_doc_id,priority:1"`
+		WorkspaceID int64 `gorm:"index:idx_pano_doc_tasks_workspace_id"`
+	}
+
 	// WorkspaceSkill turns an account's skill on in one of its workspaces:
 	// that workspace's agent sees it. A fork's is filed under its parent.
 	WorkspaceSkill struct {
@@ -739,6 +754,8 @@ const (
 	ActionIDPanoDelete
 	ActionIDPanoComment
 	ActionIDPanoAttach
+	// A Pano doc linked to a task by a chat or by the task its agent was on.
+	ActionIDPanoLink
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

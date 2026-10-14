@@ -1369,6 +1369,9 @@ paths:
               type: object
               properties:
                 task: { $ref: '#/components/schemas/Task' }
+                panoDocId:
+                  type: string
+                  description: A Pano doc of the account to link the task to as it is created; for a doc that is not found, no task is created.
       responses:
         '200':
           description: Created
@@ -2809,6 +2812,21 @@ components:
         comments:
           type: array
           items: { $ref: '#/components/schemas/PanoComment' }
+        tasks:
+          type: array
+          description: >
+            The tasks linked to the doc, oldest link first, with their status
+            now: a task the Pano chat named the doc for, the one task its agent
+            was on when it wrote the doc, or a task one of its items is
+            assigned to. Only with one doc.
+          items: { $ref: '#/components/schemas/PanoDocTask' }
+
+    PanoDocTask:
+      type: object
+      properties:
+        taskId: { type: string }
+        workspaceId: { type: string }
+        status: { type: string }
 
     PanoFile:
       type: object

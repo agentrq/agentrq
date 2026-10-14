@@ -154,4 +154,18 @@ func TestCreateTask_PassesAMissingTitleOnToTheController(t *testing.T) {
 	if got.Task.Title != "" || got.Task.Body != "Fix the login page" {
 		t.Errorf("the controller was asked for title %q and body %q, want no title and the body as sent", got.Task.Title, got.Task.Body)
 	}
+	if got.PanoDocID != 0 {
+		t.Errorf("a task sent with no doc was asked to link doc %d", got.PanoDocID)
+	}
+
+	// A task sent from the Pano chat about a doc names it, to be linked.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks",
+		strings.NewReader(`{"task":{"title":"Update it","createdBy":"human","assignee":"human"},"panoDocId":"`+monoflake.ID(77).String()+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	if resp, err := app.Test(req); err != nil || resp.StatusCode != http.StatusCreated {
+		t.Fatalf("creating a task about a doc answered %v, %v, want 201", resp, err)
+	}
+	if got.PanoDocID != 77 {
+		t.Errorf("the controller was asked to link doc %d, want 77", got.PanoDocID)
+	}
 }

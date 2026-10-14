@@ -9,13 +9,13 @@
  * The Pano board: every doc of the account as a post-it, showing only its
  * opening. Thin on purpose: the rules are in `usePano`, where they are tested.
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
   usePanoBoard, panoAuthor, panoColor, panoTilt, panoInitial, timeAgo, expiresLabel, isOwnPanoDoc, recolorPanoDoc, PANO_COLORS,
-  panoCheckable, panoCheckboxIndex, checkPanoItem, panoAssignees, usePanoChat,
+  panoCheckable, panoCheckboxIndex, checkPanoItem, panoAssignees, usePanoChat, docMentionQuery, docMentionMatches,
 } from '../composables/usePano'
 import PanoTaskButton from '../components/PanoTaskButton.vue'
 import PanoProgress from '../components/PanoProgress.vue'
@@ -42,9 +42,46 @@ const { connect, disconnect, onEvent } = useEventBus(undefined, { buffer: false 
 // a message is sent its task opens in a card of its own beside the page,
 // which App.vue draws (PanoChatColumn), as it does the desktop side panel.
 const chat = usePanoChat({ api, store: workspaceStore })
-const { supervisor, online: chatOnline, message: chatMessage, sending: chatSending, opts: chatOpts, clearContextOffered } = chat
+const { supervisor, online: chatOnline, message: chatMessage, doc: chatDoc, sending: chatSending, opts: chatOpts, clearContextOffered } = chat
 const chatInput = ref(null)
 const chatOpen = computed(() => !!route.params.taskId)
+
+// Typing # in the chat suggests the board's docs by title; picking one tags
+// the chat with it, and the task it starts is linked to that doc.
+const docMention = ref(null)
+const docMentionIndex = ref(0)
+const docOptions = computed(() => (docMention.value ? docMentionMatches(docs.value, docMention.value.query) : []))
+
+function onChatInput() {
+  docMention.value = docMentionQuery(chatMessage.value, chatInput.value.selectionStart)
+  docMentionIndex.value = 0
+}
+
+async function pickDoc(doc) {
+  const el = chatInput.value
+  const { start } = docMention.value
+  chatMessage.value = chatMessage.value.slice(0, start) + chatMessage.value.slice(el.selectionStart)
+  chatDoc.value = { id: doc.id, title: doc.title }
+  docMention.value = null
+  await nextTick()
+  el.focus()
+  el.setSelectionRange(start, start)
+}
+
+function onChatKey(event) {
+  const options = docOptions.value
+  if (!options.length) return
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    docMentionIndex.value = (docMentionIndex.value + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length
+  } else if ((event.key === 'Enter' && !event.metaKey && !event.ctrlKey) || event.key === 'Tab') {
+    event.preventDefault()
+    pickDoc(options[docMentionIndex.value])
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    docMention.value = null
+  }
+}
 
 async function sendChat() {
   try {
@@ -238,17 +275,35 @@ const action = 'p-1 rounded-sm opacity-60 hover:opacity-100 hover:bg-black/10 tr
     <!-- The chat box: large screens only, and only until a chat is open,
          whose own composer takes over. -->
     <form v-if="!chatOpen" data-test="pano-chat" class="@container hidden lg:block shrink-0 px-4 pt-3" @submit.prevent="sendChat">
+      <div v-if="chatDoc" class="flex pb-2">
+        <div data-test="pano-chat-doc" class="flex items-center text-[10px] bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-zinc-100 border border-gray-200 dark:border-zinc-700 rounded-md px-2.5 py-1 font-bold shadow-sm">
+          <span class="truncate max-w-[240px]" :title="`The task is linked to ${chatDoc.title}`">#{{ chatDoc.title }}</span>
+          <button type="button" data-test="pano-chat-doc-remove" title="Untag the doc" aria-label="Untag the doc" @click.prevent="chatDoc = null" class="ml-2 text-gray-500 hover:text-red-500 transition-colors">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" aria-hidden="true"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+      </div>
       <TaskAttachmentChips :attachments="chatOpts.attachments.value" @remove="(i) => chatOpts.attachments.value.splice(i, 1)" class="pb-2" />
-      <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto" :input-ref="(el) => { chatInput = el }"
-        @keydown.meta.enter.prevent="sendChat" @keydown.ctrl.enter.prevent="sendChat"
-        :disabled="!chatOnline || chatSending"
-        :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano... (Cmd ⌘ + Enter to send)` : 'Connect your supervisor agent to start chatting'"
-        :send-disabled="!chatOnline || !chatMessage.trim() || chatSending">
-        <template v-if="chatOnline" #tools>
-          <TaskOptionsTools :opts="chatOpts" v-model:text="chatMessage" :workspace="supervisor" :workspace-id="supervisor.id"
-            :clear-context-offered="clearContextOffered" :input-el="chatInput" />
-        </template>
-      </ComposerBox>
+      <div class="relative">
+        <ul v-if="docOptions.length" data-test="pano-chat-doc-menu" role="listbox"
+          class="absolute left-0 right-0 bottom-full mb-1 z-30 max-h-56 overflow-y-auto custom-scrollbar bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg py-1 shadow-lg">
+          <li v-for="(d, i) in docOptions" :key="d.id" role="option" :aria-selected="i === docMentionIndex" data-test="pano-chat-doc-option"
+            @mousedown.prevent="pickDoc(d)" @mouseenter="docMentionIndex = i"
+            :class="i === docMentionIndex ? 'bg-gray-100 dark:bg-zinc-800' : ''"
+            class="px-3 py-1.5 text-xs text-gray-700 dark:text-zinc-200 truncate cursor-pointer">#{{ d.title }}</li>
+        </ul>
+        <ComposerBox v-model="chatMessage" data-test="pano-chat-input" dir="auto" :input-ref="(el) => { chatInput = el }"
+          @keydown.meta.enter.prevent="sendChat" @keydown.ctrl.enter.prevent="sendChat"
+          @input="onChatInput" @click="onChatInput" @keydown="onChatKey" @blur="docMention = null"
+          :disabled="!chatOnline || chatSending"
+          :placeholder="chatOnline ? `Ask ${supervisor.name} about the Pano, # to tag a doc... (Cmd ⌘ + Enter to send)` : 'Connect your supervisor agent to start chatting'"
+          :send-disabled="!chatOnline || !chatMessage.trim() || chatSending">
+          <template v-if="chatOnline" #tools>
+            <TaskOptionsTools :opts="chatOpts" v-model:text="chatMessage" :workspace="supervisor" :workspace-id="supervisor.id"
+              :clear-context-offered="clearContextOffered" :input-el="chatInput" />
+          </template>
+        </ComposerBox>
+      </div>
       <ComposerNotice v-if="!chatOnline" data-test="pano-chat-offline" tone="red" pulse>
         Supervisor offline. Connect your supervisor agent to start chatting.
         <template #action>

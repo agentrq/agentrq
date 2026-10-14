@@ -48,3 +48,41 @@ func sweepPano(ctx context.Context, p panoSweeper) {
 		zlog.Info().Int("deleted", n).Msg("pano: deleted expired docs")
 	}
 }
+
+// The claim the backfill of doc-task links runs under: once per deployment,
+// by whichever instance claims it first.
+const (
+	panoBackfillClaim = "pano_doc_tasks_backfill"
+	panoBackfillKey   = "v1"
+)
+
+// panoBackfiller is what the backfill of doc-task links needs.
+type panoBackfiller interface {
+	BackfillPanoDocTasks(ctx context.Context) (int64, error)
+}
+
+// panoClaimer claims a one-off run, reporting whether this caller got it.
+type panoClaimer interface {
+	ClaimTelemetryAggregation(ctx context.Context, aggregationType, periodKey string) (bool, error)
+}
+
+// backfillPanoDocTasks links every doc to the tasks its checklist items were
+// assigned to before links were stored. The claim is kept even if the run
+// fails, as the latency backfill's is: a failure is logged, never retried at
+// every boot.
+func backfillPanoDocTasks(ctx context.Context, claims panoClaimer, p panoBackfiller) {
+	claimed, err := claims.ClaimTelemetryAggregation(ctx, panoBackfillClaim, panoBackfillKey)
+	if err != nil {
+		zlog.Error().Err(err).Msg("pano: failed to claim the doc-task link backfill")
+		return
+	}
+	if !claimed {
+		return
+	}
+	n, err := p.BackfillPanoDocTasks(ctx)
+	if err != nil {
+		zlog.Error().Err(err).Int64("linked", n).Msg("pano: the doc-task link backfill failed; a doc is linked again at its next save")
+		return
+	}
+	zlog.Info().Int64("linked", n).Msg("pano: backfilled doc-task links")
+}

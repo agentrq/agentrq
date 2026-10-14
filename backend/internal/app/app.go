@@ -358,6 +358,7 @@ func New(cfg Config) (*App, error) {
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
 	startPanoSweep(appCtx, crudCtrl, panoSweepInterval)
+	go backfillPanoDocTasks(appCtx, repo, crudCtrl)
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
 	pubStatsCtrl := pub.NewStatsController(pub.Params{
@@ -1419,6 +1420,7 @@ func migratedModels() []any {
 		&model.PanoDoc{},
 		&model.PanoFile{},
 		&model.PanoComment{},
+		&model.PanoDocTask{},
 		&model.SiteShare{},
 		&model.Machine{},
 		&model.EnrolmentCode{},

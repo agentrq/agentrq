@@ -7,6 +7,7 @@ package crud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -167,8 +168,17 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		WorkflowID:            req.Task.WorkflowID,
 		CompletionTriggerType: completionTrigger,
 	}
-	created, err := c.repository.CreateTask(ctx, m)
+	var created model.Task
+	if req.PanoDocID != 0 {
+		link := model.PanoDocTask{ID: c.idgen.NextID(), CreatedAt: now, UserID: userID, DocID: req.PanoDocID, TaskID: taskID, WorkspaceID: m.WorkspaceID}
+		created, err = c.repository.CreateTaskLinkingPanoDoc(ctx, m, link, now.UTC())
+	} else {
+		created, err = c.repository.CreateTask(ctx, m)
+	}
 	if err != nil {
+		if errors.Is(err, base.ErrNotFound) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("create task: %w", err)
 	}
 
@@ -180,6 +190,9 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 		ResourceID:   created.ID,
 		Actor:        entity.ActorHuman,
 	})
+	if req.PanoDocID != 0 {
+		c.emitPanoEvent(ctx, entity.ActionPanoLink, userID, 0, req.PanoDocID)
+	}
 
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }

@@ -245,6 +245,8 @@ type (
 
 	CreateTaskRequest struct {
 		Task Task `json:"task"`
+		// PanoDocID links the new task to a Pano doc, as it is created.
+		PanoDocID string `json:"panoDocId,omitempty"`
 	}
 
 	CreateTaskResponse struct {
@@ -827,6 +829,14 @@ type PanoDoc struct {
 	Files                []PanoFile    `json:"files,omitempty"`
 	Attachments          []PanoFile    `json:"attachments,omitempty"`
 	Comments             []PanoComment `json:"comments,omitempty"`
+	Tasks                []PanoDocTask `json:"tasks,omitempty"`
+}
+
+// PanoDocTask is a task linked to a doc, with its status now.
+type PanoDocTask struct {
+	TaskID      string `json:"taskId"`
+	WorkspaceID string `json:"workspaceId"`
+	Status      string `json:"status"`
 }
 
 type PanoFile struct {

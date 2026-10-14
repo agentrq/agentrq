@@ -31,7 +31,7 @@ func deleteTaskDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}, &model.PanoDocTask{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -183,7 +183,7 @@ func TestDeleteTask_WrongOwnerChangesNothing(t *testing.T) {
 // workspace, so it has to clear every task's tool calls first.
 func TestDeleteWorkspace_WithToolCalls(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate workspace: %v", err)
 	}
 	now := time.Now()
@@ -236,6 +236,7 @@ func TestDeleteTask_RollsBackWhenAChildDeleteFails(t *testing.T) {
 		{"messages", &model.Message{}},
 		{"tool calls", &model.ToolCall{}},
 		{"slack thread", &model.SlackTaskThread{}},
+		{"pano doc tasks", &model.PanoDocTask{}},
 	} {
 		t.Run(drop.name, func(t *testing.T) {
 			db := deleteTaskDB(t)
@@ -275,13 +276,14 @@ func TestDeleteWorkspace_RollsBackWhenAChildDeleteFails(t *testing.T) {
 		{"workspace skills", &model.WorkspaceSkill{}},
 		{"site shares", &model.SiteShare{}},
 		{"fork folders", &model.ForkFolder{}},
+		{"pano doc tasks", &model.PanoDocTask{}},
 		{"event triggers", &model.EventTrigger{}},
 		{"workflow steps", &model.WorkflowStep{}},
 		{"tasks", &model.Task{}},
 	} {
 		t.Run(drop.name, func(t *testing.T) {
 			db := deleteTaskDB(t)
-			if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+			if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 				t.Fatalf("migrate workspace: %v", err)
 			}
 			now := time.Now()
@@ -315,7 +317,7 @@ func TestDeleteWorkspace_RollsBackWhenAChildDeleteFails(t *testing.T) {
 // the row-count check.
 func TestDeleteWorkspace_WrongOwnerChangesNothing(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate workspace: %v", err)
 	}
 	now := time.Now()
@@ -348,7 +350,7 @@ func TestDeleteWorkspace_WrongOwnerChangesNothing(t *testing.T) {
 // other workspace's tool calls with it and the counts below would drop to zero.
 func TestDeleteWorkspace_LeavesOtherWorkspacesAlone(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate workspace: %v", err)
 	}
 	now := time.Now()
@@ -411,7 +413,7 @@ func TestDeleteWorkspace_LeavesOtherWorkspacesAlone(t *testing.T) {
 // forever and every publish logged "workspace not found".
 func TestDeleteWorkspace_DeletesItsTriggersAndSteps(t *testing.T) {
 	db := deleteTaskDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Skill{}, &model.SkillFile{}, &model.WorkspaceSkill{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.TaskStateTransition{}, &model.TaskLatency{}); err != nil {
 		t.Fatalf("migrate workspace: %v", err)
 	}
 	now := time.Now()

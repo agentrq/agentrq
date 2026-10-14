@@ -371,7 +371,7 @@ func TestDeleteSkill_RemovesItsWorkspacesToo(t *testing.T) {
 // the account.
 func TestDeleteWorkspace_KeepsTheAccountsSkills(t *testing.T) {
 	db := skillDB(t)
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.SiteShare{}, &model.ForkFolder{}, &model.EventTrigger{}, &model.WorkflowStep{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.SiteShare{}, &model.ForkFolder{}, &model.PanoDocTask{}, &model.EventTrigger{}, &model.WorkflowStep{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	r := New(&mockDB{db: db})
