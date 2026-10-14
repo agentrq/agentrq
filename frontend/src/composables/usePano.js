@@ -730,14 +730,18 @@ export const PANO_CHAT_TITLE_MAX = 80
 /**
  * The task a chat message starts: its first line is the title, and the body
  * says where it was written, so the supervisor knows the person is on the
- * board and what they probably want from it.
+ * board and what they probably want from it. It also asks that a checklist item
+ * made for the request be assigned to this task, as the board assigns one, so
+ * the item follows the task; `workspace` is the supervisor the task goes to.
  */
-export function panoChatTask(message) {
+export function panoChatTask(message, workspace) {
   const text = message.trim()
   const firstLine = text.split('\n')[0].trim()
   const title = firstLine.length > PANO_CHAT_TITLE_MAX ? `${firstLine.slice(0, PANO_CHAT_TITLE_MAX - 1).trimEnd()}…` : firstLine
   const body = `${text}\n\n---\nSent from the Pano chat: the person is looking at the Pano board, the account's shared docs. ` +
-    'They may want a doc posted or changed, or to talk about one: read the board with the pano tool when it helps. Reply in this task.'
+    'They may want a doc posted or changed, or to talk about one: read the board with the pano tool when it helps. ' +
+    `End each checklist item you add or change for this request with → [@${workspace.name}](/workspaces/${workspace.id}/tasks/<this task's id> "ongoing"), ` +
+    'so it follows this task and is ticked when the task is completed. Reply in this task.'
   return { title, body }
 }
 
@@ -786,7 +790,7 @@ export function usePanoChat({ api, store }) {
     if (!text || !online.value || sending.value) return null
     sending.value = true
     try {
-      const { title, body } = panoChatTask(text)
+      const { title, body } = panoChatTask(text, supervisor.value)
       const res = await api.createTask(
         supervisor.value.id, title, body,
         opts.assignee.value, opts.attachments.value,

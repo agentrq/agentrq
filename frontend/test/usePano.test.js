@@ -964,6 +964,8 @@ describe('mentioning a workspace in a comment', () => {
 });
 
 describe('the chat with the supervisor', () => {
+  const SUPERVISOR = { id: 's', name: 'supervisor' };
+
   it('tells a chat route by its chat view', () => {
     expect(isPanoChatRoute({ matched: [{ components: { default: {}, chat: {} } }] })).toBe(true);
     expect(isPanoChatRoute({ matched: [{ components: { default: {} } }] })).toBe(false);
@@ -978,14 +980,19 @@ describe('the chat with the supervisor', () => {
   });
 
   it('titles a message by its first line, and says in the body where it was written', () => {
-    const { title, body } = panoChatTask('  What is on the board?\nThe release one.  ');
+    const { title, body } = panoChatTask('  What is on the board?\nThe release one.  ', SUPERVISOR);
     expect(title).toBe('What is on the board?');
     expect(body.startsWith('What is on the board?\nThe release one.\n\n---\nSent from the Pano chat')).toBe(true);
     expect(body).toContain('pano tool');
   });
 
+  it('asks that an item made for the message be assigned to its task, as the board writes it', () => {
+    const { body } = panoChatTask('Add the release steps', SUPERVISOR);
+    expect(body).toContain(`→ [@supervisor](/workspaces/s/tasks/<this task's id> "ongoing")`);
+  });
+
   it('cuts a long first line short for the title', () => {
-    const { title } = panoChatTask('x'.repeat(200));
+    const { title } = panoChatTask('x'.repeat(200), SUPERVISOR);
     expect(title).toHaveLength(PANO_CHAT_TITLE_MAX);
     expect(title.endsWith('…')).toBe(true);
   });
@@ -1026,7 +1033,7 @@ describe('the chat with the supervisor', () => {
     expect(chat.sending.value).toBe(true);
     expect(await sent).toEqual({ id: 't1', workspaceId: 's' });
     expect(api.createTask).toHaveBeenCalledWith(
-      's', 'Post the plan', panoChatTask('Post the plan').body,
+      's', 'Post the plan', panoChatTask('Post the plan', SUPERVISOR).body,
       'agent', [], 'notstarted', '', false, '', '', false,
     );
     expect(chat.message.value).toBe('');
@@ -1080,7 +1087,7 @@ describe('the chat with the supervisor', () => {
       chat.message.value = 'Post the plan';
       await chat.send();
       expect(api.createTask).toHaveBeenCalledWith(
-        's', 'Post the plan', panoChatTask('Post the plan').body,
+        's', 'Post the plan', panoChatTask('Post the plan', SUPERVISOR).body,
         'human', [{ filename: 'plan.md', mimeType: 'text/markdown', data: 'IyBwbGFu' }],
         'cron', '0 * * * *', false, 'e1', 'w1', true,
       );
