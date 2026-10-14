@@ -474,8 +474,25 @@ export function machineEligibility(machine) {
 const BAD_SHAPE_REASON = (field) =>
   `That ${field} has characters the daemon will not accept: letters, digits, dot, dash and underscore, starting with a letter or digit.`
 
-/** Whether the kind's own parameters are filled in and acceptable. */
-export function paramsEligibility(kind, params) {
+/**
+ * Whether the machine says installing `agent` downloads a binary the ACP
+ * registry publishes no checksum for, which the gateway does only when told to.
+ */
+export function isUnverifiedAgent(agents, agent) {
+  const id = (agent ?? '').trim()
+  return !!id && agents.some((a) => a.id === id && a.unverified)
+}
+
+/** Whether a gateway launch is installing an unverified agent with consent. */
+function allowsUnverified(kind, params, agents) {
+  return kind === 'acp-gateway' && isUnverifiedAgent(agents, params?.agent) && !!params?.allowUnverified
+}
+
+/**
+ * Whether the kind's own parameters are filled in and acceptable. `agents` is
+ * the gateway's list, for the consent an unverified agent needs.
+ */
+export function paramsEligibility(kind, params, agents = []) {
   const spec = KINDS.find((k) => k.id === kind)
   if (!spec) return { ok: false, reason: 'Pick what to run.' }
   for (const field of spec.needs) {
@@ -489,6 +506,9 @@ export function paramsEligibility(kind, params) {
     const value = (params?.[field] ?? '').trim()
     if (value && !SAFE_PARAM.test(value)) return { ok: false, reason: BAD_SHAPE_REASON(field) }
   }
+  if (kind === 'acp-gateway' && isUnverifiedAgent(agents, params?.agent) && !params?.allowUnverified) {
+    return { ok: false, reason: 'Confirm installing this agent without a checksum.' }
+  }
   return { ok: true }
 }
 
@@ -498,7 +518,7 @@ export function paramsEligibility(kind, params) {
  * given. Shared by both launch composables so "which fields does a launch
  * send" has one answer.
  */
-export function launchParamsPayload(kind, params) {
+export function launchParamsPayload(kind, params, agents = []) {
   const spec = KINDS.find((k) => k.id === kind)
   if (!spec) return {}
   const extra = {}
@@ -507,23 +527,25 @@ export function launchParamsPayload(kind, params) {
     const value = (params?.[field] ?? '').trim()
     if (value) extra[field] = value
   }
+  if (allowsUnverified(kind, params, agents)) extra.allowUnverified = true
   return extra
 }
 
 /**
  * The agents the gateway's Agent field lists: the ACP registry's, then any
  * the machine's gateway reports that the registry does not, so an agent known
- * only to that machine is still offered. Each id once; first seen wins.
+ * only to that machine is still offered. Each id once; first seen wins, except
+ * that the machine's `unverified` is kept: only the machine knows its platform.
  */
 export function mergeAcpAgents(registry = [], machine = []) {
-  const seen = new Set()
-  const out = []
+  const byId = new Map()
   for (const a of [...registry, ...machine]) {
-    if (!a?.id || seen.has(a.id)) continue
-    seen.add(a.id)
-    out.push(a)
+    if (!a?.id) continue
+    const seen = byId.get(a.id)
+    if (!seen) byId.set(a.id, a)
+    else if (a.unverified && !seen.unverified) byId.set(a.id, { ...seen, unverified: true })
   }
-  return out
+  return [...byId.values()]
 }
 
 /**
@@ -591,6 +613,11 @@ export function useAcpGatewaySuggestions({
   )
   const acpAgents = computed(() => mergeAcpAgents(registryAgents.value, machineAgents.value))
 
+  /** Whether the chosen agent installs without a checksum on this machine. */
+  const unverifiedAgent = computed(
+    () => kind.value === 'acp-gateway' && isUnverifiedAgent(acpAgents.value, params.value.agent)
+  )
+
   /** Fills the Agent field from the list. */
   function pickAcpAgent(id) {
     params.value.agent = id
@@ -601,6 +628,8 @@ export function useAcpGatewaySuggestions({
     () => (kind.value === 'acp-gateway' ? (params.value.agent ?? '').trim() : ''),
     async (agent) => {
       acpModels.value = []
+      // Consent is to one agent, never carried over to the next.
+      if (params.value.allowUnverified) params.value.allowUnverified = false
       const machineId = getMachineId()
       const workspaceId = getWorkspaceId()
       if (!agent || !machineId || !workspaceId) return
@@ -636,7 +665,7 @@ export function useAcpGatewaySuggestions({
   )
   const claudeModels = computed(() => claudeModelSteps(claudeReported.value))
 
-  return { acpAgents, acpModels, claudeModels, pickAcpAgent }
+  return { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent }
 }
 
 /**
@@ -677,7 +706,7 @@ export function useAgentLaunch(deps = {}) {
     { flush: 'sync' }
   )
 
-  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machine?.value?.id,
@@ -703,7 +732,7 @@ export function useAgentLaunch(deps = {}) {
       machineEligibility(machine?.value),
       workspaceEligibility(selected.value, forkParent(selected.value, workspaces.value)),
       sessionEligibility(workspaceId.value, sessions?.value),
-      paramsEligibility(kind.value, params.value),
+      paramsEligibility(kind.value, params.value, acpAgents.value),
     ].filter((e) => !e.ok)
   )
 
@@ -737,7 +766,7 @@ export function useAgentLaunch(deps = {}) {
     launching.value = true
     error.value = ''
     try {
-      const extra = launchParamsPayload(kind.value, params.value)
+      const extra = launchParamsPayload(kind.value, params.value, acpAgents.value)
 
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspaceId.value, {
@@ -774,6 +803,7 @@ export function useAgentLaunch(deps = {}) {
     acpModels,
     claudeModels,
     pickAcpAgent,
+    unverifiedAgent,
     load,
     launch,
   }

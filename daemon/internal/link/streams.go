@@ -75,12 +75,16 @@ func (s *streams) place(id uint64, cols, rows uint16, sender stream.Sender, repl
 	return p, true
 }
 
-// run pumps r, a session's terminal, into the stream [streams.open] made.
-func (s *streams) run(id uint64, p *stream.Pump, r io.Reader) {
+// run pumps r, a session's terminal, into the stream [streams.open] made. The
+// channel closes once the terminal has been read to its end.
+func (s *streams) run(id uint64, p *stream.Pump, r io.Reader) <-chan struct{} {
+	read := make(chan struct{})
 	go func() {
 		_ = p.Run(r)
+		close(read)
 		s.remove(id)
 	}()
+	return read
 }
 
 // flush sends a batch that came due while the terminal was quiet.

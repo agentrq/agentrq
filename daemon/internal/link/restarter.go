@@ -66,18 +66,19 @@ func (r *Restarter) handOver(ctx context.Context, reason, to string, install, un
 	}
 	for _, sess := range live {
 		note.Sessions = append(note.Sessions, restore.Session{
-			ID:          sess.ID,
-			Profile:     r.Supervisor.Profile(sess.ID),
-			Kind:        string(sess.Kind),
-			Dir:         sess.Dir,
-			Workspace:   sess.Params.Workspace,
-			ServerName:  sess.Params.ServerName,
-			Model:       sess.Params.Model,
-			Effort:      sess.Params.Effort,
-			Autocompact: sess.Params.Autocompact,
-			Agent:       sess.Params.Agent,
-			Cols:        sess.Cols,
-			Rows:        sess.Rows,
+			ID:              sess.ID,
+			Profile:         r.Supervisor.Profile(sess.ID),
+			Kind:            string(sess.Kind),
+			Dir:             sess.Dir,
+			Workspace:       sess.Params.Workspace,
+			ServerName:      sess.Params.ServerName,
+			Model:           sess.Params.Model,
+			Effort:          sess.Params.Effort,
+			Autocompact:     sess.Params.Autocompact,
+			Agent:           sess.Params.Agent,
+			AllowUnverified: sess.Params.AllowUnverified,
+			Cols:            sess.Cols,
+			Rows:            sess.Rows,
 		})
 	}
 	if err := restore.Write(r.StateDir, note); err != nil {

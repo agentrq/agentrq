@@ -40,7 +40,15 @@ pseudo-terminals, and streams them to the browser.
   deleted the instant it fails, so `session.updated` carries the reason and
   nothing else does — the terminal page it navigated to has nothing left to
   read. `useStreamToasts` is what puts it on screen; drop `payload.error` there
-  and the reason exists only in that machine's daemon log.
+  and the reason exists only in that machine's daemon log. A failing exit is
+  explained the same way, by the terminal's last line: an ended session's
+  terminal cannot be opened, so that line is otherwise never seen.
+- **`allowUnverified` is a person's tick box, and only that.** The gateway
+  installs an agent with no registry checksum only with
+  `--allow-unverified-agent`; the launch forms ask when agentrqd's agent list
+  marks one `unverified`, and the consent resets with every new agent. CoreMCP
+  and WebMCP's `launchAgent` leave it out on purpose: an agent must not be able
+  to consent for the person.
 - **Merging a workspace fork kills its agent first, and waits for the row to
   say so** (`forkmerge.Merger`, shared by REST and CoreMCP). Merging past a
   live one leaves it working, token on disk, for a workspace that is gone; so an offline machine refuses the

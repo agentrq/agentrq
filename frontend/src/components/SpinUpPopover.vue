@@ -15,6 +15,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import AcpAgentList from './AcpAgentList.vue'
+import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
@@ -112,6 +113,7 @@ async function start() {
       </div>
 
       <AcpAgentList v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" :agents="spin.acpAgents.value" :query="spin.params.value.agent ?? ''" @pick="spin.pickAcpAgent" />
+      <UnverifiedAgentConsent v-if="spin.unverifiedAgent.value" v-model="spin.params.value.allowUnverified" id-prefix="spin-up" :agent="spin.params.value.agent" />
 
       <ul v-if="spin.blockers.value.length" class="space-y-1">
         <li v-for="b in spin.blockers.value" :key="b.reason" class="text-[11px] text-gray-500 dark:text-zinc-400">

@@ -872,6 +872,18 @@ func TestLaunchAgent_AClaudeCodeModelOrEffortIsRefusedOnADaemonThatWouldDropIt(t
 	}
 }
 
+// The consent to an unverified install reaches the daemon.
+func TestLaunchAgent_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
+	body := `{"kind":"acp-gateway","agent":"crow-cli","allowUnverified":true}`
+	resp, start := launchWith(t, claudeModelLaunchCrud(), nil, "0.10.2", body)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
+	}
+	if !start.AllowUnverified {
+		t.Errorf("the start frame = %+v, want allowUnverified", start)
+	}
+}
+
 // A chosen auto-compact window reaches the daemon on a machine that passes it on,
 // and is refused on one that would drop it.
 func TestLaunchAgent_ClaudeCodeAutocompactWindowNeedsTheCapability(t *testing.T) {

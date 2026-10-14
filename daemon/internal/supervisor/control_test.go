@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -78,6 +79,28 @@ func TestHandleStartRunsAndReports(t *testing.T) {
 	got := rep.waitFor(t, string(StateRunning))
 	if got.SessionID != 7 {
 		t.Errorf("reported session %d", got.SessionID)
+	}
+}
+
+// The consent to an unverified install reaches the gateway's command line.
+func TestHandleStartPassesTheConsentToAnUnverifiedInstall(t *testing.T) {
+	st := &recordingStarter{}
+	s := New(st.start, 0, 0)
+	rep := &recordingReporter{}
+
+	c := control(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: string(KindACPGateway), Agent: "crow-cli", AllowUnverified: true,
+		Dir: t.TempDir(), MCPURL: testURL, ServerName: "agentrq-workspace",
+	})
+	if err := s.Handle(t.Context(), "work", c, rep); err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	rep.waitFor(t, string(StateRunning))
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if len(st.specs) != 1 || !slices.Contains(st.specs[0].Argv, "--allow-unverified-agent") {
+		t.Errorf("specs = %+v, want one with --allow-unverified-agent", st.specs)
 	}
 }
 

@@ -51,12 +51,13 @@ func TestListAcpModelsFailsOpenWithNoNpx(t *testing.T) {
 }
 
 func TestListAcpAgentsParsesTheGatewaysJSON(t *testing.T) {
-	fakeNpx(t, `{"agents":[{"id":"codex-acp","name":"Codex","runtimes":["npx"]},{"id":"kilo","name":"Kilo","runtimes":["npx","binary"]}]}`)
+	fakeNpx(t, `{"agents":[{"id":"codex-acp","name":"Codex","runtimes":["npx"]},{"id":"kilo","name":"Kilo","runtimes":["npx","binary"]},{"id":"crow-cli","name":"crow-cli","runtimes":["binary"],"unverified":true}]}`)
 
 	got := ListAcpAgents(context.Background())
 	want := []wire.AcpAgent{
 		{ID: "codex-acp", Name: "Codex", Runtimes: []string{"npx"}},
 		{ID: "kilo", Name: "Kilo", Runtimes: []string{"npx", "binary"}},
+		{ID: "crow-cli", Name: "crow-cli", Runtimes: []string{"binary"}, Unverified: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ListAcpAgents = %+v, want %+v", got, want)

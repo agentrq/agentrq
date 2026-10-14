@@ -41,6 +41,7 @@ import { useToasts } from '../composables/useToasts'
 import { onWebMCPChange } from '../composables/useWebMCPChanges'
 import DeleteModal from '../components/DeleteModal.vue'
 import AcpAgentList from '../components/AcpAgentList.vue'
+import UnverifiedAgentConsent from '../components/UnverifiedAgentConsent.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
 import ClaudeOptionsPicker from '../components/ClaudeOptionsPicker.vue'
 import { useAgentLaunch } from '../composables/useAgentLaunch'
@@ -76,6 +77,7 @@ const {
   acpModels: launchAcpModels,
   claudeModels: launchClaudeModels,
   pickAcpAgent: pickLaunchAcpAgent,
+  unverifiedAgent: launchUnverifiedAgent,
 } = launcher
 
 const liveCount = computed(() => liveSessions.value.length)
@@ -561,6 +563,7 @@ async function stopSession(id) {
           <!-- The list only ever suggests: any other id typed in the field is
                still sent, so an agent the list does not know can still run. -->
           <AcpAgentList v-if="launchKind === 'acp-gateway'" id-prefix="launch" :agents="launchAcpAgents" :query="launchParams.agent" @pick="pickLaunchAcpAgent" />
+          <UnverifiedAgentConsent v-if="launchUnverifiedAgent" v-model="launchParams.allowUnverified" class="md:col-span-2" id-prefix="launch" :agent="launchParams.agent" />
           </div>
 
           <!-- Said before the button rather than after it is pressed. -->

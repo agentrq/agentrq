@@ -26,6 +26,7 @@ const rows = {
 const forkWorkspace = vi.fn(() => Promise.resolve({ workspace: { id: 'f1', name: 'fix-login' } }))
 const moveTask = vi.fn(() => Promise.resolve({}))
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 's1' } }))
+let acpAgents = []
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal()),
   fetchTasks: (_ws, { status }) => Promise.resolve({ tasks: (rows[status] ?? []).map((t) => ({ ...t })) }),
@@ -35,7 +36,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   forkWorkspace: (...a) => forkWorkspace(...a),
   moveTask: (...a) => moveTask(...a),
   launchAgent: (...a) => launchAgent(...a),
-  fetchAcpAgents: () => Promise.resolve({ agents: [] }),
+  fetchAcpAgents: () => Promise.resolve({ agents: acpAgents }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   recordTelemetry: (...a) => recordTelemetry(...a),
 }))
@@ -134,6 +135,31 @@ describe('Spin up on a task row', () => {
       expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'acp-gateway', agent: 'gemini' }))
     } finally {
       resetAcpRegistry()
+    }
+  })
+
+  // The gateway refuses to install an agent with no checksum unless told to.
+  it('asks before spinning up an agent with no checksum', async () => {
+    acpAgents = [{ id: 'crow-cli', name: 'crow-cli', runtimes: ['binary'], unverified: true }]
+    try {
+      const { row } = await mount(PARENT)
+      row('Fix login').querySelector('[title="Spin up in a fork"]').click()
+      await settle()
+      document.body.querySelector('#spin-up-kind-acp-gateway').click()
+      await settle()
+      document.body.querySelector('[data-test=spin-up-acp-agents] li button').click()
+      await settle()
+      const consent = document.body.querySelector('#spin-up-allow-unverified')
+      expect(consent.checked).toBe(false)
+      expect(document.body.querySelector('[data-test=spin-up]').textContent).toContain('Confirm installing this agent without a checksum.')
+
+      consent.click()
+      await settle()
+      ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
+      await settle()
+      expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ agent: 'crow-cli', allowUnverified: true }))
+    } finally {
+      acpAgents = []
     }
   })
 

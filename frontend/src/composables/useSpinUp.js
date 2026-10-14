@@ -90,7 +90,7 @@ export function useSpinUp(deps = {}) {
   // make a second one, so the popover says what happened and offers no retry.
   const forked = ref(null)
 
-  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -123,7 +123,7 @@ export function useSpinUp(deps = {}) {
     const waiting = state.task?.status === 'ongoing'
       ? { ok: false, reason: 'An agent has already started on this task, so it stays here.' }
       : { ok: true }
-    return [waiting, machineChoiceEligibility(machineId.value, machines.value), folder, paramsEligibility(kind.value, params.value)]
+    return [waiting, machineChoiceEligibility(machineId.value, machines.value), folder, paramsEligibility(kind.value, params.value, acpAgents.value)]
       .filter((e) => !e.ok)
   })
 
@@ -172,7 +172,7 @@ export function useSpinUp(deps = {}) {
       step.value = 'move'
       await moveTask(workspace.id, task.id, fork.id)
       step.value = 'launch'
-      const extra = launchParamsPayload(kind.value, params.value)
+      const extra = launchParamsPayload(kind.value, params.value, acpAgents.value)
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(fork.id, { machineId: machineId.value, kind: kind.value, cols, rows, ...extra })
       rememberParams(kind.value, extra)
@@ -208,6 +208,7 @@ export function useSpinUp(deps = {}) {
     acpModels,
     claudeModels,
     pickAcpAgent,
+    unverifiedAgent,
     open,
     close,
     run,

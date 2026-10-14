@@ -34,6 +34,7 @@ import {
   claudeModelSteps,
   mergeAcpAgents,
   filterAcpAgents,
+  isUnverifiedAgent,
 } from '../src/composables/useAgentLaunch.js'
 
 const READY_WORKSPACE = {
@@ -229,6 +230,89 @@ describe('paramsEligibility', () => {
     const e = paramsEligibility('acp-gateway', { model: 'a b', agent: 'a' })
     expect(e.ok).toBe(false)
     expect(e.reason).toContain('will not accept')
+  })
+})
+
+// An agent the registry publishes no checksum for: the gateway installs it only
+// when told to, and only the person launching it can say so.
+describe('an unverified agent', () => {
+  const agents = [{ id: 'crow-cli', unverified: true }, { id: 'opencode' }]
+  afterEach(() => localStorage.clear())
+
+  it('is known by the machine marking it, and only that', () => {
+    expect(isUnverifiedAgent(agents, ' crow-cli ')).toBe(true)
+    expect(isUnverifiedAgent(agents, 'opencode')).toBe(false)
+    expect(isUnverifiedAgent(agents, 'unknown')).toBe(false)
+    expect(isUnverifiedAgent(agents, '')).toBe(false)
+    expect(isUnverifiedAgent(agents, undefined)).toBe(false)
+  })
+
+  it('stops a launch until it is confirmed', () => {
+    const e = paramsEligibility('acp-gateway', { agent: 'crow-cli' }, agents)
+    expect(e.ok).toBe(false)
+    expect(e.reason).toBe('Confirm installing this agent without a checksum.')
+    expect(paramsEligibility('acp-gateway', { agent: 'crow-cli', allowUnverified: true }, agents).ok).toBe(true)
+    expect(paramsEligibility('acp-gateway', { agent: 'opencode' }, agents).ok).toBe(true)
+  })
+
+  it('sends the consent only for the agent that needs it', () => {
+    expect(launchParamsPayload('acp-gateway', { agent: 'crow-cli', allowUnverified: true }, agents)).toEqual({
+      agent: 'crow-cli',
+      allowUnverified: true,
+    })
+    expect(launchParamsPayload('acp-gateway', { agent: 'opencode', allowUnverified: true }, agents)).toEqual({
+      agent: 'opencode',
+    })
+    expect(launchParamsPayload('acp-gateway', { agent: 'crow-cli' }, agents)).toEqual({ agent: 'crow-cli' })
+  })
+
+  it('is found on the machine even when the registry lists the agent first', async () => {
+    const h = harness({
+      deps: {
+        registryAgents: ref([{ id: 'crow-cli', name: 'crow-cli', runtimes: ['binary'] }]),
+        fetchAcpAgents: vi.fn().mockResolvedValue({ agents: [{ id: 'crow-cli', unverified: true }] }),
+      },
+    })
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { agent: 'crow-cli', model: '' }
+    await flush()
+
+    expect(h.l.acpAgents.value).toEqual([{ id: 'crow-cli', name: 'crow-cli', runtimes: ['binary'], unverified: true }])
+    expect(h.l.unverifiedAgent.value).toBe(true)
+    expect(h.l.blockers.value.map((b) => b.reason)).toContain('Confirm installing this agent without a checksum.')
+  })
+
+  it('is asked again for another agent', async () => {
+    const h = harness({
+      deps: { fetchAcpAgents: vi.fn().mockResolvedValue({ agents: [{ id: 'crow-cli', unverified: true }, { id: 'cursor', unverified: true }] }) },
+    })
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { agent: 'crow-cli', model: '' }
+    await flush()
+    h.l.params.value.allowUnverified = true
+
+    h.l.pickAcpAgent('cursor')
+    await flush()
+    expect(h.l.params.value.allowUnverified).toBe(false)
+  })
+
+  it('launches with the consent once it is given', async () => {
+    const h = harness({
+      deps: { fetchAcpAgents: vi.fn().mockResolvedValue({ agents: [{ id: 'crow-cli', unverified: true }] }) },
+    })
+    await h.l.load()
+    h.l.workspaceId.value = 'ws1'
+    h.l.kind.value = 'acp-gateway'
+    h.l.params.value = { agent: 'crow-cli', model: '' }
+    await flush()
+    h.l.params.value.allowUnverified = true
+
+    await h.l.launch()
+    expect(h.deps.launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ agent: 'crow-cli', allowUnverified: true }))
+  })
+
+  it('is never a question for claude-code', () => {
+    expect(paramsEligibility('claude-code', { agent: 'crow-cli' }, agents).ok).toBe(true)
   })
 })
 
@@ -521,6 +605,13 @@ describe('mergeAcpAgents', () => {
       a,
       { id: 'b' },
     ])
+  })
+
+  // Only the machine knows its platform, so its word on a checksum is kept.
+  it('keeps the machine marking an agent unverified', () => {
+    const a = { id: 'a', name: 'From the registry' }
+    expect(mergeAcpAgents([a], [{ id: 'a', unverified: true }])).toEqual([{ ...a, unverified: true }])
+    expect(mergeAcpAgents([{ id: 'a', unverified: true }], [{ id: 'a', unverified: true }])).toEqual([{ id: 'a', unverified: true }])
   })
 
   it('takes either side missing', () => {

@@ -7,6 +7,7 @@ package stream
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/hinshun/vt10x"
@@ -125,6 +126,49 @@ func (s *Screen) Redraw() []byte {
 		b.WriteString("\x1b[?25l")
 	}
 	return b.Bytes()
+}
+
+// wrapped marks the last cell of a row the terminal wrapped onto the next. It
+// is vt10x's attrWrap, which that package does not export.
+const wrapped = 1 << 6
+
+// LastLine is the text of the last line on the screen that has any, with the
+// rows the terminal wrapped it across joined back up.
+func (s *Screen) LastLine() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	end := s.rows - 1
+	for end >= 0 && s.rowTextLocked(end) == "" {
+		end--
+	}
+	if end < 0 {
+		return ""
+	}
+	start := end
+	for start > 0 && s.term.Cell(s.cols-1, start-1).Mode&wrapped != 0 {
+		start--
+	}
+	var b strings.Builder
+	for y := start; y < end; y++ {
+		b.WriteString(s.rowLocked(y)) // its blanks are part of the line
+	}
+	b.WriteString(s.rowTextLocked(end))
+	return strings.TrimSpace(b.String())
+}
+
+// rowTextLocked is a row's characters, without the blanks after the last.
+func (s *Screen) rowTextLocked(y int) string {
+	return strings.TrimRight(s.rowLocked(y), " ")
+}
+
+// rowLocked is all of a row's characters.
+func (s *Screen) rowLocked(y int) string {
+	var b strings.Builder
+	for x := 0; x < s.cols; x++ {
+		b.WriteRune(s.term.Cell(x, y).Char) // vt10x clears a cell to a space
+	}
+	return b.String()
 }
 
 // lastNonBlankLocked is the rightmost column on a row worth writing.

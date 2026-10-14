@@ -146,6 +146,7 @@ func TestARestoredClaudeCodeKeepsItsModelAndEffort(t *testing.T) {
 	h.link.Restore(context.Background(), conn, restore.Session{
 		ID: 9, Profile: "work", Kind: string(supervisor.KindClaudeCode),
 		Dir: dir, Workspace: "demo", ServerName: "agentrq-workspace", Model: "opus", Effort: "max", Autocompact: "200k",
+		AllowUnverified: true,
 	})
 
 	sess, err := h.sup.Get(9)
@@ -155,6 +156,9 @@ func TestARestoredClaudeCodeKeepsItsModelAndEffort(t *testing.T) {
 	if sess.Params.Model != "opus" || sess.Params.Effort != "max" || sess.Params.Autocompact != "200k" {
 		t.Errorf("restored with model %q, effort %q and autocompact %q, want opus, max and 200k",
 			sess.Params.Model, sess.Params.Effort, sess.Params.Autocompact)
+	}
+	if !sess.Params.AllowUnverified {
+		t.Error("restored without the consent to an unverified install")
 	}
 }
 

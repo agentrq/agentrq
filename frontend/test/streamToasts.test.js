@@ -232,18 +232,33 @@ describe('a launch that was refused', () => {
     expect(toastFor(refused, { platform: 'desktop' })?.message).toBe('no such directory: /srv/gone');
   });
 
-  // An agent that started and later died reports `failed` as well, with an
-  // exit code rather than a sentence. That belongs in the terminal it died
-  // in, not in a toast over whatever the person has since moved on to.
+  // The terminal of an agent that has ended cannot be opened, so the last line
+  // it printed is said here — for the gateway, the reason it gave up.
+  it('says why an agent exited failing', () => {
+    const exited = session({ id: 's1', status: 'exited', exitCode: 1, error: '[acp-gateway] No build for this machine.' });
+
+    expect(toastFor(exited)).toEqual({
+      tone: 'error',
+      kind: 'failed',
+      title: 'Agent exited',
+      message: '[acp-gateway] No build for this machine.',
+      taskId: '',
+      workspaceId: '',
+    });
+  });
+
+  // An exit code with nothing to explain it is not worth interrupting for.
   it('stays quiet about a failure with no reason to give', () => {
     expect(toastFor(session({ id: 's1', status: 'failed' }))).toBeNull();
     expect(toastFor(session({ id: 's1', status: 'failed', error: '' }))).toBeNull();
+    expect(toastFor(session({ id: 's1', status: 'exited', exitCode: 1 }))).toBeNull();
   });
 
   it('stays quiet about the ordinary life of a session', () => {
     expect(toastFor(session({ id: 's1', status: 'running' }))).toBeNull();
     expect(toastFor(session({ id: 's1', status: 'exited', exitCode: 0 }))).toBeNull();
     expect(toastFor(session({ id: 's1', status: 'killed' }))).toBeNull();
+    expect(toastFor(session({ id: 's1', status: 'killed', error: 'stopped' }))).toBeNull();
   });
 });
 

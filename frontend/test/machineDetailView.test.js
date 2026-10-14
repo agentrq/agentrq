@@ -57,7 +57,13 @@ vi.mock('../src/api', () => ({
   fetchMachineSessions: () => Promise.resolve({ sessions: SESSIONS }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [WORKSPACE] }),
   launchAgent: (...args) => launchAgent(...args),
-  fetchAcpAgents: () => Promise.resolve({ agents: [{ id: 'codex-acp', name: 'Codex', runtimes: ['npx'] }] }),
+  fetchAcpAgents: () =>
+    Promise.resolve({
+      agents: [
+        { id: 'codex-acp', name: 'Codex', runtimes: ['npx'] },
+        { id: 'crow-cli', name: 'crow-cli', runtimes: ['binary'], unverified: true },
+      ],
+    }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   recordTelemetry: (...args) => recordTelemetry(...args),
   TELEMETRY_UI_ACP_AGENT_PICK: 'ui_acp_agent_pick',
@@ -145,6 +151,28 @@ describe('MachineDetailView: starting an agent', () => {
     expect(recordTelemetry).toHaveBeenCalledWith('ui_acp_agent_pick', 'ws1')
     await clickStart()
     expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', agent: 'codex-acp' }))
+  })
+
+  // The gateway refuses to install an agent with no checksum unless told to.
+  it('asks before installing a gateway agent with no checksum', async () => {
+    launchResult = { session: { id: 'sess-10', kind: 'acp-gateway', status: 'starting' } }
+    const { el, choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
+    await choose('launch-workspace-ws1')
+    await choose('launch-kind-acp-gateway')
+
+    ;[...el.querySelectorAll('[data-test=launch-acp-agents] li button')].find((b) => b.textContent.includes('crow-cli')).click()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const consent = el.querySelector('#launch-allow-unverified')
+    expect(consent.checked).toBe(false)
+    await clickStart()
+    expect(launchAgent).not.toHaveBeenCalled()
+
+    consent.click()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    await clickStart()
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ agent: 'crow-cli', allowUnverified: true }))
+    localStorage.clear() // the launch remembered crow-cli, which the next form would open on
   })
 
   it('does the same for a gateway, which asks its own questions on the way up', async () => {

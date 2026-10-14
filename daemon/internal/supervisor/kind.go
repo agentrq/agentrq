@@ -55,6 +55,8 @@ type Params struct {
 	Autocompact string
 	// Agent is the acp-gateway's selection.
 	Agent string
+	// AllowUnverified lets the acp-gateway install an agent with no checksum.
+	AllowUnverified bool
 }
 
 // safeParam is what an *identifier* may contain.
@@ -220,6 +222,9 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)
+		}
+		if p.AllowUnverified {
+			argv = append(argv, "--allow-unverified-agent")
 		}
 		// The gateway reads .mcp.json from its working directory, exactly as
 		// claude-code does — `make remote-agy` works only because it is run

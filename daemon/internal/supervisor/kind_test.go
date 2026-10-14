@@ -34,6 +34,14 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
+	g, err = Resolve(KindACPGateway, Params{Agent: "crow-cli", AllowUnverified: true})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want = "npx -y @agentrq/acp-gateway@latest --agent crow-cli --allow-unverified-agent"
+	if got := strings.Join(g.Argv, " "); got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
 	// Both kinds read it. `make remote-agy` works only because it is run from
 	// the repository root, which has a .mcp.json — which is exactly why this
 	// was easy to get wrong.

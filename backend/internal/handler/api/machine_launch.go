@@ -252,14 +252,15 @@ func (h *handler) launchAgent() fiber.Handler {
 		c.Set(_headerContentType, _mimeJSON)
 
 		var payload struct {
-			MachineID   string `json:"machineId"`
-			Kind        string `json:"kind"`
-			Model       string `json:"model,omitempty"`
-			Effort      string `json:"effort,omitempty"`
-			Autocompact string `json:"autocompact,omitempty"`
-			Agent       string `json:"agent,omitempty"`
-			Cols        uint16 `json:"cols,omitempty"`
-			Rows        uint16 `json:"rows,omitempty"`
+			MachineID       string `json:"machineId"`
+			Kind            string `json:"kind"`
+			Model           string `json:"model,omitempty"`
+			Effort          string `json:"effort,omitempty"`
+			Autocompact     string `json:"autocompact,omitempty"`
+			Agent           string `json:"agent,omitempty"`
+			AllowUnverified bool   `json:"allowUnverified,omitempty"`
+			Cols            uint16 `json:"cols,omitempty"`
+			Rows            uint16 `json:"rows,omitempty"`
 		}
 		if err := c.BodyParser(&payload); err != nil ||
 			monoflake.IDFromBase62(c.Params("id")).Int64() == 0 ||
@@ -272,16 +273,17 @@ func (h *handler) launchAgent() fiber.Handler {
 		defer cancel()
 
 		session, err := h.launcher.Launch(ctx, agentlaunch.Request{
-			UserID:      c.Locals("user_id").(string),
-			WorkspaceID: c.Params("id"),
-			MachineID:   payload.MachineID,
-			Kind:        payload.Kind,
-			Model:       payload.Model,
-			Effort:      payload.Effort,
-			Autocompact: payload.Autocompact,
-			Agent:       payload.Agent,
-			Cols:        payload.Cols,
-			Rows:        payload.Rows,
+			UserID:          c.Locals("user_id").(string),
+			WorkspaceID:     c.Params("id"),
+			MachineID:       payload.MachineID,
+			Kind:            payload.Kind,
+			Model:           payload.Model,
+			Effort:          payload.Effort,
+			Autocompact:     payload.Autocompact,
+			Agent:           payload.Agent,
+			AllowUnverified: payload.AllowUnverified,
+			Cols:            payload.Cols,
+			Rows:            payload.Rows,
 		})
 		if err != nil {
 			e, status := mapper.FromErrorToHTTPResponse(err)

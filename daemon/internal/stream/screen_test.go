@@ -28,16 +28,7 @@ func render(t *testing.T, redraw []byte, cols, rows int) *Screen {
 func (s *Screen) text(y int) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var b strings.Builder
-	for x := 0; x < s.cols; x++ {
-		g := s.term.Cell(x, y)
-		if g.Char == 0 {
-			b.WriteRune(' ')
-			continue
-		}
-		b.WriteRune(g.Char)
-	}
-	return strings.TrimRight(b.String(), " ")
+	return s.rowTextLocked(y)
 }
 
 // THE test for this milestone. A progress bar rewritten a thousand times is
@@ -196,4 +187,29 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// The last thing a process printed is what explains why it stopped, so it is
+// read back joined up, past the blank rows below it.
+func TestLastLine(t *testing.T) {
+	cases := []struct {
+		name, out, want string
+	}{
+		{"nothing printed", "", ""},
+		{"blank rows after it", "first\r\nlast words\r\n\r\n", "last words"},
+		{"wrapped over rows", "x\r\n012345678 abc", "012345678 abc"},
+		{"full but not wrapped", "0123456789\r\nabc", "abc"},
+		{"spinner erased after it", "failed\r\n|\x1b[1G\x1b[0K", "failed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := NewScreen(10, 5)
+			if _, err := s.Write([]byte(c.out)); err != nil {
+				t.Fatal(err)
+			}
+			if got := s.LastLine(); got != c.want {
+				t.Fatalf("LastLine() = %q, want %q", got, c.want)
+			}
+		})
+	}
 }

@@ -265,6 +265,18 @@ func TestLaunch_ClaudeCodeCarriesItsAutocompactWindow(t *testing.T) {
 	}
 }
 
+func TestLaunch_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
+	l, _, c := launcher()
+	rq := request("acp-gateway")
+	rq.Agent, rq.AllowUnverified = "crow-cli", true
+	if _, err := l.Launch(context.Background(), rq); err != nil {
+		t.Fatal(err)
+	}
+	if start := c.start(t); !start.AllowUnverified {
+		t.Errorf("start = %+v", start)
+	}
+}
+
 // Every refusal comes before a session row or a frame, so it leaves nothing
 // behind.
 func TestLaunch_Refusals(t *testing.T) {

@@ -291,6 +291,10 @@ type StartSession struct {
 	// Autocompact is claude-code's auto-compact window, such as "600k";
 	// blank is the daemon's default. A value needs [CapabilityAutocompact].
 	Autocompact string `json:"autocompact,omitempty"`
+	// AllowUnverified lets the acp-gateway install an agent the registry
+	// publishes no checksum for ([AcpAgent.Unverified]), which the person
+	// launching it confirmed.
+	AllowUnverified bool `json:"allowUnverified,omitempty"`
 
 	// Fork runs this session in a folder of its own, made from Dir, for a
 	// workspace fork. Nil for every other workspace.
@@ -341,6 +345,10 @@ type AcpAgent struct {
 	ID       string   `json:"id"`
 	Name     string   `json:"name,omitempty"`
 	Runtimes []string `json:"runtimes,omitempty"`
+	// Unverified is an agent whose install here downloads a binary the
+	// registry publishes no checksum for, so launching it needs
+	// [StartSession.AllowUnverified].
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // AcpAgentsList answers [OpListAcpAgents].

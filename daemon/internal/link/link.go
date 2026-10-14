@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -348,11 +349,18 @@ type capturingReporter struct {
 	// progress shows the launch in its terminal before the agent is running;
 	// nil when its stream is made only once it is.
 	progress supervisor.Progress
+	// lastWords is the last line the agent printed, set once its terminal is
+	// read. A failing exit carries it as the reason, because nobody can open
+	// the terminal of a session that has ended.
+	lastWords func() string
 }
 
 func (r *capturingReporter) Progress() supervisor.Progress { return r.progress }
 
 func (r *capturingReporter) ReportSessionState(st wire.SessionState) error {
+	if st.Error == "" && st.ExitCode != nil && *st.ExitCode != 0 && r.lastWords != nil {
+		st.Error = r.lastWords()
+	}
 	if st.Error != "" {
 		r.mu.Lock()
 		r.last = st.Error
@@ -548,7 +556,7 @@ func (l *Link) launch(ctx context.Context, conn *Conn, c wire.Control, req wire.
 	// the connection and useless to the person at the machine.
 	rep := &capturingReporter{to: conn}
 	var once sync.Once
-	rep.beforeRunning = func() { once.Do(func() { l.stream(conn, req) }) }
+	rep.beforeRunning = func() { once.Do(func() { rep.lastWords = l.stream(conn, req) }) }
 	if req.Fork != nil {
 		// Streamed from the start: making a fork's folder can take minutes,
 		// and a viewer let in while it is "starting" watches the checkout
@@ -582,30 +590,49 @@ func (l *Link) launch(ctx context.Context, conn *Conn, c wire.Control, req wire.
 	}
 }
 
-// stream starts reading a session's terminal, once it is running.
-func (l *Link) stream(conn *Conn, req wire.StartSession) {
+// stream starts reading a session's terminal, once it is running, and returns
+// the last line the agent printed: what the terminal last showed once it has
+// been read to its end, or after lastWordsWait. Nil when there is no terminal.
+func (l *Link) stream(conn *Conn, req wire.StartSession) func() string {
 	sess, err := l.Supervisor.Get(req.SessionID)
 	if err != nil {
-		return
+		return nil
 	}
 	tty := sess.PTY()
-	opened, isOpen := l.streams.get(req.SessionID)
+	pump, isOpen := l.streams.get(req.SessionID)
 	if tty == nil {
 		l.Log.Warn("a session started without a terminal", "session", req.SessionID)
 		if isOpen {
 			l.streams.remove(req.SessionID)
 		}
-		return
+		return nil
 	}
+	var read <-chan struct{}
 	if isOpen {
 		// Its notices are on the screen already, put there as they happened.
-		l.streams.run(req.SessionID, opened, tty)
-		return
+		read = l.streams.run(req.SessionID, pump, tty)
+	} else {
+		cols, rows := terminalSize(req)
+		pump = l.streams.open(req.SessionID, cols, rows, conn)
+		read = l.streams.run(req.SessionID, pump, tty)
+		announce(pump, sess.Notices(), l.Log)
 	}
-	cols, rows := terminalSize(req)
-	pump := l.streams.add(req.SessionID, cols, rows, tty, conn)
-	announce(pump, sess.Notices(), l.Log)
+	return func() string {
+		select {
+		case <-read:
+		case <-time.After(lastWordsWait):
+		}
+		line := pump.Screen.LastLine()
+		if strings.HasPrefix(line, noticePrefix) {
+			return "" // the agent printed nothing of its own
+		}
+		return line
+	}
 }
+
+// lastWordsWait bounds how long an exit report waits for the terminal to be
+// read to its end: a child that inherited it can hold it open indefinitely.
+var lastWordsWait = time.Second
 
 // terminalSize is the size a session's screen is made at.
 func terminalSize(req wire.StartSession) (cols, rows uint16) {
@@ -636,6 +663,9 @@ func (t *terminalProgress) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// noticePrefix starts every line [announce] puts in a terminal.
+const noticePrefix = "agentrqd: "
+
 // announce puts a launch's notices at the top of its terminal.
 //
 // Fed into the stream rather than written to the terminal: writing to the
@@ -651,7 +681,7 @@ func announce(p *stream.Pump, notices []string, log *slog.Logger) {
 	for _, n := range notices {
 		// Yellow, then reset. CRLF because this is a terminal, and a bare
 		// newline leaves the next line indented to wherever this one ended.
-		if err := p.Feed([]byte("\x1b[33magentrqd: " + n + "\x1b[0m\r\n")); err != nil {
+		if err := p.Feed([]byte("\x1b[33m" + noticePrefix + n + "\x1b[0m\r\n")); err != nil {
 			log.Warn("could not put a launch notice in the terminal", "error", err)
 		}
 	}

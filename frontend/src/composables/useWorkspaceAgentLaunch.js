@@ -103,7 +103,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
   const kind = ref(KINDS[0].id)
   const params = useKindParams(kind, () => workspace?.value?.id)
 
-  const { acpAgents, acpModels, claudeModels, pickAcpAgent } = useAcpGatewaySuggestions({
+  const { acpAgents, acpModels, claudeModels, pickAcpAgent, unverifiedAgent } = useAcpGatewaySuggestions({
     kind,
     params,
     getMachineId: () => machineId.value,
@@ -153,7 +153,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     [
       machineChoiceEligibility(machineId.value, machines.value),
       workspaceEligibility(workspace?.value, parent?.value ?? null),
-      paramsEligibility(kind.value, params.value),
+      paramsEligibility(kind.value, params.value, acpAgents.value),
     ].filter((e) => !e.ok)
   )
 
@@ -197,7 +197,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     launching.value = true
     error.value = ''
     try {
-      const extra = launchParamsPayload(kind.value, params.value)
+      const extra = launchParamsPayload(kind.value, params.value, acpAgents.value)
 
       const { cols, rows } = await measureTerminalSize()
       const created = await launchAgent(workspace.value.id, {
@@ -237,6 +237,7 @@ export function useWorkspaceAgentLaunch(deps = {}) {
     acpModels,
     claudeModels,
     pickAcpAgent,
+    unverifiedAgent,
     load,
     launch,
   }

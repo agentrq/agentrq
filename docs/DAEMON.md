@@ -260,6 +260,12 @@ it reaches 400k tokens. Each launch can pick another window from 100k to 900k,
 and the control panel remembers the choice per workspace in your browser.
 Choosing one needs agentrqd 0.9.18 or newer.
 
+Some ACP agents ship only as a download the ACP registry publishes no checksum
+for. The gateway installs one of those only with `--allow-unverified-agent`, so
+the launch form asks you to confirm before it starts one, and agentrqd passes
+the flag only when you have. An agent that exits with an error shows the last
+line it printed as a notification, since its terminal is gone by then.
+
 It will not run a shell, and it will not run a command the server sends it. The
 control panel asks for a *kind* — one of those two names — and the daemon
 decides what that means from its own configuration. A backend that has been

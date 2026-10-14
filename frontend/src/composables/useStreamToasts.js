@@ -59,6 +59,9 @@ const STATUS_NEWS = {
   cron: 'Turned into a scheduled task.',
 };
 
+// The toast's title for a session that ended with a reason.
+const SESSION_ENDS = { failed: 'Agent could not start', exited: 'Agent exited' };
+
 // A reply's opening words, flattened to one line: the card clamps it to two,
 // and the whole text is one click away.
 const SNIPPET_MAX = 280;
@@ -87,13 +90,15 @@ export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   // read and reports the generic "no longer on the machine". Without this the
   // reason exists only in the daemon's log, on the machine it was refused on.
   //
-  // Gated on there being a reason, not on the status alone: an agent that
-  // starts and later dies also reports `failed`, and it carries an exit code
-  // rather than a sentence. That is the terminal's news, not a toast's.
+  // An agent that exits failing carries the last line it printed, for the same
+  // reason: the terminal of a session that has ended cannot be opened.
+  //
+  // Gated on there being a reason, not on the status alone: an exit code with
+  // nothing to explain it is not worth interrupting anybody for.
   if (event.type === 'session.updated') {
-    if (payload.status !== 'failed' || !payload.error) return null;
+    if (!SESSION_ENDS[payload.status] || !payload.error) return null;
     // A session is not a task — there is nothing here to link to.
-    return { tone: 'error', kind: 'failed', title: 'Agent could not start', message: payload.error, taskId: '', workspaceId: '' };
+    return { tone: 'error', kind: 'failed', title: SESSION_ENDS[payload.status], message: payload.error, taskId: '', workspaceId: '' };
   }
 
   // An agent moving a task. The server publishes this only for the agent's own

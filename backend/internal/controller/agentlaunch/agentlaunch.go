@@ -89,8 +89,11 @@ type (
 		Effort      string
 		Autocompact string
 		Agent       string
-		Cols        uint16
-		Rows        uint16
+		// AllowUnverified is the person's consent to the acp-gateway installing
+		// an agent the registry publishes no checksum for.
+		AllowUnverified bool
+		Cols            uint16
+		Rows            uint16
 	}
 
 	// StopRequest names the workspace whose agent to stop. IDs are base62.
@@ -227,17 +230,18 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	}
 
 	start := wire.StartSession{
-		Kind:        rq.Kind,
-		Dir:         dir,
-		Fork:        fork,
-		ServerName:  mcpServerName,
-		Workspace:   ws.Workspace.Name,
-		Model:       rq.Model,
-		Effort:      rq.Effort,
-		Autocompact: rq.Autocompact,
-		Agent:       rq.Agent,
-		Cols:        rq.Cols,
-		Rows:        rq.Rows,
+		Kind:            rq.Kind,
+		Dir:             dir,
+		Fork:            fork,
+		ServerName:      mcpServerName,
+		Workspace:       ws.Workspace.Name,
+		Model:           rq.Model,
+		Effort:          rq.Effort,
+		Autocompact:     rq.Autocompact,
+		Agent:           rq.Agent,
+		AllowUnverified: rq.AllowUnverified,
+		Cols:            rq.Cols,
+		Rows:            rq.Rows,
 	}
 
 	// The supervisor workspace works across every other one, so its agent

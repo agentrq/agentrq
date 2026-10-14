@@ -20,6 +20,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceAgentLaunch } from '../composables/useWorkspaceAgentLaunch'
 import AcpAgentList from './AcpAgentList.vue'
+import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
@@ -64,6 +65,7 @@ const {
   acpModels,
   claudeModels,
   pickAcpAgent,
+  unverifiedAgent,
 } = launcher
 
 const open = ref(props.variant === 'card')
@@ -255,6 +257,7 @@ async function start() {
       <!-- The list only ever suggests: any other id typed in the field is
            still sent, so an agent the list does not know can still run. -->
       <AcpAgentList v-if="kind === 'acp-gateway'" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />
+      <UnverifiedAgentConsent v-if="unverifiedAgent" v-model="params.allowUnverified" class="@md:col-span-2" id-prefix="start-agent" :agent="params.agent" />
       </div>
 
       <!-- Said before the button rather than after it is pressed. -->

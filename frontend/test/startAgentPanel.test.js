@@ -26,11 +26,13 @@ const push = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 
 let machines = []
+const LOCAL_AGENTS = [{ id: 'local-acp', name: 'Local' }]
+let acpAgents = LOCAL_AGENTS
 const launchAgent = vi.fn(() => Promise.resolve({ session: { id: 'sess-9' } }))
 vi.mock('../src/api', () => ({
   fetchMachines: () => Promise.resolve({ machines }),
   launchAgent: (...args) => launchAgent(...args),
-  fetchAcpAgents: () => Promise.resolve({ agents: [{ id: 'local-acp', name: 'Local' }] }),
+  fetchAcpAgents: () => Promise.resolve({ agents: acpAgents }),
   fetchAcpModels: () => Promise.resolve({ agent: '', models: [] }),
   fetchWorkspaces: () => Promise.resolve({ workspaces: [] }),
   recordTelemetry: (...args) => recordTelemetry(...args),
@@ -279,5 +281,34 @@ describe('StartAgentPanel', () => {
     go.click()
     await settle()
     expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', agent: 'codex-acp' }))
+  })
+
+  // The gateway refuses to install an agent with no checksum unless told to,
+  // so the panel asks first and sends the answer.
+  it('asks before installing an agent with no checksum', async () => {
+    localStorage.clear()
+    acpAgents = [{ id: 'crow-cli', name: 'crow-cli', runtimes: ['binary'], unverified: true }]
+    try {
+      const { el, text } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+      el.querySelector('#start-agent-kind-acp-gateway').click()
+      await settle()
+      expect(el.querySelector('#start-agent-allow-unverified')).toBeNull()
+
+      ;[...el.querySelectorAll('[data-test=start-agent-acp-agents] li button')].find((b) => b.textContent.includes('crow-cli')).click()
+      await settle()
+      const consent = el.querySelector('#start-agent-allow-unverified')
+      expect(consent.checked).toBe(false)
+      expect(text()).toContain('Install crow-cli without a checksum.')
+      expect(text()).toContain('Confirm installing this agent without a checksum.')
+
+      consent.click()
+      await settle()
+      const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+      go.click()
+      await settle()
+      expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ agent: 'crow-cli', allowUnverified: true }))
+    } finally {
+      acpAgents = LOCAL_AGENTS
+    }
   })
 })

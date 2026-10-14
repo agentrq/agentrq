@@ -184,7 +184,7 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 	}
 	h := start(t, b, rig.option)
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
-		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high", Autocompact: "700k",
+		SessionID: 7, Kind: "claude-code", Dir: t.TempDir(), Workspace: "demo", Model: "opus", Effort: "high", Autocompact: "700k", AllowUnverified: true,
 		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
 	}))
 	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
@@ -194,6 +194,9 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 
 	if len(note.Sessions) != 1 || note.Sessions[0].Model != "opus" || note.Sessions[0].Effort != "high" || note.Sessions[0].Autocompact != "700k" {
 		t.Errorf("the note said %+v, want one session on model opus with effort high and autocompact 700k", note)
+	}
+	if len(note.Sessions) == 1 && !note.Sessions[0].AllowUnverified {
+		t.Error("the note lost the consent to an unverified install")
 	}
 }
 

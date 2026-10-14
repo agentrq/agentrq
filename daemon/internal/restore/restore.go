@@ -52,8 +52,10 @@ type Session struct {
 	// Autocompact is claude-code's auto-compact window, blank for the default.
 	Autocompact string `json:"autocompact,omitempty"`
 	Agent       string `json:"agent,omitempty"`
-	Cols        uint16 `json:"cols,omitempty"`
-	Rows        uint16 `json:"rows,omitempty"`
+	// AllowUnverified is the acp-gateway's consent to an unchecked install.
+	AllowUnverified bool   `json:"allowUnverified,omitempty"`
+	Cols            uint16 `json:"cols,omitempty"`
+	Rows            uint16 `json:"rows,omitempty"`
 }
 
 // File is the note left for the next start.
