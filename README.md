@@ -494,6 +494,21 @@ The gateway will automatically:
 - Spawn the agent subprocess and bridge standard I/O.
 - Forward task assignments, messages, and permission requests in real-time.
 
+### Native mode (ACP v1)
+
+In native mode AgentRQ speaks ACP itself, and the gateway only connects the
+agent to it. Add `--acp-version 1` to the gateway's command, or pick **ACP v1**
+under Protocol when you start the gateway from the app:
+
+```bash
+npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
+```
+
+Native mode needs Node 22 or newer and a server with
+`AGENTRQ_ACP_V1_ENABLED=true`. The switch is off by default (see
+[Native ACP](docs/SETUP_PRODUCTION.md#native-acp)). Without the flag, the
+gateway works as before.
+
 ## 🌌 Codex (via the ACP Gateway)
 
 [OpenAI Codex](https://github.com/openai/codex) connects through the same

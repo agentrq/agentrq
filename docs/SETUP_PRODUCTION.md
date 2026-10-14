@@ -254,6 +254,12 @@ Values are whole numbers. The server refuses to start on anything else, or on a 
 
 The value is `true` or `false`. The server refuses to start on anything else.
 
+`/api/acp/v1` is a WebSocket, so a reverse proxy in front of the server must:
+
+- pass `Upgrade` and `Connection` for `/api/acp/`. The `location /` block below already does.
+- keep its read timeout above 25 seconds, since the server pings an idle socket every 25 seconds.
+- with more than one instance, send a gateway back to the same instance. A dropped connection resumes without loss only on the instance that holds it. On another instance the gateway starts over with a fresh connection, and its agent restarts.
+
 ## Reverse Proxy Setup (Nginx Example)
 
 ```nginx

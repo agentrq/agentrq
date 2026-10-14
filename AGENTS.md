@@ -63,6 +63,10 @@ Each line says what the note will stop you getting wrong.
   does **not** end an agent's turn, and the turn's end is when the next of the
   composer's held messages is sent. Taking a reply for it posts one into the
   running turn, which is the bug the rule exists to fix.
+- **[Native ACP](docs/agents/acp-native.md)** — `controller/acpv1`, where
+  AgentRQ is the ACP client and the gateway only moves bytes. Why version
+  packages never share code, why a native connection is an agent link inside
+  the workspace server, and the turn barrier.
 - **[Site tools](docs/agents/site-tools.md)** — agents calling a shared
   website's WebMCP tools through the Chrome extension. Why it is native WebMCP
   and top frame only, why the nonce must be gone before page scripts run, and
@@ -95,7 +99,8 @@ area they belong to — while adding a route, or a single API call.
 - **API naming**: All JSON fields in API requests and responses MUST use `camelCase` (e.g., `workspaceId`, `createdAt`). Never use `snake_case` in the API surface.
 - **Backend layers**: Follow view-entity-model separation; only `view` structs define the API schema. Avoid using repository directly from handlers; use controller methods instead.
 - **REST routes go on Fiber**, under `/api/v1`. The stdlib `mux` in `app.go` is
-  only for SSE, pub-stats and the two WebSockets, and it **takes precedence for
+  only for SSE, pub-stats and the WebSockets (daemon, terminal, browser,
+  native ACP), and it **takes precedence for
   exact path matches** — so registering a Fiber route there as well does not
   duplicate it, it silently shadows the handler and hangs the request.
 - **Never introduce an absolute API URL in the frontend.** It addresses the API
