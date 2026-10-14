@@ -12,6 +12,8 @@ on:
       - 'backend/internal/data/model/model.go'
       # The agentrqd version floor is checked against the server's.
       - 'daemon/wire/version.go'
+      # The notes native ACP ends a turn with are checked against the composer.
+      - 'backend/internal/controller/acpv1/notes.go'
       - '.github/workflows/frontend.yml'
   pull_request:
     paths:
@@ -22,6 +24,8 @@ on:
       - 'backend/internal/data/model/model.go'
       # The agentrqd version floor is checked against the server's.
       - 'daemon/wire/version.go'
+      # The notes native ACP ends a turn with are checked against the composer.
+      - 'backend/internal/controller/acpv1/notes.go'
       - '.github/workflows/frontend.yml'
   workflow_dispatch:
 

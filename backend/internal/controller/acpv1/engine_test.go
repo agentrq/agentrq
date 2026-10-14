@@ -44,6 +44,19 @@ type recorder struct {
 	failReply error
 	failMark  error
 	onAttach  func(mcpctrl.AgentLink) // runs as the link attaches, as a push may
+
+	permissions []mcpctrl.PermissionRequestParams
+	closed      []string // permission requests closed
+	questions   []askedQuestion
+	humanTasks  []string // "title|body"
+	ask         func(ctx context.Context, q mcpctrl.Question) (mcpctrl.Answer, error)
+	failCreate  error
+}
+
+// askedQuestion is one AskHuman call.
+type askedQuestion struct {
+	taskID int64
+	q      mcpctrl.Question
 }
 
 func (r *recorder) AttachAgentLink(l mcpctrl.AgentLink) {
@@ -93,7 +106,16 @@ func (r *recorder) HandleAgentTelemetry(_ context.Context, _ string, p mcpctrl.A
 	r.log = append(r.log, p.Kind+":"+p.Text)
 }
 
-func (r *recorder) HandlePermissionRequest(context.Context, string, mcpctrl.PermissionRequestParams) {
+func (r *recorder) HandlePermissionRequest(_ context.Context, _ string, p mcpctrl.PermissionRequestParams) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.permissions = append(r.permissions, p)
+}
+
+func (r *recorder) ClosePermissionRequest(_ context.Context, requestID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = append(r.closed, requestID)
 }
 
 func (r *recorder) PostAgentReply(_ context.Context, _ string, taskID int64, text string) (int64, error) {
@@ -107,11 +129,26 @@ func (r *recorder) PostAgentReply(_ context.Context, _ string, taskID int64, tex
 	return int64(len(r.replies)), nil
 }
 
-func (r *recorder) AskHuman(context.Context, int64, mcpctrl.Question) (mcpctrl.Answer, error) {
-	return mcpctrl.Answer{}, nil
+func (r *recorder) AskHuman(ctx context.Context, taskID int64, q mcpctrl.Question) (mcpctrl.Answer, error) {
+	r.mu.Lock()
+	r.questions = append(r.questions, askedQuestion{taskID, q})
+	ask := r.ask
+	r.mu.Unlock()
+	if ask == nil {
+		return mcpctrl.Answer{Action: "cancel"}, nil
+	}
+	return ask(ctx, q)
 }
 
-func (r *recorder) CreateHumanTask(context.Context, string, string) (int64, error) { return 0, nil }
+func (r *recorder) CreateHumanTask(_ context.Context, title, body string) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.failCreate != nil {
+		return 0, r.failCreate
+	}
+	r.humanTasks = append(r.humanTasks, title+"|"+body)
+	return 77, nil
+}
 
 func (r *recorder) MarkTaskOngoing(_ context.Context, _ string, taskID int64) error {
 	r.mu.Lock()
@@ -1475,75 +1512,6 @@ func TestEngineEdges(t *testing.T) {
 		if _, err := e.sessionFor(e.ctx, 1); !errors.Is(err, context.Canceled) {
 			t.Fatalf("sessionFor returned %v, want %v", err, context.Canceled)
 		}
-	})
-}
-
-func TestVerdicts(t *testing.T) {
-	options := []permissionOption{
-		{OptionID: "always", Name: "Always", Kind: "allow_always"},
-		{OptionID: "yes", Name: "Yes", Kind: "allow_once"},
-		{OptionID: "no", Name: "No, and tell the agent what to do differently", Kind: "reject_once"},
-	}
-	cases := []struct {
-		name     string
-		options  []permissionOption
-		behavior string
-		want     permissionOutcome
-	}{
-		{"allow picks the once option, never the persistent one", options, "allow", permissionOutcome{Outcome: "selected", OptionID: "yes"}},
-		{"deny picks the reject option", options, "deny", permissionOutcome{Outcome: "selected", OptionID: "no"}},
-		{"allow falls back to the first once option", []permissionOption{{OptionID: "go", Name: "Go", Kind: "other"}}, "allow", permissionOutcome{Outcome: "selected", OptionID: "go"}},
-		{"deny never falls back to an allow option", []permissionOption{{OptionID: "a", Name: "Proceed", Kind: "allow_once"}}, "deny", permissionOutcome{Outcome: "cancelled"}},
-		{"deny falls back to a once option that is not an allow", []permissionOption{{OptionID: "a", Name: "Proceed", Kind: "allow_once"}, {OptionID: "s", Name: "Skip", Kind: "other"}}, "deny", permissionOutcome{Outcome: "selected", OptionID: "s"}},
-		{"only persistent options cancel", []permissionOption{{OptionID: "r", Name: "Remember this", Kind: "allow_once"}}, "allow", permissionOutcome{Outcome: "cancelled"}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := outcomeFor(c.options, c.behavior); got != c.want {
-				t.Errorf("outcomeFor(%s) was %+v, want %+v", c.behavior, got, c.want)
-			}
-		})
-	}
-
-	t.Run("a verdict answers the request it names, and Stop cancels the session's others", func(t *testing.T) {
-		rec := &recorder{}
-		a := startAgent(t, rec)
-		l := a.ready(rec, `{"sessionId":"idle-1"}`)
-		e := l.(*link).e
-		got := map[string]permissionOutcome{}
-		var mu sync.Mutex
-		wait := func(id, sessionID string) {
-			e.mu.Lock()
-			e.permissions[id] = &pendingPermission{sessionID: sessionID, options: options, settle: func(o permissionOutcome) {
-				mu.Lock()
-				got[id] = o
-				mu.Unlock()
-			}}
-			e.mu.Unlock()
-		}
-		wait("r1", "idle-1")
-		wait("r2", "idle-1")
-		wait("r3", "other")
-		if !l.DeliverVerdict(context.Background(), "r1", "allow") {
-			t.Fatal("a verdict for a waiting request was refused")
-		}
-		if l.DeliverVerdict(context.Background(), "r1", "allow") {
-			t.Fatal("a second verdict for the same request was taken")
-		}
-		l.DeliverTask(context.Background(), 42, "go")
-		p := a.expect("session/prompt")
-		l.CancelTask(context.Background(), 42)
-		a.answer(p, `{"stopReason":"cancelled"}`)
-		mu.Lock()
-		if got["r1"].OptionID != "yes" || got["r2"].Outcome != "cancelled" {
-			t.Fatalf("outcomes were %+v, want r1 allowed once and r2 cancelled by Stop", got)
-		}
-		if _, settled := got["r3"]; settled {
-			t.Fatal("Stop settled another session's request")
-		}
-		mu.Unlock()
-		e.c.End(errBridgeBye) // teardown answers what is left
-		waitFor(t, func() bool { mu.Lock(); defer mu.Unlock(); return got["r3"].Outcome == "cancelled" })
 	})
 }
 

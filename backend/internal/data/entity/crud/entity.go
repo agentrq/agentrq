@@ -1625,6 +1625,11 @@ const (
 	// A Pano doc linked to a task: by a chat that named the doc, or by the
 	// one task its agent was on when it wrote the doc.
 	ActionPanoLink Action = 99
+	// A native ACP v1 agent connected, counted when a fresh connection comes
+	// up (not on a resume), and each turn it ran. Backend-observed, on the
+	// /api/acp/v1 socket.
+	ActionACPV1Connect Action = 100
+	ActionACPV1Turn    Action = 101
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1815,6 +1820,10 @@ func (a Action) String() string {
 		return "pano_attach"
 	case ActionPanoLink:
 		return "pano_link"
+	case ActionACPV1Connect:
+		return "acp_v1_connect"
+	case ActionACPV1Turn:
+		return "acp_v1_turn"
 	}
 	return "unknown"
 }
@@ -2043,6 +2052,14 @@ type (
 		UserID      int64
 		WorkspaceID int64
 		Allowed     bool
+	}
+
+	// RecordACPV1Request counts a native ACP v1 connection coming up, or
+	// (Turn) one turn it ran.
+	RecordACPV1Request struct {
+		UserID      int64
+		WorkspaceID int64
+		Turn        bool
 	}
 
 	// RecordSiteShareRequest counts a site shared into (Shared) or withdrawn

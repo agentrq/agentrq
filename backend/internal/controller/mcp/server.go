@@ -969,24 +969,30 @@ func (ps *WorkspaceServer) denyOutstandingRequests(ctx context.Context, taskID i
 // showing as waiting on someone.
 func (ps *WorkspaceServer) closeOutstandingRequests(ctx context.Context, taskID int64) {
 	for _, requestID := range ps.outstandingRequestIDs(taskID) {
-		ps.permissionResponsesMu.RLock()
-		msgID, hasMsg := ps.permissionResponses[requestID]
-		ps.permissionResponsesMu.RUnlock()
-		if hasMsg && ps.updateMessageMetadata != nil {
-			_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": "cancelled"})
-		}
-
-		ps.toolCallIDsMu.RLock()
-		tcID, hasToolCall := ps.toolCallIDs[requestID]
-		ps.toolCallIDsMu.RUnlock()
-		if hasToolCall && ps.updateToolCallStatus != nil {
-			if err := ps.updateToolCallStatus(ctx, tcID, "cancelled"); err != nil {
-				zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to mark tool call cancelled")
-			}
-		}
-
-		ps.cleanupRequest(requestID)
+		ps.closeRequest(ctx, taskID, requestID)
 	}
+}
+
+// closeRequest marks one approval request cancelled, its card and its tool
+// call, and forgets it.
+func (ps *WorkspaceServer) closeRequest(ctx context.Context, taskID int64, requestID string) {
+	ps.permissionResponsesMu.RLock()
+	msgID, hasMsg := ps.permissionResponses[requestID]
+	ps.permissionResponsesMu.RUnlock()
+	if hasMsg && ps.updateMessageMetadata != nil {
+		_ = ps.updateMessageMetadata(ctx, taskID, msgID, map[string]any{"status": "cancelled"})
+	}
+
+	ps.toolCallIDsMu.RLock()
+	tcID, hasToolCall := ps.toolCallIDs[requestID]
+	ps.toolCallIDsMu.RUnlock()
+	if hasToolCall && ps.updateToolCallStatus != nil {
+		if err := ps.updateToolCallStatus(ctx, tcID, "cancelled"); err != nil {
+			zlog.Error().Err(err).Int64("tool_call_id", tcID).Msg("failed to mark tool call cancelled")
+		}
+	}
+
+	ps.cleanupRequest(requestID)
 }
 
 // StartPing pings all connected MCP client sessions every minute to keep connections alive.

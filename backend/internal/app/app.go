@@ -22,6 +22,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/datatypes"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/acpv1"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	eventctrl "github.com/agentrq/agentrq/backend/internal/controller/event"
@@ -141,6 +142,12 @@ type (
 		Pano struct {
 			MaxTTLDays int `yaml:"maxTtlDays"`
 		} `yaml:"pano"`
+		// Native ACP: the endpoints acp-gateway uses in native mode.
+		ACP struct {
+			V1 struct {
+				Enabled bool `yaml:"enabled"`
+			} `yaml:"v1"`
+		} `yaml:"acp"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
 	}
 
@@ -152,7 +159,9 @@ type (
 		// taskAgents writes the agent and model names still pending on
 		// shutdown.
 		taskAgents taskagent.Controller
-		cancel     context.CancelFunc
+		// acpV1Hub holds the native ACP v1 connections, told on shutdown.
+		acpV1Hub *acpv1.Hub
+		cancel   context.CancelFunc
 	}
 )
 
@@ -977,6 +986,18 @@ func New(cfg Config) (*App, error) {
 		OnUnshare: countSiteShare(crudCtrl, false),
 	})
 
+	// Native ACP v1, for acp-gateway in native mode.
+	acpV1Hub := acpv1.NewHub()
+	mountACP(mux, acpDeps{
+		enabled:    cfg.ACP.V1.Enabled,
+		hub:        acpV1Hub,
+		auth:       acpTokenAuth{tokens: tokenSvc, workspaces: crudCtrl},
+		counter:    crudCtrl,
+		workspaces: mcpManager,
+		mcpURL:     launcher.URLs.Workspace,
+		appVersion: strings.TrimPrefix(cfg.ConfigSvc.Version(), "v"),
+	})
+
 	mux.Handle("/pub/stats", pubStatsHandler(pubStatsCtrl))
 	mux.Handle("/api/v1/workspaces/{id}/events", eventsHandler(crudCtrl, bus, tokenSvc))
 	mux.Handle("/api/v1/events/stream", eventsHandler(crudCtrl, bus, tokenSvc))
@@ -1005,7 +1026,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1360,6 +1381,9 @@ func (a *App) Run() error {
 // shuts the HTTP server down within ctx's deadline. Safe to call once on SIGINT/SIGTERM.
 func (a *App) Shutdown(ctx context.Context) error {
 	a.cancel()
+	if a.acpV1Hub != nil {
+		a.acpV1Hub.CloseAll("the server is shutting down")
+	}
 	if a.telemetry != nil {
 		a.telemetry.Close()
 	}

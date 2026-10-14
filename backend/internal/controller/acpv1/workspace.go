@@ -11,7 +11,7 @@ import (
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 )
 
-// TokenAuth resolves a bearer token to the workspace and user it was minted for. app implements it from the token service and the CRUD controller (Task 6).
+// TokenAuth resolves a bearer token to the workspace and user it was minted for. app implements it from the token service and the CRUD controller.
 type TokenAuth interface {
 	WorkspaceForToken(ctx context.Context, token string) (workspaceID int64, userID string, err error)
 }
@@ -34,6 +34,7 @@ type Workspace interface {
 	HandleAgentConcurrency(ctx context.Context, sessionID string, p mcpctrl.AgentConcurrencyParams)
 	HandleAgentTelemetry(ctx context.Context, sessionID string, p mcpctrl.AgentTelemetryParams)
 	HandlePermissionRequest(ctx context.Context, linkID string, p mcpctrl.PermissionRequestParams)
+	ClosePermissionRequest(ctx context.Context, requestID string)
 	PostAgentReply(ctx context.Context, linkID string, taskID int64, text string) (int64, error)
 	AskHuman(ctx context.Context, taskID int64, q mcpctrl.Question) (mcpctrl.Answer, error)
 	CreateHumanTask(ctx context.Context, title, body string) (int64, error)

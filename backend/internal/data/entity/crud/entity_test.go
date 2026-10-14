@@ -90,6 +90,8 @@ func TestActionString(t *testing.T) {
 		{ActionPanoComment, "pano_comment"},
 		{ActionPanoAttach, "pano_attach"},
 		{ActionPanoLink, "pano_link"},
+		{ActionACPV1Connect, "acp_v1_connect"},
+		{ActionACPV1Turn, "acp_v1_turn"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

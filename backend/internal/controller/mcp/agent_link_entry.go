@@ -49,6 +49,16 @@ func (ps *WorkspaceServer) HandlePermissionRequest(ctx context.Context, linkID s
 	ps.relayPermissionRequest(ctx, linkID, p)
 }
 
+// ClosePermissionRequest marks a request the agent withdrew, or one nobody
+// answered in time, as cancelled — the card and its tool call — and forgets
+// it, as a Stop does for the requests a stopped task was waiting on.
+func (ps *WorkspaceServer) ClosePermissionRequest(ctx context.Context, requestID string) {
+	ps.requestTaskIDsMu.RLock()
+	taskID := ps.requestTaskIDs[requestID]
+	ps.requestTaskIDsMu.RUnlock()
+	ps.closeRequest(ctx, taskID, requestID)
+}
+
 // PostAgentReply writes the agent's answer for a task, attributed to the agent
 // behind the link.
 func (ps *WorkspaceServer) PostAgentReply(ctx context.Context, linkID string, taskID int64, text string) (int64, error) {

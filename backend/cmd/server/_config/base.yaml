@@ -103,6 +103,12 @@ pano:
   storage: ${AGENTRQ_PANO_STORAGE:local}
   maxTtlDays: ${AGENTRQ_PANO_MAX_TTL_DAYS:365}
 
+# Native ACP: the endpoints acp-gateway uses in native mode (--acp-version).
+# Off answers 404.
+acp:
+  v1:
+    enabled: ${AGENTRQ_ACP_V1_ENABLED:false}
+
 # Any S3-compatible store. Objects are addressed path-style.
 s3:
   endpoint: "${AGENTRQ_S3_ENDPOINT:}"

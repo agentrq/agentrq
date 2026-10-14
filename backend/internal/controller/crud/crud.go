@@ -52,6 +52,7 @@ type (
 		SkillController
 		PanoController
 		SiteShareController
+		ACPController
 		OAuthConsentController
 		EventTriggerController
 		WorkflowController

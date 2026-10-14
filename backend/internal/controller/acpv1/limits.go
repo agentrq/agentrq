@@ -33,7 +33,7 @@ var (
 	idleSessionWait       = 5 * time.Minute
 	callTimeout           = 60 * time.Second // our requests other than session/prompt
 	cancelSettleWait      = 5 * time.Second  // a cancelled turn's answer
-	defaultPermissionWait = 30 * time.Minute
+	defaultPermissionWait = 30 * time.Minute // unless the bridge's X-AgentRQ-Permission-Timeout says otherwise
 
 	maxSessions      = 32        // ACP sessions per connection before LRU eviction
 	maxReplyBytes    = 1 << 20   // one turn's answer, cut with a marker past it

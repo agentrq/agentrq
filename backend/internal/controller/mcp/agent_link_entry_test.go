@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -152,6 +153,46 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		}
 		if posted := rec.postedMessages(); len(posted) != 0 {
 			t.Fatalf("posted %v, want no card for an auto-allowed tool", posted)
+		}
+	})
+
+	t.Run("a withdrawn request's card is marked cancelled and forgotten", func(t *testing.T) {
+		rec := newEntryServer(t)
+		rec.ps.recordToolCall = func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+			tc.ID = 901
+			return tc, nil
+		}
+		type metadataUpdate struct {
+			taskID, messageID int64
+			status            any
+		}
+		var cards []metadataUpdate
+		rec.ps.updateMessageMetadata = func(ctx context.Context, taskID, messageID int64, metadata any) error {
+			cards = append(cards, metadataUpdate{taskID, messageID, metadata.(map[string]any)["status"]})
+			return nil
+		}
+		var toolCalls []string
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+			toolCalls = append(toolCalls, fmt.Sprintf("%d=%s", id, status))
+			return nil
+		}
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+			RequestID: "acp1:a:s1:t5", TaskID: task42, ToolName: "Bash", InputPreview: "{}",
+		})
+
+		rec.ps.ClosePermissionRequest(ctx, "acp1:a:s1:t5")
+
+		if len(cards) != 1 || cards[0] != (metadataUpdate{42, 701, "cancelled"}) {
+			t.Fatalf("card updates were %+v, want message 701 of task 42 marked cancelled", cards)
+		}
+		if len(toolCalls) != 1 || toolCalls[0] != "901=cancelled" {
+			t.Fatalf("tool call updates were %v, want [901=cancelled]", toolCalls)
+		}
+		if _, ok := rec.ps.permissionRequests["acp1:a:s1:t5"]; ok {
+			t.Fatal("the withdrawn request is still known, want it forgotten")
+		}
+		if _, ok := rec.ps.requestTaskIDs["acp1:a:s1:t5"]; ok {
+			t.Fatal("the withdrawn request still names its task, want it forgotten")
 		}
 	})
 

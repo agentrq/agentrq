@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -55,12 +53,12 @@ type update struct {
 // taken when it is created, so that a test shrinking one never races an
 // older connection.
 type engineLimits struct {
-	initialize, idleSession, call         time.Duration
-	sessions, reply, thought, tool, early int
+	initialize, idleSession, call, permission time.Duration
+	sessions, reply, thought, tool, early     int
 }
 
 func currentLimits() engineLimits {
-	return engineLimits{initialize: initializeTimeout, idleSession: idleSessionWait, call: callTimeout,
+	return engineLimits{initialize: initializeTimeout, idleSession: idleSessionWait, call: callTimeout, permission: defaultPermissionWait,
 		sessions: maxSessions, reply: maxReplyBytes, thought: maxThoughtBytes, tool: maxToolCallsKept, early: maxEarlyUpdates}
 }
 
@@ -96,15 +94,9 @@ type engineV1 struct {
 	commands       *mcpctrl.AgentCommandsParams
 	attached       bool
 	permissions    map[string]*pendingPermission // by request id
+	urlQuestions   map[string]context.CancelFunc // url questions still open, by elicitation id
 	stderr         []string
 	cause          error // why the connection is ending, once it is
-}
-
-// pendingPermission is a permission request waiting for the human (Task 6).
-type pendingPermission struct {
-	sessionID string
-	options   []permissionOption
-	settle    func(permissionOutcome)
 }
 
 // NewEngineFactory is what app hands Handler.NewEngine.
@@ -113,7 +105,8 @@ func NewEngineFactory(d EngineDeps) func(c *connection) engine {
 		ctx, stop := context.WithCancel(context.Background())
 		e := &engineV1{deps: d, c: c, linkID: "acp1:" + c.ID(), lim: currentLimits(), ctx: ctx, stop: stop,
 			updates: make(chan update, updateQueueCap), sessions: newSessionSet(),
-			preferredModel: c.Meta().Model, permissions: map[string]*pendingPermission{}}
+			preferredModel: c.Meta().Model, permissions: map[string]*pendingPermission{},
+			urlQuestions: map[string]context.CancelFunc{}}
 		e.link = &link{e: e}
 		e.ws = d.Workspace(c.WorkspaceID(), c.UserID())
 		e.peer = newPeer(c.Send, e)
@@ -337,7 +330,8 @@ func (e *engineV1) ending(cause error) {
 }
 
 // teardown runs once the connection is over: one note for every turn it cut
-// off, every waiting permission answered, and the link gone.
+// off, every waiting permission answered and its card closed, and the link
+// gone.
 func (e *engineV1) teardown() {
 	e.ending(e.c.Err())
 	e.mu.Lock()
@@ -359,78 +353,25 @@ func (e *engineV1) teardown() {
 	for _, taskID := range cut {
 		e.note(taskID, note)
 	}
-	e.settlePermissions("")
+	for _, requestID := range e.settlePermissions("") {
+		e.ws.ClosePermissionRequest(context.Background(), requestID)
+	}
 	if attached {
 		e.ws.DetachAgentLink(context.Background(), e.linkID)
 	}
 	e.stop()
 }
 
-// verdict answers a permission request the link raised; false when there is
-// no such request waiting.
-func (e *engineV1) verdict(requestID, behavior string) bool {
-	e.mu.Lock()
-	p := e.permissions[requestID]
-	delete(e.permissions, requestID)
-	e.mu.Unlock()
-	if p == nil {
-		return false
+// request answers the agent's requests: permissions and questions. Every
+// other client method is refused, the file system and the terminal among
+// them: AgentRQ declared neither, and cannot reach the agent's machine.
+func (e *engineV1) request(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
+	switch method {
+	case methodRequestPermission:
+		return e.requestPermission(ctx, params)
+	case methodElicitationCreate:
+		return e.createElicitation(ctx, params)
 	}
-	p.settle(outcomeFor(p.options, behavior))
-	return true
-}
-
-var persistentOption = regexp.MustCompile(`(?i)always|remember|don'?t ask`)
-
-// outcomeFor turns the human's verdict on one tool call into one of the
-// options the agent offered, the gateway's way. A persistent option is never
-// picked: the agent would remember it and stop asking, so later calls would
-// never reach the human. An unmatched deny never falls back to an allow
-// option; with nothing safe to pick, the request is cancelled.
-func outcomeFor(options []permissionOption, behavior string) permissionOutcome {
-	var once []permissionOption
-	for _, o := range options {
-		if !persistentOption.MatchString(o.Kind) && !persistentOption.MatchString(o.Name) {
-			once = append(once, o)
-		}
-	}
-	allow := behavior == "allow"
-	for _, o := range once {
-		name := strings.ToLower(o.Name)
-		if allow && (strings.HasPrefix(o.Kind, "allow") || strings.Contains(name, "allow") || strings.Contains(name, "yes") || strings.Contains(name, "approve")) ||
-			!allow && (strings.HasPrefix(o.Kind, "reject") || strings.Contains(name, "deny") || strings.Contains(name, "reject") || strings.Contains(name, "no")) {
-			return permissionOutcome{Outcome: "selected", OptionID: o.OptionID}
-		}
-	}
-	for _, o := range once {
-		if allow || !strings.HasPrefix(o.Kind, "allow") {
-			return permissionOutcome{Outcome: "selected", OptionID: o.OptionID}
-		}
-	}
-	return permissionOutcome{Outcome: "cancelled"}
-}
-
-// settlePermissions answers every waiting request of a session "cancelled",
-// or of every session when acpSessionID is "".
-func (e *engineV1) settlePermissions(acpSessionID string) {
-	e.mu.Lock()
-	var settle []*pendingPermission
-	for id, p := range e.permissions {
-		if acpSessionID == "" || p.sessionID == acpSessionID {
-			settle = append(settle, p)
-			delete(e.permissions, id)
-		}
-	}
-	e.mu.Unlock()
-	for _, p := range settle {
-		p.settle(permissionOutcome{Outcome: "cancelled"})
-	}
-}
-
-// request answers the agent's requests. In this release AgentRQ serves none
-// of the client methods: it declared no file system and no terminal, and
-// permissions and questions arrive with Task 6.
-func (e *engineV1) request(_ context.Context, method string, _ json.RawMessage) (any, *rpcError) {
 	return nil, &rpcError{Code: codeMethodNotFound, Message: method + " is not supported by AgentRQ"}
 }
 
@@ -438,6 +379,10 @@ func (e *engineV1) request(_ context.Context, method string, _ json.RawMessage) 
 // A full queue holds the reader back rather than dropping the update: the
 // frame has been counted, so a dropped one could never be replayed.
 func (e *engineV1) notification(method string, params json.RawMessage) {
+	if method == methodElicitationComplete {
+		e.completeElicitation(params)
+		return
+	}
 	if method != methodSessionUpdate {
 		zlog.Debug().Str("link", e.linkID).Str("method", method).Msg("acp v1: ignoring a notification")
 		return

@@ -85,6 +85,9 @@ func TestClientReportableActionAllowsOnlyTheNamedActions(t *testing.T) {
 		// Site shares: the server sees every announce and withdraw itself.
 		"site_share",
 		"site_unshare",
+		// Native ACP: the server sees every connection and turn itself.
+		"acp_v1_connect",
+		"acp_v1_turn",
 	} {
 		if _, ok := entity.ClientReportableAction(name); ok {
 			t.Errorf("%q must not be client-reportable", name)

@@ -246,6 +246,14 @@ An attachment's upload type is kept only when a browser cannot run it; anything 
 
 Values are whole numbers. The server refuses to start on anything else, or on a memory size above `131072`.
 
+### Native ACP
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_ACP_V1_ENABLED` | `false` | Serve `/api/acp/v1` for acp-gateway in native mode (`--acp-version 1`). Off, the endpoint answers 404. |
+
+The value is `true` or `false`. The server refuses to start on anything else.
+
 ## Reverse Proxy Setup (Nginx Example)
 
 ```nginx

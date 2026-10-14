@@ -756,6 +756,9 @@ const (
 	ActionIDPanoAttach
 	// A Pano doc linked to a task by a chat or by the task its agent was on.
 	ActionIDPanoLink
+	// A native ACP v1 agent connected, and a turn it ran.
+	ActionIDACPV1Connect
+	ActionIDACPV1Turn
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

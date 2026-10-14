@@ -20,7 +20,7 @@ import (
 const truncatedMarker = "\n\n[truncated]"
 
 // toolCall is what is remembered of a call the agent has not finished, for a
-// permission request that names it only by id (Task 6).
+// permission request that names it only by id.
 type toolCall struct {
 	id, title, name string
 	rawInput        json.RawMessage
@@ -166,6 +166,16 @@ func (p *projector) rememberCall(u toolCallUpdate) toolCall {
 		}
 	}
 	return tc
+}
+
+// toolCall is what is known of an unfinished call, zero when nothing is.
+func (p *projector) toolCall(id string) toolCall {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if el := p.calls[id]; el != nil {
+		return *el.Value.(*toolCall)
+	}
+	return toolCall{}
 }
 
 // runTurn is one delivery: find the task's session, mark the task started,
