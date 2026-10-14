@@ -92,6 +92,8 @@ func TestActionString(t *testing.T) {
 		{ActionPanoLink, "pano_link"},
 		{ActionACPV1Connect, "acp_v1_connect"},
 		{ActionACPV1Turn, "acp_v1_turn"},
+		{ActionAgentLaunchACPNativeV1, "agent_launch_acp_native_v1"},
+		{ActionAgentLaunchACPNativeV2, "agent_launch_acp_native_v2"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

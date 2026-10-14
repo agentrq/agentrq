@@ -277,6 +277,74 @@ func TestLaunch_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
 	}
 }
 
+// A native ACP launch reaches the daemon with its version, and is counted as
+// native rather than as a classic gateway.
+func TestLaunch_GatewayStartsInNativeACPMode(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		action  entity.Action
+	}{
+		{"1", entity.ActionAgentLaunchACPNativeV1},
+		{"2", entity.ActionAgentLaunchACPNativeV2},
+		{"", entity.ActionAgentLaunchACPGateway},
+	} {
+		t.Run("acpVersion "+tc.version, func(t *testing.T) {
+			l, crud, c := launcher(wire.CapabilityACPVersion)
+			l.ACPEnabled = func(string) bool { return true }
+			rq := request("acp-gateway")
+			rq.Agent, rq.ACPVersion = "codex-acp", tc.version
+			if _, err := l.Launch(context.Background(), rq); err != nil {
+				t.Fatal(err)
+			}
+			if start := c.start(t); start.ACPVersion != tc.version {
+				t.Errorf("the daemon was sent acpVersion %q, want %q", start.ACPVersion, tc.version)
+			}
+			if len(crud.counted) != 1 || crud.counted[0].Action != tc.action {
+				t.Errorf("counted %+v, want one %s", crud.counted, tc.action)
+			}
+		})
+	}
+}
+
+// The native ACP gates, each before a session row or a frame.
+func TestLaunch_NativeACPRefusals(t *testing.T) {
+	on := func(string) bool { return true }
+	cases := []struct {
+		name    string
+		kind    string
+		version string
+		caps    []string
+		enabled func(string) bool
+		err     error
+		message string
+	}{
+		{"acpVersion on claude-code is refused", "claude-code", "1", []string{wire.CapabilityACPVersion}, on,
+			entity.ErrLaunchInvalid, "acpVersion applies only to the ACP gateway"},
+		{"an acpVersion other than 1 or 2 is refused", "acp-gateway", "3", []string{wire.CapabilityACPVersion}, on,
+			entity.ErrLaunchInvalid, "acpVersion must be 1 or 2"},
+		{"a daemon without the capability gets the update message", "acp-gateway", "1", nil, on,
+			entity.ErrLaunchBusy, "update agentrqd on this machine to start an agent in native ACP mode"},
+		{"a switched-off version is refused", "acp-gateway", "1", []string{wire.CapabilityACPVersion},
+			func(string) bool { return false }, entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
+		{"a server that offers no native ACP refuses it", "acp-gateway", "2", []string{wire.CapabilityACPVersion}, nil,
+			entity.ErrLaunchBusy, "native ACP v2 is turned off on this server"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			l, crud, c := launcher(tc.caps...)
+			l.ACPEnabled = tc.enabled
+			rq := request(tc.kind)
+			rq.Agent, rq.ACPVersion = "codex-acp", tc.version
+
+			_, err := l.Launch(context.Background(), rq)
+			wantRefusal(t, err, tc.err, tc.message)
+			if len(crud.created) != 0 || len(c.sent) != 0 {
+				t.Errorf("a refused launch left created=%v sent=%v", crud.created, c.sent)
+			}
+		})
+	}
+}
+
 // Every refusal comes before a session row or a frame, so it leaves nothing
 // behind.
 func TestLaunch_Refusals(t *testing.T) {
@@ -464,11 +532,11 @@ func TestStop_PassesOnWhatItCannotRead(t *testing.T) {
 // Every kind the supervisor offers is one this server counts.
 func TestKindsAreAllCounted(t *testing.T) {
 	for _, kind := range Kinds {
-		if _, ok := launchAction(kind); !ok {
+		if _, ok := launchAction(kind, ""); !ok {
 			t.Errorf("%q is offered but not counted", kind)
 		}
 	}
-	if _, ok := launchAction(""); ok || slices.Contains(Kinds, "") {
+	if _, ok := launchAction("", ""); ok || slices.Contains(Kinds, "") {
 		t.Error("an empty kind is counted")
 	}
 }

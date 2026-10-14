@@ -23,6 +23,7 @@ import AcpAgentList from './AcpAgentList.vue'
 import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
+import AcpProtocolPicker from './AcpProtocolPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { launchFolderNote } from '../composables/useAgentLaunch'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -107,7 +108,12 @@ async function start() {
 </script>
 
 <template>
-  <div v-if="offered" :class="variant === 'card' ? 'w-full' : open ? 'w-full max-w-4xl' : 'w-full max-w-[420px]'">
+  <!-- Wide only with a machine to pick: with one, the left column would hold
+       just the heading, so the card stays narrow and one column. -->
+  <div
+    v-if="offered"
+    :class="variant === 'card' ? 'w-full' : open && available.length > 1 ? 'w-full max-w-4xl' : 'w-full max-w-[420px]'"
+  >
     <!-- Folded: one action, and what it will do. -->
     <button
       v-if="!open"
@@ -262,6 +268,7 @@ async function start() {
             <option v-for="m in acpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
         </div>
+      <AcpProtocolPicker class="@md:col-span-2" id-prefix="start-agent" v-model="params.acpVersion" />
       <!-- The list only ever suggests: any other id typed in the field is
            still sent, so an agent the list does not know can still run. -->
       <AcpAgentList v-if="kind === 'acp-gateway'" class="@md:col-span-2" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />

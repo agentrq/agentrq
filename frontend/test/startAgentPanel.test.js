@@ -121,6 +121,18 @@ describe('StartAgentPanel', () => {
     expect(text()).toMatch(/Runs in \/srv\/app on workshop-pi, your only machine that is online\./)
   })
 
+  // The wide, two-column card is for a machine picker beside what to run;
+  // with one machine there is nothing to put beside it.
+  it('opens narrow with one machine, and wide with several to pick from', async () => {
+    const one = await mount({ workspace: WORKSPACE }, [ONLINE])
+    await one.open()
+    expect(one.el.firstElementChild.className).toContain('max-w-[420px]')
+    one.el.remove()
+    const several = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
+    await several.open()
+    expect(several.el.firstElementChild.className).toContain('max-w-4xl')
+  })
+
   it('asks which machine when there are several, and says so before the button', async () => {
     const { el, text, open } = await mount({ workspace: WORKSPACE }, [ONLINE, SECOND])
     await open()
@@ -226,6 +238,27 @@ describe('StartAgentPanel', () => {
     expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'claude-code', autocompact: '600k' }))
     // Remembered for this workspace, so its next launch opens on it.
     expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['claude-code'].autocompact).toBe('600k')
+    localStorage.clear()
+  })
+
+  it('the ACP gateway form shows the protocol slider, and a launch sends the chosen protocol', async () => {
+    localStorage.clear()
+    const { el } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
+    expect(el.querySelector('#start-agent-acp-version')).toBeNull()
+    el.querySelector('#start-agent-kind-acp-gateway').click()
+    await settle()
+    const protocol = el.querySelector('#start-agent-acp-version')
+    expect(el.querySelector('[data-test=start-agent-acp-version-value]').textContent.trim()).toBe('Classic — the gateway speaks ACP')
+    protocol.value = '1'
+    protocol.dispatchEvent(new Event('input'))
+    await settle()
+
+    const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
+    go.click()
+    await settle()
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+    // Remembered for this workspace, so its next launch opens on it.
+    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['acp-gateway'].acpVersion).toBe('1')
     localStorage.clear()
   })
 

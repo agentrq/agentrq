@@ -266,3 +266,50 @@ func TestKindsListsWhatWillRun(t *testing.T) {
 		t.Fatalf("Kinds() = %v, want exactly the two the daemon runs", ks)
 	}
 }
+
+// A native launch runs the same latest gateway, with --acp-version.
+func TestTheGatewayStartsInNativeACPMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p    Params
+		want string
+	}{
+		{"classic stays classic", Params{Agent: "codex-acp"},
+			"npx -y @agentrq/acp-gateway@latest --agent codex-acp"},
+		{"native v1 passes the flag", Params{Agent: "codex-acp", ACPVersion: "1", Model: "gpt-5"},
+			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1 --model gpt-5"},
+		{"native v2 is accepted", Params{Agent: "codex-acp", ACPVersion: "2"},
+			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Resolve(KindACPGateway, tc.p)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got := strings.Join(c.Argv, " "); got != tc.want {
+				t.Errorf("argv = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Any other version is refused rather than passed on, and so is a version on
+// Claude Code, where it means nothing.
+func TestANativeACPVersionIsRefusedWhereItMeansNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		kind Kind
+		p    Params
+	}{
+		{"any other version is refused", KindACPGateway, Params{Agent: "a", ACPVersion: "3"}},
+		{"a flag is refused", KindACPGateway, Params{Agent: "a", ACPVersion: "--1"}},
+		{"claude-code ignores nothing silently", KindClaudeCode, Params{Workspace: "w", ServerName: "s", ACPVersion: "1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Resolve(tc.kind, tc.p)
+			if !errors.Is(err, ErrBadParameter) || !strings.Contains(err.Error(), "acpVersion") {
+				t.Errorf("Resolve said %v, want a bad parameter naming acpVersion", err)
+			}
+		})
+	}
+}

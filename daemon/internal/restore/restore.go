@@ -53,9 +53,11 @@ type Session struct {
 	Autocompact string `json:"autocompact,omitempty"`
 	Agent       string `json:"agent,omitempty"`
 	// AllowUnverified is the acp-gateway's consent to an unchecked install.
-	AllowUnverified bool   `json:"allowUnverified,omitempty"`
-	Cols            uint16 `json:"cols,omitempty"`
-	Rows            uint16 `json:"rows,omitempty"`
+	AllowUnverified bool `json:"allowUnverified,omitempty"`
+	// ACPVersion is the acp-gateway's native ACP version, blank for classic.
+	ACPVersion string `json:"acpVersion,omitempty"`
+	Cols       uint16 `json:"cols,omitempty"`
+	Rows       uint16 `json:"rows,omitempty"`
 }
 
 // File is the note left for the next start.

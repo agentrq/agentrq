@@ -259,6 +259,7 @@ func (h *handler) launchAgent() fiber.Handler {
 			Autocompact     string `json:"autocompact,omitempty"`
 			Agent           string `json:"agent,omitempty"`
 			AllowUnverified bool   `json:"allowUnverified,omitempty"`
+			ACPVersion      string `json:"acpVersion,omitempty"`
 			Cols            uint16 `json:"cols,omitempty"`
 			Rows            uint16 `json:"rows,omitempty"`
 		}
@@ -282,6 +283,7 @@ func (h *handler) launchAgent() fiber.Handler {
 			Autocompact:     payload.Autocompact,
 			Agent:           payload.Agent,
 			AllowUnverified: payload.AllowUnverified,
+			ACPVersion:      payload.ACPVersion,
 			Cols:            payload.Cols,
 			Rows:            payload.Rows,
 		})

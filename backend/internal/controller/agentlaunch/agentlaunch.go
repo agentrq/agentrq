@@ -71,6 +71,9 @@ type (
 		Machines *machinectrl.Registry
 		Tokens   Tokens
 		URLs     URLs
+		// ACPEnabled says whether this server offers native ACP of a version
+		// ("1" or "2"). Nil offers none.
+		ACPEnabled func(version string) bool
 
 		// launching holds the workspaces with a launch between its checks and
 		// its session row, on this instance.
@@ -92,8 +95,11 @@ type (
 		// AllowUnverified is the person's consent to the acp-gateway installing
 		// an agent the registry publishes no checksum for.
 		AllowUnverified bool
-		Cols            uint16
-		Rows            uint16
+		// ACPVersion starts the acp-gateway in native ACP mode, "1" or "2";
+		// blank is the classic gateway.
+		ACPVersion string
+		Cols       uint16
+		Rows       uint16
 	}
 
 	// StopRequest names the workspace whose agent to stop. IDs are base62.
@@ -228,6 +234,20 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		!l.Machines.HasCapability(machineID, wire.CapabilityAutocompact) {
 		return nil, busy("update agentrqd on this machine to choose Claude Code's auto-compact window, or leave it at the default")
 	}
+	// Native ACP: an older agentrqd would drop the version and start the
+	// classic gateway while the panel said native.
+	if rq.ACPVersion != "" {
+		switch {
+		case rq.Kind != "acp-gateway":
+			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion applies only to the ACP gateway")
+		case rq.ACPVersion != "1" && rq.ACPVersion != "2":
+			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion must be 1 or 2")
+		case !l.Machines.HasCapability(machineID, wire.CapabilityACPVersion):
+			return nil, busy("update agentrqd on this machine to start an agent in native ACP mode")
+		case l.ACPEnabled == nil || !l.ACPEnabled(rq.ACPVersion):
+			return nil, busy("native ACP v" + rq.ACPVersion + " is turned off on this server")
+		}
+	}
 
 	start := wire.StartSession{
 		Kind:            rq.Kind,
@@ -240,6 +260,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		Autocompact:     rq.Autocompact,
 		Agent:           rq.Agent,
 		AllowUnverified: rq.AllowUnverified,
+		ACPVersion:      rq.ACPVersion,
 		Cols:            rq.Cols,
 		Rows:            rq.Rows,
 	}
@@ -296,7 +317,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	// Counted on the frame actually being sent, not on the request coming
 	// in: a launch refused above never reached a machine, and a launch that
 	// timed out here is a delivery failure, not a spin-up.
-	if launchAction, ok := launchAction(rq.Kind); ok {
+	if launchAction, ok := launchAction(rq.Kind, rq.ACPVersion); ok {
 		if err := l.Crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
 			Action:      launchAction,
 			WorkspaceID: workspaceID,
@@ -380,11 +401,18 @@ var Kinds = []string{"claude-code", "acp-gateway"}
 // that counts it. The daemon is the actual authority on valid kinds
 // (supervisor.Resolve); a kind neither server recognises is left uncounted
 // rather than guessed at.
-func launchAction(kind string) (entity.Action, bool) {
+func launchAction(kind, acpVersion string) (entity.Action, bool) {
 	switch kind {
 	case "claude-code":
 		return entity.ActionAgentLaunchClaudeCode, true
 	case "acp-gateway":
+		// A native launch is counted as native instead of classic.
+		switch acpVersion {
+		case "1":
+			return entity.ActionAgentLaunchACPNativeV1, true
+		case "2":
+			return entity.ActionAgentLaunchACPNativeV2, true
+		}
 		return entity.ActionAgentLaunchACPGateway, true
 	}
 	return 0, false

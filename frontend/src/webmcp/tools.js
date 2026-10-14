@@ -988,13 +988,14 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         effort: str('The effort level for claude-code: low, medium, high, xhigh or max; blank for its default.'),
         autocompact: str('The auto-compact window for claude-code, 100k to 900k in whole hundreds such as 600k; blank for the default, 400k.'),
         agent: str('The agent, for acp-gateway.'),
+        acpVersion: str('For acp-gateway: 1 starts it in native ACP mode, where AgentRQ speaks ACP itself; blank for the classic gateway.'),
         cols: int('Terminal width in columns.'),
         rows: int('Terminal height in rows.'),
       },
       required: ['workspaceId', 'machineId', 'kind'],
       screen: before(workspacePage),
-      run: ({ workspaceId, machineId, kind, model = '', effort = '', autocompact = '', agent = '', cols = 0, rows = 0 }) =>
-        api.launchAgent(workspaceId, { machineId, kind, model, effort, autocompact, agent, cols, rows }),
+      run: ({ workspaceId, machineId, kind, model = '', effort = '', autocompact = '', agent = '', acpVersion = '', cols = 0, rows = 0 }) =>
+        api.launchAgent(workspaceId, { machineId, kind, model, effort, autocompact, agent, acpVersion, cols, rows }),
     }),
     tool({
       name: 'restartDaemon',

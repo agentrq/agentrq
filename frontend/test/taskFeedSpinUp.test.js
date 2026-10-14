@@ -116,6 +116,22 @@ describe('Spin up on a task row', () => {
     expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'claude-code', model: 'fable', effort: 'high' }))
   })
 
+  it('the ACP gateway form shows the protocol slider, and a spin-up sends the chosen protocol', async () => {
+    const { row } = await mount(PARENT)
+    row('Fix login').querySelector('[title="Spin up in a fork"]').click()
+    await settle()
+    expect(document.body.querySelector('#spin-up-acp-version')).toBe(null)
+    document.body.querySelector('#spin-up-kind-acp-gateway').click()
+    await settle()
+    const protocol = document.body.querySelector('#spin-up-acp-version')
+    protocol.value = '1'
+    protocol.dispatchEvent(new Event('input'))
+    await settle()
+    ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
+    await settle()
+    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+  })
+
   it('lists the ACP registry\'s agents in the popover, and a click is what it launches', async () => {
     await loadAcpRegistry(() =>
       Promise.resolve({ agents: [{ id: 'gemini', name: 'Gemini CLI', description: "Google's agent", runtimes: ['npx'] }] })

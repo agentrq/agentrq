@@ -266,6 +266,12 @@ the launch form asks you to confirm before it starts one, and agentrqd passes
 the flag only when you have. An agent that exits with an error shows the last
 line it printed as a notification, since its terminal is gone by then.
 
+The gateway can also start in native ACP mode (`acpVersion` `1`, the launch
+form's Protocol slider), where it only bridges the agent and AgentRQ speaks ACP
+itself. It needs an agentrqd newer than 0.10.3, and a server with
+`AGENTRQ_ACP_V1_ENABLED=true`; either one missing is refused rather than
+quietly starting the classic gateway.
+
 It will not run a shell, and it will not run a command the server sends it. The
 control panel asks for a *kind* — one of those two names — and the daemon
 decides what that means from its own configuration. A backend that has been

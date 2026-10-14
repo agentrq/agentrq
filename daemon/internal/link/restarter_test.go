@@ -200,6 +200,36 @@ func TestARestartKeepsClaudeCodesModelAndEffort(t *testing.T) {
 	}
 }
 
+// A gateway in native ACP mode is written into the note as native, so it does
+// not come back classic.
+func TestARestartKeepsTheGatewaysNativeACPMode(t *testing.T) {
+	b := newBackend(t)
+	rig := &restartRig{state: t.TempDir()}
+	var note restore.File
+	rig.atRestart = func() {
+		raw, err := os.ReadFile(restore.Path(rig.state))
+		if err == nil {
+			err = json.Unmarshal(raw, &note)
+		}
+		if err != nil {
+			t.Errorf("no note at the handover: %v", err)
+		}
+	}
+	h := start(t, b, rig.option)
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Agent: "a", ACPVersion: "1",
+		MCPURL: "https://agentrq.example/mcp/ws?token=test", ServerName: "agentrq-workspace",
+	}))
+	waitFor(t, func() bool { return slices.Contains(h.link.Supervisor.Running(), uint64(7)) }, "the session never started")
+
+	b.send(t, controlFrame(t, wire.OpRestart, struct{}{}))
+	waitFor(t, func() bool { return rig.count() == 1 }, "the daemon never restarted")
+
+	if len(note.Sessions) != 1 || note.Sessions[0].ACPVersion != "1" {
+		t.Errorf("the note said %+v, want one session with acpVersion 1", note)
+	}
+}
+
 func TestARestartThatFailsBringsTheAgentsBack(t *testing.T) {
 	b := newBackend(t)
 	rig := &restartRig{state: t.TempDir(), err: errors.New("exec format error")}

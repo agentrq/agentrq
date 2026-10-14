@@ -884,6 +884,22 @@ func TestLaunchAgent_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T)
 	}
 }
 
+// The native ACP version reaches the shared launch, whose gates answer for it:
+// here the server's switch, which is off.
+func TestLaunchAgent_GatewayCarriesTheNativeACPVersion(t *testing.T) {
+	body := `{"kind":"acp-gateway","agent":"codex-acp","acpVersion":"1"}`
+	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityACPVersion}, "0.10.3", body)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", resp.StatusCode)
+	}
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "native ACP v1 is turned off on this server") {
+		t.Errorf("message = %s, want it to say native ACP v1 is off", msg)
+	}
+	if start.SessionID != 0 {
+		t.Error("the start was sent anyway")
+	}
+}
+
 // A chosen auto-compact window reaches the daemon on a machine that passes it on,
 // and is refused on one that would drop it.
 func TestLaunchAgent_ClaudeCodeAutocompactWindowNeedsTheCapability(t *testing.T) {

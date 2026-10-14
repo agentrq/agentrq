@@ -57,6 +57,9 @@ type Params struct {
 	Agent string
 	// AllowUnverified lets the acp-gateway install an agent with no checksum.
 	AllowUnverified bool
+	// ACPVersion starts the acp-gateway in native mode ("1" or "2"), blank
+	// for classic.
+	ACPVersion string
 }
 
 // safeParam is what an *identifier* may contain.
@@ -171,6 +174,10 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if !claudeAutocompact.MatchString(autocompact) {
 			return Command{}, fmt.Errorf("%w: autocompact=%q", ErrBadParameter, p.Autocompact)
 		}
+		// Native ACP is the gateway's mode; it means nothing to Claude Code.
+		if p.ACPVersion != "" {
+			return Command{}, fmt.Errorf("%w: acpVersion=%q", ErrBadParameter, p.ACPVersion)
+		}
 		// --dangerously-load-development-channels is always passed, confirmed
 		// by the owner on 2026-09-15 when I asked whether a daemon should.
 		//
@@ -216,9 +223,15 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if p.Effort != "" && !claudeEfforts[p.Effort] {
 			return Command{}, fmt.Errorf("%w: effort=%q", ErrBadParameter, p.Effort)
 		}
+		if p.ACPVersion != "" && p.ACPVersion != "1" && p.ACPVersion != "2" {
+			return Command{}, fmt.Errorf("%w: acpVersion=%q", ErrBadParameter, p.ACPVersion)
+		}
 		argv := []string{
 			"npx", "-y", "@agentrq/acp-gateway@latest",
 			"--agent", p.Agent,
+		}
+		if p.ACPVersion != "" {
+			argv = append(argv, "--acp-version", p.ACPVersion)
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)

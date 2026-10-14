@@ -511,6 +511,18 @@ describe('each tool calls the interface the way the UI does', () => {
       'replaceWorkflowFromText',
       ['wf1', 'the doc'],
     ],
+    [
+      'launchAgent',
+      { workspaceId: 'ws1', machineId: 'm1', kind: 'claude-code' },
+      'launchAgent',
+      ['ws1', { machineId: 'm1', kind: 'claude-code', model: '', effort: '', autocompact: '', agent: '', acpVersion: '', cols: 0, rows: 0 }],
+    ],
+    [
+      'launchAgent',
+      { workspaceId: 'ws1', machineId: 'm1', kind: 'acp-gateway', agent: 'codex-acp', acpVersion: '1' },
+      'launchAgent',
+      ['ws1', { machineId: 'm1', kind: 'acp-gateway', model: '', effort: '', autocompact: '', agent: 'codex-acp', acpVersion: '1', cols: 0, rows: 0 }],
+    ],
   ];
 
   it.each(CASES)('%s(%o) calls %s', async (toolName, input, method, args) => {

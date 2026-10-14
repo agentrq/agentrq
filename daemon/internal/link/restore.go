@@ -78,6 +78,7 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 		Autocompact:     s.Autocompact,
 		Agent:           s.Agent,
 		AllowUnverified: s.AllowUnverified,
+		ACPVersion:      s.ACPVersion,
 	})
 	if err != nil {
 		l.Log.Warn("cannot restore a session", "session", s.ID, "error", err)
@@ -99,6 +100,7 @@ func (l *Link) Restore(ctx context.Context, conn *Conn, s restore.Session) {
 			Autocompact:     s.Autocompact,
 			Agent:           s.Agent,
 			AllowUnverified: s.AllowUnverified,
+			ACPVersion:      s.ACPVersion,
 		},
 		Dir:            s.Dir,
 		ReuseMCPConfig: cmd.NeedsMCPConfig,

@@ -759,6 +759,9 @@ const (
 	// A native ACP v1 agent connected, and a turn it ran.
 	ActionIDACPV1Connect
 	ActionIDACPV1Turn
+	// An acp-gateway launched in native ACP v1 or v2 mode.
+	ActionIDAgentLaunchACPNativeV1
+	ActionIDAgentLaunchACPNativeV2
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

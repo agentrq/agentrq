@@ -273,6 +273,10 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDACPV1Connect
 	case entity.ActionACPV1Turn:
 		action = model.ActionIDACPV1Turn
+	case entity.ActionAgentLaunchACPNativeV1:
+		action = model.ActionIDAgentLaunchACPNativeV1
+	case entity.ActionAgentLaunchACPNativeV2:
+		action = model.ActionIDAgentLaunchACPNativeV2
 	default:
 		return
 	}

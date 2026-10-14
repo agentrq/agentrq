@@ -41,7 +41,8 @@ export const KINDS = [
     // gateway's own choice to make when nobody names one, so it is validated
     // when given but never required.
     needs: ['agent'],
-    optional: ['model'],
+    // Blank is the classic gateway, as it was before native ACP.
+    optional: ['model', 'acpVersion'],
   },
 ]
 
@@ -50,7 +51,17 @@ export const KINDS = [
  * target so the form opens on something that works rather than on an empty
  * required field.
  */
-export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp' }
+export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp', acpVersion: '' }
+
+/**
+ * How the gateway runs, as its Protocol slider's steps. Blank is the classic
+ * gateway, which speaks ACP to the agent itself; "1" makes it a bridge, and
+ * AgentRQ speaks ACP v1.
+ */
+export const ACP_PROTOCOLS = [
+  { id: '', name: 'Classic', title: 'Classic — the gateway speaks ACP' },
+  { id: '1', name: 'ACP v1', title: 'ACP v1 — AgentRQ speaks ACP' },
+]
 
 /**
  * The two sliders Claude Code launches with, each a list of steps from left to
@@ -131,7 +142,7 @@ export function stepIndex(steps, value) {
 }
 
 /**
- * Where the gateway's last agent and model are remembered.
+ * Where the gateway's last agent, model and protocol are remembered.
  *
  * A per-browser convenience, not settings: never read by the server, and
  * nothing here is trusted for anything beyond pre-filling the two fields, the
@@ -140,7 +151,7 @@ export function stepIndex(steps, value) {
 const LAST_ACP_GATEWAY_KEY = 'agentrq:lastAcpGateway'
 
 /**
- * The agent and model somebody last launched the gateway with, or null.
+ * The agent, model and protocol somebody last launched the gateway with, or null.
  *
  * Wrapped in a try/catch rather than assumed available: private browsing, a
  * blocked site data setting, or a full quota all throw here, and the correct
@@ -155,18 +166,25 @@ export function lastAcpGatewayChoice() {
   }
 }
 
-/** A remembered gateway agent and model, or null when there is no agent to restore. */
+/** A remembered gateway agent, model and protocol, or null when there is no agent to restore. */
 function acpGatewayParams(parsed) {
   // The agent is the one field a launch cannot go without; a remembered
   // model is a bonus, not a condition for restoring the rest.
   if (!parsed?.agent) return null
-  return { agent: parsed.agent, model: parsed.model ?? '' }
+  return {
+    agent: parsed.agent,
+    model: parsed.model ?? '',
+    acpVersion: ACP_PROTOCOLS[stepIndex(ACP_PROTOCOLS, parsed.acpVersion)].id,
+  }
 }
 
-/** Remembers a gateway launch's agent and model for the next one. */
-export function rememberAcpGatewayChoice({ agent, model }) {
+/** Remembers a gateway launch's agent, model and protocol for the next one. */
+export function rememberAcpGatewayChoice({ agent, model, acpVersion }) {
   try {
-    localStorage.setItem(LAST_ACP_GATEWAY_KEY, JSON.stringify({ agent, model: model ?? '' }))
+    localStorage.setItem(
+      LAST_ACP_GATEWAY_KEY,
+      JSON.stringify({ agent, model: model ?? '', acpVersion: acpVersion ?? '' })
+    )
   } catch {
     // Nothing to fall back to here: the next launch just opens on
     // GATEWAY_DEFAULTS again, exactly as it did before this existed.
@@ -260,10 +278,10 @@ export function useKindParams(kind, getWorkspaceId = () => '') {
 
 /**
  * Where each workspace's last launch is remembered: the machine, the kind,
- * and each kind's parameters (the gateway's agent and model, Claude Code's
+ * and each kind's parameters (the gateway's agent, model and protocol, Claude Code's
  * model, effort and auto-compact window).
  *
- * The same kind of per-browser convenience as the gateway's agent and model,
+ * The same kind of per-browser convenience as the gateway's last choice,
  * kept per workspace because "the machine this workspace runs on", and the
  * agent it runs, are facts about the workspace. Spin up reads it to start a
  * fork the way its parent was last started.

@@ -77,6 +77,7 @@ func (r *Restarter) handOver(ctx context.Context, reason, to string, install, un
 			Autocompact:     sess.Params.Autocompact,
 			Agent:           sess.Params.Agent,
 			AllowUnverified: sess.Params.AllowUnverified,
+			ACPVersion:      sess.Params.ACPVersion,
 			Cols:            sess.Cols,
 			Rows:            sess.Rows,
 		})

@@ -106,6 +106,7 @@ func (s *Supervisor) handleStart(ctx context.Context, profile string, req wire.S
 			Autocompact:     req.Autocompact,
 			Agent:           req.Agent,
 			AllowUnverified: req.AllowUnverified,
+			ACPVersion:      req.ACPVersion,
 		},
 		Dir:        req.Dir,
 		MCPURL:     req.MCPURL,

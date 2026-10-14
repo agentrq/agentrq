@@ -31,6 +31,7 @@ type LaunchAgentParams struct {
 	Effort      string `json:"effort,omitempty" jsonschema:"claude-code only: low, medium, high, xhigh or max. Leave it out for the default"`
 	Autocompact string `json:"autocompact,omitempty" jsonschema:"claude-code only: the auto-compact window, 100k to 900k in whole hundreds such as 600k. Leave it out for the default, 400k"`
 	Agent       string `json:"agent,omitempty" jsonschema:"acp-gateway only: which agent the gateway runs"`
+	ACPVersion  string `json:"acpVersion,omitempty" jsonschema:"acp-gateway only: \"1\" (or \"2\") starts the agent in native ACP mode, where AgentRQ speaks ACP itself. Leave it out for the classic gateway"`
 }
 
 type StopAgentParams struct {
@@ -62,6 +63,7 @@ func (s *WorkspaceServer) handleLaunchAgent(ctx context.Context, req *mcp.CallTo
 		Effort:      args.Effort,
 		Autocompact: args.Autocompact,
 		Agent:       args.Agent,
+		ACPVersion:  args.ACPVersion,
 	})
 	if err != nil {
 		return errorResponse(err), nil, nil

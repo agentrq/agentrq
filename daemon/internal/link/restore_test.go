@@ -162,6 +162,31 @@ func TestARestoredClaudeCodeKeepsItsModelAndEffort(t *testing.T) {
 	}
 }
 
+// A gateway restored after a restart comes back in native ACP mode if it was
+// started in it, rather than silently classic.
+func TestARestoredGatewayKeepsItsNativeACPMode(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+	conn := &Conn{out: make(chan []byte, 8), done: make(chan struct{})}
+	dir := t.TempDir()
+	if _, _, err := supervisor.WriteMCPConfig(dir, supervisor.MCPEntry{Name: "agentrq-workspace", URL: "https://agentrq.example/mcp/ws?token=test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	h.link.Restore(context.Background(), conn, restore.Session{
+		ID: 9, Profile: "work", Kind: string(supervisor.KindACPGateway),
+		Dir: dir, ServerName: "agentrq-workspace", Agent: "a", ACPVersion: "1",
+	})
+
+	sess, err := h.sup.Get(9)
+	if err != nil {
+		t.Fatalf("the session did not come back: %v", err)
+	}
+	if sess.Params.ACPVersion != "1" {
+		t.Errorf("restored with acpVersion %q, want 1", sess.Params.ACPVersion)
+	}
+}
+
 func TestASessionThatCannotComeBackSaysWhy(t *testing.T) {
 	b := newBackend(t)
 	h := start(t, b)

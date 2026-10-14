@@ -22,12 +22,17 @@ describe('launchAgent', () => {
     expect(url).toBe('/api/v1/workspaces/ws1/agent')
     expect(init.method).toBe('POST')
     expect(body).toEqual({
-      machineId: 'm1', kind: 'claude-code', model: '', effort: '', autocompact: '', agent: '', allowUnverified: false, cols: 0, rows: 0,
+      machineId: 'm1', kind: 'claude-code', model: '', effort: '', autocompact: '', agent: '', allowUnverified: false, acpVersion: '', cols: 0, rows: 0,
     })
   })
 
   it('sends the consent to an unverified install', async () => {
     await launchAgent('ws1', { machineId: 'm1', kind: 'acp-gateway', agent: 'crow-cli', allowUnverified: true })
     expect(sent().body).toEqual(expect.objectContaining({ agent: 'crow-cli', allowUnverified: true }))
+  })
+
+  it('sends the native ACP version', async () => {
+    await launchAgent('ws1', { machineId: 'm1', kind: 'acp-gateway', agent: 'codex-acp', acpVersion: '1' })
+    expect(sent().body).toEqual(expect.objectContaining({ agent: 'codex-acp', acpVersion: '1' }))
   })
 })

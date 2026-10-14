@@ -336,6 +336,15 @@ describe('launchParamsPayload', () => {
   it('treats a missing required field as blank, not absent', () => {
     expect(launchParamsPayload('acp-gateway', {})).toEqual({ agent: '' })
   })
+
+  it('the gateway payload carries acpVersion only when chosen', () => {
+    expect(launchParamsPayload('acp-gateway', { agent: 'a', acpVersion: '' })).toEqual({ agent: 'a' })
+    expect(launchParamsPayload('acp-gateway', { agent: 'a', acpVersion: '1' })).toEqual({ agent: 'a', acpVersion: '1' })
+  })
+
+  it('acpVersion is never sent for Claude Code', () => {
+    expect(launchParamsPayload('claude-code', { model: 'opus', acpVersion: '1' })).toEqual({ model: 'opus' })
+  })
 })
 
 describe('loading workspaces', () => {
@@ -466,14 +475,23 @@ describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
 
   it('round-trips what was remembered', () => {
     rememberAcpGatewayChoice({ agent: 'codex-acp', model: 'gpt-5.5' })
-    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5', acpVersion: '' })
   })
 
   // The agent is the one field a launch cannot go without; a remembered
   // model is a bonus, not a condition for restoring the rest.
   it('remembers just the agent when no model was ever chosen', () => {
     localStorage.setItem('agentrq:lastAcpGateway', JSON.stringify({ agent: 'codex-acp' }))
-    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: '' })
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: '', acpVersion: '' })
+  })
+
+  // Native ACP is remembered with the agent, and a value the slider has no
+  // step for opens on Classic.
+  it('remembers the protocol, and reads one it cannot show as Classic', () => {
+    rememberAcpGatewayChoice({ agent: 'codex-acp', model: '', acpVersion: '1' })
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: '', acpVersion: '1' })
+    localStorage.setItem('agentrq:lastAcpGateway', JSON.stringify({ agent: 'codex-acp', acpVersion: '7' }))
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: '', acpVersion: '' })
   })
 
   it('ignores a stored value missing the agent, the same as nothing stored', () => {
@@ -490,7 +508,7 @@ describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
     rememberAcpGatewayChoice({ agent: 'codex-acp', model: 'gpt-5.5' })
     const h = harness()
     h.l.kind.value = 'acp-gateway'
-    expect(h.l.params.value).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(h.l.params.value).toEqual({ agent: 'codex-acp', model: 'gpt-5.5', acpVersion: '' })
   })
 
   it('remembers the gateway choice after a successful launch, not before', async () => {
@@ -502,7 +520,7 @@ describe('lastAcpGatewayChoice / rememberAcpGatewayChoice', () => {
     expect(lastAcpGatewayChoice()).toBeNull()
 
     await h.l.launch()
-    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(lastAcpGatewayChoice()).toEqual({ agent: 'codex-acp', model: 'gpt-5.5', acpVersion: '' })
   })
 
   it('does not remember a claude-code launch', async () => {
@@ -739,7 +757,7 @@ describe('a workspace\'s last kind', () => {
     await h.l.load()
     h.l.workspaceId.value = 'ws1'
     expect(h.l.kind.value).toBe('acp-gateway')
-    expect(h.l.params.value).toEqual({ agent: 'gemini', model: '' })
+    expect(h.l.params.value).toEqual({ agent: 'gemini', model: '', acpVersion: '' })
     h.l.workspaceId.value = 'never'
     expect(h.l.kind.value).toBe('acp-gateway')
     localStorage.clear()
@@ -908,16 +926,16 @@ describe('each workspace\'s last agent', () => {
     rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'gemini', model: 'pro' } })
     rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'claude-code', params: { model: 'opus' } })
     rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'codex-acp' } })
-    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '' })
     expect(lastLaunchParams('ws1', 'claude-code')).toEqual({ model: 'opus', effort: '', autocompact: '' })
-    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
+    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'codex-acp', model: '', acpVersion: '' })
     expect(lastLaunchParams('ws2', 'claude-code')).toBe(null)
     expect(lastLaunchParams('', 'acp-gateway')).toBe(null)
 
     // A launch that names no parameters keeps those already stored.
     rememberLaunchChoice('ws1', { machineId: 'm2', kind: 'acp-gateway' })
     expect(lastLaunchChoice('ws1')).toEqual({ machineId: 'm2', kind: 'acp-gateway' })
-    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro' })
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '' })
   })
 
   it('reads stored parameters through the same checks as the browser-wide choice', () => {
@@ -930,15 +948,15 @@ describe('each workspace\'s last agent', () => {
     expect(lastLaunchParams('ws2', 'acp-gateway')).toBe(null)
     // And a launch writes over what it could not read.
     rememberLaunchChoice('ws2', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'goose' } })
-    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'goose', model: '' })
+    expect(lastLaunchParams('ws2', 'acp-gateway')).toEqual({ agent: 'goose', model: '', acpVersion: '' })
   })
 
   it('opens a workspace on its own last agent before the one used anywhere', () => {
     rememberAcpGatewayChoice({ agent: 'codex-acp', model: '' })
     rememberLaunchChoice('ws1', { machineId: 'm1', kind: 'acp-gateway', params: { agent: 'gemini' } })
-    expect(initialParams('acp-gateway', 'ws1')).toEqual({ agent: 'gemini', model: '' })
-    expect(initialParams('acp-gateway', 'ws2')).toEqual({ agent: 'codex-acp', model: '' })
-    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: '' })
+    expect(initialParams('acp-gateway', 'ws1')).toEqual({ agent: 'gemini', model: '', acpVersion: '' })
+    expect(initialParams('acp-gateway', 'ws2')).toEqual({ agent: 'codex-acp', model: '', acpVersion: '' })
+    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: '', acpVersion: '' })
   })
 
   it('keeps Claude Code\'s auto-compact window per workspace, and opens elsewhere on the 400k default', () => {
@@ -961,7 +979,7 @@ describe('each workspace\'s last agent', () => {
     workspaceId.value = 'ws-new'
     expect(params.value.agent).toBe('typed-by-hand')
     workspaceId.value = 'ws1'
-    expect(params.value).toEqual({ agent: 'gemini', model: '' })
+    expect(params.value).toEqual({ agent: 'gemini', model: '', acpVersion: '' })
     kind.value = 'claude-code'
     expect(params.value).toEqual({ model: 'opus', effort: 'high', autocompact: '' })
   })
@@ -979,7 +997,7 @@ describe('each workspace\'s last agent', () => {
     next.l.kind.value = 'acp-gateway'
     expect(next.l.params.value.agent).not.toBe('gemini')
     next.l.workspaceId.value = 'ws1'
-    expect(next.l.params.value).toEqual({ agent: 'gemini', model: '' })
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: '', acpVersion: '' })
   })
 })
 
@@ -1072,7 +1090,7 @@ describe('choosing Claude Code\'s model and effort', () => {
     rememberParams('claude-code', { model: 'haiku', effort: 'low' })
     rememberParams('acp-gateway', { agent: 'codex-acp', model: 'gpt-5.5' })
     expect(initialParams('claude-code')).toEqual({ model: 'haiku', effort: 'low', autocompact: '' })
-    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: 'gpt-5.5' })
+    expect(initialParams('acp-gateway')).toEqual({ agent: 'codex-acp', model: 'gpt-5.5', acpVersion: '' })
   })
 
   it('keeps each kind\'s fields apart when the kind is switched back and forth', () => {

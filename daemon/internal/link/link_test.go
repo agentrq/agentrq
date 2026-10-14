@@ -398,6 +398,10 @@ func TestHelloDescribesTheMachine(t *testing.T) {
 	if !slices.Contains(hello.Capabilities, wire.CapabilityAutocompact) {
 		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityAutocompact)
 	}
+	// Nor a gateway in native ACP mode.
+	if !slices.Contains(hello.Capabilities, wire.CapabilityACPVersion) {
+		t.Errorf("capabilities = %v, want %q", hello.Capabilities, wire.CapabilityACPVersion)
+	}
 }
 
 // Who the daemon claims to be travels on the upgrade request.
@@ -999,4 +1003,27 @@ func TestALaunchShowsItsCommandInTheTerminal(t *testing.T) {
 	if len(h.tty.written()) != 0 {
 		t.Errorf("the command reached the terminal's input: %q", h.tty.written())
 	}
+}
+
+// A launch that asks for native ACP starts the gateway in that mode.
+func TestANativeACPLaunchStartsTheGatewayInNativeMode(t *testing.T) {
+	b := newBackend(t)
+	h := start(t, b)
+
+	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
+		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Agent: "a", ACPVersion: "1",
+		ServerName: "agentrq-workspace", MCPURL: "https://agentrq.example/mcp/ws?token=test",
+		// Wide enough that the line does not wrap under a long temp folder
+		// (macOS and Windows), which would split the command it looks for.
+		Cols: 400, Rows: 24,
+	}))
+	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
+	sess, _ := h.sup.Get(7)
+	if sess.Params.ACPVersion != "1" {
+		t.Errorf("started with acpVersion %q, want 1", sess.Params.ACPVersion)
+	}
+	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
+	waitFor(t, func() bool {
+		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a --acp-version 1")
+	}, "the native command was never shown in the terminal")
 }

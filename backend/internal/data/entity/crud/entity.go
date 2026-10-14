@@ -1630,6 +1630,10 @@ const (
 	// /api/acp/v1 socket.
 	ActionACPV1Connect Action = 100
 	ActionACPV1Turn    Action = 101
+	// An acp-gateway launched in native ACP v1 or v2 mode, counted instead
+	// of ActionAgentLaunchACPGateway.
+	ActionAgentLaunchACPNativeV1 Action = 102
+	ActionAgentLaunchACPNativeV2 Action = 103
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1824,6 +1828,10 @@ func (a Action) String() string {
 		return "acp_v1_connect"
 	case ActionACPV1Turn:
 		return "acp_v1_turn"
+	case ActionAgentLaunchACPNativeV1:
+		return "agent_launch_acp_native_v1"
+	case ActionAgentLaunchACPNativeV2:
+		return "agent_launch_acp_native_v2"
 	}
 	return "unknown"
 }

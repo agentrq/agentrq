@@ -28,3 +28,18 @@ func TestNewLauncher_UsesTheDeploymentsAddresses(t *testing.T) {
 		t.Errorf("machines = %v", l.Machines)
 	}
 }
+
+// Native ACP is offered only for v1, and only while its switch is on.
+func TestNewLauncher_OffersNativeACPOnlyWhereItIsOn(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		var cfg Config
+		cfg.ACP.V1.Enabled = on
+		l := newLauncher(cfg, true, nil, nil, nil, nil)
+		if got := l.ACPEnabled("1"); got != on {
+			t.Errorf("with acp.v1.enabled %v, v1 offered = %v", on, got)
+		}
+		if l.ACPEnabled("2") {
+			t.Errorf("with acp.v1.enabled %v, v2 was offered, but this server has no v2", on)
+		}
+	}
+}

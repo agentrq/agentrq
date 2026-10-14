@@ -1057,6 +1057,8 @@ func newLauncher(cfg Config, secure bool, c agentlaunch.Crud, agents agentlaunch
 		Machines: machines,
 		Tokens:   tokens,
 		URLs:     agentlaunch.URLs{Base: cfg.App.BaseURL, Domain: cfg.App.Domain, Secure: secure},
+		// Only v1 exists on this server yet; v2 stays off.
+		ACPEnabled: func(v string) bool { return v == "1" && cfg.ACP.V1.Enabled },
 	}
 }
 

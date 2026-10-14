@@ -151,6 +151,21 @@ func TestLaunchAgent_UsesTheSharedLaunch(t *testing.T) {
 	}
 }
 
+// A native ACP launch is passed on with its version.
+func TestLaunchAgent_PassesOnTheNativeACPVersion(t *testing.T) {
+	l := &fakeLauncher{}
+	s := &WorkspaceServer{launcher: l}
+
+	toolResult(s.handleLaunchAgent(authedContext(), nil, LaunchAgentParams{
+		WorkspaceID: "w1", MachineID: "m1", Kind: "acp-gateway", Agent: "codex-acp", ACPVersion: "1",
+	}))
+
+	want := agentlaunch.Request{UserID: testUserID, WorkspaceID: "w1", MachineID: "m1", Kind: "acp-gateway", Agent: "codex-acp", ACPVersion: "1"}
+	if l.launch != want {
+		t.Errorf("request = %+v, want %+v", l.launch, want)
+	}
+}
+
 func TestLaunchAgent_Refused(t *testing.T) {
 	l := &fakeLauncher{err: entity.NewLaunchError(entity.ErrLaunchBusy, "this workspace already has an agent connected")}
 	r := toolResult((&WorkspaceServer{launcher: l}).handleLaunchAgent(authedContext(), nil, LaunchAgentParams{WorkspaceID: "w1", MachineID: "m1", Kind: "claude-code"}))

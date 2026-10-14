@@ -18,6 +18,7 @@ import AcpAgentList from './AcpAgentList.vue'
 import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
+import AcpProtocolPicker from './AcpProtocolPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { spinUpName } from '../composables/useSpinUp'
 import { useWorkspaceStore } from '../stores/workspaceStore'
@@ -111,6 +112,8 @@ async function start() {
           </datalist>
         </div>
       </div>
+
+      <AcpProtocolPicker v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" v-model="spin.params.value.acpVersion" />
 
       <AcpAgentList v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" :agents="spin.acpAgents.value" :query="spin.params.value.agent ?? ''" @pick="spin.pickAcpAgent" />
       <UnverifiedAgentConsent v-if="spin.unverifiedAgent.value" v-model="spin.params.value.allowUnverified" id-prefix="spin-up" :agent="spin.params.value.agent" />

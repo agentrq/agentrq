@@ -187,6 +187,22 @@ describe('MachineDetailView: starting an agent', () => {
     expect(push).toHaveBeenCalledWith('/sessions/sess-10')
   })
 
+  it('the ACP gateway form shows the protocol slider, and a launch sends the chosen protocol', async () => {
+    localStorage.clear()
+    launchResult = { session: { id: 'sess-10', kind: 'acp-gateway', status: 'starting' } }
+    const { el, choose, clickStart, clickTab } = await mount()
+    await clickTab('New Session')
+    await choose('launch-workspace-ws1')
+    expect(el.querySelector('#launch-acp-version')).toBeNull()
+    await choose('launch-kind-acp-gateway')
+    ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'ACP v1').click()
+    await settle()
+    await clickStart()
+
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+    localStorage.clear()
+  })
+
   it('sends the model and effort chosen on the sliders for Claude Code', async () => {
     localStorage.clear()
     const { el, choose, clickStart, clickTab } = await mount()
