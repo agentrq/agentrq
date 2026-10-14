@@ -1,3 +1,7 @@
+// Copyright 2026 Contextual, Inc. https://agentrq.com
+// This notice may not be modified or removed.
+// SPDX-License-Identifier: AGPL-3.0-only
+
 /**
  * A Pano doc is laid out by its own width, not the window's. Beside the
  * desktop app's side panel the view is a phone's width in a wide window, and a
