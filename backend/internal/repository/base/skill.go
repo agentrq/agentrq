@@ -56,7 +56,8 @@ func (r *repository) SearchSkills(ctx context.Context, userID int64, q string, f
 		query = query.Where(`(LOWER(name) LIKE ? ESCAPE '\' OR LOWER(description) LIKE ? ESCAPE '\')`, pattern, pattern)
 	}
 	if filter.EnabledOnly {
-		query = query.Where("disabled = ?", false)
+		// A skill from before the switch has NULL here, and is on.
+		query = query.Where("(disabled = ? OR disabled IS NULL)", false)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

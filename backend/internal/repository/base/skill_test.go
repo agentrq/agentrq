@@ -214,6 +214,21 @@ func TestSearchSkills_FiltersByWorkspaceAndSwitch(t *testing.T) {
 	}
 }
 
+// A skill stored before the switch existed has no value in the disabled
+// column, which adding it left NULL: it is on, so enabled only still lists it.
+func TestSearchSkills_EnabledOnlyListsASkillFromBeforeTheSwitch(t *testing.T) {
+	db := skillDB(t)
+	r := New(&mockDB{db: db})
+	seedSkill(t, r)
+	if err := db.Exec("UPDATE skills SET disabled = NULL WHERE id = 1").Error; err != nil {
+		t.Fatalf("clear disabled: %v", err)
+	}
+	found, total, err := r.SearchSkills(context.Background(), skUser, "", SkillFilter{InWorkspace: skWS, EnabledOnly: true}, 0, 0)
+	if err != nil || total != 1 || len(found) != 1 || found[0].Name != "tdd" {
+		t.Errorf("enabled only, with disabled NULL, returned %v (total %d, %v), want [tdd]", found, total, err)
+	}
+}
+
 // Both statements a search runs, the count and the page, report a failure.
 // Statement 2 is the dry run that builds the workspace subquery, whose own
 // error is never returned, so it is skipped.
