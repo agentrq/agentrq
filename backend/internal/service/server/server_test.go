@@ -54,6 +54,13 @@ func TestServeHTTP(t *testing.T) {
 			wantBody:   "path:/mcp/" + monoflake.ID(123456789).String(),
 		},
 		{
+			name:       "MCPSubdomainNativeACP",
+			host:       "1.mcp.example.com",
+			path:       "/api/acp/v1",
+			wantStatus: http.StatusOK,
+			wantBody:   "path:/api/acp/v1",
+		},
+		{
 			name:       "InvalidIDSubdomain",
 			host:       "invalid!.mcp.example.com",
 			path:       "/",

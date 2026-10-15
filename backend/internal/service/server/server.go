@@ -131,9 +131,13 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Map it back to the base62 system for internal routing
 			workspaceID := monoflake.ID(id).String()
 
-			if r.URL.Path == "/" || r.URL.Path == "" {
+			// acp-gateway reaches native ACP on the workspace's own MCP host;
+			// its token names the workspace, so the path is left as it is.
+			switch {
+			case strings.HasPrefix(r.URL.Path, "/api/acp/"):
+			case r.URL.Path == "/" || r.URL.Path == "":
 				r.URL.Path = "/mcp/" + workspaceID
-			} else {
+			default:
 				r.URL.Path = "/mcp/" + workspaceID + r.URL.Path
 			}
 		} else if host != appHost {
