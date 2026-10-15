@@ -563,7 +563,9 @@ func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, m
 		if len(msgs) == 0 {
 			return nil
 		}
-		return tx.Create(&msgs).Error
+		// One INSERT binds 8 values per message, so a single statement passes
+		// SQLite's 32,766-variable limit at 4,096 messages (#921).
+		return tx.CreateInBatches(&msgs, 500).Error
 	})
 	if err != nil {
 		return model.Task{}, err
