@@ -48,7 +48,8 @@ type Params struct {
 	ServerName string
 	// Model is either kind's model, blank for the agent's own default.
 	Model string
-	// Effort is claude-code's effort level, blank for its own default.
+	// Effort is the reasoning level, blank for the agent's own default:
+	// claude-code's, or a native ACP gateway's.
 	Effort string
 	// Autocompact is claude-code's auto-compact window, such as "600k",
 	// blank for [DefaultAutocompact].
@@ -235,6 +236,12 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)
+		}
+		// Native mode only: the gateway hands it to AgentRQ in its upgrade
+		// headers, and the classic gateway has nothing to do with it. A
+		// gateway older than the flag ignores it, since --agent is given.
+		if p.Effort != "" && p.ACPVersion != "" {
+			argv = append(argv, "--effort", p.Effort)
 		}
 		if p.AllowUnverified {
 			argv = append(argv, "--allow-unverified-agent")

@@ -164,6 +164,35 @@ func TestEngineEffort(t *testing.T) {
 		})
 	})
 
+	t.Run("the bridge's effort is applied to every new session that offers it", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgentWith(t, rec, agentOpts{header: map[string]string{"X-AgentRQ-Agent-Effort": "low"}})
+		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
+		a.answer(a.expect("session/new"), string(fixture(t, "session_new.response.json")))
+		a.answer(a.expectParams("session/set_config_option", `{"sessionId":"sess-1","configId":"effort","value":"low"}`), `{}`)
+		a.answer(a.expect("session/set_mode"), `{}`)
+		rec.link(t)
+		rec.wait(t, func() bool { return len(rec.effort) == 1 })
+		rec.read(func() {
+			if e := rec.effort[0]; e.CurrentEffort != "low" {
+				t.Fatalf("effort report was %+v, want low", e)
+			}
+		})
+	})
+
+	t.Run("a bridge effort the model does not offer is skipped without error", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgentWith(t, rec, agentOpts{header: map[string]string{"X-AgentRQ-Agent-Effort": "max"}})
+		l := a.readyAsking(rec)
+		rec.wait(t, func() bool { return len(rec.effort) == 1 })
+		a.sync(l)
+		rec.read(func() {
+			if e := rec.effort[0]; e.CurrentEffort != "high" {
+				t.Fatalf("effort report was %+v, want the agent's own high", e)
+			}
+		})
+	})
+
 	t.Run("a failed switch, or a level nobody offers, re-reports what is true; an unknown session is left alone", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)

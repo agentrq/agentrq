@@ -613,13 +613,14 @@ func TestParseMeta(t *testing.T) {
 			"X-Agentrq-Bridge-Version":     {"0.3.0"},
 			"X-Agentrq-Agent":              {" codex "},
 			"X-Agentrq-Agent-Model":        {"gpt-5"},
+			"X-Agentrq-Agent-Effort":       {" high "},
 			"X-Agentrq-Auth-Method":        {"chatgpt"},
 			"X-Agentrq-Platform":           {"linux/arm64"},
 			"X-Agentrq-Cwd":                {"/home/me/work"},
 			"X-Agentrq-Max-Concurrency":    {"3"},
 			"X-Agentrq-Permission-Timeout": {"0"},
 		})
-		want := bridgeMeta{BridgeVersion: "0.3.0", Agent: "codex", Model: "gpt-5", AuthMethod: "chatgpt",
+		want := bridgeMeta{BridgeVersion: "0.3.0", Agent: "codex", Model: "gpt-5", Effort: "high", AuthMethod: "chatgpt",
 			Platform: "linux/arm64", Cwd: "/home/me/work", MaxConcurrency: 3, PermissionTimeout: 0}
 		if err != nil || m != want {
 			t.Fatalf("parseMeta returned %+v (error %v), want %+v", m, err, want)

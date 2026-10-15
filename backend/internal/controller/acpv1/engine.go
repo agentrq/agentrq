@@ -106,7 +106,7 @@ func NewEngineFactory(d EngineDeps) func(c *connection) engine {
 		ctx, stop := context.WithCancel(context.Background())
 		e := &engineV1{deps: d, c: c, linkID: "acp1:" + c.ID(), lim: currentLimits(), ctx: ctx, stop: stop,
 			updates: make(chan update, updateQueueCap), sessions: newSessionSet(),
-			preferredModel: c.Meta().Model, permissions: map[string]*pendingPermission{},
+			preferredModel: c.Meta().Model, preferredEffort: c.Meta().Effort, permissions: map[string]*pendingPermission{},
 			urlQuestions: map[string]context.CancelFunc{}}
 		e.link = &link{e: e}
 		e.ws = d.Workspace(c.WorkspaceID(), c.UserID())

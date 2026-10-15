@@ -280,6 +280,10 @@ func TestTheGatewayStartsInNativeACPMode(t *testing.T) {
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1 --model gpt-5"},
 		{"native v2 is accepted", Params{Agent: "codex-acp", ACPVersion: "2"},
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 2"},
+		{"native passes the effort", Params{Agent: "claude-acp", ACPVersion: "1", Model: "opus", Effort: "high"},
+			"npx -y @agentrq/acp-gateway@latest --agent claude-acp --acp-version 1 --model opus --effort high"},
+		{"classic leaves the effort out", Params{Agent: "claude-acp", Effort: "high"},
+			"npx -y @agentrq/acp-gateway@latest --agent claude-acp"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := Resolve(KindACPGateway, tc.p)

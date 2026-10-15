@@ -145,6 +145,7 @@ func parseMeta(h http.Header) (bridgeMeta, error) {
 		{"X-AgentRQ-Bridge-Version", 32, &m.BridgeVersion},
 		{"X-AgentRQ-Agent", 128, &m.Agent},
 		{"X-AgentRQ-Agent-Model", 128, &m.Model},
+		{"X-AgentRQ-Agent-Effort", 64, &m.Effort},
 		{"X-AgentRQ-Auth-Method", 128, &m.AuthMethod},
 		{"X-AgentRQ-Platform", 64, &m.Platform},
 		{"X-AgentRQ-Cwd", 4096, &m.Cwd},
