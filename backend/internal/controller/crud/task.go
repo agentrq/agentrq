@@ -197,6 +197,45 @@ func (c *controller) CreateTask(ctx context.Context, req entity.CreateTaskReques
 	return &entity.CreateTaskResponse{Task: c.fromModelTaskToEntity(created)}, nil
 }
 
+// maxToolCallsPage caps a page of ListTaskToolCalls.
+const maxToolCallsPage = 500
+
+// ListTaskToolCalls pages in the tool calls older than the latest ones a task
+// is read with.
+func (c *controller) ListTaskToolCalls(ctx context.Context, req entity.ListTaskToolCallsRequest) (*entity.ListTaskToolCallsResponse, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = base.TaskToolCallsPage
+	}
+	limit = min(limit, maxToolCallsPage)
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	if _, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid); err != nil {
+		return nil, err
+	}
+	tcs, err := c.repository.ListToolCalls(ctx, req.TaskID, req.Before, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &entity.ListTaskToolCallsResponse{ToolCalls: fromModelToolCallsToEntity(tcs)}, nil
+}
+
+func fromModelToolCallsToEntity(tcs []model.ToolCall) []entity.ToolCall {
+	res := make([]entity.ToolCall, len(tcs))
+	for i, tc := range tcs {
+		res[i] = entity.ToolCall{
+			ID:           tc.ID,
+			CreatedAt:    tc.CreatedAt,
+			TaskID:       tc.TaskID,
+			WorkspaceID:  tc.WorkspaceID,
+			ToolName:     tc.ToolName,
+			Description:  tc.Description,
+			InputPreview: tc.InputPreview,
+			Status:       tc.Status,
+		}
+	}
+	return res
+}
+
 func (c *controller) GetTask(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error) {
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
 	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
@@ -849,20 +888,6 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		}
 	}
 
-	toolCalls := make([]entity.ToolCall, len(m.ToolCalls))
-	for i, tc := range m.ToolCalls {
-		toolCalls[i] = entity.ToolCall{
-			ID:           tc.ID,
-			CreatedAt:    tc.CreatedAt,
-			TaskID:       tc.TaskID,
-			WorkspaceID:  tc.WorkspaceID,
-			ToolName:     tc.ToolName,
-			Description:  tc.Description,
-			InputPreview: tc.InputPreview,
-			Status:       tc.Status,
-		}
-	}
-
 	return entity.Task{
 		ID:                    m.ID,
 		CreatedAt:             m.CreatedAt,
@@ -878,7 +903,8 @@ func (c *controller) fromModelTaskToEntity(m model.Task) entity.Task {
 		ReplyText:             m.ReplyText,
 		Attachments:           atts,
 		Messages:              msgs,
-		ToolCalls:             toolCalls,
+		ToolCalls:             fromModelToolCallsToEntity(m.ToolCalls),
+		ToolCallCount:         m.ToolCallCount,
 		CronSchedule:          m.CronSchedule,
 		ParentID:              m.ParentID,
 		SortOrder:             m.SortOrder,

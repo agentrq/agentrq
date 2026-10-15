@@ -369,6 +369,8 @@ func TestGetTask_Full(t *testing.T) {
 		Messages: []model.Message{
 			{ID: 101, Text: "m1", Attachments: []byte(`[{"id":"a2"}]`)},
 		},
+		ToolCalls:     []model.ToolCall{{ID: 201, ToolName: "Bash"}},
+		ToolCallCount: 250,
 	}
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTaskStateTransitions(gomock.Any(), int64(10)).Return(nil, nil)
@@ -379,6 +381,9 @@ func TestGetTask_Full(t *testing.T) {
 	}
 	if len(resp.Task.Attachments) != 1 || len(resp.Task.Messages) != 1 {
 		t.Errorf("expected attachments and messages to be mapped")
+	}
+	if len(resp.Task.ToolCalls) != 1 || resp.Task.ToolCallCount != 250 {
+		t.Errorf("tool calls = %+v of %d, want the latest one of 250", resp.Task.ToolCalls, resp.Task.ToolCallCount)
 	}
 }
 
@@ -1507,5 +1512,50 @@ func TestCreateTask_ClearContextAskedForExplicitly(t *testing.T) {
 	}
 	if !resp.Task.ClearContext {
 		t.Errorf("expected task to have ClearContext=true")
+	}
+}
+
+// ── ListTaskToolCalls ─────────────────────────────────────────────────────────
+
+func TestListTaskToolCalls_Pages(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		limit     int
+		wantLimit int
+	}{
+		{"the default page", 0, base.TaskToolCallsPage},
+		{"a smaller page", 20, 20},
+		{"capped", 5000, maxToolCallsPage},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10}, nil)
+			e.repo.EXPECT().ListToolCalls(gomock.Any(), int64(10), int64(77), tc.wantLimit).Return([]model.ToolCall{{ID: 5, TaskID: 10, ToolName: "Bash", Status: "allowed"}}, nil)
+
+			resp, err := e.controller.ListTaskToolCalls(context.Background(), entity.ListTaskToolCallsRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr, Before: 77, Limit: tc.limit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := (entity.ToolCall{ID: 5, TaskID: 10, ToolName: "Bash", Status: "allowed"}); len(resp.ToolCalls) != 1 || resp.ToolCalls[0] != want {
+				t.Errorf("tool calls = %+v", resp.ToolCalls)
+			}
+		})
+	}
+}
+
+func TestListTaskToolCalls_Failures(t *testing.T) {
+	req := entity.ListTaskToolCallsRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr}
+
+	e := newTestController(t)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, base.ErrNotFound)
+	if _, err := e.controller.ListTaskToolCalls(context.Background(), req); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("a task elsewhere: %v, want ErrNotFound", err)
+	}
+
+	e = newTestController(t)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10}, nil)
+	e.repo.EXPECT().ListToolCalls(gomock.Any(), int64(10), int64(0), base.TaskToolCallsPage).Return(nil, fmt.Errorf("db down"))
+	if _, err := e.controller.ListTaskToolCalls(context.Background(), req); err == nil {
+		t.Error("a failed read returned no error")
 	}
 }

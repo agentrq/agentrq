@@ -31,7 +31,7 @@ Every capability of the interface, grouped roughly as the app is:
 |---|---|
 | **Where you are** | `getCurrentPage`, `navigate` |
 | **Workspaces** | list, read, create, update, archive, unarchive, delete, stats, Slack channel, connection token |
-| **Tasks** | list, read, create, reply, respond, fork, status, assignee, order, move, stop, delete, permission verdicts, elicitation answers, scheduled-task template, counts |
+| **Tasks** | list, read (and page in older tool calls), create, reply, respond, fork, status, assignee, order, move, stop, delete, permission verdicts, elicitation answers, scheduled-task template, counts |
 | **Events** | list, read, create, update, delete, triggers (list/create/update/delete), tasks an event spawned |
 | **Workflows** | list, read, create, update, delete, steps, tasks, and the whole workflow as editable text |
 

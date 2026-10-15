@@ -59,6 +59,11 @@
       <div class="flex flex-1 min-h-0">
         <!-- List -->
         <div class="w-2/5 border-r border-gray-100 dark:border-zinc-800 overflow-y-auto custom-scrollbar">
+          <button v-if="hasEarlier" type="button" data-testid="trajectory-load-earlier"
+                  @click="$emit('load-earlier')" :disabled="loadingEarlier"
+                  class="w-full px-3 py-2 border-b border-gray-100 dark:border-zinc-800 text-[9px] font-black uppercase tracking-wider text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors disabled:opacity-60 disabled:cursor-wait">
+            {{ loadingEarlier ? 'Loading…' : 'Load earlier' }} <span class="font-bold opacity-60">{{ earlierCount }}</span>
+          </button>
           <div v-if="filteredItems.length === 0" class="py-10 text-center text-[11px] text-gray-400 dark:text-zinc-500 font-medium px-4">
             {{ emptyListMessage }}
           </div>
@@ -153,7 +158,12 @@ import {
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   toolCalls: { type: Array, default: () => [] },
+  // How many tool calls are not loaded yet; the list offers to load them.
+  earlierCount: { type: Number, default: 0 },
+  loadingEarlier: { type: Boolean, default: false },
 });
+defineEmits(['load-earlier']);
+const hasEarlier = computed(() => props.earlierCount > 0);
 
 const LANES = TRAJECTORY_LANES;
 

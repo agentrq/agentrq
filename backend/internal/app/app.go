@@ -243,6 +243,10 @@ func New(cfg Config) (*App, error) {
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_events_name_user_id").Error
 	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_workflows_name_user_id").Error
 
+	// idx_tool_calls_task_id_id, over (task_id, id), pages a task's tool calls
+	// and covers every query the task_id index served.
+	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
+
 	if err := db.Conn(context.Background()).AutoMigrate(migratedModels()...); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}

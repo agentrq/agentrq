@@ -69,3 +69,13 @@ func TestFromModelTaskToView_ListsToolCallsAsTheEventCarriesThem(t *testing.T) {
 		t.Errorf("event = %+v", event)
 	}
 }
+
+// A task view counts every tool call, though it lists only the latest.
+func TestTaskViews_CountToolCalls(t *testing.T) {
+	if got := FromModelTaskToView(model.Task{ID: 1, ToolCallCount: 250}); got.ToolCallCount != 250 {
+		t.Errorf("event view counts %d, want 250", got.ToolCallCount)
+	}
+	if got := FromEntityTaskToView(entity.Task{ID: 1, ToolCallCount: 250}); got.ToolCallCount != 250 {
+		t.Errorf("REST view counts %d, want 250", got.ToolCallCount)
+	}
+}

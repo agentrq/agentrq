@@ -59,6 +59,7 @@ const TASK_FIELDS = [
   'cronSchedule',
   'eventId',
   'workflowId',
+  'toolCallCount',
 ];
 
 /**

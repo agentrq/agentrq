@@ -60,6 +60,8 @@ type (
 		Attachments datatypes.JSON
 		Messages    []Message  `gorm:"foreignKey:TaskID"`
 		ToolCalls   []ToolCall `gorm:"foreignKey:TaskID"`
+		// ToolCallCount counts every tool call when ToolCalls holds only the latest.
+		ToolCallCount int64 `gorm:"-"`
 
 		CronSchedule string `gorm:"type:varchar(64)"`
 		ParentID     int64  `gorm:"index:idx_tasks_parent_id;uniqueIndex:idx_tasks_cron_run,priority:1,where:parent_id <> 0"`
@@ -101,9 +103,9 @@ type (
 	// human verdict. This is the only place auto-allowed calls are recorded —
 	// they otherwise bypass the message thread entirely.
 	ToolCall struct {
-		ID           int64 `gorm:"primaryKey;autoIncrement:false"`
+		ID           int64 `gorm:"primaryKey;autoIncrement:false;index:idx_tool_calls_task_id_id,priority:2"`
 		CreatedAt    time.Time
-		TaskID       int64  `gorm:"index:idx_tool_calls_task_id"`
+		TaskID       int64  `gorm:"index:idx_tool_calls_task_id_id,priority:1"`
 		WorkspaceID  int64  `gorm:"index:idx_tool_calls_workspace_id"`
 		ToolName     string `gorm:"type:varchar(128)"`
 		Description  string `gorm:"type:text"`

@@ -72,6 +72,26 @@ func FromHTTPRequestToGetTaskRequestEntity(c *fiber.Ctx) *entity.GetTaskRequest 
 	return &entity.GetTaskRequest{WorkspaceID: workspaceID, TaskID: taskID}
 }
 
+func FromHTTPRequestToListTaskToolCallsRequestEntity(c *fiber.Ctx) *entity.ListTaskToolCallsRequest {
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	var before int64
+	if s := c.Query("before"); s != "" {
+		if before = monoflake.IDFromBase62(s).Int64(); before == 0 {
+			return nil
+		}
+	}
+	if workspaceID == 0 || taskID == 0 {
+		return nil
+	}
+	return &entity.ListTaskToolCallsRequest{WorkspaceID: workspaceID, TaskID: taskID, Before: before, Limit: c.QueryInt("limit", 0)}
+}
+
+func FromListTaskToolCallsResponseEntityToHTTPResponse(rs *entity.ListTaskToolCallsResponse) []byte {
+	payload, _ := json.Marshal(view.ListTaskToolCallsResponse{ToolCalls: fromEntityToolCallsToView(rs.ToolCalls)})
+	return payload
+}
+
 func FromGetTaskResponseEntityToHTTPResponse(rs *entity.GetTaskResponse) []byte {
 	transitions := make([]view.TaskStateTransition, len(rs.StateTransitions))
 	for i, tr := range rs.StateTransitions {
@@ -395,6 +415,7 @@ func FromEntityTaskToView(t entity.Task) view.Task {
 		Attachments:      fromEntityAttachmentsToView(t.Attachments),
 		Messages:         fromEntityMessagesToView(t.Messages),
 		ToolCalls:        fromEntityToolCallsToView(t.ToolCalls),
+		ToolCallCount:    t.ToolCallCount,
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,
@@ -533,6 +554,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 		Attachments:      atts,
 		Messages:         msgs,
 		ToolCalls:        toolCalls,
+		ToolCallCount:    t.ToolCallCount,
 		CronSchedule:     t.CronSchedule,
 		SortOrder:        t.SortOrder,
 		AllowAllCommands: t.AllowAllCommands,

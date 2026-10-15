@@ -106,7 +106,7 @@
                       class="px-1.5 rounded-md text-[8px] font-black uppercase tracking-tighter transition-all flex items-center gap-1 justify-center">
                 <span class="hidden @min-[40rem]:inline">Trajectory</span>
                 <svg class="@min-[40rem]:hidden w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 1021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.929a2.548 2.548 0 00-3.586-3.586l-6.837 5.63m5.108-.929l-4.655 5.653" /></svg>
-                <span v-if="sortedToolCalls.length > 0" class="min-w-[13px] h-3 px-1 rounded-full bg-gray-900 dark:bg-white text-white dark:text-black text-[7px] flex items-center justify-center font-black">{{ sortedToolCalls.length }}</span>
+                <span v-if="toolCallTotal > 0" class="min-w-[13px] h-3 px-1 rounded-full bg-gray-900 dark:bg-white text-white dark:text-black text-[7px] flex items-center justify-center font-black">{{ toolCallTotal }}</span>
               </button>
             </div>
 
@@ -725,7 +725,9 @@
     </div>
 
     <!-- Tool call trajectory (replaces the chat area in place) -->
-    <TrajectoryPanel v-else :messages="sortedMessages" :tool-calls="sortedToolCalls" />
+    <TrajectoryPanel v-else :messages="trajectoryMessages" :tool-calls="sortedToolCalls"
+                     :earlier-count="toolCallTotal - sortedToolCalls.length" :loading-earlier="loadingEarlierToolCalls"
+                     @load-earlier="loadEarlierToolCalls" />
 
     <!-- Reply Box -->
     <footer v-if="activeView === 'chat' && !workspace.archivedAt" class="px-1 @min-[40rem]:px-4 py-2 @min-[40rem]:py-4 @min-[48rem]:pb-0 border-t border-gray-100 dark:border-zinc-800 shrink-0 z-20 bg-white dark:bg-zinc-900/50">
@@ -990,7 +992,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1011,7 +1013,7 @@ import {
   planProgress,
   telemetryText,
 } from '../composables/useAgentTelemetry';
-import { belongsInThread, recentToolCalls } from '../composables/useTrajectory';
+import { belongsInThread, messagesSince, recentToolCalls } from '../composables/useTrajectory';
 import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
@@ -1530,6 +1532,38 @@ const sortedToolCalls = computed(() => {
   if (!task.value || !task.value.toolCalls) return [];
   return [...task.value.toolCalls].sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
 });
+
+// A task arrives with only its latest tool calls (#921); the rest page in.
+const TOOL_CALLS_PAGE = 200;
+const toolCallTotal = computed(() => Math.max(task.value?.toolCallCount || 0, sortedToolCalls.value.length));
+const trajectoryMessages = computed(() =>
+  toolCallTotal.value > sortedToolCalls.value.length
+    ? messagesSince(sortedMessages.value, sortedToolCalls.value[0]?.createdAt)
+    : sortedMessages.value
+);
+const loadingEarlierToolCalls = ref(false);
+
+async function loadEarlierToolCalls() {
+  const forTask = taskId.value;
+  // No call loaded yet (a cached first frame) asks for the latest page. The
+  // button is disabled while a page loads, so one is in flight at a time.
+  const before = sortedToolCalls.value[0]?.id;
+  loadingEarlierToolCalls.value = true;
+  try {
+    const res = await listTaskToolCalls(workspaceId.value, forTask, { before, limit: TOOL_CALLS_PAGE });
+    if (taskId.value !== forTask) return;
+    const earlier = res.toolCalls;
+    let merged = mergeTaskUpdate(task.value, { ...task.value, toolCalls: earlier });
+    // A short page is the first one: nothing older is left to count.
+    if (earlier.length < TOOL_CALLS_PAGE) merged = { ...merged, toolCallCount: merged.toolCalls.length };
+    task.value = merged;
+    cacheTask(sharedCache(), merged);
+  } catch (err) {
+    notifyError('Failed to load earlier tool calls: ' + err.message);
+  } finally {
+    loadingEarlierToolCalls.value = false;
+  }
+}
 
 watch(() => sortedMessages.value.length, (count) => {
   if (count === 0 && task.value?.body) {

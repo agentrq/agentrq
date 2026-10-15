@@ -140,6 +140,18 @@ export async function getTask(workspaceId, taskId) {
   return res.json();
 }
 
+// A page of a task's tool calls made before the call `before`, oldest first. A
+// task is read with only its latest; this pages in the rest.
+export async function listTaskToolCalls(workspaceId, taskId, { before = '', limit = 0 } = {}) {
+  const params = new URLSearchParams();
+  if (before) params.append('before', before);
+  if (limit) params.append('limit', limit);
+  const query = params.toString();
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/tool-calls${query ? `?${query}` : ''}`);
+  if (!res.ok) throw new Error('Failed to fetch tool calls');
+  return res.json();
+}
+
 // The trailing eventId/workflowId are mutually exclusive: they are the two
 // forms of "what fires when this completes", and the form only lets one be set.
 // panoDocId links the task to a Pano doc as it is created.

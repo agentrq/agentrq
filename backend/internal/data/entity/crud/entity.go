@@ -324,6 +324,7 @@ type (
 		Attachments           []Attachment
 		Messages              []Message
 		ToolCalls             []ToolCall
+		ToolCallCount         int64
 		CronSchedule          string
 		ParentID              int64
 		SortOrder             float64
@@ -357,6 +358,20 @@ type (
 		Task             Task
 		StateTransitions []TaskStateTransition
 		Timing           TaskTiming
+	}
+
+	// ListTaskToolCallsRequest pages a task's tool calls: up to Limit made
+	// before the call Before, or the latest when Before is 0.
+	ListTaskToolCallsRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		UserID      string
+		Before      int64
+		Limit       int
+	}
+
+	ListTaskToolCallsResponse struct {
+		ToolCalls []ToolCall
 	}
 
 	// TaskStateTransition is one change of a task's status. FromState is ""

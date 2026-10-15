@@ -1409,7 +1409,7 @@ paths:
       - $ref: '#/components/parameters/TaskId'
     get:
       tags: [Tasks]
-      summary: Get a task, with its messages, tool calls and status history
+      summary: Get a task, with its messages, latest tool calls and status history
       responses:
         '200':
           description: OK
@@ -1422,6 +1422,39 @@ paths:
       summary: Delete a task
       responses:
         '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
+  /workspaces/{id}/tasks/{taskID}/tool-calls:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      summary: Page a task's tool calls, older than the latest ones a task is read with
+      parameters:
+        - name: before
+          in: query
+          required: false
+          schema: { type: string }
+          description: The id of a tool call; only calls made before it are returned. Leave it out for the latest.
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, maximum: 500 }
+          description: How many tool calls to return; larger values are capped at 500. Leave it out, or 0, for 200.
+      responses:
+        '200':
+          description: The calls, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [toolCalls]
+                properties:
+                  toolCalls:
+                    type: array
+                    items: { $ref: '#/components/schemas/ToolCall' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
@@ -3117,7 +3150,12 @@ components:
           items: { $ref: '#/components/schemas/Message' }
         toolCalls:
           type: array
+          description: The latest tool calls, oldest first; page in the rest with the tool-calls route.
           items: { $ref: '#/components/schemas/ToolCall' }
+        toolCallCount:
+          type: integer
+          format: int64
+          description: Every tool call the task has made, when it is read with its latest ones.
         cronSchedule:
           type: string
           description: |

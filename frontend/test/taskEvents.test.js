@@ -119,3 +119,70 @@ describe('upsertToolCall', () => {
     expect(upsertToolCall(undefined, call())).toBeNull()
   })
 })
+
+// A task is read with only its latest tool calls (#921), and older pages load
+// on demand: a merge must keep every page either side holds.
+describe('mergeTaskUpdate and paged tool calls', () => {
+  const at = (minute) => `2026-10-15T10:${String(minute).padStart(2, '0')}:00Z`
+  const tc = (id, minute, overrides = {}) => ({ id, createdAt: at(minute), status: 'auto_allowed', ...overrides })
+
+  it('keeps the older pages on screen when the latest page arrives', () => {
+    const current = task({ toolCalls: [tc('a', 1), tc('b', 2), tc('c', 3)], toolCallCount: 3 })
+    const incoming = task({ toolCalls: [tc('c', 3, { status: 'allowed' }), tc('d', 4)], toolCallCount: 4 })
+
+    const merged = mergeTaskUpdate(current, incoming)
+
+    expect(merged.toolCalls.map((c) => c.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(merged.toolCalls[2].status).toBe('allowed')
+    expect(merged.toolCallCount).toBe(4)
+  })
+
+  it('puts an older page before the calls on screen', () => {
+    const merged = mergeTaskUpdate(task({ toolCalls: [tc('c', 3)], toolCallCount: 3 }), task({ toolCalls: [tc('a', 1), tc('b', 2)] }))
+
+    expect(merged.toolCalls.map((c) => c.id)).toEqual(['a', 'b', 'c'])
+    expect(merged.toolCallCount).toBe(3)
+  })
+
+  it('keeps the count an event without tool calls does not carry', () => {
+    const { toolCalls, toolCallCount, ...row } = task({ status: 'blocked' })
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCallCount).toBeUndefined()
+
+    const merged = mergeTaskUpdate(task({ toolCallCount: 900 }), row)
+
+    expect(merged.toolCallCount).toBe(900)
+    expect(merged.toolCalls).toHaveLength(1)
+  })
+
+  it('counts no tool calls when neither side has any', () => {
+    const merged = mergeTaskUpdate(task({ toolCalls: undefined }), task({ toolCalls: undefined }))
+
+    expect(merged.toolCalls).toBeUndefined()
+    expect(merged).not.toHaveProperty('toolCallCount')
+  })
+})
+
+describe('upsertToolCall and the count', () => {
+  const call = (overrides = {}) => ({ id: 't9', taskId: 'task-1', toolName: 'Bash', createdAt: '2026-10-15T10:09:00Z', ...overrides })
+
+  it('counts a new call', () => {
+    expect(upsertToolCall(task({ toolCallCount: 300 }), call()).toolCallCount).toBe(301)
+    expect(upsertToolCall(task(), call()).toolCallCount).toBe(2)
+  })
+
+  it('does not count a call it replaces', () => {
+    const current = task({ toolCalls: [call()], toolCallCount: 300 })
+
+    expect(upsertToolCall(current, call({ status: 'allowed' })).toolCallCount).toBe(300)
+  })
+
+  // Its page is not loaded: appended, it would sit out of order and be taken
+  // for the oldest loaded call, skipping the page before it.
+  it('leaves an update to a call on a page not loaded yet for that page', () => {
+    const current = task({ toolCalls: [call({ id: 't5', createdAt: '2026-10-15T10:05:00Z' })], toolCallCount: 300 })
+
+    expect(upsertToolCall(current, call({ id: 't1', createdAt: '2026-10-15T10:01:00Z' }))).toBe(current)
+    expect(upsertToolCall(current, call()).toolCallCount).toBe(301)
+  })
+})

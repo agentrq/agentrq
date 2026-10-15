@@ -6,6 +6,7 @@ package base
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -736,10 +737,9 @@ func TestRepository_ListTasksByTriggerID(t *testing.T) {
 	}
 }
 
-// A task's tool calls are what the trajectory's tool lane is drawn from, and
-// anything rebuilding a task without GetTask's preloads has to load them
-// through here. Scoped to the task and ordered oldest-first, the way the
-// trajectory reads them.
+// A task's tool calls are what the trajectory's tool lane is drawn from. They
+// page backwards from the latest, scoped to the task, and each page reads
+// oldest-first, the way the trajectory does.
 func TestRepository_ListToolCalls(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -752,32 +752,51 @@ func TestRepository_ListToolCalls(t *testing.T) {
 	taskID := int64(42)
 	base := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
 
-	db.Create(&model.ToolCall{ID: 2, TaskID: taskID, WorkspaceID: 10, ToolName: "Edit", CreatedAt: base.Add(time.Minute)})
-	db.Create(&model.ToolCall{ID: 1, TaskID: taskID, WorkspaceID: 10, ToolName: "Read", CreatedAt: base})
-	db.Create(&model.ToolCall{ID: 3, TaskID: 99, WorkspaceID: 10, ToolName: "Bash", CreatedAt: base})
+	for i := int64(5); i >= 1; i-- {
+		db.Create(&model.ToolCall{ID: i, TaskID: taskID, WorkspaceID: 10, ToolName: "Read", CreatedAt: base.Add(time.Duration(i) * time.Minute)})
+	}
+	db.Create(&model.ToolCall{ID: 6, TaskID: 99, WorkspaceID: 10, ToolName: "Bash", CreatedAt: base})
 
-	calls, err := repo.ListToolCalls(ctx, taskID)
-	if err != nil {
-		t.Fatalf("ListToolCalls: %v", err)
+	ids := func(tcs []model.ToolCall) []int64 {
+		res := make([]int64, len(tcs))
+		for i, tc := range tcs {
+			res[i] = tc.ID
+		}
+		return res
 	}
-	if len(calls) != 2 {
-		t.Fatalf("expected 2 tool calls for task %d, got %d", taskID, len(calls))
-	}
-	if calls[0].ToolName != "Read" || calls[1].ToolName != "Edit" {
-		t.Errorf("expected oldest-first order, got %s then %s", calls[0].ToolName, calls[1].ToolName)
-	}
-	for _, tc := range calls {
-		if tc.TaskID != taskID {
-			t.Errorf("tool call from another task leaked in: taskID %d", tc.TaskID)
+	for _, tc := range []struct {
+		name   string
+		before int64
+		limit  int
+		want   []int64
+	}{
+		{"the latest", 0, 2, []int64{4, 5}},
+		{"the page before", 4, 2, []int64{2, 3}},
+		{"the last, short page", 2, 2, []int64{1}},
+		{"nothing before the first", 1, 2, []int64{}},
+		{"all, when the limit allows", 0, 10, []int64{1, 2, 3, 4, 5}},
+	} {
+		calls, err := repo.ListToolCalls(ctx, taskID, tc.before, tc.limit)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got := ids(calls); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
 		}
 	}
 
-	empty, err := repo.ListToolCalls(ctx, 1234)
+	empty, err := repo.ListToolCalls(ctx, 1234, 0, 10)
 	if err != nil {
 		t.Fatalf("ListToolCalls on a task with none: %v", err)
 	}
 	if len(empty) != 0 {
 		t.Errorf("expected no tool calls, got %d", len(empty))
+	}
+
+	sqlDB, _ := db.DB()
+	_ = sqlDB.Close()
+	if _, err := repo.ListToolCalls(ctx, taskID, 0, 10); err == nil {
+		t.Error("ListToolCalls on a closed database returned no error")
 	}
 }
 

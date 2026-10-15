@@ -262,6 +262,20 @@ export function buildTrajectory(messages, toolCalls) {
 }
 
 /**
+ * The messages to trace beside a task's loaded tool calls, from `since` on.
+ * While older calls are unloaded, earlier messages wait for them: a permission
+ * request folds into its call only once the call is loaded.
+ *
+ * @param {Array<object>} messages
+ * @param {string|null} since the oldest loaded call's createdAt, or null for all
+ */
+export function messagesSince(messages, since) {
+  if (!since) return messages;
+  const from = new Date(since).getTime();
+  return messages.filter((m) => new Date(m.createdAt).getTime() >= from);
+}
+
+/**
  * The tab an entry opens on.
  *
  * A tool's summary is the interesting part — what ran, and whether it was

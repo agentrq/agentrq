@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -163,7 +164,7 @@ type Repository interface {
 
 	// ToolCall
 	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
-	ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error)
+	ListToolCalls(ctx context.Context, taskID, before int64, limit int) ([]model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
 	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
@@ -582,7 +583,21 @@ func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, m
 }
 
 func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error) {
-	return getTask(r.conn(ctx).Preload("Messages").Preload("ToolCalls"), workspaceID, taskID, userID)
+	t, err := getTask(r.conn(ctx).Preload("Messages"), workspaceID, taskID, userID)
+	if err != nil {
+		return t, err
+	}
+	if t.ToolCalls, err = r.ListToolCalls(ctx, taskID, 0, TaskToolCallsPage); err != nil {
+		return model.Task{}, err
+	}
+	// Counted only when the page is full; a shorter page is all of them.
+	t.ToolCallCount = int64(len(t.ToolCalls))
+	if len(t.ToolCalls) == TaskToolCallsPage {
+		if err := r.conn(ctx).Model(&model.ToolCall{}).Where("task_id = ?", taskID).Count(&t.ToolCallCount).Error; err != nil {
+			return model.Task{}, err
+		}
+	}
+	return t, nil
 }
 
 func (r *repository) GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error) {
@@ -828,7 +843,7 @@ func (r *repository) UpdateTask(ctx context.Context, t model.Task, columns ...st
 	if err != nil {
 		return model.Task{}, err
 	}
-	res.Messages, res.ToolCalls = t.Messages, t.ToolCalls
+	res.Messages, res.ToolCalls, res.ToolCallCount = t.Messages, t.ToolCalls, t.ToolCallCount
 	return res, nil
 }
 
@@ -915,15 +930,23 @@ func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall) (mod
 	return tc, nil
 }
 
-// ListToolCalls returns a task's tool calls in the order they were made.
-//
-// The task view carries them alongside the messages, so anything rebuilding a
-// task outside GetTask — which preloads both — has to load them itself, or it
-// publishes a task that looks like it never called a tool.
-func (r *repository) ListToolCalls(ctx context.Context, taskID int64) ([]model.ToolCall, error) {
+// TaskToolCallsPage is how many tool calls a task is read with; the rest are
+// paged in with ListToolCalls (#921).
+const TaskToolCallsPage = 200
+
+// ListToolCalls returns up to limit of a task's tool calls made before the one
+// with id before, or its latest when before is 0, oldest first.
+func (r *repository) ListToolCalls(ctx context.Context, taskID, before int64, limit int) ([]model.ToolCall, error) {
+	q := r.conn(ctx).Where("task_id = ?", taskID)
+	if before != 0 {
+		q = q.Where("id < ?", before)
+	}
 	var tcs []model.ToolCall
-	err := r.conn(ctx).Where("task_id = ?", taskID).Order("created_at asc").Find(&tcs).Error
-	return tcs, err
+	if err := q.Order("id desc").Limit(limit).Find(&tcs).Error; err != nil {
+		return nil, err
+	}
+	slices.Reverse(tcs)
+	return tcs, nil
 }
 
 func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error) {

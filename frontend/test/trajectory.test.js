@@ -14,6 +14,7 @@ import {
   defaultDetailTab,
   filterTrajectory,
   trajectoryLaneCounts,
+  messagesSince,
 } from '../src/composables/useTrajectory'
 
 const at = (minutes) => new Date(Date.UTC(2026, 8, 4, 10, minutes)).toISOString()
@@ -479,5 +480,18 @@ describe('toolCallKind', () => {
     expect(toolCallKind({ toolName: 'Grep' })).toBe('search')
     expect(toolCallKind({ toolName: 'mcp__x__y' })).toBe('tool')
     expect(toolCallKind()).toBe('tool')
+  })
+})
+
+describe('messagesSince', () => {
+  const messages = [{ id: 'm1', createdAt: at(1) }, { id: 'm2', createdAt: at(5) }, { id: 'm3', createdAt: at(9) }]
+
+  it('keeps the messages from the oldest loaded tool call on', () => {
+    expect(messagesSince(messages, at(5)).map((m) => m.id)).toEqual(['m2', 'm3'])
+  })
+
+  it('keeps them all without a start', () => {
+    expect(messagesSince(messages, null)).toBe(messages)
+    expect(messagesSince(messages, undefined)).toBe(messages)
   })
 })

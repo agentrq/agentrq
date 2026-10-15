@@ -44,6 +44,7 @@ const (
 	_routePathEvents      = "/workspaces/:id/events"
 	_routePathAttachment  = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
 	_routePathCounts      = "/workspaces/:id/tasks/counts"
+	_routePathToolCalls   = "/workspaces/:id/tasks/:taskID/tool-calls"
 )
 
 func (h *handler) registerTaskRoutes() error {
@@ -53,6 +54,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Get(_routePathTasks, h.listTasks())
 	h.router.Get(_routePathCounts, h.getWorkspaceTaskCounts())
 	h.router.Get(_routePathTask, h.getTask())
+	h.router.Get(_routePathToolCalls, h.listTaskToolCalls())
 	h.router.Post(_routePathRespond, h.respondToTask())
 	h.router.Post(_routePathFork, h.forkTask())
 	h.router.Post(_routePathReply, h.replyToTask())
@@ -276,6 +278,29 @@ func (h *handler) getTask() fiber.Handler {
 		}
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromGetTaskResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) listTaskToolCalls() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToListTaskToolCallsRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.ListTaskToolCalls(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to list task tool calls")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromListTaskToolCallsResponseEntityToHTTPResponse(rs))
 	}
 }
 

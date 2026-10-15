@@ -17,21 +17,38 @@
  * the product removes a message or a tool call from a task, so the only way an
  * arriving list can be shorter than the one on screen is that it was not
  * loaded.
+ *
+ * Tool calls go further: a task is read with only its latest (#921), so the
+ * merge keeps every call either side holds — older pages included.
  */
 
-/** The task's collection-valued relations, in the shape the API sends them. */
-const TASK_RELATIONS = ['messages', 'toolCalls'];
+/** The task's relations an arriving copy replaces whole, when it has them. */
+const TASK_RELATIONS = ['messages'];
 
 function hasEntries(value) {
   return Array.isArray(value) && value.length > 0;
+}
+
+function byCreatedAt(a, b) {
+  return new Date(a.createdAt) - new Date(b.createdAt);
+}
+
+/** Every call either list holds, the arriving copy of each winning, oldest first. */
+function unionToolCalls(held, arriving) {
+  if (!hasEntries(held)) return arriving;
+  if (!hasEntries(arriving)) return held;
+  const byId = new Map(held.map((c) => [c.id, c]));
+  for (const c of arriving) byId.set(c.id, c);
+  return [...byId.values()].sort(byCreatedAt);
 }
 
 /**
  * The task to render, given the one on screen and the one an event carried.
  *
  * Scalar fields always come from the event — status, title and the rest are
- * exactly what it is reporting. Relations come from the event too, unless it
- * carries none and the current task does.
+ * exactly what it is reporting. Messages come from the event too, unless it
+ * carries none and the current task does; tool calls are the union of both,
+ * and toolCallCount the larger count.
  *
  * @param {object|null} current  the task the view is holding, if any
  * @param {object|null} incoming the task payload the event carried
@@ -49,12 +66,16 @@ export function mergeTaskUpdate(current, incoming) {
       merged[relation] = current[relation];
     }
   }
+  const toolCalls = unionToolCalls(current.toolCalls, incoming.toolCalls);
+  if (toolCalls !== undefined) merged.toolCalls = toolCalls;
+  const count = Math.max(current.toolCallCount || 0, incoming.toolCallCount || 0, toolCalls?.length || 0);
+  if (count) merged.toolCallCount = count;
   return merged;
 }
 
 /**
  * The task with one tool call put in its place: replaced when the task already
- * lists it (a permission answered), appended when it is new.
+ * lists it (a permission answered), appended and counted when it is new.
  *
  * A `toolCall.updated` event carries that one call and nothing else, so a run
  * of thousands never resends the calls the client already has (#921).
@@ -67,6 +88,9 @@ export function upsertToolCall(task, call) {
   if (!task || !call?.id || String(call.taskId) !== String(task.id)) return task ?? null;
   const calls = Array.isArray(task.toolCalls) ? task.toolCalls : [];
   const at = calls.findIndex((c) => c.id === call.id);
-  const toolCalls = at === -1 ? [...calls, call] : calls.map((c, i) => (i === at ? call : c));
-  return { ...task, toolCalls };
+  if (at !== -1) return { ...task, toolCalls: calls.map((c, i) => (i === at ? call : c)) };
+  // A call older than every loaded one is on a page not loaded yet; it comes with it.
+  const unloaded = (task.toolCallCount ?? 0) > calls.length;
+  if (unloaded && calls.length && new Date(call.createdAt) < new Date(calls[0].createdAt)) return task;
+  return { ...task, toolCalls: [...calls, call], toolCallCount: (task.toolCallCount ?? calls.length) + 1 };
 }

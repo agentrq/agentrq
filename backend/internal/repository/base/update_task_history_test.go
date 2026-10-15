@@ -68,7 +68,8 @@ func openHistoryDB(t *testing.T, d gorm.Dialector, cfg *gorm.Config) *gorm.DB {
 }
 
 // seedLongTask creates the task dtTaskID with historyRows messages and tool
-// calls, and returns it as GetTask loads it: with all of them.
+// calls, and returns it with all of them, though GetTask loads only the latest
+// tool calls: the saves under test must not write any history they are handed.
 func seedLongTask(t *testing.T, db *gorm.DB) model.Task {
 	t.Helper()
 	ctx := context.Background()
@@ -93,9 +94,13 @@ func seedLongTask(t *testing.T, db *gorm.DB) model.Task {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if len(task.Messages) != historyRows || len(task.ToolCalls) != historyRows {
-		t.Fatalf("loaded %d messages and %d tool calls, want %d of each", len(task.Messages), len(task.ToolCalls), historyRows)
+	if len(task.Messages) != historyRows || len(task.ToolCalls) != TaskToolCallsPage || task.ToolCallCount != historyRows {
+		t.Fatalf("loaded %d messages and %d of %d tool calls, want %d, and %d of %d", len(task.Messages), len(task.ToolCalls), task.ToolCallCount, historyRows, TaskToolCallsPage, historyRows)
 	}
+	if first := task.ToolCalls[0].ID; first != historyRows-TaskToolCallsPage+1 {
+		t.Fatalf("first loaded tool call = %d, want the latest page", first)
+	}
+	task.ToolCalls = calls
 	return task
 }
 
@@ -156,8 +161,8 @@ func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
 			if got.Status != "completed" {
 				t.Errorf("status = %q, want completed", got.Status)
 			}
-			if len(got.Messages) != historyRows || len(got.ToolCalls) != historyRows {
-				t.Errorf("after the save: %d messages and %d tool calls, want %d of each", len(got.Messages), len(got.ToolCalls), historyRows)
+			if len(got.Messages) != historyRows || got.ToolCallCount != historyRows {
+				t.Errorf("after the save: %d messages and %d tool calls, want %d of each", len(got.Messages), got.ToolCallCount, historyRows)
 			}
 		})
 	}

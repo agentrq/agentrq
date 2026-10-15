@@ -594,11 +594,28 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
     }),
     tool({
       name: 'getTask',
-      description: 'One task in full, including its conversation.',
+      description:
+        'One task in full, including its conversation. It carries only its latest tool calls; ' +
+        'toolCallCount counts them all, and listTaskToolCalls pages in the rest.',
       properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },
       required: ['workspaceId', 'taskId'],
       readOnly: true,
       run: ({ workspaceId, taskId }) => api.getTask(workspaceId, taskId),
+    }),
+    tool({
+      name: 'listTaskToolCalls',
+      description:
+        "A page of a task's tool calls, oldest first: those made before the call `before`, or " +
+        'the latest when it is omitted.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        taskId: TASK_ID,
+        before: str('The id of a tool call; only calls made before it are returned.'),
+        limit: int('How many to return, at most 500. Defaults to 200.'),
+      },
+      required: ['workspaceId', 'taskId'],
+      readOnly: true,
+      run: ({ workspaceId, taskId, before, limit }) => api.listTaskToolCalls(workspaceId, taskId, { before, limit }),
     }),
     tool({
       name: 'createTask',

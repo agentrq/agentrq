@@ -210,22 +210,24 @@ type (
 		CreatedAt time.Time `json:"createdAt"`
 		UpdatedAt time.Time `json:"updatedAt"`
 
-		WorkspaceID      string       `json:"workspaceId"`
-		CreatedBy        string       `json:"createdBy"`
-		Assignee         string       `json:"assignee"`
-		Status           string       `json:"status"`
-		Title            string       `json:"title"`
-		Body             string       `json:"body"`
-		Response         string       `json:"response,omitempty"`
-		ReplyText        string       `json:"replyText,omitempty"`
-		Attachments      []Attachment `json:"attachments,omitempty"`
-		Metadata         any          `json:"metadata,omitempty"`
-		Messages         []Message    `json:"messages,omitempty"`
-		ToolCalls        []ToolCall   `json:"toolCalls,omitempty"`
-		CronSchedule     string       `json:"cronSchedule,omitempty"`
-		ParentID         string       `json:"parentId,omitempty"`
-		SortOrder        float64      `json:"sortOrder"`
-		AllowAllCommands bool         `json:"allowAllCommands"`
+		WorkspaceID string       `json:"workspaceId"`
+		CreatedBy   string       `json:"createdBy"`
+		Assignee    string       `json:"assignee"`
+		Status      string       `json:"status"`
+		Title       string       `json:"title"`
+		Body        string       `json:"body"`
+		Response    string       `json:"response,omitempty"`
+		ReplyText   string       `json:"replyText,omitempty"`
+		Attachments []Attachment `json:"attachments,omitempty"`
+		Metadata    any          `json:"metadata,omitempty"`
+		Messages    []Message    `json:"messages,omitempty"`
+		ToolCalls   []ToolCall   `json:"toolCalls,omitempty"`
+		// ToolCallCount counts them all; a task carries only its latest.
+		ToolCallCount    int64   `json:"toolCallCount,omitempty"`
+		CronSchedule     string  `json:"cronSchedule,omitempty"`
+		ParentID         string  `json:"parentId,omitempty"`
+		SortOrder        float64 `json:"sortOrder"`
+		AllowAllCommands bool    `json:"allowAllCommands"`
 		// ClearContext asks the backend to send /clear down the agent's
 		// terminal before it pushes this task, so the task starts on a clean
 		// context rather than on whatever the last one left behind.
@@ -264,6 +266,10 @@ type (
 		Task             Task                  `json:"task"`
 		StateTransitions []TaskStateTransition `json:"stateTransitions"`
 		Timing           TaskTiming            `json:"timing"`
+	}
+
+	ListTaskToolCallsResponse struct {
+		ToolCalls []ToolCall `json:"toolCalls"`
 	}
 
 	TaskStateTransition struct {
