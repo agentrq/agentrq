@@ -771,7 +771,9 @@ func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, 
 		if err != nil && !inserted {
 			return err
 		}
-		if err := tx.Save(&t).Error; err != nil {
+		// Only the task row: messages and tool calls have their own writes, and
+		// upserting every one of them here broke past ~4,095 tool calls (#921).
+		if err := tx.Omit(clause.Associations).Save(&t).Error; err != nil {
 			return err
 		}
 		if inserted {
