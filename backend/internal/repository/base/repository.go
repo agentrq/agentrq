@@ -58,6 +58,9 @@ type Repository interface {
 	// neither.
 	CreateTaskWithMessages(ctx context.Context, t model.Task, msgs []model.Message) (model.Task, error)
 	GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
+	// GetTaskRow is GetTask without the messages and tool calls, for a caller
+	// that only changes the task row (#921).
+	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
 	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
@@ -578,12 +581,16 @@ func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, m
 }
 
 func (r *repository) GetTask(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error) {
+	return getTask(r.conn(ctx).Preload("Messages").Preload("ToolCalls"), workspaceID, taskID, userID)
+}
+
+func (r *repository) GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error) {
+	return getTask(r.conn(ctx), workspaceID, taskID, userID)
+}
+
+func getTask(db *gorm.DB, workspaceID, taskID int64, userID int64) (model.Task, error) {
 	var t model.Task
-	err := r.conn(ctx).
-		Preload("Messages").
-		Preload("ToolCalls").
-		Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).
-		First(&t).Error
+	err := db.Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID).First(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.Task{}, ErrNotFound
 	}

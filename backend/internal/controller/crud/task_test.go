@@ -425,7 +425,7 @@ func TestRespondToTask_Allow(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100)) // attachment ID (always server-generated)
 	e.idgen.EXPECT().NextID().Return(int64(101)) // message ID
@@ -453,7 +453,7 @@ func TestRespondToTask_AllowAll(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{task}, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
@@ -478,7 +478,7 @@ func TestRespondToTask_Reject(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "rejected"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.idgen.EXPECT().NextID().Return(int64(100))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
@@ -504,7 +504,7 @@ func TestUpdateTaskStatus_Success(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "completed"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 
 	resp, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
@@ -523,7 +523,7 @@ func TestUpdateTaskStatus_CronRejected(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
 		WorkspaceID: 1, TaskID: 10, Status: "ongoing", UserID: testUserIDStr,
@@ -540,7 +540,7 @@ func TestUpdateTaskStatus_OngoingConflict(t *testing.T) {
 	ongoing := model.Task{ID: 11, WorkspaceID: 1, Status: "ongoing"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().ListTasks(gomock.Any(), gomock.Any(), testUserID).Return([]model.Task{ongoing}, nil)
 
 	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
@@ -558,7 +558,7 @@ func TestUpdateTaskStatus_ToBlocked(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "blocked"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 	// Default pubsub expectation is already in newTestController
 
@@ -578,7 +578,7 @@ func TestUpdateTaskStatus_InvalidStatus(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "notstarted"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateTaskStatus(context.Background(), entity.UpdateTaskStatusRequest{
 		WorkspaceID: 1, TaskID: 10, Status: "bad_status", UserID: testUserIDStr,
@@ -595,7 +595,7 @@ func TestUpdateTaskOrder_Success(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, SortOrder: 2.5}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 
 	resp, err := e.controller.UpdateTaskOrder(context.Background(), entity.UpdateTaskOrderRequest{
@@ -606,6 +606,53 @@ func TestUpdateTaskOrder_Success(t *testing.T) {
 	}
 	if resp.Task.SortOrder != 2.5 {
 		t.Errorf("expected sort order 2.5, got %f", resp.Task.SortOrder)
+	}
+}
+
+// ── UpdateTaskAllowAllCommands ────────────────────────────────────────────────
+
+func TestUpdateTaskAllowAllCommands(t *testing.T) {
+	errDB := errors.New("database unavailable")
+	req := entity.UpdateTaskAllowAllCommandsRequest{WorkspaceID: 1, TaskID: 10, AllowAllCommands: true, UserID: testUserIDStr}
+
+	t.Run("saves the row with the new setting", func(t *testing.T) {
+		e := newTestController(t)
+		e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+		e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1}, nil)
+		e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Task) (model.Task, error) {
+			return m, nil
+		})
+		resp, err := e.controller.UpdateTaskAllowAllCommands(context.Background(), req)
+		if err != nil || !resp.Task.AllowAllCommands {
+			t.Fatalf("got %+v, %v", resp, err)
+		}
+	})
+
+	cases := []struct {
+		name   string
+		expect func(e *testEnv)
+	}{
+		{"the workspace cannot be read", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(model.Workspace{}, errDB)
+		}},
+		{"the task cannot be read", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDB)
+		}},
+		{"the task cannot be saved", func(e *testEnv) {
+			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
+			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10, WorkspaceID: 1}, nil)
+			e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, errDB)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestController(t)
+			tc.expect(e)
+			if _, err := e.controller.UpdateTaskAllowAllCommands(context.Background(), req); !errors.Is(err, errDB) {
+				t.Fatalf("got %v, want the database error", err)
+			}
+		})
 	}
 }
 
@@ -620,7 +667,7 @@ func TestUpdateTaskAssignee_AgentAppendLoopNote(t *testing.T) {
 	task := model.Task{ID: 10, WorkspaceID: 1, Assignee: "human", Body: "Original body."}
 	updated := model.Task{ID: 10, WorkspaceID: 1, Assignee: "agent", Body: "Original body.\n\nBe concise."}
 
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
 
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
@@ -651,7 +698,7 @@ func TestUpdateTaskTitle_RenamesATaskInAnyStatusWithinSevenDays(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Untitled", Status: "completed", CreatedAt: time.Now().Add(-6 * 24 * time.Hour)}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		return m, nil
 	})
@@ -679,7 +726,7 @@ func TestUpdateTaskTitle_RefusesATaskOlderThanSevenDays(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Title: "Old", CreatedAt: time.Now().Add(-8 * 24 * time.Hour)}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateTaskTitle(context.Background(), entity.UpdateTaskTitleRequest{
 		WorkspaceID: 1, TaskID: 10, Title: "New", UserID: testUserIDStr,
@@ -713,11 +760,11 @@ func TestUpdateTaskTitle_PassesOnRepositoryFailures(t *testing.T) {
 		}},
 		{"the task cannot be read", func(e *testEnv) {
 			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDB)
+			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, errDB)
 		}},
 		{"the task cannot be saved", func(e *testEnv) {
 			e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-			e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(recent, nil)
+			e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(recent, nil)
 			e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, errDB)
 		}},
 	}
@@ -747,7 +794,7 @@ func TestUpdateTaskAssignee_LoopNoteIdempotent(t *testing.T) {
 	task := model.Task{ID: 11, WorkspaceID: 1, Assignee: "human", Body: bodyWithNote}
 	updated := model.Task{ID: 11, WorkspaceID: 1, Assignee: "agent", Body: bodyWithNote}
 
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(11), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(11), testUserID).Return(task, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(ws, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		if m.Body != bodyWithNote {
@@ -775,14 +822,11 @@ func TestMoveTask_Success(t *testing.T) {
 	source := activeWorkspace()
 	dest := model.Workspace{ID: 2, UserID: testUserID, Name: "dest"}
 	task := model.Task{ID: 10, WorkspaceID: 1, UserID: testUserID, Title: "t"}
-	updated := model.Task{
-		ID: 10, WorkspaceID: 2, UserID: testUserID, Title: "t",
-		ToolCalls: []model.ToolCall{{ID: 100, TaskID: 10, WorkspaceID: 1}},
-	}
+	updated := model.Task{ID: 10, WorkspaceID: 2, UserID: testUserID, Title: "t"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(source, nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(dest, nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		if m.WorkspaceID != 2 {
 			return model.Task{}, fmt.Errorf("expected task to be reassigned to workspace 2, got %d", m.WorkspaceID)
@@ -801,8 +845,9 @@ func TestMoveTask_Success(t *testing.T) {
 	if resp.Task.WorkspaceID != 2 {
 		t.Errorf("expected task moved to workspace 2, got %d", resp.Task.WorkspaceID)
 	}
-	if len(resp.Task.ToolCalls) != 1 || resp.Task.ToolCalls[0].WorkspaceID != 2 {
-		t.Errorf("expected tool call to be re-scoped to workspace 2, got %+v", resp.Task.ToolCalls)
+	// The tool calls are re-scoped in the database; the answer carries the row only.
+	if len(resp.Task.ToolCalls) != 0 {
+		t.Errorf("expected the row only, got tool calls %+v", resp.Task.ToolCalls)
 	}
 }
 
@@ -817,7 +862,7 @@ func TestMoveTask_UpdateToolCallsWorkspaceIDError(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("database unavailable"))
 
@@ -844,7 +889,7 @@ func TestMoveTask_UpdateSlackTaskThreadWorkspaceIDError(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 	e.repo.EXPECT().UpdateToolCallsWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(nil)
 	e.repo.EXPECT().UpdateSlackTaskThreadWorkspaceID(gomock.Any(), int64(10), int64(2)).Return(fmt.Errorf("database unavailable"))
@@ -903,7 +948,7 @@ func TestMoveTask_TaskNotFound(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, base.ErrNotFound)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, base.ErrNotFound)
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
 		WorkspaceID: 1, TaskID: 10, DestinationWorkspaceID: 2, UserID: testUserIDStr,
@@ -923,7 +968,7 @@ func TestMoveTask_UpdateTaskError(t *testing.T) {
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(2), testUserID).Return(model.Workspace{ID: 2, UserID: testUserID}, nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, fmt.Errorf("database unavailable"))
 
 	resp, err := e.controller.MoveTask(context.Background(), entity.MoveTaskRequest{
@@ -958,7 +1003,7 @@ func TestReplyToTask_Success(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.idgen.EXPECT().NextID().Return(int64(101))
 	e.repo.EXPECT().CreateMessage(gomock.Any(), gomock.Any()).Return(nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(task, nil)
@@ -984,7 +1029,7 @@ func TestUpdateScheduledTask_Success(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "cron", Title: "new title", CronSchedule: "0 9 * * 1"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 
 	resp, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
@@ -1005,7 +1050,7 @@ func TestUpdateScheduledTask_NotStartedToCron(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "cron", Title: "scheduled title", CronSchedule: "0 9 * * 1"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		if m.Status != "cron" {
 			t.Errorf("expected status 'cron', got %s", m.Status)
@@ -1029,7 +1074,7 @@ func TestUpdateScheduledTask_NonCronTask_Rejected(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
 		WorkspaceID: 1, TaskID: 10, CronSchedule: "0 9 * * 1", UserID: testUserIDStr,
@@ -1044,7 +1089,7 @@ func TestUpdateScheduledTask_InvalidCron(t *testing.T) {
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
 		WorkspaceID: 1, TaskID: 10, CronSchedule: "bad cron", UserID: testUserIDStr,
@@ -1060,7 +1105,7 @@ func TestUpdateScheduledTask_AllowsSubHourlyCronWithHumanAudience(t *testing.T) 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "cron", CronSchedule: "*/15 * * * *"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, m model.Task) (model.Task, error) {
 		if m.CronSchedule != "*/15 * * * *" {
 			return model.Task{}, fmt.Errorf("expected sub-hourly cron schedule, got %s", m.CronSchedule)
@@ -1089,7 +1134,7 @@ func TestUpdateScheduledTask_RejectsSubHourlyCronWithoutHumanAudience(t *testing
 
 	task := model.Task{ID: 10, WorkspaceID: 1, Status: "cron"}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 
 	_, err := e.controller.UpdateScheduledTask(context.Background(), entity.UpdateScheduledTaskRequest{
 		WorkspaceID: 1, TaskID: 10, CronSchedule: "*/15 * * * *", UserID: testUserIDStr,
@@ -1105,7 +1150,7 @@ func TestUpdateScheduledTask_RejectsSubHourlyCronWithoutHumanAudience(t *testing
 func TestUpdateMessageMetadata_Success(t *testing.T) {
 	e := newTestController(t)
 
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, nil)
 	e.repo.EXPECT().UpdateMessageMetadata(gomock.Any(), int64(10), int64(500), gomock.Any()).Return(nil)
 
 	err := e.controller.UpdateMessageMetadata(context.Background(), entity.UpdateMessageMetadataRequest{
@@ -1259,7 +1304,7 @@ func TestRespondToTask_AttachmentOnly(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	e.idgen.EXPECT().NextID().Return(int64(200)) // attachment ID
 	e.idgen.EXPECT().NextID().Return(int64(201)) // message ID
 	e.storage.EXPECT().Save(gomock.Any(), "base64data").Return(nil)
@@ -1294,7 +1339,7 @@ func TestRespondToTask_EmptyTextAndNoAttachments(t *testing.T) {
 	updated := model.Task{ID: 10, WorkspaceID: 1, Status: "ongoing"}
 
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
-	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
 	// No CreateMessage expected — empty text + no attachments should not create a message
 	e.repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(updated, nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(updated, nil)

@@ -65,6 +65,20 @@ describe('useTaskRename', () => {
     expect(rename.saving.value).toBe(false)
   })
 
+  it('keeps the messages and tool calls the row-only answer leaves out', async () => {
+    updateTaskTitle.mockResolvedValue({ task: { id: 't1', title: 'Fix login', createdAt: createdAgo(DAY), messages: [], toolCalls: [] } })
+    const { task, rename } = setup()
+    task.value = { ...task.value, messages: [{ id: 'm1' }], toolCalls: [{ id: 'c1' }] }
+
+    rename.start()
+    rename.draft.value = 'Fix login'
+    await rename.save()
+
+    expect(task.value.title).toBe('Fix login')
+    expect(task.value.messages).toEqual([{ id: 'm1' }])
+    expect(task.value.toolCalls).toEqual([{ id: 'c1' }])
+  })
+
   it('just closes for an unchanged or empty title', async () => {
     const { rename } = setup()
     rename.start()

@@ -4,6 +4,7 @@
 
 import { computed, ref } from 'vue';
 import { updateTaskTitle } from '../api';
+import { mergeTaskUpdate } from './useTaskEvents';
 
 /**
  * How long after it was created a task can be renamed. The server enforces the
@@ -55,7 +56,8 @@ export function useTaskRename(task, workspaceId, { onError, now = Date.now }) {
     saving.value = true;
     try {
       const res = await updateTaskTitle(workspaceId.value, task.value.id, title);
-      task.value = res.task;
+      // The answer carries the task row only: keep the messages on screen.
+      task.value = mergeTaskUpdate(task.value, res.task);
       editing.value = false;
     } catch (err) {
       onError('Could not rename the task: ' + err.message);

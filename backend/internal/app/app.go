@@ -434,49 +434,7 @@ func New(cfg Config) (*App, error) {
 				return res, err
 			},
 			func(ctx context.Context, taskID int64, status string) (model.Task, error) {
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				m, err := repo.GetTask(ctx, workspaceID, taskID, uid)
-				if err != nil {
-					return model.Task{}, err
-				}
-				if m.Status == status {
-					return m, nil
-				}
-				m.Status = status
-
-				// No "Status updated to" message in the thread: the change is
-				// recorded as a state transition and shown in the task's timeline.
-				updated, err := repo.UpdateTask(ctx, m)
-				if err == nil {
-					if updated.Status == "completed" || updated.Status == "done" {
-						pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-							PubSubID: entity.PubSubTopicCRUD,
-							Event: entity.CRUDEvent{
-								Action:       entity.ActionTaskComplete,
-								WorkspaceID:  workspaceID,
-								UserID:       uid,
-								ResourceType: entity.ResourceTask,
-								ResourceID:   updated.ID,
-								Actor:        entity.ActorAgent,
-								Origin:       entity.OriginMCP,
-							},
-						})
-
-					}
-					pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-						PubSubID: entity.PubSubTopicCRUD,
-						Event: entity.CRUDEvent{
-							Action:       entity.ActionTaskUpdate,
-							WorkspaceID:  workspaceID,
-							UserID:       uid,
-							ResourceType: entity.ResourceTask,
-							ResourceID:   updated.ID,
-							Actor:        entity.ActorAgent,
-							Origin:       entity.OriginMCP,
-						},
-					})
-				}
-				return updated, err
+				return setAgentTaskStatus(ctx, repo, pubsubSvc, workspaceID, workspaceOwner, taskID, status)
 			},
 			taskAgentCtrl.Register,
 			func(ctx context.Context, taskID int64) (model.Task, error) {

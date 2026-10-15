@@ -13,9 +13,12 @@ import (
 	"github.com/mustafaturan/monoflake"
 	"gorm.io/gorm"
 
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
+	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
+	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 )
 
 // The database only checks that a task exists, so this read is what stops one
@@ -66,4 +69,80 @@ func TestWorkspaceTaskReportsStorageFailures(t *testing.T) {
 	if _, err := workspaceTask(context.Background(), repo, memParent, monoflake.ID(memUser).String(), 101); err != errRepo {
 		t.Errorf("err = %v, want %v", err, errRepo)
 	}
+}
+
+// An agent's status change reads and saves the task row only, and announces
+// the change; a completion is announced as one too.
+func TestSetAgentTaskStatus(t *testing.T) {
+	owner := monoflake.ID(memUser).String()
+	row := model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser, Status: "ongoing"}
+	published := func(ps *mock_pubsub.MockService) *[]entity.Action {
+		var actions []entity.Action
+		ps.EXPECT().Publish(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, req pubsub.PublishRequest) (*pubsub.PublishResponse, error) {
+			ev := req.Event.(entity.CRUDEvent)
+			if req.PubSubID != entity.PubSubTopicCRUD || ev.WorkspaceID != memParent || ev.UserID != memUser || ev.ResourceID != 101 || ev.Actor != entity.ActorAgent {
+				t.Errorf("published %+v", req)
+			}
+			actions = append(actions, ev.Action)
+			return nil, nil
+		}).AnyTimes()
+		return &actions
+	}
+
+	for _, tc := range []struct {
+		status string
+		want   []entity.Action
+	}{
+		{"completed", []entity.Action{entity.ActionTaskComplete, entity.ActionTaskUpdate}},
+		{"done", []entity.Action{entity.ActionTaskComplete, entity.ActionTaskUpdate}},
+		{"blocked", []entity.Action{entity.ActionTaskUpdate}},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := mock_repository.NewMockRepository(ctrl)
+			ps := mock_pubsub.NewMockService(ctrl)
+			repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
+			repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Task) (model.Task, error) {
+				return m, nil
+			})
+			actions := published(ps)
+
+			got, err := setAgentTaskStatus(context.Background(), repo, ps, memParent, owner, 101, tc.status)
+			if err != nil || got.Status != tc.status {
+				t.Fatalf("got %+v, %v", got, err)
+			}
+			if len(*actions) != len(tc.want) || (*actions)[0] != tc.want[0] {
+				t.Errorf("published %v, want %v", *actions, tc.want)
+			}
+		})
+	}
+
+	t.Run("unchanged", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo := mock_repository.NewMockRepository(ctrl)
+		repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
+		got, err := setAgentTaskStatus(context.Background(), repo, mock_pubsub.NewMockService(ctrl), memParent, owner, 101, "ongoing")
+		if err != nil || got.ID != 101 {
+			t.Fatalf("got %+v, %v", got, err)
+		}
+	})
+
+	t.Run("not read", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo := mock_repository.NewMockRepository(ctrl)
+		repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(model.Task{}, errRepo)
+		if _, err := setAgentTaskStatus(context.Background(), repo, mock_pubsub.NewMockService(ctrl), memParent, owner, 101, "completed"); err != errRepo {
+			t.Errorf("err = %v, want %v", err, errRepo)
+		}
+	})
+
+	t.Run("not saved", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo := mock_repository.NewMockRepository(ctrl)
+		repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
+		repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, errRepo)
+		if _, err := setAgentTaskStatus(context.Background(), repo, mock_pubsub.NewMockService(ctrl), memParent, owner, 101, "completed"); err != errRepo {
+			t.Errorf("err = %v, want %v", err, errRepo)
+		}
+	})
 }

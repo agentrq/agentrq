@@ -285,3 +285,42 @@ func TestCreateTasks_NeverMoveAnotherTasksHistory(t *testing.T) {
 		})
 	}
 }
+
+// A save reads only the task row: none of its history is loaded, and a task in
+// another workspace or of another user is not found.
+func TestGetTaskRow_ReadsOnlyTheRow(t *testing.T) {
+	for _, d := range historyDBs(t) {
+		t.Run(d.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := New(&mockDB{db: d.db})
+			seedLongTask(t, d.db)
+
+			var childReads int
+			if err := d.db.Callback().Query().After("gorm:query").Register("test:count_child_reads", func(tx *gorm.DB) {
+				if tx.Statement.Table == "messages" || tx.Statement.Table == "tool_calls" {
+					childReads++
+				}
+			}); err != nil {
+				t.Fatalf("register: %v", err)
+			}
+
+			task, err := repo.GetTaskRow(ctx, dtWorkspaceID, dtTaskID, dtUserID)
+			if err != nil {
+				t.Fatalf("get the row of a task with %d tool calls: %v", historyRows, err)
+			}
+			if task.ID != dtTaskID || task.Status != "ongoing" {
+				t.Errorf("got task %d with status %q, want %d ongoing", task.ID, task.Status, dtTaskID)
+			}
+			if childReads != 0 || len(task.Messages) != 0 || len(task.ToolCalls) != 0 {
+				t.Errorf("read %d child tables, got %d messages and %d tool calls; want the row only", childReads, len(task.Messages), len(task.ToolCalls))
+			}
+
+			if _, err := repo.GetTaskRow(ctx, dtWorkspaceID+1, dtTaskID, dtUserID); err != ErrNotFound {
+				t.Errorf("another workspace: got %v, want ErrNotFound", err)
+			}
+			if _, err := repo.GetTaskRow(ctx, dtWorkspaceID, dtTaskID, dtUserID+1); err != ErrNotFound {
+				t.Errorf("another user: got %v, want ErrNotFound", err)
+			}
+		})
+	}
+}

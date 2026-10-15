@@ -289,7 +289,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	if err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +403,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +493,7 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +537,7 @@ func (c *controller) UpdateTaskTitle(ctx context.Context, req entity.UpdateTaskT
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -579,7 +579,7 @@ func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (
 	}
 
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -597,9 +597,6 @@ func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (
 	// existing tool-call rows keep pointing at the task's old workspace.
 	if err := c.repository.UpdateToolCallsWorkspaceID(ctx, updated.ID, updated.WorkspaceID); err != nil {
 		return nil, err
-	}
-	for i := range updated.ToolCalls {
-		updated.ToolCalls[i].WorkspaceID = updated.WorkspaceID
 	}
 
 	// SlackTaskThread.WorkspaceID is denormalized the same way and is used to
@@ -626,7 +623,7 @@ func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -661,7 +658,7 @@ func (c *controller) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequ
 	if err != nil {
 		return nil, err
 	}
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -795,7 +792,7 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 func (c *controller) UpdateMessageMetadata(ctx context.Context, req entity.UpdateMessageMetadataRequest) error {
 	// Let's verify task access
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	_, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	_, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return err
 	}
@@ -958,7 +955,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 		return nil, err
 	}
 	uid := monoflake.IDFromBase62(req.UserID).Int64()
-	m, err := c.repository.GetTask(ctx, req.WorkspaceID, req.TaskID, uid)
+	m, err := c.repository.GetTaskRow(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}

@@ -1732,7 +1732,8 @@ function markAnswered(requestId, answer) {
 async function updateStatus(newStatus) {
   try {
     const res = await updateTaskStatus(workspaceId.value, taskId.value, newStatus);
-    task.value = res.task;
+    // The answer carries the task row only: merge it, or the chat goes blank.
+    task.value = cacheTaskUpdate(sharedCache(), task.value, res.task);
     notifySuccess(`Status updated to ${newStatus}`);
   } catch (err) {
     notifyError("Failed to update status: " + err.message);
@@ -1742,7 +1743,8 @@ async function updateStatus(newStatus) {
 const updateAssignee = async (newAssignee) => {
   try {
     const res = await updateTaskAssignee(workspaceId.value, taskId.value, newAssignee);
-    task.value = res.task;
+    // The answer carries the task row only: merge it, or the chat goes blank.
+    task.value = cacheTaskUpdate(sharedCache(), task.value, res.task);
     notifySuccess(`Task reassigned to ${newAssignee}`);
   } catch (err) {
     notifyError("Failed to reassign task: " + err.message);
@@ -1773,7 +1775,8 @@ const toggleYOLO = async () => {
   const newVal = !task.value.allowAllCommands;
   try {
     const res = await updateTaskAllowAllCommands(workspaceId.value, taskId.value, newVal);
-    task.value = res.task;
+    // The answer carries the task row only: merge it, or the chat goes blank.
+    task.value = cacheTaskUpdate(sharedCache(), task.value, res.task);
     if (newVal) notifySuccess("YOLO mode active: Agent will execute commands without approval.");
     else notifySuccess("YOLO mode disabled: Approval required for sensitive commands.");
   } catch (err) {
