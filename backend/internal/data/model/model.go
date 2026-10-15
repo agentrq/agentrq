@@ -764,6 +764,8 @@ const (
 	// An acp-gateway launched in native ACP v1 or v2 mode.
 	ActionIDAgentLaunchACPNativeV1
 	ActionIDAgentLaunchACPNativeV2
+	// A reasoning level asked of the connected agent.
+	ActionIDAgentEffortSelect
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

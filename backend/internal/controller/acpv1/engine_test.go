@@ -32,6 +32,7 @@ type recorder struct {
 	replies   []string // "taskID|text"
 	telemetry []mcpctrl.AgentTelemetryParams
 	models    []mcpctrl.AgentModelsParams
+	effort    []mcpctrl.AgentEffortParams
 	commands  []mcpctrl.AgentCommandsParams
 	conc      []mcpctrl.AgentConcurrencyParams
 	ongoing   []int64
@@ -85,6 +86,12 @@ func (r *recorder) HandleAgentModels(_ context.Context, _ string, p mcpctrl.Agen
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.models = append(r.models, p)
+}
+
+func (r *recorder) HandleAgentEffort(_ context.Context, _ string, p mcpctrl.AgentEffortParams) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.effort = append(r.effort, p)
 }
 
 func (r *recorder) HandleAgentCommands(_ context.Context, _ string, p mcpctrl.AgentCommandsParams) {

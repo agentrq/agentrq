@@ -1225,6 +1225,57 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SimpleError' }
 
+  /workspaces/{id}/agent/effort:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Ask the connected agent to switch reasoning level
+      description: |
+        A request, like choosing a model: `202` means asked, and the agent's
+        next report says whether it switched. Available only where
+        `agentEffort.canSet` is true on the workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [effort]
+              properties:
+                effort:
+                  type: string
+                  description: One of the ids the agent offers in `agentEffort.efforts`.
+      responses:
+        '202':
+          description: The agent was asked to switch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requested: { type: string }
+        '400':
+          description: No level named, or a level the agent does not offer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '403':
+          description: Not your workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '404':
+          description: No agent connected for this workspace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+        '409':
+          description: The connected agent does not support choosing a reasoning level, or could not be reached
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimpleError' }
+
   /workspaces/{id}/agent/concurrency:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -2651,6 +2702,12 @@ components:
             What the connected agent can switch between. Absent when no agent is
             connected, or when the connected one has not reported any, so its
             presence means a choice exists.
+        agentEffort:
+          allOf: [{ $ref: '#/components/schemas/AgentEffort' }]
+          description: |
+            The reasoning levels the connected agent offers for its current
+            model. Absent when it offers none, as after a switch to a model
+            without levels.
         agentConcurrency:
           allOf: [{ $ref: '#/components/schemas/AgentConcurrency' }]
           description: |
@@ -2731,6 +2788,27 @@ components:
         group:
           type: string
           description: Optional grouping, e.g. the provider name.
+
+    AgentEffort:
+      type: object
+      description: |
+        Live state: the agent's session config option with category
+        `thought_level`, reported only while the session that sent it is
+        connected.
+      properties:
+        configId: { type: string }
+        currentEffort: { type: string }
+        canSet:
+          type: boolean
+          description: Whether choosing one of these would do anything.
+        efforts:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
 
     AgentConcurrency:
       type: object

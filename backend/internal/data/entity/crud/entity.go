@@ -37,6 +37,7 @@ type (
 		AgentConnected        bool
 		AgentSupportsStop     bool
 		AgentModels           *AgentModels
+		AgentEffort           *AgentEffort
 		AgentCommands         *AgentCommands
 		AgentClient           *AgentClient
 		AgentConcurrency      *AgentConcurrency
@@ -85,6 +86,21 @@ type (
 		Description string
 		Current     bool
 		Group       string
+	}
+
+	// AgentEffort is the reasoning level the connected agent offers, live state
+	// like AgentModels, absent when it offers none.
+	AgentEffort struct {
+		ConfigID      string
+		CurrentEffort string
+		Efforts       []AgentEffortLevel
+		CanSet        bool
+	}
+
+	AgentEffortLevel struct {
+		ID          string
+		Name        string
+		Description string
 	}
 
 	// AgentCommands is the set of slash commands the workspace's connected
@@ -1649,6 +1665,9 @@ const (
 	// of ActionAgentLaunchACPGateway.
 	ActionAgentLaunchACPNativeV1 Action = 102
 	ActionAgentLaunchACPNativeV2 Action = 103
+	// A reasoning level asked of the connected agent from the interface;
+	// backend-emitted, like ActionAgentModelSelect.
+	ActionAgentEffortSelect Action = 104
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1847,6 +1866,8 @@ func (a Action) String() string {
 		return "agent_launch_acp_native_v1"
 	case ActionAgentLaunchACPNativeV2:
 		return "agent_launch_acp_native_v2"
+	case ActionAgentEffortSelect:
+		return "agent_effort_select"
 	}
 	return "unknown"
 }

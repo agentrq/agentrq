@@ -111,3 +111,17 @@ func TestFromEntityAgentConcurrencyToView(t *testing.T) {
 		}
 	})
 }
+
+func TestFromEntityAgentEffortToView(t *testing.T) {
+	if fromEntityAgentEffortToView(nil) != nil {
+		t.Fatal("nil did not stay nil")
+	}
+	got := fromEntityAgentEffortToView(&entity.AgentEffort{
+		ConfigID: "effort", CurrentEffort: "low", CanSet: true,
+		Efforts: []entity.AgentEffortLevel{{ID: "low", Name: "Low", Description: "fastest"}},
+	})
+	if got.ConfigID != "effort" || got.CurrentEffort != "low" || !got.CanSet || len(got.Efforts) != 1 ||
+		got.Efforts[0].ID != "low" || got.Efforts[0].Name != "Low" || got.Efforts[0].Description != "fastest" {
+		t.Fatalf("got %+v", got)
+	}
+}

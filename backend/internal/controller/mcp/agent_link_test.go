@@ -32,7 +32,10 @@ type fakeLink struct {
 	stops    []int64
 	verdicts []string // requestID=behavior
 	models   []string // session/config/model
-	limits   []int
+	efforts  []string // session/config/effort
+	// unreachable makes SetEffort fail, as a link gone mid-call does.
+	unreachable bool
+	limits      []int
 }
 
 func (l *fakeLink) ID() string { return l.id }
@@ -62,6 +65,13 @@ func (l *fakeLink) SetModel(_ context.Context, sessionID, configID, modelID stri
 	defer l.mu.Unlock()
 	l.models = append(l.models, sessionID+"/"+configID+"/"+modelID)
 	return true
+}
+
+func (l *fakeLink) SetEffort(_ context.Context, sessionID, configID, effort string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.efforts = append(l.efforts, sessionID+"/"+configID+"/"+effort)
+	return !l.unreachable
 }
 
 func (l *fakeLink) SetConcurrency(_ context.Context, limit int) bool {
@@ -99,6 +109,7 @@ func newLinkServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 		bus:                    bus,
 		agentTelemetryMessages: make(map[string]int64),
 		agentModels:            make(map[string]AgentModelsSnapshot),
+		agentEffort:            make(map[string]AgentEffortSnapshot),
 		agentCommands:          make(map[string]AgentCommandsSnapshot),
 		agentIdentities:        make(map[string]AgentClientInfo),
 		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),

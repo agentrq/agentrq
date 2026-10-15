@@ -86,17 +86,18 @@ type engineV1 struct {
 	caps        agentCapabilities
 	authMethods []authMethod
 
-	mu             sync.Mutex
-	sessions       sessionSet
-	idle           *session      // opened at connect, not yet adopted by a task
-	idlePending    chan struct{} // closed when the idle session has opened (or failed)
-	preferredModel string
-	commands       *mcpctrl.AgentCommandsParams
-	attached       bool
-	permissions    map[string]*pendingPermission // by request id
-	urlQuestions   map[string]context.CancelFunc // url questions still open, by elicitation id
-	stderr         []string
-	cause          error // why the connection is ending, once it is
+	mu              sync.Mutex
+	sessions        sessionSet
+	idle            *session      // opened at connect, not yet adopted by a task
+	idlePending     chan struct{} // closed when the idle session has opened (or failed)
+	preferredModel  string
+	preferredEffort string
+	commands        *mcpctrl.AgentCommandsParams
+	attached        bool
+	permissions     map[string]*pendingPermission // by request id
+	urlQuestions    map[string]context.CancelFunc // url questions still open, by elicitation id
+	stderr          []string
+	cause           error // why the connection is ending, once it is
 }
 
 // NewEngineFactory is what app hands Handler.NewEngine.
@@ -245,6 +246,7 @@ func (e *engineV1) attach() {
 	}
 	if idle != nil {
 		e.reportModels(idle)
+		e.reportEffort(idle)
 	}
 	if commands != nil {
 		e.ws.HandleAgentCommands(e.ctx, e.linkID, *commands)

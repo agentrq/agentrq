@@ -22,6 +22,7 @@ const EVERY_FIELD = {
   triggerId: 'tr1',
   workflowId: 'wf1',
   modelId: 'gemini-2.5-pro',
+  effort: 'high',
   maxConcurrency: 4,
   stepId: 'st1',
   requestId: 'req1',

@@ -43,6 +43,7 @@ type (
 		IsAgentConnected(workspaceID int64) bool
 		SupportsStop(workspaceID int64) bool
 		AgentModels(workspaceID int64) *mcpctrl.AgentModelsSnapshot
+		AgentEffort(workspaceID int64) *mcpctrl.AgentEffortSnapshot
 		AgentCommands(workspaceID int64) *mcpctrl.AgentCommandsSnapshot
 		AgentClient(workspaceID int64) *mcpctrl.AgentClientInfo
 		AgentConcurrency(workspaceID int64) *mcpctrl.AgentConcurrencySnapshot
@@ -53,6 +54,7 @@ type (
 	// workspace metadata a running server has to be told about.
 	workspaceServer interface {
 		SendSetModelNotification(ctx context.Context, modelID string) error
+		SendSetEffortNotification(ctx context.Context, effort string) error
 		SendSetConcurrencyNotification(ctx context.Context, limit int) error
 		SendChannelNotification(ctx context.Context, taskID int64, content string)
 		// ClearContextForTask clears at most once per handover, however many

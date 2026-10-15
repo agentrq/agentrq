@@ -178,6 +178,7 @@ func sessionEndServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 		workspaceID:      7,
 		userID:           "0ZzhYQG2qtl",
 		agentModels:      make(map[string]AgentModelsSnapshot),
+		agentEffort:      make(map[string]AgentEffortSnapshot),
 		agentCommands:    make(map[string]AgentCommandsSnapshot),
 		agentConcurrency: make(map[string]AgentConcurrencySnapshot),
 	}
@@ -191,6 +192,7 @@ func sessionEndServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 	ps, sub := sessionEndServer(t)
 	ps.agentModels["gw"] = AgentModelsSnapshot{ConfigID: "model", CurrentModel: "opus", Models: []AgentModel{{ID: "opus"}}}
+	ps.agentEffort["gw"] = AgentEffortSnapshot{ConfigID: "effort", CurrentEffort: "high", Efforts: []AgentEffort{{ID: "high"}}}
 	ps.agentCommands["gw"] = AgentCommandsSnapshot{Commands: []AgentCommand{{Name: "compact"}}}
 	ps.agentConcurrency["gw"] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
@@ -198,6 +200,9 @@ func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 
 	if got := readEvent(t, sub); got.Type != "agent.models" || len(got.Payload["models"].([]any)) != 0 {
 		t.Errorf("models event = %+v, want an empty list", got)
+	}
+	if got := readEvent(t, sub); got.Type != "agent.effort" || len(got.Payload["efforts"].([]any)) != 0 {
+		t.Errorf("effort event = %+v, want an empty list", got)
 	}
 	if got := readEvent(t, sub); got.Type != "agent.commands" || len(got.Payload["commands"].([]any)) != 0 {
 		t.Errorf("commands event = %+v, want an empty list", got)

@@ -107,6 +107,18 @@ func (m *Manager) AgentModels(workspaceID int64) *AgentModelsSnapshot {
 	return srv.AgentModels()
 }
 
+// AgentEffort reports the reasoning levels the workspace's connected agent
+// offers, or nil when there is no server running for it or nothing offers any.
+func (m *Manager) AgentEffort(workspaceID int64) *AgentEffortSnapshot {
+	m.mu.RLock()
+	srv, ok := m.servers[workspaceID]
+	m.mu.RUnlock()
+	if !ok || srv == nil {
+		return nil
+	}
+	return srv.AgentEffort()
+}
+
 // AgentCommands reports the slash commands the workspace's connected agent
 // offers, or nil when there is no server running for it or nothing has reported
 // any.

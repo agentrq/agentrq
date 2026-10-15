@@ -120,6 +120,20 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   /**
+   * Record the reasoning levels a workspace's agent offers. An empty list
+   * clears the field, which is how a model without levels hides the picker.
+   */
+  function updateAgentEffort(workspaceId, effort) {
+    const idx = findIndex(workspaceId);
+    if (idx === -1) return;
+    const list = Array.isArray(effort?.efforts) ? effort.efforts : [];
+    const agentEffort = list.length > 0
+      ? { configId: effort.configId, currentEffort: effort.currentEffort, canSet: effort.canSet === true, efforts: list }
+      : undefined;
+    workspaces.value[idx] = { ...workspaces.value[idx], agentEffort };
+  }
+
+  /**
    * Record how many tasks a workspace's gateway is running at once.
    *
    * Lives here for the same reason `agentModels` does: it changes from outside
@@ -194,6 +208,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     updateAgentStatus,
     updateAgentCommands,
     updateAgentModels,
+    updateAgentEffort,
     updateAgentConcurrency,
     getWorkspace,
     forksOf,

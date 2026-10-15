@@ -617,6 +617,23 @@ export async function setAgentModel(workspaceId, modelId) {
 }
 
 /**
+ * Ask the workspace's connected agent to switch reasoning level. Like the model
+ * switch, resolving means asked: the agent's next report says whether it did.
+ */
+export async function setAgentEffort(workspaceId, effort) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/agent/effort`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ effort })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || 'Failed to change the reasoning level');
+  }
+  return res.json();
+}
+
+/**
  * Ask the workspace's connected gateway to run a different number of tasks at
  * once.
  *

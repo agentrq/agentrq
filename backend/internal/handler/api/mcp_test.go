@@ -30,6 +30,7 @@ type fakeMCPManager struct {
 	server workspaceServer
 
 	models      *mcpctrl.AgentModelsSnapshot
+	effort      *mcpctrl.AgentEffortSnapshot
 	commands    *mcpctrl.AgentCommandsSnapshot
 	client      *mcpctrl.AgentClientInfo
 	concurrency *mcpctrl.AgentConcurrencySnapshot
@@ -46,6 +47,10 @@ func (f *fakeMCPManager) SupportsStop(workspaceID int64) bool                  {
 
 func (f *fakeMCPManager) AgentModels(workspaceID int64) *mcpctrl.AgentModelsSnapshot {
 	return f.models
+}
+
+func (f *fakeMCPManager) AgentEffort(workspaceID int64) *mcpctrl.AgentEffortSnapshot {
+	return f.effort
 }
 
 func (f *fakeMCPManager) AgentCommands(workspaceID int64) *mcpctrl.AgentCommandsSnapshot {
@@ -70,6 +75,10 @@ type fakeWorkspaceServer struct {
 	modelCalls int
 	modelErr   error
 
+	effort      string
+	effortCalls int
+	effortErr   error
+
 	limit            int
 	concurrencyCalls int
 	concurrencyErr   error
@@ -93,6 +102,12 @@ func (f *fakeWorkspaceServer) SendSetModelNotification(ctx context.Context, mode
 	f.modelCalls++
 	f.modelID = modelID
 	return f.modelErr
+}
+
+func (f *fakeWorkspaceServer) SendSetEffortNotification(ctx context.Context, effort string) error {
+	f.effortCalls++
+	f.effort = effort
+	return f.effortErr
 }
 
 func (f *fakeWorkspaceServer) SendSetConcurrencyNotification(ctx context.Context, limit int) error {

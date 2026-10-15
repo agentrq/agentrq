@@ -371,6 +371,7 @@ func (e *engineV1) applyUpdate(n sessionNotification) {
 			e.mu.Unlock()
 			e.reportModels(s)
 		}
+		e.setEffortOptions(s, u.ConfigOptions)
 	case "usage_update":
 		var u usageUpdate
 		if lenient(n.Update, &u) {

@@ -161,6 +161,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		AgentConnected:        p.AgentConnected,
 		AgentSupportsStop:     p.AgentSupportsStop,
 		AgentModels:           fromEntityAgentModelsToView(p.AgentModels),
+		AgentEffort:           fromEntityAgentEffortToView(p.AgentEffort),
 		AgentCommands:         fromEntityAgentCommandsToView(p.AgentCommands),
 		AgentClient:           fromEntityAgentClientToView(p.AgentClient),
 		AgentConcurrency:      fromEntityAgentConcurrencyToView(p.AgentConcurrency),
@@ -219,6 +220,24 @@ func fromViewNotificationSettingsToEntity(p *view.NotificationSettings) *entity.
 		WorkspaceArchived:   p.WorkspaceArchived,
 		WorkspaceUnarchived: p.WorkspaceUnarchived,
 		Channels:            p.Channels,
+	}
+}
+
+// fromEntityAgentEffortToView renders the reasoning levels the connected agent
+// offers, nil when it offers none.
+func fromEntityAgentEffortToView(e *entity.AgentEffort) *view.AgentEffort {
+	if e == nil {
+		return nil
+	}
+	efforts := make([]view.AgentEffortLevel, len(e.Efforts))
+	for i, one := range e.Efforts {
+		efforts[i] = view.AgentEffortLevel{ID: one.ID, Name: one.Name, Description: one.Description}
+	}
+	return &view.AgentEffort{
+		ConfigID:      e.ConfigID,
+		CurrentEffort: e.CurrentEffort,
+		Efforts:       efforts,
+		CanSet:        e.CanSet,
 	}
 }
 

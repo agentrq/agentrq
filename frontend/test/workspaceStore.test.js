@@ -326,6 +326,38 @@ describe('workspaceStore', () => {
     })
   })
 
+  describe('updateAgentEffort', () => {
+    beforeEach(async () => {
+      fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })
+      await useWorkspaceStore().fetchWorkspaces()
+    })
+
+    const levels = { configId: 'effort', currentEffort: 'high', canSet: true, efforts: [{ id: 'low' }, { id: 'high' }] }
+
+    it('records the levels against the named workspace only', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentEffort('0ZzhYQG2qtl', levels)
+      expect(store.getWorkspace('0ZzhYQG2qtl').agentEffort).toEqual(levels)
+      expect(store.getWorkspace('0iAx25vra8v').agentEffort).toBeUndefined()
+    })
+
+    it('clears the field when the levels go, and reads a missing canSet as false', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentEffort('0ZzhYQG2qtl', { ...levels, canSet: undefined })
+      expect(store.getWorkspace('0ZzhYQG2qtl').agentEffort.canSet).toBe(false)
+      store.updateAgentEffort('0ZzhYQG2qtl', { ...levels, efforts: [] })
+      expect(store.getWorkspace('0ZzhYQG2qtl').agentEffort).toBeUndefined()
+      store.updateAgentEffort('0ZzhYQG2qtl', null)
+      expect(store.getWorkspace('0ZzhYQG2qtl').agentEffort).toBeUndefined()
+    })
+
+    it('ignores a workspace it does not hold', () => {
+      const store = useWorkspaceStore()
+      store.updateAgentEffort('nope', levels)
+      expect(store.workspaces.some((w) => w.agentEffort)).toBe(false)
+    })
+  })
+
   describe('updateAgentModels', () => {
     beforeEach(async () => {
       fetchWorkspaces.mockResolvedValue({ workspaces: [ws('0ZzhYQG2qtl', 'alpha'), ws('0iAx25vra8v', 'beta')] })

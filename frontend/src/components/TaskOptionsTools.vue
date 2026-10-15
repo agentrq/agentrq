@@ -19,6 +19,7 @@ import { useTooltipStore } from '../stores/tooltipStore'
 import { useSpeechToText } from '../composables/useSpeechToText'
 import { clearContextTooltip } from '../composables/useClearContext'
 import AgentModelPicker from './AgentModelPicker.vue'
+import AgentEffortPicker from './AgentEffortPicker.vue'
 
 const props = defineProps({
   /** The `useTaskOptions` this row edits. */
@@ -268,4 +269,5 @@ function handleFileUpload(event) {
                      as the YOLO toggle beside it is, so the two agree about
                      what an agent task means. -->
                 <AgentModelPicker v-if="assignee === 'agent'" :workspace="workspace" />
+                <AgentEffortPicker v-if="assignee === 'agent'" :workspace="workspace" />
 </template>

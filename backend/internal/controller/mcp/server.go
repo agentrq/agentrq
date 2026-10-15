@@ -179,6 +179,8 @@ type WorkspaceServer struct {
 	// sessions so a disconnected agent stops advertising its models.
 	agentModelsMu     sync.RWMutex
 	agentModels       map[string]AgentModelsSnapshot // sessionID -> models last reported
+	agentEffortMu     sync.RWMutex
+	agentEffort       map[string]AgentEffortSnapshot // sessionID -> reasoning level last reported
 	agentCommandsMu   sync.RWMutex
 	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
 	agentIdentitiesMu sync.RWMutex
@@ -507,6 +509,7 @@ func NewWorkspaceServer(
 		autoDecidedRequests:    make(map[string]struct{}),
 		agentTelemetryMessages: make(map[string]int64),
 		agentModels:            make(map[string]AgentModelsSnapshot),
+		agentEffort:            make(map[string]AgentEffortSnapshot),
 		agentCommands:          make(map[string]AgentCommandsSnapshot),
 		agentIdentities:        make(map[string]AgentClientInfo),
 		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),

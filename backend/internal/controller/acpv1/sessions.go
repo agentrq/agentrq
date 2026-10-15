@@ -18,17 +18,21 @@ import (
 // idle one opened at connect that the first task adopts. Every field but id
 // and proj is guarded by the engine's mu.
 type session struct {
-	id         string
-	taskID     int64 // 0 while idle
-	busy       bool  // a turn is running on it
-	elem       *list.Element
-	modes      *sessionModeState
-	reenforced int // times the agent was put back into a mode that asks
-	configID   string
-	current    string
-	models     []mcpctrl.AgentModel
-	proj       *projector
-	stopTurn   context.CancelFunc // gives up on the running turn's prompt; nil between turns
+	id          string
+	taskID      int64 // 0 while idle
+	busy        bool  // a turn is running on it
+	elem        *list.Element
+	modes       *sessionModeState
+	reenforced  int // times the agent was put back into a mode that asks
+	configID    string
+	current     string
+	models      []mcpctrl.AgentModel
+	effortID    string
+	effort      string
+	efforts     []mcpctrl.AgentEffort
+	effortShown bool // the workspace was last told the session offers levels
+	proj        *projector
+	stopTurn    context.CancelFunc // gives up on the running turn's prompt; nil between turns
 }
 
 // sessionSet finds a session by its id or its task in O(1), and keeps them in
@@ -150,6 +154,7 @@ func (e *engineV1) newSession(ctx context.Context, taskID int64) (*session, erro
 	s := &session{id: resp.SessionID, taskID: taskID, busy: taskID != 0, modes: resp.Modes,
 		proj: newProjector(e.lim.reply, e.lim.thought, e.lim.tool)}
 	s.configID, s.current, s.models, _ = modelsFrom(resp.ConfigOptions)
+	s.effortID, s.effort, s.efforts, _ = effortFrom(resp.ConfigOptions)
 	registered := make(chan []*session, 1)
 	if !e.enqueue(update{register: s, registered: registered}) {
 		return nil, errPeerClosed
@@ -170,6 +175,14 @@ func (e *engineV1) newSession(ctx context.Context, taskID int64) (*session, erro
 		e.applyModel(ctx, s, preferred)
 	} else {
 		e.reportModels(s)
+	}
+	e.mu.Lock()
+	preferredEffort, efforts, effort := e.preferredEffort, s.efforts, s.effort
+	e.mu.Unlock()
+	if preferredEffort != "" && preferredEffort != effort && offersEffort(efforts, preferredEffort) {
+		e.applyEffort(ctx, s, preferredEffort)
+	} else {
+		e.reportEffort(s)
 	}
 	if s.modes != nil {
 		e.mu.Lock()
@@ -222,6 +235,7 @@ func (e *engineV1) sessionFor(ctx context.Context, taskID int64) (*session, erro
 	e.mu.Unlock()
 	if adopted {
 		e.reportModels(s) // now the task's
+		e.reportEffort(s)
 	}
 	if s != nil {
 		return s, nil
@@ -288,9 +302,76 @@ func (e *engineV1) applyModel(ctx context.Context, s *session, requested string)
 				s.current, s.models = id, withCurrent(s.models, id)
 			}
 			e.mu.Unlock()
+			if len(resp.ConfigOptions) > 0 {
+				e.setEffortOptions(s, resp.ConfigOptions)
+			}
 		}
 	}
 	e.reportModels(s)
+}
+
+// setEffortOptions takes the session's reasoning level from the agent's full
+// list of config options, and tells the workspace. A list without one means
+// the current model has no levels, and the picker goes.
+func (e *engineV1) setEffortOptions(s *session, opts []configOption) {
+	e.mu.Lock()
+	s.effortID, s.effort, s.efforts, _ = effortFrom(opts)
+	e.mu.Unlock()
+	e.reportEffort(s)
+}
+
+// reportEffort tells the workspace the session's reasoning level, once the
+// link is attached: while the agent offers levels, and once more with none
+// when they go.
+func (e *engineV1) reportEffort(s *session) {
+	e.mu.Lock()
+	p := mcpctrl.AgentEffortParams{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.effortID,
+		CurrentEffort: s.effort, Efforts: s.efforts, CanSet: s.effortID != ""}
+	send := e.attached && (len(s.efforts) > 0 || s.effortShown)
+	if send {
+		s.effortShown = len(s.efforts) > 0
+	}
+	e.mu.Unlock()
+	if send {
+		e.ws.HandleAgentEffort(e.ctx, e.linkID, p)
+	}
+}
+
+// applyEffort switches a session to a reasoning level it offers. The picker is
+// always answered, with what the agent now says or what was last known.
+func (e *engineV1) applyEffort(ctx context.Context, s *session, requested string) {
+	e.mu.Lock()
+	configID, sessionID, offered := s.effortID, s.id, offersEffort(s.efforts, requested)
+	e.mu.Unlock()
+	if offered {
+		var resp setConfigOptionResponse
+		err := e.callWithin(ctx, methodSessionSetConfig, setConfigOptionRequest{SessionID: sessionID, ConfigID: configID, Value: requested}, &resp)
+		switch {
+		case err != nil:
+			zlog.Warn().Str("link", e.linkID).Err(err).Str("effort", requested).Msg("acp v1: the agent did not switch reasoning level")
+		case len(resp.ConfigOptions) > 0:
+			e.setEffortOptions(s, resp.ConfigOptions)
+			return
+		default:
+			e.mu.Lock()
+			s.effort = requested
+			e.mu.Unlock()
+		}
+	}
+	e.reportEffort(s)
+}
+
+// setEffort is the human picking a reasoning level for a session: it becomes
+// the default for new sessions that offer it too.
+func (e *engineV1) setEffort(acpSessionID, effort string) bool {
+	e.mu.Lock()
+	e.preferredEffort = effort
+	s := e.sessions.byID[acpSessionID]
+	e.mu.Unlock()
+	if s != nil {
+		go e.applyEffort(e.ctx, s, effort)
+	}
+	return true
 }
 
 // setModel is the human picking a model for a session: it becomes the

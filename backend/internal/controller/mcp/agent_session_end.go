@@ -58,6 +58,13 @@ func (ps *WorkspaceServer) agentSessionEnded(ctx context.Context, sessionID stri
 		ps.publishAgentModels(AgentModelsSnapshot{})
 	}
 
+	ps.agentEffortMu.RLock()
+	hadEffort := len(ps.agentEffort[sessionID].Efforts) > 0
+	ps.agentEffortMu.RUnlock()
+	if hadEffort {
+		ps.publishAgentEffort(AgentEffortSnapshot{})
+	}
+
 	ps.agentCommandsMu.RLock()
 	hadCommands := len(ps.agentCommands[sessionID].Commands) > 0
 	ps.agentCommandsMu.RUnlock()

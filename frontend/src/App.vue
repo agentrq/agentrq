@@ -1001,6 +1001,12 @@ onEvent((event) => {
     workspaceStore.updateAgentModels(workspaceId, { configId, currentModel, canSet, models })
   }
 
+  // The agent's reasoning levels, which change with the model it runs.
+  if (event.type === 'agent.effort') {
+    const { configId, currentEffort, canSet, efforts, workspaceId } = event.payload
+    workspaceStore.updateAgentEffort(workspaceId, { configId, currentEffort, canSet, efforts })
+  }
+
   // How many tasks the gateway is running at once, and what its queue is
   // doing. Arrives on connect, on every reconnect, and after every set — the
   // last of which is the whole point: the gateway's own report is the only

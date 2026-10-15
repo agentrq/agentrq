@@ -83,6 +83,42 @@ func modelsFrom(opts []configOption) (configID, current string, models []mcpctrl
 	return pick.ID, current, models, true
 }
 
+// effortFrom finds the agent's reasoning level among its config options: the
+// select with category "thought_level", picked by category alone. ok is false
+// when the agent offers none, which is how a model without levels says so.
+func effortFrom(opts []configOption) (configID, current string, efforts []mcpctrl.AgentEffort, ok bool) {
+	for i := range opts {
+		o := &opts[i]
+		if o.Type != "select" || o.Category != "thought_level" {
+			continue
+		}
+		choices := o.selectOptions()
+		if len(choices) == 0 {
+			continue
+		}
+		for _, so := range choices {
+			id := optionText(so.Value)
+			name := so.Name
+			if name == "" {
+				name = id
+			}
+			efforts = append(efforts, mcpctrl.AgentEffort{ID: id, Name: name, Description: so.Description})
+		}
+		return o.ID, optionText(o.CurrentValue), efforts, true
+	}
+	return "", "", nil, false
+}
+
+// offersEffort reports whether id is one of the levels offered.
+func offersEffort(efforts []mcpctrl.AgentEffort, id string) bool {
+	for _, e := range efforts {
+		if e.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveModel finds a requested model by id, else by display name.
 func resolveModel(models []mcpctrl.AgentModel, requested string) (string, bool) {
 	for _, m := range models {

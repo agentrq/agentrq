@@ -30,6 +30,7 @@ type Workspace interface {
 	DetachAgentLink(ctx context.Context, id string)
 	HandleAgentIdentity(ctx context.Context, sessionID string, p mcpctrl.AgentIdentityParams)
 	HandleAgentModels(ctx context.Context, sessionID string, p mcpctrl.AgentModelsParams)
+	HandleAgentEffort(ctx context.Context, sessionID string, p mcpctrl.AgentEffortParams)
 	HandleAgentCommands(ctx context.Context, sessionID string, p mcpctrl.AgentCommandsParams)
 	HandleAgentConcurrency(ctx context.Context, sessionID string, p mcpctrl.AgentConcurrencyParams)
 	HandleAgentTelemetry(ctx context.Context, sessionID string, p mcpctrl.AgentTelemetryParams)

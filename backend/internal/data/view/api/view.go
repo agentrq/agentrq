@@ -24,6 +24,7 @@ type (
 		AgentConnected       bool                  `json:"agentConnected"`
 		AgentSupportsStop    bool                  `json:"agentSupportsStop"`
 		AgentModels          *AgentModels          `json:"agentModels,omitempty"`
+		AgentEffort          *AgentEffort          `json:"agentEffort,omitempty"`
 		AgentCommands        *AgentCommands        `json:"agentCommands,omitempty"`
 		AgentClient          *AgentClient          `json:"agentClient,omitempty"`
 		AgentConcurrency     *AgentConcurrency     `json:"agentConcurrency,omitempty"`
@@ -81,6 +82,21 @@ type (
 		Description string `json:"description,omitempty"`
 		Current     bool   `json:"current,omitempty"`
 		Group       string `json:"group,omitempty"`
+	}
+
+	// AgentEffort is the reasoning level the connected agent offers. Omitted
+	// when it offers none, as after a switch to a model without levels.
+	AgentEffort struct {
+		ConfigID      string             `json:"configId"`
+		CurrentEffort string             `json:"currentEffort,omitempty"`
+		Efforts       []AgentEffortLevel `json:"efforts"`
+		CanSet        bool               `json:"canSet"`
+	}
+
+	AgentEffortLevel struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
 	}
 
 	// AgentCommands is the set of slash commands the connected agent offers.
@@ -425,6 +441,12 @@ type (
 	// itself reported, and are deliberately not the browser's to choose.
 	SetAgentModelRequest struct {
 		ModelID string `json:"modelId"`
+	}
+
+	// SetAgentEffortRequest asks the workspace's connected agent to switch
+	// reasoning level, one of the levels it offers.
+	SetAgentEffortRequest struct {
+		Effort string `json:"effort"`
 	}
 
 	// SetAgentConcurrencyRequest asks the workspace's connected gateway to run

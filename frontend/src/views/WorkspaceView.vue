@@ -132,6 +132,10 @@
                              <AgentModelPicker v-if="canChooseModel(p)" :workspace="p" compact @click.stop />
                              <span v-else class="text-[9px] font-medium text-gray-500 dark:text-zinc-400 truncate">{{ agentDetails(p).model }}</span>
                            </template>
+                           <template v-if="canChooseEffort(p)">
+                             <span class="text-[9px] font-black text-gray-300 dark:text-zinc-700 shrink-0">·</span>
+                             <AgentEffortPicker :workspace="p" compact @click.stop />
+                           </template>
                          </template>
                          <span v-else class="text-[8px] font-black uppercase tracking-widest transition-colors"
                                :class="p.agentConnected ? 'text-green-600 dark:text-green-500' : 'text-gray-400 dark:text-zinc-500'">
@@ -254,6 +258,8 @@ import { useTooltipStore } from '../stores/tooltipStore';
 import { agentDetails, agentSummary } from '../composables/useAgentSummary';
 import { canChooseModel } from '../composables/useAgentModelPicker';
 import AgentModelPicker from '../components/AgentModelPicker.vue';
+import { canChooseEffort } from '../composables/useAgentEffortPicker';
+import AgentEffortPicker from '../components/AgentEffortPicker.vue';
 import LoadingState from '../components/LoadingState.vue';
 import AccountStats from '../components/AccountStats.vue';
 

@@ -31,6 +31,8 @@ type AgentLink interface {
 	DeliverVerdict(ctx context.Context, requestID, behavior string) bool
 	// SetModel switches the model of one of the link's ACP sessions.
 	SetModel(ctx context.Context, acpSessionID, configID, modelID string) bool
+	// SetEffort switches the reasoning level of one of the link's ACP sessions.
+	SetEffort(ctx context.Context, acpSessionID, configID, effort string) bool
 	// SetConcurrency changes how many tasks the link runs at once.
 	SetConcurrency(ctx context.Context, limit int) bool
 	// Dispatch says whether the link already holds a session for the task,
@@ -140,7 +142,7 @@ func (ps *WorkspaceServer) refreshConnected() {
 	ps.publishAgentConnected(now)
 }
 
-// notifyLink turns the three per-session channel notifications into the
+// notifyLink turns the four per-session channel notifications into the
 // link's typed calls. Nothing else is ever sent to one session by id.
 func notifyLink(ctx context.Context, link AgentLink, method string, params map[string]any) bool {
 	switch method {
@@ -153,6 +155,11 @@ func notifyLink(ctx context.Context, link AgentLink, method string, params map[s
 		configID, _ := params["config_id"].(string)
 		modelID, _ := params["model_id"].(string)
 		return link.SetModel(ctx, sessionID, configID, modelID)
+	case AgentSetEffortNotificationMethod:
+		sessionID, _ := params["sessionId"].(string)
+		configID, _ := params["configId"].(string)
+		effort, _ := params["effort"].(string)
+		return link.SetEffort(ctx, sessionID, configID, effort)
 	case AgentSetConcurrencyNotificationMethod:
 		limit, _ := params["maxConcurrency"].(int)
 		return link.SetConcurrency(ctx, limit)

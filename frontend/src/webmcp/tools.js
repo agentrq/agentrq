@@ -786,6 +786,20 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, modelId }) => api.setAgentModel(workspaceId, modelId),
     }),
     tool({
+      name: 'setAgentEffort',
+      description:
+        'Ask the workspace\'s connected agent to switch reasoning level. Only offered where the ' +
+        'agent reported levels for its current model and said it can change them; asking is not ' +
+        'the same as it having changed, which the workspace reports separately.',
+      properties: {
+        workspaceId: WORKSPACE_ID,
+        effort: str('The id of a reasoning level the agent listed as available.'),
+      },
+      required: ['workspaceId', 'effort'],
+      screen: before(settingsPage()),
+      run: ({ workspaceId, effort }) => api.setAgentEffort(workspaceId, effort),
+    }),
+    tool({
       name: 'setAgentConcurrency',
       description:
         'Ask the workspace\'s connected gateway to run a different number of tasks at once. Only ' +

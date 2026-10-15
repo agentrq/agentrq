@@ -43,6 +43,10 @@ func (l *link) SetModel(_ context.Context, acpSessionID, _ /* configID: the sess
 	return l.e.setModel(acpSessionID, modelID)
 }
 
+func (l *link) SetEffort(_ context.Context, acpSessionID, _ /* configID: the session knows its own */, effort string) bool {
+	return l.e.setEffort(acpSessionID, effort)
+}
+
 func (l *link) SetConcurrency(_ context.Context, limit int) bool {
 	l.e.q.setLimit(limit)
 	return true

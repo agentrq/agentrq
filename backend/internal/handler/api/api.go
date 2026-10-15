@@ -672,6 +672,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Put("/:id/slack", h.setWorkspaceSlackChannel())
 	r.Delete("/:id/slack", h.removeWorkspaceSlackChannel())
 	r.Post("/:id/agent/model", h.setAgentModel())
+	r.Post("/:id/agent/effort", h.setAgentEffort())
 	r.Post("/:id/agent/concurrency", h.setAgentConcurrency())
 	return nil
 }
@@ -744,6 +745,55 @@ func (h *handler) setAgentModel() fiber.Handler {
 		// Answering with the chosen model here would invite a client to render
 		// it as settled — the one thing this flow must not claim.
 		return c.Status(http.StatusAccepted).JSON(fiber.Map{"requested": rq.ModelID})
+	}
+}
+
+// setAgentEffort asks the workspace's connected agent to switch reasoning
+// level, refusing with the same reasons setAgentModel gives.
+func (h *handler) setAgentEffort() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var rq view.SetAgentEffortRequest
+		if err := c.BodyParser(&rq); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "invalid request payload"})
+		}
+		if strings.TrimSpace(rq.Effort) == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "effort is required"})
+		}
+
+		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+		userID := c.Locals("user_id").(string)
+
+		ctx, cancel := newContext(c)
+		defer cancel()
+		if ok, err := h.crud.CheckWorkspaceAccess(ctx, workspaceID, userID); err != nil || !ok {
+			return c.Status(http.StatusForbidden).JSON(fiber.Map{"error": "forbidden"})
+		}
+
+		srv := h.mcpManager.Get(workspaceID, userID)
+		if srv == nil {
+			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
+		}
+
+		switch err := srv.SendSetEffortNotification(c.Context(), rq.Effort); {
+		case errors.Is(err, mcpctrl.ErrEffortSelectUnsupported), errors.Is(err, mcpctrl.ErrEffortSetNotDelivered):
+			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, mcpctrl.ErrEffortNotOffered):
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		case err != nil:
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "failed to select the reasoning level"})
+		}
+
+		if err := h.crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
+			Action:      entity.ActionAgentEffortSelect,
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+		}); err != nil {
+			zlog.Warn().Err(err).Int64("workspace_id", workspaceID).
+				Msg("reasoning level selection was made but not counted")
+		}
+
+		// Accepted: only the agent's next report says whether it switched.
+		return c.Status(http.StatusAccepted).JSON(fiber.Map{"requested": rq.Effort})
 	}
 }
 
@@ -840,6 +890,7 @@ func (h *handler) createWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
+		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
 		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspace.ID))
@@ -872,6 +923,7 @@ func (h *handler) getWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspace.ID))
+		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspace.ID))
 		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspace.ID))
@@ -927,6 +979,7 @@ func (h *handler) listWorkspaces() fiber.Handler {
 			rs.Workspaces[i].AgentConnected = h.mcpManager.IsAgentConnected(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentSupportsStop = h.mcpManager.SupportsStop(rs.Workspaces[i].ID)
 			rs.Workspaces[i].AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rs.Workspaces[i].ID))
+			rs.Workspaces[i].AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentClient = agentClientEntity(h.mcpManager.AgentClient(rs.Workspaces[i].ID))
 			rs.Workspaces[i].AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rs.Workspaces[i].ID))
@@ -1094,6 +1147,7 @@ func (h *handler) updateWorkspace() fiber.Handler {
 		rs.Workspace.AgentConnected = h.mcpManager.IsAgentConnected(rq.Workspace.ID)
 		rs.Workspace.AgentSupportsStop = h.mcpManager.SupportsStop(rq.Workspace.ID)
 		rs.Workspace.AgentModels = agentModelsEntity(h.mcpManager.AgentModels(rq.Workspace.ID))
+		rs.Workspace.AgentEffort = agentEffortEntity(h.mcpManager.AgentEffort(rq.Workspace.ID))
 		rs.Workspace.AgentCommands = agentCommandsEntity(h.mcpManager.AgentCommands(rq.Workspace.ID))
 		rs.Workspace.AgentClient = agentClientEntity(h.mcpManager.AgentClient(rq.Workspace.ID))
 		rs.Workspace.AgentConcurrency = agentConcurrencyEntity(h.mcpManager.AgentConcurrency(rq.Workspace.ID))
@@ -1347,6 +1401,23 @@ func (h *handler) enrichWorkspaceSlack(ctx context.Context, ws *entity.Workspace
 	cfg, err := h.slackCtrl.GetWorkspaceSlackConfig(ctx, ws.ID)
 	if err == nil && cfg != nil {
 		ws.Slack = cfg
+	}
+}
+
+// agentEffortEntity converts a live MCP snapshot into the workspace's entity.
+func agentEffortEntity(s *mcpctrl.AgentEffortSnapshot) *entity.AgentEffort {
+	if s == nil {
+		return nil
+	}
+	efforts := make([]entity.AgentEffortLevel, len(s.Efforts))
+	for i, e := range s.Efforts {
+		efforts[i] = entity.AgentEffortLevel{ID: e.ID, Name: e.Name, Description: e.Description}
+	}
+	return &entity.AgentEffort{
+		ConfigID:      s.ConfigID,
+		CurrentEffort: s.CurrentEffort,
+		Efforts:       efforts,
+		CanSet:        s.Selectable(),
 	}
 }
 
