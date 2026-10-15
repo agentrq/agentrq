@@ -249,16 +249,22 @@ describe('StartAgentPanel', () => {
     await settle()
     const protocol = el.querySelector('#start-agent-acp-version')
     expect(el.querySelector('[data-test=start-agent-acp-version-value]').textContent.trim()).toBe('Classic — the gateway speaks ACP')
+    // The classic gateway cannot hand an effort on, so there is none to pick.
+    expect(el.querySelector('#start-agent-acp-effort')).toBeNull()
     protocol.value = '1'
     protocol.dispatchEvent(new Event('input'))
+    await settle()
+    const effort = el.querySelector('#start-agent-acp-effort')
+    effort.value = '4'
+    effort.dispatchEvent(new Event('input'))
     await settle()
 
     const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
     go.click()
     await settle()
-    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1', effort: 'xhigh' }))
     // Remembered for this workspace, so its next launch opens on it.
-    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['acp-gateway'].acpVersion).toBe('1')
+    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['acp-gateway']).toMatchObject({ acpVersion: '1', effort: 'xhigh' })
     localStorage.clear()
   })
 

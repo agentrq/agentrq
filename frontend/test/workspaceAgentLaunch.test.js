@@ -512,7 +512,7 @@ describe('a fork, and remembering the launch', () => {
     await next.l.load()
     expect(next.l.machineId.value).toBe('m2')
     expect(next.l.kind.value).toBe('acp-gateway')
-    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '' })
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '', effort: '' })
   })
 
   it('keeps the last kind, and asks for a machine, when the last one is offline', async () => {
@@ -549,12 +549,12 @@ describe('a fork, and remembering the launch', () => {
     first.l.kind.value = 'acp-gateway'
     first.l.params.value = { agent: 'gemini', model: 'pro' }
     await first.l.launch()
-    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '' })
+    expect(lastLaunchParams('ws1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '', effort: '' })
     localStorage.removeItem('agentrq:lastAcpGateway')
 
     const next = harness()
     next.l.kind.value = 'acp-gateway'
-    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '' })
+    expect(next.l.params.value).toEqual({ agent: 'gemini', model: 'pro', acpVersion: '', effort: '' })
     localStorage.clear()
   })
 })

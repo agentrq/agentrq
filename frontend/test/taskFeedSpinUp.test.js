@@ -123,13 +123,18 @@ describe('Spin up on a task row', () => {
     expect(document.body.querySelector('#spin-up-acp-version')).toBe(null)
     document.body.querySelector('#spin-up-kind-acp-gateway').click()
     await settle()
+    expect(document.body.querySelector('#spin-up-acp-effort')).toBe(null)
     const protocol = document.body.querySelector('#spin-up-acp-version')
     protocol.value = '1'
     protocol.dispatchEvent(new Event('input'))
     await settle()
+    const effort = document.body.querySelector('#spin-up-acp-effort')
+    effort.value = '2'
+    effort.dispatchEvent(new Event('input'))
+    await settle()
     ;[...document.body.querySelectorAll('[data-test=spin-up] button')].find((b) => b.textContent.trim() === 'Spin up').click()
     await settle()
-    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+    expect(launchAgent).toHaveBeenCalledWith('f1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1', effort: 'medium' }))
   })
 
   it('lists the ACP registry\'s agents in the popover, and a click is what it launches', async () => {

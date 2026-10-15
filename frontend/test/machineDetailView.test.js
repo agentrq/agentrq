@@ -195,11 +195,14 @@ describe('MachineDetailView: starting an agent', () => {
     await choose('launch-workspace-ws1')
     expect(el.querySelector('#launch-acp-version')).toBeNull()
     await choose('launch-kind-acp-gateway')
+    expect(el.querySelector('#launch-acp-effort')).toBeNull()
     ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'ACP v1').click()
+    await settle()
+    ;[...el.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Max').click()
     await settle()
     await clickStart()
 
-    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1' }))
+    expect(launchAgent).toHaveBeenCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1', effort: 'max' }))
     localStorage.clear()
   })
 
