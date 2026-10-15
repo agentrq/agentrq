@@ -63,7 +63,8 @@ type Repository interface {
 	GetTaskRow(ctx context.Context, workspaceID, taskID int64, userID int64) (model.Task, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) ([]model.Task, error)
 	CountTasks(ctx context.Context, req entity.ListTasksRequest, userID int64) (int64, error)
-	UpdateTask(ctx context.Context, t model.Task) (model.Task, error)
+	// UpdateTask writes only the columns of t it names, and UpdatedAt.
+	UpdateTask(ctx context.Context, t model.Task, columns ...string) (model.Task, error)
 	DeleteTask(ctx context.Context, workspaceID, taskID int64, userID int64) error
 
 	// Message
@@ -765,60 +766,70 @@ func (r *repository) GetNextTask(ctx context.Context, workspaceID int64, userID 
 	return t, err
 }
 
-// UpdateTask saves t and, when that changes its status, records the
-// transition in the same transaction. Every status change in the backend is a
-// save through here, which is why the history is written here and not by the
-// callers.
-func (r *repository) UpdateTask(ctx context.Context, t model.Task) (model.Task, error) {
+// taskColumns are the fields an UpdateTask may name.
+var taskColumns = map[string]bool{
+	"Status": true, "SortOrder": true, "Assignee": true, "Body": true, "Title": true,
+	"WorkspaceID": true, "AllowAllCommands": true, "CronSchedule": true, "ClearContext": true,
+}
+
+// UpdateTask writes the columns of t it names, and UpdatedAt, and returns the
+// row as it now stands. Never the whole of t: callers read it before this
+// transaction, and saving all of it put back whatever changed in between.
+//
+// When that changes the status, the transition is recorded in the same
+// transaction. Every status change in the backend goes through here, which is
+// why the history is written here and not by the callers.
+func (r *repository) UpdateTask(ctx context.Context, t model.Task, columns ...string) (model.Task, error) {
+	selected := []string{"UpdatedAt"}
+	for _, c := range columns {
+		if !taskColumns[c] {
+			return model.Task{}, fmt.Errorf("update task: %q is not a column it may write", c)
+		}
+		selected = append(selected, c)
+	}
+	var res model.Task
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		var prev struct {
-			Status      string
-			WorkspaceID int64
+		var prev model.Task
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", t.ID).Take(&prev).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
 		}
-		err := tx.Model(&model.Task{}).
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("status, workspace_id").
-			Where("id = ?", t.ID).
-			Take(&prev).Error
-		inserted := errors.Is(err, gorm.ErrRecordNotFound)
-		if err != nil && !inserted {
+		if err != nil {
 			return err
 		}
-		// Only the task row: messages and tool calls have their own writes, and
-		// upserting every one of them here broke past ~4,095 tool calls (#921).
-		if err := tx.Omit(clause.Associations).Save(&t).Error; err != nil {
+		if err := tx.Model(&model.Task{ID: t.ID}).Select(selected).Updates(&t).Error; err != nil {
 			return err
 		}
-		if inserted {
-			// Save inserted it: this is the task's first state.
-			return recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status))
+		if err := tx.Where("id = ?", t.ID).Take(&res).Error; err != nil {
+			return err
 		}
-		if prev.WorkspaceID != t.WorkspaceID {
+		if prev.WorkspaceID != res.WorkspaceID {
 			// A moved task takes its history with it.
 			if err := tx.Model(&model.TaskStateTransition{}).
 				Where("task_id = ?", t.ID).
-				Update("workspace_id", t.WorkspaceID).Error; err != nil {
+				Update("workspace_id", res.WorkspaceID).Error; err != nil {
 				return err
 			}
 			if err := tx.Model(&model.TaskLatency{}).
 				Where("task_id = ?", t.ID).
-				Update("workspace_id", t.WorkspaceID).Error; err != nil {
+				Update("workspace_id", res.WorkspaceID).Error; err != nil {
 				return err
 			}
 		}
-		if prev.Status == t.Status {
+		if prev.Status == res.Status {
 			return nil
 		}
 		from, err := currentTaskState(tx, t.ID, prev.Status)
 		if err != nil {
 			return err
 		}
-		return recordTaskStateTransition(tx, t, from, model.TaskStateFromStatus(t.Status))
+		return recordTaskStateTransition(tx, res, from, model.TaskStateFromStatus(res.Status))
 	})
 	if err != nil {
 		return model.Task{}, err
 	}
-	return t, nil
+	res.Messages, res.ToolCalls = t.Messages, t.ToolCalls
+	return res, nil
 }
 
 // DeleteTask removes a task and everything that points at it.

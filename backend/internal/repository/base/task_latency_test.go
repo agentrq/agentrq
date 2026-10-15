@@ -64,7 +64,7 @@ func TestTaskLatency_RecordedOnClose(t *testing.T) {
 	}
 
 	task.Status = "completed"
-	if task, err = repo.UpdateTask(ctx, task); err != nil {
+	if task, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	l, ok := latencyOf(t, db, dtTaskID)
@@ -81,13 +81,13 @@ func TestTaskLatency_RecordedOnClose(t *testing.T) {
 
 	// Reopen: the row stays until the task closes again, then is replaced.
 	task.Status = "ongoing"
-	if task, err = repo.UpdateTask(ctx, task); err != nil {
+	if task, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	db.Model(&model.TaskStateTransition{}).Where("task_id = ? AND to_state = ?", dtTaskID, model.TaskStateOngoing).
 		Where("from_state = ?", model.TaskStateCompleted).Update("created_at", now.Add(time.Hour))
 	task.Status = "rejected"
-	if _, err = repo.UpdateTask(ctx, task); err != nil {
+	if _, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("reject: %v", err)
 	}
 	l, _ = latencyOf(t, db, dtTaskID)
@@ -119,7 +119,7 @@ func TestTaskLatency_MovesWithTheTask(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	task.WorkspaceID = dtWorkspaceID + 1
-	if _, err := repo.UpdateTask(ctx, task); err != nil {
+	if _, err := repo.UpdateTask(ctx, task, "WorkspaceID"); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 	if l, _ := latencyOf(t, db, dtTaskID); l.WorkspaceID != dtWorkspaceID+1 {
@@ -160,7 +160,7 @@ func TestTaskLatency_WriteFailures(t *testing.T) {
 			} else {
 				task.Status = "completed"
 			}
-			if _, err := repo.UpdateTask(ctx, task); !errors.Is(err, errInjected) {
+			if _, err := repo.UpdateTask(ctx, task, "Status", "WorkspaceID"); !errors.Is(err, errInjected) {
 				t.Fatalf("got %v, want the injected failure", err)
 			}
 		})

@@ -20,7 +20,6 @@ import (
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
-	"gorm.io/datatypes"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/acpv1"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
@@ -454,76 +453,7 @@ func New(cfg Config) (*App, error) {
 				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
 				return repo.GetNextTask(ctx, workspaceID, uid)
 			},
-			func(ctx context.Context, chatID string, text string, attachments []entity.Attachment, metadata any) (int64, error) {
-				id := monoflake.IDFromBase62(chatID)
-				if id == 0 {
-					return 0, fmt.Errorf("invalid chat ID: %s", chatID)
-				}
-				taskID := id.Int64()
-				m, err := workspaceTask(ctx, repo, workspaceID, workspaceOwner, taskID)
-				if err != nil {
-					return 0, err
-				}
-
-				crud.SaveAttachments(storageSvc, ids, contentID, taskID, attachments)
-
-				var attsData []byte
-				if len(attachments) > 0 {
-					attsData, _ = json.Marshal(attachments)
-				}
-
-				var metadataJSON datatypes.JSON
-				if metadata != nil {
-					if b, err := json.Marshal(metadata); err == nil {
-						metadataJSON = datatypes.JSON(b)
-					}
-				}
-
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				if m.Status == "notstarted" {
-					m.Status = "ongoing"
-					_, _ = repo.UpdateTask(ctx, m)
-				}
-
-				msgID := ids.NextID()
-				msg := model.Message{
-					ID:          msgID,
-					CreatedAt:   time.Now(),
-					TaskID:      taskID,
-					UserID:      uid,
-					Sender:      "agent",
-					Text:        text,
-					Attachments: datatypes.JSON(attsData),
-					Metadata:    metadataJSON,
-				}
-
-				if err := repo.CreateMessage(ctx, msg); err != nil {
-					return 0, err
-				}
-
-				pubsubSvc.Publish(context.Background(), pubsub.PublishRequest{
-					PubSubID: entity.PubSubTopicCRUD,
-					Event: entity.CRUDEvent{
-						Action:       entity.ActionMessageCreate,
-						WorkspaceID:  workspaceID,
-						UserID:       uid,
-						ResourceType: entity.ResourceMessage,
-						ResourceID:   msgID,
-						Actor:        entity.ActorAgent,
-						Origin:       entity.OriginMCP,
-					},
-				})
-
-				uid = monoflake.IDFromBase62(workspaceOwner).Int64()
-				latest, err := repo.GetTask(ctx, workspaceID, taskID, uid)
-				if err == nil {
-					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
-						Type:    "task.updated",
-						Payload: mapper.FromModelTaskToView(latest),
-					})
-				}
-				return msgID, nil
-			},
+			agentTasks{repo: repo, pubsub: pubsubSvc, bus: bus, storage: storageSvc, ids: ids, workspaceID: workspaceID, contentID: contentID, owner: workspaceOwner}.reply,
 			func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 				existingMetadata := make(map[string]any)
 				if m, err := repo.SystemGetMessage(ctx, messageID); err == nil && len(m.Metadata) > 0 {

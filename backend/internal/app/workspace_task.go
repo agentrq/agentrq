@@ -50,7 +50,7 @@ func setAgentTaskStatus(ctx context.Context, repo base.Repository, ps pubsub.Ser
 	}
 	m.Status = status
 
-	updated, err := repo.UpdateTask(ctx, m)
+	updated, err := repo.UpdateTask(ctx, m, "Status")
 	if err != nil {
 		return updated, err
 	}

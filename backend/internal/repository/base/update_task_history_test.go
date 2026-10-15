@@ -6,6 +6,7 @@ package base
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -142,7 +143,7 @@ func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
 			writes := countChildWrites(t, d.db)
 
 			task.Status = "completed"
-			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
+			if _, err := repo.UpdateTask(context.Background(), task, "Status"); err != nil {
 				t.Fatalf("update a task with %d tool calls: %v", historyRows, err)
 			}
 			if *writes != 0 {
@@ -162,9 +163,9 @@ func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
 	}
 }
 
-// A save of a task that is not stored yet inserts its row, and still only
-// its row: the history it carries stays with the task it was loaded from.
-func TestUpdateTask_InsertFallbackWritesOnlyTheRow(t *testing.T) {
+// An update of a task that is not stored refuses it and writes nothing: no
+// row, and none of the history it carries moves off the task it was loaded from.
+func TestUpdateTask_MissingTaskWritesNothing(t *testing.T) {
 	const copyID = dtTaskID + 1
 	for _, d := range historyDBs(t) {
 		t.Run(d.name, func(t *testing.T) {
@@ -173,17 +174,14 @@ func TestUpdateTask_InsertFallbackWritesOnlyTheRow(t *testing.T) {
 			writes := countChildWrites(t, d.db)
 
 			task.ID = copyID
-			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
-				t.Fatalf("save a new task carrying %d tool calls: %v", historyRows, err)
+			if _, err := repo.UpdateTask(context.Background(), task, "Status"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("update a task that is not stored: %v, want ErrNotFound", err)
 			}
 			if *writes != 0 {
-				t.Errorf("inserting the task wrote messages or tool calls %d times, want 0", *writes)
+				t.Errorf("the update wrote messages or tool calls %d times, want 0", *writes)
 			}
-			if _, err := repo.GetTask(context.Background(), dtWorkspaceID, copyID, dtUserID); err != nil {
-				t.Fatalf("the inserted task: %v", err)
-			}
-			if m, c := historyOf(t, d.db, copyID); m != 0 || c != 0 {
-				t.Errorf("the inserted task has %d messages and %d tool calls, want none", m, c)
+			if _, err := repo.GetTask(context.Background(), dtWorkspaceID, copyID, dtUserID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("the missing task: %v, want ErrNotFound", err)
 			}
 			if m, c := historyOf(t, d.db, dtTaskID); m != historyRows || c != historyRows {
 				t.Errorf("the original kept %d messages and %d tool calls, want %d of each", m, c, historyRows)
@@ -204,7 +202,7 @@ func TestUpdateTask_TrimmedHistoryDeletesNothing(t *testing.T) {
 			task.Messages = task.Messages[:1]
 			task.ToolCalls = nil
 			task.Status = "blocked"
-			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
+			if _, err := repo.UpdateTask(context.Background(), task, "Status"); err != nil {
 				t.Fatalf("update: %v", err)
 			}
 			if *writes != 0 {

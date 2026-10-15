@@ -36,16 +36,16 @@ func TestTaskStateTransitions_RecordedOnCreateAndStatusChange(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	task.Status = "ongoing"
-	if task, err = repo.UpdateTask(ctx, task); err != nil {
+	if task, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	// A save that leaves the status alone is not a transition.
 	task.Title = "renamed"
-	if task, err = repo.UpdateTask(ctx, task); err != nil {
+	if task, err = repo.UpdateTask(ctx, task, "Title"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	task.Status = "blocked"
-	if _, err = repo.UpdateTask(ctx, task); err != nil {
+	if _, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestTaskStateTransitions_RecordTheAgentIDs(t *testing.T) {
 	}
 	task.Status = "ongoing"
 	ctx := entity.WithTaskAgent(context.Background(), entity.TaskAgent{Name: "gemini", ID: 7, ModelID: 9})
-	if _, err = repo.UpdateTask(ctx, task); err != nil {
+	if _, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
@@ -148,20 +148,22 @@ func TestTaskStateTransitions_RecordedWhenCreatedWithMessages(t *testing.T) {
 	}
 }
 
-// Save upserts, so an UpdateTask of a task that is not there yet creates it,
-// and that is its first state.
-func TestTaskStateTransitions_UpdateThatInserts(t *testing.T) {
+// Every caller reads the task first, so a task that is not there was deleted in
+// between: the update refuses it rather than bring it back.
+func TestTaskStateTransitions_UpdateOfAMissingTask(t *testing.T) {
 	db := deleteTaskDB(t)
 	repo := New(&mockDB{db: db})
 	now := time.Now()
 
 	task := model.Task{ID: dtTaskID, CreatedAt: now, UpdatedAt: now, WorkspaceID: dtWorkspaceID, UserID: dtUserID, Status: "cron"}
-	if _, err := repo.UpdateTask(context.Background(), task); err != nil {
-		t.Fatalf("update: %v", err)
+	if _, err := repo.UpdateTask(context.Background(), task, "Status"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("update: %v, want ErrNotFound", err)
 	}
-	rows := transitionsOf(t, repo, dtTaskID)
-	if len(rows) != 1 || rows[0].FromState != model.TaskStateNone || rows[0].ToState != model.TaskStateCron {
-		t.Fatalf("transitions = %+v, want one none→cron", rows)
+	if err := db.First(&model.Task{}, dtTaskID).Error; err == nil {
+		t.Fatal("the update created the task")
+	}
+	if rows := transitionsOf(t, repo, dtTaskID); len(rows) != 0 {
+		t.Fatalf("transitions = %+v, want none", rows)
 	}
 }
 
@@ -177,7 +179,7 @@ func TestTaskStateTransitions_MoveTakesHistoryAlong(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	task.WorkspaceID = otherWorkspace
-	if _, err := repo.UpdateTask(ctx, task); err != nil {
+	if _, err := repo.UpdateTask(ctx, task, "WorkspaceID"); err != nil {
 		t.Fatalf("move: %v", err)
 	}
 	rows := transitionsOf(t, repo, dtTaskID)
@@ -233,7 +235,7 @@ func TestTaskStateTransitions_WriteFailureRollsBack(t *testing.T) {
 	}
 
 	task.Status = "ongoing"
-	if _, err := repo.UpdateTask(ctx, task); err == nil {
+	if _, err := repo.UpdateTask(ctx, task, "Status"); err == nil {
 		t.Fatal("update: want the history write's error")
 	}
 	var got model.Task
@@ -258,7 +260,7 @@ func TestUpdateTask_LookupFailure(t *testing.T) {
 	if err := db.Migrator().DropTable(&model.Message{}, &model.ToolCall{}, &model.Task{}); err != nil {
 		t.Fatalf("drop: %v", err)
 	}
-	if _, err := repo.UpdateTask(context.Background(), model.Task{ID: dtTaskID, Status: "ongoing"}); err == nil {
+	if _, err := repo.UpdateTask(context.Background(), model.Task{ID: dtTaskID, Status: "ongoing"}, "Status"); err == nil {
 		t.Fatal("update: want the lookup's error")
 	}
 }
@@ -324,12 +326,12 @@ func TestTaskStateTransitions_StatementFailures(t *testing.T) {
 		}},
 		{"save task", "update", "tasks", func(r Repository, task model.Task) error {
 			task.Status = "ongoing"
-			_, err := r.UpdateTask(context.Background(), task)
+			_, err := r.UpdateTask(context.Background(), task, "Status")
 			return err
 		}},
 		{"move history", "update", "task_state_transitions", func(r Repository, task model.Task) error {
 			task.WorkspaceID = 7
-			_, err := r.UpdateTask(context.Background(), task)
+			_, err := r.UpdateTask(context.Background(), task, "WorkspaceID")
 			return err
 		}},
 		{"delete task's history", "delete", "task_state_transitions", func(r Repository, _ model.Task) error {
@@ -437,7 +439,7 @@ func TestTaskStateTransitions_NeedsInput(t *testing.T) {
 	// A real status change ends the wait, from needs-input.
 	msg(5, `{"type":"permission_request","status":"pending"}`)
 	task.Status = "blocked"
-	if task, err = repo.UpdateTask(ctx, task); err != nil {
+	if task, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	want(ongoing, needs, ongoing, needs, blocked)
@@ -451,7 +453,7 @@ func TestTaskStateTransitions_NeedsInput(t *testing.T) {
 
 	// A closed task is not waiting on anyone, whatever is left in its thread.
 	task.Status = "completed"
-	if _, err = repo.UpdateTask(ctx, task); err != nil {
+	if _, err = repo.UpdateTask(ctx, task, "Status"); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	msg(6, `{"type":"permission_request","status":"pending"}`)
@@ -541,7 +543,7 @@ func TestUpdateTask_HistoryLookupFailure(t *testing.T) {
 	}
 	failQuery(t, db, "task_state_transitions")
 	task.Status = "ongoing"
-	if _, err := repo.UpdateTask(context.Background(), task); !errors.Is(err, errInjected) {
+	if _, err := repo.UpdateTask(context.Background(), task, "Status"); !errors.Is(err, errInjected) {
 		t.Fatalf("got %v, want the injected failure", err)
 	}
 }

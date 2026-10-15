@@ -102,7 +102,7 @@ func TestSetAgentTaskStatus(t *testing.T) {
 			repo := mock_repository.NewMockRepository(ctrl)
 			ps := mock_pubsub.NewMockService(ctrl)
 			repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
-			repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, m model.Task) (model.Task, error) {
+			repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").DoAndReturn(func(_ context.Context, m model.Task, _ ...string) (model.Task, error) {
 				return m, nil
 			})
 			actions := published(ps)
@@ -140,7 +140,7 @@ func TestSetAgentTaskStatus(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		repo := mock_repository.NewMockRepository(ctrl)
 		repo.EXPECT().GetTaskRow(gomock.Any(), memParent, int64(101), memUser).Return(row, nil)
-		repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any()).Return(model.Task{}, errRepo)
+		repo.EXPECT().UpdateTask(gomock.Any(), gomock.Any(), "Status").Return(model.Task{}, errRepo)
 		if _, err := setAgentTaskStatus(context.Background(), repo, mock_pubsub.NewMockService(ctrl), memParent, owner, 101, "completed"); err != errRepo {
 			t.Errorf("err = %v, want %v", err, errRepo)
 		}

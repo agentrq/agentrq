@@ -297,6 +297,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	createMsg := false
 	msgText := req.Text
 	msgSender := "human"
+	var changed []string
 
 	switch req.Action {
 	case "allow", "allow_all":
@@ -311,6 +312,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 			}
 		}
 		m.Status = "ongoing"
+		changed = append(changed, "Status")
 		createMsg = true
 		if msgText == "" {
 			msgText = "Human approved this task."
@@ -325,6 +327,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 		})
 	case "reject":
 		m.Status = "rejected"
+		changed = append(changed, "Status")
 		createMsg = true
 		if msgText == "" {
 			msgText = "Human rejected this task."
@@ -376,7 +379,7 @@ func (c *controller) RespondToTask(ctx context.Context, req entity.RespondToTask
 	}
 
 	m.UpdatedAt = time.Now()
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, changed...)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +434,7 @@ func (c *controller) UpdateTaskStatus(ctx context.Context, req entity.UpdateTask
 	m.Status = req.Status
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "Status")
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +475,7 @@ func (c *controller) UpdateTaskOrder(ctx context.Context, req entity.UpdateTaskO
 	m.SortOrder = req.SortOrder
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "SortOrder")
 	if err != nil {
 		return nil, err
 	}
@@ -502,14 +505,16 @@ func (c *controller) UpdateTaskAssignee(ctx context.Context, req entity.UpdateTa
 		return nil, fmt.Errorf("invalid assignee: %s", req.Assignee)
 	}
 
+	changed := []string{"Assignee"}
 	if req.Assignee == "agent" && m.Assignee != "agent" {
 		m.Body = AppendSelfLearningNote(m.Body, w.SelfLearningLoopNote)
+		changed = append(changed, "Body")
 	}
 
 	m.Assignee = req.Assignee
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, changed...)
 	if err != nil {
 		return nil, err
 	}
@@ -548,7 +553,7 @@ func (c *controller) UpdateTaskTitle(ctx context.Context, req entity.UpdateTaskT
 	m.Title = title
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "Title")
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +592,7 @@ func (c *controller) MoveTask(ctx context.Context, req entity.MoveTaskRequest) (
 	m.WorkspaceID = req.DestinationWorkspaceID
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "WorkspaceID")
 	if err != nil {
 		return nil, err
 	}
@@ -631,7 +636,7 @@ func (c *controller) UpdateTaskAllowAllCommands(ctx context.Context, req entity.
 	m.AllowAllCommands = req.AllowAllCommands
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "AllowAllCommands")
 	if err != nil {
 		return nil, err
 	}
@@ -981,7 +986,7 @@ func (c *controller) UpdateScheduledTask(ctx context.Context, req entity.UpdateS
 	m.ClearContext = req.ClearContext
 	m.UpdatedAt = time.Now()
 
-	updated, err := c.repository.UpdateTask(ctx, m)
+	updated, err := c.repository.UpdateTask(ctx, m, "Status", "CronSchedule", "Title", "Body", "Assignee", "AllowAllCommands", "ClearContext")
 	if err != nil {
 		return nil, err
 	}
