@@ -153,3 +153,13 @@ describe('the fork button', () => {
     expect(forkTask).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('the back arrow', () => {
+  it("goes to the workspace's task list, not back in history", async () => {
+    const { el } = await mount()
+
+    el.querySelector('[data-test="task-back"]').click()
+
+    expect(push).toHaveBeenCalledWith({ path: '/workspaces/ws1' })
+  })
+})

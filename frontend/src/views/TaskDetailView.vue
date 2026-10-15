@@ -21,7 +21,7 @@
         <!-- Title & Status Row -->
         <div class="flex items-start justify-between gap-2">
           <div class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
-            <button @click="router.back()" class="@min-[48rem]:hidden h-7 w-7 -ml-1.5 text-gray-500 hover:text-black dark:hover:text-white transition-colors flex items-center justify-center" title="Go Back">
+            <button @click="router.push(taskListPath(route))" data-test="task-back" class="@min-[48rem]:hidden h-7 w-7 -ml-1.5 text-gray-500 hover:text-black dark:hover:text-white transition-colors flex items-center justify-center" title="Back to tasks">
               <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
             </button>
             <!-- Removed workspace name on mobile per user request -->
@@ -1017,6 +1017,7 @@ import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
 import { mergeTaskUpdate, upsertToolCall } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
+import { taskListPath } from '../composables/taskListPath';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
