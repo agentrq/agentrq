@@ -13,10 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// A task read with GetTask carries every message and tool call it has. Saving
-// it used to upsert all of them in one statement each, so past 4,095 tool calls
-// (8 columns a row) SQLite refused it with "too many SQL variables": the task
-// could take no reply and no status change, and held the workspace's queue.
+// Saving a task must write only its row, never the history GetTask loaded (#921).
 func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
 	db := deleteTaskDB(t)
 	repo := New(&mockDB{db: db})
