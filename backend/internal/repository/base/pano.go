@@ -182,7 +182,9 @@ func (r *repository) CreateTaskLinkingPanoDoc(ctx context.Context, t model.Task,
 		if err := panoDocExists(tx, t.UserID, link.DocID, now); err != nil {
 			return err
 		}
-		if err := tx.Create(&t).Error; err != nil {
+		// Only the task row: a task copied from a loaded one must not take
+		// that task's messages and tool calls (#921).
+		if err := tx.Omit(clause.Associations).Create(&t).Error; err != nil {
 			return err
 		}
 		if err := recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status)); err != nil {

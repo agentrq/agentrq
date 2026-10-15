@@ -6,27 +6,79 @@ package base
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/glebarez/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-// Saving a task must write only its row, never the history GetTask loaded (#921).
-func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
-	db := deleteTaskDB(t)
-	repo := New(&mockDB{db: db})
-	ctx := context.Background()
-	now := time.Now()
+// A task's writes must never move its history (#921). One statement for all of
+// a task's messages or tool calls binds 8 values a row: past 4,095 rows that is
+// over SQLite's limit of 32,766, and past 8,191 over Postgres's 65,535. The
+// tests seed 8,200 of each, which breaks both if any write takes them along.
+//
+// They run on SQLite, and on Postgres too when AGENTRQ_TEST_POSTGRES_DSN names
+// a throwaway database: its tables are dropped and recreated.
+const historyRows = 8200
 
+type historyDB struct {
+	name string
+	db   *gorm.DB
+}
+
+var historyTables = []any{&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}, &model.PanoDoc{}, &model.PanoDocTask{}}
+
+func historyDBs(t *testing.T) []historyDB {
+	t.Helper()
+	quiet := &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
+	dbs := []historyDB{{name: "sqlite", db: openHistoryDB(t, sqlite.Open("file::memory:?_pragma=foreign_keys(1)"), quiet)}}
+	if dsn := os.Getenv("AGENTRQ_TEST_POSTGRES_DSN"); dsn != "" {
+		pg := openHistoryDB(t, postgres.Open(dsn), quiet)
+		dbs = append(dbs, historyDB{name: "postgres", db: pg})
+	} else {
+		t.Log("AGENTRQ_TEST_POSTGRES_DSN is not set; running on SQLite only")
+	}
+	return dbs
+}
+
+func openHistoryDB(t *testing.T, d gorm.Dialector, cfg *gorm.Config) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(d, cfg)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := db.Migrator().DropTable(historyTables...); err != nil {
+		t.Fatalf("drop tables: %v", err)
+	}
+	if err := db.AutoMigrate(historyTables...); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+// seedLongTask creates the task dtTaskID with historyRows messages and tool
+// calls, and returns it as GetTask loads it: with all of them.
+func seedLongTask(t *testing.T, db *gorm.DB) model.Task {
+	t.Helper()
+	ctx := context.Background()
+	repo := New(&mockDB{db: db})
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	if _, err := repo.CreateTask(ctx, model.Task{ID: dtTaskID, CreatedAt: now, UpdatedAt: now, WorkspaceID: dtWorkspaceID, UserID: dtUserID, Status: "ongoing"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	const n = 4100
-	msgs := make([]model.Message, n)
-	calls := make([]model.ToolCall, n)
-	for i := range n {
+	msgs := make([]model.Message, historyRows)
+	calls := make([]model.ToolCall, historyRows)
+	for i := range historyRows {
 		msgs[i] = model.Message{ID: int64(i + 1), CreatedAt: now, TaskID: dtTaskID, UserID: dtUserID, Sender: "agent", Text: "working"}
 		calls[i] = model.ToolCall{ID: int64(i + 1), CreatedAt: now, TaskID: dtTaskID, WorkspaceID: dtWorkspaceID, ToolName: "Bash", Status: "auto_allowed"}
 	}
@@ -36,45 +88,200 @@ func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
 	if err := db.CreateInBatches(calls, 500).Error; err != nil {
 		t.Fatalf("seed tool calls: %v", err)
 	}
-
 	task, err := repo.GetTask(ctx, dtWorkspaceID, dtTaskID, dtUserID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if len(task.Messages) != n || len(task.ToolCalls) != n {
-		t.Fatalf("loaded %d messages and %d tool calls, want %d of each", len(task.Messages), len(task.ToolCalls), n)
+	if len(task.Messages) != historyRows || len(task.ToolCalls) != historyRows {
+		t.Fatalf("loaded %d messages and %d tool calls, want %d of each", len(task.Messages), len(task.ToolCalls), historyRows)
 	}
+	return task
+}
 
-	// Count every write that reaches a child table during the save.
-	var childWrites int
-	countChildWrite := func(tx *gorm.DB) {
+// countChildWrites counts every insert, update or delete that reaches the
+// messages or tool_calls table from now on.
+func countChildWrites(t *testing.T, db *gorm.DB) *int {
+	t.Helper()
+	var n int
+	count := func(tx *gorm.DB) {
 		if tx.Statement.Table == "messages" || tx.Statement.Table == "tool_calls" {
-			childWrites++
+			n++
 		}
 	}
-	if err := db.Callback().Create().After("gorm:create").Register("test:count_child_creates", countChildWrite); err != nil {
+	cb := db.Callback()
+	if err := cb.Create().After("gorm:create").Register("test:count_child_creates", count); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if err := db.Callback().Update().After("gorm:update").Register("test:count_child_updates", countChildWrite); err != nil {
+	if err := cb.Update().After("gorm:update").Register("test:count_child_updates", count); err != nil {
 		t.Fatalf("register: %v", err)
 	}
+	if err := cb.Delete().After("gorm:delete").Register("test:count_child_deletes", count); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	return &n
+}
 
-	task.Status = "completed"
-	if _, err := repo.UpdateTask(ctx, task); err != nil {
-		t.Fatalf("update a task with %d tool calls: %v", n, err)
+// historyOf counts the messages and tool calls stored for a task.
+func historyOf(t *testing.T, db *gorm.DB, taskID int64) (msgs, calls int64) {
+	t.Helper()
+	if err := db.Model(&model.Message{}).Where("task_id = ?", taskID).Count(&msgs).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
 	}
-	if childWrites != 0 {
-		t.Errorf("saving the task wrote its messages or tool calls %d times, want 0", childWrites)
+	if err := db.Model(&model.ToolCall{}).Where("task_id = ?", taskID).Count(&calls).Error; err != nil {
+		t.Fatalf("count tool calls: %v", err)
 	}
+	return msgs, calls
+}
 
-	got, err := repo.GetTask(ctx, dtWorkspaceID, dtTaskID, dtUserID)
-	if err != nil {
-		t.Fatalf("get after update: %v", err)
+// Saving a task must write only its row, never the history GetTask loaded.
+func TestUpdateTask_DoesNotRewriteHistory(t *testing.T) {
+	for _, d := range historyDBs(t) {
+		t.Run(d.name, func(t *testing.T) {
+			repo := New(&mockDB{db: d.db})
+			task := seedLongTask(t, d.db)
+			writes := countChildWrites(t, d.db)
+
+			task.Status = "completed"
+			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
+				t.Fatalf("update a task with %d tool calls: %v", historyRows, err)
+			}
+			if *writes != 0 {
+				t.Errorf("saving the task wrote its messages or tool calls %d times, want 0", *writes)
+			}
+			got, err := repo.GetTask(context.Background(), dtWorkspaceID, dtTaskID, dtUserID)
+			if err != nil {
+				t.Fatalf("get after update: %v", err)
+			}
+			if got.Status != "completed" {
+				t.Errorf("status = %q, want completed", got.Status)
+			}
+			if len(got.Messages) != historyRows || len(got.ToolCalls) != historyRows {
+				t.Errorf("after the save: %d messages and %d tool calls, want %d of each", len(got.Messages), len(got.ToolCalls), historyRows)
+			}
+		})
 	}
-	if got.Status != "completed" {
-		t.Errorf("status = %q, want completed", got.Status)
+}
+
+// A save of a task that is not stored yet inserts its row, and still only
+// its row: the history it carries stays with the task it was loaded from.
+func TestUpdateTask_InsertFallbackWritesOnlyTheRow(t *testing.T) {
+	const copyID = dtTaskID + 1
+	for _, d := range historyDBs(t) {
+		t.Run(d.name, func(t *testing.T) {
+			repo := New(&mockDB{db: d.db})
+			task := seedLongTask(t, d.db)
+			writes := countChildWrites(t, d.db)
+
+			task.ID = copyID
+			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
+				t.Fatalf("save a new task carrying %d tool calls: %v", historyRows, err)
+			}
+			if *writes != 0 {
+				t.Errorf("inserting the task wrote messages or tool calls %d times, want 0", *writes)
+			}
+			if _, err := repo.GetTask(context.Background(), dtWorkspaceID, copyID, dtUserID); err != nil {
+				t.Fatalf("the inserted task: %v", err)
+			}
+			if m, c := historyOf(t, d.db, copyID); m != 0 || c != 0 {
+				t.Errorf("the inserted task has %d messages and %d tool calls, want none", m, c)
+			}
+			if m, c := historyOf(t, d.db, dtTaskID); m != historyRows || c != historyRows {
+				t.Errorf("the original kept %d messages and %d tool calls, want %d of each", m, c, historyRows)
+			}
+		})
 	}
-	if len(got.Messages) != n || len(got.ToolCalls) != n {
-		t.Errorf("after the save: %d messages and %d tool calls, want %d of each", len(got.Messages), len(got.ToolCalls), n)
+}
+
+// A task saved with fewer messages or tool calls than it has loses none: a
+// save never deletes history.
+func TestUpdateTask_TrimmedHistoryDeletesNothing(t *testing.T) {
+	for _, d := range historyDBs(t) {
+		t.Run(d.name, func(t *testing.T) {
+			repo := New(&mockDB{db: d.db})
+			task := seedLongTask(t, d.db)
+			writes := countChildWrites(t, d.db)
+
+			task.Messages = task.Messages[:1]
+			task.ToolCalls = nil
+			task.Status = "blocked"
+			if _, err := repo.UpdateTask(context.Background(), task); err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			if *writes != 0 {
+				t.Errorf("saving the task wrote its messages or tool calls %d times, want 0", *writes)
+			}
+			if m, c := historyOf(t, d.db, dtTaskID); m != historyRows || c != historyRows {
+				t.Errorf("after the save: %d messages and %d tool calls, want %d of each", m, c, historyRows)
+			}
+		})
+	}
+}
+
+// Deleting a task removes all of its history however long it is: the child
+// deletes go by task id, so they bind one value whatever the count.
+func TestDeleteTask_LongHistory(t *testing.T) {
+	for _, d := range historyDBs(t) {
+		t.Run(d.name, func(t *testing.T) {
+			repo := New(&mockDB{db: d.db})
+			seedLongTask(t, d.db)
+
+			if err := repo.DeleteTask(context.Background(), dtWorkspaceID, dtTaskID, dtUserID); err != nil {
+				t.Fatalf("delete a task with %d tool calls: %v", historyRows, err)
+			}
+			if m, c := historyOf(t, d.db, dtTaskID); m != 0 || c != 0 {
+				t.Errorf("after the delete: %d messages and %d tool calls, want none", m, c)
+			}
+		})
+	}
+}
+
+// A task created from a copy of a loaded one starts with no history, and the
+// task it was copied from keeps all of its own, on every create path.
+func TestCreateTasks_NeverMoveAnotherTasksHistory(t *testing.T) {
+	const copyID = dtTaskID + 1
+	creates := map[string]func(r Repository, db *gorm.DB, task model.Task) error{
+		"CreateTask": func(r Repository, _ *gorm.DB, task model.Task) error {
+			_, err := r.CreateTask(context.Background(), task)
+			return err
+		},
+		"CreateTaskWithMessages": func(r Repository, _ *gorm.DB, task model.Task) error {
+			_, err := r.CreateTaskWithMessages(context.Background(), task, nil)
+			return err
+		},
+		"CreateTaskLinkingPanoDoc": func(r Repository, db *gorm.DB, task model.Task) error {
+			now := time.Now().UTC()
+			if err := db.Create(&model.PanoDoc{ID: 1, UserID: dtUserID, CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(time.Hour)}).Error; err != nil {
+				return err
+			}
+			link := model.PanoDocTask{ID: 1, UserID: dtUserID, DocID: 1, TaskID: task.ID, WorkspaceID: task.WorkspaceID}
+			_, err := r.CreateTaskLinkingPanoDoc(context.Background(), task, link, now)
+			return err
+		},
+	}
+	for name, create := range creates {
+		t.Run(name, func(t *testing.T) {
+			for _, d := range historyDBs(t) {
+				t.Run(d.name, func(t *testing.T) {
+					repo := New(&mockDB{db: d.db})
+					task := seedLongTask(t, d.db)
+					writes := countChildWrites(t, d.db)
+
+					task.ID = copyID
+					task.Status = "notstarted"
+					if err := create(repo, d.db, task); err != nil {
+						t.Fatalf("create a task copied from one with %d tool calls: %v", historyRows, err)
+					}
+					if *writes != 0 {
+						t.Errorf("creating the task wrote messages or tool calls %d times, want 0", *writes)
+					}
+					if m, c := historyOf(t, d.db, copyID); m != 0 || c != 0 {
+						t.Errorf("the new task has %d messages and %d tool calls, want none", m, c)
+					}
+					if m, c := historyOf(t, d.db, dtTaskID); m != historyRows || c != historyRows {
+						t.Errorf("the original kept %d messages and %d tool calls, want %d of each", m, c, historyRows)
+					}
+				})
+			}
+		})
 	}
 }

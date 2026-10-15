@@ -541,7 +541,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 
 func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&t).Error; err != nil {
+		// Only the task row: a task copied from a loaded one must not take
+		// that task's messages and tool calls (#921).
+		if err := tx.Omit(clause.Associations).Create(&t).Error; err != nil {
 			return err
 		}
 		return recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status))
@@ -554,7 +556,9 @@ func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, 
 
 func (r *repository) CreateTaskWithMessages(ctx context.Context, t model.Task, msgs []model.Message) (model.Task, error) {
 	err := r.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&t).Error; err != nil {
+		// Only the task row: a task copied from a loaded one must not take
+		// that task's messages and tool calls (#921).
+		if err := tx.Omit(clause.Associations).Create(&t).Error; err != nil {
 			return err
 		}
 		if err := recordTaskStateTransition(tx, t, model.TaskStateNone, model.TaskStateFromStatus(t.Status)); err != nil {
