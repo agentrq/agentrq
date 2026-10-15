@@ -664,36 +664,8 @@ func New(cfg Config) (*App, error) {
 			&skillStore{crud: crudCtrl, workspaceID: workspaceID, userID: workspaceOwner},
 			crudCtrl,
 			siteToolsBackend{repo: repo, hub: siteHub},
-			func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
-				if _, err := workspaceTask(ctx, repo, workspaceID, workspaceOwner, tc.TaskID); err != nil {
-					return model.ToolCall{}, err
-				}
-				created, err := repo.CreateToolCall(ctx, tc)
-				if err == nil {
-					uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-					if latest, gErr := repo.GetTask(ctx, workspaceID, created.TaskID, uid); gErr == nil {
-						bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
-							Type:    "task.updated",
-							Payload: mapper.FromModelTaskToView(latest),
-						})
-					}
-				}
-				return created, err
-			},
-			func(ctx context.Context, id int64, status string) error {
-				updated, err := repo.UpdateToolCallStatus(ctx, id, status)
-				if err != nil {
-					return err
-				}
-				uid := monoflake.IDFromBase62(workspaceOwner).Int64()
-				if latest, gErr := repo.GetTask(ctx, workspaceID, updated.TaskID, uid); gErr == nil {
-					bus.Publish(workspaceID, workspaceOwner, eventbus.Event{
-						Type:    "task.updated",
-						Payload: mapper.FromModelTaskToView(latest),
-					})
-				}
-				return nil
-			},
+			toolCallRecorder{repo: repo, bus: bus, workspaceID: workspaceID, owner: workspaceOwner}.create,
+			toolCallRecorder{repo: repo, bus: bus, workspaceID: workspaceID, owner: workspaceOwner}.answer,
 			bus,
 			ids,
 			storageSvc,
@@ -1099,15 +1071,11 @@ func mcpTaskDefaults(ctx context.Context, repo base.Repository, workspaceID int6
 	return task
 }
 
-// taskEventPayload loads the task an SSE event is about, with the relations a
-// task view carries.
+// taskEventPayload loads the task an SSE event is about, with its messages.
 //
-// A client replaces its whole task with this payload, so a relation missing
-// from it is a relation the client loses: publishing a task loaded without its
-// tool calls is what used to empty the trajectory's tool lane every time a new
-// message arrived. SystemGetTask preloads nothing — it is the system-scoped
-// lookup, used in plenty of places that want only the row — so the relations
-// are loaded here rather than widened for every caller.
+// Tool calls are left out: they arrive one at a time as toolCall.updated, and
+// a client keeps the relations a payload does not carry (mergeTaskUpdate).
+// Reloading every call on each event grew as N² over a long run (#921).
 //
 // A relation that fails to load is left as it is instead of failing the
 // publish: an event that reports a status change late-but-complete is worth
@@ -1119,9 +1087,6 @@ func taskEventPayload(ctx context.Context, repo base.Repository, taskID int64) (
 	}
 	if messages, err := repo.ListMessages(ctx, t.ID); err == nil {
 		t.Messages = messages
-	}
-	if toolCalls, err := repo.ListToolCalls(ctx, t.ID); err == nil {
-		t.ToolCalls = toolCalls
 	}
 	return t, nil
 }

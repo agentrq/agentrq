@@ -1015,7 +1015,7 @@ import { belongsInThread, recentToolCalls } from '../composables/useTrajectory';
 import { agentIsWorking, agentIsBusy, turnStartedAt, activitySince, formatElapsed, workDurations, workingPlaceholder } from '../composables/useAgentTurn';
 import { recordUiAction } from '../composables/useUiTelemetry';
 import { writeClipboard } from '../composables/useMarkdownLinks';
-import { mergeTaskUpdate } from '../composables/useTaskEvents';
+import { mergeTaskUpdate, upsertToolCall } from '../composables/useTaskEvents';
 import { taskDotClass, taskStatusTone } from '../composables/useTaskStatusStyle';
 import { forkNotice, forkedTaskPath } from '../composables/useTaskFork';
 import { useTaskRename } from '../composables/useTaskRename';
@@ -1957,6 +1957,12 @@ watch(events, (evts) => {
       // the merge for the same reason, never the raw payload.
       task.value = cacheTaskUpdate(sharedCache(), task.value, last.payload);
     }
+  }
+
+  // One tool call, never the whole task: see upsertToolCall.
+  if (last.type === 'toolCall.updated') {
+    const updated = upsertToolCall(task.value, last.payload?.toolCall);
+    if (updated !== task.value) task.value = cacheTaskUpdate(sharedCache(), task.value, updated);
   }
 }, { deep: true });
 

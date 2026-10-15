@@ -11,6 +11,8 @@ import (
 	"time"
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/mustafaturan/monoflake"
 )
 
 func TestFromEntityAttachmentsToView_KeepsTheLink(t *testing.T) {
@@ -49,5 +51,21 @@ func TestFromGetTaskResponseEntityToHTTPResponse_StateTransitions(t *testing.T) 
 		if !strings.Contains(raw, want) {
 			t.Errorf("response %s\nlacks %s", raw, want)
 		}
+	}
+}
+
+// A task view lists its tool calls the same way a toolCall.updated event
+// carries one, so a client can upsert either into the other.
+func TestFromModelTaskToView_ListsToolCallsAsTheEventCarriesThem(t *testing.T) {
+	tc := model.ToolCall{ID: 5, TaskID: 101, WorkspaceID: 10, ToolName: "Bash", InputPreview: `{"command":"ls"}`, Status: "pending", CreatedAt: time.Unix(1, 0)}
+
+	got := FromModelTaskToView(model.Task{ID: 101, WorkspaceID: 10, ToolCalls: []model.ToolCall{tc}})
+	event := FromModelToolCallToUpdatedView(10, tc)
+
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0] != event.ToolCall {
+		t.Fatalf("task view lists %+v, event carries %+v", got.ToolCalls, event.ToolCall)
+	}
+	if event.WorkspaceID != monoflake.ID(10).String() || event.ToolCall.TaskID != monoflake.ID(101).String() {
+		t.Errorf("event = %+v", event)
 	}
 }

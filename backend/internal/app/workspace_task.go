@@ -18,10 +18,16 @@ import (
 // workspace its MCP server serves. Every write an agent makes against a task
 // passes here first: the database only checks that the task exists, so without
 // it one workspace's token could post into any task, in any workspace.
+//
+// The row only: it runs on every tool call, and a long run's task holds
+// thousands of messages and tool calls (#921).
 func workspaceTask(ctx context.Context, repo base.Repository, workspaceID int64, owner string, taskID int64) (model.Task, error) {
-	t, err := repo.GetTask(ctx, workspaceID, taskID, monoflake.IDFromBase62(owner).Int64())
+	t, err := repo.SystemGetTask(ctx, taskID)
+	if err == nil && (t.WorkspaceID != workspaceID || t.UserID != monoflake.IDFromBase62(owner).Int64()) {
+		err = base.ErrNotFound
+	}
 	if errors.Is(err, base.ErrNotFound) {
-		return t, fmt.Errorf("task %s is not in this workspace", monoflake.ID(taskID).String())
+		return model.Task{}, fmt.Errorf("task %s is not in this workspace", monoflake.ID(taskID).String())
 	}
 	return t, err
 }

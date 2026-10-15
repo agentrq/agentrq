@@ -462,6 +462,25 @@ func fromEntityAttachmentsToView(atts []entity.Attachment) []view.Attachment {
 	return res
 }
 
+func FromModelToolCallToView(tc model.ToolCall) view.ToolCall {
+	return view.ToolCall{
+		ID:           monoflake.ID(tc.ID).String(),
+		CreatedAt:    tc.CreatedAt,
+		TaskID:       monoflake.ID(tc.TaskID).String(),
+		ToolName:     tc.ToolName,
+		Description:  tc.Description,
+		InputPreview: tc.InputPreview,
+		Status:       tc.Status,
+	}
+}
+
+func FromModelToolCallToUpdatedView(workspaceID int64, tc model.ToolCall) view.ToolCallUpdated {
+	return view.ToolCallUpdated{
+		WorkspaceID: monoflake.ID(workspaceID).String(),
+		ToolCall:    FromModelToolCallToView(tc),
+	}
+}
+
 func FromModelTaskToView(t model.Task) view.Task {
 	var workspaceID string
 	if t.WorkspaceID != 0 {
@@ -496,15 +515,7 @@ func FromModelTaskToView(t model.Task) view.Task {
 
 	toolCalls := make([]view.ToolCall, len(t.ToolCalls))
 	for i, tc := range t.ToolCalls {
-		toolCalls[i] = view.ToolCall{
-			ID:           monoflake.ID(tc.ID).String(),
-			CreatedAt:    tc.CreatedAt,
-			TaskID:       monoflake.ID(tc.TaskID).String(),
-			ToolName:     tc.ToolName,
-			Description:  tc.Description,
-			InputPreview: tc.InputPreview,
-			Status:       tc.Status,
-		}
+		toolCalls[i] = FromModelToolCallToView(tc)
 	}
 
 	res := view.Task{

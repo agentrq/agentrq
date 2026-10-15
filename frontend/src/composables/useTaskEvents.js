@@ -51,3 +51,22 @@ export function mergeTaskUpdate(current, incoming) {
   }
   return merged;
 }
+
+/**
+ * The task with one tool call put in its place: replaced when the task already
+ * lists it (a permission answered), appended when it is new.
+ *
+ * A `toolCall.updated` event carries that one call and nothing else, so a run
+ * of thousands never resends the calls the client already has (#921).
+ *
+ * @param {object|null} task the task the view is holding, if any
+ * @param {object|null} call the tool call the event carried
+ * @returns {object|null} a new task, or `task` itself when the call is not its
+ */
+export function upsertToolCall(task, call) {
+  if (!task || !call?.id || String(call.taskId) !== String(task.id)) return task ?? null;
+  const calls = Array.isArray(task.toolCalls) ? task.toolCalls : [];
+  const at = calls.findIndex((c) => c.id === call.id);
+  const toolCalls = at === -1 ? [...calls, call] : calls.map((c, i) => (i === at ? call : c));
+  return { ...task, toolCalls };
+}

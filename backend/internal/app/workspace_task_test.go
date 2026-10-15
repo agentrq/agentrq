@@ -61,7 +61,7 @@ func TestWorkspaceTaskRefusesATaskFromElsewhere(t *testing.T) {
 func TestWorkspaceTaskReportsStorageFailures(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := mock_repository.NewMockRepository(ctrl)
-	repo.EXPECT().GetTask(gomock.Any(), memParent, int64(101), memUser).Return(model.Task{}, errRepo)
+	repo.EXPECT().SystemGetTask(gomock.Any(), int64(101)).Return(model.Task{}, errRepo)
 
 	if _, err := workspaceTask(context.Background(), repo, memParent, monoflake.ID(memUser).String(), 101); err != errRepo {
 		t.Errorf("err = %v, want %v", err, errRepo)

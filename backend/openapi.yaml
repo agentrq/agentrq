@@ -2449,7 +2449,8 @@ paths:
         every other route.
 
         Event types: `task.created`, `task.updated`, `task.deleted`,
-        `status.updated`, `reply.received`, `respond.ack`, `agent.connected`.
+        `status.updated`, `reply.received`, `respond.ack`, `agent.connected`,
+        `toolCall.updated` (one tool call, `{workspaceId, toolCall}`).
 
         Served by the standard-library mux rather than by Fiber, because Fiber's
         response buffering is unsuited to a stream that never ends.

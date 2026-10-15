@@ -13,6 +13,7 @@ import {
   cacheTaskEvent,
   cacheTaskUpdate,
   cacheTasks,
+  cacheToolCallEvent,
   connectCache,
   isCacheEnabled,
   resetSharedCache,
@@ -284,6 +285,52 @@ describe('cacheTaskEvent', () => {
   })
 })
 
+describe('cacheToolCallEvent', () => {
+  const event = (call = {}) => ({
+    workspaceId: 'ws1',
+    toolCall: { id: 't2', taskId: '0iCYTqxKOqv', toolName: 'Bash', status: 'pending', ...call },
+  })
+
+  it('puts the one tool call into the cached task', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+    await cacheTask(db, makeTask({ toolCalls: [{ id: 't1' }] }), { storage: allOn })
+
+    expect(await cacheToolCallEvent(db, event(), { storage: allOn })).toBe(true)
+    expect(await cacheToolCallEvent(db, event({ status: 'allowed' }), { storage: allOn })).toBe(true)
+
+    const back = await getCachedTask(db, 'ws1', '0iCYTqxKOqv')
+    expect(back.toolCalls.map((c) => [c.id, c.status])).toEqual([['t1', undefined], ['t2', 'allowed']])
+    db.close()
+  })
+
+  it('writes nothing for a task the cache does not hold', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+
+    expect(await cacheToolCallEvent(db, event(), { storage: allOn })).toBe(false)
+    expect(await getCachedTask(db, 'ws1', '0iCYTqxKOqv')).toBeFalsy()
+    db.close()
+  })
+
+  it('writes nothing for an opted-out workspace', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+    await cacheTask(db, makeTask({ toolCalls: [] }), { storage: allOn })
+    const off = storageWith({ [cacheSettingKey('ws1')]: SETTING_OFF })
+
+    expect(await cacheToolCallEvent(db, event(), { storage: off })).toBe(false)
+    db.close()
+  })
+
+  it('writes nothing without a cache or a usable payload', async () => {
+    const db = await openCache({ userId: 'u1', factory })
+
+    expect(await cacheToolCallEvent(null, event(), { storage: allOn })).toBe(false)
+    expect(await cacheToolCallEvent(db, null, { storage: allOn })).toBe(false)
+    expect(await cacheToolCallEvent(db, { toolCall: event().toolCall }, { storage: allOn })).toBe(false)
+    expect(await cacheToolCallEvent(db, { workspaceId: 'ws1', toolCall: { id: 't2' } }, { storage: allOn })).toBe(false)
+    db.close()
+  })
+})
+
 describe('connectCache', () => {
   it('opens once and hands the same connection to everyone', async () => {
     const db = await connectCache('u1', { factory })
@@ -368,6 +415,7 @@ describe('the rule this module enforces', () => {
       'cacheTaskEvent',
       'cacheTaskUpdate',
       'cacheTasks',
+      'cacheToolCallEvent',
       'connectCache',
     ])
   })

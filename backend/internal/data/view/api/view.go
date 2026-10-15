@@ -196,6 +196,13 @@ type (
 		Status       string    `json:"status"`
 	}
 
+	// ToolCallUpdated is a toolCall.updated stream event: one tool call made or
+	// answered, for the client to upsert into its task.
+	ToolCallUpdated struct {
+		WorkspaceID string   `json:"workspaceId"`
+		ToolCall    ToolCall `json:"toolCall"`
+	}
+
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {

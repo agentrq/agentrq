@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 
-import { mergeTaskUpdate } from '../src/composables/useTaskEvents'
+import { mergeTaskUpdate, upsertToolCall } from '../src/composables/useTaskEvents'
 
 const task = (overrides = {}) => ({
   id: 'task-1',
@@ -82,5 +82,40 @@ describe('mergeTaskUpdate', () => {
 
     expect(mergeTaskUpdate(current, null)).toBe(current)
     expect(mergeTaskUpdate(undefined, undefined)).toBeNull()
+  })
+})
+
+describe('upsertToolCall', () => {
+  const call = (overrides = {}) => ({ id: 't2', taskId: 'task-1', toolName: 'Bash', status: 'pending', ...overrides })
+
+  it('appends a tool call the task does not list yet', () => {
+    const current = task()
+    const updated = upsertToolCall(current, call())
+
+    expect(updated.toolCalls.map((c) => c.id)).toEqual(['t1', 't2'])
+    expect(updated).not.toBe(current)
+    expect(current.toolCalls).toHaveLength(1)
+  })
+
+  it('replaces a tool call the task already lists, where it stands', () => {
+    const current = task({ toolCalls: [call({ id: 't1' }), call(), call({ id: 't3' })] })
+    const updated = upsertToolCall(current, call({ status: 'allowed' }))
+
+    expect(updated.toolCalls.map((c) => c.id)).toEqual(['t1', 't2', 't3'])
+    expect(updated.toolCalls[1].status).toBe('allowed')
+  })
+
+  it('starts the list for a task that has none', () => {
+    expect(upsertToolCall(task({ toolCalls: undefined }), call()).toolCalls).toEqual([call()])
+  })
+
+  it('leaves the task alone for a call that is not its own', () => {
+    const current = task()
+
+    expect(upsertToolCall(current, call({ taskId: 'task-2' }))).toBe(current)
+    expect(upsertToolCall(current, call({ id: '' }))).toBe(current)
+    expect(upsertToolCall(current, null)).toBe(current)
+    expect(upsertToolCall(null, call())).toBeNull()
+    expect(upsertToolCall(undefined, call())).toBeNull()
   })
 })

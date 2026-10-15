@@ -554,7 +554,7 @@ import PanoChatColumn from './components/PanoChatColumn.vue'
 import { isPanoChatRoute } from './composables/usePano'
 import { useSidePanel } from './composables/useSidePanel'
 import ProfileList from './components/ProfileList.vue'
-import { cacheTaskEvent, connectCache, sharedCache } from './composables/useCachedTasks'
+import { cacheTaskEvent, cacheToolCallEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
 import { SWEEP_INTERVAL_MS, sweepIfDue, whenIdle } from './composables/useCacheRetention'
 import CommandPalette from './components/CommandPalette.vue'
@@ -1028,6 +1028,9 @@ onEvent((event) => {
   // stream carries tasks nobody has open to merge against. See useCachedTasks.
   if (event.type === 'task.created' || event.type === 'task.updated') {
     cacheTaskEvent(sharedCache(), event.payload)
+  }
+  if (event.type === 'toolCall.updated') {
+    cacheToolCallEvent(sharedCache(), event.payload)
   }
 
   // A deleted task must not outlive itself on this device. Driven by the event

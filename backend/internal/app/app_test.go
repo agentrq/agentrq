@@ -320,13 +320,10 @@ func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
 	}
 }
 
-// The SSE payload a client replaces its whole task with.
-//
-// The regression: it was built from SystemGetTask, which preloads nothing, and
-// only the messages were loaded back on — so every event carried a task that
-// had never called a tool, and the trajectory's tool lane emptied itself the
-// moment a new message arrived.
-func TestTaskEventPayloadCarriesTheTasksRelations(t *testing.T) {
+// The SSE payload carries the task's messages but never its tool calls: those
+// arrive one at a time, and reloading them all on every event grew as N² (#921).
+// The strict mock fails if the tool calls are read.
+func TestTaskEventPayloadCarriesMessagesNotToolCalls(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -335,7 +332,6 @@ func TestTaskEventPayloadCarriesTheTasksRelations(t *testing.T) {
 
 	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{ID: 7, Title: "Ship it"}, nil)
 	repo.EXPECT().ListMessages(ctx, int64(7)).Return([]model.Message{{ID: 1}, {ID: 2}}, nil)
-	repo.EXPECT().ListToolCalls(ctx, int64(7)).Return([]model.ToolCall{{ID: 3, ToolName: "Read"}}, nil)
 
 	task, err := taskEventPayload(ctx, repo, 7)
 	if err != nil {
@@ -344,11 +340,8 @@ func TestTaskEventPayloadCarriesTheTasksRelations(t *testing.T) {
 	if len(task.Messages) != 2 {
 		t.Errorf("expected 2 messages, got %d", len(task.Messages))
 	}
-	if len(task.ToolCalls) != 1 {
-		t.Fatalf("expected the task's tool calls, got %d", len(task.ToolCalls))
-	}
-	if task.ToolCalls[0].ToolName != "Read" {
-		t.Errorf("unexpected tool call %q", task.ToolCalls[0].ToolName)
+	if task.ToolCalls != nil {
+		t.Errorf("expected no tool calls, got %d", len(task.ToolCalls))
 	}
 }
 
@@ -363,7 +356,6 @@ func TestTaskEventPayloadStillPublishesWhenARelationFails(t *testing.T) {
 
 	repo.EXPECT().SystemGetTask(ctx, int64(7)).Return(model.Task{ID: 7, Status: "completed"}, nil)
 	repo.EXPECT().ListMessages(ctx, int64(7)).Return(nil, errors.New("messages unavailable"))
-	repo.EXPECT().ListToolCalls(ctx, int64(7)).Return(nil, errors.New("tool calls unavailable"))
 
 	task, err := taskEventPayload(ctx, repo, 7)
 	if err != nil {
@@ -372,8 +364,8 @@ func TestTaskEventPayloadStillPublishesWhenARelationFails(t *testing.T) {
 	if task.Status != "completed" {
 		t.Errorf("expected the task itself, got status %q", task.Status)
 	}
-	if task.Messages != nil || task.ToolCalls != nil {
-		t.Errorf("expected the failed relations to be left empty")
+	if task.Messages != nil {
+		t.Errorf("expected the failed messages to be left empty")
 	}
 }
 

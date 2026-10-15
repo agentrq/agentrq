@@ -2,7 +2,7 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { mergeTaskUpdate } from './useTaskEvents';
+import { mergeTaskUpdate, upsertToolCall } from './useTaskEvents';
 import { getCachedTask, openCache, putTask } from './useLocalCache';
 import { taskTerms } from './useTaskIndex';
 
@@ -138,6 +138,23 @@ export async function cacheTaskEvent(db, incoming, options = {}) {
 
   const held = await getCachedTask(db, incoming.workspaceId, incoming.id);
   return cacheTask(db, mergeTaskUpdate(held, incoming), options);
+}
+
+/**
+ * Put the one tool call a `toolCall.updated` event carried into the cached task.
+ *
+ * Only a task already cached: one that is not has nothing to keep current, and
+ * loads whole from the server when it is opened.
+ */
+export async function cacheToolCallEvent(db, event, options = {}) {
+  const workspaceId = event?.workspaceId;
+  const call = event?.toolCall;
+  if (!db || !workspaceId || !call?.taskId) return false;
+  if (!isCacheEnabled(workspaceId, options.storage)) return false;
+
+  const held = await getCachedTask(db, workspaceId, call.taskId);
+  if (!held) return false;
+  return cacheTask(db, upsertToolCall(held, call), options);
 }
 
 /**
