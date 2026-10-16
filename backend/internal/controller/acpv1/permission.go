@@ -42,7 +42,11 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	}
 	known := s.proj.toolCall(req.ToolCall.ToolCallID)
 	title, rawInput := describeToolCall(known, req.ToolCall)
-	if _, ours := workspaceTool(title, e.ws.ToolNames(), deref(req.ToolCall.Name), known.name, known.title); ours {
+	name := deref(req.ToolCall.Name)
+	if name == "" {
+		name = known.name
+	}
+	if _, ours := workspaceTool(title, name, e.ws.ToolNames()); ours {
 		return requestPermissionResponse{Outcome: allowOwnTool(req.Options)}, nil
 	}
 	// The request owns the call's row from here: the one already recorded for
