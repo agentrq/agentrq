@@ -250,7 +250,7 @@ Values are whole numbers. The server refuses to start on anything else, or on a 
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_ACP_V1_ENABLED` | `false` | Serve `/api/acp/v1` for acp-gateway in native mode (`--acp-version 1`). Off, the endpoint answers 404. |
+| `AGENTRQ_ACP_V1_ENABLED` | `true` | Serve `/api/acp/v1` for acp-gateway in native mode (`--acp-version 1`). Off, the endpoint answers 404. |
 
 The value is `true` or `false`. The server refuses to start on anything else.
 

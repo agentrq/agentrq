@@ -104,10 +104,10 @@ pano:
   maxTtlDays: ${AGENTRQ_PANO_MAX_TTL_DAYS:365}
 
 # Native ACP: the endpoints acp-gateway uses in native mode (--acp-version).
-# Off answers 404.
+# On by default; off answers 404.
 acp:
   v1:
-    enabled: ${AGENTRQ_ACP_V1_ENABLED:false}
+    enabled: ${AGENTRQ_ACP_V1_ENABLED:true}
 
 # Any S3-compatible store. Objects are addressed path-style.
 s3:

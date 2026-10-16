@@ -257,14 +257,14 @@ func TestMountACP(t *testing.T) {
 	})
 }
 
-// The switch reaches acp.v1.enabled through the real base.yaml, off unless set.
+// The switch reaches acp.v1.enabled through the real base.yaml, on unless set.
 func TestACPSwitchFromEnv(t *testing.T) {
 	for _, tt := range []struct {
 		env  string
 		set  bool
 		want bool
 	}{
-		{"", false, false},
+		{"", false, true},
 		{"true", true, true},
 		{"false", true, false},
 	} {

@@ -9,4 +9,4 @@
 - **A dropped socket is not a closed connection.** The peer and its turns live through the 120 s grace window, and a resume replays what was missed. Only the window running out, the bridge's goodbye or the agent's exit ends them.
 - **No fs, no terminal, ever claimed.** The server cannot reach the agent's machine; agents use their own tools.
 - **The endpoint is on the stdlib mux and never also a Fiber route** (the mux shadows exact paths).
-- **Off unless `AGENTRQ_ACP_V1_ENABLED=true`.** While it is off, the endpoint answers 404, so a local test needs the switch set.
+- **On unless `AGENTRQ_ACP_V1_ENABLED=false`.** While it is off, the endpoint answers 404.

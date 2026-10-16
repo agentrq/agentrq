@@ -504,8 +504,8 @@ under Protocol when you start the gateway from the app:
 npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
 ```
 
-Native mode needs Node 22 or newer and a server with
-`AGENTRQ_ACP_V1_ENABLED=true`. The switch is off by default (see
+Native mode needs Node 22 or newer, and a server that has not turned it off
+with `AGENTRQ_ACP_V1_ENABLED=false` (it is on by default; see
 [Native ACP](docs/SETUP_PRODUCTION.md#native-acp)). Without the flag, the
 gateway works as before.
 
