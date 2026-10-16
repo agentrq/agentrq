@@ -9,27 +9,31 @@ import "testing"
 func TestWorkspaceTool(t *testing.T) {
 	offered := map[string]struct{}{"reply": {}, "saveMemory": {}, "updateTaskStatus": {}, "task": {}}
 	cases := []struct {
-		name, title, tool string
-		ok                bool
+		name, title string
+		names       []string
+		tool        string
+		ok          bool
 	}{
-		{"a call attributed to the workspace server is ours", "saveMemory (agentrq-workspace MCP Server)", "saveMemory", true},
-		{"a double-underscore qualified call is ours", "mcp__agentrq-workspace__reply", "reply", true},
-		{"a dotted qualified call is ours", "mcp.agentrq-workspace.updateTaskStatus", "updateTaskStatus", true},
-		{"a dashed qualified call is ours", "mcp-agentrq-task", "task", true},
-		{"a bare server_tool title is split both ways and checked", "agentrq-workspace_updateTaskStatus", "updateTaskStatus", true},
-		{"a tool the workspace does not offer is not ours", "mcp__agentrq-evil__rm_rf", "", false},
-		{"a server not named like AgentRQ's is not ours", "mcp__notagentrq__reply", "", false},
-		{"an attributed call to another server is not ours", "reply (filesystem MCP Server)", "", false},
-		{"a plain tool name is not ours", "write_file", "", false},
-		{"a path is not a call", "cat /home/me/agentrq-workspace/reply", "", false},
-		{"the legacy pattern is kept as generous as the gateway", "reply agentrq-AbCdEfGhIjK", "reply", true},
-		{"the legacy pattern with no space names the whole title", "agentrq-AbCdEfGhIjK", "agentrq-AbCdEfGhIjK", true},
+		{"a call attributed to the workspace server is ours", "saveMemory (agentrq-workspace MCP Server)", nil, "saveMemory", true},
+		{"a double-underscore qualified call is ours", "mcp__agentrq-workspace__reply", nil, "reply", true},
+		{"a dotted qualified call is ours", "mcp.agentrq-workspace.updateTaskStatus", nil, "updateTaskStatus", true},
+		{"a dashed qualified call is ours", "mcp-agentrq-task", nil, "task", true},
+		{"a bare server_tool title is split both ways and checked", "agentrq-workspace_updateTaskStatus", nil, "updateTaskStatus", true},
+		{"a human-readable title with a programmatic workspace tool name is ours", "Replying to task", []string{"mcp__agentrq-workspace__task"}, "task", true},
+		{"a structured workspace tool name wins over a legacy match in the title", "Replying in agentrq-AbCdEfGhIjK", []string{"mcp__agentrq-workspace__task"}, "task", true},
+		{"a tool the workspace does not offer is not ours", "mcp__agentrq-evil__rm_rf", nil, "", false},
+		{"a server not named like AgentRQ's is not ours", "mcp__notagentrq__reply", nil, "", false},
+		{"an attributed call to another server is not ours", "reply (filesystem MCP Server)", nil, "", false},
+		{"a plain tool name is not ours", "write_file", nil, "", false},
+		{"a path is not a call", "cat /home/me/agentrq-workspace/reply", nil, "", false},
+		{"the legacy pattern is kept as generous as the gateway", "reply agentrq-AbCdEfGhIjK", nil, "reply", true},
+		{"the legacy pattern with no space names the whole title", "agentrq-AbCdEfGhIjK", nil, "agentrq-AbCdEfGhIjK", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tool, ok := workspaceTool(c.title, offered)
+			tool, ok := workspaceTool(c.title, offered, c.names...)
 			if tool != c.tool || ok != c.ok {
-				t.Errorf("workspaceTool(%q) was (%q, %v), want (%q, %v)", c.title, tool, ok, c.tool, c.ok)
+				t.Errorf("workspaceTool(%q, %v) was (%q, %v), want (%q, %v)", c.title, c.names, tool, ok, c.tool, c.ok)
 			}
 		})
 	}

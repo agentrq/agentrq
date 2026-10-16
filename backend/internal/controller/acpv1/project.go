@@ -436,7 +436,7 @@ func (e *engineV1) toolCallUpdate(s *session, raw json.RawMessage) {
 	}
 	s.proj.rows.Lock()
 	tc := s.proj.rememberCall(u)
-	tool, ours := workspaceTool(tc.title, e.ws.ToolNames())
+	tool, ours := workspaceTool(tc.title, e.ws.ToolNames(), tc.name)
 	if !ours {
 		e.recordCall(s, tc, rowStatus(u.Status))
 	}

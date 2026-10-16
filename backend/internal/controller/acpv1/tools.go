@@ -35,7 +35,22 @@ var (
 // workspaceTool reports which of the workspace's own tools a call is, if it
 // is one. Both halves must check out: a server named like AgentRQ's, and a
 // tool the workspace actually offers. The name alone never grants anything.
-func workspaceTool(title string, offered map[string]struct{}) (tool string, ok bool) {
+func workspaceTool(title string, offered map[string]struct{}, names ...string) (tool string, ok bool) {
+	candidates := append([]string{title}, names...)
+	for _, s := range candidates {
+		if tool, ok := namedWorkspaceTool(s, offered); ok {
+			return tool, true
+		}
+	}
+	for _, s := range candidates {
+		if legacyAgentrqTool.MatchString(s) {
+			return firstToken(s), true
+		}
+	}
+	return "", false
+}
+
+func namedWorkspaceTool(title string, offered map[string]struct{}) (tool string, ok bool) {
 	ours := func(server, tool string) bool {
 		if !strings.EqualFold(server, mcpServerName) && !agentrqServer.MatchString(server) {
 			return false
@@ -66,9 +81,6 @@ func workspaceTool(title string, offered map[string]struct{}) (tool string, ok b
 				return tool, true
 			}
 		}
-	}
-	if legacyAgentrqTool.MatchString(title) {
-		return firstToken(title), true
 	}
 	return "", false
 }

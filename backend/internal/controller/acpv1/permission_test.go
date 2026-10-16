@@ -203,6 +203,15 @@ func TestPermissions(t *testing.T) {
 		if got := a.answerTo(5); string(got.Result) != answerApproved {
 			t.Fatalf("the agent was answered %s, want %s", got.Result, answerApproved)
 		}
+		a.request(6, methodRequestPermission, `{"sessionId":"sess-1","toolCall":{"toolCallId":"call-4","title":"Replying to task","name":"mcp__agentrq-workspace__task"},"options":[{"optionId":"approved","name":"Yes","kind":"allow_once"}]}`)
+		if got := a.answerTo(6); string(got.Result) != answerApproved {
+			t.Fatalf("the agent was answered %s, want %s", got.Result, answerApproved)
+		}
+		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"call-2","title":"Replying to task","name":"mcp__agentrq-workspace__task","status":"pending"}`)
+		a.request(7, methodRequestPermission, request)
+		if got := a.answerTo(7); string(got.Result) != `{"outcome":{"outcome":"selected","optionId":"approved-always"}}` {
+			t.Fatalf("the agent was answered %s, want approved-always", got.Result)
+		}
 		rec.read(func() {
 			if len(rec.permissions) != 0 {
 				t.Fatalf("the workspace was asked %+v, want nothing for its own tool", rec.permissions)

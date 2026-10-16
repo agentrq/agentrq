@@ -40,8 +40,9 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	if s == nil {
 		return cancelled, nil
 	}
-	title, rawInput := describeToolCall(s, req.ToolCall)
-	if _, ours := workspaceTool(title, e.ws.ToolNames()); ours {
+	known := s.proj.toolCall(req.ToolCall.ToolCallID)
+	title, rawInput := describeToolCall(known, req.ToolCall)
+	if _, ours := workspaceTool(title, e.ws.ToolNames(), deref(req.ToolCall.Name), known.name, known.title); ours {
 		return requestPermissionResponse{Outcome: allowOwnTool(req.Options)}, nil
 	}
 	// The request owns the call's row from here: the one already recorded for
@@ -119,8 +120,7 @@ func (e *engineV1) permissionWait() time.Duration {
 // describeToolCall names a call the way the card shows it: the request's own
 // title, else what an earlier tool_call update said, else its name, else
 // "Unknown Tool" — some agents send the request with nothing but the id.
-func describeToolCall(s *session, tc toolCallUpdate) (string, json.RawMessage) {
-	known := s.proj.toolCall(tc.ToolCallID)
+func describeToolCall(known toolCall, tc toolCallUpdate) (string, json.RawMessage) {
 	raw := tc.RawInput
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = known.rawInput

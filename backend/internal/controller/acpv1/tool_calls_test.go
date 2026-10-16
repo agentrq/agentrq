@@ -115,6 +115,8 @@ func TestToolCallRows(t *testing.T) {
 		rec, a, l := midTurn(t, agentOpts{})
 		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c1","title":"mcp__agentrq-workspace__task","status":"in_progress","rawInput":{"action":"get"}}`)
 		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"c1","status":"completed"}`)
+		a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c2","title":"Replying to task","name":"mcp__agentrq-workspace__task","status":"in_progress","rawInput":{"action":"reply"}}`)
+		a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"c2","status":"completed"}`)
 		a.sync(l)
 
 		idle := &recorder{}

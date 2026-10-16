@@ -1093,7 +1093,7 @@ func TestEngine(t *testing.T) {
 			a.chunk("sess-1", "agent_message_chunk", "Done.")
 		})
 		a.turn(rec, l, task, "sess-1", "end_turn", func() {
-			a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c2","title":"mcp__agentrq-workspace__task","status":"in_progress","rawInput":{"action":"reply","payload":{"taskId":"`+taskReplyID+`","text":"Again."}}}`)
+			a.update("sess-1", `{"sessionUpdate":"tool_call","toolCallId":"c2","title":"Replying to task","name":"mcp__agentrq-workspace__task","status":"in_progress","rawInput":{"action":"reply","payload":{"taskId":"`+taskReplyID+`","text":"Again."}}}`)
 			a.update("sess-1", `{"sessionUpdate":"tool_call_update","toolCallId":"c2","status":"completed"}`)
 			a.chunk("sess-1", "agent_message_chunk", "Again.")
 		})
