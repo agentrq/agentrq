@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
@@ -38,11 +39,15 @@ func (e *engineV1) createElicitation(ctx context.Context, params json.RawMessage
 		}
 		taskID = id
 	}
+	var completed atomic.Bool
 	if req.Mode == "url" && req.ElicitationID != "" {
 		var stop context.CancelFunc
 		ctx, stop = context.WithCancel(ctx)
 		e.mu.Lock()
-		e.urlQuestions[req.ElicitationID] = stop
+		e.urlQuestions[req.ElicitationID] = func() {
+			completed.Store(true)
+			stop()
+		}
 		e.mu.Unlock()
 		defer func() {
 			e.mu.Lock()
@@ -53,6 +58,9 @@ func (e *engineV1) createElicitation(ctx context.Context, params json.RawMessage
 	}
 	ans, err := e.ws.AskHuman(ctx, taskID, agentlink.Question{Mode: req.Mode, Message: req.Message,
 		RequestedSchema: req.RequestedSchema, URL: req.URL})
+	if completed.Load() {
+		return createElicitationResponse{Action: "accept"}, nil
+	}
 	if err != nil {
 		return cancel, nil
 	}

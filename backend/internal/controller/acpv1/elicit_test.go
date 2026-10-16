@@ -77,7 +77,7 @@ func TestElicitation(t *testing.T) {
 		})
 	})
 
-	t.Run("elicitation/complete closes a url question still waiting", func(t *testing.T) {
+	t.Run("elicitation/complete closes a url question still waiting as accepted", func(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		asked := make(chan struct{})
 		rec.read(func() {
@@ -92,9 +92,11 @@ func TestElicitation(t *testing.T) {
 		a.write(`{"jsonrpc":"2.0","method":"elicitation/complete","params":{"elicitationId":"nope"}}`)
 		a.write(`{"jsonrpc":"2.0","method":"elicitation/complete","params":"not an object"}`)
 		a.write(`{"jsonrpc":"2.0","method":"elicitation/complete","params":{"elicitationId":"e-1"}}`)
-		if got := a.answerTo(5); string(got.Result) != `{"action":"cancel"}` {
-			t.Fatalf("the agent was answered %s, want cancel", got.Result)
+		if got := a.answerTo(5); string(got.Result) != `{"action":"accept"}` {
+			t.Fatalf("the agent was answered %s, want accept", got.Result)
 		}
+		// A second completion notice after AskHuman returned is ignored.
+		a.write(`{"jsonrpc":"2.0","method":"elicitation/complete","params":{"elicitationId":"e-1"}}`)
 	})
 
 	t.Run("an invalid schema is answered cancel", func(t *testing.T) {
