@@ -94,8 +94,8 @@ type engineV1 struct {
 	preferredEffort string
 	commands        *agentlink.CommandsReport
 	attached        bool
-	permissions     map[string]*pendingPermission // by request id
-	urlQuestions    map[string]context.CancelFunc // url questions still open, by elicitation id
+	permissions     map[string]*pendingPermission      // by request id
+	urlQuestions    map[string]context.CancelCauseFunc // url questions still open, by elicitation id
 	stderr          []string
 	cause           error // why the connection is ending, once it is
 }
@@ -107,7 +107,7 @@ func NewEngineFactory(d EngineDeps) func(c *connection) engine {
 		e := &engineV1{deps: d, c: c, linkID: "acp1:" + c.ID(), lim: currentLimits(), ctx: ctx, stop: stop,
 			updates: make(chan update, updateQueueCap), sessions: newSessionSet(),
 			preferredModel: c.Meta().Model, preferredEffort: c.Meta().Effort, permissions: map[string]*pendingPermission{},
-			urlQuestions: map[string]context.CancelFunc{}}
+			urlQuestions: map[string]context.CancelCauseFunc{}}
 		e.link = &link{e: e}
 		e.ws = d.Workspace(c.WorkspaceID(), c.UserID())
 		e.peer = newPeer(c.Send, e)

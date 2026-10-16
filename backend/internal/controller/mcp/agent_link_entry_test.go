@@ -348,6 +348,28 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		}
 	})
 
+	t.Run("AskHuman ended by the agent's completion closes the card as accepted", func(t *testing.T) {
+		rec := newEntryServer(t)
+		var closed any
+		rec.ps.updateMessageMetadata = func(ctx context.Context, taskID, messageID int64, metadata any) error {
+			closed = metadata
+			return nil
+		}
+		askCtx, stop := context.WithCancelCause(ctx)
+		go func() {
+			<-rec.posts
+			stop(agentlink.ErrQuestionCompleted)
+		}()
+
+		got, err := rec.ps.AskHuman(askCtx, 42, agentlink.Question{Mode: "url", Message: "Sign in", URL: "https://example.com/login"})
+		if err != nil || got.Action != "accept" {
+			t.Fatalf("AskHuman returned (%+v, %v), want accept", got, err)
+		}
+		if m, _ := closed.(map[string]any); m["status"] != "accept" {
+			t.Fatalf("the card was closed with %v, want status accept", closed)
+		}
+	})
+
 	t.Run("AskHuman reports a card that could not be posted", func(t *testing.T) {
 		rec := newEntryServer(t)
 		errDown := errors.New("database unavailable")
