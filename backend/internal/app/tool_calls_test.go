@@ -14,6 +14,7 @@ import (
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_repository "github.com/agentrq/agentrq/backend/internal/service/mocks/repository"
 )
@@ -64,15 +65,14 @@ func assertNothingPublished(t *testing.T, stream chan []byte) {
 	}
 }
 
-// A tool call costs one row read and one insert, and goes out on its own: the
-// strict mock fails on any read of the task's messages or tool calls.
+// A tool call costs one insert, which checks the task itself, and goes out on
+// its own: the strict mock fails on any read of the task or its history.
 func TestToolCallRecorderCreatePublishesOnlyTheCall(t *testing.T) {
 	r, repo, stream := newToolCallRecorder(t)
 	ctx := context.Background()
 	tc := model.ToolCall{ID: 5, TaskID: 101, WorkspaceID: memParent, ToolName: "Bash", Status: "pending"}
 
-	repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser}, nil)
-	repo.EXPECT().CreateToolCall(ctx, tc).Return(tc, nil)
+	repo.EXPECT().CreateToolCall(ctx, tc, memUser).Return(tc, nil)
 
 	created, err := r.create(ctx, tc)
 	if err != nil || created.ID != 5 {
@@ -93,10 +93,10 @@ func TestToolCallRecorderCreateRefusesATaskFromElsewhere(t *testing.T) {
 	r, repo, stream := newToolCallRecorder(t)
 	ctx := context.Background()
 
-	repo.EXPECT().SystemGetTask(ctx, int64(102)).Return(model.Task{ID: 102, WorkspaceID: memFork, UserID: memUser}, nil)
+	repo.EXPECT().CreateToolCall(ctx, model.ToolCall{ID: 5, TaskID: 102, WorkspaceID: memParent}, memUser).Return(model.ToolCall{}, base.ErrNotFound)
 
-	if _, err := r.create(ctx, model.ToolCall{ID: 5, TaskID: 102}); err == nil {
-		t.Fatal("a task in another workspace took a tool call")
+	if _, err := r.create(ctx, model.ToolCall{ID: 5, TaskID: 102, WorkspaceID: memFork}); err == nil || !strings.Contains(err.Error(), "is not in this workspace") {
+		t.Fatalf("err = %v, want the task refused as not in this workspace", err)
 	}
 	assertNothingPublished(t, stream)
 }
@@ -104,10 +104,9 @@ func TestToolCallRecorderCreateRefusesATaskFromElsewhere(t *testing.T) {
 func TestToolCallRecorderCreateReportsStorageFailures(t *testing.T) {
 	r, repo, stream := newToolCallRecorder(t)
 	ctx := context.Background()
-	tc := model.ToolCall{ID: 5, TaskID: 101}
+	tc := model.ToolCall{ID: 5, TaskID: 101, WorkspaceID: memParent}
 
-	repo.EXPECT().SystemGetTask(ctx, int64(101)).Return(model.Task{ID: 101, WorkspaceID: memParent, UserID: memUser}, nil)
-	repo.EXPECT().CreateToolCall(ctx, tc).Return(model.ToolCall{}, errRepo)
+	repo.EXPECT().CreateToolCall(ctx, tc, memUser).Return(model.ToolCall{}, errRepo)
 
 	if _, err := r.create(ctx, tc); err != errRepo {
 		t.Fatalf("err = %v, want %v", err, errRepo)

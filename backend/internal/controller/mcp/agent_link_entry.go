@@ -15,6 +15,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // The entry points a native link calls. An MCP agent reaches the same
@@ -42,6 +43,23 @@ func (ps *WorkspaceServer) ClosePermissionRequest(ctx context.Context, requestID
 	taskID := ps.requestTaskIDs[requestID]
 	ps.requestTaskIDsMu.RUnlock()
 	ps.closeRequest(ctx, taskID, requestID)
+}
+
+// RecordToolCall records a call a native agent ran without asking, as its
+// tool_calls row; 0 when it was not recorded.
+func (ps *WorkspaceServer) RecordToolCall(ctx context.Context, taskID int64, c agentlink.ToolCall) int64 {
+	return ps.persistToolCall(ctx, taskID, agentlink.PermissionRequest{
+		ToolName: c.ToolName, Description: c.Description, InputPreview: c.InputPreview}, c.Status)
+}
+
+// SetToolCallStatus moves a recorded call on. Best-effort, like the record.
+func (ps *WorkspaceServer) SetToolCallStatus(ctx context.Context, id int64, status string) {
+	if ps.updateToolCallStatus == nil {
+		return
+	}
+	if err := ps.updateToolCallStatus(ctx, id, status); err != nil {
+		zlog.Error().Err(err).Int64("tool_call_id", id).Str("status", status).Msg("failed to update tool call status")
+	}
 }
 
 // PostAgentReply writes the agent's answer for a task, attributed to the agent

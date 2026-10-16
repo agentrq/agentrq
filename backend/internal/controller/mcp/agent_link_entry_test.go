@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -111,6 +112,68 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 
 		if got := rec.ps.toolCallIDs["acp1:a:s1:t3"]; got != 900 {
 			t.Fatalf("the request's tool call was %d, want 900", got)
+		}
+	})
+
+	t.Run("a link's permission request takes over the row the link recorded, not a second one", func(t *testing.T) {
+		rec := newEntryServer(t)
+		rec.ps.recordToolCall = func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+			t.Fatalf("a second row was recorded: %+v", tc)
+			return tc, nil
+		}
+		var statuses []string
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+			statuses = append(statuses, fmt.Sprintf("%d|%s", id, status))
+			return nil
+		}
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
+			RequestID: "acp1:a:s1:t5", TaskID: task42, ToolName: "Bash", InputPreview: "{}", ToolCallRowID: 901,
+		})
+
+		if got := rec.ps.toolCallIDs["acp1:a:s1:t5"]; got != 901 {
+			t.Fatalf("the request's tool call was %d, want the link's row 901", got)
+		}
+		if want := []string{"901|pending"}; !slices.Equal(statuses, want) {
+			t.Fatalf("the row's statuses were %q, want %q", statuses, want)
+		}
+	})
+
+	t.Run("a call a link ran without asking is recorded with its status", func(t *testing.T) {
+		rec := newEntryServer(t)
+		var recorded model.ToolCall
+		rec.ps.recordToolCall = func(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
+			recorded = tc
+			tc.ID = 902
+			return tc, nil
+		}
+		got := rec.ps.RecordToolCall(ctx, 42, agentlink.ToolCall{
+			ToolName: "Read", Description: "Read a.go", InputPreview: `{"path":"a.go"}`, Status: "running"})
+
+		if got != 902 {
+			t.Fatalf("RecordToolCall returned %d, want 902", got)
+		}
+		if recorded.TaskID != 42 || recorded.ToolName != "Read" || recorded.Description != "Read a.go" ||
+			recorded.InputPreview != `{"path":"a.go"}` || recorded.Status != "running" {
+			t.Fatalf("the row recorded was %+v, want Read on task 42, running", recorded)
+		}
+	})
+
+	t.Run("a recorded call's status moves on, and a failed write is only logged", func(t *testing.T) {
+		rec := newEntryServer(t)
+		rec.ps.SetToolCallStatus(ctx, 903, "completed") // no store wired: nothing to do
+
+		var statuses []string
+		rec.ps.updateToolCallStatus = func(ctx context.Context, id int64, status string) error {
+			statuses = append(statuses, fmt.Sprintf("%d|%s", id, status))
+			if status == "failed" {
+				return errors.New("database unavailable")
+			}
+			return nil
+		}
+		rec.ps.SetToolCallStatus(ctx, 903, "completed")
+		rec.ps.SetToolCallStatus(ctx, 904, "failed")
+		if want := []string{"903|completed", "904|failed"}; !slices.Equal(statuses, want) {
+			t.Fatalf("the statuses written were %q, want %q", statuses, want)
 		}
 	})
 

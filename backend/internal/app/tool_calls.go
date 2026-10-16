@@ -6,11 +6,14 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
+	"github.com/mustafaturan/monoflake"
 )
 
 // toolCallUpdatedEvent carries one tool call that was made or answered.
@@ -24,12 +27,13 @@ type toolCallRecorder struct {
 	owner       string
 }
 
-// create records a tool call on a task of this workspace.
+// create records a tool call on a task of this workspace, in one statement.
 func (r toolCallRecorder) create(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
-	if _, err := workspaceTask(ctx, r.repo, r.workspaceID, r.owner, tc.TaskID); err != nil {
-		return model.ToolCall{}, err
+	tc.WorkspaceID = r.workspaceID
+	created, err := r.repo.CreateToolCall(ctx, tc, monoflake.IDFromBase62(r.owner).Int64())
+	if errors.Is(err, base.ErrNotFound) {
+		return model.ToolCall{}, fmt.Errorf("task %s is not in this workspace", monoflake.ID(tc.TaskID).String())
 	}
-	created, err := r.repo.CreateToolCall(ctx, tc)
 	if err == nil {
 		r.publish(created)
 	}

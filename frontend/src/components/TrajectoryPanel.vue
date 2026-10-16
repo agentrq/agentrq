@@ -258,8 +258,11 @@ function laneDotClass(it) {
       case 'denied':
       case 'decline':
       case 'cancel':
+      case 'failed':
         return 'bg-red-500';
-      case 'pending': return 'bg-amber-400';
+      case 'pending':
+      case 'running':
+        return 'bg-amber-400';
       case 'allowed':
       case 'auto_allowed':
       case 'accept':
@@ -283,12 +286,15 @@ function toolCallStatusStyle(status) {
     case 'allowed':
     case 'auto_allowed':
     case 'accept':
+    case 'completed':
       return 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800';
     case 'denied':
     case 'decline':
     case 'cancel':
+    case 'failed':
       return 'text-red-700 dark:text-red-500 bg-red-50 dark:bg-red-500/10';
     case 'pending':
+    case 'running':
       return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10';
     default:
       return 'text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-zinc-800';
@@ -304,6 +310,9 @@ function toolCallStatusLabel(status) {
     case 'accept': return 'Answered';
     case 'decline': return 'Declined';
     case 'cancel': return 'Cancelled';
+    case 'running': return 'Running';
+    case 'completed': return 'Completed';
+    case 'failed': return 'Failed';
     default: return status;
   }
 }

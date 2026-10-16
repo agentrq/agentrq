@@ -44,6 +44,11 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	if _, ours := workspaceTool(title, e.ws.ToolNames()); ours {
 		return requestPermissionResponse{Outcome: allowOwnTool(req.Options)}, nil
 	}
+	// The request owns the call's row from here: the one already recorded for
+	// it, else the one the request records.
+	s.proj.rows.Lock()
+	row := s.proj.gate(req.ToolCall.ToolCallID)
+	s.proj.rows.Unlock()
 
 	requestID := e.linkID + ":" + req.SessionID + ":" + req.ToolCall.ToolCallID
 	answer := make(chan permissionOutcome, 1)
@@ -68,7 +73,7 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 
 	e.ws.HandlePermissionRequest(ctx, e.linkID, agentlink.PermissionRequest{
 		RequestID: requestID, TaskID: b62(e.taskOf(s)),
-		ToolName: title, Description: title, InputPreview: inputPreview(rawInput),
+		ToolName: title, Description: title, InputPreview: inputPreview(rawInput), ToolCallRowID: row,
 	})
 
 	var timeout <-chan time.Time

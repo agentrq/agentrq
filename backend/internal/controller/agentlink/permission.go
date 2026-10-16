@@ -12,4 +12,16 @@ type PermissionRequest struct {
 	ToolName     string `json:"tool_name"`
 	Description  string `json:"description"`
 	InputPreview string `json:"input_preview"`
+	// ToolCallRowID is the row a link already recorded for this call, which
+	// the request takes over instead of recording the call a second time.
+	ToolCallRowID int64 `json:"-"`
+}
+
+// ToolCall is a tool call an agent ran without asking, recorded so the
+// trajectory lists it beside the ones it asked about.
+type ToolCall struct {
+	ToolName     string
+	Description  string
+	InputPreview string
+	Status       string
 }

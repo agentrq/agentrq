@@ -163,7 +163,7 @@ type Repository interface {
 	UpdateSessionState(ctx context.Context, id int64, status string, exitCode *int, endedAt *time.Time, restored bool) error
 
 	// ToolCall
-	CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error)
+	CreateToolCall(ctx context.Context, tc model.ToolCall, userID int64) (model.ToolCall, error)
 	ListToolCalls(ctx context.Context, taskID, before int64, limit int) ([]model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
@@ -923,9 +923,18 @@ func (r *repository) UpdateMessageMetadata(ctx context.Context, taskID int64, me
 	})
 }
 
-func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall) (model.ToolCall, error) {
-	if err := r.conn(ctx).Create(&tc).Error; err != nil {
-		return model.ToolCall{}, err
+// CreateToolCall records a tool call on a task of the call's workspace that
+// userID owns, ErrNotFound for any other task. The check and the insert are
+// one statement: a native agent's run records a row per call it makes.
+func (r *repository) CreateToolCall(ctx context.Context, tc model.ToolCall, userID int64) (model.ToolCall, error) {
+	res := r.conn(ctx).Exec(`INSERT INTO tool_calls (id, created_at, task_id, workspace_id, tool_name, description, input_preview, status)
+		SELECT ?, ?, id, workspace_id, ?, ?, ?, ? FROM tasks WHERE id = ? AND workspace_id = ? AND user_id = ?`,
+		tc.ID, tc.CreatedAt, tc.ToolName, tc.Description, tc.InputPreview, tc.Status, tc.TaskID, tc.WorkspaceID, userID)
+	if res.Error != nil {
+		return model.ToolCall{}, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return model.ToolCall{}, ErrNotFound
 	}
 	return tc, nil
 }
@@ -949,17 +958,16 @@ func (r *repository) ListToolCalls(ctx context.Context, taskID, before int64, li
 	return tcs, nil
 }
 
+// UpdateToolCallStatus sets a tool call's status and returns the row, in one
+// statement: a native agent's run updates one per call it makes.
 func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error) {
 	var tc model.ToolCall
-	if err := r.conn(ctx).Where("id = ?", id).First(&tc).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return model.ToolCall{}, ErrNotFound
-		}
-		return model.ToolCall{}, err
+	res := r.conn(ctx).Model(&tc).Clauses(clause.Returning{}).Where("id = ?", id).Update("status", status)
+	if res.Error != nil {
+		return model.ToolCall{}, res.Error
 	}
-	tc.Status = status
-	if err := r.conn(ctx).Save(&tc).Error; err != nil {
-		return model.ToolCall{}, err
+	if res.RowsAffected == 0 {
+		return model.ToolCall{}, ErrNotFound
 	}
 	return tc, nil
 }

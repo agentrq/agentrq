@@ -22,16 +22,31 @@ import (
 const truncatedMarker = "\n\n[truncated]"
 
 // toolCall is what is remembered of a call the agent has not finished, for a
-// permission request that names it only by id.
+// permission request that names it only by id, and for its tool_calls row.
 type toolCall struct {
 	id, title, name string
 	rawInput        json.RawMessage
+	row             int64 // the tool_calls row recorded for it, 0 for none yet
+	gated           bool  // a permission request asked about it, and owns its row
+}
+
+// label names a call the way its permission card would.
+func (tc toolCall) label() string {
+	for _, l := range []string{tc.title, tc.name} {
+		if l != "" {
+			return l
+		}
+	}
+	return "Unknown Tool"
 }
 
 // projector turns one session's updates into what the human reads: the
 // turn's answer, its reasoning, the latest usage, and the calls in flight.
 // Its own lock, because the update loop writes while a turn reads.
 type projector struct {
+	// rows is held while a call's row is decided and written, so a permission
+	// request and a status update never both record the same call.
+	rows       sync.Mutex
 	mu         sync.Mutex
 	replyCap   int
 	thoughtCap int
@@ -161,13 +176,43 @@ func (p *projector) rememberCall(u toolCallUpdate) toolCall {
 	case el != nil:
 		el.Value = &tc
 	default:
-		p.calls[tc.id] = p.callOrder.PushBack(&tc)
-		if p.callOrder.Len() > p.callCap {
-			oldest := p.callOrder.Remove(p.callOrder.Front()).(*toolCall)
-			delete(p.calls, oldest.id)
-		}
+		p.keep(&tc)
 	}
 	return tc
+}
+
+// keep remembers a call not yet known; past the cap the oldest one goes.
+// p.mu is held.
+func (p *projector) keep(tc *toolCall) {
+	p.calls[tc.id] = p.callOrder.PushBack(tc)
+	if p.callOrder.Len() > p.callCap {
+		oldest := p.callOrder.Remove(p.callOrder.Front()).(*toolCall)
+		delete(p.calls, oldest.id)
+	}
+}
+
+// gate marks a call a permission request asks about, remembering it if no
+// update named it yet, and returns the row already recorded for it.
+func (p *projector) gate(id string) int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	el := p.calls[id]
+	if el == nil {
+		p.keep(&toolCall{id: id, gated: true})
+		return 0
+	}
+	tc := el.Value.(*toolCall)
+	tc.gated = true
+	return tc.row
+}
+
+// setRow remembers the row recorded for a call still in flight.
+func (p *projector) setRow(id string, row int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if el := p.calls[id]; el != nil {
+		el.Value.(*toolCall).row = row
+	}
 }
 
 // toolCall is what is known of an unfinished call, zero when nothing is.
@@ -380,24 +425,56 @@ func (e *engineV1) applyUpdate(n sessionNotification) {
 	}
 }
 
-// toolCallUpdate remembers a call, and records a completed reply the agent
-// sent to the session's own task through the workspace's reply tool, so the
-// same text is not posted a second time when the turn ends.
+// toolCallUpdate remembers a call and keeps its tool_calls row, and records a
+// completed reply the agent sent to the session's own task through the
+// workspace's reply tool, so the same text is not posted a second time when
+// the turn ends.
 func (e *engineV1) toolCallUpdate(s *session, raw json.RawMessage) {
 	var u toolCallUpdate
 	if !lenient(raw, &u) || u.ToolCallID == "" {
 		return
 	}
+	s.proj.rows.Lock()
 	tc := s.proj.rememberCall(u)
-	if u.Status == nil || *u.Status != "completed" {
-		return
-	}
 	tool, ours := workspaceTool(tc.title, e.ws.ToolNames())
 	if !ours {
+		e.recordCall(s, tc, rowStatus(u.Status))
+	}
+	s.proj.rows.Unlock()
+	if !ours || u.Status == nil || *u.Status != "completed" {
 		return
 	}
 	if taskID, text, ok := agentReply(tool, tc.rawInput); ok && taskID == b62(e.taskOf(s)) {
 		s.proj.recordToolReply(text)
+	}
+}
+
+// rowStatus is what a call's row shows for its ACP status: "" until it runs.
+// A pending call may yet be put to the human, whose request records it.
+func rowStatus(status *string) string {
+	switch deref(status) {
+	case "in_progress":
+		return "running"
+	case "completed", "failed":
+		return *status
+	}
+	return ""
+}
+
+// recordCall writes a call the agent runs without asking as its task's
+// tool_calls row once it starts, and moves the row on as it finishes. A call
+// a permission request asked about is left to that request's row, whose
+// verdict says more than how it ended. s.proj.rows is held.
+func (e *engineV1) recordCall(s *session, tc toolCall, status string) {
+	taskID := e.taskOf(s)
+	switch {
+	case tc.gated || status == "" || taskID == 0:
+	case tc.row == 0:
+		row := e.ws.RecordToolCall(e.ctx, taskID, agentlink.ToolCall{
+			ToolName: tc.label(), Description: tc.label(), InputPreview: inputPreview(tc.rawInput), Status: status})
+		s.proj.setRow(tc.id, row)
+	case status != "running":
+		e.ws.SetToolCallStatus(e.ctx, tc.row, status)
 	}
 }
 

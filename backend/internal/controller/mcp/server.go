@@ -2328,8 +2328,13 @@ func truncateForStorage(s string, max int) string {
 // persistToolCall records a tool-call permission decision so it shows up in the
 // task's "tool calls" list, separate from the message thread. Best-effort: this
 // is a secondary audit trail, not the allow/deny decision itself, so failures
-// are logged and swallowed. Returns the new row's ID (0 if not recorded).
+// are logged and swallowed. Returns the new row's ID (0 if not recorded). A
+// call a native link already recorded keeps its row, which takes the status.
 func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p agentlink.PermissionRequest, status string) int64 {
+	if p.ToolCallRowID != 0 {
+		ps.SetToolCallStatus(ctx, p.ToolCallRowID, status)
+		return p.ToolCallRowID
+	}
 	if ps.recordToolCall == nil {
 		return 0
 	}

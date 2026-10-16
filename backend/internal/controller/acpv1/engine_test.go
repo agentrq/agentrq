@@ -48,10 +48,19 @@ type recorder struct {
 
 	permissions []agentlink.PermissionRequest
 	closed      []string // permission requests closed
+	toolCalls   []recordedCall
+	callStatus  []string // "row|status"
 	questions   []askedQuestion
 	humanTasks  []string // "title|body"
 	ask         func(ctx context.Context, q agentlink.Question) (agentlink.Answer, error)
 	failCreate  error
+}
+
+// recordedCall is one RecordToolCall, with the row it was given.
+type recordedCall struct {
+	taskID int64
+	row    int64
+	call   agentlink.ToolCall
 }
 
 // askedQuestion is one AskHuman call.
@@ -123,6 +132,20 @@ func (r *recorder) ClosePermissionRequest(_ context.Context, requestID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.closed = append(r.closed, requestID)
+}
+
+func (r *recorder) RecordToolCall(_ context.Context, taskID int64, c agentlink.ToolCall) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	row := int64(100 + len(r.toolCalls))
+	r.toolCalls = append(r.toolCalls, recordedCall{taskID, row, c})
+	return row
+}
+
+func (r *recorder) SetToolCallStatus(_ context.Context, id int64, status string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.callStatus = append(r.callStatus, fmt.Sprintf("%d|%s", id, status))
 }
 
 func (r *recorder) PostAgentReply(_ context.Context, _ string, taskID int64, text string) (int64, error) {
