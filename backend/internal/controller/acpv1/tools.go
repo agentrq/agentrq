@@ -16,9 +16,9 @@ import (
 const mcpServerName = "agentrq-workspace"
 
 var (
-	legacyAgentrqTool = regexp.MustCompile(`^\s*(?:[A-Za-z0-9_]+\s+)?agentrq-[a-zA-Z0-9]{11}\s*$`)
+	legacyAgentrqTool = regexp.MustCompile(`agentrq-[a-zA-Z0-9]{11}`)
 	agentrqServer     = regexp.MustCompile(`(?i)^agentrq(?:[.\-_][A-Za-z0-9.\-_]*)?$`)
-	attributedCall    = regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*\(\s*([^()\s]+)\s+MCP(?:\s+Server)?\s*\)\s*$`)
+	attributedCall    = regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*\(\s*([^()\s]+)\s+MCP\b`)
 	// RE2 has no back-references, so each separator of the qualified form has
 	// its own pattern.
 	qualifiedCalls = []*regexp.Regexp{
@@ -37,12 +37,16 @@ var (
 // tool the workspace actually offers. A server name alone never grants
 // anything. name is the call's structured name, read only by server and tool:
 // the legacy pattern matches anywhere in a string, so it stays on the title.
+// A name that says nothing of AgentRQ, and is not one of its tools, is final:
+// a title cannot make another tool ours.
 func workspaceTool(title, name string, offered map[string]struct{}) (tool string, ok bool) {
-	if trimmedName := strings.TrimSpace(name); trimmedName != "" {
-		if tool, ok, _ := namedWorkspaceTool(trimmedName, offered); ok {
-			return tool, true
+	if name = strings.TrimSpace(name); name != "" {
+		tool, ok, named := namedWorkspaceTool(name, offered)
+		if ok || named {
+			return tool, ok
 		}
-		if _, bareOffered := offered[trimmedName]; !bareOffered {
+		_, bareOffered := offered[name]
+		if !bareOffered && !strings.Contains(strings.ToLower(name), "agentrq") {
 			return "", false
 		}
 	}
@@ -51,7 +55,10 @@ func workspaceTool(title, name string, offered map[string]struct{}) (tool string
 		return tool, ok
 	}
 	if legacyAgentrqTool.MatchString(title) {
-		return firstToken(title), true
+		tool = firstToken(strings.TrimSpace(title))
+		if _, offeredTool := offered[tool]; offeredTool {
+			return tool, true
+		}
 	}
 	return "", false
 }
