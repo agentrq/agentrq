@@ -195,6 +195,27 @@ func TestCreateToolCall(t *testing.T) {
 			if _, err := repo.CreateToolCall(ctx, tc, dtUserID); err == nil {
 				t.Error("a repeated id was stored without an error")
 			}
+
+			inj := model.ToolCall{
+				ID:           11,
+				CreatedAt:    now,
+				TaskID:       1,
+				WorkspaceID:  dtWorkspaceID,
+				ToolName:     "mcp__agentrq-workspace__task'; DROP TABLE tool_calls; --",
+				Description:  "Replying'); DELETE FROM tasks; --",
+				InputPreview: `{"q":"1'; DROP TABLE tasks; --"}`,
+				Status:       "running'; DROP TABLE tool_calls; --",
+			}
+			if _, err := repo.CreateToolCall(ctx, inj, dtUserID); err != nil {
+				t.Fatalf("CreateToolCall with SQL metacharacters failed: %v", err)
+			}
+			updated, err := repo.UpdateToolCallStatus(ctx, 11, "completed'; DROP TABLE tool_calls; --")
+			if err != nil {
+				t.Fatalf("UpdateToolCallStatus with SQL metacharacters failed: %v", err)
+			}
+			if updated.ToolName != inj.ToolName || updated.Description != inj.Description || updated.InputPreview != inj.InputPreview || updated.Status != "completed'; DROP TABLE tool_calls; --" {
+				t.Errorf("stored row after SQL metacharacter round-trip = %+v", updated)
+			}
 		})
 	}
 }

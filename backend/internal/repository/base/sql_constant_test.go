@@ -28,25 +28,32 @@ var sqlTextArg = map[string]int{
 	"First": 1, "Find": 1, "Take": 1, "Last": 1, "Delete": 1,
 }
 
-// dynamicSQL names the functions that build SQL text at run time, and why
-// it is safe: every fragment is one of our own constants, never a value from
-// a caller. Values always go through a ? placeholder.
+// dynamicSQL names the exact expressions that build SQL text at run time in
+// each function, and why they are safe: every fragment is one of our own
+// constants, never a value from a caller. Values always go through a ?
+// placeholder.
 var dynamicSQL = map[string]string{
-	"ListTasks":                        "the per-database metadata filter and sort order, and an ORDER BY picked from constants by the status filter",
-	"GetNextTask":                      "the per-database sort order",
-	"GetWorkspaceTaskCountsByCategory": "the per-database metadata filter",
-	"syncNeedsInput":                   "pendingRequestClause, a per-database constant",
-	"detailedStats":                    "the per-database date buckets, and a scope its two callers pass as a literal",
-	"telemetryCounts":                  "a rollup table name its callers pass as a literal",
-	"moveTelemetry":                    "the rollup table names in telemetryRollupTables",
-	"ListTaskLatencyRollups":           "a table from taskLatencyRollupTable",
-	"mergeTaskLatencyRollups":          "latency table constants from its two callers",
-	"writeTaskLatencyRollups":          "latency table constants from every caller",
-	"moveTaskLatencyRollups":           "the three latency table constants",
+	`ListTasks:"id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")"`: "the per-database metadata filter",
+	`ListTasks:orderBy`: "the per-database sort order and an ORDER BY picked from constants by the status filter",
+	`ListTasks:"id = (SELECT MAX(id) FROM messages m2 WHERE m2.task_id = messages.task_id) OR (" + metadataExpr + ")"`:                                                                               "the per-database metadata filter",
+	`GetNextTask:fmt.Sprintf("%s ASC, id ASC", sortExpr)`:                                                                                                                                            "the per-database sort order",
+	`GetWorkspaceTaskCountsByCategory:"id IN (SELECT task_id FROM messages m1 WHERE created_at = (SELECT MAX(created_at) FROM messages m2 WHERE m2.task_id = m1.task_id) AND " + metadataExpr + ")"`: "the per-database metadata filter",
+	`syncNeedsInput:pendingRequestClause(tx)`:                    "pendingRequestClause, a per-database constant",
+	`detailedStats:scopeClause`:                                  "a scope its two callers pass as a literal",
+	`detailedStats:dateExpr + " as date, count(*) as count"`:     "the per-database date buckets",
+	`detailedStats:bucketExpr + " as bucket, count(*) as count"`: "the per-database date buckets",
+	`telemetryCounts:table`:                                      "a rollup table name its callers pass as a literal",
+	`moveTelemetry:"INSERT INTO " + table + " (period_start, user_id, workspace_id, action, sub_action_id, actor, count) " + "SELECT period_start, user_id, ?, action, sub_action_id, actor, count FROM " + table + " WHERE workspace_id = ? " + "ON CONFLICT (period_start, user_id, workspace_id, action, sub_action_id, actor) " + "DO UPDATE SET count = " + table + ".count + excluded.count"`: "the rollup table names in telemetryRollupTables",
+	`moveTelemetry:"DELETE FROM " + table + " WHERE workspace_id = ?"`:          "the rollup table names in telemetryRollupTables",
+	`ListTaskLatencyRollups:taskLatencyRollupTable[g]`:                          "a table from taskLatencyRollupTable",
+	`mergeTaskLatencyRollups:from`:                                              "latency table constants from its two callers",
+	`writeTaskLatencyRollups:table`:                                             "latency table constants from every caller",
+	`moveTaskLatencyRollups:table`:                                              "the three latency table constants",
+	`moveTaskLatencyRollups:"DELETE FROM " + table + " WHERE workspace_id = ?"`: "the three latency table constants",
 }
 
 // TestSQLTextIsConstant fails when SQL text reaching GORM is not a
-// compile-time constant outside the functions in dynamicSQL. Request input
+// compile-time constant outside the expressions in dynamicSQL. Request input
 // pasted into a query is SQL injection; a value must go through ? instead.
 func TestSQLTextIsConstant(t *testing.T) {
 	fset := token.NewFileSet()
@@ -70,12 +77,23 @@ func TestSQLTextIsConstant(t *testing.T) {
 		files = append(files, f)
 	}
 
+	found, used := checkSQLConstants(fset, files)
+	for _, s := range found {
+		t.Errorf("SQL text is built at run time at %s; pass values with ? instead, or, if every fragment is our own constant, add the expression to dynamicSQL with the reason", s)
+	}
+	for key := range dynamicSQL {
+		if !used[key] {
+			t.Errorf("dynamicSQL lists %s, which no longer builds SQL text at run time; remove it", key)
+		}
+	}
+}
+
+func checkSQLConstants(fset *token.FileSet, files []*ast.File) (found []string, used map[string]bool) {
 	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
 	conf := types.Config{Importer: stdlibOnly{importer.Default()}, Error: func(error) {}}
 	_, _ = conf.Check("base", fset, files, info)
 
-	var found []string
-	used := map[string]bool{}
+	used = map[string]bool{}
 	for _, f := range files {
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
@@ -98,28 +116,22 @@ func TestSQLTextIsConstant(t *testing.T) {
 				if constantOrNotText(info, call.Args[i]) {
 					return true
 				}
-				if _, ok := dynamicSQL[fn.Name.Name]; ok {
-					used[fn.Name.Name] = true
+				key := fn.Name.Name + ":" + types.ExprString(call.Args[i])
+				if _, ok := dynamicSQL[key]; ok {
+					used[key] = true
 					return true
 				}
-				found = append(found, fset.Position(call.Args[i].Pos()).String()+" in "+fn.Name.Name+": "+sel.Sel.Name)
+				found = append(found, fset.Position(call.Args[i].Pos()).String()+" in "+fn.Name.Name+": "+sel.Sel.Name+"("+types.ExprString(call.Args[i])+")")
 				return true
 			})
 		}
 	}
 	sort.Strings(found)
-	for _, s := range found {
-		t.Errorf("SQL text is built at run time at %s; pass values with ? instead, or, if every fragment is our own constant, add the function to dynamicSQL with the reason", s)
-	}
-	for name := range dynamicSQL {
-		if !used[name] {
-			t.Errorf("dynamicSQL lists %s, which no longer builds SQL text at run time; remove it", name)
-		}
-	}
+	return found, used
 }
 
 // constantOrNotText reports whether e is a compile-time constant, or is not
-// text at all (a model, a subquery, a column slice).
+// text at all (a model pointer/struct or a typed non-string value).
 func constantOrNotText(info *types.Info, e ast.Expr) bool {
 	tv, ok := info.Types[e]
 	if ok && tv.Value != nil {
@@ -129,10 +141,49 @@ func constantOrNotText(info *types.Info, e ast.Expr) bool {
 		b, isBasic := tv.Type.Underlying().(*types.Basic)
 		return !isBasic || b.Info()&types.IsString == 0
 	}
-	// The type is unknown, because it comes from a package this test does
-	// not load. Text joined with + is still text.
-	b, ok := e.(*ast.BinaryExpr)
-	return !ok || b.Op != token.ADD
+	// When the type comes from an unloaded package (such as entity, model, or
+	// clause), only struct composite literals and clause.Associations are
+	// allowed; struct fields like req.Filter or concatenated strings must be
+	// treated as runtime text.
+	switch x := e.(type) {
+	case *ast.CompositeLit:
+		return true
+	case *ast.UnaryExpr:
+		_, isLit := x.X.(*ast.CompositeLit)
+		return x.Op == token.AND && isLit
+	default:
+		return types.ExprString(e) == "clause.Associations"
+	}
+}
+
+func TestSQLTextIsConstant_RejectsInjectedSQL(t *testing.T) {
+	const badSrc = `package base
+import (
+	"fmt"
+	"github.com/agentrq/agentrq/backend/internal/data/entity"
+	"github.com/agentrq/agentrq/backend/internal/data/model"
+)
+func (r *repository) badQueries(req entity.ListTasksRequest, tc model.ToolCall, col string) {
+	r.conn(nil).Where("title = '" + req.Filter + "'")
+	r.conn(nil).Where(fmt.Sprintf("status = '%s'", col))
+	r.conn(nil).Order(req.Filter)
+	r.conn(nil).Exec(tc.ToolName)
+	r.conn(nil).First(&tc, col)
+	r.conn(nil).Where("title = ?", req.Filter).First(&model.Task{}, 1)
+}
+func (r *repository) ListTasks(req entity.ListTasksRequest) {
+	r.conn(nil).Where("injected = " + req.Assignee)
+}
+`
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "bad.go", badSrc, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, _ := checkSQLConstants(fset, []*ast.File{f})
+	if len(found) != 6 {
+		t.Fatalf("checkSQLConstants caught %d of 6 injected queries: %v", len(found), found)
+	}
 }
 
 // stdlibOnly loads the standard library, and gives every other import an
