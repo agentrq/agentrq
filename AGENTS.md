@@ -99,6 +99,9 @@ area they belong to — while adding a route, or a single API call.
 
 - **API naming**: All JSON fields in API requests and responses MUST use `camelCase` (e.g., `workspaceId`, `createdAt`). Never use `snake_case` in the API surface.
 - **Backend layers**: Follow view-entity-model separation; only `view` structs define the API schema. Avoid using repository directly from handlers; use controller methods instead.
+- **SQL text is constant; values go through `?`.** Never paste request input
+  into a query, an ORDER BY, a column or a table name. A test in the
+  repository fails on SQL built at run time outside a short reviewed list.
 - **REST routes go on Fiber**, under `/api/v1`. The stdlib `mux` in `app.go` is
   only for SSE, pub-stats and the WebSockets (daemon, terminal, browser,
   native ACP), and it **takes precedence for
