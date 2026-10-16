@@ -15,7 +15,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import * as api from '../api'
 import {
-  usePanoDoc, panoAuthor, panoColor, panoTilt, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
+  usePanoDoc, panoAuthor, panoColor, panoDate, expiresLabel, linkPanoFiles, formatFileSize, isOwnPanoDoc,
   panoCheckable, panoCheckboxIndex, formatMarkdown, panoAssignees, panoRelatedTasks, panoLinkedTasks, panoItemMenus, panoMentions,
   mentionQuery, mentionMatches, taskMentionQuery, taskMentionMatches, insertMention, commentMentions, PANO_COLORS, PANO_TASK_STATUSES,
 } from '../composables/usePano'
@@ -374,7 +374,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
                   :class="preview ? 'bg-white dark:bg-zinc-700 text-gray-900 dark:text-white' : 'text-gray-500 dark:text-zinc-400'" class="px-3 py-1 rounded-md">Preview</button>
               </div>
             </div>
-            <div :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: '-0.6deg' }" class="mx-auto max-w-2xl px-6 @min-[40rem]:px-8 pt-9 pb-6">
+            <div :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex }" class="mx-auto max-w-2xl px-6 @min-[40rem]:px-8 pt-9 pb-6">
               <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
               <label for="pano-title-input" class="sr-only">Title</label>
               <input id="pano-title-input" v-model="draft.title" data-test="pano-title-input" maxlength="200" placeholder="Title"
@@ -450,7 +450,7 @@ const trash = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022
       </form>
 
       <div v-else-if="doc" class="grid gap-8 @min-[64rem]:grid-cols-[minmax(0,1fr)_320px] items-start">
-        <article :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex, rotate: `${panoTilt(doc.id) / 4}deg` }" class="mt-3 px-6 @min-[40rem]:px-10 pt-10 pb-8 min-w-0">
+        <article :class="[paper, color.card, color.body]" :style="{ '--pano-ink': color.inkHex, '--pano-tag': color.tagHex, '--pano-tag-ink': color.tagInkHex }" class="mt-3 px-6 @min-[40rem]:px-10 pt-10 pb-8 min-w-0">
           <span aria-hidden="true" :class="color.tape" class="absolute -top-3 left-1/2 -translate-x-1/2 -rotate-2 w-24 h-6 rounded-[2px]"></span>
           <h1 data-test="pano-title" :class="color.title" class="text-2xl @min-[48rem]:text-3xl font-black leading-tight break-words">{{ doc.title }}</h1>
           <p data-test="pano-meta" :class="color.muted" class="mt-1 text-[11px]">

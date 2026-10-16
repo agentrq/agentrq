@@ -1237,6 +1237,14 @@ describe('a doc', () => {
     });
   });
 
+  it('lays the paper straight, read and edited, where the board tilts it', async () => {
+    const { el } = await mount('/pano/d1');
+    expect($(el, 'pano-title').closest('article').style.rotate).toBe('');
+    await click($(el, 'pano-edit'));
+    expect($(el, 'pano-title-input').parentElement.style.rotate).toBe('');
+    expect($(el, 'pano-title-input').parentElement.style.getPropertyValue('--pano-ink')).not.toBe('');
+  });
+
   describe('the editor', () => {
     it('opens on Edit with the doc as it is, in its color, and cancels', async () => {
       const { el } = await mount('/pano/d1');
