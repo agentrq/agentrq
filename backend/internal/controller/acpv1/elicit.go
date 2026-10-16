@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // createElicitation puts the agent's question to the human. A question tied to
@@ -51,7 +51,7 @@ func (e *engineV1) createElicitation(ctx context.Context, params json.RawMessage
 			stop()
 		}()
 	}
-	ans, err := e.ws.AskHuman(ctx, taskID, mcpctrl.Question{Mode: req.Mode, Message: req.Message,
+	ans, err := e.ws.AskHuman(ctx, taskID, agentlink.Question{Mode: req.Mode, Message: req.Message,
 		RequestedSchema: req.RequestedSchema, URL: req.URL})
 	if err != nil {
 		return cancel, nil

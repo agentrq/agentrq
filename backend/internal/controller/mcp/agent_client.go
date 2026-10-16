@@ -10,6 +10,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,40 +24,6 @@ import (
 // this carries that across.
 const AgentIdentityNotificationMethod = "notifications/claude/channel/agent"
 
-// AgentIdentityParams is the payload of an agent notification.
-//
-// snake_case, unlike the REST surface: this is the wire format the gateways
-// send (acp-gateway's `sendAgentToWorkspace`), the same reasoning the models
-// and commands payloads beside it record.
-type AgentIdentityParams struct {
-	TaskID    string `json:"task_id"`
-	SessionID string `json:"session_id"`
-	Name      string `json:"name"`
-	Title     string `json:"title"`
-	Version   string `json:"version"`
-}
-
-// AgentClientInfo is what the client attached to a workspace said it was when
-// it connected.
-//
-// Not a cached notification like the models and commands beside it — it is read
-// off the session itself — but that alone is not enough to keep it current. An
-// MCP session outlives the stream that carried it: after a gateway goes away
-// its session is still listed, so a reader that trusted the session list would
-// go on naming a client that had already left. AgentClient checks the same
-// signal the workspace uses to say an agent is live.
-type AgentClientInfo struct {
-	// Name is the agent behind the connection when a gateway has said which one
-	// it is driving, and otherwise the client's own name for itself —
-	// "claude-code" for Claude Code attached directly, "acp-gateway" for a
-	// gateway too old to report its agent.
-	Name string
-	// Title is a longer human-readable name, when the agent gave one.
-	Title string
-	// Version is what it reported, when it reported one.
-	Version string
-}
-
 // HandleAgentIdentity records which agent a gateway says it is driving.
 //
 // Keyed by the MCP transport session, deliberately, and *not* by the payload's
@@ -69,7 +36,7 @@ type AgentClientInfo struct {
 // A nameless payload is ignored rather than recorded. The name is the entire
 // point of this notification, and an empty one would replace a perfectly good
 // client name with nothing.
-func (ps *WorkspaceServer) HandleAgentIdentity(ctx context.Context, sessionID string, p AgentIdentityParams) {
+func (ps *WorkspaceServer) HandleAgentIdentity(ctx context.Context, sessionID string, p agentlink.IdentityReport) {
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
 		zlog.Debug().Str("session_id", sessionID).Msg("ignoring an agent notification that named nobody")
@@ -77,7 +44,7 @@ func (ps *WorkspaceServer) HandleAgentIdentity(ctx context.Context, sessionID st
 	}
 
 	ps.agentIdentitiesMu.Lock()
-	ps.agentIdentities[sessionID] = AgentClientInfo{
+	ps.agentIdentities[sessionID] = agentlink.ClientInfo{
 		Name:    name,
 		Title:   strings.TrimSpace(p.Title),
 		Version: strings.TrimSpace(p.Version),
@@ -92,7 +59,7 @@ func (ps *WorkspaceServer) HandleAgentIdentity(ctx context.Context, sessionID st
 }
 
 // reportedAgent returns what a session said it was driving, if anything.
-func (ps *WorkspaceServer) reportedAgent(sessionID string) *AgentClientInfo {
+func (ps *WorkspaceServer) reportedAgent(sessionID string) *agentlink.ClientInfo {
 	ps.agentIdentitiesMu.RLock()
 	defer ps.agentIdentitiesMu.RUnlock()
 	if info, ok := ps.agentIdentities[sessionID]; ok {
@@ -116,7 +83,7 @@ func (ps *WorkspaceServer) reportedAgent(sessionID string) *AgentClientInfo {
 //
 // Native links come after every MCP session, and are named only by what they
 // reported: a link has no handshake of its own to fall back on.
-func (ps *WorkspaceServer) AgentClient() *AgentClientInfo {
+func (ps *WorkspaceServer) AgentClient() *agentlink.ClientInfo {
 	if ps.mcpServer != nil {
 		for sess := range ps.mcpServer.Sessions() {
 			if !ps.isStreaming(sess.ID()) {
@@ -159,7 +126,7 @@ func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAge
 // it was running: what the session reported first, else its client's own
 // name unless that is a bridge. info is nil for a native link, which has no
 // handshake.
-func (ps *WorkspaceServer) sessionAgent(id string, info *AgentClientInfo) entity.TaskAgent {
+func (ps *WorkspaceServer) sessionAgent(id string, info *agentlink.ClientInfo) entity.TaskAgent {
 	var agent entity.TaskAgent
 	if reported := ps.reportedAgent(id); reported != nil {
 		agent.Name = reported.Name
@@ -174,7 +141,7 @@ func (ps *WorkspaceServer) sessionAgent(id string, info *AgentClientInfo) entity
 	snapshot, ok := ps.agentModels[id]
 	ps.agentModelsMu.RUnlock()
 	if ok {
-		agent.Model = snapshot.currentModelName()
+		agent.Model = snapshot.CurrentModelName()
 	}
 	return agent
 }
@@ -228,7 +195,7 @@ func isBridge(clientName string) bool {
 // attached to this workspace" — is about the session rather than about any one
 // request. When the handshake goes, this reads whatever replaces it; until
 // then, a request-scoped identity would answer a different question.
-func clientInfoFrom(p *mcp.InitializeParams) *AgentClientInfo {
+func clientInfoFrom(p *mcp.InitializeParams) *agentlink.ClientInfo {
 	if p == nil || p.ClientInfo == nil {
 		return nil
 	}
@@ -236,7 +203,7 @@ func clientInfoFrom(p *mcp.InitializeParams) *AgentClientInfo {
 	if name == "" {
 		return nil
 	}
-	return &AgentClientInfo{Name: name, Version: strings.TrimSpace(p.ClientInfo.Version)}
+	return &agentlink.ClientInfo{Name: name, Version: strings.TrimSpace(p.ClientInfo.Version)}
 }
 
 // pruneAgentIdentities drops what sessions that have gone away reported.
@@ -247,7 +214,7 @@ func clientInfoFrom(p *mcp.InitializeParams) *AgentClientInfo {
 // the map before its own session is visible.
 //
 // The caller must hold the write lock.
-func pruneAgentIdentities(identities map[string]AgentClientInfo, live []string) {
+func pruneAgentIdentities(identities map[string]agentlink.ClientInfo, live []string) {
 	if len(live) == 0 {
 		return
 	}

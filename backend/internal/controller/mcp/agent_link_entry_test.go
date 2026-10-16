@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,7 +44,7 @@ func newEntryServer(t *testing.T) *entryRecorder {
 	rec := &entryRecorder{ps: ps, posts: make(chan postedMessage, 8)}
 	ps.idgen = &fakeIDs{}
 	ps.requestTools = make(map[string]string)
-	ps.requestParams = make(map[string]*PermissionRequestParams)
+	ps.requestParams = make(map[string]*agentlink.PermissionRequest)
 	ps.sessionTasks = make(map[string]int64)
 	ps.permissionResponses = make(map[string]int64)
 	ps.toolCallIDs = make(map[string]int64)
@@ -81,7 +82,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 
 	t.Run("a link's permission request takes the custom-notification relay", func(t *testing.T) {
 		rec := newEntryServer(t)
-		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
 			RequestID: "acp1:a:s1:t1", TaskID: task42, ToolName: "Bash", Description: "Bash", InputPreview: "{}",
 		})
 
@@ -104,7 +105,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			tc.ID = 900
 			return tc, nil
 		}
-		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
 			RequestID: "acp1:a:s1:t3", TaskID: task42, ToolName: "Bash", InputPreview: "{}",
 		})
 
@@ -119,7 +120,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			return model.Task{}, errors.New("task not found")
 		}
 		rec.ps.sessionTasks["sess-other"] = 9
-		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
 			RequestID: "acp1:a:s1:t4", TaskID: task42, ToolName: "Bash", InputPreview: "{}",
 		})
 
@@ -134,7 +135,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		link := &fakeLink{id: "acp1:a"}
 		rec.ps.AttachAgentLink(link)
 
-		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
 			RequestID: "acp1:a:s1:t2", TaskID: task42, ToolName: "Read", InputPreview: "{}",
 		})
 
@@ -176,7 +177,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			toolCalls = append(toolCalls, fmt.Sprintf("%d=%s", id, status))
 			return nil
 		}
-		rec.ps.HandlePermissionRequest(ctx, "acp1:a", PermissionRequestParams{
+		rec.ps.HandlePermissionRequest(ctx, "acp1:a", agentlink.PermissionRequest{
 			RequestID: "acp1:a:s1:t5", TaskID: task42, ToolName: "Bash", InputPreview: "{}",
 		})
 
@@ -212,9 +213,9 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 	t.Run("PostAgentReply posts as the agent the link reported, with its model", func(t *testing.T) {
 		rec := newEntryServer(t)
 		rec.ps.AttachAgentLink(&fakeLink{id: "acp1:a"})
-		rec.ps.HandleAgentIdentity(ctx, "acp1:a", AgentIdentityParams{Name: "codex-acp"})
-		rec.ps.HandleAgentModels(ctx, "acp1:a", AgentModelsParams{
-			SessionID: "s1", ConfigID: "model", CurrentModel: "m1", Models: []AgentModel{{ID: "m1", Name: "Model one"}},
+		rec.ps.HandleAgentIdentity(ctx, "acp1:a", agentlink.IdentityReport{Name: "codex-acp"})
+		rec.ps.HandleAgentModels(ctx, "acp1:a", agentlink.ModelsReport{
+			SessionID: "s1", ConfigID: "model", CurrentModel: "m1", Models: []agentlink.Model{{ID: "m1", Name: "Model one"}},
 		})
 
 		id, err := rec.ps.PostAgentReply(ctx, "acp1:a", 42, "done")
@@ -251,7 +252,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			_ = rec.ps.RespondToElicitation(id, "accept", map[string]any{"ok": true})
 		}()
 
-		got, err := rec.ps.AskHuman(ctx, 42, Question{
+		got, err := rec.ps.AskHuman(ctx, 42, agentlink.Question{
 			Mode: "form", Message: "Proceed?",
 			RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{"ok": map[string]any{"type": "boolean"}}},
 		})
@@ -275,7 +276,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 			_ = rec.ps.RespondToElicitation(id, "decline", nil)
 		}()
 
-		got, err := rec.ps.AskHuman(ctx, 42, Question{Mode: "url", Message: "Sign in", URL: "https://example.com/login"})
+		got, err := rec.ps.AskHuman(ctx, 42, agentlink.Question{Mode: "url", Message: "Sign in", URL: "https://example.com/login"})
 		if err != nil || got.Action != "decline" {
 			t.Fatalf("AskHuman returned (%+v, %v), want decline", got, err)
 		}
@@ -290,14 +291,14 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 		rec.ps.reply = func(ctx context.Context, chatID, text string, a []entity.Attachment, metadata any) (int64, error) {
 			return 0, errDown
 		}
-		if _, err := rec.ps.AskHuman(ctx, 42, Question{Mode: "url", Message: "Sign in", URL: "https://example.com"}); !errors.Is(err, errDown) {
+		if _, err := rec.ps.AskHuman(ctx, 42, agentlink.Question{Mode: "url", Message: "Sign in", URL: "https://example.com"}); !errors.Is(err, errDown) {
 			t.Fatalf("AskHuman returned %v, want the posting error", err)
 		}
 	})
 
 	t.Run("AskHuman refuses an empty message, a form without a schema, a url without a link and an unknown mode", func(t *testing.T) {
 		rec := newEntryServer(t)
-		for name, q := range map[string]Question{
+		for name, q := range map[string]agentlink.Question{
 			"empty message":       {Mode: "url", URL: "https://example.com"},
 			"form without schema": {Mode: "form", Message: "?"},
 			"url without link":    {Mode: "url", Message: "?"},
@@ -314,7 +315,7 @@ func TestAgentLinkEntryPoints(t *testing.T) {
 
 	t.Run("AskHuman refuses a schema the elicit tool would refuse", func(t *testing.T) {
 		rec := newEntryServer(t)
-		_, err := rec.ps.AskHuman(ctx, 42, Question{Mode: "form", Message: "?", RequestedSchema: map[string]any{
+		_, err := rec.ps.AskHuman(ctx, 42, agentlink.Question{Mode: "form", Message: "?", RequestedSchema: map[string]any{
 			"type":       "object",
 			"properties": map[string]any{"nested": map[string]any{"type": "object"}},
 		}})

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -373,10 +374,10 @@ func TestPollOnceReconcilesEveryPendingTaskNotJustThoseBeforeAnOngoingOne(t *tes
 // could take.
 func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 	ps := pushServer(t)
-	ps.agentConcurrency = map[string]AgentConcurrencySnapshot{}
+	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
 	sessID := connectedServer(t, ps, "acp-gateway")
 	defer streamFor(ps, sessID)()
-	ps.agentConcurrency[sessID] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
+	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
 	got := ps.pollOnce(pendingTaskRepo(
 		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},
@@ -391,10 +392,10 @@ func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 // Full is full.
 func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
 	ps := pushServer(t)
-	ps.agentConcurrency = map[string]AgentConcurrencySnapshot{}
+	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
 	sessID := connectedServer(t, ps, "acp-gateway")
 	defer streamFor(ps, sessID)()
-	ps.agentConcurrency[sessID] = AgentConcurrencySnapshot{MaxConcurrency: 2, CanSet: true}
+	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 2, CanSet: true}
 
 	got := ps.pollOnce(pendingTaskRepo(
 		model.Task{ID: 1, Status: "ongoing", Assignee: "agent"},

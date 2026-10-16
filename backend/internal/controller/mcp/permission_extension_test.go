@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // An extension's verdict is a real answer, and is not a person's.
@@ -78,7 +80,7 @@ func TestExtensionCannotWriteAnAutoAllowRule(t *testing.T) {
 	ps, rec := approvalServer(t, nil)
 	ps.permissionRequests["req-x4"] = "sess-1"
 	ps.requestTools["req-x4"] = "Bash"
-	ps.requestParams["req-x4"] = &PermissionRequestParams{
+	ps.requestParams["req-x4"] = &agentlink.PermissionRequest{
 		RequestID:    "req-x4",
 		ToolName:     "Bash",
 		InputPreview: `{"command":"rm -rf /"}`,

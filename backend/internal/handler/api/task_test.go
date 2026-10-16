@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	"github.com/gofiber/fiber/v2"
@@ -141,8 +141,8 @@ func TestReplyChannelContent(t *testing.T) {
 	const taskID = int64(1234)
 	envelope := "[Reply to task " + monoflake.ID(taskID).String() + "] "
 
-	advertised := &mcpctrl.AgentCommandsSnapshot{
-		Commands: []mcpctrl.AgentCommand{
+	advertised := &agentlink.CommandsSnapshot{
+		Commands: []agentlink.Command{
 			{Name: "compact", Description: "Shorten the context"},
 			{Name: "web", Hint: "query"},
 		},
@@ -199,7 +199,7 @@ func TestReplyChannelContent(t *testing.T) {
 		if got := replyChannelContent(taskID, "/compact", nil, nil); got != want {
 			t.Errorf("got %q, want the envelope kept", got)
 		}
-		empty := &mcpctrl.AgentCommandsSnapshot{}
+		empty := &agentlink.CommandsSnapshot{}
 		if got := replyChannelContent(taskID, "/compact", nil, empty); got != want {
 			t.Errorf("with an empty list: got %q, want the envelope kept", got)
 		}
@@ -545,7 +545,7 @@ func TestCreateTask_PushesWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 		},
 	}
 	srv := &fakeWorkspaceServer{}
-	mgr := &fakeMCPManager{server: srv, concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 4}}
+	mgr := &fakeMCPManager{server: srv, concurrency: &agentlink.ConcurrencySnapshot{MaxConcurrency: 4}}
 	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -591,7 +591,7 @@ func TestCreateTask_DoesNotPushWhenEverySlotIsBusy(t *testing.T) {
 		},
 	}
 	srv := &fakeWorkspaceServer{}
-	mgr := &fakeMCPManager{server: srv, concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 2}}
+	mgr := &fakeMCPManager{server: srv, concurrency: &agentlink.ConcurrencySnapshot{MaxConcurrency: 2}}
 	h := &handler{crud: crudCtrl, mcpManager: mgr, bus: eventbus.New()}
 
 	app.Post("/api/v1/workspaces/:id/tasks", func(c *fiber.Ctx) error {
@@ -654,13 +654,13 @@ func TestAgentTaskConcurrencyDefaultsToOne(t *testing.T) {
 	if got := agentTaskConcurrency(&fakeMCPManager{}, 1); got != 1 {
 		t.Errorf("no snapshot: got %d, want 1", got)
 	}
-	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &mcpctrl.AgentConcurrencySnapshot{}}, 1); got != 1 {
+	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &agentlink.ConcurrencySnapshot{}}, 1); got != 1 {
 		t.Errorf("snapshot reporting no limit: got %d, want 1", got)
 	}
 	if got := agentTaskConcurrency(nil, 1); got != 1 {
 		t.Errorf("no manager at all: got %d, want 1", got)
 	}
-	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &mcpctrl.AgentConcurrencySnapshot{MaxConcurrency: 7}}, 1); got != 7 {
+	if got := agentTaskConcurrency(&fakeMCPManager{concurrency: &agentlink.ConcurrencySnapshot{MaxConcurrency: 7}}, 1); got != 7 {
 		t.Errorf("reported limit: got %d, want 7", got)
 	}
 }

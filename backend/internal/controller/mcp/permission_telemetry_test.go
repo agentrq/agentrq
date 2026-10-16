@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
@@ -112,7 +113,7 @@ func approvalServer(t *testing.T, autoAllowed []string) (*WorkspaceServer, *appr
 		autoAllowedTools:    autoAllowed,
 		permissionRequests:  make(map[string]string),
 		requestTools:        make(map[string]string),
-		requestParams:       make(map[string]*PermissionRequestParams),
+		requestParams:       make(map[string]*agentlink.PermissionRequest),
 		sessionTasks:        map[string]int64{"sess-1": 42},
 		requestTaskIDs:      make(map[string]int64),
 		permissionResponses: make(map[string]int64),
@@ -229,7 +230,7 @@ func TestAllowAlwaysIsCountedAsAManualApproval(t *testing.T) {
 	ps, rec := approvalServer(t, nil)
 	ps.permissionRequests["req-5"] = "sess-1"
 	ps.requestTools["req-5"] = "Read"
-	ps.requestParams["req-5"] = &PermissionRequestParams{RequestID: "req-5", ToolName: "Read"}
+	ps.requestParams["req-5"] = &agentlink.PermissionRequest{RequestID: "req-5", ToolName: "Read"}
 
 	_ = ps.SendPermissionVerdict(context.Background(), 42, "req-5", "allow_always")
 
@@ -266,7 +267,7 @@ func TestReplayedVerdictIsNotCountedAgain(t *testing.T) {
 
 	// The agent comes back on a new session and asks again.
 	if !ps.rebindPermissionRequest(context.Background(), "sess-2",
-		PermissionRequestParams{RequestID: "req-6", ToolName: "Read"}) {
+		agentlink.PermissionRequest{RequestID: "req-6", ToolName: "Read"}) {
 		t.Fatal("a re-sent request should be recognised as a re-send")
 	}
 
@@ -391,7 +392,7 @@ func TestManualRequestStillRebindsWithoutTheAutoSignal(t *testing.T) {
 
 	ps.rememberUndeliveredVerdict("req-10", "allow")
 	if !ps.rebindPermissionRequest(context.Background(), "sess-2",
-		PermissionRequestParams{RequestID: "req-10", ToolName: "Read"}) {
+		agentlink.PermissionRequest{RequestID: "req-10", ToolName: "Read"}) {
 		t.Fatal("a request the human answered should still be recognised as a re-send")
 	}
 	if got := rec.count("permission_manual_allow"); got != 0 {

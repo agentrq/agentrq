@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // request sends a request as the agent.
@@ -42,7 +42,7 @@ func (a *agent) answerTo(id int) rpcMessage {
 }
 
 // midTurn is an agent with task 42's turn running on sess-1.
-func midTurn(t *testing.T, o agentOpts) (*recorder, *agent, mcpctrl.AgentLink) {
+func midTurn(t *testing.T, o agentOpts) (*recorder, *agent, agentlink.Link) {
 	t.Helper()
 	rec := &recorder{}
 	a := startAgentWith(t, rec, o)
@@ -52,12 +52,12 @@ func midTurn(t *testing.T, o agentOpts) (*recorder, *agent, mcpctrl.AgentLink) {
 	return rec, a, l
 }
 
-func (r *recorder) permissionRequests(t *testing.T, n int) []mcpctrl.PermissionRequestParams {
+func (r *recorder) permissionRequests(t *testing.T, n int) []agentlink.PermissionRequest {
 	t.Helper()
 	r.wait(t, func() bool { return len(r.permissions) == n })
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]mcpctrl.PermissionRequestParams(nil), r.permissions...)
+	return append([]agentlink.PermissionRequest(nil), r.permissions...)
 }
 
 func (r *recorder) closedRequests() []string {
@@ -170,7 +170,7 @@ func TestPermissions(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		a.request(5, methodRequestPermission, request)
 		got := rec.permissionRequests(t, 1)[0]
-		want := mcpctrl.PermissionRequestParams{RequestID: "acp1:" + a.connID + ":sess-1:call-2", TaskID: b62(42),
+		want := agentlink.PermissionRequest{RequestID: "acp1:" + a.connID + ":sess-1:call-2", TaskID: b62(42),
 			ToolName: "Unknown Tool", Description: "Unknown Tool", InputPreview: "{}"}
 		if got != want {
 			t.Fatalf("the workspace was asked %+v, want %+v", got, want)

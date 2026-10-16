@@ -15,6 +15,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
@@ -406,7 +407,7 @@ func replyChannelContent(
 	taskID int64,
 	text string,
 	attachments []entity.Attachment,
-	commands *mcpctrl.AgentCommandsSnapshot,
+	commands *agentlink.CommandsSnapshot,
 ) string {
 	// Leading whitespace is trimmed rather than disqualifying: the point is for
 	// the command to lead the prompt, and " /compact" would defeat that while
@@ -429,7 +430,7 @@ func replyChannelContent(
 
 // isAdvertisedCommand reports whether the text opens with a slash command the
 // connected agent said it accepts.
-func isAdvertisedCommand(text string, commands *mcpctrl.AgentCommandsSnapshot) bool {
+func isAdvertisedCommand(text string, commands *agentlink.CommandsSnapshot) bool {
 	if commands == nil || !strings.HasPrefix(text, "/") {
 		return false
 	}

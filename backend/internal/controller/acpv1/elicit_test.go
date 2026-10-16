@@ -10,19 +10,19 @@ import (
 	"slices"
 	"testing"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 func TestElicitation(t *testing.T) {
 	form := `{"sessionId":"sess-1","mode":"form","message":"Which branch?","requestedSchema":{"type":"object","properties":{"branch":{"type":"string"}}}}`
-	answers := func(a mcpctrl.Answer, err error) func(context.Context, mcpctrl.Question) (mcpctrl.Answer, error) {
-		return func(context.Context, mcpctrl.Question) (mcpctrl.Answer, error) { return a, err }
+	answers := func(a agentlink.Answer, err error) func(context.Context, agentlink.Question) (agentlink.Answer, error) {
+		return func(context.Context, agentlink.Question) (agentlink.Answer, error) { return a, err }
 	}
 
 	t.Run("a form question is put to the human and the answer returned", func(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		rec.read(func() {
-			rec.ask = answers(mcpctrl.Answer{Action: "accept", Content: map[string]any{"branch": "main"}}, nil)
+			rec.ask = answers(agentlink.Answer{Action: "accept", Content: map[string]any{"branch": "main"}}, nil)
 		})
 		a.request(5, methodElicitationCreate, form)
 		if got := a.answerTo(5); string(got.Result) != `{"action":"accept","content":{"branch":"main"}}` {
@@ -81,10 +81,10 @@ func TestElicitation(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		asked := make(chan struct{})
 		rec.read(func() {
-			rec.ask = func(ctx context.Context, _ mcpctrl.Question) (mcpctrl.Answer, error) {
+			rec.ask = func(ctx context.Context, _ agentlink.Question) (agentlink.Answer, error) {
 				close(asked)
 				<-ctx.Done()
-				return mcpctrl.Answer{}, ctx.Err()
+				return agentlink.Answer{}, ctx.Err()
 			}
 		})
 		a.request(5, methodElicitationCreate, string(fixture(t, "elicitation_create.url.request.json")))
@@ -99,7 +99,7 @@ func TestElicitation(t *testing.T) {
 
 	t.Run("an invalid schema is answered cancel", func(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
-		rec.read(func() { rec.ask = answers(mcpctrl.Answer{}, errors.New("invalid requestedSchema")) })
+		rec.read(func() { rec.ask = answers(agentlink.Answer{}, errors.New("invalid requestedSchema")) })
 		a.request(5, methodElicitationCreate, form)
 		if got := a.answerTo(5); string(got.Result) != `{"action":"cancel"}` {
 			t.Fatalf("the agent was answered %s, want cancel", got.Result)
@@ -122,7 +122,7 @@ func TestElicitation(t *testing.T) {
 	t.Run("a declined form carries no content", func(t *testing.T) {
 		rec, a, _ := midTurn(t, agentOpts{})
 		rec.read(func() {
-			rec.ask = answers(mcpctrl.Answer{Action: "decline", Content: map[string]any{"branch": "x"}}, nil)
+			rec.ask = answers(agentlink.Answer{Action: "decline", Content: map[string]any{"branch": "x"}}, nil)
 		})
 		a.request(5, methodElicitationCreate, form)
 		if got := a.answerTo(5); string(got.Result) != `{"action":"decline"}` {

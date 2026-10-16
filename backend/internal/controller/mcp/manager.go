@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // Manager holds a registry of per-workspace MCP servers.
@@ -97,7 +99,7 @@ func (m *Manager) SupportsStop(workspaceID int64) bool {
 
 // AgentModels reports the models the workspace's connected agent offers, or nil
 // when there is no server running for it or nothing has reported any.
-func (m *Manager) AgentModels(workspaceID int64) *AgentModelsSnapshot {
+func (m *Manager) AgentModels(workspaceID int64) *agentlink.ModelsSnapshot {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()
@@ -109,7 +111,7 @@ func (m *Manager) AgentModels(workspaceID int64) *AgentModelsSnapshot {
 
 // AgentEffort reports the reasoning levels the workspace's connected agent
 // offers, or nil when there is no server running for it or nothing offers any.
-func (m *Manager) AgentEffort(workspaceID int64) *AgentEffortSnapshot {
+func (m *Manager) AgentEffort(workspaceID int64) *agentlink.EffortSnapshot {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()
@@ -122,7 +124,7 @@ func (m *Manager) AgentEffort(workspaceID int64) *AgentEffortSnapshot {
 // AgentCommands reports the slash commands the workspace's connected agent
 // offers, or nil when there is no server running for it or nothing has reported
 // any.
-func (m *Manager) AgentCommands(workspaceID int64) *AgentCommandsSnapshot {
+func (m *Manager) AgentCommands(workspaceID int64) *agentlink.CommandsSnapshot {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()
@@ -135,7 +137,7 @@ func (m *Manager) AgentCommands(workspaceID int64) *AgentCommandsSnapshot {
 // AgentConcurrency reports how many tasks the workspace's connected gateway
 // will run at once, or nil when there is no server running for it or nothing
 // has reported a limit.
-func (m *Manager) AgentConcurrency(workspaceID int64) *AgentConcurrencySnapshot {
+func (m *Manager) AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()
@@ -147,7 +149,7 @@ func (m *Manager) AgentConcurrency(workspaceID int64) *AgentConcurrencySnapshot 
 
 // AgentClient reports what is attached to the workspace, or nil when there is
 // no server running for it or nothing has connected.
-func (m *Manager) AgentClient(workspaceID int64) *AgentClientInfo {
+func (m *Manager) AgentClient(workspaceID int64) *agentlink.ClientInfo {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()

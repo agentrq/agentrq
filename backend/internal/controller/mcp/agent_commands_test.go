@@ -14,6 +14,7 @@ import (
 
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -31,7 +32,7 @@ func connectedCommandsServer(t *testing.T) (*WorkspaceServer, string, chan []byt
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
+	ps.agentCommands = make(map[string]agentlink.CommandsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
 
@@ -44,7 +45,7 @@ func newCommandsServer() *WorkspaceServer {
 	return &WorkspaceServer{
 		workspaceID:   100,
 		bus:           eventbus.New(),
-		agentCommands: make(map[string]AgentCommandsSnapshot),
+		agentCommands: make(map[string]agentlink.CommandsSnapshot),
 	}
 }
 
@@ -65,8 +66,8 @@ const gatewayCommandsFrame = `{
 
 func TestAgentCommandsParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	var frame struct {
-		Method string              `json:"method"`
-		Params AgentCommandsParams `json:"params"`
+		Method string                   `json:"method"`
+		Params agentlink.CommandsReport `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(gatewayCommandsFrame), &frame); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -86,7 +87,7 @@ func TestAgentCommandsParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	if len(p.Commands) != 2 {
 		t.Fatalf("commands = %d, want 2", len(p.Commands))
 	}
-	want := AgentCommand{Name: "web", Description: "Search the web for information", Hint: "query to search for"}
+	want := agentlink.Command{Name: "web", Description: "Search the web for information", Hint: "query to search for"}
 	if !reflect.DeepEqual(p.Commands[0], want) {
 		t.Errorf("commands[0] = %+v, want %+v", p.Commands[0], want)
 	}
@@ -119,8 +120,8 @@ func TestHandleCustomNotificationRoutesCommands(t *testing.T) {
 func TestHandleAgentCommands(t *testing.T) {
 	t.Run("records what the session reported", func(t *testing.T) {
 		ps := newCommandsServer()
-		ps.HandleAgentCommands(context.Background(), "sess-1", AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "init"}, {Name: "review", Description: "Review the diff"}},
+		ps.HandleAgentCommands(context.Background(), "sess-1", agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "init"}, {Name: "review", Description: "Review the diff"}},
 		})
 
 		got := ps.agentCommands["sess-1"]
@@ -136,9 +137,9 @@ func TestHandleAgentCommands(t *testing.T) {
 		// Keying on the payload would file every snapshot under an ID that
 		// never appears live, and none would ever be advertised.
 		ps := newCommandsServer()
-		ps.HandleAgentCommands(context.Background(), "mcp-session", AgentCommandsParams{
+		ps.HandleAgentCommands(context.Background(), "mcp-session", agentlink.CommandsReport{
 			SessionID: "acp-session",
-			Commands:  []AgentCommand{{Name: "init"}},
+			Commands:  []agentlink.Command{{Name: "init"}},
 		})
 
 		if _, ok := ps.agentCommands["mcp-session"]; !ok {
@@ -157,7 +158,7 @@ func TestHandleAgentCommands(t *testing.T) {
 		// against the same list this is keyed on, so "" is internally
 		// consistent — and dropping it would lose the commands outright.
 		ps := newCommandsServer()
-		ps.HandleAgentCommands(context.Background(), "", AgentCommandsParams{Commands: []AgentCommand{{Name: "init"}}})
+		ps.HandleAgentCommands(context.Background(), "", agentlink.CommandsReport{Commands: []agentlink.Command{{Name: "init"}}})
 
 		if _, ok := ps.agentCommands[""]; !ok {
 			t.Errorf("expected the commands recorded under the blank key, got %+v", ps.agentCommands)
@@ -169,11 +170,11 @@ func TestHandleAgentCommands(t *testing.T) {
 
 	t.Run("the newest report replaces the previous one", func(t *testing.T) {
 		ps := newCommandsServer()
-		ps.HandleAgentCommands(context.Background(), "sess-1", AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "a"}, {Name: "b"}},
+		ps.HandleAgentCommands(context.Background(), "sess-1", agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "a"}, {Name: "b"}},
 		})
-		ps.HandleAgentCommands(context.Background(), "sess-1", AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "c"}},
+		ps.HandleAgentCommands(context.Background(), "sess-1", agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "c"}},
 		})
 
 		got := ps.agentCommands["sess-1"]
@@ -184,8 +185,8 @@ func TestHandleAgentCommands(t *testing.T) {
 
 	t.Run("an empty list is recorded, because it withdraws the menu", func(t *testing.T) {
 		ps := newCommandsServer()
-		ps.HandleAgentCommands(context.Background(), "sess-1", AgentCommandsParams{Commands: []AgentCommand{{Name: "a"}}})
-		ps.HandleAgentCommands(context.Background(), "sess-1", AgentCommandsParams{Commands: nil})
+		ps.HandleAgentCommands(context.Background(), "sess-1", agentlink.CommandsReport{Commands: []agentlink.Command{{Name: "a"}}})
+		ps.HandleAgentCommands(context.Background(), "sess-1", agentlink.CommandsReport{Commands: nil})
 
 		got, ok := ps.agentCommands["sess-1"]
 		if !ok {
@@ -232,8 +233,8 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 		// int64 would match nothing and the menu would never move.
 		ps, sessionID, ch := connectedCommandsServer(t)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "compact", Description: "Shorten the context"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "compact", Description: "Shorten the context"}},
 		})
 
 		payload := waitForEvent(t, ch)
@@ -257,12 +258,12 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 		// about a menu that did not move.
 		ps, sessionID, ch := connectedCommandsServer(t)
 
-		same := []AgentCommand{{Name: "init"}, {Name: "review", Hint: "what to review"}}
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{Commands: same})
+		same := []agentlink.Command{{Name: "init"}, {Name: "review", Hint: "what to review"}}
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{Commands: same})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "init"}, {Name: "review", Hint: "what to review"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "init"}, {Name: "review", Hint: "what to review"}},
 		})
 
 		select {
@@ -277,10 +278,10 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 		// offering commands the agent has stopped accepting.
 		ps, sessionID, ch := connectedCommandsServer(t)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{Commands: []AgentCommand{{Name: "a"}}})
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{Commands: []agentlink.Command{{Name: "a"}}})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{Commands: nil})
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{Commands: nil})
 
 		payload := waitForEvent(t, ch)
 		if commands, ok := payload["commands"].([]any); !ok || len(commands) != 0 {
@@ -294,12 +295,12 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 		// would take away commands that still work.
 		ps, sessionID, ch := connectedCommandsServer(t)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "still-here"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "still-here"}},
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentCommands(context.Background(), "a-second-session", AgentCommandsParams{Commands: nil})
+		ps.HandleAgentCommands(context.Background(), "a-second-session", agentlink.CommandsReport{Commands: nil})
 
 		payload := waitForEvent(t, ch)
 		commands, _ := payload["commands"].([]any)
@@ -315,13 +316,13 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 	t.Run("announces a changed description, not just a changed name", func(t *testing.T) {
 		ps, sessionID, ch := connectedCommandsServer(t)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "plan", Description: "the old wording"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "plan", Description: "the old wording"}},
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "plan", Description: "the revised wording"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "plan", Description: "the revised wording"}},
 		})
 
 		payload := waitForEvent(t, ch)
@@ -337,9 +338,9 @@ func TestHandleAgentCommandsPublishesTheChange(t *testing.T) {
 }
 
 func TestPickAgentCommands(t *testing.T) {
-	snapshots := map[string]AgentCommandsSnapshot{
-		"live":     {SessionID: "acp-live", Commands: []AgentCommand{{Name: "a"}}},
-		"dead":     {SessionID: "acp-dead", Commands: []AgentCommand{{Name: "z"}}},
+	snapshots := map[string]agentlink.CommandsSnapshot{
+		"live":     {SessionID: "acp-live", Commands: []agentlink.Command{{Name: "a"}}},
+		"dead":     {SessionID: "acp-dead", Commands: []agentlink.Command{{Name: "z"}}},
 		"withdrew": {SessionID: "acp-empty"},
 	}
 
@@ -387,7 +388,7 @@ func TestPickAgentCommands(t *testing.T) {
 	})
 
 	t.Run("has nothing to report when nothing was recorded", func(t *testing.T) {
-		if got := pickAgentCommands(map[string]AgentCommandsSnapshot{}, []string{"live"}); got != nil {
+		if got := pickAgentCommands(map[string]agentlink.CommandsSnapshot{}, []string{"live"}); got != nil {
 			t.Errorf("got %+v, want nil", got)
 		}
 		if got := pickAgentCommands(nil, []string{"live"}); got != nil {
@@ -398,7 +399,7 @@ func TestPickAgentCommands(t *testing.T) {
 
 func TestPruneAgentCommands(t *testing.T) {
 	t.Run("drops the sessions that have gone", func(t *testing.T) {
-		snapshots := map[string]AgentCommandsSnapshot{"a": {}, "b": {}, "c": {}}
+		snapshots := map[string]agentlink.CommandsSnapshot{"a": {}, "b": {}, "c": {}}
 		pruneAgentCommands(snapshots, []string{"b"})
 
 		if len(snapshots) != 1 {
@@ -412,7 +413,7 @@ func TestPruneAgentCommands(t *testing.T) {
 	t.Run("keeps everything when nothing is connected", func(t *testing.T) {
 		// No live sessions means "between connections", not "all stale" —
 		// pruning there would discard the notification being recorded.
-		snapshots := map[string]AgentCommandsSnapshot{"a": {}}
+		snapshots := map[string]agentlink.CommandsSnapshot{"a": {}}
 		pruneAgentCommands(snapshots, nil)
 
 		if len(snapshots) != 1 {
@@ -425,7 +426,7 @@ func TestAgentCommandsWithoutAnMCPServer(t *testing.T) {
 	// No server means no live sessions, so there is nothing to offer even
 	// though something was recorded earlier.
 	ps := newCommandsServer()
-	ps.agentCommands["sess-1"] = AgentCommandsSnapshot{Commands: []AgentCommand{{Name: "a"}}}
+	ps.agentCommands["sess-1"] = agentlink.CommandsSnapshot{Commands: []agentlink.Command{{Name: "a"}}}
 
 	if got := ps.AgentCommands(); got != nil {
 		t.Errorf("AgentCommands() = %+v, want nil", got)
@@ -439,7 +440,7 @@ func TestAgentCommandsWithAConnectedSession(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
+	ps.agentCommands = make(map[string]agentlink.CommandsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
 
@@ -450,9 +451,9 @@ func TestAgentCommandsWithAConnectedSession(t *testing.T) {
 		t.Errorf("AgentCommands() = %+v before any report, want nil", got)
 	}
 
-	ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
+	ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
 		SessionID: "acp-session",
-		Commands:  []AgentCommand{{Name: "init"}, {Name: "compact"}},
+		Commands:  []agentlink.Command{{Name: "init"}, {Name: "compact"}},
 	})
 
 	got := ps.AgentCommands()
@@ -471,8 +472,8 @@ func TestAgentCommandsIgnoresADepartedSession(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentCommands = map[string]AgentCommandsSnapshot{
-		"a-session-that-left": {Commands: []AgentCommand{{Name: "a"}}},
+	ps.agentCommands = map[string]agentlink.CommandsSnapshot{
+		"a-session-that-left": {Commands: []agentlink.Command{{Name: "a"}}},
 	}
 	connectedServer(t, ps, "acp-gateway")
 
@@ -487,13 +488,13 @@ func TestHandleAgentCommandsPrunesDepartedSessions(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentCommands = map[string]AgentCommandsSnapshot{
-		"a-session-that-left": {Commands: []AgentCommand{{Name: "old"}}},
+	ps.agentCommands = map[string]agentlink.CommandsSnapshot{
+		"a-session-that-left": {Commands: []agentlink.Command{{Name: "old"}}},
 	}
 	sessionID := connectedServer(t, ps, "acp-gateway")
 
-	ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-		Commands: []AgentCommand{{Name: "new"}},
+	ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+		Commands: []agentlink.Command{{Name: "new"}},
 	})
 
 	if _, ok := ps.agentCommands["a-session-that-left"]; ok {
@@ -519,11 +520,11 @@ func TestManagerAgentCommands(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
 		ps.bus = eventbus.New()
-		ps.agentCommands = make(map[string]AgentCommandsSnapshot)
+		ps.agentCommands = make(map[string]agentlink.CommandsSnapshot)
 		sessionID := connectedServer(t, ps, "acp-gateway")
 		streamFor(ps, sessionID)
-		ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-			Commands: []AgentCommand{{Name: "init"}},
+		ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+			Commands: []agentlink.Command{{Name: "init"}},
 		})
 
 		m2 := NewManager(func(int64, string) *WorkspaceServer { return ps })
@@ -544,12 +545,12 @@ func TestAgentCommandsStopAtTheStream(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentCommands = make(map[string]AgentCommandsSnapshot)
+	ps.agentCommands = make(map[string]agentlink.CommandsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	drop := streamFor(ps, sessionID)
 
-	ps.HandleAgentCommands(context.Background(), sessionID, AgentCommandsParams{
-		Commands: []AgentCommand{{Name: "compact"}},
+	ps.HandleAgentCommands(context.Background(), sessionID, agentlink.CommandsReport{
+		Commands: []agentlink.Command{{Name: "compact"}},
 	})
 	if ps.AgentCommands() == nil {
 		t.Fatal("expected the commands while the stream is up")

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
@@ -94,16 +95,16 @@ func newTelemetryRecorder(t *testing.T) *telemetryRecorder {
 	return rec
 }
 
-func thoughtParams(text string) AgentTelemetryParams {
-	return AgentTelemetryParams{SessionID: "sess-1", Kind: "thought", Text: text, Data: map[string]any{}}
+func thoughtParams(text string) agentlink.TelemetryReport {
+	return agentlink.TelemetryReport{SessionID: "sess-1", Kind: "thought", Text: text, Data: map[string]any{}}
 }
 
-func planParams(planID, text string, data map[string]any) AgentTelemetryParams {
+func planParams(planID, text string, data map[string]any) agentlink.TelemetryReport {
 	full := map[string]any{"planId": planID, "planType": "items"}
 	for k, v := range data {
 		full[k] = v
 	}
-	return AgentTelemetryParams{SessionID: "sess-1", Kind: "plan", Text: text, Data: full}
+	return agentlink.TelemetryReport{SessionID: "sess-1", Kind: "plan", Text: text, Data: full}
 }
 
 // Reasoning is appended: each block explains a different moment of the turn.
@@ -191,8 +192,8 @@ func TestHandleAgentTelemetry_DistinctPlansGetDistinctMessages(t *testing.T) {
 func TestHandleAgentTelemetry_UsageIsRevisedInPlace(t *testing.T) {
 	rec := newTelemetryRecorder(t)
 	ctx := context.Background()
-	usage := func(text string, used float64) AgentTelemetryParams {
-		return AgentTelemetryParams{
+	usage := func(text string, used float64) agentlink.TelemetryReport {
+		return agentlink.TelemetryReport{
 			SessionID: "sess-1",
 			Kind:      "usage",
 			Text:      text,
@@ -299,7 +300,7 @@ func TestHandleAgentTelemetry_UndeliverablePlanIsNotRemembered(t *testing.T) {
 
 // The payload describes the telemetry; it does not get to relabel the message.
 func TestAgentTelemetryMetadata_PayloadCannotOverrideTypeOrText(t *testing.T) {
-	metadata := agentTelemetryMetadata(MessageTypeAgentPlan, AgentTelemetryParams{
+	metadata := agentTelemetryMetadata(MessageTypeAgentPlan, agentlink.TelemetryReport{
 		Text: "the real rendering",
 		Data: map[string]any{
 			"type":    "permission_request",
@@ -336,7 +337,7 @@ func TestHandleAgentTelemetry_NoTaskPostsNothing(t *testing.T) {
 func TestHandleAgentTelemetry_UnknownKindIsIgnored(t *testing.T) {
 	rec := newTelemetryRecorder(t)
 
-	rec.ps.HandleAgentTelemetry(context.Background(), "sess-1", AgentTelemetryParams{
+	rec.ps.HandleAgentTelemetry(context.Background(), "sess-1", agentlink.TelemetryReport{
 		SessionID: "sess-1", Kind: "something_new", Text: "…",
 	})
 
@@ -436,7 +437,7 @@ func TestHandleAgentTelemetry_UsageCarriesWhenItWasReported(t *testing.T) {
 	defer func(f func() time.Time) { nowFunc = f }(nowFunc)
 	nowFunc = func() time.Time { return time.Date(2026, 10, 12, 10, 1, 9, 500, time.UTC) }
 
-	usage := AgentTelemetryParams{
+	usage := agentlink.TelemetryReport{
 		SessionID: "sess-1", Kind: "usage", Text: "Context 1 / 2 tokens (50%)",
 		Data: map[string]any{"used": 1.0, "size": 2.0, "reportedAt": "1999-01-01T00:00:00Z"},
 	}

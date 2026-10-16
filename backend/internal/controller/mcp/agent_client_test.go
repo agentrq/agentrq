@@ -10,6 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -21,7 +22,7 @@ func connectedIdentityServer(t *testing.T, clientName string) (*WorkspaceServer,
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentIdentities = make(map[string]AgentClientInfo)
+	ps.agentIdentities = make(map[string]agentlink.ClientInfo)
 	sessionID := connectedServer(t, ps, clientName)
 	return ps, sessionID, streamFor(ps, sessionID)
 }
@@ -156,7 +157,7 @@ const gatewayAgentFrame = `{
 }`
 
 func TestHandleCustomNotificationRoutesAgentIdentity(t *testing.T) {
-	ps := &WorkspaceServer{agentIdentities: make(map[string]AgentClientInfo)}
+	ps := &WorkspaceServer{agentIdentities: make(map[string]agentlink.ClientInfo)}
 	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayAgentFrame))
 
 	// Keyed by the MCP transport session, not the ACP session in the payload.
@@ -174,8 +175,8 @@ func TestHandleCustomNotificationRoutesAgentIdentity(t *testing.T) {
 
 func TestHandleAgentIdentity(t *testing.T) {
 	t.Run("trims what the gateway sent", func(t *testing.T) {
-		ps := &WorkspaceServer{agentIdentities: make(map[string]AgentClientInfo)}
-		ps.HandleAgentIdentity(context.Background(), "sess-1", AgentIdentityParams{
+		ps := &WorkspaceServer{agentIdentities: make(map[string]agentlink.ClientInfo)}
+		ps.HandleAgentIdentity(context.Background(), "sess-1", agentlink.IdentityReport{
 			Name: "  gemini  ", Title: "  Gemini CLI  ", Version: "  2.0  ",
 		})
 
@@ -188,8 +189,8 @@ func TestHandleAgentIdentity(t *testing.T) {
 	t.Run("ignores a payload that named nobody", func(t *testing.T) {
 		// The name is the entire point of this notification, and an empty one
 		// would replace a perfectly good client name with nothing.
-		ps := &WorkspaceServer{agentIdentities: make(map[string]AgentClientInfo)}
-		ps.HandleAgentIdentity(context.Background(), "sess-1", AgentIdentityParams{Name: "   "})
+		ps := &WorkspaceServer{agentIdentities: make(map[string]agentlink.ClientInfo)}
+		ps.HandleAgentIdentity(context.Background(), "sess-1", agentlink.IdentityReport{Name: "   "})
 
 		if len(ps.agentIdentities) != 0 {
 			t.Errorf("recorded %+v, want nothing", ps.agentIdentities)
@@ -197,9 +198,9 @@ func TestHandleAgentIdentity(t *testing.T) {
 	})
 
 	t.Run("the newest report replaces the previous one", func(t *testing.T) {
-		ps := &WorkspaceServer{agentIdentities: make(map[string]AgentClientInfo)}
-		ps.HandleAgentIdentity(context.Background(), "sess-1", AgentIdentityParams{Name: "codex"})
-		ps.HandleAgentIdentity(context.Background(), "sess-1", AgentIdentityParams{Name: "gemini"})
+		ps := &WorkspaceServer{agentIdentities: make(map[string]agentlink.ClientInfo)}
+		ps.HandleAgentIdentity(context.Background(), "sess-1", agentlink.IdentityReport{Name: "codex"})
+		ps.HandleAgentIdentity(context.Background(), "sess-1", agentlink.IdentityReport{Name: "gemini"})
 
 		if got := ps.agentIdentities["sess-1"].Name; got != "gemini" {
 			t.Errorf("Name = %q, want the second report", got)
@@ -210,7 +211,7 @@ func TestHandleAgentIdentity(t *testing.T) {
 func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 	t.Run("names the agent rather than the gateway in front of it", func(t *testing.T) {
 		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, AgentIdentityParams{
+		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{
 			Name: "codex", Title: "Codex CLI", Version: "1.10.0",
 		})
 
@@ -247,7 +248,7 @@ func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 	t.Run("still says nothing once the stream has gone", func(t *testing.T) {
 		// The reported agent must not outlive its connection either.
 		ps, sessionID, drop := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, AgentIdentityParams{Name: "codex"})
+		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{Name: "codex"})
 
 		drop()
 
@@ -259,7 +260,7 @@ func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
 
 func TestPruneAgentIdentities(t *testing.T) {
 	t.Run("drops the sessions that have gone", func(t *testing.T) {
-		identities := map[string]AgentClientInfo{"a": {Name: "x"}, "b": {Name: "y"}}
+		identities := map[string]agentlink.ClientInfo{"a": {Name: "x"}, "b": {Name: "y"}}
 		pruneAgentIdentities(identities, []string{"b"})
 
 		if len(identities) != 1 {
@@ -271,7 +272,7 @@ func TestPruneAgentIdentities(t *testing.T) {
 	})
 
 	t.Run("keeps everything when nothing is connected", func(t *testing.T) {
-		identities := map[string]AgentClientInfo{"a": {Name: "x"}}
+		identities := map[string]agentlink.ClientInfo{"a": {Name: "x"}}
 		pruneAgentIdentities(identities, nil)
 
 		if len(identities) != 1 {

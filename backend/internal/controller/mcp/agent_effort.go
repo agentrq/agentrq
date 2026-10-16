@@ -12,6 +12,7 @@ import (
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -22,43 +23,10 @@ var (
 	ErrEffortSetNotDelivered   = errors.New("the connected agent could not be reached")
 )
 
-// AgentEffort is one reasoning level the connected agent offers.
-type AgentEffort struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-}
-
-// AgentEffortParams is what a session reports about its reasoning level: the
-// agent's ACP config option with category "thought_level". An empty Efforts
-// withdraws the offer, which is what a switch to a model without levels does.
-type AgentEffortParams struct {
-	TaskID        string        `json:"taskId"`
-	SessionID     string        `json:"sessionId"`
-	ConfigID      string        `json:"configId"`
-	CurrentEffort string        `json:"currentEffort"`
-	Efforts       []AgentEffort `json:"efforts"`
-	CanSet        bool          `json:"canSet,omitempty"`
-}
-
-// AgentEffortSnapshot is what one connected session last reported.
-type AgentEffortSnapshot struct {
-	SessionID     string
-	ConfigID      string
-	CurrentEffort string
-	Efforts       []AgentEffort
-	CanSet        bool
-}
-
-// Selectable reports whether a choice can be written back.
-func (s AgentEffortSnapshot) Selectable() bool {
-	return s.CanSet && s.ConfigID != ""
-}
-
 // HandleAgentEffort records a session's reasoning level, keyed by transport
 // session like HandleAgentModels, and publishes it when it changed.
-func (ps *WorkspaceServer) HandleAgentEffort(_ context.Context, sessionID string, p AgentEffortParams) {
-	snapshot := AgentEffortSnapshot{
+func (ps *WorkspaceServer) HandleAgentEffort(_ context.Context, sessionID string, p agentlink.EffortReport) {
+	snapshot := agentlink.EffortSnapshot{
 		SessionID:     p.SessionID,
 		ConfigID:      p.ConfigID,
 		CurrentEffort: p.CurrentEffort,
@@ -78,7 +46,7 @@ func (ps *WorkspaceServer) HandleAgentEffort(_ context.Context, sessionID string
 	}
 }
 
-func sameAgentEffort(a, b AgentEffortSnapshot) bool {
+func sameAgentEffort(a, b agentlink.EffortSnapshot) bool {
 	return a.ConfigID == b.ConfigID &&
 		a.CurrentEffort == b.CurrentEffort &&
 		a.CanSet == b.CanSet &&
@@ -87,17 +55,17 @@ func sameAgentEffort(a, b AgentEffortSnapshot) bool {
 
 // publishAgentEffort tells the open pages what the workspace now offers. A
 // withdrawal falls back to another live session's offer, as models do.
-func (ps *WorkspaceServer) publishAgentEffort(reported AgentEffortSnapshot) {
+func (ps *WorkspaceServer) publishAgentEffort(reported agentlink.EffortSnapshot) {
 	published := reported
 	if len(published.Efforts) == 0 {
-		published = AgentEffortSnapshot{}
+		published = agentlink.EffortSnapshot{}
 		if snapshot := ps.AgentEffort(); snapshot != nil {
 			published = *snapshot
 		}
 	}
 	efforts := published.Efforts
 	if efforts == nil {
-		efforts = []AgentEffort{}
+		efforts = []agentlink.Effort{}
 	}
 	ps.bus.Publish(ps.workspaceID, ps.userID, eventbus.Event{
 		Type: "agent.effort",
@@ -113,7 +81,7 @@ func (ps *WorkspaceServer) publishAgentEffort(reported AgentEffortSnapshot) {
 
 // AgentEffort reports the reasoning levels the connected agent offers, or nil
 // when no streaming session offers any.
-func (ps *WorkspaceServer) AgentEffort() *AgentEffortSnapshot {
+func (ps *WorkspaceServer) AgentEffort() *agentlink.EffortSnapshot {
 	ps.agentEffortMu.RLock()
 	defer ps.agentEffortMu.RUnlock()
 	_, snapshot := pickAgentEffortSession(ps.agentEffort, ps.streamingSessionIDs())
@@ -122,9 +90,9 @@ func (ps *WorkspaceServer) AgentEffort() *AgentEffortSnapshot {
 
 // pickAgentEffortSession is pickAgentModelsSession for reasoning levels: the
 // first live session that can switch, else the first that offers any.
-func pickAgentEffortSession(snapshots map[string]AgentEffortSnapshot, live []string) (string, *AgentEffortSnapshot) {
+func pickAgentEffortSession(snapshots map[string]agentlink.EffortSnapshot, live []string) (string, *agentlink.EffortSnapshot) {
 	var fallbackID string
-	var fallback *AgentEffortSnapshot
+	var fallback *agentlink.EffortSnapshot
 	for _, id := range live {
 		snapshot, ok := snapshots[id]
 		if !ok || len(snapshot.Efforts) == 0 {
@@ -152,7 +120,7 @@ func (ps *WorkspaceServer) SetAgentEffort(ctx context.Context, effortID string) 
 	if snapshot == nil || !snapshot.Selectable() {
 		return ErrEffortSelectUnsupported
 	}
-	if !slices.ContainsFunc(snapshot.Efforts, func(e AgentEffort) bool { return e.ID == effortID }) {
+	if !slices.ContainsFunc(snapshot.Efforts, func(e agentlink.Effort) bool { return e.ID == effortID }) {
 		return ErrEffortNotOffered
 	}
 	link, ok := ps.agentLink(sessID)
@@ -169,7 +137,7 @@ func (ps *WorkspaceServer) SetAgentEffort(ctx context.Context, effortID string) 
 
 // pruneAgentEffort drops the snapshots of sessions that have gone away, under
 // the same rule as pruneAgentModels. The caller holds the write lock.
-func pruneAgentEffort(snapshots map[string]AgentEffortSnapshot, live []string) {
+func pruneAgentEffort(snapshots map[string]agentlink.EffortSnapshot, live []string) {
 	if len(live) == 0 {
 		return
 	}

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/gorilla/websocket"
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
@@ -82,7 +82,7 @@ type engineV1 struct {
 	early   []sessionNotification // updates for a session not yet registered; the update loop's alone
 
 	// set once by the handshake, read-only afterwards
-	agent       mcpctrl.AgentIdentityParams
+	agent       agentlink.IdentityReport
 	caps        agentCapabilities
 	authMethods []authMethod
 
@@ -92,7 +92,7 @@ type engineV1 struct {
 	idlePending     chan struct{} // closed when the idle session has opened (or failed)
 	preferredModel  string
 	preferredEffort string
-	commands        *mcpctrl.AgentCommandsParams
+	commands        *agentlink.CommandsReport
 	attached        bool
 	permissions     map[string]*pendingPermission // by request id
 	urlQuestions    map[string]context.CancelFunc // url questions still open, by elicitation id
@@ -169,9 +169,9 @@ func (e *engineV1) handshake() error {
 		return errVersion
 	}
 	e.caps, e.authMethods = r.AgentCapabilities, r.AuthMethods
-	e.agent = mcpctrl.AgentIdentityParams{Name: e.c.Meta().Agent}
+	e.agent = agentlink.IdentityReport{Name: e.c.Meta().Agent}
 	if r.AgentInfo != nil {
-		e.agent = mcpctrl.AgentIdentityParams{Name: r.AgentInfo.Name, Title: r.AgentInfo.Title, Version: r.AgentInfo.Version}
+		e.agent = agentlink.IdentityReport{Name: r.AgentInfo.Name, Title: r.AgentInfo.Title, Version: r.AgentInfo.Version}
 		if e.agent.Title == e.agent.Name {
 			e.agent.Title = ""
 		}
@@ -277,7 +277,7 @@ func (e *engineV1) reportConcurrency() {
 	}
 	limit, active, queued := e.q.numbers()
 	lo, hi, canSet := 1, maxConcurrency, true
-	e.ws.HandleAgentConcurrency(e.ctx, e.linkID, mcpctrl.AgentConcurrencyParams{
+	e.ws.HandleAgentConcurrency(e.ctx, e.linkID, agentlink.ConcurrencyReport{
 		MaxConcurrency: &limit, Active: active, Queued: queued, Min: &lo, Max: &hi, CanSet: &canSet})
 }
 

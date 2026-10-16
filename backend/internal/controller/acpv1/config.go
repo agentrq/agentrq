@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // optionText reads a config value id, which the schema types as a string but
@@ -46,7 +46,7 @@ func isModelOption(o configOption) bool {
 // modelsFrom finds the agent's model list among its config options: a select
 // with category "model" or id "model" first, else the first that looks like
 // one. ok is false when there is none.
-func modelsFrom(opts []configOption) (configID, current string, models []mcpctrl.AgentModel, ok bool) {
+func modelsFrom(opts []configOption) (configID, current string, models []agentlink.Model, ok bool) {
 	var pick *configOption
 	var choices []selectOption
 	for i := range opts {
@@ -78,7 +78,7 @@ func modelsFrom(opts []configOption) (configID, current string, models []mcpctrl
 		if name == "" {
 			name = id
 		}
-		models = append(models, mcpctrl.AgentModel{ID: id, Name: name, Description: so.Description, Current: id == current, Group: so.Group})
+		models = append(models, agentlink.Model{ID: id, Name: name, Description: so.Description, Current: id == current, Group: so.Group})
 	}
 	return pick.ID, current, models, true
 }
@@ -86,7 +86,7 @@ func modelsFrom(opts []configOption) (configID, current string, models []mcpctrl
 // effortFrom finds the agent's reasoning level among its config options: the
 // select with category "thought_level", picked by category alone. ok is false
 // when the agent offers none, which is how a model without levels says so.
-func effortFrom(opts []configOption) (configID, current string, efforts []mcpctrl.AgentEffort, ok bool) {
+func effortFrom(opts []configOption) (configID, current string, efforts []agentlink.Effort, ok bool) {
 	for i := range opts {
 		o := &opts[i]
 		if o.Type != "select" || o.Category != "thought_level" {
@@ -102,7 +102,7 @@ func effortFrom(opts []configOption) (configID, current string, efforts []mcpctr
 			if name == "" {
 				name = id
 			}
-			efforts = append(efforts, mcpctrl.AgentEffort{ID: id, Name: name, Description: so.Description})
+			efforts = append(efforts, agentlink.Effort{ID: id, Name: name, Description: so.Description})
 		}
 		return o.ID, optionText(o.CurrentValue), efforts, true
 	}
@@ -110,7 +110,7 @@ func effortFrom(opts []configOption) (configID, current string, efforts []mcpctr
 }
 
 // offersEffort reports whether id is one of the levels offered.
-func offersEffort(efforts []mcpctrl.AgentEffort, id string) bool {
+func offersEffort(efforts []agentlink.Effort, id string) bool {
 	for _, e := range efforts {
 		if e.ID == id {
 			return true
@@ -120,7 +120,7 @@ func offersEffort(efforts []mcpctrl.AgentEffort, id string) bool {
 }
 
 // resolveModel finds a requested model by id, else by display name.
-func resolveModel(models []mcpctrl.AgentModel, requested string) (string, bool) {
+func resolveModel(models []agentlink.Model, requested string) (string, bool) {
 	for _, m := range models {
 		if m.ID == requested {
 			return m.ID, true
@@ -135,8 +135,8 @@ func resolveModel(models []mcpctrl.AgentModel, requested string) (string, bool) 
 }
 
 // withCurrent is models with id marked as the current one.
-func withCurrent(models []mcpctrl.AgentModel, id string) []mcpctrl.AgentModel {
-	out := make([]mcpctrl.AgentModel, len(models))
+func withCurrent(models []agentlink.Model, id string) []agentlink.Model {
+	out := make([]agentlink.Model, len(models))
 	for i, m := range models {
 		m.Current = m.ID == id
 		out[i] = m

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
@@ -853,7 +854,7 @@ func TestWorkspaceServer_PersistToolCall_AutoAllowed(t *testing.T) {
 		},
 	}
 
-	params := PermissionRequestParams{
+	params := agentlink.PermissionRequest{
 		RequestID:    "req-1",
 		ToolName:     "Bash",
 		Description:  "run tests",
@@ -884,7 +885,7 @@ func TestWorkspaceServer_PersistToolCall_AutoAllowed(t *testing.T) {
 
 func TestWorkspaceServer_PersistToolCall_NoRecordFunc(t *testing.T) {
 	ps := &WorkspaceServer{}
-	gotID := ps.persistToolCall(context.Background(), 42, PermissionRequestParams{ToolName: "Bash"}, "auto_allowed")
+	gotID := ps.persistToolCall(context.Background(), 42, agentlink.PermissionRequest{ToolName: "Bash"}, "auto_allowed")
 	if gotID != 0 {
 		t.Errorf("expected 0 when recordToolCall is nil, got %d", gotID)
 	}
@@ -904,7 +905,7 @@ func TestWorkspaceServer_PersistToolCall_RecordError(t *testing.T) {
 		},
 	}
 
-	gotID := ps.persistToolCall(context.Background(), 42, PermissionRequestParams{ToolName: "Bash"}, "auto_allowed")
+	gotID := ps.persistToolCall(context.Background(), 42, agentlink.PermissionRequest{ToolName: "Bash"}, "auto_allowed")
 	if gotID != 0 {
 		t.Errorf("expected 0 on record error, got %d", gotID)
 	}

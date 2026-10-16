@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -883,9 +884,9 @@ func TestAgentCommandsEntity(t *testing.T) {
 	})
 
 	t.Run("carries the snapshot across into the API layer's own shape", func(t *testing.T) {
-		got := agentCommandsEntity(&mcpctrl.AgentCommandsSnapshot{
+		got := agentCommandsEntity(&agentlink.CommandsSnapshot{
 			SessionID: "acp-session",
-			Commands: []mcpctrl.AgentCommand{
+			Commands: []agentlink.Command{
 				{Name: "review", Description: "Review the diff", Hint: "what to review"},
 				{Name: "init"},
 			},
@@ -911,7 +912,7 @@ func TestAgentClientEntity(t *testing.T) {
 	})
 
 	t.Run("carries the live identity into the API layer's own shape", func(t *testing.T) {
-		got := agentClientEntity(&mcpctrl.AgentClientInfo{Name: "claude-code", Version: "2.0.1"})
+		got := agentClientEntity(&agentlink.ClientInfo{Name: "claude-code", Version: "2.0.1"})
 		if got == nil || got.Name != "claude-code" || got.Version != "2.0.1" {
 			t.Errorf("agentClientEntity returned %+v, want claude-code 2.0.1", got)
 		}
@@ -1044,7 +1045,7 @@ func TestAgentConcurrencyEntity(t *testing.T) {
 	})
 
 	t.Run("carries the snapshot across into the API layer's own shape", func(t *testing.T) {
-		got := agentConcurrencyEntity(&mcpctrl.AgentConcurrencySnapshot{
+		got := agentConcurrencyEntity(&agentlink.ConcurrencySnapshot{
 			MaxConcurrency: 4,
 			Active:         2,
 			Queued:         3,
@@ -1067,7 +1068,7 @@ func TestAgentConcurrencyEntity(t *testing.T) {
 	t.Run("a gateway willing to be told a limit but naming none cannot set", func(t *testing.T) {
 		// Settable(), not the raw flag. A control offered on that promise would
 		// have no number to start from and no way to tell a change had landed.
-		got := agentConcurrencyEntity(&mcpctrl.AgentConcurrencySnapshot{CanSet: true})
+		got := agentConcurrencyEntity(&agentlink.ConcurrencySnapshot{CanSet: true})
 		if got == nil || got.CanSet {
 			t.Errorf("got %+v, want canSet false", got)
 		}

@@ -6,6 +6,8 @@ package mcp
 
 import (
 	"testing"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 func TestIsMCPTool(t *testing.T) {
@@ -210,37 +212,37 @@ func TestBuildAutoAllowRule(t *testing.T) {
 	tests := []struct {
 		name     string
 		toolName string
-		params   *PermissionRequestParams
+		params   *agentlink.PermissionRequest
 		want     string
 	}{
 		{
 			"MCP tool",
 			"mcp_agentrq_createTask",
-			&PermissionRequestParams{InputPreview: `{"title": "test"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"title": "test"}`},
 			"mcp_agentrq_createTask",
 		},
 		{
 			"Bash with git command",
 			"Bash",
-			&PermissionRequestParams{InputPreview: `{"command": "git status --short"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"command": "git status --short"}`},
 			"Bash:git *",
 		},
 		{
 			"Bash with npm command",
 			"Bash",
-			&PermissionRequestParams{InputPreview: `{"command": "npm run build"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"command": "npm run build"}`},
 			"Bash:npm *",
 		},
 		{
 			"Bash with chained command",
 			"Bash",
-			&PermissionRequestParams{InputPreview: `{"command": "cd /tmp && ls -la"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"command": "cd /tmp && ls -la"}`},
 			"Bash:cd *",
 		},
 		{
 			"shell_execute with ls",
 			"shell_execute",
-			&PermissionRequestParams{InputPreview: `{"command": "ls -la"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"command": "ls -la"}`},
 			"shell_execute:ls *",
 		},
 		{
@@ -252,7 +254,7 @@ func TestBuildAutoAllowRule(t *testing.T) {
 		{
 			"Write tool",
 			"Write",
-			&PermissionRequestParams{InputPreview: `{"path": "/foo/bar.txt"}`},
+			&agentlink.PermissionRequest{InputPreview: `{"path": "/foo/bar.txt"}`},
 			"Write",
 		},
 		{
@@ -264,7 +266,7 @@ func TestBuildAutoAllowRule(t *testing.T) {
 		{
 			"Bash with invalid JSON",
 			"Bash",
-			&PermissionRequestParams{InputPreview: "not json"},
+			&agentlink.PermissionRequest{InputPreview: "not json"},
 			"Bash:*",
 		},
 	}

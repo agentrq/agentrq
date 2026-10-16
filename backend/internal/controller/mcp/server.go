@@ -22,6 +22,7 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -99,14 +100,6 @@ type RecordToolCallFunc func(ctx context.Context, tc model.ToolCall) (model.Tool
 // permission request is resolved ("allowed" or "denied").
 type UpdateToolCallStatusFunc func(ctx context.Context, id int64, status string) error
 
-type PermissionRequestParams struct {
-	RequestID    string `json:"request_id"`
-	TaskID       string `json:"task_id,omitempty"`
-	ToolName     string `json:"tool_name"`
-	Description  string `json:"description"`
-	InputPreview string `json:"input_preview"`
-}
-
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
 type WorkspaceServer struct {
 	workspaceID           int64
@@ -145,7 +138,7 @@ type WorkspaceServer struct {
 	requestToolsMu        sync.RWMutex
 	requestTools          map[string]string // requestID -> toolName
 	requestParamsMu       sync.RWMutex
-	requestParams         map[string]*PermissionRequestParams
+	requestParams         map[string]*agentlink.PermissionRequest
 	sessionTasksMu        sync.RWMutex
 	sessionTasks          map[string]int64 // sessionID -> taskID
 
@@ -178,19 +171,19 @@ type WorkspaceServer struct {
 	// only ever arrives by notification, and read back filtered to live
 	// sessions so a disconnected agent stops advertising its models.
 	agentModelsMu     sync.RWMutex
-	agentModels       map[string]AgentModelsSnapshot // sessionID -> models last reported
+	agentModels       map[string]agentlink.ModelsSnapshot // sessionID -> models last reported
 	agentEffortMu     sync.RWMutex
-	agentEffort       map[string]AgentEffortSnapshot // sessionID -> reasoning level last reported
+	agentEffort       map[string]agentlink.EffortSnapshot // sessionID -> reasoning level last reported
 	agentCommandsMu   sync.RWMutex
-	agentCommands     map[string]AgentCommandsSnapshot // sessionID -> slash commands last reported
+	agentCommands     map[string]agentlink.CommandsSnapshot // sessionID -> slash commands last reported
 	agentIdentitiesMu sync.RWMutex
-	agentIdentities   map[string]AgentClientInfo // sessionID -> the agent a gateway says it drives
+	agentIdentities   map[string]agentlink.ClientInfo // sessionID -> the agent a gateway says it drives
 	// How many tasks each connected gateway will run at once, and what its
 	// queue is doing. Cached for the same reason the models are: it only ever
 	// arrives by notification, and a page has to be able to render a number
 	// before the gateway next speaks.
 	agentConcurrencyMu sync.RWMutex
-	agentConcurrency   map[string]AgentConcurrencySnapshot // sessionID -> concurrency last reported
+	agentConcurrency   map[string]agentlink.ConcurrencySnapshot // sessionID -> concurrency last reported
 	streamingMu        sync.RWMutex
 	streaming          map[string]int // sessionID -> how many streams it currently holds
 	elicitationsMu     sync.Mutex
@@ -205,7 +198,7 @@ type WorkspaceServer struct {
 
 	// Native agent links, in attach order (agent_link.go).
 	linksMu sync.RWMutex
-	links   []AgentLink
+	links   []agentlink.Link
 	// connected is the value last published as agent.connected, shared by
 	// MCP streams and links so they make one 0↔1 edge between them.
 	connectedMu sync.Mutex
@@ -500,7 +493,7 @@ func NewWorkspaceServer(
 		autoAllowedTools:       autoAllowedTools,
 		permissionRequests:     make(map[string]string),
 		requestTools:           make(map[string]string),
-		requestParams:          make(map[string]*PermissionRequestParams),
+		requestParams:          make(map[string]*agentlink.PermissionRequest),
 		sessionTasks:           make(map[string]int64),
 		requestTaskIDs:         make(map[string]int64),
 		permissionResponses:    make(map[string]int64),
@@ -508,11 +501,11 @@ func NewWorkspaceServer(
 		toolCallIDs:            make(map[string]int64),
 		autoDecidedRequests:    make(map[string]struct{}),
 		agentTelemetryMessages: make(map[string]int64),
-		agentModels:            make(map[string]AgentModelsSnapshot),
-		agentEffort:            make(map[string]AgentEffortSnapshot),
-		agentCommands:          make(map[string]AgentCommandsSnapshot),
-		agentIdentities:        make(map[string]AgentClientInfo),
-		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),
+		agentModels:            make(map[string]agentlink.ModelsSnapshot),
+		agentEffort:            make(map[string]agentlink.EffortSnapshot),
+		agentCommands:          make(map[string]agentlink.CommandsSnapshot),
+		agentIdentities:        make(map[string]agentlink.ClientInfo),
+		agentConcurrency:       make(map[string]agentlink.ConcurrencySnapshot),
 		streaming:              make(map[string]int),
 		elicitations:           make(map[string]chan elicitationResponse),
 		clearedTaskIDs:         make(map[int64]struct{}),
@@ -2177,7 +2170,7 @@ func (ps *WorkspaceServer) notificationMiddleware(next mcp.MethodHandler) mcp.Me
 		if method == "notifications/claude/channel/permission_request" {
 			ps.emitTelemetry(ctx, ActionMCPNotification, "permission_request", clientIdentityFromRequest(req))
 			params := req.GetParams()
-			var p PermissionRequestParams
+			var p agentlink.PermissionRequest
 			b, _ := json.Marshal(params)
 			_ = json.Unmarshal(b, &p)
 
@@ -2336,7 +2329,7 @@ func truncateForStorage(s string, max int) string {
 // task's "tool calls" list, separate from the message thread. Best-effort: this
 // is a secondary audit trail, not the allow/deny decision itself, so failures
 // are logged and swallowed. Returns the new row's ID (0 if not recorded).
-func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p PermissionRequestParams, status string) int64 {
+func (ps *WorkspaceServer) persistToolCall(ctx context.Context, taskID int64, p agentlink.PermissionRequest, status string) int64 {
 	if ps.recordToolCall == nil {
 		return 0
 	}
@@ -2751,7 +2744,7 @@ func (ps *WorkspaceServer) wasAutoDecided(requestID string) bool {
 func (ps *WorkspaceServer) rebindPermissionRequest(
 	ctx context.Context,
 	sessionID string,
-	p PermissionRequestParams,
+	p agentlink.PermissionRequest,
 ) bool {
 	if sessionID == "" {
 		return false
@@ -2807,8 +2800,8 @@ func (ps *WorkspaceServer) rebindPermissionRequest(
 
 func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, sessionID string, data []byte) {
 	var msg struct {
-		Method string                  `json:"method"`
-		Params PermissionRequestParams `json:"params"`
+		Method string                      `json:"method"`
+		Params agentlink.PermissionRequest `json:"params"`
 	}
 	if err := json.Unmarshal(data, &msg); err != nil {
 		zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal custom MCP notification")
@@ -2819,7 +2812,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == AgentTelemetryNotificationMethod {
 		var telemetry struct {
-			Params AgentTelemetryParams `json:"params"`
+			Params agentlink.TelemetryReport `json:"params"`
 		}
 		if err := json.Unmarshal(data, &telemetry); err != nil {
 			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent telemetry notification")
@@ -2831,7 +2824,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == AgentModelsNotificationMethod {
 		var models struct {
-			Params AgentModelsParams `json:"params"`
+			Params agentlink.ModelsReport `json:"params"`
 		}
 		if err := json.Unmarshal(data, &models); err != nil {
 			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent models notification")
@@ -2843,7 +2836,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == AgentIdentityNotificationMethod {
 		var identity struct {
-			Params AgentIdentityParams `json:"params"`
+			Params agentlink.IdentityReport `json:"params"`
 		}
 		if err := json.Unmarshal(data, &identity); err != nil {
 			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent identity notification")
@@ -2855,7 +2848,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == AgentConcurrencyNotificationMethod {
 		var concurrency struct {
-			Params AgentConcurrencyParams `json:"params"`
+			Params agentlink.ConcurrencyReport `json:"params"`
 		}
 		if err := json.Unmarshal(data, &concurrency); err != nil {
 			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent concurrency notification")
@@ -2867,7 +2860,7 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 
 	if msg.Method == AgentCommandsNotificationMethod {
 		var commands struct {
-			Params AgentCommandsParams `json:"params"`
+			Params agentlink.CommandsReport `json:"params"`
 		}
 		if err := json.Unmarshal(data, &commands); err != nil {
 			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent commands notification")
@@ -2932,7 +2925,7 @@ func formatModelAttachments(raw []byte) string {
 // relayPermissionRequest is how an agent's permission request reaches the
 // human: the auto-allow rules, a task's allow-all, the card and the tool_calls
 // row. A gateway's custom notification and a native link both come here.
-func (ps *WorkspaceServer) relayPermissionRequest(ctx context.Context, sessionID string, p PermissionRequestParams) {
+func (ps *WorkspaceServer) relayPermissionRequest(ctx context.Context, sessionID string, p agentlink.PermissionRequest) {
 
 	// The same request arriving again means the agent reconnected while
 	// waiting for an answer, not that it wants to ask twice.

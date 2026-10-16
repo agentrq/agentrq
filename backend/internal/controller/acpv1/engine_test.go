@@ -21,46 +21,46 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/mustafaturan/monoflake"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // recorder is a Workspace that writes down everything the engine asked of it.
 // log keeps the order of the replies and telemetry, as the human reads them.
 type recorder struct {
 	mu        sync.Mutex
-	links     []mcpctrl.AgentLink
+	links     []agentlink.Link
 	replies   []string // "taskID|text"
-	telemetry []mcpctrl.AgentTelemetryParams
-	models    []mcpctrl.AgentModelsParams
-	effort    []mcpctrl.AgentEffortParams
-	commands  []mcpctrl.AgentCommandsParams
-	conc      []mcpctrl.AgentConcurrencyParams
+	telemetry []agentlink.TelemetryReport
+	models    []agentlink.ModelsReport
+	effort    []agentlink.EffortReport
+	commands  []agentlink.CommandsReport
+	conc      []agentlink.ConcurrencyReport
 	ongoing   []int64
 	offers    int
-	identity  []mcpctrl.AgentIdentityParams
+	identity  []agentlink.IdentityReport
 	detached  []string
 	log       []string
 	connects  int
 	turns     int
 	failReply error
 	failMark  error
-	onAttach  func(mcpctrl.AgentLink) // runs as the link attaches, as a push may
+	onAttach  func(agentlink.Link) // runs as the link attaches, as a push may
 
-	permissions []mcpctrl.PermissionRequestParams
+	permissions []agentlink.PermissionRequest
 	closed      []string // permission requests closed
 	questions   []askedQuestion
 	humanTasks  []string // "title|body"
-	ask         func(ctx context.Context, q mcpctrl.Question) (mcpctrl.Answer, error)
+	ask         func(ctx context.Context, q agentlink.Question) (agentlink.Answer, error)
 	failCreate  error
 }
 
 // askedQuestion is one AskHuman call.
 type askedQuestion struct {
 	taskID int64
-	q      mcpctrl.Question
+	q      agentlink.Question
 }
 
-func (r *recorder) AttachAgentLink(l mcpctrl.AgentLink) {
+func (r *recorder) AttachAgentLink(l agentlink.Link) {
 	r.mu.Lock()
 	r.links = append(r.links, l)
 	onAttach := r.onAttach
@@ -76,44 +76,44 @@ func (r *recorder) DetachAgentLink(_ context.Context, id string) {
 	r.detached = append(r.detached, id)
 }
 
-func (r *recorder) HandleAgentIdentity(_ context.Context, _ string, p mcpctrl.AgentIdentityParams) {
+func (r *recorder) HandleAgentIdentity(_ context.Context, _ string, p agentlink.IdentityReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.identity = append(r.identity, p)
 }
 
-func (r *recorder) HandleAgentModels(_ context.Context, _ string, p mcpctrl.AgentModelsParams) {
+func (r *recorder) HandleAgentModels(_ context.Context, _ string, p agentlink.ModelsReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.models = append(r.models, p)
 }
 
-func (r *recorder) HandleAgentEffort(_ context.Context, _ string, p mcpctrl.AgentEffortParams) {
+func (r *recorder) HandleAgentEffort(_ context.Context, _ string, p agentlink.EffortReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.effort = append(r.effort, p)
 }
 
-func (r *recorder) HandleAgentCommands(_ context.Context, _ string, p mcpctrl.AgentCommandsParams) {
+func (r *recorder) HandleAgentCommands(_ context.Context, _ string, p agentlink.CommandsReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.commands = append(r.commands, p)
 }
 
-func (r *recorder) HandleAgentConcurrency(_ context.Context, _ string, p mcpctrl.AgentConcurrencyParams) {
+func (r *recorder) HandleAgentConcurrency(_ context.Context, _ string, p agentlink.ConcurrencyReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.conc = append(r.conc, p)
 }
 
-func (r *recorder) HandleAgentTelemetry(_ context.Context, _ string, p mcpctrl.AgentTelemetryParams) {
+func (r *recorder) HandleAgentTelemetry(_ context.Context, _ string, p agentlink.TelemetryReport) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.telemetry = append(r.telemetry, p)
 	r.log = append(r.log, p.Kind+":"+p.Text)
 }
 
-func (r *recorder) HandlePermissionRequest(_ context.Context, _ string, p mcpctrl.PermissionRequestParams) {
+func (r *recorder) HandlePermissionRequest(_ context.Context, _ string, p agentlink.PermissionRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.permissions = append(r.permissions, p)
@@ -136,13 +136,13 @@ func (r *recorder) PostAgentReply(_ context.Context, _ string, taskID int64, tex
 	return int64(len(r.replies)), nil
 }
 
-func (r *recorder) AskHuman(ctx context.Context, taskID int64, q mcpctrl.Question) (mcpctrl.Answer, error) {
+func (r *recorder) AskHuman(ctx context.Context, taskID int64, q agentlink.Question) (agentlink.Answer, error) {
 	r.mu.Lock()
 	r.questions = append(r.questions, askedQuestion{taskID, q})
 	ask := r.ask
 	r.mu.Unlock()
 	if ask == nil {
-		return mcpctrl.Answer{Action: "cancel"}, nil
+		return agentlink.Answer{Action: "cancel"}, nil
 	}
 	return ask(ctx, q)
 }
@@ -188,7 +188,7 @@ func (r *recorder) wait(t *testing.T, cond func() bool) {
 	waitFor(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return cond() })
 }
 
-func (r *recorder) link(t *testing.T) mcpctrl.AgentLink {
+func (r *recorder) link(t *testing.T) agentlink.Link {
 	t.Helper()
 	r.wait(t, func() bool { return len(r.links) == 1 })
 	r.mu.Lock()
@@ -410,7 +410,7 @@ func (a *agent) controlOf(kind string) control {
 
 // ready runs the handshake and opens the idle session with the given answer,
 // then waits for the link.
-func (a *agent) ready(rec *recorder, sessionNew string) mcpctrl.AgentLink {
+func (a *agent) ready(rec *recorder, sessionNew string) agentlink.Link {
 	a.t.Helper()
 	a.answer(a.expect("initialize"), string(fixture(a.t, "initialize.response.json")))
 	a.answer(a.expect("session/new"), sessionNew)
@@ -421,7 +421,7 @@ func (a *agent) ready(rec *recorder, sessionNew string) mcpctrl.AgentLink {
 
 // readyAsking is ready with the fixture's session, answering the switch to
 // the mode that asks.
-func (a *agent) readyAsking(rec *recorder) mcpctrl.AgentLink {
+func (a *agent) readyAsking(rec *recorder) agentlink.Link {
 	a.t.Helper()
 	a.answer(a.expect("initialize"), string(fixture(a.t, "initialize.response.json")))
 	a.answer(a.expect("session/new"), string(fixture(a.t, "session_new.response.json")))
@@ -434,7 +434,7 @@ func (a *agent) readyAsking(rec *recorder) mcpctrl.AgentLink {
 // sync waits until the engine has applied every frame sent so far: the
 // answer to a request proves the reader got past them, and a barrier that
 // they were applied.
-func (a *agent) sync(l mcpctrl.AgentLink) {
+func (a *agent) sync(l agentlink.Link) {
 	a.t.Helper()
 	a.syncs++
 	id := strconv.Itoa(1_000_000 + a.syncs)
@@ -451,7 +451,7 @@ func (a *agent) sync(l mcpctrl.AgentLink) {
 
 // turn delivers a message, answers the prompt on sessionID with the frames
 // in between, and waits until the turn has finished.
-func (a *agent) turn(rec *recorder, l mcpctrl.AgentLink, taskID int64, sessionID, stopReason string, between ...func()) {
+func (a *agent) turn(rec *recorder, l agentlink.Link, taskID int64, sessionID, stopReason string, between ...func()) {
 	a.t.Helper()
 	var offers int
 	rec.read(func() { offers = rec.offers })
@@ -631,7 +631,7 @@ func TestEngine(t *testing.T) {
 		a.ready(rec, `{"sessionId":"idle-1"}`)
 		rec.wait(t, func() bool { return len(rec.identity) == 1 })
 		rec.read(func() {
-			if got := rec.identity[0]; got != (mcpctrl.AgentIdentityParams{Name: "example-agent", Title: "Example Agent", Version: "0.9.2"}) {
+			if got := rec.identity[0]; got != (agentlink.IdentityReport{Name: "example-agent", Title: "Example Agent", Version: "0.9.2"}) {
 				t.Fatalf("identity was %+v, want the agentInfo", got)
 			}
 		})
@@ -642,7 +642,7 @@ func TestEngine(t *testing.T) {
 		b.answer(b.expect("session/new"), `{"sessionId":"idle-1"}`)
 		rec2.wait(t, func() bool { return len(rec2.identity) == 1 })
 		rec2.read(func() {
-			if got := rec2.identity[0]; got != (mcpctrl.AgentIdentityParams{Name: "other-agent"}) {
+			if got := rec2.identity[0]; got != (agentlink.IdentityReport{Name: "other-agent"}) {
 				t.Fatalf("identity was %+v, want the bridge's agent header", got)
 			}
 		})
@@ -655,7 +655,7 @@ func TestEngine(t *testing.T) {
 		a.answer(a.expect("session/new"), `{"sessionId":"idle-1"}`)
 		rec.wait(t, func() bool { return len(rec.identity) == 1 })
 		rec.read(func() {
-			if got := rec.identity[0]; got != (mcpctrl.AgentIdentityParams{Name: "solo", Version: "1"}) {
+			if got := rec.identity[0]; got != (agentlink.IdentityReport{Name: "solo", Version: "1"}) {
 				t.Fatalf("identity was %+v, want no title", got)
 			}
 		})
@@ -1251,7 +1251,7 @@ func TestEngine(t *testing.T) {
 		rec.link(t)
 		rec.wait(t, func() bool { return len(rec.commands) == 1 })
 		rec.read(func() {
-			want := []mcpctrl.AgentCommand{{Name: "init", Description: "z", Hint: "path"}, {Name: "review", Description: "r"}}
+			want := []agentlink.Command{{Name: "init", Description: "z", Hint: "path"}, {Name: "review", Description: "r"}}
 			if got := rec.commands[0].Commands; !slices.Equal(got, want) {
 				t.Fatalf("commands were %+v, want %+v", got, want)
 			}
@@ -1470,7 +1470,7 @@ func TestEngine(t *testing.T) {
 func TestEngineEdges(t *testing.T) {
 	t.Run("a task pushed while the link attaches starts, and its numbers wait for the link", func(t *testing.T) {
 		rec := &recorder{}
-		rec.onAttach = func(l mcpctrl.AgentLink) { l.DeliverTask(context.Background(), 42, "early") }
+		rec.onAttach = func(l agentlink.Link) { l.DeliverTask(context.Background(), 42, "early") }
 		a := startAgent(t, rec)
 		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
 		a.answer(a.expect("session/new"), `{"sessionId":"idle-1"}`)

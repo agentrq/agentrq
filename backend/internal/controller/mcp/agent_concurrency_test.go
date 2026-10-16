@@ -14,6 +14,7 @@ import (
 
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -31,7 +32,7 @@ func connectedConcurrencyServer(t *testing.T) (*WorkspaceServer, string, chan []
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentConcurrency = make(map[string]AgentConcurrencySnapshot)
+	ps.agentConcurrency = make(map[string]agentlink.ConcurrencySnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
 
@@ -63,8 +64,8 @@ const gatewayConcurrencyFrame = `{
 
 func TestAgentConcurrencyParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	var frame struct {
-		Method string                 `json:"method"`
-		Params AgentConcurrencyParams `json:"params"`
+		Method string                      `json:"method"`
+		Params agentlink.ConcurrencyReport `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(gatewayConcurrencyFrame), &frame); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -75,10 +76,10 @@ func TestAgentConcurrencyParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	}
 
 	p := frame.Params
-	if got := p.limit(); got != 4 {
+	if got := p.Limit(); got != 4 {
 		t.Errorf("limit() = %d, want 4", got)
 	}
-	if !p.canSet() {
+	if !p.OffersSet() {
 		t.Error("canSet() = false, want true")
 	}
 	if p.Active != 2 || p.Queued != 3 {
@@ -115,14 +116,14 @@ func TestAgentConcurrencyParamsTreatsAbsentAsUnsaid(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var p AgentConcurrencyParams
+			var p agentlink.ConcurrencyReport
 			if err := json.Unmarshal([]byte(tc.body), &p); err != nil {
 				t.Fatalf("unmarshal: %v", err)
 			}
-			if got := p.limit(); got != tc.wantLimit {
+			if got := p.Limit(); got != tc.wantLimit {
 				t.Errorf("limit() = %d, want %d", got, tc.wantLimit)
 			}
-			if got := p.canSet(); got != tc.wantSet {
+			if got := p.OffersSet(); got != tc.wantSet {
 				t.Errorf("canSet() = %v, want %v", got, tc.wantSet)
 			}
 		})
@@ -133,7 +134,7 @@ func TestHandleCustomNotificationRoutesConcurrency(t *testing.T) {
 	ps := &WorkspaceServer{
 		workspaceID:      100,
 		bus:              eventbus.New(),
-		agentConcurrency: make(map[string]AgentConcurrencySnapshot),
+		agentConcurrency: make(map[string]agentlink.ConcurrencySnapshot),
 	}
 	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayConcurrencyFrame))
 
@@ -154,7 +155,7 @@ func TestHandleCustomNotificationRoutesConcurrency(t *testing.T) {
 
 func TestConcurrencySnapshotFrom(t *testing.T) {
 	t.Run("keeps the range the gateway reported", func(t *testing.T) {
-		got := concurrencySnapshotFrom(AgentConcurrencyParams{
+		got := concurrencySnapshotFrom(agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Min: intPtr(2), Max: intPtr(64),
 		})
 		if got.Min != 2 || got.Max != 64 {
@@ -166,7 +167,7 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 		// A limit of 0 is a queue that never hands anything out — a stall
 		// dressed as a setting, not something to offer a way to ask for.
 		for _, min := range []int{0, -5} {
-			got := concurrencySnapshotFrom(AgentConcurrencyParams{
+			got := concurrencySnapshotFrom(agentlink.ConcurrencyReport{
 				MaxConcurrency: intPtr(4), Min: intPtr(min),
 			})
 			if got.Min != 1 {
@@ -179,7 +180,7 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 		// Nothing is invented here. A client reads 0 as "no ceiling of its
 		// own", which is honest; a number made up here would be wrong the
 		// first time the gateway moved its real one.
-		got := concurrencySnapshotFrom(AgentConcurrencyParams{MaxConcurrency: intPtr(4)})
+		got := concurrencySnapshotFrom(agentlink.ConcurrencyReport{MaxConcurrency: intPtr(4)})
 		if got.Max != 0 {
 			t.Errorf("max = %d, want 0 for a gateway that named none", got.Max)
 		}
@@ -195,14 +196,14 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 		// value it was showing, and merely opening it would propose a change
 		// nobody asked for. What is running is the one number certainly true,
 		// so the range moves rather than the limit.
-		above := concurrencySnapshotFrom(AgentConcurrencyParams{
+		above := concurrencySnapshotFrom(agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(100), Min: intPtr(1), Max: intPtr(64),
 		})
 		if above.MaxConcurrency != 100 || above.Max != 100 {
 			t.Errorf("got %+v, want the limit kept at 100 and max widened to it", above)
 		}
 
-		below := concurrencySnapshotFrom(AgentConcurrencyParams{
+		below := concurrencySnapshotFrom(agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(2), Min: intPtr(8), Max: intPtr(64),
 		})
 		if below.MaxConcurrency != 2 || below.Min != 2 {
@@ -211,7 +212,7 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 	})
 
 	t.Run("raises an inverted ceiling to the floor", func(t *testing.T) {
-		got := concurrencySnapshotFrom(AgentConcurrencyParams{
+		got := concurrencySnapshotFrom(agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Min: intPtr(4), Max: intPtr(2),
 		})
 		if got.Min > got.Max {
@@ -220,7 +221,7 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 	})
 
 	t.Run("treats a negative limit as none reported", func(t *testing.T) {
-		got := concurrencySnapshotFrom(AgentConcurrencyParams{MaxConcurrency: intPtr(-3)})
+		got := concurrencySnapshotFrom(agentlink.ConcurrencyReport{MaxConcurrency: intPtr(-3)})
 		if got.MaxConcurrency != 0 || got.Reported() {
 			t.Errorf("got %+v, want a nonsense limit read as nothing reported", got)
 		}
@@ -230,23 +231,23 @@ func TestConcurrencySnapshotFrom(t *testing.T) {
 func TestAgentConcurrencySettable(t *testing.T) {
 	cases := []struct {
 		name     string
-		snapshot AgentConcurrencySnapshot
+		snapshot agentlink.ConcurrencySnapshot
 		want     bool
 	}{
-		{"willing and reporting", AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}, true},
+		{"willing and reporting", agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}, true},
 		{
 			// Every gateway ever published reports a limit and the older ones
 			// ignore being told to change it. Silence is no.
 			"reporting but silent about setting",
-			AgentConcurrencySnapshot{MaxConcurrency: 4}, false,
+			agentlink.ConcurrencySnapshot{MaxConcurrency: 4}, false,
 		},
 		{
 			// Willingness without a current value leaves a control with
 			// nothing to show and no way to tell whether a change landed.
 			"willing but reporting no limit",
-			AgentConcurrencySnapshot{CanSet: true}, false,
+			agentlink.ConcurrencySnapshot{CanSet: true}, false,
 		},
-		{"nothing at all", AgentConcurrencySnapshot{}, false},
+		{"nothing at all", agentlink.ConcurrencySnapshot{}, false},
 	}
 
 	for _, tc := range cases {
@@ -263,7 +264,7 @@ func TestAgentConcurrencyIgnoresDepartedSessions(t *testing.T) {
 	// that carried it, so a snapshot keyed to a departed gateway still looks
 	// live to anything reading the session list alone.
 	ps, sessionID, _ := connectedConcurrencyServer(t)
-	ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+	ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 		MaxConcurrency: intPtr(4), CanSet: boolPtr(true),
 	})
 
@@ -284,13 +285,13 @@ func TestAgentConcurrencyIgnoresDepartedSessions(t *testing.T) {
 // the second silently overwrites the first. A test written that way passes
 // without ever exercising the choice.
 func TestPickAgentConcurrencySession(t *testing.T) {
-	settable := AgentConcurrencySnapshot{MaxConcurrency: 8, CanSet: true}
-	readOnly := AgentConcurrencySnapshot{MaxConcurrency: 2}
-	silent := AgentConcurrencySnapshot{}
+	settable := agentlink.ConcurrencySnapshot{MaxConcurrency: 8, CanSet: true}
+	readOnly := agentlink.ConcurrencySnapshot{MaxConcurrency: 2}
+	silent := agentlink.ConcurrencySnapshot{}
 
 	cases := []struct {
 		name      string
-		snapshots map[string]AgentConcurrencySnapshot
+		snapshots map[string]agentlink.ConcurrencySnapshot
 		live      []string
 		wantID    string
 		wantLimit int
@@ -301,7 +302,7 @@ func TestPickAgentConcurrencySession(t *testing.T) {
 			// beside it and the workspace would show a read-only number while
 			// something perfectly capable was connected.
 			name:      "prefers the gateway that can be set, whatever the order",
-			snapshots: map[string]AgentConcurrencySnapshot{"old": readOnly, "new": settable},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"old": readOnly, "new": settable},
 			live:      []string{"old", "new"},
 			wantID:    "new", wantLimit: 8,
 		},
@@ -309,13 +310,13 @@ func TestPickAgentConcurrencySession(t *testing.T) {
 			// What every deployment running an older gateway looks like: the
 			// number is worth showing even though nothing can be done about it.
 			name:      "falls back to a gateway that can only report",
-			snapshots: map[string]AgentConcurrencySnapshot{"old": readOnly},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"old": readOnly},
 			live:      []string{"old"},
 			wantID:    "old", wantLimit: 2,
 		},
 		{
 			name:      "keeps the first read-only gateway when several only report",
-			snapshots: map[string]AgentConcurrencySnapshot{"a": readOnly, "b": {MaxConcurrency: 5}},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"a": readOnly, "b": {MaxConcurrency: 5}},
 			live:      []string{"a", "b"},
 			wantID:    "a", wantLimit: 2,
 		},
@@ -323,7 +324,7 @@ func TestPickAgentConcurrencySession(t *testing.T) {
 			// A session that named no limit has told the interface nothing it
 			// can render, so it is passed over rather than returned.
 			name:      "skips a session that reported no limit",
-			snapshots: map[string]AgentConcurrencySnapshot{"quiet": silent, "loud": readOnly},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"quiet": silent, "loud": readOnly},
 			live:      []string{"quiet", "loud"},
 			wantID:    "loud", wantLimit: 2,
 		},
@@ -332,13 +333,13 @@ func TestPickAgentConcurrencySession(t *testing.T) {
 			// outlives the stream that carried it, so a departed gateway would
 			// otherwise go on advertising a limit nothing can act on.
 			name:      "ignores a session that is no longer live",
-			snapshots: map[string]AgentConcurrencySnapshot{"gone": settable},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"gone": settable},
 			live:      []string{"here"},
 			wantID:    "", wantLimit: 0,
 		},
 		{
 			name:      "answers nothing when nothing is live",
-			snapshots: map[string]AgentConcurrencySnapshot{"gone": settable},
+			snapshots: map[string]agentlink.ConcurrencySnapshot{"gone": settable},
 			live:      nil,
 			wantID:    "", wantLimit: 0,
 		},
@@ -367,7 +368,7 @@ func TestAgentConcurrencyFallsBackToAReadOnlyGateway(t *testing.T) {
 	// What every deployment running an older gateway looks like: the number is
 	// worth showing even though nothing can be done about it.
 	ps, sessionID, _ := connectedConcurrencyServer(t)
-	ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+	ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 		MaxConcurrency: intPtr(2), Active: 1,
 	})
 
@@ -412,7 +413,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// int64 would match nothing and the control would never move.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Active: 2, Queued: 3,
 			Min: intPtr(1), Max: intPtr(64), CanSet: boolPtr(true),
 		})
@@ -440,7 +441,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// vanished on the next page load.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4),
 		})
 
@@ -458,7 +459,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// swallowing it would leave the control timing out over a request that
 		// was answered at once.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
-		report := AgentConcurrencyParams{
+		report := agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Active: 2, Queued: 3, CanSet: boolPtr(true),
 		}
 
@@ -476,12 +477,12 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// so a report that changes nothing but those is still news.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Active: 2, Queued: 3, CanSet: boolPtr(true),
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), Active: 4, Queued: 1, CanSet: boolPtr(true),
 		})
 		payload := waitForEvent(t, ch)
@@ -499,9 +500,9 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// gateway cannot be faked over the in-memory transport — it hands every
 		// session an empty ID, so both would land on one map key.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
-		ps.agentConcurrency[sessionID] = AgentConcurrencySnapshot{MaxConcurrency: 2, Min: 1}
+		ps.agentConcurrency[sessionID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 2, Min: 1}
 
-		ps.publishAgentConcurrency(AgentConcurrencySnapshot{})
+		ps.publishAgentConcurrency(agentlink.ConcurrencySnapshot{})
 
 		payload := waitForEvent(t, ch)
 		if got, ok := payload["maxConcurrency"].(float64); !ok || got != 2 {
@@ -513,12 +514,12 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// Zero is how a client is told the control has no subject any more,
 		// which is what its store reads as "there is no number here".
 		ps, sessionID, ch := connectedConcurrencyServer(t)
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4), CanSet: boolPtr(true),
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{})
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{})
 
 		payload := waitForEvent(t, ch)
 		if got, ok := payload["maxConcurrency"].(float64); !ok || got != 0 {
@@ -535,7 +536,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 		// limit. This state is the feature working, not an error.
 		ps, sessionID, ch := connectedConcurrencyServer(t)
 
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(1), Active: 4, Queued: 2, CanSet: boolPtr(true),
 		})
 
@@ -549,7 +550,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 }
 
 func TestSetAgentConcurrency(t *testing.T) {
-	settable := AgentConcurrencyParams{
+	settable := agentlink.ConcurrencyReport{
 		MaxConcurrency: intPtr(4), Min: intPtr(1), Max: intPtr(64), CanSet: boolPtr(true),
 	}
 
@@ -658,7 +659,7 @@ func TestSetConcurrencyParams(t *testing.T) {
 
 func TestPruneAgentConcurrency(t *testing.T) {
 	t.Run("drops what departed sessions reported", func(t *testing.T) {
-		snapshots := map[string]AgentConcurrencySnapshot{
+		snapshots := map[string]agentlink.ConcurrencySnapshot{
 			"gone": {MaxConcurrency: 2},
 			"here": {MaxConcurrency: 4},
 		}
@@ -677,7 +678,7 @@ func TestPruneAgentConcurrency(t *testing.T) {
 		// that every snapshot is stale — and dropping them there would discard
 		// the very notification being recorded, since an early call can observe
 		// the map before its own session is visible.
-		snapshots := map[string]AgentConcurrencySnapshot{"sess": {MaxConcurrency: 4}}
+		snapshots := map[string]agentlink.ConcurrencySnapshot{"sess": {MaxConcurrency: 4}}
 		pruneAgentConcurrency(snapshots, nil)
 
 		if len(snapshots) != 1 {
@@ -702,7 +703,7 @@ func TestManagerAgentConcurrency(t *testing.T) {
 
 	t.Run("asks the workspace's own server", func(t *testing.T) {
 		ps, sessionID, _ := connectedConcurrencyServer(t)
-		ps.HandleAgentConcurrency(context.Background(), sessionID, AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(4),
 			Active:         2,
 			Queued:         3,

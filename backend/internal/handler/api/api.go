@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/acpregistry"
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlaunch"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	machinectrl "github.com/agentrq/agentrq/backend/internal/controller/machine"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
@@ -1405,7 +1406,7 @@ func (h *handler) enrichWorkspaceSlack(ctx context.Context, ws *entity.Workspace
 }
 
 // agentEffortEntity converts a live MCP snapshot into the workspace's entity.
-func agentEffortEntity(s *mcpctrl.AgentEffortSnapshot) *entity.AgentEffort {
+func agentEffortEntity(s *agentlink.EffortSnapshot) *entity.AgentEffort {
 	if s == nil {
 		return nil
 	}
@@ -1424,7 +1425,7 @@ func agentEffortEntity(s *mcpctrl.AgentEffortSnapshot) *entity.AgentEffort {
 // agentModelsEntity converts a live MCP snapshot into the entity the workspace
 // carries, so the API layer keeps its own shape rather than exposing the MCP
 // controller's type through the view.
-func agentModelsEntity(s *mcpctrl.AgentModelsSnapshot) *entity.AgentModels {
+func agentModelsEntity(s *agentlink.ModelsSnapshot) *entity.AgentModels {
 	if s == nil {
 		return nil
 	}
@@ -1453,7 +1454,7 @@ func agentModelsEntity(s *mcpctrl.AgentModelsSnapshot) *entity.AgentModels {
 // agentConcurrencyEntity converts a live MCP snapshot into the entity the
 // workspace carries, so the API layer keeps its own shape rather than exposing
 // the MCP controller's type through the view.
-func agentConcurrencyEntity(s *mcpctrl.AgentConcurrencySnapshot) *entity.AgentConcurrency {
+func agentConcurrencyEntity(s *agentlink.ConcurrencySnapshot) *entity.AgentConcurrency {
 	if s == nil {
 		return nil
 	}
@@ -1473,7 +1474,7 @@ func agentConcurrencyEntity(s *mcpctrl.AgentConcurrencySnapshot) *entity.AgentCo
 // agentCommandsEntity converts a live MCP snapshot into the entity the
 // workspace carries, so the API layer keeps its own shape rather than exposing
 // the MCP controller's type through the view.
-func agentCommandsEntity(s *mcpctrl.AgentCommandsSnapshot) *entity.AgentCommands {
+func agentCommandsEntity(s *agentlink.CommandsSnapshot) *entity.AgentCommands {
 	if s == nil {
 		return nil
 	}
@@ -1491,7 +1492,7 @@ func agentCommandsEntity(s *mcpctrl.AgentCommandsSnapshot) *entity.AgentCommands
 
 // agentClientEntity converts the live MCP client identity into the entity the
 // workspace carries.
-func agentClientEntity(c *mcpctrl.AgentClientInfo) *entity.AgentClient {
+func agentClientEntity(c *agentlink.ClientInfo) *entity.AgentClient {
 	if c == nil {
 		return nil
 	}

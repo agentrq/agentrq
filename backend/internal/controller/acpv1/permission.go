@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // pendingPermission is a tool call waiting for the human.
@@ -66,7 +66,7 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 		e.mu.Unlock()
 	}()
 
-	e.ws.HandlePermissionRequest(ctx, e.linkID, mcpctrl.PermissionRequestParams{
+	e.ws.HandlePermissionRequest(ctx, e.linkID, agentlink.PermissionRequest{
 		RequestID: requestID, TaskID: b62(e.taskOf(s)),
 		ToolName: title, Description: title, InputPreview: inputPreview(rawInput),
 	})

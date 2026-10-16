@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -277,7 +277,7 @@ func (e *engineV1) endTurn(s *session, taskID int64, stopReason string, err erro
 		}
 	}
 	if u, ok := s.proj.usageForTurnEnd(); ok {
-		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, mcpctrl.AgentTelemetryParams{
+		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
 			TaskID: b62(taskID), SessionID: s.id, Kind: "usage", Text: formatUsage(u), Data: usageData(u)})
 	}
 	if err != nil {
@@ -302,7 +302,7 @@ func (e *engineV1) flushThought(s *session) {
 	if strings.TrimSpace(thought) == "" || taskID == 0 {
 		return
 	}
-	e.ws.HandleAgentTelemetry(e.ctx, e.linkID, mcpctrl.AgentTelemetryParams{
+	e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
 		TaskID: b62(taskID), SessionID: s.id, Kind: "thought", Text: thought, Data: map[string]any{}})
 }
 
@@ -311,7 +311,7 @@ func (e *engineV1) flushThought(s *session) {
 func (e *engineV1) sendPlan(s *session, text string, data map[string]any) {
 	e.flushThought(s)
 	if taskID := e.taskOf(s); taskID != 0 {
-		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, mcpctrl.AgentTelemetryParams{
+		e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
 			TaskID: b62(taskID), SessionID: s.id, Kind: "plan", Text: text, Data: data})
 	}
 }
@@ -403,15 +403,15 @@ func (e *engineV1) toolCallUpdate(s *session, raw json.RawMessage) {
 
 // normalizeCommands is the gateway's: names trimmed, nameless commands
 // dropped, a repeated name's last entry kept in the first one's place.
-func normalizeCommands(in []availableCommand) []mcpctrl.AgentCommand {
-	out := []mcpctrl.AgentCommand{}
+func normalizeCommands(in []availableCommand) []agentlink.Command {
+	out := []agentlink.Command{}
 	at := map[string]int{}
 	for _, c := range in {
 		name := strings.TrimSpace(c.Name)
 		if name == "" {
 			continue
 		}
-		cmd := mcpctrl.AgentCommand{Name: name, Description: strings.TrimSpace(c.Description)}
+		cmd := agentlink.Command{Name: name, Description: strings.TrimSpace(c.Description)}
 		if c.Input != nil {
 			cmd.Hint = strings.TrimSpace(c.Input.Hint)
 		}
@@ -427,9 +427,9 @@ func normalizeCommands(in []availableCommand) []mcpctrl.AgentCommand {
 
 // setCommands keeps the agent's slash commands for attach to report, and
 // reports them now when the link is up. An empty list withdraws the menu.
-func (e *engineV1) setCommands(s *session, commands []mcpctrl.AgentCommand) {
+func (e *engineV1) setCommands(s *session, commands []agentlink.Command) {
 	e.mu.Lock()
-	p := mcpctrl.AgentCommandsParams{TaskID: b62(s.taskID), SessionID: s.id, Commands: commands}
+	p := agentlink.CommandsReport{TaskID: b62(s.taskID), SessionID: s.id, Commands: commands}
 	e.commands = &p
 	attached := e.attached
 	e.mu.Unlock()

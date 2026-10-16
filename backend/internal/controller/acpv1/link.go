@@ -7,14 +7,14 @@ package acpv1
 import (
 	"context"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // link is the engine as the workspace server sees it. Every method returns
 // promptly: whatever waits on the agent runs on a goroutine of its own.
 type link struct{ e *engineV1 }
 
-var _ mcpctrl.AgentLink = (*link)(nil)
+var _ agentlink.Link = (*link)(nil)
 
 func (l *link) ID() string { return l.e.linkID }
 

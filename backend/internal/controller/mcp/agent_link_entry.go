@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
@@ -27,25 +28,9 @@ var ErrWorkspaceArchived = errors.New("workspace is archived and read-only")
 // ErrBadQuestion is a question that cannot be put to a human as asked.
 var ErrBadQuestion = errors.New("a question needs a message, and a form schema or a url")
 
-// Question is something a native agent asks the human, exactly as the elicit
-// tool would: a form to fill in, or a link to visit and confirm.
-type Question struct {
-	Mode            string         // "form" | "url"
-	Message         string         // the question
-	RequestedSchema map[string]any // form only
-	URL             string         // url only
-	Timeout         time.Duration  // <= 0 means an hour; capped at an hour
-}
-
-// Answer is what came back.
-type Answer struct {
-	Action  string         // "accept" | "decline" | "cancel"
-	Content map[string]any // form answers when accepted
-}
-
 // HandlePermissionRequest relays a native agent's permission request through
 // the same path a gateway's permission_request notification takes.
-func (ps *WorkspaceServer) HandlePermissionRequest(ctx context.Context, linkID string, p PermissionRequestParams) {
+func (ps *WorkspaceServer) HandlePermissionRequest(ctx context.Context, linkID string, p agentlink.PermissionRequest) {
 	ps.relayPermissionRequest(ctx, linkID, p)
 }
 
@@ -70,33 +55,33 @@ func (ps *WorkspaceServer) PostAgentReply(ctx context.Context, linkID string, ta
 
 // AskHuman puts a question to the human in a task and waits for the answer,
 // with the elicit tool's card, validation and limits.
-func (ps *WorkspaceServer) AskHuman(ctx context.Context, taskID int64, q Question) (Answer, error) {
+func (ps *WorkspaceServer) AskHuman(ctx context.Context, taskID int64, q agentlink.Question) (agentlink.Answer, error) {
 	if q.Message == "" {
-		return Answer{}, ErrBadQuestion
+		return agentlink.Answer{}, ErrBadQuestion
 	}
 	metadata := map[string]any{"type": "elicitation_request", "message": q.Message, "mode": q.Mode, "status": "pending"}
 	switch q.Mode {
 	case "form":
 		if len(q.RequestedSchema) == 0 {
-			return Answer{}, ErrBadQuestion
+			return agentlink.Answer{}, ErrBadQuestion
 		}
 		if err := validateElicitRequestedSchema(q.RequestedSchema); err != nil {
-			return Answer{}, fmt.Errorf("invalid requestedSchema: %w", err)
+			return agentlink.Answer{}, fmt.Errorf("invalid requestedSchema: %w", err)
 		}
 		metadata["requestedSchema"] = q.RequestedSchema
 	case "url":
 		if q.URL == "" {
-			return Answer{}, ErrBadQuestion
+			return agentlink.Answer{}, ErrBadQuestion
 		}
 		metadata["url"] = q.URL
 	default:
-		return Answer{}, ErrBadQuestion
+		return agentlink.Answer{}, ErrBadQuestion
 	}
 	resp, err := ps.askHuman(ctx, taskID, q.Message, metadata, questionTimeout(q.Timeout))
 	if err != nil {
-		return Answer{}, err
+		return agentlink.Answer{}, err
 	}
-	return Answer{Action: resp.Action, Content: resp.Content}, nil
+	return agentlink.Answer{Action: resp.Action, Content: resp.Content}, nil
 }
 
 // questionTimeout is how long a question waits: the elicit tool's default for

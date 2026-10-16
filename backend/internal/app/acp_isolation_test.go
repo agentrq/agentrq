@@ -51,3 +51,45 @@ func TestACPVersionsStayIsolated(t *testing.T) {
 		t.Fatalf("walking the backend failed: %v", err)
 	}
 }
+
+// ACP never goes through the MCP layer: a version package and agentlink, the
+// protocol-neutral types they share with the workspace server, import nothing
+// from MCP. Tests included, so a fake cannot pull it back in.
+func TestACPImportsNothingFromMCP(t *testing.T) {
+	const internal = "github.com/agentrq/agentrq/backend/internal/"
+	banned := []string{internal + "controller/mcp", internal + "handler/mcp", "github.com/modelcontextprotocol/"}
+	root, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("finding the backend failed: %v", err)
+	}
+	checked := 0
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		dir := filepath.Base(filepath.Dir(path))
+		if dir != "agentlink" && !strings.HasPrefix(dir, "acpv") {
+			return nil
+		}
+		checked++
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imp := range f.Imports {
+			p := strings.Trim(imp.Path.Value, `"`)
+			for _, b := range banned {
+				if p == b || strings.HasPrefix(p, b) {
+					t.Errorf("%s imports %s: ACP must not depend on the MCP layer", path, p)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the backend failed: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal("found no ACP or agentlink source to check")
+	}
+}

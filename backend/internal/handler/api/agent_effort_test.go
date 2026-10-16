@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/controller/crud"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
@@ -96,15 +97,15 @@ func TestAgentEffortEntity(t *testing.T) {
 	if agentEffortEntity(nil) != nil {
 		t.Fatal("a nil snapshot did not stay nil")
 	}
-	got := agentEffortEntity(&mcpctrl.AgentEffortSnapshot{
+	got := agentEffortEntity(&agentlink.EffortSnapshot{
 		SessionID: "s1", ConfigID: "effort", CurrentEffort: "high", CanSet: true,
-		Efforts: []mcpctrl.AgentEffort{{ID: "high", Name: "High", Description: "slower"}},
+		Efforts: []agentlink.Effort{{ID: "high", Name: "High", Description: "slower"}},
 	})
 	if got.ConfigID != "effort" || got.CurrentEffort != "high" || !got.CanSet ||
 		len(got.Efforts) != 1 || got.Efforts[0] != (entity.AgentEffortLevel{ID: "high", Name: "High", Description: "slower"}) {
 		t.Fatalf("got %+v", got)
 	}
-	if agentEffortEntity(&mcpctrl.AgentEffortSnapshot{CanSet: true}).CanSet {
+	if agentEffortEntity(&agentlink.EffortSnapshot{CanSet: true}).CanSet {
 		t.Fatal("an offer with no config option to write to was settable")
 	}
 }
@@ -122,8 +123,8 @@ func (effortWorkspaceCrud) CreateWorkspace(context.Context, entity.CreateWorkspa
 // The workspace payload carries the agent's reasoning levels, so a page that
 // loads after the agent reported them shows the picker.
 func TestWorkspacePayloadCarriesTheAgentEffort(t *testing.T) {
-	h := &handler{crud: effortWorkspaceCrud{}, mcpManager: &fakeMCPManager{effort: &mcpctrl.AgentEffortSnapshot{
-		ConfigID: "effort", CurrentEffort: "high", CanSet: true, Efforts: []mcpctrl.AgentEffort{{ID: "high", Name: "High"}},
+	h := &handler{crud: effortWorkspaceCrud{}, mcpManager: &fakeMCPManager{effort: &agentlink.EffortSnapshot{
+		ConfigID: "effort", CurrentEffort: "high", CanSet: true, Efforts: []agentlink.Effort{{ID: "high", Name: "High"}},
 	}}}
 	app := fiber.New()
 	app.Use(func(c *fiber.Ctx) error { c.Locals("user_id", monoflake.ID(100).String()); return c.Next() })

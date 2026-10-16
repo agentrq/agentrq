@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_auth "github.com/agentrq/agentrq/backend/internal/service/mocks/auth"
@@ -108,11 +109,11 @@ func newLinkServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 		userID:                 "user-1",
 		bus:                    bus,
 		agentTelemetryMessages: make(map[string]int64),
-		agentModels:            make(map[string]AgentModelsSnapshot),
-		agentEffort:            make(map[string]AgentEffortSnapshot),
-		agentCommands:          make(map[string]AgentCommandsSnapshot),
-		agentIdentities:        make(map[string]AgentClientInfo),
-		agentConcurrency:       make(map[string]AgentConcurrencySnapshot),
+		agentModels:            make(map[string]agentlink.ModelsSnapshot),
+		agentEffort:            make(map[string]agentlink.EffortSnapshot),
+		agentCommands:          make(map[string]agentlink.CommandsSnapshot),
+		agentIdentities:        make(map[string]agentlink.ClientInfo),
+		agentConcurrency:       make(map[string]agentlink.ConcurrencySnapshot),
 		permissionRequests:     make(map[string]string),
 		requestTaskIDs:         make(map[string]int64),
 	}, events
@@ -223,9 +224,9 @@ func TestAgentLinks(t *testing.T) {
 		ps, events := newLinkServer(t)
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
-		ps.HandleAgentModels(context.Background(), "acp1:a", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "acp1:a", agentlink.ModelsReport{
 			SessionID: "s1", ConfigID: "model", CurrentModel: "m1",
-			Models: []AgentModel{{ID: "m1", Name: "Model one"}},
+			Models: []agentlink.Model{{ID: "m1", Name: "Model one"}},
 		})
 		if m := ps.AgentModels(); m == nil {
 			t.Fatal("AgentModels returned nil while the link was attached, want its snapshot")
@@ -369,9 +370,9 @@ func TestAgentLinks(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
-		ps.HandleAgentModels(context.Background(), "acp1:a", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "acp1:a", agentlink.ModelsReport{
 			SessionID: "s1", ConfigID: "model", CurrentModel: "m1", CanSet: true,
-			Models: []AgentModel{{ID: "m1", Name: "Model one"}, {ID: "m2", Name: "Model two"}},
+			Models: []agentlink.Model{{ID: "m1", Name: "Model one"}, {ID: "m2", Name: "Model two"}},
 		})
 
 		if err := ps.SetAgentModel(context.Background(), "m2"); err != nil {
@@ -387,7 +388,7 @@ func TestAgentLinks(t *testing.T) {
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
 		limit, canSet := 1, true
-		ps.HandleAgentConcurrency(context.Background(), "acp1:a", AgentConcurrencyParams{MaxConcurrency: &limit, CanSet: &canSet})
+		ps.HandleAgentConcurrency(context.Background(), "acp1:a", agentlink.ConcurrencyReport{MaxConcurrency: &limit, CanSet: &canSet})
 
 		if err := ps.SetAgentConcurrency(context.Background(), 3); err != nil {
 			t.Fatalf("SetAgentConcurrency returned %v, want nil", err)
@@ -414,10 +415,10 @@ func TestAgentLinks(t *testing.T) {
 	t.Run("AgentClient names the agent a link reported", func(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		ps.AttachAgentLink(&fakeLink{id: "acp1:a"})
-		ps.HandleAgentIdentity(context.Background(), "acp1:a", AgentIdentityParams{Name: "codex-acp", Version: "0.9"})
+		ps.HandleAgentIdentity(context.Background(), "acp1:a", agentlink.IdentityReport{Name: "codex-acp", Version: "0.9"})
 
 		got := ps.AgentClient()
-		if got == nil || *got != (AgentClientInfo{Name: "codex-acp", Version: "0.9"}) {
+		if got == nil || *got != (agentlink.ClientInfo{Name: "codex-acp", Version: "0.9"}) {
 			t.Fatalf("AgentClient returned %+v, want codex-acp 0.9", got)
 		}
 	})
@@ -476,9 +477,9 @@ func TestSetAgentReachesALinkByItsOwnCall(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
-		ps.HandleAgentModels(context.Background(), "acp1:a", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "acp1:a", agentlink.ModelsReport{
 			SessionID: "s1", ConfigID: "model", CurrentModel: "a", CanSet: true,
-			Models: []AgentModel{{ID: "a"}, {ID: "b"}},
+			Models: []agentlink.Model{{ID: "a"}, {ID: "b"}},
 		})
 
 		if err := ps.SetAgentModel(context.Background(), "b"); err != nil {
@@ -493,7 +494,7 @@ func TestSetAgentReachesALinkByItsOwnCall(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
-		ps.HandleAgentConcurrency(context.Background(), "acp1:a", AgentConcurrencyParams{
+		ps.HandleAgentConcurrency(context.Background(), "acp1:a", agentlink.ConcurrencyReport{
 			MaxConcurrency: intPtr(2), Min: intPtr(1), Max: intPtr(8), CanSet: boolPtr(true),
 		})
 

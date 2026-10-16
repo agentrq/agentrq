@@ -11,12 +11,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 	"github.com/golang/mock/gomock"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/mustafaturan/monoflake"
 )
 
 // permissionServer builds a workspace server with just enough wired up to take
@@ -38,7 +40,7 @@ func permissionServer(t *testing.T, replies *int) *WorkspaceServer {
 		pubsub:              pubsubMock,
 		permissionRequests:  make(map[string]string),
 		requestTools:        make(map[string]string),
-		requestParams:       make(map[string]*PermissionRequestParams),
+		requestParams:       make(map[string]*agentlink.PermissionRequest),
 		sessionTasks:        map[string]int64{"sess-old": 42},
 		requestTaskIDs:      make(map[string]int64),
 		permissionResponses: make(map[string]int64),
@@ -76,7 +78,7 @@ func TestRebindPermissionRequest_UnknownRequestIsAskedNormally(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
 
-	if ps.rebindPermissionRequest(context.Background(), "sess-new", PermissionRequestParams{RequestID: "req-1"}) {
+	if ps.rebindPermissionRequest(context.Background(), "sess-new", agentlink.PermissionRequest{RequestID: "req-1"}) {
 		t.Fatal("an unasked request must not be treated as a re-send")
 	}
 }
@@ -87,7 +89,7 @@ func TestRebindPermissionRequest_NoSession(t *testing.T) {
 	ps := permissionServer(t, &replies)
 	ps.permissionResponses["req-1"] = 700
 
-	if ps.rebindPermissionRequest(context.Background(), "", PermissionRequestParams{RequestID: "req-1"}) {
+	if ps.rebindPermissionRequest(context.Background(), "", agentlink.PermissionRequest{RequestID: "req-1"}) {
 		t.Fatal("a request with no session must not be treated as a re-send")
 	}
 }
@@ -152,7 +154,7 @@ func TestRebindPermissionRequest_DeliversTheMissedVerdict(t *testing.T) {
 
 	// Still no session to deliver on, but the attempt is what is being checked:
 	// the held verdict must be sent again rather than the question re-asked.
-	rebound := ps.rebindPermissionRequest(context.Background(), "sess-new", PermissionRequestParams{RequestID: "req-1"})
+	rebound := ps.rebindPermissionRequest(context.Background(), "sess-new", agentlink.PermissionRequest{RequestID: "req-1"})
 
 	if !rebound {
 		t.Fatal("expected the re-sent request to be recognised")
@@ -182,7 +184,7 @@ func TestCleanupRequest_ForgetsTheHeldVerdict(t *testing.T) {
 	if _, ok := ps.undeliveredVerdicts["req-1"]; ok {
 		t.Fatal("expected the held verdict to be forgotten with the request")
 	}
-	if ps.rebindPermissionRequest(context.Background(), "sess-new", PermissionRequestParams{RequestID: "req-1"}) {
+	if ps.rebindPermissionRequest(context.Background(), "sess-new", agentlink.PermissionRequest{RequestID: "req-1"}) {
 		t.Fatal("a forgotten request must be asked afresh")
 	}
 }
@@ -519,5 +521,41 @@ func TestClientSupportsStop_NoClientInfo(t *testing.T) {
 
 	if clientSupportsStop(sess) {
 		t.Fatal("a session with no client info cannot be stopped")
+	}
+}
+
+// permissionRequestParams carries a permission_request payload in an SDK
+// request, the shape notificationMiddleware reads it from.
+type permissionRequestParams struct {
+	*mcp.LoggingMessageParams
+	body agentlink.PermissionRequest
+}
+
+func (p *permissionRequestParams) MarshalJSON() ([]byte, error) { return json.Marshal(p.body) }
+
+func TestNotificationMiddlewareRelaysAPermissionRequest(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	sessionID := connectedServer(t, ps, "acp-gateway")
+	var sess *mcp.ServerSession
+	for s := range ps.mcpServer.Sessions() {
+		if s.ID() == sessionID {
+			sess = s
+		}
+	}
+	req := &mcp.ServerRequest[*permissionRequestParams]{Session: sess, Params: &permissionRequestParams{
+		LoggingMessageParams: &mcp.LoggingMessageParams{},
+		body:                 agentlink.PermissionRequest{RequestID: "req-mw", TaskID: monoflake.ID(42).String(), ToolName: "Bash"},
+	}}
+	next := func(context.Context, string, mcp.Request) (mcp.Result, error) { return nil, nil }
+
+	if _, err := ps.notificationMiddleware(next)(context.Background(), "notifications/claude/channel/permission_request", req); err != nil {
+		t.Fatalf("middleware returned %v, want nil", err)
+	}
+	if got := ps.requestParams["req-mw"]; got == nil || got.ToolName != "Bash" {
+		t.Fatalf("recorded request = %+v, want the Bash request", got)
+	}
+	if ps.permissionRequests["req-mw"] != sessionID || replies != 1 {
+		t.Fatalf("request bound to %q with %d replies, want %q and 1", ps.permissionRequests["req-mw"], replies, sessionID)
 	}
 }

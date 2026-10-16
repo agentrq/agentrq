@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 func TestEffortFrom(t *testing.T) {
@@ -21,7 +21,7 @@ func TestEffortFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, current, efforts, ok := effortFrom(resp.ConfigOptions)
-		want := []mcpctrl.AgentEffort{{ID: "low", Name: "Low"}, {ID: "high", Name: "High"}}
+		want := []agentlink.Effort{{ID: "low", Name: "Low"}, {ID: "high", Name: "High"}}
 		if !ok || id != "effort" || current != "high" || !slices.Equal(efforts, want) {
 			t.Fatalf("effortFrom = %q %q %+v %v, want effort high %+v", id, current, efforts, ok, want)
 		}
@@ -40,7 +40,7 @@ func TestEffortFrom(t *testing.T) {
 			{"id":"empty","category":"thought_level","type":"select","options":[]},
 			{"id":"level","category":"thought_level","type":"select","currentValue":"max","options":[{"value":"max","description":"slowest"}]}]`)
 		id, current, efforts, ok := effortFrom(opts)
-		if !ok || id != "level" || current != "max" || !slices.Equal(efforts, []mcpctrl.AgentEffort{{ID: "max", Name: "max", Description: "slowest"}}) {
+		if !ok || id != "level" || current != "max" || !slices.Equal(efforts, []agentlink.Effort{{ID: "max", Name: "max", Description: "slowest"}}) {
 			t.Fatalf("effortFrom = %q %q %+v %v, want the level select", id, current, efforts, ok)
 		}
 	})

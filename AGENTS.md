@@ -66,7 +66,8 @@ Each line says what the note will stop you getting wrong.
 - **[Native ACP](docs/agents/acp-native.md)** — `controller/acpv1`, where
   AgentRQ is the ACP client and the gateway only moves bytes. Why version
   packages never share code, why a native connection is an agent link inside
-  the workspace server, and the turn barrier.
+  the workspace server, why it never touches the MCP layer, and the turn
+  barrier.
 - **[Site tools](docs/agents/site-tools.md)** — agents calling a shared
   website's WebMCP tools through the Chrome extension. Why it is native WebMCP
   and top frame only, why the nonce must be gone before page scripts run, and

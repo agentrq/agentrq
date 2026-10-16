@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 )
 
@@ -29,11 +30,11 @@ import (
 type fakeMCPManager struct {
 	server workspaceServer
 
-	models      *mcpctrl.AgentModelsSnapshot
-	effort      *mcpctrl.AgentEffortSnapshot
-	commands    *mcpctrl.AgentCommandsSnapshot
-	client      *mcpctrl.AgentClientInfo
-	concurrency *mcpctrl.AgentConcurrencySnapshot
+	models      *agentlink.ModelsSnapshot
+	effort      *agentlink.EffortSnapshot
+	commands    *agentlink.CommandsSnapshot
+	client      *agentlink.ClientInfo
+	concurrency *agentlink.ConcurrencySnapshot
 	connected   bool
 	supportStop bool
 
@@ -45,21 +46,21 @@ func (f *fakeMCPManager) Remove(workspaceID int64)                             {
 func (f *fakeMCPManager) IsAgentConnected(workspaceID int64) bool              { return f.connected }
 func (f *fakeMCPManager) SupportsStop(workspaceID int64) bool                  { return f.supportStop }
 
-func (f *fakeMCPManager) AgentModels(workspaceID int64) *mcpctrl.AgentModelsSnapshot {
+func (f *fakeMCPManager) AgentModels(workspaceID int64) *agentlink.ModelsSnapshot {
 	return f.models
 }
 
-func (f *fakeMCPManager) AgentEffort(workspaceID int64) *mcpctrl.AgentEffortSnapshot {
+func (f *fakeMCPManager) AgentEffort(workspaceID int64) *agentlink.EffortSnapshot {
 	return f.effort
 }
 
-func (f *fakeMCPManager) AgentCommands(workspaceID int64) *mcpctrl.AgentCommandsSnapshot {
+func (f *fakeMCPManager) AgentCommands(workspaceID int64) *agentlink.CommandsSnapshot {
 	return f.commands
 }
 
-func (f *fakeMCPManager) AgentClient(workspaceID int64) *mcpctrl.AgentClientInfo { return f.client }
+func (f *fakeMCPManager) AgentClient(workspaceID int64) *agentlink.ClientInfo { return f.client }
 
-func (f *fakeMCPManager) AgentConcurrency(workspaceID int64) *mcpctrl.AgentConcurrencySnapshot {
+func (f *fakeMCPManager) AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot {
 	return f.concurrency
 }
 

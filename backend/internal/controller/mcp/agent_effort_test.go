@@ -10,11 +10,13 @@ import (
 	"testing"
 
 	"github.com/mustafaturan/monoflake"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
-var settableEffort = AgentEffortParams{
+var settableEffort = agentlink.EffortReport{
 	SessionID: "s1", ConfigID: "effort", CurrentEffort: "high", CanSet: true,
-	Efforts: []AgentEffort{{ID: "low", Name: "Low"}, {ID: "high", Name: "High", Description: "slower"}},
+	Efforts: []agentlink.Effort{{ID: "low", Name: "Low"}, {ID: "high", Name: "High", Description: "slower"}},
 }
 
 // effortEvent reads events until the next agent.effort one.
@@ -68,7 +70,7 @@ func TestHandleAgentEffort(t *testing.T) {
 		ps.HandleAgentEffort(context.Background(), "acp1:a", settableEffort)
 		effortEvent(t, sub)
 
-		ps.HandleAgentEffort(context.Background(), "acp1:a", AgentEffortParams{SessionID: "s1"})
+		ps.HandleAgentEffort(context.Background(), "acp1:a", agentlink.EffortReport{SessionID: "s1"})
 		if evt := effortEvent(t, sub); len(evt.Payload["efforts"].([]any)) != 0 || evt.Payload["canSet"] != false {
 			t.Fatalf("withdrawal payload = %+v, want no levels", evt.Payload)
 		}
@@ -82,7 +84,7 @@ func TestHandleAgentEffort(t *testing.T) {
 		effortEvent(t, sub)
 		ps.HandleAgentEffort(context.Background(), "acp1:a", settableEffort)
 		effortEvent(t, sub)
-		ps.HandleAgentEffort(context.Background(), "acp1:a", AgentEffortParams{SessionID: "s1"})
+		ps.HandleAgentEffort(context.Background(), "acp1:a", agentlink.EffortReport{SessionID: "s1"})
 		if evt := effortEvent(t, sub); evt.Payload["currentEffort"] != "low" {
 			t.Fatalf("withdrawal payload = %+v, want b's offer still shown", evt.Payload)
 		}
@@ -170,7 +172,7 @@ func TestSetAgentEffort(t *testing.T) {
 // method for it, so an MCP session that reported one is not reachable.
 func TestSetAgentEffortNeverReachesAnMCPSession(t *testing.T) {
 	ps, sessionID, _ := connectedModelsServer(t)
-	ps.agentEffort = make(map[string]AgentEffortSnapshot)
+	ps.agentEffort = make(map[string]agentlink.EffortSnapshot)
 	ps.HandleAgentEffort(context.Background(), sessionID, settableEffort)
 
 	if err := ps.SetAgentEffort(context.Background(), "low"); !errors.Is(err, ErrEffortSetNotDelivered) {
@@ -179,7 +181,7 @@ func TestSetAgentEffortNeverReachesAnMCPSession(t *testing.T) {
 }
 
 func TestPruneAgentEffortKeepsEverythingBetweenConnections(t *testing.T) {
-	snapshots := map[string]AgentEffortSnapshot{"gone": {ConfigID: "effort"}}
+	snapshots := map[string]agentlink.EffortSnapshot{"gone": {ConfigID: "effort"}}
 	pruneAgentEffort(snapshots, nil)
 	if len(snapshots) != 1 {
 		t.Fatal("a report was dropped while no session was live")

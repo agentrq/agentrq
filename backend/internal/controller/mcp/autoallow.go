@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // isShellTool returns true if the tool name represents a shell/bash execution tool.
@@ -59,7 +61,7 @@ func extractBaseCommand(command string) string {
 //   - MCP tools:   "mcp_servername_toolname"  (exact match)
 //   - Shell tools:  "Bash:git *"              (base-command glob)
 //   - Other tools: "Read", "Write"            (exact tool name)
-func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *PermissionRequestParams) string {
+func (ps *WorkspaceServer) buildAutoAllowRule(toolName string, params *agentlink.PermissionRequest) string {
 	// MCP tools: store exact name
 	if isMCPTool(toolName) {
 		return toolName

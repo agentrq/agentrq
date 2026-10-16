@@ -9,6 +9,8 @@ import (
 	"time"
 
 	zlog "github.com/rs/zerolog/log"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // MessageMetadataSessionEnded marks a usage message whose session has closed
@@ -55,28 +57,28 @@ func (ps *WorkspaceServer) agentSessionEnded(ctx context.Context, sessionID stri
 	hadModels := len(ps.agentModels[sessionID].Models) > 0
 	ps.agentModelsMu.RUnlock()
 	if hadModels {
-		ps.publishAgentModels(AgentModelsSnapshot{})
+		ps.publishAgentModels(agentlink.ModelsSnapshot{})
 	}
 
 	ps.agentEffortMu.RLock()
 	hadEffort := len(ps.agentEffort[sessionID].Efforts) > 0
 	ps.agentEffortMu.RUnlock()
 	if hadEffort {
-		ps.publishAgentEffort(AgentEffortSnapshot{})
+		ps.publishAgentEffort(agentlink.EffortSnapshot{})
 	}
 
 	ps.agentCommandsMu.RLock()
 	hadCommands := len(ps.agentCommands[sessionID].Commands) > 0
 	ps.agentCommandsMu.RUnlock()
 	if hadCommands {
-		ps.publishAgentCommands(AgentCommandsSnapshot{})
+		ps.publishAgentCommands(agentlink.CommandsSnapshot{})
 	}
 
 	ps.agentConcurrencyMu.RLock()
 	hadConcurrency := ps.agentConcurrency[sessionID].Reported()
 	ps.agentConcurrencyMu.RUnlock()
 	if hadConcurrency {
-		ps.publishAgentConcurrency(AgentConcurrencySnapshot{})
+		ps.publishAgentConcurrency(agentlink.ConcurrencySnapshot{})
 	}
 
 	ps.endUsageMessages(ctx, sessionID)

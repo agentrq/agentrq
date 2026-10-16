@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
@@ -38,11 +39,11 @@ func TestCallingAgent(t *testing.T) {
 
 	t.Run("names the agent behind a gateway, and its model", func(t *testing.T) {
 		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, AgentIdentityParams{Name: "gemini"})
-		ps.agentModels = make(map[string]AgentModelsSnapshot)
-		ps.agentModels[sessionID] = AgentModelsSnapshot{
+		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{Name: "gemini"})
+		ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
+		ps.agentModels[sessionID] = agentlink.ModelsSnapshot{
 			CurrentModel: "gemini-3-flash",
-			Models:       []AgentModel{{ID: "gemini-3-pro", Name: "Gemini 3 Pro"}, {ID: "gemini-3-flash", Name: " Gemini 3 Flash "}},
+			Models:       []agentlink.Model{{ID: "gemini-3-pro", Name: "Gemini 3 Pro"}, {ID: "gemini-3-flash", Name: " Gemini 3 Flash "}},
 		}
 		got := ps.callingAgent(toolCallOn(t, ps, sessionID))
 		if got != (entity.TaskAgent{Name: "gemini", Model: "Gemini 3 Flash"}) {
@@ -52,7 +53,7 @@ func TestCallingAgent(t *testing.T) {
 
 	t.Run("names nobody for a gateway that has not said which agent it drives", func(t *testing.T) {
 		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.agentModels = map[string]AgentModelsSnapshot{sessionID: {CurrentModel: "gemini-3-flash"}}
+		ps.agentModels = map[string]agentlink.ModelsSnapshot{sessionID: {CurrentModel: "gemini-3-flash"}}
 		if got := ps.callingAgent(toolCallOn(t, ps, sessionID)); got != (entity.TaskAgent{}) {
 			t.Errorf("callingAgent() = %+v, want an empty agent", got)
 		}
@@ -72,17 +73,17 @@ func TestCallingAgent(t *testing.T) {
 func TestAgentModelsSnapshotCurrentModelName(t *testing.T) {
 	cases := []struct {
 		name     string
-		snapshot AgentModelsSnapshot
+		snapshot agentlink.ModelsSnapshot
 		want     string
 	}{
-		{"nothing selected", AgentModelsSnapshot{Models: []AgentModel{{ID: "a", Name: "A"}}}, ""},
-		{"the list's name for it", AgentModelsSnapshot{CurrentModel: "a", Models: []AgentModel{{ID: "a", Name: "A"}}}, "A"},
-		{"the ID when the list gives no name", AgentModelsSnapshot{CurrentModel: "a", Models: []AgentModel{{ID: "a", Name: " "}}}, "a"},
-		{"the ID when the list does not have it", AgentModelsSnapshot{CurrentModel: "b", Models: []AgentModel{{ID: "a", Name: "A"}}}, "b"},
+		{"nothing selected", agentlink.ModelsSnapshot{Models: []agentlink.Model{{ID: "a", Name: "A"}}}, ""},
+		{"the list's name for it", agentlink.ModelsSnapshot{CurrentModel: "a", Models: []agentlink.Model{{ID: "a", Name: "A"}}}, "A"},
+		{"the ID when the list gives no name", agentlink.ModelsSnapshot{CurrentModel: "a", Models: []agentlink.Model{{ID: "a", Name: " "}}}, "a"},
+		{"the ID when the list does not have it", agentlink.ModelsSnapshot{CurrentModel: "b", Models: []agentlink.Model{{ID: "a", Name: "A"}}}, "b"},
 	}
 	for _, c := range cases {
-		if got := c.snapshot.currentModelName(); got != c.want {
-			t.Errorf("%s: currentModelName() = %q, want %q", c.name, got, c.want)
+		if got := c.snapshot.CurrentModelName(); got != c.want {
+			t.Errorf("%s: CurrentModelName() = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

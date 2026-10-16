@@ -10,7 +10,7 @@ import (
 	"errors"
 	"strings"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	zlog "github.com/rs/zerolog/log"
 )
 
@@ -26,10 +26,10 @@ type session struct {
 	reenforced  int // times the agent was put back into a mode that asks
 	configID    string
 	current     string
-	models      []mcpctrl.AgentModel
+	models      []agentlink.Model
 	effortID    string
 	effort      string
-	efforts     []mcpctrl.AgentEffort
+	efforts     []agentlink.Effort
 	effortShown bool // the workspace was last told the session offers levels
 	proj        *projector
 	stopTurn    context.CancelFunc // gives up on the running turn's prompt; nil between turns
@@ -270,7 +270,7 @@ func (e *engineV1) ownsTask(taskID int64) bool {
 // attached and if the agent offers any.
 func (e *engineV1) reportModels(s *session) {
 	e.mu.Lock()
-	p := mcpctrl.AgentModelsParams{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.configID,
+	p := agentlink.ModelsReport{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.configID,
 		CurrentModel: s.current, Models: s.models, CanSet: s.configID != ""}
 	attached := e.attached
 	e.mu.Unlock()
@@ -325,7 +325,7 @@ func (e *engineV1) setEffortOptions(s *session, opts []configOption) {
 // when they go.
 func (e *engineV1) reportEffort(s *session) {
 	e.mu.Lock()
-	p := mcpctrl.AgentEffortParams{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.effortID,
+	p := agentlink.EffortReport{TaskID: b62(s.taskID), SessionID: s.id, ConfigID: s.effortID,
 		CurrentEffort: s.effort, Efforts: s.efforts, CanSet: s.effortID != ""}
 	send := e.attached && (len(s.efforts) > 0 || s.effortShown)
 	if send {

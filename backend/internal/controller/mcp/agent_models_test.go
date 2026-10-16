@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/mustafaturan/monoflake"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -32,7 +33,7 @@ func newModelsServer() *WorkspaceServer {
 	return &WorkspaceServer{
 		workspaceID: 100,
 		bus:         eventbus.New(),
-		agentModels: make(map[string]AgentModelsSnapshot),
+		agentModels: make(map[string]agentlink.ModelsSnapshot),
 	}
 }
 
@@ -55,8 +56,8 @@ const gatewayModelsFrame = `{
 
 func TestAgentModelsParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	var frame struct {
-		Method string            `json:"method"`
-		Params AgentModelsParams `json:"params"`
+		Method string                 `json:"method"`
+		Params agentlink.ModelsReport `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(gatewayModelsFrame), &frame); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -82,7 +83,7 @@ func TestAgentModelsParamsMatchesTheGatewayWireFormat(t *testing.T) {
 	if len(p.Models) != 2 {
 		t.Fatalf("models = %d, want 2", len(p.Models))
 	}
-	want := AgentModel{
+	want := agentlink.Model{
 		ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro",
 		Description: "Most capable", Current: true, Group: "Google",
 	}
@@ -118,10 +119,10 @@ func TestHandleCustomNotificationRoutesModels(t *testing.T) {
 func TestHandleAgentModels(t *testing.T) {
 	t.Run("records what the session reported", func(t *testing.T) {
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{
 			ConfigID:     "model",
 			CurrentModel: "b",
-			Models:       []AgentModel{{ID: "a"}, {ID: "b"}},
+			Models:       []agentlink.Model{{ID: "a"}, {ID: "b"}},
 		})
 
 		got := ps.agentModels["sess-1"]
@@ -137,9 +138,9 @@ func TestHandleAgentModels(t *testing.T) {
 		// Keying on the payload would file every snapshot under an ID that
 		// never appears live, and none would ever be advertised.
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "mcp-session", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "mcp-session", agentlink.ModelsReport{
 			SessionID: "acp-session",
-			Models:    []AgentModel{{ID: "a"}},
+			Models:    []agentlink.Model{{ID: "a"}},
 		})
 
 		if _, ok := ps.agentModels["mcp-session"]; !ok {
@@ -158,7 +159,7 @@ func TestHandleAgentModels(t *testing.T) {
 		// against the same list this is keyed on, so "" is internally
 		// consistent — and dropping it would lose the models outright.
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "", AgentModelsParams{Models: []AgentModel{{ID: "a"}}})
+		ps.HandleAgentModels(context.Background(), "", agentlink.ModelsReport{Models: []agentlink.Model{{ID: "a"}}})
 
 		if _, ok := ps.agentModels[""]; !ok {
 			t.Errorf("expected the models recorded under the blank key, got %+v", ps.agentModels)
@@ -170,8 +171,8 @@ func TestHandleAgentModels(t *testing.T) {
 
 	t.Run("the newest report replaces the previous one", func(t *testing.T) {
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{Models: []AgentModel{{ID: "a"}, {ID: "b"}}})
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{Models: []AgentModel{{ID: "c"}}})
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{Models: []agentlink.Model{{ID: "a"}, {ID: "b"}}})
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{Models: []agentlink.Model{{ID: "c"}}})
 
 		got := ps.agentModels["sess-1"]
 		if len(got.Models) != 1 || got.Models[0].ID != "c" {
@@ -181,8 +182,8 @@ func TestHandleAgentModels(t *testing.T) {
 
 	t.Run("an empty list is recorded, because it withdraws the choice", func(t *testing.T) {
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{Models: []AgentModel{{ID: "a"}}})
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{Models: nil})
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{Models: []agentlink.Model{{ID: "a"}}})
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{Models: nil})
 
 		got, ok := ps.agentModels["sess-1"]
 		if !ok {
@@ -196,8 +197,8 @@ func TestHandleAgentModels(t *testing.T) {
 	t.Run("falls back to the per-model current flag", func(t *testing.T) {
 		// Gateways send the top-level field or the flag, not always both.
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{
-			Models: []AgentModel{{ID: "a"}, {ID: "b", Current: true}},
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{
+			Models: []agentlink.Model{{ID: "a"}, {ID: "b", Current: true}},
 		})
 
 		if got := ps.agentModels["sess-1"].CurrentModel; got != "b" {
@@ -207,7 +208,7 @@ func TestHandleAgentModels(t *testing.T) {
 
 	t.Run("leaves the current model empty when nothing claims to be it", func(t *testing.T) {
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{Models: []AgentModel{{ID: "a"}}})
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{Models: []agentlink.Model{{ID: "a"}}})
 
 		if got := ps.agentModels["sess-1"].CurrentModel; got != "" {
 			t.Errorf("CurrentModel = %q, want empty", got)
@@ -216,9 +217,9 @@ func TestHandleAgentModels(t *testing.T) {
 
 	t.Run("the top-level field beats the flag when both are set", func(t *testing.T) {
 		ps := newModelsServer()
-		ps.HandleAgentModels(context.Background(), "sess-1", AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), "sess-1", agentlink.ModelsReport{
 			CurrentModel: "a",
-			Models:       []AgentModel{{ID: "b", Current: true}},
+			Models:       []agentlink.Model{{ID: "b", Current: true}},
 		})
 
 		if got := ps.agentModels["sess-1"].CurrentModel; got != "a" {
@@ -228,9 +229,9 @@ func TestHandleAgentModels(t *testing.T) {
 }
 
 func TestPickAgentModels(t *testing.T) {
-	snapshots := map[string]AgentModelsSnapshot{
-		"live":     {ConfigID: "model", Models: []AgentModel{{ID: "a"}}},
-		"dead":     {ConfigID: "stale", Models: []AgentModel{{ID: "z"}}},
+	snapshots := map[string]agentlink.ModelsSnapshot{
+		"live":     {ConfigID: "model", Models: []agentlink.Model{{ID: "a"}}},
+		"dead":     {ConfigID: "stale", Models: []agentlink.Model{{ID: "z"}}},
 		"withdrew": {ConfigID: "empty"},
 	}
 
@@ -277,7 +278,7 @@ func TestPickAgentModels(t *testing.T) {
 	})
 
 	t.Run("has nothing to report when nothing was recorded", func(t *testing.T) {
-		if got := pickAgentModels(map[string]AgentModelsSnapshot{}, []string{"live"}); got != nil {
+		if got := pickAgentModels(map[string]agentlink.ModelsSnapshot{}, []string{"live"}); got != nil {
 			t.Errorf("got %+v, want nil", got)
 		}
 		if got := pickAgentModels(nil, []string{"live"}); got != nil {
@@ -288,7 +289,7 @@ func TestPickAgentModels(t *testing.T) {
 
 func TestPruneAgentModels(t *testing.T) {
 	t.Run("drops the sessions that have gone", func(t *testing.T) {
-		snapshots := map[string]AgentModelsSnapshot{"a": {}, "b": {}, "c": {}}
+		snapshots := map[string]agentlink.ModelsSnapshot{"a": {}, "b": {}, "c": {}}
 		pruneAgentModels(snapshots, []string{"b"})
 
 		if len(snapshots) != 1 {
@@ -302,7 +303,7 @@ func TestPruneAgentModels(t *testing.T) {
 	t.Run("keeps everything when nothing is connected", func(t *testing.T) {
 		// No live sessions means "between connections", not "all stale" —
 		// pruning there would discard the notification being recorded.
-		snapshots := map[string]AgentModelsSnapshot{"a": {}}
+		snapshots := map[string]agentlink.ModelsSnapshot{"a": {}}
 		pruneAgentModels(snapshots, nil)
 
 		if len(snapshots) != 1 {
@@ -315,7 +316,7 @@ func TestAgentModelsWithoutAnMCPServer(t *testing.T) {
 	// No server means no live sessions, so there is nothing to advertise even
 	// though something was recorded earlier.
 	ps := newModelsServer()
-	ps.agentModels["sess-1"] = AgentModelsSnapshot{Models: []AgentModel{{ID: "a"}}}
+	ps.agentModels["sess-1"] = agentlink.ModelsSnapshot{Models: []agentlink.Model{{ID: "a"}}}
 
 	if got := ps.AgentModels(); got != nil {
 		t.Errorf("AgentModels() = %+v, want nil", got)
@@ -333,7 +334,7 @@ func TestAgentModelsWithAConnectedSession(t *testing.T) {
 	ps := permissionServer(t, &replies)
 	// A bus, because recording a report now announces it.
 	ps.bus = eventbus.New()
-	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
 
@@ -346,10 +347,10 @@ func TestAgentModelsWithAConnectedSession(t *testing.T) {
 		t.Errorf("AgentModels() = %+v before any report, want nil", got)
 	}
 
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 		ConfigID:     "model",
 		CurrentModel: "gemini-2.5-pro",
-		Models:       []AgentModel{{ID: "gemini-2.5-pro"}, {ID: "gemini-2.5-flash"}},
+		Models:       []agentlink.Model{{ID: "gemini-2.5-pro"}, {ID: "gemini-2.5-flash"}},
 	})
 
 	got := ps.AgentModels()
@@ -367,8 +368,8 @@ func TestAgentModelsWithAConnectedSession(t *testing.T) {
 func TestAgentModelsIgnoresADepartedSession(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	ps.agentModels = map[string]AgentModelsSnapshot{
-		"a-session-that-left": {ConfigID: "model", Models: []AgentModel{{ID: "a"}}},
+	ps.agentModels = map[string]agentlink.ModelsSnapshot{
+		"a-session-that-left": {ConfigID: "model", Models: []agentlink.Model{{ID: "a"}}},
 	}
 	connectedServer(t, ps, "acp-gateway")
 
@@ -382,12 +383,12 @@ func TestAgentModelsIgnoresADepartedSession(t *testing.T) {
 func TestHandleAgentModelsPrunesDepartedSessions(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	ps.agentModels = map[string]AgentModelsSnapshot{
-		"a-session-that-left": {Models: []AgentModel{{ID: "old"}}},
+	ps.agentModels = map[string]agentlink.ModelsSnapshot{
+		"a-session-that-left": {Models: []agentlink.Model{{ID: "old"}}},
 	}
 	sessionID := connectedServer(t, ps, "acp-gateway")
 
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{Models: []AgentModel{{ID: "new"}}})
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{Models: []agentlink.Model{{ID: "new"}}})
 
 	if _, ok := ps.agentModels["a-session-that-left"]; ok {
 		t.Errorf("the departed session should have been pruned: %+v", ps.agentModels)
@@ -404,13 +405,13 @@ func TestHandleAgentModelsPrunesDepartedSessions(t *testing.T) {
 func TestAgentModelsStopAtTheStream(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	drop := streamFor(ps, sessionID)
 
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 		CurrentModel: "gpt-5-codex",
-		Models:       []AgentModel{{ID: "gpt-5-codex"}},
+		Models:       []agentlink.Model{{ID: "gpt-5-codex"}},
 	})
 	if ps.AgentModels() == nil {
 		t.Fatal("expected the models while the stream is up")
@@ -435,7 +436,7 @@ func TestAgentModelsStopAtTheStream(t *testing.T) {
 func TestAgentModelsWithTwoConnectedSessions(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	ps.mcpServer = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
 
 	// Two sessions, each having reported its own models.
@@ -443,11 +444,11 @@ func TestAgentModelsWithTwoConnectedSessions(t *testing.T) {
 	second := connectSession(t, ps, "gateway-b")
 	dropFirst := streamFor(ps, first)
 	streamFor(ps, second)
-	ps.HandleAgentModels(context.Background(), first, AgentModelsParams{
-		CurrentModel: "from-a", Models: []AgentModel{{ID: "from-a"}},
+	ps.HandleAgentModels(context.Background(), first, agentlink.ModelsReport{
+		CurrentModel: "from-a", Models: []agentlink.Model{{ID: "from-a"}},
 	})
-	ps.HandleAgentModels(context.Background(), second, AgentModelsParams{
-		CurrentModel: "from-b", Models: []AgentModel{{ID: "from-b"}},
+	ps.HandleAgentModels(context.Background(), second, agentlink.ModelsReport{
+		CurrentModel: "from-b", Models: []agentlink.Model{{ID: "from-b"}},
 	})
 
 	dropFirst() // one goes; the other is still working
@@ -470,7 +471,7 @@ func connectedModelsServer(t *testing.T) (*WorkspaceServer, string, chan []byte)
 	replies := 0
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
-	ps.agentModels = make(map[string]AgentModelsSnapshot)
+	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	sessionID := connectedServer(t, ps, "acp-gateway")
 	streamFor(ps, sessionID)
 
@@ -524,10 +525,10 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 		// int64 would match nothing and the picker would never move.
 		ps, sessionID, ch := connectedModelsServer(t)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 			ConfigID:     "model",
 			CurrentModel: "gemini-2.5-pro",
-			Models: []AgentModel{
+			Models: []agentlink.Model{
 				{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", Group: "Google"},
 				{ID: "gpt-5-codex", Name: "GPT-5 Codex"},
 			},
@@ -563,18 +564,18 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 		// that to every open tab would be noise about a picker that did not move.
 		ps, sessionID, ch := connectedModelsServer(t)
 
-		same := AgentModelsParams{
+		same := agentlink.ModelsReport{
 			ConfigID:     "model",
 			CurrentModel: "a",
-			Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+			Models:       []agentlink.Model{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
 		}
 		ps.HandleAgentModels(context.Background(), sessionID, same)
 		waitForEvent(t, ch)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 			ConfigID:     "model",
 			CurrentModel: "a",
-			Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+			Models:       []agentlink.Model{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
 		})
 
 		expectSilence(t, ch)
@@ -587,13 +588,13 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 		// would call the one change that matters "unchanged".
 		ps, sessionID, ch := connectedModelsServer(t)
 
-		models := []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		models := []agentlink.Model{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 			ConfigID: "model", CurrentModel: "a", Models: models,
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 			ConfigID: "model", CurrentModel: "b", Models: models,
 		})
 
@@ -608,12 +609,12 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 		// on offering models the agent has stopped accepting.
 		ps, sessionID, ch := connectedModelsServer(t)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
-			ConfigID: "model", Models: []AgentModel{{ID: "a"}},
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
+			ConfigID: "model", Models: []agentlink.Model{{ID: "a"}},
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{Models: nil})
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{Models: nil})
 
 		payload := waitForEvent(t, ch)
 		if models, ok := payload["models"].([]any); !ok || len(models) != 0 {
@@ -627,12 +628,12 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 		// would take away a choice that still works.
 		ps, sessionID, ch := connectedModelsServer(t)
 
-		ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
-			ConfigID: "model", CurrentModel: "still-here", Models: []AgentModel{{ID: "still-here"}},
+		ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
+			ConfigID: "model", CurrentModel: "still-here", Models: []agentlink.Model{{ID: "still-here"}},
 		})
 		waitForEvent(t, ch)
 
-		ps.HandleAgentModels(context.Background(), "a-second-session", AgentModelsParams{Models: nil})
+		ps.HandleAgentModels(context.Background(), "a-second-session", agentlink.ModelsReport{Models: nil})
 
 		payload := waitForEvent(t, ch)
 		models, ok := payload["models"].([]any)
@@ -650,11 +651,11 @@ func TestHandleAgentModelsPublishesTheChange(t *testing.T) {
 }
 
 func TestSameAgentModels(t *testing.T) {
-	base := AgentModelsSnapshot{
+	base := agentlink.ModelsSnapshot{
 		SessionID:    "acp-1",
 		ConfigID:     "model",
 		CurrentModel: "a",
-		Models:       []AgentModel{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
+		Models:       []agentlink.Model{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}},
 	}
 
 	t.Run("a reconnected session offering the same list is not a change", func(t *testing.T) {
@@ -687,7 +688,7 @@ func TestSameAgentModels(t *testing.T) {
 
 	t.Run("the list itself is part of the comparison", func(t *testing.T) {
 		other := base
-		other.Models = []AgentModel{{ID: "a", Name: "A"}}
+		other.Models = []agentlink.Model{{ID: "a", Name: "A"}}
 		if sameAgentModels(base, other) {
 			t.Error("a shorter list must count as a change")
 		}
@@ -699,12 +700,12 @@ func TestSameAgentModels(t *testing.T) {
 // that silently does nothing is the failure this whole capability gate exists
 // to prevent — and that the request reaches exactly one session.
 func TestSetAgentModel(t *testing.T) {
-	selectable := AgentModelsParams{
+	selectable := agentlink.ModelsReport{
 		SessionID:    "acp-session-1",
 		ConfigID:     "model",
 		CurrentModel: "a",
 		CanSet:       true,
-		Models:       []AgentModel{{ID: "a"}, {ID: "b"}},
+		Models:       []agentlink.Model{{ID: "a"}, {ID: "b"}},
 	}
 
 	t.Run("refuses when nothing has reported any models", func(t *testing.T) {
@@ -798,13 +799,13 @@ func TestSetAgentModel(t *testing.T) {
 func TestAgentModelsSelectable(t *testing.T) {
 	cases := []struct {
 		name     string
-		snapshot AgentModelsSnapshot
+		snapshot agentlink.ModelsSnapshot
 		want     bool
 	}{
-		{"willing and with somewhere to write", AgentModelsSnapshot{CanSet: true, ConfigID: "model"}, true},
-		{"willing but naming no config option", AgentModelsSnapshot{CanSet: true}, false},
-		{"a config option but never said it can set", AgentModelsSnapshot{ConfigID: "model"}, false},
-		{"an older gateway, saying neither", AgentModelsSnapshot{}, false},
+		{"willing and with somewhere to write", agentlink.ModelsSnapshot{CanSet: true, ConfigID: "model"}, true},
+		{"willing but naming no config option", agentlink.ModelsSnapshot{CanSet: true}, false},
+		{"a config option but never said it can set", agentlink.ModelsSnapshot{ConfigID: "model"}, false},
+		{"an older gateway, saying neither", agentlink.ModelsSnapshot{}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -820,8 +821,8 @@ func TestAgentModelsSelectable(t *testing.T) {
 func TestHandleAgentModelsPublishesCanSetChange(t *testing.T) {
 	ps, sessionID, ch := connectedModelsServer(t)
 
-	models := []AgentModel{{ID: "a"}}
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+	models := []agentlink.Model{{ID: "a"}}
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 		ConfigID: "model", CurrentModel: "a", Models: models,
 	})
 	select {
@@ -830,7 +831,7 @@ func TestHandleAgentModelsPublishesCanSetChange(t *testing.T) {
 		t.Fatal("the first report was not announced")
 	}
 
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 		ConfigID: "model", CurrentModel: "a", Models: models, CanSet: true,
 	})
 
@@ -857,9 +858,9 @@ func TestHandleAgentModelsPublishesCanSetChange(t *testing.T) {
 func TestPublishedCanSetFollowsTheSameRuleAsTheWorkspacePayload(t *testing.T) {
 	ps, sessionID, ch := connectedModelsServer(t)
 
-	ps.HandleAgentModels(context.Background(), sessionID, AgentModelsParams{
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
 		CanSet: true,
-		Models: []AgentModel{{ID: "a"}},
+		Models: []agentlink.Model{{ID: "a"}},
 	})
 
 	select {
@@ -888,16 +889,16 @@ func TestPublishedCanSetFollowsTheSameRuleAsTheWorkspacePayload(t *testing.T) {
 // Taking the first with a model list would report the older one's inability and
 // refuse a switch that the newer one would have carried out.
 func TestPickAgentModelsPrefersASessionThatCanActuallySwitch(t *testing.T) {
-	readOnly := AgentModelsSnapshot{
+	readOnly := agentlink.ModelsSnapshot{
 		ConfigID: "model",
-		Models:   []AgentModel{{ID: "old"}},
+		Models:   []agentlink.Model{{ID: "old"}},
 	}
-	capable := AgentModelsSnapshot{
+	capable := agentlink.ModelsSnapshot{
 		ConfigID: "model",
 		CanSet:   true,
-		Models:   []AgentModel{{ID: "new"}},
+		Models:   []agentlink.Model{{ID: "new"}},
 	}
-	snapshots := map[string]AgentModelsSnapshot{"first": readOnly, "second": capable}
+	snapshots := map[string]agentlink.ModelsSnapshot{"first": readOnly, "second": capable}
 
 	id, got := pickAgentModelsSession(snapshots, []string{"first", "second"})
 	if got == nil || !got.Selectable() {
@@ -910,7 +911,7 @@ func TestPickAgentModelsPrefersASessionThatCanActuallySwitch(t *testing.T) {
 	t.Run("still shows a read-only gateway when that is all there is", func(t *testing.T) {
 		// Every deployment today. Preferring selectable must not mean showing
 		// nothing when nothing is selectable.
-		id, got := pickAgentModelsSession(map[string]AgentModelsSnapshot{"only": readOnly}, []string{"only"})
+		id, got := pickAgentModelsSession(map[string]agentlink.ModelsSnapshot{"only": readOnly}, []string{"only"})
 		if got == nil || len(got.Models) != 1 || got.Models[0].ID != "old" {
 			t.Fatalf("picked %+v, want the read-only gateway's list", got)
 		}
@@ -927,12 +928,12 @@ func TestSendSetModelReachesTheCapableGatewayOfTwo(t *testing.T) {
 	capableID := connectSession(t, ps, "acp-gateway")
 	streamFor(ps, capableID)
 
-	ps.HandleAgentModels(context.Background(), readOnlyID, AgentModelsParams{
-		ConfigID: "model", CurrentModel: "old", Models: []AgentModel{{ID: "old"}},
+	ps.HandleAgentModels(context.Background(), readOnlyID, agentlink.ModelsReport{
+		ConfigID: "model", CurrentModel: "old", Models: []agentlink.Model{{ID: "old"}},
 	})
-	ps.HandleAgentModels(context.Background(), capableID, AgentModelsParams{
+	ps.HandleAgentModels(context.Background(), capableID, agentlink.ModelsReport{
 		ConfigID: "model", CurrentModel: "new", CanSet: true,
-		Models: []AgentModel{{ID: "new"}, {ID: "newer"}},
+		Models: []agentlink.Model{{ID: "new"}, {ID: "newer"}},
 	})
 
 	// "newer" exists only on the capable gateway, so a refusal here would mean

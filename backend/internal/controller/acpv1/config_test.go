@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 func options(t *testing.T, raw string) []configOption {
@@ -27,7 +27,7 @@ func TestModelsFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, current, models, ok := modelsFrom(resp.ConfigOptions)
-		want := []mcpctrl.AgentModel{{ID: "model-large", Name: "Large", Current: true}, {ID: "model-small", Name: "Small", Description: "faster"}}
+		want := []agentlink.Model{{ID: "model-large", Name: "Large", Current: true}, {ID: "model-small", Name: "Small", Description: "faster"}}
 		if !ok || id != "model" || current != "model-large" || len(models) != 2 || models[0] != want[0] || models[1] != want[1] {
 			t.Fatalf("modelsFrom was (%q, %q, %+v, %v), want (model, model-large, %+v, true)", id, current, models, ok, want)
 		}
@@ -51,7 +51,7 @@ func TestModelsFrom(t *testing.T) {
 	})
 	t.Run("grouped models keep their group", func(t *testing.T) {
 		_, _, models, _ := modelsFrom(options(t, `[{"id":"model","name":"Model","type":"select","currentValue":"b","options":[{"group":"fast","name":"Fast","options":[{"value":"a","name":"A"}]},{"group":"big","options":[{"value":"b"}]}]}]`))
-		want := []mcpctrl.AgentModel{{ID: "a", Name: "A", Group: "Fast"}, {ID: "b", Name: "b", Group: "big", Current: true}}
+		want := []agentlink.Model{{ID: "a", Name: "A", Group: "Fast"}, {ID: "b", Name: "b", Group: "big", Current: true}}
 		if len(models) != 2 || models[0] != want[0] || models[1] != want[1] {
 			t.Fatalf("models were %+v, want %+v (a nameless group reads as its id, a nameless model as its value)", models, want)
 		}
@@ -84,7 +84,7 @@ func TestModelsFrom(t *testing.T) {
 }
 
 func TestResolveModel(t *testing.T) {
-	models := []mcpctrl.AgentModel{{ID: "model-large", Name: "Large"}, {ID: "model-small", Name: "Small"}}
+	models := []agentlink.Model{{ID: "model-large", Name: "Large"}, {ID: "model-small", Name: "Small"}}
 	for requested, want := range map[string]string{"model-small": "model-small", "large": "model-large", "nope": ""} {
 		if got, _ := resolveModel(models, requested); got != want {
 			t.Errorf("resolveModel(%q) was %q, want %q", requested, got, want)

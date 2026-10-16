@@ -13,6 +13,8 @@ import (
 	zlog "github.com/rs/zerolog/log"
 
 	"github.com/mustafaturan/monoflake"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // AgentTelemetryNotificationMethod is the channel notification carrying the
@@ -37,31 +39,6 @@ const (
 	MessageTypeAgentUsage   = "agent_usage"
 )
 
-// AgentTelemetryParams is the payload of an agent telemetry notification.
-//
-// Text is a rendered, ready-to-show form of the same thing Data holds
-// structurally, so a client that does not understand a given kind still has
-// something to show.
-type AgentTelemetryParams struct {
-	TaskID    string         `json:"task_id"`
-	SessionID string         `json:"session_id"`
-	Kind      string         `json:"kind"`
-	Text      string         `json:"text"`
-	Data      map[string]any `json:"data"`
-}
-
-// planID is the plan a payload refers to, or "" if it names none.
-func (p AgentTelemetryParams) planID() string {
-	id, _ := p.Data["planId"].(string)
-	return id
-}
-
-// removed reports whether the agent withdrew the plan this payload names.
-func (p AgentTelemetryParams) removed() bool {
-	gone, _ := p.Data["removed"].(bool)
-	return gone
-}
-
 // agentTelemetryMessageKey identifies the one chat message that stands for a
 // plan, or for a task's usage counters — the things that are revised in place
 // rather than appended to.
@@ -77,7 +54,7 @@ func agentTelemetryMessageKey(taskID int64, kind, planID string) string {
 // Reasoning is appended: each block explains a different moment of the turn.
 // Plans and usage counters are revised in place, because a new message every
 // time a checkbox ticks or a token counter moves buries the conversation.
-func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID string, p AgentTelemetryParams) {
+func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID string, p agentlink.TelemetryReport) {
 	taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
 	if !ok {
 		zlog.Warn().Str("session_id", sessionID).Str("kind", p.Kind).
@@ -108,7 +85,7 @@ func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID s
 // Text is carried in the metadata as well as in the message body: the body is
 // written once and a revised plan or usage line would otherwise go stale, so
 // the metadata is what a client should prefer.
-func agentTelemetryMetadata(messageType string, p AgentTelemetryParams) map[string]any {
+func agentTelemetryMetadata(messageType string, p agentlink.TelemetryReport) map[string]any {
 	metadata := map[string]any{"type": messageType, "text": p.Text}
 	for k, v := range p.Data {
 		// The payload describes the telemetry; it does not get to say what
@@ -148,8 +125,8 @@ func (ps *WorkspaceServer) postAgentTelemetryMessage(ctx context.Context, taskID
 // reviseAgentTelemetryMessage updates the message already standing for this
 // plan or usage counter, and posts a new one only when there is none. It
 // returns that message's ID, or 0 when nothing stands for it.
-func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, taskID int64, p AgentTelemetryParams, messageType string) int64 {
-	key := agentTelemetryMessageKey(taskID, p.Kind, p.planID())
+func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, taskID int64, p agentlink.TelemetryReport, messageType string) int64 {
+	key := agentTelemetryMessageKey(taskID, p.Kind, p.PlanID())
 	metadata := agentTelemetryMetadata(messageType, p)
 
 	ps.agentTelemetryMessagesMu.RLock()
@@ -175,7 +152,7 @@ func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, task
 
 	// A withdrawal notice for a plan that was never shown says nothing to the
 	// human, and posting one would put an orphaned card in the conversation.
-	if p.removed() {
+	if p.Removed() {
 		return 0
 	}
 
@@ -191,8 +168,8 @@ func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, task
 // forgetRemovedPlan releases a withdrawn plan's message, so that an agent
 // reusing the same plan ID later starts a new card rather than reviving the
 // one marked withdrawn.
-func (ps *WorkspaceServer) forgetRemovedPlan(key string, p AgentTelemetryParams) {
-	if !p.removed() {
+func (ps *WorkspaceServer) forgetRemovedPlan(key string, p agentlink.TelemetryReport) {
+	if !p.Removed() {
 		return
 	}
 	ps.agentTelemetryMessagesMu.Lock()

@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
 )
 
@@ -42,11 +43,11 @@ type (
 		Remove(workspaceID int64)
 		IsAgentConnected(workspaceID int64) bool
 		SupportsStop(workspaceID int64) bool
-		AgentModels(workspaceID int64) *mcpctrl.AgentModelsSnapshot
-		AgentEffort(workspaceID int64) *mcpctrl.AgentEffortSnapshot
-		AgentCommands(workspaceID int64) *mcpctrl.AgentCommandsSnapshot
-		AgentClient(workspaceID int64) *mcpctrl.AgentClientInfo
-		AgentConcurrency(workspaceID int64) *mcpctrl.AgentConcurrencySnapshot
+		AgentModels(workspaceID int64) *agentlink.ModelsSnapshot
+		AgentEffort(workspaceID int64) *agentlink.EffortSnapshot
+		AgentCommands(workspaceID int64) *agentlink.CommandsSnapshot
+		AgentClient(workspaceID int64) *agentlink.ClientInfo
+		AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot
 	}
 
 	// workspaceServer is the part of one workspace's MCP server this package

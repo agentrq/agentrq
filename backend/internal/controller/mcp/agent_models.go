@@ -8,11 +8,11 @@ import (
 	"context"
 	"errors"
 	"slices"
-	"strings"
 
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -51,112 +51,13 @@ var (
 	ErrModelSetNotDelivered = errors.New("the connected agent could not be reached")
 )
 
-// AgentModel is one model the connected agent offers.
-type AgentModel struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Current     bool   `json:"current,omitempty"`
-	Group       string `json:"group,omitempty"`
-}
-
-// AgentModelsParams is the payload of a models notification.
-//
-// snake_case, unlike the REST surface: this is the wire format the gateways
-// already send (acp-gateway's `sendModelsToWorkspace`), and renaming the fields
-// here would break every gateway in the field to satisfy a convention that
-// governs the HTTP API rather than this channel.
-type AgentModelsParams struct {
-	TaskID       string       `json:"task_id"`
-	SessionID    string       `json:"session_id"`
-	ConfigID     string       `json:"config_id"`
-	CurrentModel string       `json:"current_model"`
-	Models       []AgentModel `json:"models"`
-	// CanSet is the gateway saying it will act on a set_model notification.
-	//
-	// Absent means no, which is what makes this safe to add: every gateway
-	// already in the field reports its models and none of them can be told to
-	// change one, so reading silence as "yes" would offer a picker that does
-	// nothing on every deployment that exists today.
-	//
-	// It has to come from the gateway rather than from a list of client names
-	// here, because the question is about the gateway's *version*, and the
-	// handshake name — "acp-gateway" either way — cannot tell two versions
-	// apart. stopCapableClients can be a name list precisely because stopping
-	// has been there since that client's first release.
-	CanSet bool `json:"can_set,omitempty"`
-}
-
-// AgentModelsSnapshot is what one connected session last reported.
-//
-// ConfigID is carried through because selecting a model means writing back to
-// the same session config option the agent advertised it under; a snapshot
-// without it describes models nobody can switch to. SessionID is the *agent's*
-// session — see the note on keying in HandleAgentModels — and is kept for the
-// same reason: a future "use this model" has to name it.
-type AgentModelsSnapshot struct {
-	SessionID    string
-	ConfigID     string
-	CurrentModel string
-	Models       []AgentModel
-	// CanSet reports whether the session that sent this will act on a
-	// set_model notification. See the field on AgentModelsParams.
-	CanSet bool
-}
-
-// Selectable reports whether a choice can actually be written back.
-//
-// The one definition of that rule, because it is asked in three places — the
-// predicate the interface reads, the guard on the notification, and the flag on
-// the workspace payload — and three copies of "CanSet && ConfigID != \"\"" would
-// eventually disagree about whether a gateway that forgot its config option
-// counts.
-//
-// ConfigID is half of it because a selection is a write to that session config
-// option: a snapshot without one describes models nobody can switch to, however
-// willing the gateway says it is.
-func (s AgentModelsSnapshot) Selectable() bool {
-	return s.CanSet && s.ConfigID != ""
-}
-
-// currentModelName is the display name of the model the session is running:
-// the name its list gives the current ID, or the ID itself, or "".
-func (s AgentModelsSnapshot) currentModelName() string {
-	if s.CurrentModel == "" {
-		return ""
-	}
-	for _, m := range s.Models {
-		if m.ID == s.CurrentModel && strings.TrimSpace(m.Name) != "" {
-			return strings.TrimSpace(m.Name)
-		}
-	}
-	return s.CurrentModel
-}
-
-// currentModelID is the model the payload says is selected.
-//
-// The top-level field is preferred, falling back to whichever entry carries the
-// agent's own `current` flag: gateways send one or the other, and a picker with
-// nothing selected is worse than either.
-func (p AgentModelsParams) currentModelID() string {
-	if p.CurrentModel != "" {
-		return p.CurrentModel
-	}
-	for _, m := range p.Models {
-		if m.Current {
-			return m.ID
-		}
-	}
-	return ""
-}
-
 // HandleAgentModels records the models a session reports it can switch between.
 //
 // Recorded rather than relayed into the chat: unlike agent telemetry, this is
 // not something that happened during a turn — it is a standing fact about the
 // connected agent, and it belongs beside the other live capabilities the
 // dashboard reads off the workspace.
-func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID string, p AgentModelsParams) {
+func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID string, p agentlink.ModelsReport) {
 	// Keyed by the MCP transport session, deliberately, and *not* by the
 	// payload's session_id.
 	//
@@ -174,10 +75,10 @@ func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID stri
 	// An empty model list is recorded rather than dropped: it is how a session
 	// says it has stopped offering a choice, and keeping the old list would
 	// leave a picker showing models the agent no longer accepts.
-	snapshot := AgentModelsSnapshot{
+	snapshot := agentlink.ModelsSnapshot{
 		SessionID:    p.SessionID,
 		ConfigID:     p.ConfigID,
-		CurrentModel: p.currentModelID(),
+		CurrentModel: p.CurrentModelID(),
 		Models:       p.Models,
 		CanSet:       p.CanSet,
 	}
@@ -217,7 +118,7 @@ func (ps *WorkspaceServer) HandleAgentModels(ctx context.Context, sessionID stri
 // A gateway may send the top-level field alone, without the per-model `current`
 // flag, and then a model switch changes nothing else — which is precisely the
 // event this whole path exists to carry.
-func sameAgentModels(a, b AgentModelsSnapshot) bool {
+func sameAgentModels(a, b agentlink.ModelsSnapshot) bool {
 	return a.ConfigID == b.ConfigID &&
 		a.CurrentModel == b.CurrentModel &&
 		a.CanSet == b.CanSet &&
@@ -242,10 +143,10 @@ func sameAgentModels(a, b AgentModelsSnapshot) bool {
 // still be offering models, and taking the picker away because this one stopped
 // would remove something still live. So an empty report falls back to whatever
 // the workspace would serve, which is an empty list when the answer is nothing.
-func (ps *WorkspaceServer) publishAgentModels(reported AgentModelsSnapshot) {
+func (ps *WorkspaceServer) publishAgentModels(reported agentlink.ModelsSnapshot) {
 	published := reported
 	if len(published.Models) == 0 {
-		published = AgentModelsSnapshot{}
+		published = agentlink.ModelsSnapshot{}
 		if snapshot := ps.AgentModels(); snapshot != nil {
 			published = *snapshot
 		}
@@ -256,7 +157,7 @@ func (ps *WorkspaceServer) publishAgentModels(reported AgentModelsSnapshot) {
 	// was absent", and the two mean the same thing here.
 	models := published.Models
 	if models == nil {
-		models = []AgentModel{}
+		models = []agentlink.Model{}
 	}
 
 	// camelCase, unlike the notification this came from. The wire format the
@@ -297,7 +198,7 @@ func (ps *WorkspaceServer) publishAgentModels(reported AgentModelsSnapshot) {
 // Asking per session rather than "is anything connected" is what makes this
 // right when two gateways are attached: one of them leaving must take its own
 // models with it and leave the other's alone.
-func (ps *WorkspaceServer) AgentModels() *AgentModelsSnapshot {
+func (ps *WorkspaceServer) AgentModels() *agentlink.ModelsSnapshot {
 	ps.agentModelsMu.RLock()
 	defer ps.agentModelsMu.RUnlock()
 	return pickAgentModels(ps.agentModels, ps.streamingSessionIDs())
@@ -327,7 +228,7 @@ func (ps *WorkspaceServer) liveSessionIDs() []string {
 // `live` is iterated rather than the map so the answer follows the session
 // order the server reports rather than Go's randomised map order, which would
 // otherwise make the choice differ between two identical calls.
-func pickAgentModels(snapshots map[string]AgentModelsSnapshot, live []string) *AgentModelsSnapshot {
+func pickAgentModels(snapshots map[string]agentlink.ModelsSnapshot, live []string) *agentlink.ModelsSnapshot {
 	_, snapshot := pickAgentModelsSession(snapshots, live)
 	return snapshot
 }
@@ -349,9 +250,9 @@ func pickAgentModels(snapshots map[string]AgentModelsSnapshot, live []string) *A
 //
 // The fallback keeps a read-only gateway's models on display when that is all
 // there is, which is what every deployment looks like today.
-func pickAgentModelsSession(snapshots map[string]AgentModelsSnapshot, live []string) (string, *AgentModelsSnapshot) {
+func pickAgentModelsSession(snapshots map[string]agentlink.ModelsSnapshot, live []string) (string, *agentlink.ModelsSnapshot) {
 	var fallbackID string
-	var fallback *AgentModelsSnapshot
+	var fallback *agentlink.ModelsSnapshot
 
 	for _, id := range live {
 		snapshot, ok := snapshots[id]
@@ -389,7 +290,7 @@ func (ps *WorkspaceServer) SetAgentModel(ctx context.Context, modelID string) er
 	if snapshot == nil || !snapshot.Selectable() {
 		return ErrModelSelectUnsupported
 	}
-	if !slices.ContainsFunc(snapshot.Models, func(m AgentModel) bool { return m.ID == modelID }) {
+	if !slices.ContainsFunc(snapshot.Models, func(m agentlink.Model) bool { return m.ID == modelID }) {
 		return ErrModelNotOffered
 	}
 
@@ -445,7 +346,7 @@ func (ps *WorkspaceServer) setSessionModel(ctx context.Context, sessID, acpSessi
 // map before the session is visible.
 //
 // The caller must hold the write lock.
-func pruneAgentModels(snapshots map[string]AgentModelsSnapshot, live []string) {
+func pruneAgentModels(snapshots map[string]agentlink.ModelsSnapshot, live []string) {
 	if len(live) == 0 {
 		return
 	}

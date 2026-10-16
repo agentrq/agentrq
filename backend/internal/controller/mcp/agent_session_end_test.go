@@ -14,13 +14,14 @@ import (
 
 	"github.com/golang/mock/gomock"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
 )
 
-func usageParams(used float64) AgentTelemetryParams {
-	return AgentTelemetryParams{SessionID: "sess-1", Kind: "usage", Text: "Context", Data: map[string]any{"used": used, "size": 200000.0}}
+func usageParams(used float64) agentlink.TelemetryReport {
+	return agentlink.TelemetryReport{SessionID: "sess-1", Kind: "usage", Text: "Context", Data: map[string]any{"used": used, "size": 200000.0}}
 }
 
 // nextEventOfType reads events off a subscription until one of the given type
@@ -99,7 +100,7 @@ func TestAgentSessionEnded_LeavesAMessageAnotherSessionStillWrites(t *testing.T)
 	rec.ps.sessionTasks["sess-2"] = 42
 
 	rec.ps.HandleAgentTelemetry(ctx, "sess-1", usageParams(100))
-	rec.ps.HandleAgentTelemetry(ctx, "sess-2", AgentTelemetryParams{Kind: "usage", Text: "Context", Data: map[string]any{"used": 200.0}})
+	rec.ps.HandleAgentTelemetry(ctx, "sess-2", agentlink.TelemetryReport{Kind: "usage", Text: "Context", Data: map[string]any{"used": 200.0}})
 	revisionsBefore := len(rec.revisions)
 
 	rec.ps.agentSessionEnded(ctx, "sess-1")
@@ -107,7 +108,7 @@ func TestAgentSessionEnded_LeavesAMessageAnotherSessionStillWrites(t *testing.T)
 	if len(rec.revisions) != revisionsBefore {
 		t.Fatalf("a message sess-2 still writes was marked ended: %+v", rec.revisions[revisionsBefore:])
 	}
-	rec.ps.HandleAgentTelemetry(ctx, "sess-2", AgentTelemetryParams{Kind: "usage", Text: "Context", Data: map[string]any{"used": 300.0}})
+	rec.ps.HandleAgentTelemetry(ctx, "sess-2", agentlink.TelemetryReport{Kind: "usage", Text: "Context", Data: map[string]any{"used": 300.0}})
 	if len(rec.posted) != 1 {
 		t.Errorf("sess-2 should keep revising the same message, got %d posted", len(rec.posted))
 	}
@@ -177,10 +178,10 @@ func sessionEndServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 		bus:              eventbus.New(),
 		workspaceID:      7,
 		userID:           "0ZzhYQG2qtl",
-		agentModels:      make(map[string]AgentModelsSnapshot),
-		agentEffort:      make(map[string]AgentEffortSnapshot),
-		agentCommands:    make(map[string]AgentCommandsSnapshot),
-		agentConcurrency: make(map[string]AgentConcurrencySnapshot),
+		agentModels:      make(map[string]agentlink.ModelsSnapshot),
+		agentEffort:      make(map[string]agentlink.EffortSnapshot),
+		agentCommands:    make(map[string]agentlink.CommandsSnapshot),
+		agentConcurrency: make(map[string]agentlink.ConcurrencySnapshot),
 	}
 	sub := ps.bus.Subscribe(ps.workspaceID, "")
 	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", sub) })
@@ -191,10 +192,10 @@ func sessionEndServer(t *testing.T) (*WorkspaceServer, chan []byte) {
 // hears that they did.
 func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 	ps, sub := sessionEndServer(t)
-	ps.agentModels["gw"] = AgentModelsSnapshot{ConfigID: "model", CurrentModel: "opus", Models: []AgentModel{{ID: "opus"}}}
-	ps.agentEffort["gw"] = AgentEffortSnapshot{ConfigID: "effort", CurrentEffort: "high", Efforts: []AgentEffort{{ID: "high"}}}
-	ps.agentCommands["gw"] = AgentCommandsSnapshot{Commands: []AgentCommand{{Name: "compact"}}}
-	ps.agentConcurrency["gw"] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
+	ps.agentModels["gw"] = agentlink.ModelsSnapshot{ConfigID: "model", CurrentModel: "opus", Models: []agentlink.Model{{ID: "opus"}}}
+	ps.agentEffort["gw"] = agentlink.EffortSnapshot{ConfigID: "effort", CurrentEffort: "high", Efforts: []agentlink.Effort{{ID: "high"}}}
+	ps.agentCommands["gw"] = agentlink.CommandsSnapshot{Commands: []agentlink.Command{{Name: "compact"}}}
+	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
 	ps.agentSessionEnded(context.Background(), "gw")
 
@@ -216,7 +217,7 @@ func TestAgentSessionEnded_WithdrawsWhatTheSessionReported(t *testing.T) {
 // without anything published for it.
 func TestAgentSessionEnded_SilentSessionPublishesNothing(t *testing.T) {
 	ps, sub := sessionEndServer(t)
-	ps.agentConcurrency["gw"] = AgentConcurrencySnapshot{MaxConcurrency: 4}
+	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4}
 
 	ps.agentSessionEnded(context.Background(), "claude")
 
@@ -252,7 +253,7 @@ func TestHandler_ClosedStreamWithdrawsConcurrency(t *testing.T) {
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		bus, nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)
-	ps.agentConcurrency["gw"] = AgentConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
+	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 	sub := bus.Subscribe(1, "")
 	t.Cleanup(func() { bus.Unsubscribe(1, "", sub) })
 

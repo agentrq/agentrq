@@ -11,6 +11,7 @@ import (
 	"github.com/mustafaturan/monoflake"
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
@@ -21,47 +22,13 @@ import (
 // newest list for a session replaces the previous one rather than adding to it.
 const AgentCommandsNotificationMethod = "notifications/claude/channel/commands"
 
-// AgentCommand is one slash command the connected agent offers.
-type AgentCommand struct {
-	// Name is typed as /<name> at the start of a message.
-	Name string `json:"name"`
-	// Description says what the command does, and may be empty: the name is
-	// what gets invoked, and an agent is not obliged to explain itself.
-	Description string `json:"description,omitempty"`
-	// Hint describes the argument, for the commands that take one.
-	Hint string `json:"hint,omitempty"`
-}
-
-// AgentCommandsParams is the payload of a commands notification.
-//
-// snake_case, unlike the REST surface: this is the wire format the gateways
-// already send (acp-gateway's `sendCommandsToWorkspace`), and renaming the
-// fields here would break every gateway in the field to satisfy a convention
-// that governs the HTTP API rather than this channel.
-type AgentCommandsParams struct {
-	TaskID    string         `json:"task_id"`
-	SessionID string         `json:"session_id"`
-	Commands  []AgentCommand `json:"commands"`
-}
-
-// AgentCommandsSnapshot is what one connected session last reported.
-//
-// SessionID is the *agent's* session — see the note on keying in
-// HandleAgentCommands — and is kept because it is the only thing tying a
-// snapshot back to the conversation it came from when more than one session is
-// connected.
-type AgentCommandsSnapshot struct {
-	SessionID string
-	Commands  []AgentCommand
-}
-
 // HandleAgentCommands records the slash commands a session reports it offers.
 //
 // Recorded rather than relayed into the chat, like the models beside it: this
 // is not something that happened during a turn, it is a standing fact about the
 // connected agent, and it belongs with the other live capabilities the
 // interface reads off the workspace.
-func (ps *WorkspaceServer) HandleAgentCommands(ctx context.Context, sessionID string, p AgentCommandsParams) {
+func (ps *WorkspaceServer) HandleAgentCommands(ctx context.Context, sessionID string, p agentlink.CommandsReport) {
 	// Keyed by the MCP transport session, deliberately, and *not* by the
 	// payload's session_id.
 	//
@@ -79,7 +46,7 @@ func (ps *WorkspaceServer) HandleAgentCommands(ctx context.Context, sessionID st
 	// An empty command list is recorded rather than dropped: it is how an agent
 	// says it has withdrawn its commands, and keeping the old list would leave
 	// a menu offering commands the agent no longer accepts.
-	snapshot := AgentCommandsSnapshot{
+	snapshot := agentlink.CommandsSnapshot{
 		SessionID: p.SessionID,
 		Commands:  p.Commands,
 	}
@@ -123,10 +90,10 @@ func (ps *WorkspaceServer) HandleAgentCommands(ctx context.Context, sessionID st
 // still be offering commands, and taking the menu away because this one stopped
 // would remove something still live. So an empty report falls back to whatever
 // the workspace would serve, which is an empty list when the answer is nothing.
-func (ps *WorkspaceServer) publishAgentCommands(reported AgentCommandsSnapshot) {
+func (ps *WorkspaceServer) publishAgentCommands(reported agentlink.CommandsSnapshot) {
 	commands := reported.Commands
 	if len(commands) == 0 {
-		commands = []AgentCommand{}
+		commands = []agentlink.Command{}
 		if snapshot := ps.AgentCommands(); snapshot != nil {
 			commands = snapshot.Commands
 		}
@@ -153,7 +120,7 @@ func (ps *WorkspaceServer) publishAgentCommands(reported AgentCommandsSnapshot) 
 // would keep a departed agent's commands on offer. Every one of them would fail
 // — and worse, a reply that opens with one is delivered stripped of the
 // envelope that gives it context, on the strength of a menu nobody is behind.
-func (ps *WorkspaceServer) AgentCommands() *AgentCommandsSnapshot {
+func (ps *WorkspaceServer) AgentCommands() *agentlink.CommandsSnapshot {
 	ps.agentCommandsMu.RLock()
 	defer ps.agentCommandsMu.RUnlock()
 	return pickAgentCommands(ps.agentCommands, ps.streamingSessionIDs())
@@ -171,7 +138,7 @@ func (ps *WorkspaceServer) AgentCommands() *AgentCommandsSnapshot {
 // showing. `live` is iterated rather than the map so the answer follows the
 // session order the server reports rather than Go's randomised map order, which
 // would otherwise make the choice differ between two identical calls.
-func pickAgentCommands(snapshots map[string]AgentCommandsSnapshot, live []string) *AgentCommandsSnapshot {
+func pickAgentCommands(snapshots map[string]agentlink.CommandsSnapshot, live []string) *agentlink.CommandsSnapshot {
 	for _, id := range live {
 		snapshot, ok := snapshots[id]
 		if !ok || len(snapshot.Commands) == 0 {
@@ -195,7 +162,7 @@ func pickAgentCommands(snapshots map[string]AgentCommandsSnapshot, live []string
 // map before the session is visible.
 //
 // The caller must hold the write lock.
-func pruneAgentCommands(snapshots map[string]AgentCommandsSnapshot, live []string) {
+func pruneAgentCommands(snapshots map[string]agentlink.CommandsSnapshot, live []string) {
 	if len(live) == 0 {
 		return
 	}
