@@ -49,7 +49,7 @@ var (
 	ErrConcurrencySetUnsupported = errors.New("the connected agent does not support changing its concurrency")
 	// ErrConcurrencyInvalid means the value asked for is not a limit at all.
 	// Out-of-range is a different thing and is not refused here — see
-	// SendSetConcurrencyNotification.
+	// SetAgentConcurrency.
 	ErrConcurrencyInvalid = errors.New("the concurrency limit must be a whole number of at least 1")
 	// ErrConcurrencySetNotDelivered means the session that offered the control
 	// could not be reached to be told of the change.
@@ -368,7 +368,7 @@ func pickAgentConcurrencySession(snapshots map[string]AgentConcurrencySnapshot, 
 	return fallbackID, fallback
 }
 
-// SendSetConcurrencyNotification asks the connected gateway to run a different
+// SetAgentConcurrency asks the connected gateway to run a different
 // number of tasks at once.
 //
 // Addressed to the one session that offered the control, deliberately, and not
@@ -388,7 +388,7 @@ func pickAgentConcurrencySession(snapshots map[string]AgentConcurrencySnapshot, 
 // Nothing is recorded optimistically. The gateway answers every set with a
 // concurrency notification — accepted, clamped or ignored — and that report is
 // the only thing that knows which of the three it was.
-func (ps *WorkspaceServer) SendSetConcurrencyNotification(ctx context.Context, limit int) error {
+func (ps *WorkspaceServer) SetAgentConcurrency(ctx context.Context, limit int) error {
 	if limit < 1 {
 		return ErrConcurrencyInvalid
 	}
@@ -401,13 +401,11 @@ func (ps *WorkspaceServer) SendSetConcurrencyNotification(ctx context.Context, l
 		return ErrConcurrencySetUnsupported
 	}
 
-	params := setConcurrencyParams(limit)
-	// Narrow but real: streamingSessionIDs and notifySession read the same
-	// session list, so a session named by the first is addressable by the
-	// second — unless the gateway disconnects between the two, which is exactly
-	// when a human is most likely to be clicking. Reported rather than
-	// swallowed, so the control reverts instead of appearing to have worked.
-	if !ps.notifySession(ctx, sessID, AgentSetConcurrencyNotificationMethod, params) {
+	// Narrow but real: the session named above can disconnect before it is
+	// reached, which is exactly when a human is most likely to be clicking.
+	// Reported rather than swallowed, so the control reverts instead of
+	// appearing to have worked.
+	if !ps.setSessionConcurrency(ctx, sessID, limit) {
 		return ErrConcurrencySetNotDelivered
 	}
 
@@ -417,6 +415,16 @@ func (ps *WorkspaceServer) SendSetConcurrencyNotification(ctx context.Context, l
 		Int("max_concurrency", limit).
 		Msg("asked the connected gateway to change its concurrency")
 	return nil
+}
+
+// setSessionConcurrency reaches the session that offered the control: a native
+// link by its own call, an MCP session by the set_concurrency channel
+// notification.
+func (ps *WorkspaceServer) setSessionConcurrency(ctx context.Context, sessID string, limit int) bool {
+	if link, ok := ps.agentLink(sessID); ok {
+		return link.SetConcurrency(ctx, limit)
+	}
+	return ps.notifySession(ctx, sessID, AgentSetConcurrencyNotificationMethod, setConcurrencyParams(limit))
 }
 
 // setConcurrencyParams is the payload of a set_concurrency notification.

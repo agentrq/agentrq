@@ -2621,13 +2621,7 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 		}
 	}
 
-	// Notify Claude Code session
-	params := map[string]any{
-		"request_id": requestID,
-		"behavior":   effectiveBehavior, // "allow" | "deny"
-	}
-
-	if !ps.notifySession(ctx, sessID, "notifications/claude/channel/permission", params) {
+	if !ps.deliverVerdict(ctx, sessID, requestID, effectiveBehavior) {
 		// The agent's connection went away between asking and being answered —
 		// a reconnection mints a new session id, and this verdict is addressed
 		// to the old one. Keep it: if the agent re-sends the same request on its
@@ -2662,15 +2656,26 @@ func (ps *WorkspaceServer) sendVerdict(ctx context.Context, taskID int64, reques
 	return nil
 }
 
+// deliverVerdict hands a permission verdict ("allow" | "deny") to the session
+// that asked: a native link by its own call, an MCP session by the permission
+// channel notification.
+func (ps *WorkspaceServer) deliverVerdict(ctx context.Context, sessID, requestID, behavior string) bool {
+	if link, ok := ps.agentLink(sessID); ok {
+		return link.DeliverVerdict(ctx, requestID, behavior)
+	}
+	return ps.notifySession(ctx, sessID, "notifications/claude/channel/permission", map[string]any{
+		"request_id": requestID,
+		"behavior":   behavior,
+	})
+}
+
 // notifySession sends a notification to one MCP session by id, reporting
-// whether that session was still there to receive it.
+// whether that session was still there to receive it. MCP only: a native link
+// is never sent a method string, it is called.
 //
 // The official SDK exposes no public API for generic notifications, hence the
-// reflection. A native link is called instead (notifyLink).
+// reflection.
 func (ps *WorkspaceServer) notifySession(ctx context.Context, sessID, method string, params map[string]any) bool {
-	if link, ok := ps.agentLink(sessID); ok {
-		return notifyLink(ctx, link, method, params)
-	}
 	if ps.mcpServer == nil {
 		return false
 	}

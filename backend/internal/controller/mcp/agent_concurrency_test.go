@@ -548,7 +548,7 @@ func TestHandleAgentConcurrencyPublishesTheChange(t *testing.T) {
 	})
 }
 
-func TestSendSetConcurrencyNotification(t *testing.T) {
+func TestSetAgentConcurrency(t *testing.T) {
 	settable := AgentConcurrencyParams{
 		MaxConcurrency: intPtr(4), Min: intPtr(1), Max: intPtr(64), CanSet: boolPtr(true),
 	}
@@ -556,7 +556,7 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 	t.Run("refuses when nothing has reported a limit", func(t *testing.T) {
 		ps, _, _ := connectedConcurrencyServer(t)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 4); !errors.Is(err, ErrConcurrencySetUnsupported) {
+		if err := ps.SetAgentConcurrency(context.Background(), 4); !errors.Is(err, ErrConcurrencySetUnsupported) {
 			t.Errorf("err = %v, want ErrConcurrencySetUnsupported", err)
 		}
 	})
@@ -569,7 +569,7 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		params.CanSet = nil
 		ps.HandleAgentConcurrency(context.Background(), sessionID, params)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 4); !errors.Is(err, ErrConcurrencySetUnsupported) {
+		if err := ps.SetAgentConcurrency(context.Background(), 4); !errors.Is(err, ErrConcurrencySetUnsupported) {
 			t.Errorf("err = %v, want ErrConcurrencySetUnsupported", err)
 		}
 	})
@@ -581,7 +581,7 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
 
 		for _, limit := range []int{0, -1} {
-			if err := ps.SendSetConcurrencyNotification(context.Background(), limit); !errors.Is(err, ErrConcurrencyInvalid) {
+			if err := ps.SetAgentConcurrency(context.Background(), limit); !errors.Is(err, ErrConcurrencyInvalid) {
 				t.Errorf("err for %d = %v, want ErrConcurrencyInvalid", limit, err)
 			}
 		}
@@ -595,7 +595,7 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		ps, sessionID, _ := connectedConcurrencyServer(t)
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 9000); err != nil {
+		if err := ps.SetAgentConcurrency(context.Background(), 9000); err != nil {
 			t.Errorf("err = %v, want an out-of-range value forwarded for the gateway to clamp", err)
 		}
 	})
@@ -604,8 +604,8 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		ps, sessionID, _ := connectedConcurrencyServer(t)
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 8); err != nil {
-			t.Fatalf("SendSetConcurrencyNotification() = %v, want nil", err)
+		if err := ps.SetAgentConcurrency(context.Background(), 8); err != nil {
+			t.Fatalf("SetAgentConcurrency() = %v, want nil", err)
 		}
 	})
 
@@ -617,8 +617,8 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		ps, sessionID, _ := connectedConcurrencyServer(t)
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 8); err != nil {
-			t.Fatalf("SendSetConcurrencyNotification() = %v", err)
+		if err := ps.SetAgentConcurrency(context.Background(), 8); err != nil {
+			t.Fatalf("SetAgentConcurrency() = %v", err)
 		}
 
 		if got := ps.AgentConcurrency().MaxConcurrency; got != 4 {
@@ -631,7 +631,7 @@ func TestSendSetConcurrencyNotification(t *testing.T) {
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
 		ps.removeStreamingSession(sessionID)
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 8); !errors.Is(err, ErrConcurrencySetUnsupported) {
+		if err := ps.SetAgentConcurrency(context.Background(), 8); !errors.Is(err, ErrConcurrencySetUnsupported) {
 			t.Errorf("err = %v, want ErrConcurrencySetUnsupported", err)
 		}
 	})

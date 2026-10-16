@@ -141,28 +141,3 @@ func (ps *WorkspaceServer) refreshConnected() {
 	ps.connected = now
 	ps.publishAgentConnected(now)
 }
-
-// notifyLink turns the four per-session channel notifications into the
-// link's typed calls. Nothing else is ever sent to one session by id.
-func notifyLink(ctx context.Context, link AgentLink, method string, params map[string]any) bool {
-	switch method {
-	case "notifications/claude/channel/permission":
-		requestID, _ := params["request_id"].(string)
-		behavior, _ := params["behavior"].(string)
-		return link.DeliverVerdict(ctx, requestID, behavior)
-	case AgentSetModelNotificationMethod:
-		sessionID, _ := params["session_id"].(string)
-		configID, _ := params["config_id"].(string)
-		modelID, _ := params["model_id"].(string)
-		return link.SetModel(ctx, sessionID, configID, modelID)
-	case AgentSetEffortNotificationMethod:
-		sessionID, _ := params["sessionId"].(string)
-		configID, _ := params["configId"].(string)
-		effort, _ := params["effort"].(string)
-		return link.SetEffort(ctx, sessionID, configID, effort)
-	case AgentSetConcurrencyNotificationMethod:
-		limit, _ := params["maxConcurrency"].(int)
-		return link.SetConcurrency(ctx, limit)
-	}
-	return false
-}

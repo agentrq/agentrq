@@ -15,10 +15,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
-// AgentSetEffortNotificationMethod asks one session to switch its reasoning
-// level. camelCase payload, like set_concurrency.
-const AgentSetEffortNotificationMethod = "notifications/claude/channel/set_effort"
-
 // Reasons a reasoning level cannot be selected.
 var (
 	ErrEffortSelectUnsupported = errors.New("the connected agent does not support choosing a reasoning level")
@@ -144,10 +140,11 @@ func pickAgentEffortSession(snapshots map[string]AgentEffortSnapshot, live []str
 	return fallbackID, fallback
 }
 
-// SendSetEffortNotification asks the one session that offered the choice to
-// switch its reasoning level. The snapshot is not updated here: the agent's
-// next report says whether it did.
-func (ps *WorkspaceServer) SendSetEffortNotification(ctx context.Context, effortID string) error {
+// SetAgentEffort asks the one session that offered the choice to switch its
+// reasoning level. Only a native link reports reasoning levels, so only a link
+// is asked, by its own call. The snapshot is not updated here: the agent's next
+// report says whether it did.
+func (ps *WorkspaceServer) SetAgentEffort(ctx context.Context, effortID string) error {
 	ps.agentEffortMu.RLock()
 	sessID, snapshot := pickAgentEffortSession(ps.agentEffort, ps.streamingSessionIDs())
 	ps.agentEffortMu.RUnlock()
@@ -158,12 +155,8 @@ func (ps *WorkspaceServer) SendSetEffortNotification(ctx context.Context, effort
 	if !slices.ContainsFunc(snapshot.Efforts, func(e AgentEffort) bool { return e.ID == effortID }) {
 		return ErrEffortNotOffered
 	}
-	params := map[string]any{
-		"sessionId": snapshot.SessionID,
-		"configId":  snapshot.ConfigID,
-		"effort":    effortID,
-	}
-	if !ps.notifySession(ctx, sessID, AgentSetEffortNotificationMethod, params) {
+	link, ok := ps.agentLink(sessID)
+	if !ok || !link.SetEffort(ctx, snapshot.SessionID, snapshot.ConfigID, effortID) {
 		return ErrEffortSetNotDelivered
 	}
 	zlog.Info().

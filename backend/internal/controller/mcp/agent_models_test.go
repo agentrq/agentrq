@@ -698,7 +698,7 @@ func TestSameAgentModels(t *testing.T) {
 // after stopping. These pin the three ways it can refuse — because a picker
 // that silently does nothing is the failure this whole capability gate exists
 // to prevent — and that the request reaches exactly one session.
-func TestSendSetModelNotification(t *testing.T) {
+func TestSetAgentModel(t *testing.T) {
 	selectable := AgentModelsParams{
 		SessionID:    "acp-session-1",
 		ConfigID:     "model",
@@ -710,7 +710,7 @@ func TestSendSetModelNotification(t *testing.T) {
 	t.Run("refuses when nothing has reported any models", func(t *testing.T) {
 		ps, _, _ := connectedModelsServer(t)
 
-		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+		if err := ps.SetAgentModel(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
 	})
@@ -725,7 +725,7 @@ func TestSendSetModelNotification(t *testing.T) {
 		params.CanSet = false
 		ps.HandleAgentModels(context.Background(), sessionID, params)
 
-		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+		if err := ps.SetAgentModel(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
 	})
@@ -738,7 +738,7 @@ func TestSendSetModelNotification(t *testing.T) {
 		params.ConfigID = ""
 		ps.HandleAgentModels(context.Background(), sessionID, params)
 
-		if err := ps.SendSetModelNotification(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
+		if err := ps.SetAgentModel(context.Background(), "a"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
 	})
@@ -750,7 +750,7 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps, sessionID, _ := connectedModelsServer(t)
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 
-		if err := ps.SendSetModelNotification(context.Background(), "not-offered"); !errors.Is(err, ErrModelNotOffered) {
+		if err := ps.SetAgentModel(context.Background(), "not-offered"); !errors.Is(err, ErrModelNotOffered) {
 			t.Errorf("err = %v, want ErrModelNotOffered", err)
 		}
 	})
@@ -759,8 +759,8 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps, sessionID, _ := connectedModelsServer(t)
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 
-		if err := ps.SendSetModelNotification(context.Background(), "b"); err != nil {
-			t.Fatalf("SendSetModelNotification() = %v, want nil", err)
+		if err := ps.SetAgentModel(context.Background(), "b"); err != nil {
+			t.Fatalf("SetAgentModel() = %v, want nil", err)
 		}
 	})
 
@@ -772,8 +772,8 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps, sessionID, _ := connectedModelsServer(t)
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 
-		if err := ps.SendSetModelNotification(context.Background(), "b"); err != nil {
-			t.Fatalf("SendSetModelNotification() = %v", err)
+		if err := ps.SetAgentModel(context.Background(), "b"); err != nil {
+			t.Fatalf("SetAgentModel() = %v", err)
 		}
 
 		if got := ps.AgentModels().CurrentModel; got != "a" {
@@ -789,7 +789,7 @@ func TestSendSetModelNotification(t *testing.T) {
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
 		ps.removeStreamingSession(sessionID)
 
-		if err := ps.SendSetModelNotification(context.Background(), "b"); !errors.Is(err, ErrModelSelectUnsupported) {
+		if err := ps.SetAgentModel(context.Background(), "b"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
 		}
 	})
@@ -937,7 +937,7 @@ func TestSendSetModelReachesTheCapableGatewayOfTwo(t *testing.T) {
 
 	// "newer" exists only on the capable gateway, so a refusal here would mean
 	// the read-only one was consulted.
-	if err := ps.SendSetModelNotification(context.Background(), "newer"); err != nil {
-		t.Errorf("SendSetModelNotification() = %v, want it to reach the capable gateway", err)
+	if err := ps.SetAgentModel(context.Background(), "newer"); err != nil {
+		t.Errorf("SetAgentModel() = %v, want it to reach the capable gateway", err)
 	}
 }

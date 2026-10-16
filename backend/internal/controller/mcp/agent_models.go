@@ -368,7 +368,7 @@ func pickAgentModelsSession(snapshots map[string]AgentModelsSnapshot, live []str
 	return fallbackID, fallback
 }
 
-// SendSetModelNotification asks the connected agent to switch to a model.
+// SetAgentModel asks the connected agent to switch to a model.
 //
 // Addressed to the one session that offered the choice, deliberately, and not
 // broadcast the way a stop is. A stop is broadcast because any session may be
@@ -381,7 +381,7 @@ func pickAgentModelsSession(snapshots map[string]AgentModelsSnapshot, live []str
 // here is what keeps a stale picker honest: a tab that loaded before the agent
 // narrowed its list would otherwise write an ID the agent no longer accepts,
 // and the failure would surface as silence rather than as a message.
-func (ps *WorkspaceServer) SendSetModelNotification(ctx context.Context, modelID string) error {
+func (ps *WorkspaceServer) SetAgentModel(ctx context.Context, modelID string) error {
 	ps.agentModelsMu.RLock()
 	sessID, snapshot := pickAgentModelsSession(ps.agentModels, ps.streamingSessionIDs())
 	ps.agentModelsMu.RUnlock()
@@ -393,22 +393,11 @@ func (ps *WorkspaceServer) SendSetModelNotification(ctx context.Context, modelID
 		return ErrModelNotOffered
 	}
 
-	// snake_case, the wire format every gateway already speaks on this channel.
-	// session_id is the gateway's own ACP session, which is what it needs to
-	// write the config option against; sessID above is this server's transport
-	// to that gateway, which is how the notification finds it. The two are
-	// different namespaces and both are needed.
-	params := map[string]any{
-		"session_id": snapshot.SessionID,
-		"config_id":  snapshot.ConfigID,
-		"model_id":   modelID,
-	}
-	// Narrow but real: streamingSessionIDs and notifySession read the same
-	// session list, so a session named by the first is addressable by the
-	// second — unless the gateway disconnects between the two, which is exactly
-	// when a human is most likely to be clicking. Reported rather than
-	// swallowed, so the picker reverts instead of appearing to have worked.
-	if !ps.notifySession(ctx, sessID, AgentSetModelNotificationMethod, params) {
+	// Narrow but real: the session named above can disconnect before it is
+	// reached, which is exactly when a human is most likely to be clicking.
+	// Reported rather than swallowed, so the picker reverts instead of
+	// appearing to have worked.
+	if !ps.setSessionModel(ctx, sessID, snapshot.SessionID, snapshot.ConfigID, modelID) {
 		return ErrModelSetNotDelivered
 	}
 
@@ -423,6 +412,24 @@ func (ps *WorkspaceServer) SendSetModelNotification(ctx context.Context, modelID
 		Str("model_id", modelID).
 		Msg("asked the connected agent to switch model")
 	return nil
+}
+
+// setSessionModel reaches the session that offered the choice: a native link by
+// its own call, an MCP session by the set_model channel notification.
+//
+// acpSessionID is the agent's own ACP session, which is what it needs to write
+// the config option against; sessID is this server's transport to it. The two
+// are different namespaces and both are needed. The notification is
+// snake_case, the wire format every gateway already speaks on this channel.
+func (ps *WorkspaceServer) setSessionModel(ctx context.Context, sessID, acpSessionID, configID, modelID string) bool {
+	if link, ok := ps.agentLink(sessID); ok {
+		return link.SetModel(ctx, acpSessionID, configID, modelID)
+	}
+	return ps.notifySession(ctx, sessID, AgentSetModelNotificationMethod, map[string]any{
+		"session_id": acpSessionID,
+		"config_id":  configID,
+		"model_id":   modelID,
+	})
 }
 
 // pruneAgentModels drops the snapshots of sessions that have gone away.

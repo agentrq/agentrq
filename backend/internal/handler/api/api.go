@@ -712,7 +712,7 @@ func (h *handler) setAgentModel() fiber.Handler {
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
 		}
 
-		switch err := srv.SendSetModelNotification(c.Context(), rq.ModelID); {
+		switch err := srv.SetAgentModel(c.Context(), rq.ModelID); {
 		case errors.Is(err, mcpctrl.ErrModelSelectUnsupported):
 			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrModelNotOffered):
@@ -774,7 +774,7 @@ func (h *handler) setAgentEffort() fiber.Handler {
 			return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "mcp server not found"})
 		}
 
-		switch err := srv.SendSetEffortNotification(c.Context(), rq.Effort); {
+		switch err := srv.SetAgentEffort(c.Context(), rq.Effort); {
 		case errors.Is(err, mcpctrl.ErrEffortSelectUnsupported), errors.Is(err, mcpctrl.ErrEffortSetNotDelivered):
 			return c.Status(http.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrEffortNotOffered):
@@ -841,7 +841,7 @@ func (h *handler) setAgentConcurrency() fiber.Handler {
 		// clamps it and reports what it settled on, which is both the
 		// documented behaviour and more truthful than refusing against a range
 		// this server only has a cached copy of.
-		switch err := srv.SendSetConcurrencyNotification(c.Context(), *rq.MaxConcurrency); {
+		switch err := srv.SetAgentConcurrency(c.Context(), *rq.MaxConcurrency); {
 		case errors.Is(err, mcpctrl.ErrConcurrencyInvalid):
 			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		case errors.Is(err, mcpctrl.ErrConcurrencySetUnsupported):

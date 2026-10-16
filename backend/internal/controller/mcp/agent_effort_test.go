@@ -112,10 +112,10 @@ func TestHandleAgentEffort(t *testing.T) {
 	})
 }
 
-func TestSendSetEffortNotification(t *testing.T) {
+func TestSetAgentEffort(t *testing.T) {
 	t.Run("refuses when nothing offers a level", func(t *testing.T) {
 		ps, _, _ := linkedEffortServer(t, "acp1:a")
-		err := ps.SendSetEffortNotification(context.Background(), "low")
+		err := ps.SetAgentEffort(context.Background(), "low")
 		if !errors.Is(err, ErrEffortSelectUnsupported) || err.Error() != "the connected agent does not support choosing a reasoning level" {
 			t.Fatalf("err = %v, want ErrEffortSelectUnsupported", err)
 		}
@@ -126,7 +126,7 @@ func TestSendSetEffortNotification(t *testing.T) {
 		p := settableEffort
 		p.ConfigID = ""
 		ps.HandleAgentEffort(context.Background(), "acp1:a", p)
-		if err := ps.SendSetEffortNotification(context.Background(), "low"); !errors.Is(err, ErrEffortSelectUnsupported) {
+		if err := ps.SetAgentEffort(context.Background(), "low"); !errors.Is(err, ErrEffortSelectUnsupported) {
 			t.Fatalf("err = %v, want ErrEffortSelectUnsupported", err)
 		}
 	})
@@ -134,7 +134,7 @@ func TestSendSetEffortNotification(t *testing.T) {
 	t.Run("refuses a level the agent did not offer", func(t *testing.T) {
 		ps, _, links := linkedEffortServer(t, "acp1:a")
 		ps.HandleAgentEffort(context.Background(), "acp1:a", settableEffort)
-		if err := ps.SendSetEffortNotification(context.Background(), "max"); !errors.Is(err, ErrEffortNotOffered) {
+		if err := ps.SetAgentEffort(context.Background(), "max"); !errors.Is(err, ErrEffortNotOffered) {
 			t.Fatalf("err = %v, want ErrEffortNotOffered", err)
 		}
 		if len(links[0].efforts) != 0 {
@@ -145,7 +145,7 @@ func TestSendSetEffortNotification(t *testing.T) {
 	t.Run("reaches the link that offered it as a typed call, without recording the switch", func(t *testing.T) {
 		ps, _, links := linkedEffortServer(t, "acp1:a")
 		ps.HandleAgentEffort(context.Background(), "acp1:a", settableEffort)
-		if err := ps.SendSetEffortNotification(context.Background(), "low"); err != nil {
+		if err := ps.SetAgentEffort(context.Background(), "low"); err != nil {
 			t.Fatalf("err = %v, want nil", err)
 		}
 		if len(links[0].efforts) != 1 || links[0].efforts[0] != "s1/effort/low" {
@@ -160,10 +160,22 @@ func TestSendSetEffortNotification(t *testing.T) {
 		ps, _, links := linkedEffortServer(t, "acp1:a")
 		links[0].unreachable = true
 		ps.HandleAgentEffort(context.Background(), "acp1:a", settableEffort)
-		if err := ps.SendSetEffortNotification(context.Background(), "low"); !errors.Is(err, ErrEffortSetNotDelivered) {
+		if err := ps.SetAgentEffort(context.Background(), "low"); !errors.Is(err, ErrEffortSetNotDelivered) {
 			t.Fatalf("err = %v, want ErrEffortSetNotDelivered", err)
 		}
 	})
+}
+
+// Only a native link is ever asked for a reasoning level: there is no channel
+// method for it, so an MCP session that reported one is not reachable.
+func TestSetAgentEffortNeverReachesAnMCPSession(t *testing.T) {
+	ps, sessionID, _ := connectedModelsServer(t)
+	ps.agentEffort = make(map[string]AgentEffortSnapshot)
+	ps.HandleAgentEffort(context.Background(), sessionID, settableEffort)
+
+	if err := ps.SetAgentEffort(context.Background(), "low"); !errors.Is(err, ErrEffortSetNotDelivered) {
+		t.Fatalf("err = %v, want ErrEffortSetNotDelivered", err)
+	}
 }
 
 func TestPruneAgentEffortKeepsEverythingBetweenConnections(t *testing.T) {

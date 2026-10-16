@@ -53,9 +53,9 @@ type (
 	// uses: everything the HTTP layer asks a connected agent to do, plus the
 	// workspace metadata a running server has to be told about.
 	workspaceServer interface {
-		SendSetModelNotification(ctx context.Context, modelID string) error
-		SendSetEffortNotification(ctx context.Context, effort string) error
-		SendSetConcurrencyNotification(ctx context.Context, limit int) error
+		SetAgentModel(ctx context.Context, modelID string) error
+		SetAgentEffort(ctx context.Context, effort string) error
+		SetAgentConcurrency(ctx context.Context, limit int) error
 		SendChannelNotification(ctx context.Context, taskID int64, content string)
 		// ClearContextForTask clears at most once per handover, however many
 		// times the task is then pushed — so a caller pushes freely and never

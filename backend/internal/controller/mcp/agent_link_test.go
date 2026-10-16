@@ -279,9 +279,8 @@ func TestAgentLinks(t *testing.T) {
 		ps.AttachAgentLink(link)
 		ps.permissionRequests["acp1:a:s1:t1"] = "acp1:a"
 
-		if !ps.notifySession(context.Background(), "acp1:a", "notifications/claude/channel/permission",
-			map[string]any{"request_id": "acp1:a:s1:t1", "behavior": "allow"}) {
-			t.Fatal("notifySession returned false for a live link, want true")
+		if !ps.deliverVerdict(context.Background(), "acp1:a", "acp1:a:s1:t1", "allow") {
+			t.Fatal("deliverVerdict returned false for a live link, want true")
 		}
 		if len(link.verdicts) != 1 || link.verdicts[0] != "acp1:a:s1:t1=allow" {
 			t.Fatalf("link verdicts were %v, want [acp1:a:s1:t1=allow]", link.verdicts)
@@ -375,8 +374,8 @@ func TestAgentLinks(t *testing.T) {
 			Models: []AgentModel{{ID: "m1", Name: "Model one"}, {ID: "m2", Name: "Model two"}},
 		})
 
-		if err := ps.SendSetModelNotification(context.Background(), "m2"); err != nil {
-			t.Fatalf("SendSetModelNotification returned %v, want nil", err)
+		if err := ps.SetAgentModel(context.Background(), "m2"); err != nil {
+			t.Fatalf("SetAgentModel returned %v, want nil", err)
 		}
 		if len(link.models) != 1 || link.models[0] != "s1/model/m2" {
 			t.Fatalf("link models were %v, want [s1/model/m2]", link.models)
@@ -390,8 +389,8 @@ func TestAgentLinks(t *testing.T) {
 		limit, canSet := 1, true
 		ps.HandleAgentConcurrency(context.Background(), "acp1:a", AgentConcurrencyParams{MaxConcurrency: &limit, CanSet: &canSet})
 
-		if err := ps.SendSetConcurrencyNotification(context.Background(), 3); err != nil {
-			t.Fatalf("SendSetConcurrencyNotification returned %v, want nil", err)
+		if err := ps.SetAgentConcurrency(context.Background(), 3); err != nil {
+			t.Fatalf("SetAgentConcurrency returned %v, want nil", err)
 		}
 		if len(link.limits) != 1 || link.limits[0] != 3 {
 			t.Fatalf("link limits were %v, want [3]", link.limits)
@@ -455,16 +454,54 @@ func TestAgentLinks(t *testing.T) {
 		}
 	})
 
-	t.Run("notifySession refuses a channel method a link is never sent", func(t *testing.T) {
+	t.Run("notifySession never reaches a link, even with a method a link answers", func(t *testing.T) {
 		ps, _ := newLinkServer(t)
 		link := &fakeLink{id: "acp1:a"}
 		ps.AttachAgentLink(link)
 
-		if ps.notifySession(context.Background(), "acp1:a", "notifications/claude/channel", map[string]any{"content": "x"}) {
-			t.Fatal("notifySession returned true for a push addressed to a link, want false")
+		if ps.notifySession(context.Background(), "acp1:a", "notifications/claude/channel/permission",
+			map[string]any{"request_id": "acp1:a:s1:t1", "behavior": "allow"}) {
+			t.Fatal("notifySession returned true for a link, want false")
 		}
 		if tasks, stops, verdicts := link.recorded(); len(tasks)+len(stops)+len(verdicts) != 0 {
 			t.Fatalf("the link was called: tasks %v, stops %v, verdicts %v", tasks, stops, verdicts)
+		}
+	})
+}
+
+// A choice made for a native link reaches it by its own call, never as a
+// channel method string.
+func TestSetAgentReachesALinkByItsOwnCall(t *testing.T) {
+	t.Run("model", func(t *testing.T) {
+		ps, _ := newLinkServer(t)
+		link := &fakeLink{id: "acp1:a"}
+		ps.AttachAgentLink(link)
+		ps.HandleAgentModels(context.Background(), "acp1:a", AgentModelsParams{
+			SessionID: "s1", ConfigID: "model", CurrentModel: "a", CanSet: true,
+			Models: []AgentModel{{ID: "a"}, {ID: "b"}},
+		})
+
+		if err := ps.SetAgentModel(context.Background(), "b"); err != nil {
+			t.Fatalf("SetAgentModel() = %v, want nil", err)
+		}
+		if len(link.models) != 1 || link.models[0] != "s1/model/b" {
+			t.Fatalf("link models were %v, want [s1/model/b]", link.models)
+		}
+	})
+
+	t.Run("concurrency", func(t *testing.T) {
+		ps, _ := newLinkServer(t)
+		link := &fakeLink{id: "acp1:a"}
+		ps.AttachAgentLink(link)
+		ps.HandleAgentConcurrency(context.Background(), "acp1:a", AgentConcurrencyParams{
+			MaxConcurrency: intPtr(2), Min: intPtr(1), Max: intPtr(8), CanSet: boolPtr(true),
+		})
+
+		if err := ps.SetAgentConcurrency(context.Background(), 4); err != nil {
+			t.Fatalf("SetAgentConcurrency() = %v, want nil", err)
+		}
+		if len(link.limits) != 1 || link.limits[0] != 4 {
+			t.Fatalf("link limits were %v, want [4]", link.limits)
 		}
 	})
 }

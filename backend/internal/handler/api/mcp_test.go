@@ -98,19 +98,19 @@ type fakeWorkspaceServer struct {
 	notifiedContent    string
 }
 
-func (f *fakeWorkspaceServer) SendSetModelNotification(ctx context.Context, modelID string) error {
+func (f *fakeWorkspaceServer) SetAgentModel(ctx context.Context, modelID string) error {
 	f.modelCalls++
 	f.modelID = modelID
 	return f.modelErr
 }
 
-func (f *fakeWorkspaceServer) SendSetEffortNotification(ctx context.Context, effort string) error {
+func (f *fakeWorkspaceServer) SetAgentEffort(ctx context.Context, effort string) error {
 	f.effortCalls++
 	f.effort = effort
 	return f.effortErr
 }
 
-func (f *fakeWorkspaceServer) SendSetConcurrencyNotification(ctx context.Context, limit int) error {
+func (f *fakeWorkspaceServer) SetAgentConcurrency(ctx context.Context, limit int) error {
 	f.concurrencyCalls++
 	f.limit = limit
 	return f.concurrencyErr
