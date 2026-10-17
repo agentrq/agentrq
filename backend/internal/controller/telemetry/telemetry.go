@@ -279,6 +279,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDAgentLaunchACPNativeV2
 	case entity.ActionAgentEffortSelect:
 		action = model.ActionIDAgentEffortSelect
+	case entity.ActionACPV1Logout:
+		action = model.ActionIDACPV1Logout
 	default:
 		return
 	}

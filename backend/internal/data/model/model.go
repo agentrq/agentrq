@@ -766,6 +766,8 @@ const (
 	ActionIDAgentLaunchACPNativeV2
 	// A reasoning level asked of the connected agent.
 	ActionIDAgentEffortSelect
+	// A native ACP v1 agent logged out on a person's /logout.
+	ActionIDACPV1Logout
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

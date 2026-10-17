@@ -15,14 +15,18 @@ type ACPController interface {
 	RecordACPV1(ctx context.Context, req entity.RecordACPV1Request)
 }
 
-// RecordACPV1 counts a native ACP v1 connection coming up, or a turn it ran.
+// RecordACPV1 counts a native ACP v1 connection coming up, a turn it ran, or
+// the agent logging out.
 func (c *controller) RecordACPV1(ctx context.Context, req entity.RecordACPV1Request) {
 	if req.UserID == 0 {
 		return
 	}
 	action := entity.ActionACPV1Connect
-	if req.Turn {
+	switch {
+	case req.Turn:
 		action = entity.ActionACPV1Turn
+	case req.Logout:
+		action = entity.ActionACPV1Logout
 	}
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       action,

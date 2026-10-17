@@ -479,6 +479,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionAgentLaunchACPNativeV1, model.ActionIDAgentLaunchACPNativeV1, "agent launch acp native v1"},
 		{entity.ActionAgentLaunchACPNativeV2, model.ActionIDAgentLaunchACPNativeV2, "agent launch acp native v2"},
 		{entity.ActionAgentEffortSelect, model.ActionIDAgentEffortSelect, "agent effort select"},
+		{entity.ActionACPV1Logout, model.ActionIDACPV1Logout, "acp v1 logout"},
 	}
 
 	for _, tc := range cases {

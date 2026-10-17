@@ -236,6 +236,10 @@ func (e *engineV1) runTurn(d delivery) {
 	if e.q.cancelledSince(d.taskID, d.seq) || e.isEnding() {
 		return
 	}
+	if isLogout(d.content) && supported(e.caps.Auth.Logout) {
+		e.logout(d.taskID)
+		return
+	}
 	s, err := e.sessionFor(e.ctx, d.taskID)
 	if err != nil {
 		if e.isEnding() {
@@ -506,7 +510,7 @@ func normalizeCommands(in []availableCommand) []agentlink.Command {
 // reports them now when the link is up. An empty list withdraws the menu.
 func (e *engineV1) setCommands(s *session, commands []agentlink.Command) {
 	e.mu.Lock()
-	p := agentlink.CommandsReport{TaskID: b62(s.taskID), SessionID: s.id, Commands: commands}
+	p := agentlink.CommandsReport{TaskID: b62(s.taskID), SessionID: s.id, Commands: e.withLogout(commands)}
 	e.commands = &p
 	attached := e.attached
 	e.mu.Unlock()

@@ -41,6 +41,9 @@ func TestWireTypes(t *testing.T) {
 		if supported(r.AgentCapabilities.SessionCapabilities.List) {
 			t.Error("session list read as supported, want unsupported (it was not offered)")
 		}
+		if !supported(r.AgentCapabilities.Auth.Logout) {
+			t.Error("auth logout read as unsupported, want supported ({} means yes)")
+		}
 		if len(r.AuthMethods) != 2 || r.AuthMethods[1].Type != "terminal" || r.AuthMethods[0].Type != "" {
 			t.Errorf("auth methods were %+v, want an agent login then a terminal one", r.AuthMethods)
 		}

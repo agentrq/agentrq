@@ -88,12 +88,13 @@ type acpCounter interface {
 	RecordACPV1(ctx context.Context, req entity.RecordACPV1Request)
 }
 
-// countACPV1 builds the engine's OnConnect (turn false) or OnTurn hook.
-func countACPV1(rec acpCounter, turn bool) func(ctx context.Context, workspaceID int64, userID string) {
+// countACPV1 builds one of the engine's telemetry hooks: kind says which
+// (zero for OnConnect, Turn for OnTurn, Logout for OnLogout).
+func countACPV1(rec acpCounter, kind entity.RecordACPV1Request) func(ctx context.Context, workspaceID int64, userID string) {
 	return func(ctx context.Context, workspaceID int64, userID string) {
-		rec.RecordACPV1(ctx, entity.RecordACPV1Request{
-			UserID: monoflake.IDFromBase62(userID).Int64(), WorkspaceID: workspaceID, Turn: turn,
-		})
+		req := kind
+		req.UserID, req.WorkspaceID = monoflake.IDFromBase62(userID).Int64(), workspaceID
+		rec.RecordACPV1(ctx, req)
 	}
 }
 
@@ -120,8 +121,9 @@ func mountACP(mux *http.ServeMux, d acpDeps) {
 			Workspace:  func(id int64, userID string) acpv1.Workspace { return d.workspaces.Get(id, userID) },
 			MCPURL:     d.mcpURL,
 			AppVersion: d.appVersion,
-			OnConnect:  countACPV1(d.counter, false),
-			OnTurn:     countACPV1(d.counter, true),
+			OnConnect:  countACPV1(d.counter, entity.RecordACPV1Request{}),
+			OnTurn:     countACPV1(d.counter, entity.RecordACPV1Request{Turn: true}),
+			OnLogout:   countACPV1(d.counter, entity.RecordACPV1Request{Logout: true}),
 		}),
 	})
 }

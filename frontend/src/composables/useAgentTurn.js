@@ -78,10 +78,11 @@ function isUsageFooter(message) {
 
 /**
  * The gateway's notes on a turn that ended before the agent finished, in
- * `STOP_REASON_NOTES` and the fallback for a reason it does not know. Matched
- * on the text because that is all a reply carries.
+ * `STOP_REASON_NOTES` and the fallback for a reason it does not know, plus the
+ * one a /logout ends with. Matched on the text because that is all a reply
+ * carries.
  */
-const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: ))/u
+const STOP_REASON_NOTE = /^⚠️ (The turn was cancelled before the agent finished\.|The agent refused to continue this turn\.|The agent stopped (mid-turn: |for a reason this gateway does not recognise: )|The agent logged out: )/u
 
 /** The note the gateway sends when a turn ends early, stopped or otherwise. */
 function isStopReasonNote(message) {

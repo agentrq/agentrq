@@ -42,6 +42,7 @@ type recorder struct {
 	log       []string
 	connects  int
 	turns     int
+	logouts   int
 	failReply error
 	failMark  error
 	onAttach  func(agentlink.Link) // runs as the link attaches, as a push may
@@ -1264,7 +1265,7 @@ func TestEngine(t *testing.T) {
 	t.Run("slash commands are normalised and an empty list withdraws them", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
-		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
+		a.answer(a.expect("initialize"), `{"protocolVersion":1}`) // no logout, so no /logout of AgentRQ's own
 		req := a.expect("session/new")
 		// Sent ahead of the answer, before AgentRQ knows the session: held,
 		// and applied once it is registered. The other session's stays held.
@@ -1477,6 +1478,94 @@ func TestEngine(t *testing.T) {
 			t.Fatalf("frames %+v arrived, want no session/close", a.backlog)
 		}
 	})
+
+	t.Run("/logout logs an agent that can log out out, instead of prompting it", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgentWith(t, rec, agentOpts{deps: func(d *EngineDeps) {
+			d.OnLogout = func(context.Context, int64, string) { rec.mu.Lock(); rec.logouts++; rec.mu.Unlock() }
+		}})
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, " /logout \n- report.pdf")
+		a.answer(a.expectParams("logout", `{}`), `{}`)
+		rec.wait(t, func() bool { return len(rec.replies) == 1 && rec.logouts == 1 })
+		if want := "42|" + noteLoggedOut; rec.replies[0] != want {
+			t.Fatalf("replies were %q, want only %q", rec.replies, want)
+		}
+		a.turn(rec, l, 42, "idle-1", "end_turn") // the task's next message is a prompt again
+	})
+
+	t.Run("a /logout the agent refuses ends with the error note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "/logout")
+		a.fail(a.expect("logout"), codeInternalError, "not logged in")
+		rec.wait(t, func() bool { return len(rec.replies) == 1 })
+		if want := "42|" + noteAnsweredWithError("not logged in"); rec.replies[0] != want {
+			t.Fatalf("replies were %q, want %q", rec.replies, want)
+		}
+	})
+
+	t.Run("a /logout cut off by the connection ending posts no note", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		l.DeliverTask(context.Background(), 42, "/logout")
+		a.expect("logout")
+		a.control(`{"agentrqBridge":"bye"}`)
+		rec.wait(t, func() bool { return len(rec.detached) == 1 })
+		rec.read(func() {
+			if len(rec.replies) != 0 {
+				t.Fatalf("replies were %q, want none", rec.replies)
+			}
+		})
+	})
+
+	t.Run("/logout takes the place of the agent's own logout command in its menu", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"idle-1"}`)
+		a.update("idle-1", `{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"logout","description":"the agent's own"},{"name":"web","description":"Search"}]}`)
+		a.sync(l)
+		rec.read(func() {
+			got := rec.commands[len(rec.commands)-1].Commands
+			if want := []agentlink.Command{{Name: "web", Description: "Search"}, logoutCommand}; !slices.Equal(got, want) {
+				t.Fatalf("commands were %+v, want %+v", got, want)
+			}
+		})
+	})
+
+	t.Run("an agent that can log out but lists no commands still offers /logout", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		a.ready(rec, `{"sessionId":"idle-1"}`)
+		rec.read(func() {
+			want := agentlink.CommandsReport{SessionID: "idle-1", Commands: []agentlink.Command{logoutCommand}}
+			if len(rec.commands) != 1 || rec.commands[0].SessionID != want.SessionID || !slices.Equal(rec.commands[0].Commands, want.Commands) {
+				t.Fatalf("commands reports were %+v, want only %+v", rec.commands, want)
+			}
+		})
+	})
+
+	for name, caps := range map[string]string{"omits auth.logout": `{}`, "sends a null auth.logout": `{"auth":{"logout":null}}`} {
+		t.Run("an agent that "+name+" gets /logout as a prompt and no menu entry", func(t *testing.T) {
+			rec := &recorder{}
+			a := startAgent(t, rec)
+			a.answer(a.expect("initialize"), `{"protocolVersion":1,"agentCapabilities":`+caps+`}`)
+			a.answer(a.expect("session/new"), `{"sessionId":"s-1"}`)
+			l := rec.link(t)
+			rec.wait(t, func() bool { return rec.offers == 1 })
+			l.DeliverTask(context.Background(), 42, "/logout")
+			a.answer(a.expectParams("session/prompt", `{"sessionId":"s-1","prompt":[{"type":"text","text":"/logout"}]}`), `{"stopReason":"end_turn"}`)
+			a.update("s-1", `{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"web"}]}`)
+			a.sync(l)
+			rec.read(func() {
+				if got := rec.commands[len(rec.commands)-1].Commands; !slices.Equal(got, []agentlink.Command{{Name: "web"}}) {
+					t.Fatalf("commands were %+v, want only the agent's own", got)
+				}
+			})
+		})
+	}
 
 	t.Run("telemetry hooks hear of the connection and each turn", func(t *testing.T) {
 		rec := &recorder{}

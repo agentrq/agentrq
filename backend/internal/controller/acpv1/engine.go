@@ -37,6 +37,7 @@ type EngineDeps struct {
 	AppVersion string
 	OnConnect  func(ctx context.Context, workspaceID int64, userID string) // telemetry, Task 6
 	OnTurn     func(ctx context.Context, workspaceID int64, userID string) // telemetry, Task 6
+	OnLogout   func(ctx context.Context, workspaceID int64, userID string) // telemetry
 }
 
 // update is one item of the ordered update queue: a notification; a barrier
@@ -247,6 +248,13 @@ func (e *engineV1) attach() {
 	if idle != nil {
 		e.reportModels(idle)
 		e.reportEffort(idle)
+	}
+	if commands == nil && supported(e.caps.Auth.Logout) {
+		p := agentlink.CommandsReport{Commands: []agentlink.Command{logoutCommand}}
+		if idle != nil {
+			p.SessionID = idle.id
+		}
+		commands = &p
 	}
 	if commands != nil {
 		e.ws.HandleAgentCommands(e.ctx, e.linkID, *commands)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -156,10 +157,11 @@ func TestACPTokenAuth(t *testing.T) {
 
 func TestCountACPV1(t *testing.T) {
 	rec := &fakeACPCounter{}
-	countACPV1(rec, false)(context.Background(), 70, monoflake.ID(7).String())
-	countACPV1(rec, true)(context.Background(), 71, monoflake.ID(7).String())
-	want := []entity.RecordACPV1Request{{UserID: 7, WorkspaceID: 70}, {UserID: 7, WorkspaceID: 71, Turn: true}}
-	if len(rec.got) != 2 || rec.got[0] != want[0] || rec.got[1] != want[1] {
+	countACPV1(rec, entity.RecordACPV1Request{})(context.Background(), 70, monoflake.ID(7).String())
+	countACPV1(rec, entity.RecordACPV1Request{Turn: true})(context.Background(), 71, monoflake.ID(7).String())
+	countACPV1(rec, entity.RecordACPV1Request{Logout: true})(context.Background(), 72, monoflake.ID(7).String())
+	want := []entity.RecordACPV1Request{{UserID: 7, WorkspaceID: 70}, {UserID: 7, WorkspaceID: 71, Turn: true}, {UserID: 7, WorkspaceID: 72, Logout: true}}
+	if !slices.Equal(rec.got, want) {
 		t.Fatalf("counted %+v, want %+v", rec.got, want)
 	}
 }

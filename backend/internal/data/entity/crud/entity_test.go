@@ -95,6 +95,7 @@ func TestActionString(t *testing.T) {
 		{ActionAgentLaunchACPNativeV1, "agent_launch_acp_native_v1"},
 		{ActionAgentLaunchACPNativeV2, "agent_launch_acp_native_v2"},
 		{ActionAgentEffortSelect, "agent_effort_select"},
+		{ActionACPV1Logout, "acp_v1_logout"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

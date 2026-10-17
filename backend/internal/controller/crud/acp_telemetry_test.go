@@ -13,14 +13,14 @@ import (
 
 func TestRecordACPV1(t *testing.T) {
 	for _, tc := range []struct {
-		turn bool
-		want entity.Action
-	}{{false, entity.ActionACPV1Connect}, {true, entity.ActionACPV1Turn}} {
+		turn, logout bool
+		want         entity.Action
+	}{{false, false, entity.ActionACPV1Connect}, {true, false, entity.ActionACPV1Turn}, {false, true, entity.ActionACPV1Logout}} {
 		env := newMachineTelemetryEnv(t)
-		env.controller.RecordACPV1(context.Background(), entity.RecordACPV1Request{UserID: 7, WorkspaceID: 70, Turn: tc.turn})
+		env.controller.RecordACPV1(context.Background(), entity.RecordACPV1Request{UserID: 7, WorkspaceID: 70, Turn: tc.turn, Logout: tc.logout})
 		e := env.only(t)
 		if e.Action != tc.want || e.UserID != 7 || e.WorkspaceID != 70 || e.ResourceType != entity.ResourceWorkspace || e.ResourceID != 70 || e.Actor != entity.ActorAgent {
-			t.Errorf("turn=%v: the event was %+v, want %v for user 7 in workspace 70, by the agent", tc.turn, e, tc.want)
+			t.Errorf("turn=%v logout=%v: the event was %+v, want %v for user 7 in workspace 70, by the agent", tc.turn, tc.logout, e, tc.want)
 		}
 	}
 }

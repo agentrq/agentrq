@@ -19,7 +19,7 @@ const completed = (note) => (note.endsWith(': ') ? `${note}other.` : note.endsWi
 
 describe('the notes ACP v1 ends a turn with', () => {
   it('reads every note from the Go source', () => {
-    expect(notes.length).toBe(8)
+    expect(notes.length).toBe(9)
   })
 
   for (const note of notes) {

@@ -14,7 +14,8 @@ import (
 
 // The notes a turn can end with. The composer matches them word for word
 // (frontend/src/composables/useAgentTurn.js, STOP_REASON_NOTE), so these are
-// the gateway's texts exactly, "this gateway" included.
+// the gateway's texts exactly, "this gateway" included, plus AgentRQ's own
+// for /logout.
 const (
 	noteRefusal         = "⚠️ The agent refused to continue this turn."
 	noteMaxTokens       = "⚠️ The agent stopped mid-turn: it ran out of output tokens."
@@ -24,6 +25,8 @@ const (
 	noteProcessExited   = "⚠️ The agent stopped mid-turn: its process exited."
 	noteConnectionLost  = "⚠️ The agent stopped mid-turn: the connection to its machine was lost."
 	noteErrorPrefix     = "⚠️ The agent stopped mid-turn: it answered with an error ("
+	// noteLoggedOut is AgentRQ's own, for a /logout the agent accepted.
+	noteLoggedOut = "⚠️ The agent logged out: its next session asks for a login again."
 )
 
 // maxNoteErrorRunes is how much of an agent's error message a note quotes.

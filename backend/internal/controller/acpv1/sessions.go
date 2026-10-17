@@ -206,6 +206,50 @@ func (e *engineV1) closeSession(s *session) {
 	}()
 }
 
+// logoutCommand is AgentRQ's own slash command: typed as a task's message, it
+// logs the agent out instead of prompting it. It is listed among the agent's
+// commands so the reply reaches the engine as the bare command.
+var logoutCommand = agentlink.Command{Name: "logout", Description: "Log the agent out; its next session asks for a login again"}
+
+// isLogout reports whether a delivery is the /logout command, with nothing
+// after it on its line.
+func isLogout(content string) bool {
+	line, _, _ := strings.Cut(strings.TrimSpace(content), "\n")
+	return strings.TrimSpace(line) == "/"+logoutCommand.Name
+}
+
+// withLogout lists /logout among the agent's commands when the agent can log
+// out, in place of any logout command of its own: the engine answers it.
+func (e *engineV1) withLogout(commands []agentlink.Command) []agentlink.Command {
+	if !supported(e.caps.Auth.Logout) {
+		return commands
+	}
+	out := make([]agentlink.Command, 0, len(commands)+1)
+	for _, c := range commands {
+		if c.Name != logoutCommand.Name {
+			out = append(out, c)
+		}
+	}
+	return append(out, logoutCommand)
+}
+
+// logout runs a /logout delivery: the agent is asked to end its login, and
+// the note it ends with is what tells the composer this turn is over.
+func (e *engineV1) logout(taskID int64) {
+	err := e.callWithin(e.ctx, methodLogout, logoutRequest{}, nil)
+	if e.isEnding() {
+		return
+	}
+	if err != nil {
+		e.note(taskID, noteAnsweredWithError(errorText(err)))
+		return
+	}
+	if e.deps.OnLogout != nil {
+		e.deps.OnLogout(e.ctx, e.c.WorkspaceID(), e.c.UserID())
+	}
+	e.note(taskID, noteLoggedOut)
+}
+
 // sessionFor finds or opens the session a task's turn runs on, and marks it
 // busy so it cannot be evicted: the task's own, else the idle session (waiting
 // for it while it is still opening), else a new one.

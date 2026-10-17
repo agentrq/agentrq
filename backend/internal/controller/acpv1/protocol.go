@@ -16,6 +16,7 @@ const ProtocolVersion = 1
 const (
 	methodInitialize       = "initialize"
 	methodAuthenticate     = "authenticate"
+	methodLogout           = "logout"
 	methodSessionNew       = "session/new"
 	methodSessionPrompt    = "session/prompt"
 	methodSessionCancel    = "session/cancel"
@@ -130,10 +131,17 @@ func lenient(raw json.RawMessage, dst any) bool {
 }
 
 type agentCapabilities struct {
-	LoadSession         bool                `json:"loadSession"`
-	PromptCapabilities  promptCapabilities  `json:"promptCapabilities"`
-	MCPCapabilities     mcpCapabilities     `json:"mcpCapabilities"`
-	SessionCapabilities sessionCapabilities `json:"sessionCapabilities"`
+	LoadSession         bool                  `json:"loadSession"`
+	PromptCapabilities  promptCapabilities    `json:"promptCapabilities"`
+	MCPCapabilities     mcpCapabilities       `json:"mcpCapabilities"`
+	SessionCapabilities sessionCapabilities   `json:"sessionCapabilities"`
+	Auth                agentAuthCapabilities `json:"auth"`
+}
+
+// agentAuthCapabilities: logout is supported when the agent supplies an
+// object for it; omitted or null means AgentRQ must never call it.
+type agentAuthCapabilities struct {
+	Logout json.RawMessage `json:"logout"`
 }
 
 type promptCapabilities struct {
@@ -305,6 +313,9 @@ type sessionIDParams struct {
 type authenticateRequest struct {
 	MethodID string `json:"methodId"`
 }
+
+// logoutRequest has no fields: logout's params are an empty object.
+type logoutRequest struct{}
 
 type sessionNotification struct {
 	SessionID string          `json:"sessionId"`

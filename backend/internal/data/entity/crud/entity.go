@@ -1670,6 +1670,8 @@ const (
 	// A reasoning level asked of the connected agent from the interface;
 	// backend-emitted, like ActionAgentModelSelect.
 	ActionAgentEffortSelect Action = 104
+	// A native ACP v1 agent logged out on a person's /logout.
+	ActionACPV1Logout Action = 105
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1870,6 +1872,8 @@ func (a Action) String() string {
 		return "agent_launch_acp_native_v2"
 	case ActionAgentEffortSelect:
 		return "agent_effort_select"
+	case ActionACPV1Logout:
+		return "acp_v1_logout"
 	}
 	return "unknown"
 }
@@ -2100,12 +2104,13 @@ type (
 		Allowed     bool
 	}
 
-	// RecordACPV1Request counts a native ACP v1 connection coming up, or
-	// (Turn) one turn it ran.
+	// RecordACPV1Request counts a native ACP v1 connection coming up, (Turn)
+	// one turn it ran, or (Logout) the agent logging out.
 	RecordACPV1Request struct {
 		UserID      int64
 		WorkspaceID int64
 		Turn        bool
+		Logout      bool
 	}
 
 	// RecordSiteShareRequest counts a site shared into (Shared) or withdrawn
