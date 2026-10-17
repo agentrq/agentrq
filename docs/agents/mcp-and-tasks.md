@@ -54,13 +54,15 @@ accepted. A retired tool name is answered, unlisted, by `ActionToolsMiddleware`
 from `legacyTools` in each server's `tools.go`: never drop an entry while a
 gateway, CLI or extension installed before the merge may still call it.
 
-## What an agent reports leaves with its stream
+## What an agent reports leaves with its link
 
-Models, commands, concurrency and the usage ring are cached per MCP session and
-pushed to the page only as events. When a session's last stream closes,
-`agentSessionEnded` re-announces them and marks its usage message
-`sessionEnded`; **a new kind of report must be added there**, or switching from
-acp-gateway to Claude Code leaves the gateway's on screen.
+Models, commands, concurrency and the usage ring come only from native ACP
+links (the gateway's MCP channel notifications are gone; the MCP allowlist keeps
+only Claude Code's `permission_request`). They are cached per link and pushed to
+the page only as events. When a link detaches, `agentSessionEnded`
+re-announces them and marks its usage message `sessionEnded`; **a new kind of
+report must be added there**, or switching from acp-gateway to Claude Code
+leaves the gateway's on screen.
 
 ## This server is stateful, so it cannot serve 2026-07-28
 

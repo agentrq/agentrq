@@ -15,16 +15,11 @@ type Command struct {
 	Hint string `json:"hint,omitempty"`
 }
 
-// CommandsReport is the payload of a commands notification.
-//
-// snake_case, unlike the REST surface: this is the wire format the gateways
-// already send (acp-gateway's `sendCommandsToWorkspace`), and renaming the
-// fields here would break every gateway in the field to satisfy a convention
-// that governs the HTTP API rather than this channel.
+// CommandsReport is the slash commands a session reports it offers.
 type CommandsReport struct {
-	TaskID    string    `json:"task_id"`
-	SessionID string    `json:"session_id"`
-	Commands  []Command `json:"commands"`
+	TaskID    string
+	SessionID string
+	Commands  []Command
 }
 
 // CommandsSnapshot is what one connected session last reported.

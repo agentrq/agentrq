@@ -58,8 +58,8 @@ type Params struct {
 	Agent string
 	// AllowUnverified lets the acp-gateway install an agent with no checksum.
 	AllowUnverified bool
-	// ACPVersion starts the acp-gateway in native mode ("1" or "2"), blank
-	// for classic.
+	// ACPVersion is the ACP version the acp-gateway runs: "1" or "2", blank
+	// for "1".
 	ACPVersion string
 }
 
@@ -224,23 +224,26 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if p.Effort != "" && !claudeEfforts[p.Effort] {
 			return Command{}, fmt.Errorf("%w: effort=%q", ErrBadParameter, p.Effort)
 		}
-		if p.ACPVersion != "" && p.ACPVersion != "1" && p.ACPVersion != "2" {
+		// The gateway always runs native: blank is ACP v1, never the old
+		// MCP mode, which the server no longer serves. A session saved
+		// before this comes back as v1 too.
+		acpVersion := p.ACPVersion
+		if acpVersion == "" {
+			acpVersion = "1"
+		}
+		if acpVersion != "1" && acpVersion != "2" {
 			return Command{}, fmt.Errorf("%w: acpVersion=%q", ErrBadParameter, p.ACPVersion)
 		}
 		argv := []string{
 			"npx", "-y", "@agentrq/acp-gateway@latest",
 			"--agent", p.Agent,
-		}
-		if p.ACPVersion != "" {
-			argv = append(argv, "--acp-version", p.ACPVersion)
+			"--acp-version", acpVersion,
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)
 		}
-		// Native mode only: the gateway hands it to AgentRQ in its upgrade
-		// headers, and the classic gateway has nothing to do with it. A
-		// gateway older than the flag ignores it, since --agent is given.
-		if p.Effort != "" && p.ACPVersion != "" {
+		// The gateway hands it to AgentRQ in its upgrade headers.
+		if p.Effort != "" {
 			argv = append(argv, "--effort", p.Effort)
 		}
 		if p.AllowUnverified {

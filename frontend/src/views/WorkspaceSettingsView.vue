@@ -1234,10 +1234,12 @@ const startCommand = computed(() => `claude --dangerously-load-development-chann
 // so the flag is part of the command rather than a footnote someone hits as an
 // error.
 const ACP_GATEWAY = 'npx -y @agentrq/acp-gateway@latest';
-const acpStartCommand = `${ACP_GATEWAY} --agent harn`;
+// What starts an agent: the gateway reaches AgentRQ over ACP v1 only.
+const ACP_V1 = '--acp-version 1';
+const acpStartCommand = `${ACP_GATEWAY} --agent harn ${ACP_V1}`;
 const acpListAgentsCommand = `${ACP_GATEWAY} --list-agents`;
 const acpLoginCommand = `${ACP_GATEWAY} --login --agent harn`;
-const acpInstalledAgentCommand = `${ACP_GATEWAY} -- harn serve acp`;
+const acpInstalledAgentCommand = `${ACP_GATEWAY} ${ACP_V1} -- harn serve acp`;
 
 // Antigravity gets its own tab because it needs two things the other ACP
 // agents do not: a login before it will open a session, and permission to
@@ -1250,9 +1252,9 @@ const ANTIGRAVITY_AGENT = '--agent antigravity-acp --allow-unverified-agent';
 // downloads, and an npx distribution never reaches that path.
 const CODEX_AGENT = '--agent codex-acp';
 const codexLoginCommand = `${ACP_GATEWAY} --login ${CODEX_AGENT}`;
-const codexStartCommand = `${ACP_GATEWAY} ${CODEX_AGENT}`;
+const codexStartCommand = `${ACP_GATEWAY} ${CODEX_AGENT} ${ACP_V1}`;
 const antigravityLoginCommand = `${ACP_GATEWAY} --login ${ANTIGRAVITY_AGENT}`;
-const antigravityStartCommand = `${ACP_GATEWAY} ${ANTIGRAVITY_AGENT}`;
+const antigravityStartCommand = `${ACP_GATEWAY} ${ANTIGRAVITY_AGENT} ${ACP_V1}`;
 
 // The card's heading names what is being set up rather than describing it
 // generically, so the tab and the panel below it agree.

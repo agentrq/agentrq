@@ -4,17 +4,18 @@
 
 package agentlink
 
-// TelemetryReport is the payload of an agent telemetry notification.
+// TelemetryReport is one piece of an agent's turn that is not its answer: its
+// reasoning, its plan, or what the turn is costing.
 //
 // Text is a rendered, ready-to-show form of the same thing Data holds
 // structurally, so a client that does not understand a given kind still has
 // something to show.
 type TelemetryReport struct {
-	TaskID    string         `json:"task_id"`
-	SessionID string         `json:"session_id"`
-	Kind      string         `json:"kind"`
-	Text      string         `json:"text"`
-	Data      map[string]any `json:"data"`
+	TaskID    string
+	SessionID string
+	Kind      string
+	Text      string
+	Data      map[string]any
 }
 
 // PlanID is the plan a payload refers to, or "" if it names none.

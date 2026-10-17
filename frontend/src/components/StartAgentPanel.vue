@@ -23,7 +23,6 @@ import AcpAgentList from './AcpAgentList.vue'
 import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
-import AcpProtocolPicker from './AcpProtocolPicker.vue'
 import AcpEffortPicker from './AcpEffortPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { launchFolderNote } from '../composables/useAgentLaunch'
@@ -269,8 +268,7 @@ async function start() {
             <option v-for="m in acpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
           </datalist>
         </div>
-      <AcpProtocolPicker class="@md:col-span-2" id-prefix="start-agent" v-model="params.acpVersion" />
-      <AcpEffortPicker v-if="params.acpVersion" class="@md:col-span-2" id-prefix="start-agent" v-model="params.effort" />
+      <AcpEffortPicker class="@md:col-span-2" id-prefix="start-agent" v-model="params.effort" />
       <!-- The list only ever suggests: any other id typed in the field is
            still sent, so an agent the list does not know can still run. -->
       <AcpAgentList v-if="kind === 'acp-gateway'" class="@md:col-span-2" id-prefix="start-agent" :agents="acpAgents" :query="params.agent" @pick="pickAcpAgent" />

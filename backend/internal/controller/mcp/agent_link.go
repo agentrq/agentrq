@@ -25,8 +25,7 @@ func (ps *WorkspaceServer) AttachAgentLink(link agentlink.Link) {
 }
 
 // DetachAgentLink removes a link and tells the open pages that what it
-// reported no longer holds — the same thing an MCP session's last stream
-// closing does.
+// reported no longer holds.
 func (ps *WorkspaceServer) DetachAgentLink(ctx context.Context, id string) {
 	ps.linksMu.Lock()
 	i := slices.IndexFunc(ps.links, func(l agentlink.Link) bool { return l.ID() == id })

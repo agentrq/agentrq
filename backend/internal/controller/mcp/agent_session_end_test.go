@@ -224,38 +224,21 @@ func TestAgentSessionEnded_SilentSessionPublishesNothing(t *testing.T) {
 	expectNoEvent(t, sub)
 }
 
-func TestRemoveStreamingSession_ReportsTheLastStream(t *testing.T) {
-	ps := &WorkspaceServer{}
-	ps.addStreamingSession("s")
-	ps.addStreamingSession("s")
-
-	if ps.removeStreamingSession("s") {
-		t.Error("first close reported as the last while another stream is open")
-	}
-	if !ps.removeStreamingSession("s") {
-		t.Error("last close not reported as the last")
-	}
-}
-
-// End to end through the HTTP handler: a stream closing is what withdraws the
-// gateway's concurrency.
-func TestHandler_ClosedStreamWithdrawsConcurrency(t *testing.T) {
+// End to end through the HTTP handler: a closed stream takes its session off
+// the air, and nothing is left counted as connected.
+func TestHandler_ClosedStreamStopsStreaming(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	t.Cleanup(ctrl.Finish)
 	pub := mock_pubsub.NewMockService(ctrl)
 	pub.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	listTasks := func(context.Context, ListTasksFilter) ([]model.Task, error) { return nil, nil }
 
-	bus := eventbus.New()
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
 		nil, nil, nil, nil, listTasks, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		bus, nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
+		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)
-	ps.agentConcurrency["gw"] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
-	sub := bus.Subscribe(1, "")
-	t.Cleanup(func() { bus.Unsubscribe(1, "", sub) })
 
 	srv := httptest.NewServer(ps.Handler())
 	t.Cleanup(srv.Close)
@@ -268,7 +251,11 @@ func TestHandler_ClosedStreamWithdrawsConcurrency(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if got := nextEventOfType(t, sub, "agent.concurrency"); got.Payload["maxConcurrency"] != 0.0 {
-		t.Errorf("concurrency event = %+v, want no limit", got)
+	deadline := time.Now().Add(time.Second)
+	for ps.isStreaming("gw") || ps.agentConnections.Load() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("still streaming %v with %d connections after the stream closed", ps.isStreaming("gw"), ps.agentConnections.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

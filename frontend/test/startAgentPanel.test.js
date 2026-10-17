@@ -241,19 +241,13 @@ describe('StartAgentPanel', () => {
     localStorage.clear()
   })
 
-  it('the ACP gateway form shows the protocol slider, and a launch sends the chosen protocol', async () => {
+  it('the ACP gateway form offers an effort and no protocol, and a launch sends the effort', async () => {
     localStorage.clear()
     const { el } = await mount({ workspace: WORKSPACE, variant: 'card' }, [ONLINE])
-    expect(el.querySelector('#start-agent-acp-version')).toBeNull()
+    expect(el.querySelector('#start-agent-acp-effort')).toBeNull()
     el.querySelector('#start-agent-kind-acp-gateway').click()
     await settle()
-    const protocol = el.querySelector('#start-agent-acp-version')
-    expect(el.querySelector('[data-test=start-agent-acp-version-value]').textContent.trim()).toBe('Classic — the gateway speaks ACP')
-    // The classic gateway cannot hand an effort on, so there is none to pick.
-    expect(el.querySelector('#start-agent-acp-effort')).toBeNull()
-    protocol.value = '1'
-    protocol.dispatchEvent(new Event('input'))
-    await settle()
+    expect(el.querySelector('#start-agent-acp-version')).toBeNull()
     const effort = el.querySelector('#start-agent-acp-effort')
     effort.value = '4'
     effort.dispatchEvent(new Event('input'))
@@ -262,9 +256,10 @@ describe('StartAgentPanel', () => {
     const go = [...el.querySelectorAll('button')].find((b) => /Start an agent/i.test(b.textContent))
     go.click()
     await settle()
-    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', acpVersion: '1', effort: 'xhigh' }))
+    expect(launchAgent).toHaveBeenLastCalledWith('ws1', expect.objectContaining({ kind: 'acp-gateway', effort: 'xhigh' }))
+    expect(launchAgent.mock.lastCall[1]).not.toHaveProperty('acpVersion')
     // Remembered for this workspace, so its next launch opens on it.
-    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['acp-gateway']).toMatchObject({ acpVersion: '1', effort: 'xhigh' })
+    expect(JSON.parse(localStorage.getItem('agentrq:lastLaunch')).ws1.params['acp-gateway']).toMatchObject({ effort: 'xhigh' })
     localStorage.clear()
   })
 

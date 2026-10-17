@@ -15,13 +15,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
-// AgentCommandsNotificationMethod is the channel notification a gateway sends
-// to say which slash commands the agent behind it offers.
-//
-// An ACP agent advertises them whenever context makes them relevant, so the
-// newest list for a session replaces the previous one rather than adding to it.
-const AgentCommandsNotificationMethod = "notifications/claude/channel/commands"
-
 // HandleAgentCommands records the slash commands a session reports it offers.
 //
 // Recorded rather than relayed into the chat, like the models beside it: this

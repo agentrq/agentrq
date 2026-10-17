@@ -1591,6 +1591,8 @@ const (
 	// claude-code are two directly comparable counts instead of a value
 	// buried inside one bucket.
 	ActionAgentLaunchClaudeCode Action = 72
+	// Retired: the gateway's old MCP mode. Kept for the counts already
+	// stored; a gateway launch is now ActionAgentLaunchACPNativeV1 or V2.
 	ActionAgentLaunchACPGateway Action = 73
 	// Skills used from the interface. An agent's skill tools are already
 	// counted as MCP tool calls, so these skip an MCP-origin context rather
@@ -1661,8 +1663,7 @@ const (
 	// /api/acp/v1 socket.
 	ActionACPV1Connect Action = 100
 	ActionACPV1Turn    Action = 101
-	// An acp-gateway launched in native ACP v1 or v2 mode, counted instead
-	// of ActionAgentLaunchACPGateway.
+	// An acp-gateway launched in native ACP v1 or v2 mode.
 	ActionAgentLaunchACPNativeV1 Action = 102
 	ActionAgentLaunchACPNativeV2 Action = 103
 	// A reasoning level asked of the connected agent from the interface;

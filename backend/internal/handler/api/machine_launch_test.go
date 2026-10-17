@@ -443,6 +443,7 @@ func launchTestHandler(t *testing.T, machineID int64, crudCtrl *fakeLaunchCrud, 
 	t.Helper()
 	registry := machinectrl.NewRegistry("test-instance")
 	registry.Add(machineID, conn)
+	registry.SetCapabilities(machineID, conn, []string{wire.CapabilityACPVersion})
 
 	return withLauncher(&handler{
 		crud:            crudCtrl,
@@ -455,11 +456,12 @@ func launchTestHandler(t *testing.T, machineID int64, crudCtrl *fakeLaunchCrud, 
 // withLauncher gives h the launcher app.go would, built from its own fields.
 func withLauncher(h *handler) *handler {
 	h.launcher = &agentlaunch.Launcher{
-		Crud:     h.crud,
-		Agents:   h.mcpManager,
-		Machines: h.machineRegistry,
-		Tokens:   h.tokenSvc,
-		URLs:     h.mcpURLs(),
+		Crud:       h.crud,
+		Agents:     h.mcpManager,
+		Machines:   h.machineRegistry,
+		Tokens:     h.tokenSvc,
+		URLs:       h.mcpURLs(),
+		ACPEnabled: func(string) bool { return true },
 	}
 	return h
 }
@@ -481,7 +483,7 @@ func TestLaunchAgent_CountsByKind(t *testing.T) {
 		wantAction entity.Action
 	}{
 		{"claude-code", entity.ActionAgentLaunchClaudeCode},
-		{"acp-gateway", entity.ActionAgentLaunchACPGateway},
+		{"acp-gateway", entity.ActionAgentLaunchACPNativeV1},
 	}
 
 	for _, tc := range cases {
@@ -875,7 +877,7 @@ func TestLaunchAgent_AClaudeCodeModelOrEffortIsRefusedOnADaemonThatWouldDropIt(t
 // The consent to an unverified install reaches the daemon.
 func TestLaunchAgent_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
 	body := `{"kind":"acp-gateway","agent":"crow-cli","allowUnverified":true}`
-	resp, start := launchWith(t, claudeModelLaunchCrud(), nil, "0.10.2", body)
+	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityACPVersion}, "0.10.3", body)
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
 	}
@@ -885,15 +887,23 @@ func TestLaunchAgent_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T)
 }
 
 // The native ACP version reaches the shared launch, whose gates answer for it:
-// here the server's switch, which is off.
+// here a machine too old to pass it on.
 func TestLaunchAgent_GatewayCarriesTheNativeACPVersion(t *testing.T) {
-	body := `{"kind":"acp-gateway","agent":"codex-acp","acpVersion":"1"}`
+	body := `{"kind":"acp-gateway","agent":"codex-acp","acpVersion":"2"}`
 	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityACPVersion}, "0.10.3", body)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
+	}
+	if start.ACPVersion != "2" {
+		t.Errorf("the start frame names acpVersion %q, want 2", start.ACPVersion)
+	}
+
+	resp, start = launchWith(t, claudeModelLaunchCrud(), nil, "0.10.2", body)
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", resp.StatusCode)
 	}
-	if msg := responseMessage(t, resp); !strings.Contains(msg, "native ACP v1 is turned off on this server") {
-		t.Errorf("message = %s, want it to say native ACP v1 is off", msg)
+	if msg := responseMessage(t, resp); !strings.Contains(msg, "update agentrqd on this machine to start the ACP gateway") {
+		t.Errorf("message = %s, want it to ask for an agentrqd update", msg)
 	}
 	if start.SessionID != 0 {
 		t.Error("the start was sent anyway")
@@ -925,13 +935,13 @@ func TestLaunchAgent_ClaudeCodeAutocompactWindowNeedsTheCapability(t *testing.T)
 }
 
 // Leaving the model blank, or choosing the gateway's, needs nothing new from
-// the daemon: both worked before the capability existed.
+// the daemon: neither needs the Claude Code options capability.
 func TestLaunchAgent_OnlyAClaudeCodeModelNeedsTheCapability(t *testing.T) {
 	for _, body := range []string{
 		`{"kind":"claude-code"}`,
 		`{"kind":"acp-gateway","agent":"codex-acp","model":"gpt-5"}`,
 	} {
-		resp, _ := launchWith(t, claudeModelLaunchCrud(), nil, "0.9.14", body)
+		resp, _ := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityACPVersion}, "0.9.14", body)
 		if resp.StatusCode != http.StatusAccepted {
 			t.Errorf("%s: status = %d, want 202: %s", body, resp.StatusCode, responseMessage(t, resp))
 		}

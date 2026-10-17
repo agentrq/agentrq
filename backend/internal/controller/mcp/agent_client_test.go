@@ -50,20 +50,6 @@ func TestAgentClient(t *testing.T) {
 		}
 	})
 
-	t.Run("does not name a bridge that has not said what is behind it", func(t *testing.T) {
-		// "acp-gateway" says how an agent is plumbed in, not what it is, and it
-		// would sit in the one place the interface has to name the agent. Better
-		// nothing than the pipe.
-		replies := 0
-		ps := permissionServer(t, &replies)
-		ps.bus = eventbus.New()
-		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
-
-		if got := ps.AgentClient(); got != nil {
-			t.Errorf("AgentClient() = %+v, want nil until the gateway names its agent", got)
-		}
-	})
-
 	t.Run("has nothing to report when the attached client named nobody", func(t *testing.T) {
 		// The loop runs and finds a session, but nothing worth showing. A name
 		// is the only thing this field is for, so an anonymous client is the
@@ -140,38 +126,8 @@ func TestClientInfoFrom(t *testing.T) {
 	})
 }
 
-// The gateway's MCP client is the gateway, so left to the handshake alone a
-// workspace can only ever name the bridge. These cover the notification that
-// tells it what is really behind there.
-
-const gatewayAgentFrame = `{
-  "jsonrpc": "2.0",
-  "method": "notifications/claude/channel/agent",
-  "params": {
-    "task_id": "0iF1U1qQwS1",
-    "session_id": "01a07404-01a7-7033-a58f-47b119036378",
-    "name": "codex",
-    "title": "Codex CLI",
-    "version": "1.10.0"
-  }
-}`
-
-func TestHandleCustomNotificationRoutesAgentIdentity(t *testing.T) {
-	ps := &WorkspaceServer{agentIdentities: make(map[string]agentlink.ClientInfo)}
-	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayAgentFrame))
-
-	// Keyed by the MCP transport session, not the ACP session in the payload.
-	got, ok := ps.agentIdentities["transport-session"]
-	if !ok {
-		t.Fatalf("the agent was not recorded; map = %+v", ps.agentIdentities)
-	}
-	if _, wrong := ps.agentIdentities["01a07404-01a7-7033-a58f-47b119036378"]; wrong {
-		t.Error("keyed by the payload's ACP session, which the session list never reports")
-	}
-	if got.Name != "codex" || got.Title != "Codex CLI" || got.Version != "1.10.0" {
-		t.Errorf("recorded = %+v", got)
-	}
-}
+// A native link has no handshake, so these cover the report that says which
+// agent is behind it.
 
 func TestHandleAgentIdentity(t *testing.T) {
 	t.Run("trims what the gateway sent", func(t *testing.T) {
@@ -204,56 +160,6 @@ func TestHandleAgentIdentity(t *testing.T) {
 
 		if got := ps.agentIdentities["sess-1"].Name; got != "gemini" {
 			t.Errorf("Name = %q, want the second report", got)
-		}
-	})
-}
-
-func TestAgentClientPrefersTheReportedAgent(t *testing.T) {
-	t.Run("names the agent rather than the gateway in front of it", func(t *testing.T) {
-		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{
-			Name: "codex", Title: "Codex CLI", Version: "1.10.0",
-		})
-
-		got := ps.AgentClient()
-		if got == nil {
-			t.Fatal("AgentClient() = nil")
-		}
-		if got.Name != "codex" || got.Title != "Codex CLI" || got.Version != "1.10.0" {
-			t.Errorf("AgentClient() = %+v, want the agent behind the gateway", got)
-		}
-	})
-
-	t.Run("falls back to the client's own name when it is the agent", func(t *testing.T) {
-		// Claude Code attached directly is the agent, so its own name is the
-		// answer and nothing needs to report one.
-		ps, _, _ := connectedIdentityServer(t, "claude-code")
-
-		got := ps.AgentClient()
-		if got == nil || got.Name != "claude-code" {
-			t.Errorf("AgentClient() = %+v, want the client's own name", got)
-		}
-	})
-
-	t.Run("says nothing for a bridge too old to report its agent", func(t *testing.T) {
-		// Rather than naming the bridge. The interface shows a plain "agent
-		// live" for it, which is all anyone actually knows.
-		ps, _, _ := connectedIdentityServer(t, "acp-gateway")
-
-		if got := ps.AgentClient(); got != nil {
-			t.Errorf("AgentClient() = %+v, want nil", got)
-		}
-	})
-
-	t.Run("still says nothing once the stream has gone", func(t *testing.T) {
-		// The reported agent must not outlive its connection either.
-		ps, sessionID, drop := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{Name: "codex"})
-
-		drop()
-
-		if got := ps.AgentClient(); got != nil {
-			t.Errorf("AgentClient() = %+v after the stream went, want nil", got)
 		}
 	})
 }
@@ -307,22 +213,5 @@ func TestStreamingSessionCounting(t *testing.T) {
 	ps.removeStreamingSession("never-seen")
 	if ps.isStreaming("never-seen") {
 		t.Error("a session nobody opened is not streaming")
-	}
-}
-
-func TestIsBridge(t *testing.T) {
-	// Names arrive as the client chose to write them, the same reason
-	// clientSupportsStop folds case and trims.
-	for name, want := range map[string]bool{
-		"acp-gateway":   true,
-		"ACP-Gateway":   true,
-		" acp-gateway ": true,
-		"claude-code":   false,
-		"":              false,
-		"acp":           false,
-	} {
-		if got := isBridge(name); got != want {
-			t.Errorf("isBridge(%q) = %v, want %v", name, got, want)
-		}
 	}
 }

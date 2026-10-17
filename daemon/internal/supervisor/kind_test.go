@@ -30,7 +30,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want = "npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --model gemini-3.8-flash-high"
+	want = "npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --acp-version 1 --model gemini-3.8-flash-high"
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -38,7 +38,7 @@ func TestResolveMatchesTheMakeTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want = "npx -y @agentrq/acp-gateway@latest --agent crow-cli --allow-unverified-agent"
+	want = "npx -y @agentrq/acp-gateway@latest --agent crow-cli --acp-version 1 --allow-unverified-agent"
 	if got := strings.Join(g.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -109,7 +109,7 @@ func TestGatewayWithoutModelIsAccepted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := "npx -y @agentrq/acp-gateway@latest --agent a"
+	want := "npx -y @agentrq/acp-gateway@latest --agent a --acp-version 1"
 	if got := strings.Join(c.Argv, " "); got != want {
 		t.Errorf("argv = %q, want %q", got, want)
 	}
@@ -267,23 +267,23 @@ func TestKindsListsWhatWillRun(t *testing.T) {
 	}
 }
 
-// A native launch runs the same latest gateway, with --acp-version.
+// The gateway always runs native ACP: blank is v1.
 func TestTheGatewayStartsInNativeACPMode(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		p    Params
 		want string
 	}{
-		{"classic stays classic", Params{Agent: "codex-acp"},
-			"npx -y @agentrq/acp-gateway@latest --agent codex-acp"},
+		{"blank is v1", Params{Agent: "codex-acp"},
+			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1"},
 		{"native v1 passes the flag", Params{Agent: "codex-acp", ACPVersion: "1", Model: "gpt-5"},
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1 --model gpt-5"},
 		{"native v2 is accepted", Params{Agent: "codex-acp", ACPVersion: "2"},
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 2"},
 		{"native passes the effort", Params{Agent: "claude-acp", ACPVersion: "1", Model: "opus", Effort: "high"},
 			"npx -y @agentrq/acp-gateway@latest --agent claude-acp --acp-version 1 --model opus --effort high"},
-		{"classic leaves the effort out", Params{Agent: "claude-acp", Effort: "high"},
-			"npx -y @agentrq/acp-gateway@latest --agent claude-acp"},
+		{"blank passes the effort too", Params{Agent: "claude-acp", Effort: "high"},
+			"npx -y @agentrq/acp-gateway@latest --agent claude-acp --acp-version 1 --effort high"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := Resolve(KindACPGateway, tc.p)

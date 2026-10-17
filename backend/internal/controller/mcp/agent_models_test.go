@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -34,85 +33,6 @@ func newModelsServer() *WorkspaceServer {
 		workspaceID: 100,
 		bus:         eventbus.New(),
 		agentModels: make(map[string]agentlink.ModelsSnapshot),
-	}
-}
-
-// The exact frame acp-gateway puts on the wire (src/acpClient.ts), so a rename
-// on either side fails here rather than in production.
-const gatewayModelsFrame = `{
-  "jsonrpc": "2.0",
-  "method": "notifications/claude/channel/models",
-  "params": {
-    "task_id": "0iF1U1qQwS1",
-    "session_id": "01a07404-01a7-7033-a58f-47b119036378",
-    "config_id": "model",
-    "current_model": "gemini-2.5-pro",
-    "models": [
-      {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "description": "Most capable", "current": true, "group": "Google"},
-      {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
-    ]
-  }
-}`
-
-func TestAgentModelsParamsMatchesTheGatewayWireFormat(t *testing.T) {
-	var frame struct {
-		Method string                 `json:"method"`
-		Params agentlink.ModelsReport `json:"params"`
-	}
-	if err := json.Unmarshal([]byte(gatewayModelsFrame), &frame); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if frame.Method != AgentModelsNotificationMethod {
-		t.Errorf("method = %q, want %q", frame.Method, AgentModelsNotificationMethod)
-	}
-
-	p := frame.Params
-	if p.TaskID != "0iF1U1qQwS1" {
-		t.Errorf("task_id = %q", p.TaskID)
-	}
-	if p.SessionID != "01a07404-01a7-7033-a58f-47b119036378" {
-		t.Errorf("session_id = %q", p.SessionID)
-	}
-	if p.ConfigID != "model" {
-		t.Errorf("config_id = %q", p.ConfigID)
-	}
-	if p.CurrentModel != "gemini-2.5-pro" {
-		t.Errorf("current_model = %q", p.CurrentModel)
-	}
-	if len(p.Models) != 2 {
-		t.Fatalf("models = %d, want 2", len(p.Models))
-	}
-	want := agentlink.Model{
-		ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro",
-		Description: "Most capable", Current: true, Group: "Google",
-	}
-	if !reflect.DeepEqual(p.Models[0], want) {
-		t.Errorf("models[0] = %+v, want %+v", p.Models[0], want)
-	}
-	if p.Models[1].Description != "" || p.Models[1].Current || p.Models[1].Group != "" {
-		t.Errorf("optional fields should stay zero when absent: %+v", p.Models[1])
-	}
-}
-
-func TestHandleCustomNotificationRoutesModels(t *testing.T) {
-	ps := newModelsServer()
-	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayModelsFrame))
-
-	// Keyed by the MCP transport session — the namespace liveSessionIDs
-	// reports — and not by the ACP session the payload names.
-	got, ok := ps.agentModels["transport-session"]
-	if !ok {
-		t.Fatalf("models were not recorded; map = %+v", ps.agentModels)
-	}
-	if _, wrong := ps.agentModels["01a07404-01a7-7033-a58f-47b119036378"]; wrong {
-		t.Error("keyed by the payload's ACP session, which liveSessionIDs never reports")
-	}
-	if len(got.Models) != 2 || got.ConfigID != "model" {
-		t.Errorf("recorded = %+v", got)
-	}
-	if got.SessionID != "01a07404-01a7-7033-a58f-47b119036378" {
-		t.Errorf("the agent's session should be kept on the snapshot, got %q", got.SessionID)
 	}
 }
 
@@ -472,8 +392,7 @@ func connectedModelsServer(t *testing.T) (*WorkspaceServer, string, chan []byte)
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
 	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
-	sessionID := connectedServer(t, ps, "acp-gateway")
-	streamFor(ps, sessionID)
+	sessionID := attachLink(ps, "acp1:models").id
 
 	ch := ps.bus.Subscribe(ps.workspaceID, "")
 	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", ch) })
@@ -783,12 +702,9 @@ func TestSetAgentModel(t *testing.T) {
 	})
 
 	t.Run("stops offering the choice once the session drops its stream", func(t *testing.T) {
-		// The trap #504 fixed for the Stop button: a session outlives the
-		// stream that carried it, so a snapshot keyed to a departed gateway
-		// still looks live to anything reading the session list alone.
 		ps, sessionID, _ := connectedModelsServer(t)
 		ps.HandleAgentModels(context.Background(), sessionID, selectable)
-		ps.removeStreamingSession(sessionID)
+		ps.DetachAgentLink(context.Background(), sessionID)
 
 		if err := ps.SetAgentModel(context.Background(), "b"); !errors.Is(err, ErrModelSelectUnsupported) {
 			t.Errorf("err = %v, want ErrModelSelectUnsupported", err)
@@ -925,8 +841,7 @@ func TestPickAgentModelsPrefersASessionThatCanActuallySwitch(t *testing.T) {
 // addressed to a gateway that will ignore it while a capable one stands beside.
 func TestSendSetModelReachesTheCapableGatewayOfTwo(t *testing.T) {
 	ps, readOnlyID, _ := connectedModelsServer(t)
-	capableID := connectSession(t, ps, "acp-gateway")
-	streamFor(ps, capableID)
+	capableID := attachLink(ps, "acp1:capable").id
 
 	ps.HandleAgentModels(context.Background(), readOnlyID, agentlink.ModelsReport{
 		ConfigID: "model", CurrentModel: "old", Models: []agentlink.Model{{ID: "old"}},

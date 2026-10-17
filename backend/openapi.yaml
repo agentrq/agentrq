@@ -2756,10 +2756,9 @@ components:
     AgentModels:
       type: object
       description: |
-        Live state read off the workspace's MCP session rather than a stored
-        column: it arrives as a `notifications/claude/channel/models`
-        notification from the gateway and is reported only while the session
-        that sent it is still connected.
+        Live state read off the workspace's native ACP link rather than a
+        stored column: the gateway's agent reports it over ACP v1, and it is
+        reported only while the link that sent it is still connected.
       properties:
         configId:
           type: string
@@ -2813,10 +2812,9 @@ components:
     AgentConcurrency:
       type: object
       description: |
-        Live state read off the workspace's MCP session rather than a stored
-        column: it arrives as a `notifications/claude/channel/concurrency`
-        notification from the gateway and is reported only while the session
-        that sent it is still connected. The limit itself lives in the
+        Live state read off the workspace's native ACP link rather than a
+        stored column: the gateway reports it over ACP v1, and it is reported
+        only while the link that sent it is still connected. The limit itself lives in the
         gateway's memory and does not survive its restart.
       properties:
         maxConcurrency:

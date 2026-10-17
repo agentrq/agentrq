@@ -44,12 +44,12 @@ func (ps *WorkspaceServer) rememberUsageMessage(sessionID string, taskID, msgID 
 	byKey[agentTelemetryMessageKey(taskID, agentTelemetryKindUsage, "")] = usageMessageRef{taskID: taskID, msgID: msgID}
 }
 
-// agentSessionEnded tells the open pages that what a session reported no
-// longer holds, once its last stream has closed.
+// agentSessionEnded tells the open pages that what a native link reported no
+// longer holds, once it has detached.
 //
-// The REST payload already filters to streaming sessions, but a page that is
-// open only hears events, and nothing else says that the gateway's limit,
-// models and commands left with it. Without this, switching a workspace from
+// The REST payload already filters to live sessions, but a page that is open
+// only hears events, and nothing else says that the gateway's limit, models
+// and commands left with it. Without this, switching a workspace from
 // acp-gateway to Claude Code left the gateway's concurrency control and context
 // ring on screen for an agent that has neither.
 func (ps *WorkspaceServer) agentSessionEnded(ctx context.Context, sessionID string) {

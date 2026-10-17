@@ -459,7 +459,7 @@ See [docs/SKILLS.md](docs/SKILLS.md) for the format, limits, importing, sharing 
 
 ## 🌉 ACP Gateway (Bridge for ACP Agents)
 
-While Claude Code has native support for `claude/notifications`, other agents like **Antigravity** and **Codex** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` bridges the [Agent Client Protocol (ACP)](https://agentclientprotocol.com) with MCP to enable this.
+While Claude Code has native support for `claude/notifications`, other agents like **Antigravity** and **Codex** require a bridge to receive real-time task notifications from AgentRQ. The `@agentrq/acp-gateway` connects them to AgentRQ over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com): AgentRQ speaks ACP v1 itself, and the gateway only carries it between the agent and the server.
 
 There is nothing to install — `npx` fetches the gateway, and the gateway fetches
 the agent you name.
@@ -473,13 +473,13 @@ the agent you name.
 ```bash
 # Using Antigravity
 npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
-npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
+npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --acp-version 1 --allow-unverified-agent
 ```
 
 ```bash
 # Using Codex
 npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
-npx -y @agentrq/acp-gateway@latest --agent codex-acp
+npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
 ```
 
 Antigravity is published as a binary the registry carries no checksum for, so it
@@ -491,20 +491,12 @@ The gateway will automatically:
 - Spawn the agent subprocess and bridge standard I/O.
 - Forward task assignments, messages, and permission requests in real-time.
 
-### Native mode (ACP v1)
+### ACP v1
 
-In native mode AgentRQ speaks ACP itself, and the gateway only connects the
-agent to it. Add `--acp-version 1` to the gateway's command, or pick **ACP v1**
-under Protocol when you start the gateway from the app:
-
-```bash
-npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
-```
-
-Native mode needs Node 22 or newer, and a server that has not turned it off
+The gateway needs Node 22 or newer, and a server that has not turned ACP v1 off
 with `AGENTRQ_ACP_V1_ENABLED=false` (it is on by default; see
-[Native ACP](docs/SETUP_PRODUCTION.md#native-acp)). Without the flag, the
-gateway works as before.
+[Native ACP](docs/SETUP_PRODUCTION.md#native-acp)). The gateway no longer talks
+to AgentRQ over MCP, so a server with ACP v1 off cannot run it.
 
 ## 🌌 Codex (via the ACP Gateway)
 
@@ -530,7 +522,7 @@ npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
 3. Start the bridge. Run it from the same directory as `.mcp.json`:
 
 ```bash
-npx -y @agentrq/acp-gateway@latest --agent codex-acp
+npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
 ```
 
 Sign out again with `--logout` in place of `--login`. The registry publishes

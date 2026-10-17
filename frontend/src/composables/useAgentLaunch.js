@@ -41,10 +41,8 @@ export const KINDS = [
     // gateway's own choice to make when nobody names one, so it is validated
     // when given but never required.
     needs: ['agent'],
-    // Blank is the classic gateway, as it was before native ACP, and the
-    // agent's own effort. Effort is sent only with a protocol: the classic
-    // gateway has no way to hand it on.
-    optional: ['model', 'acpVersion', 'effort'],
+    // Blank is the agent's own effort.
+    optional: ['model', 'effort'],
   },
 ]
 
@@ -53,17 +51,7 @@ export const KINDS = [
  * target so the form opens on something that works rather than on an empty
  * required field.
  */
-export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp', acpVersion: '', effort: '' }
-
-/**
- * How the gateway runs, as its Protocol slider's steps. Blank is the classic
- * gateway, which speaks ACP to the agent itself; "1" makes it a bridge, and
- * AgentRQ speaks ACP v1.
- */
-export const ACP_PROTOCOLS = [
-  { id: '', name: 'Classic', title: 'Classic — the gateway speaks ACP' },
-  { id: '1', name: 'ACP v1', title: 'ACP v1 — AgentRQ speaks ACP' },
-]
+export const GATEWAY_DEFAULTS = { model: 'gemini-3.8-flash-high', agent: 'antigravity-acp', effort: '' }
 
 /**
  * The two sliders Claude Code launches with, each a list of steps from left to
@@ -148,7 +136,7 @@ export function stepIndex(steps, value) {
 }
 
 /**
- * Where the gateway's last agent, model, protocol and effort are remembered.
+ * Where the gateway's last agent, model and effort are remembered.
  *
  * A per-browser convenience, not settings: never read by the server, and
  * nothing here is trusted for anything beyond pre-filling the two fields, the
@@ -157,7 +145,7 @@ export function stepIndex(steps, value) {
 const LAST_ACP_GATEWAY_KEY = 'agentrq:lastAcpGateway'
 
 /**
- * The agent, model, protocol and effort somebody last launched the gateway with, or null.
+ * The agent, model and effort somebody last launched the gateway with, or null.
  *
  * Wrapped in a try/catch rather than assumed available: private browsing, a
  * blocked site data setting, or a full quota all throw here, and the correct
@@ -172,7 +160,7 @@ export function lastAcpGatewayChoice() {
   }
 }
 
-/** A remembered gateway agent, model, protocol and effort, or null when there is no agent to restore. */
+/** A remembered gateway agent, model and effort, or null when there is no agent to restore. */
 function acpGatewayParams(parsed) {
   // The agent is the one field a launch cannot go without; a remembered
   // model is a bonus, not a condition for restoring the rest.
@@ -180,17 +168,16 @@ function acpGatewayParams(parsed) {
   return {
     agent: parsed.agent,
     model: parsed.model ?? '',
-    acpVersion: ACP_PROTOCOLS[stepIndex(ACP_PROTOCOLS, parsed.acpVersion)].id,
     effort: CLAUDE_CODE_EFFORTS[stepIndex(CLAUDE_CODE_EFFORTS, parsed.effort)].id,
   }
 }
 
-/** Remembers a gateway launch's agent, model, protocol and effort for the next one. */
-export function rememberAcpGatewayChoice({ agent, model, acpVersion, effort }) {
+/** Remembers a gateway launch's agent, model and effort for the next one. */
+export function rememberAcpGatewayChoice({ agent, model, effort }) {
   try {
     localStorage.setItem(
       LAST_ACP_GATEWAY_KEY,
-      JSON.stringify({ agent, model: model ?? '', acpVersion: acpVersion ?? '', effort: effort ?? '' })
+      JSON.stringify({ agent, model: model ?? '', effort: effort ?? '' })
     )
   } catch {
     // Nothing to fall back to here: the next launch just opens on
@@ -552,7 +539,6 @@ export function launchParamsPayload(kind, params, agents = []) {
     const value = (params?.[field] ?? '').trim()
     if (value) extra[field] = value
   }
-  if (kind === 'acp-gateway' && !extra.acpVersion) delete extra.effort
   if (allowsUnverified(kind, params, agents)) extra.allowUnverified = true
   return extra
 }

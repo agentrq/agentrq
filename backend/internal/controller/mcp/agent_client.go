@@ -16,26 +16,16 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// AgentIdentityNotificationMethod is the channel notification a gateway sends
-// to say which agent is behind it.
+// HandleAgentIdentity records which agent a native link says it is driving.
 //
-// A gateway's MCP client is the gateway, so without this a workspace can only
-// ever name the bridge. The agent named itself during its own ACP handshake and
-// this carries that across.
-const AgentIdentityNotificationMethod = "notifications/claude/channel/agent"
-
-// HandleAgentIdentity records which agent a gateway says it is driving.
+// Keyed by the link, deliberately, and *not* by the payload's session_id — the
+// trap agent_commands.go documents at length. The two are different
+// namespaces: the link is this server's connection to the gateway, while
+// session_id is the gateway's own ACP session with the agent behind it.
 //
-// Keyed by the MCP transport session, deliberately, and *not* by the payload's
-// session_id — the trap agent_commands.go documents at length. The two are
-// different namespaces: the transport session is this server's connection to
-// the gateway, while session_id is the gateway's own ACP session with the agent
-// behind it. Keying on the payload would file every identity under an ID the
-// session list never reports.
-//
-// A nameless payload is ignored rather than recorded. The name is the entire
-// point of this notification, and an empty one would replace a perfectly good
-// client name with nothing.
+// A nameless report is ignored rather than recorded. The name is the entire
+// point of it, and an empty one would replace a perfectly good name with
+// nothing.
 func (ps *WorkspaceServer) HandleAgentIdentity(ctx context.Context, sessionID string, p agentlink.IdentityReport) {
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
@@ -76,29 +66,22 @@ func (ps *WorkspaceServer) reportedAgent(sessionID string) *agentlink.ClientInfo
 // session order the server reports is at least stable between two calls — the
 // same reason pickAgentCommands iterates the live list rather than a map.
 //
-// A session that no longer holds a stream is passed over. Sessions linger after
-// their stream drops, so without this the workspace would keep naming a gateway
-// that left — beside an "agent offline" indicator when it was the only one, and
-// in place of a gateway that is still there when it was not.
+// An MCP session that no longer holds a stream is passed over. Sessions linger
+// after their stream drops, so without this the workspace would keep naming an
+// agent that left, beside an "agent offline" indicator.
 //
-// Native links come after every MCP session, and are named only by what they
-// reported: a link has no handshake of its own to fall back on.
+// An MCP session is named by its handshake. Native links come after every MCP
+// session, and are named only by what they reported: a link has no handshake
+// of its own to fall back on.
 func (ps *WorkspaceServer) AgentClient() *agentlink.ClientInfo {
 	if ps.mcpServer != nil {
 		for sess := range ps.mcpServer.Sessions() {
 			if !ps.isStreaming(sess.ID()) {
 				continue
 			}
-			// What a bridge says it is driving wins over what the bridge calls
-			// itself, because the question is which agent is attached.
-			if agent := ps.reportedAgent(sess.ID()); agent != nil {
-				return agent
+			if info := clientInfoFrom(sess.InitializeParams()); info != nil {
+				return info
 			}
-			info := clientInfoFrom(sess.InitializeParams())
-			if info == nil || isBridge(info.Name) {
-				continue
-			}
-			return info
 		}
 	}
 	for _, id := range ps.linkIDs() {
@@ -114,7 +97,7 @@ func (ps *WorkspaceServer) AgentClient() *agentlink.ClientInfo {
 //
 // The same precedence as AgentClient, but for the calling session only: a
 // status change belongs to whoever made it, not to whichever agent happens to
-// be listed first. A bridge that has not said what it drives names nobody.
+// be listed first.
 func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAgent {
 	if req == nil || req.Session == nil {
 		return entity.TaskAgent{}
@@ -123,14 +106,13 @@ func (ps *WorkspaceServer) callingAgent(req *mcp.CallToolRequest) entity.TaskAge
 }
 
 // sessionAgent names the agent behind one session and the model it last said
-// it was running: what the session reported first, else its client's own
-// name unless that is a bridge. info is nil for a native link, which has no
-// handshake.
+// it was running: what a native link reported, else an MCP client's own name.
+// info is nil for a native link, which has no handshake.
 func (ps *WorkspaceServer) sessionAgent(id string, info *agentlink.ClientInfo) entity.TaskAgent {
 	var agent entity.TaskAgent
 	if reported := ps.reportedAgent(id); reported != nil {
 		agent.Name = reported.Name
-	} else if info != nil && !isBridge(info.Name) {
+	} else if info != nil {
 		agent.Name = info.Name
 	}
 	if agent.Name == "" {
@@ -164,26 +146,6 @@ func (ps *WorkspaceServer) linkTaskAgentContext(ctx context.Context, linkID stri
 		return ctx
 	}
 	return entity.WithTaskAgent(ctx, ps.registerTaskAgent(ctx, agent))
-}
-
-// bridgeClients names the MCP clients that are a way through to an agent rather
-// than an agent themselves, keyed by the lowercased name from the handshake.
-//
-// Naming one of these answers the wrong question. "acp-gateway" tells a human
-// how their agent is plumbed in, not what it is, and it appears in the one
-// place the interface has to say which agent is working — so when a bridge has
-// not said what is behind it, the workspace says nothing rather than naming the
-// pipe. A client that is not a bridge is the agent, and is named.
-//
-// The same shape as stopCapableClients above, and for the same reason: the
-// handshake name is the only thing distinguishing these clients, and there is
-// exactly one of them today.
-var bridgeClients = map[string]bool{
-	"acp-gateway": true,
-}
-
-func isBridge(clientName string) bool {
-	return bridgeClients[strings.ToLower(strings.TrimSpace(clientName))]
 }
 
 // clientInfoFrom reads a client's identity out of the initialize handshake.

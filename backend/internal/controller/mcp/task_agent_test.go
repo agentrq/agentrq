@@ -37,28 +37,6 @@ func TestCallingAgent(t *testing.T) {
 		}
 	})
 
-	t.Run("names the agent behind a gateway, and its model", func(t *testing.T) {
-		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.HandleAgentIdentity(context.Background(), sessionID, agentlink.IdentityReport{Name: "gemini"})
-		ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
-		ps.agentModels[sessionID] = agentlink.ModelsSnapshot{
-			CurrentModel: "gemini-3-flash",
-			Models:       []agentlink.Model{{ID: "gemini-3-pro", Name: "Gemini 3 Pro"}, {ID: "gemini-3-flash", Name: " Gemini 3 Flash "}},
-		}
-		got := ps.callingAgent(toolCallOn(t, ps, sessionID))
-		if got != (entity.TaskAgent{Name: "gemini", Model: "Gemini 3 Flash"}) {
-			t.Errorf("callingAgent() = %+v, want gemini on Gemini 3 Flash", got)
-		}
-	})
-
-	t.Run("names nobody for a gateway that has not said which agent it drives", func(t *testing.T) {
-		ps, sessionID, _ := connectedIdentityServer(t, "acp-gateway")
-		ps.agentModels = map[string]agentlink.ModelsSnapshot{sessionID: {CurrentModel: "gemini-3-flash"}}
-		if got := ps.callingAgent(toolCallOn(t, ps, sessionID)); got != (entity.TaskAgent{}) {
-			t.Errorf("callingAgent() = %+v, want an empty agent", got)
-		}
-	})
-
 	t.Run("names nobody for a call without a session", func(t *testing.T) {
 		ps := &WorkspaceServer{}
 		if got := ps.callingAgent(nil); got != (entity.TaskAgent{}) {
@@ -118,16 +96,6 @@ func TestHandleUpdateTaskStatus_RecordsTheCallingAgent(t *testing.T) {
 		})
 		if asked.Name != "claude-code" || got != (entity.TaskAgent{Name: "claude-code", ID: 7}) {
 			t.Errorf("registered %+v and recorded %+v, want claude-code registered and recorded with ID 7", asked, got)
-		}
-	})
-
-	t.Run("registers nobody for a gateway that has not named its agent", func(t *testing.T) {
-		got := updateStatusAs(t, "acp-gateway", func(context.Context, entity.TaskAgent) entity.TaskAgent {
-			t.Error("a gateway that named no agent was registered")
-			return entity.TaskAgent{}
-		})
-		if got != (entity.TaskAgent{}) {
-			t.Errorf("recorded %+v, want an empty agent", got)
 		}
 	})
 

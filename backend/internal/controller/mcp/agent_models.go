@@ -16,26 +16,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
-// AgentModelsNotificationMethod is the channel notification a gateway sends to
-// say which models the agent behind it can switch between.
-//
-// It arrives whenever the agent's session config changes, so the newest one for
-// a session replaces the previous rather than adding to it.
-const AgentModelsNotificationMethod = "notifications/claude/channel/models"
-
-// AgentSetModelNotificationMethod is the notification this server sends to ask
-// a gateway to switch the agent behind it to a different model.
-//
-// The second server-to-agent command there is, after cancel. Like that one it
-// is this project's own invention rather than anything MCP defines, so a client
-// not written to listen for it drops it in silence — which is what CanSet
-// exists to detect before a picker is ever offered.
-//
-// snake_case in its payload, like every notification on this channel: the wire
-// format belongs to the gateways, and the REST surface's camelCase stops at the
-// handler.
-const AgentSetModelNotificationMethod = "notifications/claude/channel/set_model"
-
 // Reasons a model cannot be selected, so the handler can say which it was
 // rather than answering every refusal the same way.
 var (
@@ -315,22 +295,14 @@ func (ps *WorkspaceServer) SetAgentModel(ctx context.Context, modelID string) er
 	return nil
 }
 
-// setSessionModel reaches the session that offered the choice: a native link by
-// its own call, an MCP session by the set_model channel notification.
+// setSessionModel reaches the native link that offered the choice.
 //
 // acpSessionID is the agent's own ACP session, which is what it needs to write
-// the config option against; sessID is this server's transport to it. The two
-// are different namespaces and both are needed. The notification is
-// snake_case, the wire format every gateway already speaks on this channel.
+// the config option against; sessID is this server's link to it. The two are
+// different namespaces and both are needed.
 func (ps *WorkspaceServer) setSessionModel(ctx context.Context, sessID, acpSessionID, configID, modelID string) bool {
-	if link, ok := ps.agentLink(sessID); ok {
-		return link.SetModel(ctx, acpSessionID, configID, modelID)
-	}
-	return ps.notifySession(ctx, sessID, AgentSetModelNotificationMethod, map[string]any{
-		"session_id": acpSessionID,
-		"config_id":  configID,
-		"model_id":   modelID,
-	})
+	link, ok := ps.agentLink(sessID)
+	return ok && link.SetModel(ctx, acpSessionID, configID, modelID)
 }
 
 // pruneAgentModels drops the snapshots of sessions that have gone away.

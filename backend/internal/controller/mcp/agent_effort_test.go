@@ -12,6 +12,7 @@ import (
 	"github.com/mustafaturan/monoflake"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
+	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
 var settableEffort = agentlink.EffortReport{
@@ -168,15 +169,34 @@ func TestSetAgentEffort(t *testing.T) {
 	})
 }
 
-// Only a native link is ever asked for a reasoning level: there is no channel
-// method for it, so an MCP session that reported one is not reachable.
-func TestSetAgentEffortNeverReachesAnMCPSession(t *testing.T) {
-	ps, sessionID, _ := connectedModelsServer(t)
+// Only a native link is ever asked to change a setting: acp-gateway speaks
+// only native ACP, so a report keyed to an MCP session is not reachable.
+func TestAgentSettingsNeverReachAnMCPSession(t *testing.T) {
+	replies := 0
+	ps := permissionServer(t, &replies)
+	ps.bus = eventbus.New()
+	ps.agentModels = make(map[string]agentlink.ModelsSnapshot)
 	ps.agentEffort = make(map[string]agentlink.EffortSnapshot)
-	ps.HandleAgentEffort(context.Background(), sessionID, settableEffort)
+	ps.agentConcurrency = make(map[string]agentlink.ConcurrencySnapshot)
+	sessionID := connectedServer(t, ps, "claude-code")
+	streamFor(ps, sessionID)
 
+	ps.HandleAgentEffort(context.Background(), sessionID, settableEffort)
 	if err := ps.SetAgentEffort(context.Background(), "low"); !errors.Is(err, ErrEffortSetNotDelivered) {
-		t.Fatalf("err = %v, want ErrEffortSetNotDelivered", err)
+		t.Errorf("effort: err = %v, want ErrEffortSetNotDelivered", err)
+	}
+
+	ps.HandleAgentModels(context.Background(), sessionID, agentlink.ModelsReport{
+		ConfigID: "model", CurrentModel: "a", CanSet: true, Models: []agentlink.Model{{ID: "a"}, {ID: "b"}},
+	})
+	if err := ps.SetAgentModel(context.Background(), "b"); !errors.Is(err, ErrModelSetNotDelivered) {
+		t.Errorf("model: err = %v, want ErrModelSetNotDelivered", err)
+	}
+
+	limit, canSet := 4, true
+	ps.HandleAgentConcurrency(context.Background(), sessionID, agentlink.ConcurrencyReport{MaxConcurrency: &limit, CanSet: &canSet})
+	if err := ps.SetAgentConcurrency(context.Background(), 8); !errors.Is(err, ErrConcurrencySetNotDelivered) {
+		t.Errorf("concurrency: err = %v, want ErrConcurrencySetNotDelivered", err)
 	}
 }
 

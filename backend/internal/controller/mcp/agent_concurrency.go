@@ -15,31 +15,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 )
 
-// AgentConcurrencyNotificationMethod is the channel notification a gateway
-// sends to say how many tasks it will run at once, and what its queue is doing.
-//
-// It arrives on connect — before any task runs — on every reconnect, and again
-// after every set, so the newest one for a connection replaces the previous
-// rather than adding to it.
-const AgentConcurrencyNotificationMethod = "notifications/claude/channel/concurrency"
-
-// AgentSetConcurrencyNotificationMethod is the notification this server sends
-// to ask a gateway to change how many tasks it runs at once.
-//
-// The third server-to-agent command there is, after cancel and set_model. Like
-// those it is this project's own invention rather than anything MCP defines, so
-// a gateway not written to listen for it drops it in silence — which is what
-// CanSet exists to detect before a control is ever offered.
-//
-// camelCase in its payload, unlike every older notification on this channel.
-// Those are snake_case and each carries its fields twice, having gained a
-// second spelling after something was already reading the first; this pair was
-// born with one spelling and the gateway reads exactly that one. It
-// destructures `maxConcurrency` and nothing else, so any other spelling reads
-// as no value at all — and the gateway answers by reporting the limit it never
-// changed.
-const AgentSetConcurrencyNotificationMethod = "notifications/claude/channel/set_concurrency"
-
 // Reasons a concurrency limit cannot be changed, so the handler can say which
 // it was rather than answering every refusal the same way.
 var (
@@ -312,28 +287,10 @@ func (ps *WorkspaceServer) SetAgentConcurrency(ctx context.Context, limit int) e
 	return nil
 }
 
-// setSessionConcurrency reaches the session that offered the control: a native
-// link by its own call, an MCP session by the set_concurrency channel
-// notification.
+// setSessionConcurrency reaches the native link that offered the control.
 func (ps *WorkspaceServer) setSessionConcurrency(ctx context.Context, sessID string, limit int) bool {
-	if link, ok := ps.agentLink(sessID); ok {
-		return link.SetConcurrency(ctx, limit)
-	}
-	return ps.notifySession(ctx, sessID, AgentSetConcurrencyNotificationMethod, setConcurrencyParams(limit))
-}
-
-// setConcurrencyParams is the payload of a set_concurrency notification.
-//
-// camelCase, and only camelCase. The gateway destructures `maxConcurrency` and
-// nothing else, so any other spelling reads as no value at all — and the
-// gateway then answers by reporting the limit it had not changed, which from
-// the interface is indistinguishable from a control that does nothing.
-//
-// Its own function so that spelling can be pinned by a test without reaching
-// through a live session: this is a mistake that fails silently, and a silent
-// failure deserves an assertion that cannot be skipped.
-func setConcurrencyParams(limit int) map[string]any {
-	return map[string]any{"maxConcurrency": limit}
+	link, ok := ps.agentLink(sessID)
+	return ok && link.SetConcurrency(ctx, limit)
 }
 
 // pruneAgentConcurrency drops the snapshots of sessions that have gone away.

@@ -375,7 +375,7 @@ func TestPollOnceReconcilesEveryPendingTaskNotJustThoseBeforeAnOngoingOne(t *tes
 func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 	ps := pushServer(t)
 	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
-	sessID := connectedServer(t, ps, "acp-gateway")
+	sessID := connectedServer(t, ps, "claude-code")
 	defer streamFor(ps, sessID)()
 	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 4, CanSet: true}
 
@@ -393,7 +393,7 @@ func TestPollOnceOffersWhileTheAgentHasRoomForMoreTasks(t *testing.T) {
 func TestPollOnceOffersNothingWhenEverySlotIsBusy(t *testing.T) {
 	ps := pushServer(t)
 	ps.agentConcurrency = map[string]agentlink.ConcurrencySnapshot{}
-	sessID := connectedServer(t, ps, "acp-gateway")
+	sessID := connectedServer(t, ps, "claude-code")
 	defer streamFor(ps, sessID)()
 	ps.agentConcurrency[sessID] = agentlink.ConcurrencySnapshot{MaxConcurrency: 2, CanSet: true}
 
@@ -540,7 +540,7 @@ func TestPollOnceCarriesTheTaskAttachments(t *testing.T) {
 // here to prove the reflection into the SDK's private conn still works at all.
 func TestSendChannelNotificationReachesALiveSession(t *testing.T) {
 	ps := pushServer(t)
-	sessID := connectedServer(t, ps, "acp-gateway")
+	sessID := connectedServer(t, ps, "claude-code")
 	defer streamFor(ps, sessID)()
 
 	ps.SendChannelNotification(context.Background(), 7, "next task")

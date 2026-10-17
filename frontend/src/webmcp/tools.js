@@ -1019,7 +1019,7 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
         effort: str('The effort level for claude-code: low, medium, high, xhigh or max; blank for its default.'),
         autocompact: str('The auto-compact window for claude-code, 100k to 900k in whole hundreds such as 600k; blank for the default, 400k.'),
         agent: str('The agent, for acp-gateway.'),
-        acpVersion: str('For acp-gateway: 1 starts it in native ACP mode, where AgentRQ speaks ACP itself; blank for the classic gateway.'),
+        acpVersion: str('For acp-gateway: the ACP version AgentRQ speaks with the agent, 1 or 2; blank for 1.'),
         cols: int('Terminal width in columns.'),
         rows: int('Terminal height in rows.'),
       },

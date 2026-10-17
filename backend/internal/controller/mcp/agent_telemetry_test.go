@@ -363,47 +363,6 @@ func TestHandleAgentTelemetry_PayloadTaskIDIsHonoured(t *testing.T) {
 	}
 }
 
-// The SDK rejects this notification method, so it arrives as a raw body the
-// handler recognises and forwards here.
-func TestHandleCustomNotification_RoutesAgentTelemetry(t *testing.T) {
-	rec := newTelemetryRecorder(t)
-	body, _ := json.Marshal(map[string]any{
-		"method": AgentTelemetryNotificationMethod,
-		"params": map[string]any{
-			"task_id":    "",
-			"session_id": "sess-1",
-			"kind":       "thought",
-			"text":       "Reasoning from the wire.",
-			"data":       map[string]any{},
-		},
-	})
-
-	rec.ps.HandleCustomNotification(context.Background(), "sess-1", body)
-
-	if len(rec.posted) != 1 {
-		t.Fatalf("expected the notification to be relayed, got %d messages", len(rec.posted))
-	}
-	if rec.posted[0].text != "Reasoning from the wire." {
-		t.Errorf("relayed text = %q", rec.posted[0].text)
-	}
-}
-
-// A telemetry body the shared notification envelope accepts but the telemetry
-// payload does not is dropped rather than half-read.
-func TestHandleCustomNotification_MalformedAgentTelemetryIsDropped(t *testing.T) {
-	rec := newTelemetryRecorder(t)
-	// `kind` as a number: the permission envelope this shares a decode with
-	// ignores the field, so only the telemetry decode rejects it.
-	body := []byte(`{"method":"` + AgentTelemetryNotificationMethod +
-		`","params":{"session_id":"sess-1","kind":123,"text":"…"}}`)
-
-	rec.ps.HandleCustomNotification(context.Background(), "sess-1", body)
-
-	if len(rec.posted) != 0 {
-		t.Fatalf("expected nothing to be posted, got %d messages", len(rec.posted))
-	}
-}
-
 // Plans are keyed per plan; usage is keyed per task.
 func TestAgentTelemetryMessageKey(t *testing.T) {
 	if got, want := agentTelemetryMessageKey(42, agentTelemetryKindPlan, "plan-a"), "42:plan:plan-a"; got != want {

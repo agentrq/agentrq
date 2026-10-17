@@ -8,6 +8,6 @@
 // identity, telemetry, permission requests, questions).
 //
 // It imports no MCP package, so native ACP can use it without depending on the
-// MCP layer. The JSON tags are the classic gateway's channel wire format, which
-// the MCP side still decodes into these types; they go when that path does.
+// MCP layer. PermissionRequest's JSON tags are Claude Code's channel wire
+// format, which the MCP side decodes.
 package agentlink

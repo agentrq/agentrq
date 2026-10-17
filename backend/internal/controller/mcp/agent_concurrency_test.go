@@ -33,124 +33,11 @@ func connectedConcurrencyServer(t *testing.T) (*WorkspaceServer, string, chan []
 	ps := permissionServer(t, &replies)
 	ps.bus = eventbus.New()
 	ps.agentConcurrency = make(map[string]agentlink.ConcurrencySnapshot)
-	sessionID := connectedServer(t, ps, "acp-gateway")
-	streamFor(ps, sessionID)
+	sessionID := attachLink(ps, "acp1:concurrency").id
 
 	ch := ps.bus.Subscribe(ps.workspaceID, "")
 	t.Cleanup(func() { ps.bus.Unsubscribe(ps.workspaceID, "", ch) })
 	return ps, sessionID, ch
-}
-
-// The exact frame acp-gateway puts on the wire (its `sendConcurrencyNotification`),
-// so a rename on either side fails here rather than in production.
-//
-// camelCase throughout, unlike the snake_case siblings on this channel — and
-// unlike them it is not doubled, because this pair was born with one spelling.
-// taskId and sessionId are always empty: the limit belongs to the gateway
-// process, not to any task or session it holds.
-const gatewayConcurrencyFrame = `{
-  "jsonrpc": "2.0",
-  "method": "notifications/claude/channel/concurrency",
-  "params": {
-    "taskId": "", "sessionId": "",
-    "maxConcurrency": 4,
-    "active": 2,
-    "queued": 3,
-    "min": 1,
-    "max": 64,
-    "canSet": true
-  }
-}`
-
-func TestAgentConcurrencyParamsMatchesTheGatewayWireFormat(t *testing.T) {
-	var frame struct {
-		Method string                      `json:"method"`
-		Params agentlink.ConcurrencyReport `json:"params"`
-	}
-	if err := json.Unmarshal([]byte(gatewayConcurrencyFrame), &frame); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if frame.Method != AgentConcurrencyNotificationMethod {
-		t.Errorf("method = %q, want %q", frame.Method, AgentConcurrencyNotificationMethod)
-	}
-
-	p := frame.Params
-	if got := p.Limit(); got != 4 {
-		t.Errorf("limit() = %d, want 4", got)
-	}
-	if !p.OffersSet() {
-		t.Error("canSet() = false, want true")
-	}
-	if p.Active != 2 || p.Queued != 3 {
-		t.Errorf("active/queued = %d/%d, want 2/3", p.Active, p.Queued)
-	}
-	if p.Min == nil || *p.Min != 1 || p.Max == nil || *p.Max != 64 {
-		t.Errorf("min/max = %v/%v, want 1/64", p.Min, p.Max)
-	}
-}
-
-// Absent is not zero. A gateway that named no limit has said nothing, which is
-// a different thing from one that will run nothing — and `canSet` absent is the
-// rule that keeps a control off every gateway older than this feature.
-func TestAgentConcurrencyParamsTreatsAbsentAsUnsaid(t *testing.T) {
-	cases := []struct {
-		name      string
-		body      string
-		wantLimit int
-		wantSet   bool
-	}{
-		{"what the gateway sends", `{"maxConcurrency": 8, "canSet": true}`, 8, true},
-		{"a limit reported without permission to change it", `{"maxConcurrency": 8}`, 8, false},
-		{"permission with no limit behind it", `{"canSet": true}`, 0, true},
-		{"neither", `{"active": 1}`, 0, false},
-		{
-			// The one spelling the gateway does not write. Read as absent
-			// rather than quietly accepted: this notification was designed
-			// with a single spelling, and tolerating a second here is how the
-			// channel's older messages ended up carrying every field twice.
-			"the spelling this channel's older messages use",
-			`{"max_concurrency": 8, "can_set": true}`, 0, false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var p agentlink.ConcurrencyReport
-			if err := json.Unmarshal([]byte(tc.body), &p); err != nil {
-				t.Fatalf("unmarshal: %v", err)
-			}
-			if got := p.Limit(); got != tc.wantLimit {
-				t.Errorf("limit() = %d, want %d", got, tc.wantLimit)
-			}
-			if got := p.OffersSet(); got != tc.wantSet {
-				t.Errorf("canSet() = %v, want %v", got, tc.wantSet)
-			}
-		})
-	}
-}
-
-func TestHandleCustomNotificationRoutesConcurrency(t *testing.T) {
-	ps := &WorkspaceServer{
-		workspaceID:      100,
-		bus:              eventbus.New(),
-		agentConcurrency: make(map[string]agentlink.ConcurrencySnapshot),
-	}
-	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayConcurrencyFrame))
-
-	// Keyed by the MCP transport session — the namespace liveSessionIDs
-	// reports. The payload's session_id is empty on this notification anyway,
-	// which is precisely why it must not be used as a key.
-	got, ok := ps.agentConcurrency["transport-session"]
-	if !ok {
-		t.Fatalf("concurrency was not recorded; map = %+v", ps.agentConcurrency)
-	}
-	if _, wrong := ps.agentConcurrency[""]; wrong {
-		t.Error("keyed by the payload's empty session_id rather than the transport session")
-	}
-	if got.MaxConcurrency != 4 || got.Active != 2 || got.Queued != 3 || !got.CanSet {
-		t.Errorf("recorded = %+v", got)
-	}
 }
 
 func TestConcurrencySnapshotFrom(t *testing.T) {
@@ -272,7 +159,7 @@ func TestAgentConcurrencyIgnoresDepartedSessions(t *testing.T) {
 		t.Fatal("AgentConcurrency() = nil while the session is still streaming")
 	}
 
-	ps.removeStreamingSession(sessionID)
+	ps.DetachAgentLink(context.Background(), sessionID)
 	if got := ps.AgentConcurrency(); got != nil {
 		t.Errorf("AgentConcurrency() = %+v after the stream dropped, want nil", got)
 	}
@@ -630,31 +517,12 @@ func TestSetAgentConcurrency(t *testing.T) {
 	t.Run("stops offering the control once the session drops its stream", func(t *testing.T) {
 		ps, sessionID, _ := connectedConcurrencyServer(t)
 		ps.HandleAgentConcurrency(context.Background(), sessionID, settable)
-		ps.removeStreamingSession(sessionID)
+		ps.DetachAgentLink(context.Background(), sessionID)
 
 		if err := ps.SetAgentConcurrency(context.Background(), 8); !errors.Is(err, ErrConcurrencySetUnsupported) {
 			t.Errorf("err = %v, want ErrConcurrencySetUnsupported", err)
 		}
 	})
-}
-
-// The gateway destructures `maxConcurrency` and nothing else. Under any other
-// spelling the value reads as absent, and the gateway answers by reporting the
-// limit it did not change — from the interface, indistinguishable from a
-// control that does nothing. Worth its own test precisely because it is a
-// mistake that fails in silence.
-func TestSetConcurrencyParams(t *testing.T) {
-	params := setConcurrencyParams(8)
-
-	if got, ok := params["maxConcurrency"].(int); !ok || got != 8 {
-		t.Errorf("params = %+v, want maxConcurrency: 8", params)
-	}
-	if _, wrong := params["max_concurrency"]; wrong {
-		t.Errorf("params carry the snake_case spelling the gateway cannot read: %+v", params)
-	}
-	if len(params) != 1 {
-		t.Errorf("params = %+v, want nothing but the limit", params)
-	}
 }
 
 func TestPruneAgentConcurrency(t *testing.T) {

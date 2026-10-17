@@ -71,11 +71,11 @@ describe('useSpinUp: opening', () => {
     rememberLaunchChoice('p1', { machineId: 'm2', kind: 'acp-gateway', params: { agent: 'gemini', model: 'gemini-3-pro' } });
     const { spin } = setup();
     await spin.open(task, parent);
-    expect(spin.params.value).toEqual({ agent: 'gemini', model: 'gemini-3-pro', acpVersion: '', effort: '' });
+    expect(spin.params.value).toEqual({ agent: 'gemini', model: 'gemini-3-pro', effort: '' });
 
     await spin.run();
-    expect(lastLaunchParams('p1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro', acpVersion: '', effort: '' });
-    expect(lastLaunchParams('f1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro', acpVersion: '', effort: '' });
+    expect(lastLaunchParams('p1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro', effort: '' });
+    expect(lastLaunchParams('f1', 'acp-gateway')).toEqual({ agent: 'gemini', model: 'gemini-3-pro', effort: '' });
   });
 
   it('lists the registry\'s agents it is handed', async () => {
@@ -194,7 +194,7 @@ describe('useSpinUp: running', () => {
     const result = await spin.run();
     expect(deps.launchAgent).toHaveBeenCalledWith('f1', { machineId: 'm1', kind: 'acp-gateway', cols: 80, rows: 24, agent: 'gemini' });
     expect(result.session).toBe(null);
-    expect(JSON.parse(localStorage.getItem('agentrq:lastAcpGateway'))).toEqual({ agent: 'gemini', model: '', acpVersion: '', effort: '' });
+    expect(JSON.parse(localStorage.getItem('agentrq:lastAcpGateway'))).toEqual({ agent: 'gemini', model: '', effort: '' });
   });
 
   it('stops at a failed move, keeps the fork, says which step, and will not fork again', async () => {

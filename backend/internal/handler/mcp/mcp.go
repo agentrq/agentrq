@@ -35,13 +35,10 @@ import (
 // customNotificationMethods are the channel notifications the MCP SDK rejects
 // as unsupported methods, so they are recognised here and handed to the
 // workspace server directly instead of reaching its middleware.
+//
+// Only Claude Code's own: acp-gateway speaks native ACP v1, never MCP.
 var customNotificationMethods = []string{
 	"notifications/claude/channel/permission_request",
-	mcpctrl.AgentTelemetryNotificationMethod,
-	mcpctrl.AgentModelsNotificationMethod,
-	mcpctrl.AgentCommandsNotificationMethod,
-	mcpctrl.AgentIdentityNotificationMethod,
-	mcpctrl.AgentConcurrencyNotificationMethod,
 }
 
 // customNotificationMethod reports which of those a request body declares.

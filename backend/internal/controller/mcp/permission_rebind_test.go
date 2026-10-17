@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
@@ -275,15 +274,15 @@ func TestSendPermissionVerdict_DeliversToALiveSession(t *testing.T) {
 	}
 }
 
-// A stop request reaches whatever stop-capable agents are connected, without
-// needing to know which connection started the task.
+// A stop request reaches whatever native links are connected, without needing
+// to know which connection started the task.
 func TestSendCancelNotification_ReachesConnectedAgents(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+	ps.AttachAgentLink(&fakeLink{id: "acp1:a", hasTask: map[int64]bool{42: true}})
 
 	if !ps.SendCancelNotification(context.Background(), 42).Stopped {
-		t.Fatal("expected the stop to reach the connected gateway")
+		t.Fatal("expected the stop to reach the connected link")
 	}
 }
 
@@ -292,7 +291,7 @@ func TestSendCancelNotification_ReachesConnectedAgents(t *testing.T) {
 func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+	ps.AttachAgentLink(&fakeLink{id: "acp1:a", hasTask: map[int64]bool{42: true}})
 
 	var marked map[string]any
 	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
@@ -335,7 +334,7 @@ func TestSendCancelNotification_ClosesTheOutstandingApproval(t *testing.T) {
 func TestSendCancelNotification_SurvivesAToolCallThatWillNotClose(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+	ps.AttachAgentLink(&fakeLink{id: "acp1:a", hasTask: map[int64]bool{42: true}})
 
 	ps.updateMessageMetadata = func(ctx context.Context, taskID int64, messageID int64, metadata any) error {
 		return nil
@@ -461,67 +460,26 @@ func TestSupportsStop(t *testing.T) {
 		}
 	})
 
-	t.Run("the ACP gateway", func(t *testing.T) {
+	t.Run("a native link", func(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
-		streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+		ps.AttachAgentLink(&fakeLink{id: "acp1:a"})
 		if !ps.SupportsStop() {
-			t.Fatal("expected true for the ACP gateway")
+			t.Fatal("expected true for a native link")
 		}
 	})
 
-	t.Run("the ACP gateway once its stream has gone", func(t *testing.T) {
-		// A session outlives the stream that carried it, so without checking the
-		// stream the dashboard offered a Stop button with nothing behind it.
+	t.Run("a native link once it has detached", func(t *testing.T) {
 		replies := 0
 		ps := permissionServer(t, &replies)
-		drop := streamFor(ps, connectedServer(t, ps, "acp-gateway"))
+		ps.AttachAgentLink(&fakeLink{id: "acp1:a"})
 
-		drop()
+		ps.DetachAgentLink(context.Background(), "acp1:a")
 
 		if ps.SupportsStop() {
-			t.Fatal("expected false once nothing is streaming")
+			t.Fatal("expected false once nothing is attached")
 		}
 	})
-}
-
-// Client names arrive as the client chose to write them.
-func TestClientSupportsStop_NameHandling(t *testing.T) {
-	if clientSupportsStop(nil) {
-		t.Fatal("a missing session cannot be stopped")
-	}
-
-	cases := map[string]bool{
-		"acp-gateway":   true,
-		"ACP-Gateway":   true,
-		" acp-gateway ": true,
-		"claude-code":   false,
-		"":              false,
-	}
-	for name, want := range cases {
-		if got := stopCapableClients[strings.ToLower(strings.TrimSpace(name))]; got != want {
-			t.Errorf("client %q: expected stop support %v, got %v", name, want, got)
-		}
-	}
-}
-
-// A session that never completed the handshake carries no client name.
-func TestClientSupportsStop_NoClientInfo(t *testing.T) {
-	replies := 0
-	ps := permissionServer(t, &replies)
-	server := mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0"}, nil)
-	ps.mcpServer = server
-
-	serverTransport, _ := mcp.NewInMemoryTransports()
-	sess, err := server.Connect(context.Background(), serverTransport, nil)
-	if err != nil {
-		t.Fatalf("connect server: %v", err)
-	}
-	t.Cleanup(func() { _ = sess.Close() })
-
-	if clientSupportsStop(sess) {
-		t.Fatal("a session with no client info cannot be stopped")
-	}
 }
 
 // permissionRequestParams carries a permission_request payload in an SDK
@@ -536,7 +494,7 @@ func (p *permissionRequestParams) MarshalJSON() ([]byte, error) { return json.Ma
 func TestNotificationMiddlewareRelaysAPermissionRequest(t *testing.T) {
 	replies := 0
 	ps := permissionServer(t, &replies)
-	sessionID := connectedServer(t, ps, "acp-gateway")
+	sessionID := connectedServer(t, ps, "claude-code")
 	var sess *mcp.ServerSession
 	for s := range ps.mcpServer.Sessions() {
 		if s.ID() == sessionID {

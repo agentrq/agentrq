@@ -17,14 +17,6 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
-// AgentTelemetryNotificationMethod is the channel notification carrying the
-// parts of an agent's turn that are not its answer: the reasoning behind it,
-// the plan it is working to, and what the turn is costing.
-//
-// Named "agent telemetry" throughout to keep it apart from emitTelemetry, which
-// is this product's own usage analytics and has nothing to do with it.
-const AgentTelemetryNotificationMethod = "notifications/claude/channel/telemetry"
-
 // The kinds of telemetry a gateway sends.
 const (
 	agentTelemetryKindThought = "thought"

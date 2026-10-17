@@ -644,9 +644,7 @@ func (ps *WorkspaceServer) Handler() http.Handler {
 				ps.emitTelemetry(r.Context(), ActionMCPConnect, "connect", clientIdentityFromHTTPRequest(r))
 			}
 			defer func() {
-				if ps.removeStreamingSession(sessID) {
-					ps.agentSessionEnded(context.WithoutCancel(r.Context()), sessID)
-				}
+				ps.removeStreamingSession(sessID)
 				ps.agentConnections.Add(-1)
 				ps.refreshConnected()
 			}()
@@ -754,31 +752,6 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	zlog.Debug().Int("sessions", sessionCount).Msg("MCP notification sent")
 }
 
-// stopCapableClients names the MCP clients known to act on a stop request,
-// keyed by the lowercased client name from the initialize handshake.
-//
-// Stopping is not something MCP has: the notification below is this server's
-// own invention, and a client not written to listen for it drops it in
-// silence. Claude Code connected directly is such a client — there is no stop
-// in what it speaks — so a Stop button in front of it would report success and
-// change nothing. Only the ACP gateway acts on it, cancelling the turn of the
-// agent behind it.
-var stopCapableClients = map[string]bool{
-	"acp-gateway": true,
-}
-
-// clientSupportsStop reports whether a session's client acts on a stop request.
-func clientSupportsStop(sess *mcp.ServerSession) bool {
-	if sess == nil {
-		return false
-	}
-	p := sess.InitializeParams()
-	if p == nil || p.ClientInfo == nil {
-		return false
-	}
-	return stopCapableClients[strings.ToLower(strings.TrimSpace(p.ClientInfo.Name))]
-}
-
 // addStreamingSession records that a session has opened a stream.
 //
 // Counted rather than flagged: a client may hold more than one at a time, and
@@ -792,17 +765,15 @@ func (ps *WorkspaceServer) addStreamingSession(sessID string) {
 	ps.streamingMu.Unlock()
 }
 
-// removeStreamingSession records that one of a session's streams has closed,
-// and reports whether that was its last.
-func (ps *WorkspaceServer) removeStreamingSession(sessID string) bool {
+// removeStreamingSession records that one of a session's streams has closed.
+func (ps *WorkspaceServer) removeStreamingSession(sessID string) {
 	ps.streamingMu.Lock()
 	defer ps.streamingMu.Unlock()
 	if ps.streaming[sessID] <= 1 {
 		delete(ps.streaming, sessID)
-		return true
+		return
 	}
 	ps.streaming[sessID]--
-	return false
 }
 
 // isStreaming reports whether a session still has a stream open.
@@ -839,35 +810,13 @@ func (ps *WorkspaceServer) streamingSessionIDs() []string {
 	return append(ids, ps.linkIDs()...)
 }
 
-// stopCapableSessions lists the connected sessions worth sending a stop to.
-func (ps *WorkspaceServer) stopCapableSessions() []string {
-	if ps.mcpServer == nil {
-		return nil
-	}
-	var ids []string
-	for sess := range ps.mcpServer.Sessions() {
-		if clientSupportsStop(sess) && ps.isStreaming(sess.ID()) {
-			ids = append(ids, sess.ID())
-		}
-	}
-	return ids
-}
-
 // SupportsStop reports whether anything currently connected can be asked to
 // stop, so the dashboard only offers a Stop button that would do something.
 //
-// "Currently connected" has to mean the stream, not the session: a session
-// outlives the stream that carried it, so a workspace whose gateway had gone
-// went on offering a Stop button with nothing behind it.
-//
-// Only the advertised capability is gated. SendCancelNotification still tries
-// every stop-capable session it can find, because attempting delivery to a
-// session that might yet be reachable costs nothing, while refusing to try is
-// how a stop goes missing.
-//
-// Every native link can be stopped.
+// Only a native link can: MCP has no stop, so Claude Code connected directly
+// cannot be asked to end a turn.
 func (ps *WorkspaceServer) SupportsStop() bool {
-	return len(ps.stopCapableSessions()) > 0 || ps.hasAgentLinks()
+	return ps.hasAgentLinks()
 }
 
 // StopOutcome reports how much of a stop request could actually be carried out.
@@ -885,25 +834,15 @@ func (o StopOutcome) Acted() bool { return o.Stopped || o.ApprovalsDenied > 0 }
 // SendCancelNotification asks whatever is working on a task to stop, reporting
 // how far it got.
 //
-// Broadcast to every stop-capable session rather than addressed to one: the
-// agent may have reconnected since it started the task, and the point of a stop
-// button is that it works. An agent with nothing running for that task ignores
-// it.
+// Every native link is asked rather than one: the agent may have reconnected
+// since it started the task, and the point of a stop button is that it works.
+// Only a link that had the task counts.
 //
-// A client that cannot stop is passed over rather than told. That is not the
-// end of it: an agent whose turn cannot be ended can still be refused the
-// command it is standing at, which is the nearest thing to a stop it can be
-// given, so the approvals the task is waiting on are denied instead.
+// An agent whose turn cannot be ended can still be refused the command it is
+// standing at, which is the nearest thing to a stop it can be given, so the
+// approvals the task is waiting on are denied instead.
 func (ps *WorkspaceServer) SendCancelNotification(ctx context.Context, taskID int64) StopOutcome {
-	params := map[string]any{"task_id": monoflake.ID(taskID).String()}
-
 	sent := 0
-	for _, sessID := range ps.stopCapableSessions() {
-		if ps.notifySession(ctx, sessID, "notifications/claude/channel/cancel", params) {
-			sent++
-		}
-	}
-	// Every link is asked, and only a link that had the task counts.
 	for _, link := range ps.agentLinks() {
 		if link.CancelTask(ctx, taskID) {
 			sent++
@@ -2819,66 +2758,6 @@ func (ps *WorkspaceServer) HandleCustomNotification(ctx context.Context, session
 	}
 
 	zlog.Debug().Str("method", msg.Method).Str("session_id", sessionID).Msg("HandleCustomNotification received method")
-
-	if msg.Method == AgentTelemetryNotificationMethod {
-		var telemetry struct {
-			Params agentlink.TelemetryReport `json:"params"`
-		}
-		if err := json.Unmarshal(data, &telemetry); err != nil {
-			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent telemetry notification")
-			return
-		}
-		ps.HandleAgentTelemetry(ctx, sessionID, telemetry.Params)
-		return
-	}
-
-	if msg.Method == AgentModelsNotificationMethod {
-		var models struct {
-			Params agentlink.ModelsReport `json:"params"`
-		}
-		if err := json.Unmarshal(data, &models); err != nil {
-			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent models notification")
-			return
-		}
-		ps.HandleAgentModels(ctx, sessionID, models.Params)
-		return
-	}
-
-	if msg.Method == AgentIdentityNotificationMethod {
-		var identity struct {
-			Params agentlink.IdentityReport `json:"params"`
-		}
-		if err := json.Unmarshal(data, &identity); err != nil {
-			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent identity notification")
-			return
-		}
-		ps.HandleAgentIdentity(ctx, sessionID, identity.Params)
-		return
-	}
-
-	if msg.Method == AgentConcurrencyNotificationMethod {
-		var concurrency struct {
-			Params agentlink.ConcurrencyReport `json:"params"`
-		}
-		if err := json.Unmarshal(data, &concurrency); err != nil {
-			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent concurrency notification")
-			return
-		}
-		ps.HandleAgentConcurrency(ctx, sessionID, concurrency.Params)
-		return
-	}
-
-	if msg.Method == AgentCommandsNotificationMethod {
-		var commands struct {
-			Params agentlink.CommandsReport `json:"params"`
-		}
-		if err := json.Unmarshal(data, &commands); err != nil {
-			zlog.Error().Err(err).Str("session_id", sessionID).Msg("Failed to unmarshal agent commands notification")
-			return
-		}
-		ps.HandleAgentCommands(ctx, sessionID, commands.Params)
-		return
-	}
 
 	if msg.Method == "notifications/claude/channel/permission_request" {
 		ps.relayPermissionRequest(ctx, sessionID, msg.Params)

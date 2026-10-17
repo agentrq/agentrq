@@ -95,8 +95,8 @@ type (
 		// AllowUnverified is the person's consent to the acp-gateway installing
 		// an agent the registry publishes no checksum for.
 		AllowUnverified bool
-		// ACPVersion starts the acp-gateway in native ACP mode, "1" or "2";
-		// blank is the classic gateway.
+		// ACPVersion is the ACP version the acp-gateway runs, "1" or "2";
+		// blank is "1".
 		ACPVersion string
 		Cols       uint16
 		Rows       uint16
@@ -234,8 +234,12 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		!l.Machines.HasCapability(machineID, wire.CapabilityAutocompact) {
 		return nil, busy("update agentrqd on this machine to choose Claude Code's auto-compact window, or leave it at the default")
 	}
-	// Native ACP: an older agentrqd would drop the version and start the
-	// classic gateway while the panel said native.
+	// The gateway speaks only native ACP, so blank is v1. An older agentrqd
+	// would drop the version and start the gateway in the MCP mode this
+	// server no longer serves.
+	if rq.Kind == "acp-gateway" && rq.ACPVersion == "" {
+		rq.ACPVersion = "1"
+	}
 	if rq.ACPVersion != "" {
 		switch {
 		case rq.Kind != "acp-gateway":
@@ -243,7 +247,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		case rq.ACPVersion != "1" && rq.ACPVersion != "2":
 			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion must be 1 or 2")
 		case !l.Machines.HasCapability(machineID, wire.CapabilityACPVersion):
-			return nil, busy("update agentrqd on this machine to start an agent in native ACP mode")
+			return nil, busy("update agentrqd on this machine to start the ACP gateway")
 		case l.ACPEnabled == nil || !l.ACPEnabled(rq.ACPVersion):
 			return nil, busy("native ACP v" + rq.ACPVersion + " is turned off on this server")
 		}
@@ -406,14 +410,10 @@ func launchAction(kind, acpVersion string) (entity.Action, bool) {
 	case "claude-code":
 		return entity.ActionAgentLaunchClaudeCode, true
 	case "acp-gateway":
-		// A native launch is counted as native instead of classic.
-		switch acpVersion {
-		case "1":
-			return entity.ActionAgentLaunchACPNativeV1, true
-		case "2":
+		if acpVersion == "2" {
 			return entity.ActionAgentLaunchACPNativeV2, true
 		}
-		return entity.ActionAgentLaunchACPGateway, true
+		return entity.ActionAgentLaunchACPNativeV1, true
 	}
 	return 0, false
 }

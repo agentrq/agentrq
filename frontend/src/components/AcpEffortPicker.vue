@@ -5,7 +5,7 @@
 -->
 
 <!--
-  The effort a native ACP agent starts on, as one slider with Claude Code's
+  The effort an ACP agent starts on, as one slider with Claude Code's
   steps, so both launch forms offer the same levels the same way. It starts at
   Default, the blank step, which leaves the level to the agent; an agent that
   does not offer the chosen level starts on its own default too.

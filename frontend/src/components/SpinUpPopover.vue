@@ -18,7 +18,6 @@ import AcpAgentList from './AcpAgentList.vue'
 import UnverifiedAgentConsent from './UnverifiedAgentConsent.vue'
 import AgentKindPicker from './AgentKindPicker.vue'
 import ClaudeOptionsPicker from './ClaudeOptionsPicker.vue'
-import AcpProtocolPicker from './AcpProtocolPicker.vue'
 import AcpEffortPicker from './AcpEffortPicker.vue'
 import { terminalPath } from '../composables/useTerminalView'
 import { spinUpName } from '../composables/useSpinUp'
@@ -114,8 +113,7 @@ async function start() {
         </div>
       </div>
 
-      <AcpProtocolPicker v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" v-model="spin.params.value.acpVersion" />
-      <AcpEffortPicker v-if="spin.kind.value === 'acp-gateway' && spin.params.value.acpVersion" id-prefix="spin-up" v-model="spin.params.value.effort" />
+      <AcpEffortPicker v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" v-model="spin.params.value.effort" />
 
       <AcpAgentList v-if="spin.kind.value === 'acp-gateway'" id-prefix="spin-up" :agents="spin.acpAgents.value" :query="spin.params.value.agent ?? ''" @pick="spin.pickAcpAgent" />
       <UnverifiedAgentConsent v-if="spin.unverifiedAgent.value" v-model="spin.params.value.allowUnverified" id-prefix="spin-up" :agent="spin.params.value.agent" />

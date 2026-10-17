@@ -144,6 +144,14 @@ func launcher(caps ...string) (*Launcher, *fakeCrud, *conn) {
 	}, crud, c
 }
 
+// gatewayLauncher is a launcher on a machine and server that can run the
+// gateway, which always speaks native ACP.
+func gatewayLauncher(caps ...string) (*Launcher, *fakeCrud, *conn) {
+	l, crud, c := launcher(append(caps, wire.CapabilityACPVersion)...)
+	l.ACPEnabled = func(string) bool { return true }
+	return l, crud, c
+}
+
 func request(kind string) Request {
 	return Request{UserID: "user-1", WorkspaceID: workspace1, MachineID: machine5, Kind: kind}
 }
@@ -205,12 +213,12 @@ func TestLaunch_TheSupervisorGetsTheCoreServer(t *testing.T) {
 // The launch reached the machine; reporting a failed count as a failed launch
 // would be a lie the caller acts on.
 func TestLaunch_SucceedsWhenTheCountFails(t *testing.T) {
-	l, crud, _ := launcher()
+	l, crud, _ := gatewayLauncher()
 	crud.telemetryErr = errDatabaseDown
 	if _, err := l.Launch(context.Background(), request("acp-gateway")); err != nil {
 		t.Fatal(err)
 	}
-	if len(crud.counted) != 1 || crud.counted[0].Action != entity.ActionAgentLaunchACPGateway {
+	if len(crud.counted) != 1 || crud.counted[0].Action != entity.ActionAgentLaunchACPNativeV1 {
 		t.Errorf("counted %+v", crud.counted)
 	}
 }
@@ -266,7 +274,7 @@ func TestLaunch_ClaudeCodeCarriesItsAutocompactWindow(t *testing.T) {
 }
 
 func TestLaunch_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
-	l, _, c := launcher()
+	l, _, c := gatewayLauncher()
 	rq := request("acp-gateway")
 	rq.Agent, rq.AllowUnverified = "crow-cli", true
 	if _, err := l.Launch(context.Background(), rq); err != nil {
@@ -277,27 +285,27 @@ func TestLaunch_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T) {
 	}
 }
 
-// A native ACP launch reaches the daemon with its version, and is counted as
-// native rather than as a classic gateway.
+// A gateway launch reaches the daemon with its ACP version, blank being v1,
+// and is counted by that version.
 func TestLaunch_GatewayStartsInNativeACPMode(t *testing.T) {
 	for _, tc := range []struct {
 		version string
+		want    string
 		action  entity.Action
 	}{
-		{"1", entity.ActionAgentLaunchACPNativeV1},
-		{"2", entity.ActionAgentLaunchACPNativeV2},
-		{"", entity.ActionAgentLaunchACPGateway},
+		{"1", "1", entity.ActionAgentLaunchACPNativeV1},
+		{"2", "2", entity.ActionAgentLaunchACPNativeV2},
+		{"", "1", entity.ActionAgentLaunchACPNativeV1},
 	} {
 		t.Run("acpVersion "+tc.version, func(t *testing.T) {
-			l, crud, c := launcher(wire.CapabilityACPVersion)
-			l.ACPEnabled = func(string) bool { return true }
+			l, crud, c := gatewayLauncher()
 			rq := request("acp-gateway")
 			rq.Agent, rq.ACPVersion = "codex-acp", tc.version
 			if _, err := l.Launch(context.Background(), rq); err != nil {
 				t.Fatal(err)
 			}
-			if start := c.start(t); start.ACPVersion != tc.version {
-				t.Errorf("the daemon was sent acpVersion %q, want %q", start.ACPVersion, tc.version)
+			if start := c.start(t); start.ACPVersion != tc.want {
+				t.Errorf("the daemon was sent acpVersion %q, want %q", start.ACPVersion, tc.want)
 			}
 			if len(crud.counted) != 1 || crud.counted[0].Action != tc.action {
 				t.Errorf("counted %+v, want one %s", crud.counted, tc.action)
@@ -323,8 +331,12 @@ func TestLaunch_NativeACPRefusals(t *testing.T) {
 		{"an acpVersion other than 1 or 2 is refused", "acp-gateway", "3", []string{wire.CapabilityACPVersion}, on,
 			entity.ErrLaunchInvalid, "acpVersion must be 1 or 2"},
 		{"a daemon without the capability gets the update message", "acp-gateway", "1", nil, on,
-			entity.ErrLaunchBusy, "update agentrqd on this machine to start an agent in native ACP mode"},
+			entity.ErrLaunchBusy, "update agentrqd on this machine to start the ACP gateway"},
+		{"a blank version needs the capability too", "acp-gateway", "", nil, on,
+			entity.ErrLaunchBusy, "update agentrqd on this machine to start the ACP gateway"},
 		{"a switched-off version is refused", "acp-gateway", "1", []string{wire.CapabilityACPVersion},
+			func(string) bool { return false }, entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
+		{"a blank version is refused when v1 is off", "acp-gateway", "", []string{wire.CapabilityACPVersion},
 			func(string) bool { return false }, entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
 		{"a server that offers no native ACP refuses it", "acp-gateway", "2", []string{wire.CapabilityACPVersion}, nil,
 			entity.ErrLaunchBusy, "native ACP v2 is turned off on this server"},

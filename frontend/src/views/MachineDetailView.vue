@@ -44,7 +44,6 @@ import AcpAgentList from '../components/AcpAgentList.vue'
 import UnverifiedAgentConsent from '../components/UnverifiedAgentConsent.vue'
 import AgentKindPicker from '../components/AgentKindPicker.vue'
 import ClaudeOptionsPicker from '../components/ClaudeOptionsPicker.vue'
-import AcpProtocolPicker from '../components/AcpProtocolPicker.vue'
 import AcpEffortPicker from '../components/AcpEffortPicker.vue'
 import { useAgentLaunch } from '../composables/useAgentLaunch'
 import { terminalPath } from '../composables/useTerminalView'
@@ -562,8 +561,7 @@ async function stopSession(id) {
                 <option v-for="m in launchAcpModels" :key="m.id" :value="m.id">{{ m.name }}</option>
               </datalist>
             </div>
-          <AcpProtocolPicker class="md:col-span-2" id-prefix="launch" v-model="launchParams.acpVersion" />
-          <AcpEffortPicker v-if="launchParams.acpVersion" class="md:col-span-2" id-prefix="launch" v-model="launchParams.effort" />
+          <AcpEffortPicker class="md:col-span-2" id-prefix="launch" v-model="launchParams.effort" />
           <!-- The list only ever suggests: any other id typed in the field is
                still sent, so an agent the list does not know can still run. -->
           <AcpAgentList v-if="launchKind === 'acp-gateway'" id-prefix="launch" :agents="launchAcpAgents" :query="launchParams.agent" @pick="pickLaunchAcpAgent" />

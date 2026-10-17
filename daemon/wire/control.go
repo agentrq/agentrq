@@ -300,8 +300,8 @@ type StartSession struct {
 	// publishes no checksum for ([AcpAgent.Unverified]), which the person
 	// launching it confirmed.
 	AllowUnverified bool `json:"allowUnverified,omitempty"`
-	// ACPVersion starts acp-gateway in native mode: "1" or "2". Blank is the
-	// classic gateway. Needs [CapabilityACPVersion].
+	// ACPVersion is the ACP version acp-gateway runs: "1" or "2", blank for
+	// "1". Needs [CapabilityACPVersion].
 	ACPVersion string `json:"acpVersion,omitempty"`
 
 	// Fork runs this session in a folder of its own, made from Dir, for a

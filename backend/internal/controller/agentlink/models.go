@@ -15,31 +15,16 @@ type Model struct {
 	Group       string `json:"group,omitempty"`
 }
 
-// ModelsReport is the payload of a models notification.
-//
-// snake_case, unlike the REST surface: this is the wire format the gateways
-// already send (acp-gateway's `sendModelsToWorkspace`), and renaming the fields
-// here would break every gateway in the field to satisfy a convention that
-// governs the HTTP API rather than this channel.
+// ModelsReport is the models a session reports it can switch between.
 type ModelsReport struct {
-	TaskID       string  `json:"task_id"`
-	SessionID    string  `json:"session_id"`
-	ConfigID     string  `json:"config_id"`
-	CurrentModel string  `json:"current_model"`
-	Models       []Model `json:"models"`
-	// CanSet is the gateway saying it will act on a set_model notification.
-	//
-	// Absent means no, which is what makes this safe to add: every gateway
-	// already in the field reports its models and none of them can be told to
-	// change one, so reading silence as "yes" would offer a picker that does
-	// nothing on every deployment that exists today.
-	//
-	// It has to come from the gateway rather than from a list of client names
-	// here, because the question is about the gateway's *version*, and the
-	// handshake name — "acp-gateway" either way — cannot tell two versions
-	// apart. stopCapableClients can be a name list precisely because stopping
-	// has been there since that client's first release.
-	CanSet bool `json:"can_set,omitempty"`
+	TaskID       string
+	SessionID    string
+	ConfigID     string
+	CurrentModel string
+	Models       []Model
+	// CanSet is the agent saying it will act on SetModel. Absent means no, so
+	// a picker is never offered that would do nothing.
+	CanSet bool
 }
 
 // ModelsSnapshot is what one connected session last reported.

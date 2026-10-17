@@ -15,12 +15,12 @@ type Effort struct {
 // agent's ACP config option with category "thought_level". An empty Efforts
 // withdraws the offer, which is what a switch to a model without levels does.
 type EffortReport struct {
-	TaskID        string   `json:"taskId"`
-	SessionID     string   `json:"sessionId"`
-	ConfigID      string   `json:"configId"`
-	CurrentEffort string   `json:"currentEffort"`
-	Efforts       []Effort `json:"efforts"`
-	CanSet        bool     `json:"canSet,omitempty"`
+	TaskID        string
+	SessionID     string
+	ConfigID      string
+	CurrentEffort string
+	Efforts       []Effort
+	CanSet        bool
 }
 
 // EffortSnapshot is what one connected session last reported.

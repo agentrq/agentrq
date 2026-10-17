@@ -8,8 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+)
 
-	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+// permissionRequest is the one channel notification still routed here, and
+// retiredModels one acp-gateway sent over MCP before it spoke only native ACP.
+const (
+	permissionRequest = "notifications/claude/channel/permission_request"
+	retiredModels     = "notifications/claude/channel/models"
 )
 
 // The bug this file guards against: the router used to decide by scanning the
@@ -59,18 +64,33 @@ func TestCustomNotificationMethod_IgnoresTheNameInsideAToolCall(t *testing.T) {
 
 func TestCustomNotificationMethod_RoutesByTheMethodItDeclares(t *testing.T) {
 	// A real notification whose payload happens to name a different one. It
-	// belongs to the method it declares, not to whichever name appears first
-	// in the allowlist.
+	// belongs to the method it declares, not to whichever name appears in it.
 	body := fmt.Appendf(nil,
-		`{"jsonrpc":"2.0","method":%q,"params":{"note":%q}}`,
-		mcpctrl.AgentTelemetryNotificationMethod, mcpctrl.AgentModelsNotificationMethod)
+		`{"jsonrpc":"2.0","method":%q,"params":{"note":%q}}`, permissionRequest, retiredModels)
 
 	got, ok := customNotificationMethod(body)
 	if !ok {
-		t.Fatal("a genuine telemetry notification was not recognised")
+		t.Fatal("a genuine permission_request notification was not recognised")
 	}
-	if got != mcpctrl.AgentTelemetryNotificationMethod {
-		t.Errorf("routed as %q, want the declared %q", got, mcpctrl.AgentTelemetryNotificationMethod)
+	if got != permissionRequest {
+		t.Errorf("routed as %q, want the declared %q", got, permissionRequest)
+	}
+}
+
+func TestCustomNotificationMethod_LeavesTheGatewaysOldMethodsToTheSDK(t *testing.T) {
+	// acp-gateway reports these over native ACP v1 now. Over MCP they are
+	// unknown methods, and the SDK says so.
+	for _, method := range []string{
+		"notifications/claude/channel/telemetry",
+		"notifications/claude/channel/models",
+		"notifications/claude/channel/commands",
+		"notifications/claude/channel/agent",
+		"notifications/claude/channel/concurrency",
+	} {
+		body := fmt.Appendf(nil, `{"jsonrpc":"2.0","method":%q,"params":{}}`, method)
+		if got, ok := customNotificationMethod(body); ok {
+			t.Errorf("%s was intercepted as %q; it should reach the SDK handler", method, got)
+		}
 	}
 }
 
@@ -87,10 +107,10 @@ func TestCustomNotificationMethod_FallsThroughToTheSDK(t *testing.T) {
 		{"a method the SDK owns", `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`},
 		{"an unrelated notification", `{"jsonrpc":"2.0","method":"notifications/initialized"}`},
 		{"malformed JSON", `{"jsonrpc":"2.0","method":`},
-		{"a batch array", `[{"jsonrpc":"2.0","method":"` + mcpctrl.AgentModelsNotificationMethod + `"}]`},
+		{"a batch array", `[{"jsonrpc":"2.0","method":"` + permissionRequest + `"}]`},
 		{"an empty body", ``},
-		{"JSON that is not an object", `"` + mcpctrl.AgentModelsNotificationMethod + `"`},
-		{"a method that only starts the same way", `{"jsonrpc":"2.0","method":"` + mcpctrl.AgentModelsNotificationMethod + `/extra"}`},
+		{"JSON that is not an object", `"` + permissionRequest + `"`},
+		{"a method that only starts the same way", `{"jsonrpc":"2.0","method":"` + permissionRequest + `/extra"}`},
 	}
 
 	for _, tc := range cases {

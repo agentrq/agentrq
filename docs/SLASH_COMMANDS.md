@@ -64,6 +64,5 @@ prompt.
   session, which starts with its first task.
 - **Check what you are connected through.** The menu needs an ACP agent behind
   the gateway; see the gateway's README for which agents those are.
-- **Check the gateway's version.** Forwarding commands was added to
-  `@agentrq/acp-gateway` after 0.2.12; an older gateway never sends them, and
-  everything else keeps working as before.
+- **Check the gateway runs in ACP v1.** It reports commands over native ACP,
+  so a gateway started by hand needs `--acp-version 1`.

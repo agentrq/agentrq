@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"reflect"
 	"testing"
 	"time"
 
@@ -46,74 +45,6 @@ func newCommandsServer() *WorkspaceServer {
 		workspaceID:   100,
 		bus:           eventbus.New(),
 		agentCommands: make(map[string]agentlink.CommandsSnapshot),
-	}
-}
-
-// The exact frame acp-gateway puts on the wire (src/acpClient.ts), so a rename
-// on either side fails here rather than in production.
-const gatewayCommandsFrame = `{
-  "jsonrpc": "2.0",
-  "method": "notifications/claude/channel/commands",
-  "params": {
-    "task_id": "0iF1U1qQwS1",
-    "session_id": "01a07404-01a7-7033-a58f-47b119036378",
-    "commands": [
-      {"name": "web", "description": "Search the web for information", "hint": "query to search for"},
-      {"name": "compact"}
-    ]
-  }
-}`
-
-func TestAgentCommandsParamsMatchesTheGatewayWireFormat(t *testing.T) {
-	var frame struct {
-		Method string                   `json:"method"`
-		Params agentlink.CommandsReport `json:"params"`
-	}
-	if err := json.Unmarshal([]byte(gatewayCommandsFrame), &frame); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	if frame.Method != AgentCommandsNotificationMethod {
-		t.Errorf("method = %q, want %q", frame.Method, AgentCommandsNotificationMethod)
-	}
-
-	p := frame.Params
-	if p.TaskID != "0iF1U1qQwS1" {
-		t.Errorf("task_id = %q", p.TaskID)
-	}
-	if p.SessionID != "01a07404-01a7-7033-a58f-47b119036378" {
-		t.Errorf("session_id = %q", p.SessionID)
-	}
-	if len(p.Commands) != 2 {
-		t.Fatalf("commands = %d, want 2", len(p.Commands))
-	}
-	want := agentlink.Command{Name: "web", Description: "Search the web for information", Hint: "query to search for"}
-	if !reflect.DeepEqual(p.Commands[0], want) {
-		t.Errorf("commands[0] = %+v, want %+v", p.Commands[0], want)
-	}
-	if p.Commands[1].Description != "" || p.Commands[1].Hint != "" {
-		t.Errorf("optional fields should stay zero when absent: %+v", p.Commands[1])
-	}
-}
-
-func TestHandleCustomNotificationRoutesCommands(t *testing.T) {
-	ps := newCommandsServer()
-	ps.HandleCustomNotification(context.Background(), "transport-session", []byte(gatewayCommandsFrame))
-
-	// Keyed by the MCP transport session — the namespace liveSessionIDs
-	// reports — and not by the ACP session the payload names.
-	got, ok := ps.agentCommands["transport-session"]
-	if !ok {
-		t.Fatalf("commands were not recorded; map = %+v", ps.agentCommands)
-	}
-	if _, wrong := ps.agentCommands["01a07404-01a7-7033-a58f-47b119036378"]; wrong {
-		t.Error("keyed by the payload's ACP session, which liveSessionIDs never reports")
-	}
-	if len(got.Commands) != 2 || got.Commands[0].Name != "web" {
-		t.Errorf("recorded = %+v", got)
-	}
-	if got.SessionID != "01a07404-01a7-7033-a58f-47b119036378" {
-		t.Errorf("the agent's session should be kept on the snapshot, got %q", got.SessionID)
 	}
 }
 

@@ -39,6 +39,13 @@ type fakeLink struct {
 	limits      []int
 }
 
+// attachLink attaches a new fakeLink to ps under id.
+func attachLink(ps *WorkspaceServer, id string) *fakeLink {
+	l := &fakeLink{id: id}
+	ps.AttachAgentLink(l)
+	return l
+}
+
 func (l *fakeLink) ID() string { return l.id }
 
 func (l *fakeLink) DeliverTask(_ context.Context, taskID int64, content string) {
