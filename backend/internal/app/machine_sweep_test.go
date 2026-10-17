@@ -13,13 +13,16 @@ import (
 	"time"
 )
 
-// fakeMachineSweeper answers every sweep with n and err, and counts the sweeps.
+// fakeMachineSweeper answers every stale sweep with n and err, and every
+// finished sweep with finished and finishedErr, and counts the sweeps.
 type fakeMachineSweeper struct {
-	mu    sync.Mutex
-	n     int64
-	err   error
-	calls int
-	swept chan struct{}
+	mu          sync.Mutex
+	n           int64
+	err         error
+	finished    int64
+	finishedErr error
+	calls       int
+	swept       chan struct{}
 }
 
 func (f *fakeMachineSweeper) DeleteStaleSessions(context.Context) (int64, error) {
@@ -35,6 +38,10 @@ func (f *fakeMachineSweeper) DeleteStaleSessions(context.Context) (int64, error)
 	return f.n, f.err
 }
 
+func (f *fakeMachineSweeper) DeleteFinishedSessions(context.Context) (int64, error) {
+	return f.finished, f.finishedErr
+}
+
 func TestSweepMachines(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -44,6 +51,9 @@ func TestSweepMachines(t *testing.T) {
 		{"a sweep that ended sessions says how many", &fakeMachineSweeper{n: 2}, `"deleted":2,"message":"machines: ended the sessions of stale machines"`},
 		{"a sweep that failed says so", &fakeMachineSweeper{err: errors.New("database unavailable")}, `"error":"database unavailable"`},
 		{"a sweep that found nothing says nothing", &fakeMachineSweeper{}, ""},
+		{"a sweep that removed finished sessions says how many", &fakeMachineSweeper{finished: 3}, `"deleted":3,"message":"machines: removed finished sessions"`},
+		{"a failed finished sweep says so", &fakeMachineSweeper{finishedErr: errors.New("database unavailable")}, `"message":"machines: removing finished sessions failed; retried at the next sweep"`},
+		{"finished sessions are removed even when the stale sweep failed", &fakeMachineSweeper{err: errors.New("database unavailable"), finished: 1}, `"deleted":1,"message":"machines: removed finished sessions"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := captureLog(t)

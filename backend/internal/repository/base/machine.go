@@ -355,6 +355,19 @@ func (r *repository) DeleteFinishedSession(ctx context.Context, id int64) error 
 		Delete(&model.Session{}).Error
 }
 
+// DeleteFinishedSessions removes every session that has ended, and says how
+// many it removed.
+//
+// A session is deleted as it ends, but only on a best-effort basis, so this
+// catches the rows whose delete failed, and those written before sessions
+// were deleted at all.
+func (r *repository) DeleteFinishedSessions(ctx context.Context) (int64, error) {
+	res := r.conn(ctx).
+		Where("status IN ?", []string{"exited", "killed", "failed"}).
+		Delete(&model.Session{})
+	return res.RowsAffected, res.Error
+}
+
 // ReconcileSessions ends the sessions a machine is no longer running.
 //
 // The daemon says what it is supervising; anything this machine still has

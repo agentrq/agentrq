@@ -12,12 +12,14 @@ import (
 )
 
 // machineSweepInterval is how often the agents of machines away too long are
-// ended. A session outlives the threshold by at most this much.
+// ended, and finished sessions still stored are removed. A session outlives
+// the threshold by at most this much.
 const machineSweepInterval = 5 * time.Minute
 
 // machineSweeper is the part of the crud controller the sweep runs.
 type machineSweeper interface {
 	DeleteStaleSessions(ctx context.Context) (int64, error)
+	DeleteFinishedSessions(ctx context.Context) (int64, error)
 }
 
 // startMachineSweep ends the sessions of stale machines every interval until
@@ -38,12 +40,14 @@ func startMachineSweep(ctx context.Context, m machineSweeper, every time.Duratio
 }
 
 func sweepMachines(ctx context.Context, m machineSweeper) {
-	n, err := m.DeleteStaleSessions(ctx)
-	if err != nil {
+	if n, err := m.DeleteStaleSessions(ctx); err != nil {
 		zlog.Error().Err(err).Msg("machines: ending the sessions of stale machines failed; retried at the next sweep")
-		return
-	}
-	if n > 0 {
+	} else if n > 0 {
 		zlog.Info().Int64("deleted", n).Msg("machines: ended the sessions of stale machines")
+	}
+	if n, err := m.DeleteFinishedSessions(ctx); err != nil {
+		zlog.Error().Err(err).Msg("machines: removing finished sessions failed; retried at the next sweep")
+	} else if n > 0 {
+		zlog.Info().Int64("deleted", n).Msg("machines: removed finished sessions")
 	}
 }

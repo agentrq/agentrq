@@ -9,8 +9,6 @@ import (
 
 	zlog "github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-
-	"github.com/agentrq/agentrq/backend/internal/data/model"
 )
 
 // migrationLockKey is the Postgres advisory lock every instance holds while it
@@ -43,8 +41,7 @@ func withMigrationLock(db *gorm.DB, migrate func(conn *gorm.DB) error) error {
 	})
 }
 
-// migrateSchema brings the schema up to date with the models, and clears what
-// earlier releases left behind.
+// migrateSchema brings the schema up to date with the models.
 func migrateSchema(conn *gorm.DB) error {
 	// Drop old single-column unique index on push_subscriptions.endpoint — replaced
 	// by composite uniqueIndex(endpoint, workspace_id) to allow one subscription per
@@ -66,20 +63,5 @@ func migrateSchema(conn *gorm.DB) error {
 	// and covers every query the task_id index served.
 	_ = conn.Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
 
-	if err := conn.AutoMigrate(migratedModels()...); err != nil {
-		return err
-	}
-
-	// Sessions that have finished are removed as they finish, but rows written
-	// before that was true are still here — and they are what turns a machine
-	// page into a list of everything that has ever run on it. A session row is
-	// operational state, "what is running here", so a finished one has no
-	// reader; the record of what happened is the audit log.
-	//
-	// Safe to repeat, and it only ever matches rows whose process is over.
-	_ = conn.
-		Where("status IN ?", []string{"exited", "killed", "failed"}).
-		Delete(&model.Session{}).Error
-
-	return nil
+	return conn.AutoMigrate(migratedModels()...)
 }

@@ -188,6 +188,17 @@ func TestReconcileSessionsRefusesAnEmptyMachine(t *testing.T) {
 	}
 }
 
+// Finished sessions still stored are removed, and the count is passed on.
+func TestDeleteFinishedSessions(t *testing.T) {
+	env := newTestController(t)
+	env.repo.EXPECT().DeleteFinishedSessions(gomock.Any()).Return(int64(3), nil)
+
+	n, err := env.controller.DeleteFinishedSessions(t.Context())
+	if err != nil || n != 3 {
+		t.Errorf("DeleteFinishedSessions = %d, %v; want 3, nil", n, err)
+	}
+}
+
 // A machine away longer than the threshold loses its live sessions.
 func TestDeleteStaleSessions(t *testing.T) {
 	env := newTestController(t)

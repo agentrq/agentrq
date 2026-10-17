@@ -77,6 +77,44 @@ func TestDeleteStaleSessionsDatabaseUnavailable(t *testing.T) {
 	}
 }
 
+// Every ended session goes, whatever its machine; a live one stays.
+func TestDeleteFinishedSessions(t *testing.T) {
+	db := forkFolderDB(t)
+	repo := New(&mockDB{db: db})
+	for _, s := range []model.Session{
+		{ID: 10, MachineID: 1, UserID: memUserID, Status: "running"},
+		{ID: 11, MachineID: 1, UserID: memUserID, Status: "starting"},
+		{ID: 12, MachineID: 1, UserID: memUserID, Status: "exited"},
+		{ID: 13, MachineID: 2, UserID: memUserID, Status: "killed"},
+		{ID: 14, MachineID: 3, UserID: memOtherUserID, Status: "failed"},
+	} {
+		if err := db.Create(&s).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := repo.DeleteFinishedSessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Errorf("deleted %d sessions, want 3", n)
+	}
+	if got, want := sessionIDs(t, db), []int64{10, 11}; !reflect.DeepEqual(got, want) {
+		t.Errorf("sessions left = %v, want %v", got, want)
+	}
+}
+
+func TestDeleteFinishedSessionsDatabaseUnavailable(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(&mockDB{db: db}).DeleteFinishedSessions(context.Background()); err == nil {
+		t.Error("no sessions table, and no error")
+	}
+}
+
 // Deleting a machine deletes its sessions, so none is left to block a merge,
 // and leaves another machine's alone.
 func TestDeleteMachineDeletesItsSessions(t *testing.T) {

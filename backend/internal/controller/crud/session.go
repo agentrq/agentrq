@@ -26,6 +26,7 @@ type SessionController interface {
 	ListSessions(ctx context.Context, req entity.ListSessionsRequest) (*entity.ListSessionsResponse, error)
 	ReconcileSessions(ctx context.Context, req entity.ReconcileSessionsRequest) error
 	DeleteStaleSessions(ctx context.Context) (int64, error)
+	DeleteFinishedSessions(ctx context.Context) (int64, error)
 	ActiveSessionForWorkspace(ctx context.Context, req entity.ActiveSessionRequest) (*entity.SessionView, error)
 	ForkFolderMachines(ctx context.Context, req entity.ActiveSessionRequest) ([]string, error)
 	RecordTerminalView(ctx context.Context, req entity.RecordTerminalViewRequest)
@@ -309,6 +310,12 @@ func (c *controller) ReconcileSessions(ctx context.Context, req entity.Reconcile
 // merged and launched again. The machines stay enrolled.
 func (c *controller) DeleteStaleSessions(ctx context.Context) (int64, error) {
 	return c.repository.DeleteStaleSessions(ctx, time.Now().Add(-machinerules.StaleThreshold))
+}
+
+// DeleteFinishedSessions removes the sessions of every account that have
+// ended but are still stored.
+func (c *controller) DeleteFinishedSessions(ctx context.Context) (int64, error) {
+	return c.repository.DeleteFinishedSessions(ctx)
 }
 
 // RecordTerminalView counts somebody opening or closing a session's terminal.
