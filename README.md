@@ -4,9 +4,6 @@
   <a href="README.zh-CN.md">简体中文</a>
   <br />
   <br />
-  <a href="https://discord.gg/xFSMaEA2b2">
-    <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" />
-  </a>
   <a href="https://chromewebstore.google.com/detail/agentrq/iadkenmjgjoilnioldgchgjpdnbaghbj">
     <img src="https://img.shields.io/badge/Chrome%20Web%20Store-Add%20to%20Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" />
   </a>
