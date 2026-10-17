@@ -1,0 +1,19 @@
+{
+  "name": "agentrq-custom-supervisor",
+  "version": "1.0.0",
+  "description": "AgentRQ Supervisor Plugin for Claude Code, for a self-hosted server",
+  "keywords": [
+    "claude-plugin",
+    "agentrq",
+    "mcp",
+    "task manager",
+    "tasks",
+    "multi-agent",
+    "human-in-the-loop",
+    "agent-orchestration",
+    "orchestration",
+    "self-hosted"
+  ],
+  "author": "Mustafa Turan",
+  "license": "Apache-2.0"
+}

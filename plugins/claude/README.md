@@ -1,18 +1,21 @@
 # Claude Code plugins
 
-The two plugins AgentRQ publishes for [Claude Code](https://claude.com/claude-code), served
+The plugins AgentRQ publishes for [Claude Code](https://claude.com/claude-code), served
 from this repository's own marketplace.
 
-| Plugin | Connects to | For |
-|---|---|---|
-| [`agentrq`](agentrq/README.md) | the account-level supervisor MCP server | orchestrating work across every workspace you own |
-| [`agentrq-workspace`](agentrq-workspace/README.md) | one workspace's own MCP server | working a single workspace's task queue |
+| Plugin | Connects to | Asks at install | For |
+|---|---|---|---|
+| [`agentrq`](agentrq/README.md) | `https://mcp.agentrq.com/mcp`, the account-level supervisor MCP server | nothing; it signs in with OAuth | orchestrating work across every workspace you own |
+| [`agentrq-custom-supervisor`](agentrq-custom-supervisor/README.md) | a self-hosted server's supervisor MCP server | its URL | the same, on your own server |
+| [`agentrq-workspace`](agentrq-workspace/README.md) | one workspace's own MCP server | its URL | working a single workspace's task queue |
 
 ```bash
 /plugin marketplace add https://github.com/agentrq/agentrq
 /plugin install agentrq@agentrq
 /plugin install agentrq-workspace@agentrq
 ```
+
+`agentrq-custom-supervisor`'s skill is a copy of `agentrq`'s, and a test fails if they drift.
 
 A Claude marketplace is a git URL rather than a published package, so the manifest that
 lists these lives at the repository root — [`.claude-plugin/marketplace.json`](../../.claude-plugin/marketplace.json)

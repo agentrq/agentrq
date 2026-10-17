@@ -130,6 +130,8 @@ func TestPluginDocsListExactlyTheRegisteredTools(t *testing.T) {
 			docs: []string{
 				"plugins/claude/agentrq/README.md",
 				"plugins/claude/agentrq/skills/agentrq/SKILL.md",
+				"plugins/claude/agentrq-custom-supervisor/README.md",
+				"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
 			},
 		},
 		{
@@ -196,6 +198,8 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 		"plugins/claude/agentrq/skills/agentrq/SKILL.md",
 		"plugins/claude/agentrq-workspace/README.md",
 		"plugins/claude/agentrq-workspace/skills/agentrq-workspace/SKILL.md",
+		"plugins/claude/agentrq-custom-supervisor/README.md",
+		"plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md",
 		"plugins/gemini/README.md",
 		"plugins/gemini/GEMINI.md",
 	}
@@ -230,6 +234,7 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 	plugins := []string{
 		"plugins/claude/agentrq",
 		"plugins/claude/agentrq-workspace",
+		"plugins/claude/agentrq-custom-supervisor",
 	}
 
 	for _, rel := range plugins {
@@ -285,5 +290,25 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 				t.Errorf("%s dimensions = %dx%d, want square 512..2048 px", iconPath, width, height)
 			}
 		})
+	}
+}
+
+// agentrq-custom-supervisor is agentrq pointed at a self-hosted server, so its
+// skill must not drift from agentrq's copy.
+func TestPluginDocsCustomSupervisorSkillMatchesTheHostedOne(t *testing.T) {
+	root := repoRoot(t)
+	custom := "plugins/claude/agentrq-custom-supervisor/skills/agentrq/SKILL.md"
+	hosted := "plugins/claude/agentrq/skills/agentrq/SKILL.md"
+
+	got, err := os.ReadFile(filepath.Join(root, custom))
+	if err != nil {
+		t.Fatalf("cannot read %s: %v", custom, err)
+	}
+	want, err := os.ReadFile(filepath.Join(root, hosted))
+	if err != nil {
+		t.Fatalf("cannot read %s: %v", hosted, err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("%s differs from %s; copy the hosted skill over it", custom, hosted)
 	}
 }

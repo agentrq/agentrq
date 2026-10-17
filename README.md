@@ -587,9 +587,10 @@ When you first run Claude with this server, it will provide a link to authentica
 AgentRQ provides official extensions for major AI agent CLI tools to simplify setup and integration with its supervisor MCP. The sub agents MCPs should use their own workspace specific MCP server URLs.
 
 ### 🍊 Claude Code
-Two plugins for Claude Code are published from this repository's own marketplace, each with a skill and pre-configured MCP access:
+Plugins for Claude Code are published from this repository's own marketplace, each with a skill and pre-configured MCP access:
 
 - [`agentrq`](plugins/claude/agentrq/README.md) — the **supervisor**, talking to the account-level MCP server so one agent can orchestrate work across every workspace you own.
+- [`agentrq-custom-supervisor`](plugins/claude/agentrq-custom-supervisor/README.md) — the same supervisor for a **self-hosted** server; it asks for the server's supervisor MCP URL.
 - [`agentrq-workspace`](plugins/claude/agentrq-workspace/README.md) — the **workspace agent**, connected to a single workspace's MCP server to work its queue.
 
 **Installation:**
