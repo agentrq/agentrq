@@ -37,7 +37,7 @@
   parent, for a fork) or 0; the board puts 0's docs first, and only they get the
   to-task button.
 - **Expired docs are hidden by every query**, not only swept: the hourly sweep
-  can be up to an hour late.
+  (plus up to 2 minutes of jitter) can be that late.
 - **Color is a uint8 in the database and a name everywhere else.** Append new
   colors; never reorder them.
 - **The workspace tool's description ends with the agentrq-ws hint; CoreMCP's

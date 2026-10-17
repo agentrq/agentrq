@@ -16,9 +16,10 @@ import (
 // ended. A session outlives the threshold by at most this much.
 const machineSweepInterval = 5 * time.Minute
 
-// machineSweepJitter is the most each wait is lengthened by, a random whole
-// number of seconds, so instances started together do not sweep together.
-const machineSweepJitter = 2 * time.Minute
+// sweepJitter is the most each wait between sweeps is lengthened by, a random
+// whole number of seconds, so instances started together do not sweep
+// together.
+const sweepJitter = 2 * time.Minute
 
 // machineSweeper is the part of the crud controller the sweep runs.
 type machineSweeper interface {

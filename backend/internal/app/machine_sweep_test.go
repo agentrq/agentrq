@@ -89,7 +89,7 @@ func TestStartMachineSweep(t *testing.T) {
 func TestSweepWaitAddsJitterInSeconds(t *testing.T) {
 	seen := map[time.Duration]bool{}
 	for range 1000 {
-		d := sweepWait(machineSweepInterval, machineSweepJitter)
+		d := sweepWait(machineSweepInterval, sweepJitter)
 		if d < 5*time.Minute || d > 7*time.Minute || d%time.Second != 0 {
 			t.Fatalf("waited %s, want 5m to 7m in whole seconds", d)
 		}

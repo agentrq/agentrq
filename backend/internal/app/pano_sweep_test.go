@@ -86,7 +86,7 @@ func TestStartPanoSweep(t *testing.T) {
 	captureLog(t)
 	f := &fakeSweeper{swept: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	startPanoSweep(ctx, f, time.Millisecond)
+	startPanoSweep(ctx, f, time.Millisecond, 0)
 	for range 2 {
 		select {
 		case <-f.swept:

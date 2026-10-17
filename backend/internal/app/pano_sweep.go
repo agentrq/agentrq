@@ -20,19 +20,20 @@ type panoSweeper interface {
 	DeleteExpiredPanoDocs(ctx context.Context) (int, error)
 }
 
-// startPanoSweep deletes expired Pano docs every interval until ctx ends.
-// Every backend instance runs it; a doc is deleted once whichever gets there
-// first.
-func startPanoSweep(ctx context.Context, p panoSweeper, every time.Duration) {
+// startPanoSweep deletes expired Pano docs every interval, plus up to
+// jitter, until ctx ends. Every backend instance runs it; a doc is deleted
+// once whichever gets there first.
+func startPanoSweep(ctx context.Context, p panoSweeper, every, jitter time.Duration) {
 	go func() {
-		ticker := time.NewTicker(every)
-		defer ticker.Stop()
+		timer := time.NewTimer(sweepWait(every, jitter))
+		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
+			case <-timer.C:
 				sweepPano(ctx, p)
+				timer.Reset(sweepWait(every, jitter))
 			}
 		}
 	}()

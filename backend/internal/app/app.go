@@ -371,8 +371,8 @@ func New(cfg Config) (*App, error) {
 		TaskAgents:   taskAgentCtrl,
 	})
 	moveLegacySkills(context.Background(), crudCtrl)
-	startPanoSweep(appCtx, crudCtrl, panoSweepInterval)
-	startMachineSweep(appCtx, crudCtrl, machineSweepInterval, machineSweepJitter)
+	startPanoSweep(appCtx, crudCtrl, panoSweepInterval, sweepJitter)
+	startMachineSweep(appCtx, crudCtrl, machineSweepInterval, sweepJitter)
 	go backfillPanoDocTasks(appCtx, repo, crudCtrl)
 
 	// ── Pub/Stats ─────────────────────────────────────────────────────────────
