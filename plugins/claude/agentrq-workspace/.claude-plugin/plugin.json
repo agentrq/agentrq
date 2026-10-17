@@ -1,8 +1,7 @@
 {
   "name": "agentrq-workspace",
   "description": "Workspace agent that executes tasks assigned by humans or supervisors, communicates progress via reply, and manages task lifecycle within a specific AgentRQ workspace",
-  "version": "1.0.13",
-  "icon": "./.claude-plugin/icon.png",
+  "version": "1.0.14",
   "userConfig": {
     "agentrq_workspace_mcp_url": {
       "type": "string",
