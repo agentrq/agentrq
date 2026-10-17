@@ -124,3 +124,77 @@ func TestErrError(t *testing.T) {
 		t.Errorf("Error returned %q, want \"test-err\"", e.Error())
 	}
 }
+
+// Drain lets every queued and running task finish, then refuses new ones.
+func TestDrainFinishesQueuedTasks(t *testing.T) {
+	queues, _ := New(Params{})
+	queue, _ := queues.Create(context.Background(), CreateRequest{Name: "email", Size: 10})
+	release := make(chan struct{})
+	var processed int32
+	_ = queues.AddWorkers(context.Background(), AddWorkersRequest{QueueID: queue.ID, Count: 1, Handle: func(context.Context, Task) error {
+		<-release
+		atomic.AddInt32(&processed, 1)
+		return nil
+	}})
+	for i := range 3 {
+		if err := queues.AddTask(context.Background(), AddTaskRequest{QueueID: queue.ID, Task: Task{ID: int64(i)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	drained := make(chan error, 1)
+	go func() { drained <- queues.Drain(context.Background()) }()
+	select {
+	case err := <-drained:
+		t.Fatalf("Drain returned %v with three tasks still to run", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-drained; err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&processed); got != 3 {
+		t.Errorf("processed %d tasks before Drain returned, want 3", got)
+	}
+	if err := queues.AddTask(context.Background(), AddTaskRequest{QueueID: queue.ID, Task: Task{ID: 9}}); err != ErrQueueClosed {
+		t.Errorf("AddTask after Drain: %v, want ErrQueueClosed", err)
+	}
+}
+
+// Drain gives up when its deadline passes, and still closes the queues.
+func TestDrainStopsAtTheDeadline(t *testing.T) {
+	queues, _ := New(Params{})
+	queue, _ := queues.Create(context.Background(), CreateRequest{Name: "email", Size: 10})
+	block := make(chan struct{})
+	defer close(block)
+	_ = queues.AddWorkers(context.Background(), AddWorkersRequest{QueueID: queue.ID, Count: 1, Handle: func(context.Context, Task) error {
+		<-block
+		return nil
+	}})
+	_ = queues.AddTask(context.Background(), AddTaskRequest{QueueID: queue.ID, Task: Task{ID: 1}})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := queues.Drain(ctx); err != context.DeadlineExceeded {
+		t.Errorf("Drain: %v, want the deadline", err)
+	}
+	select {
+	case <-queues.(*service).done:
+	default:
+		t.Error("the queues were not closed")
+	}
+}
+
+// A task refused as the queue is full is not waited for.
+func TestDrainIgnoresARefusedTask(t *testing.T) {
+	queues, _ := New(Params{})
+	queue, _ := queues.Create(context.Background(), CreateRequest{Name: "email", Size: 0})
+	if err := queues.AddTask(context.Background(), AddTaskRequest{QueueID: queue.ID, Task: Task{ID: 1}}); err != ErrQueueFull {
+		t.Fatalf("AddTask: %v, want ErrQueueFull", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := queues.Drain(ctx); err != nil {
+		t.Errorf("Drain: %v, want nothing to wait for", err)
+	}
+}

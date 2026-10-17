@@ -18,6 +18,9 @@ type (
 		Create(ctx context.Context, req CreateRequest) (*CreateResponse, error)
 		AddTask(ctx context.Context, req AddTaskRequest) error
 		AddWorkers(ctx context.Context, req AddWorkersRequest) error
+		// Drain refuses new tasks, waits for the queued and running ones
+		// to finish, then closes. It gives up when ctx is done.
+		Drain(ctx context.Context) error
 		Close()
 	}
 
@@ -46,6 +49,10 @@ type (
 		queues    sync.Map
 		done      chan struct{}
 		closeOnce sync.Once
+		// closedMu makes closed final: once Drain holds it, no AddTask is
+		// still between the check and the enqueue.
+		closedMu sync.RWMutex
+		closed   bool
 	}
 
 	Params struct{}
@@ -56,9 +63,12 @@ type (
 	}
 
 	queue struct {
-		name  string
-		stats stats
-		items chan Task
+		// pending counts tasks added and not yet processed, queued or
+		// running, so no task is missed between the two.
+		pending int32
+		name    string
+		stats   stats
+		items   chan Task
 	}
 
 	stats struct {
@@ -77,6 +87,7 @@ const (
 	ErrQueueNotFound      err = "queue not found"
 	ErrQueueFull          err = "queue is full"
 	ErrInvalidTaskHandler err = "invalid task handler"
+	ErrQueueClosed        err = "queue is closed"
 )
 
 func (e err) Error() string {
@@ -91,6 +102,39 @@ func New(p Params) (Service, error) {
 	}
 	go s.printStats()
 	return s, nil
+}
+
+// drainPoll is how often Drain looks for remaining work.
+const drainPoll = 10 * time.Millisecond
+
+func (s *service) Drain(ctx context.Context) error {
+	s.closedMu.Lock()
+	s.closed = true
+	s.closedMu.Unlock()
+
+	ticker := time.NewTicker(drainPoll)
+	defer ticker.Stop()
+	for !s.idle() {
+		select {
+		case <-ctx.Done():
+			s.Close()
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	s.Close()
+	return nil
+}
+
+// idle reports whether every task added has been processed.
+func (s *service) idle() bool {
+	idle := true
+	s.queues.Range(func(_, value any) bool {
+		q := value.(*queue)
+		idle = atomic.LoadInt32(&q.pending) == 0
+		return idle
+	})
+	return idle
 }
 
 func (s *service) Close() {
@@ -120,11 +164,18 @@ func (s *service) AddTask(ctx context.Context, req AddTaskRequest) error {
 
 	q := v.(*queue)
 
+	s.closedMu.RLock()
+	defer s.closedMu.RUnlock()
+	if s.closed {
+		return ErrQueueClosed
+	}
+	atomic.AddInt32(&q.pending, 1)
 	select {
 	case q.items <- req.Task:
 		_ = atomic.AddInt32(&q.stats.enqueuedJobs, 1)
 		return nil
 	default:
+		atomic.AddInt32(&q.pending, -1)
 		_ = atomic.AddInt32(&q.stats.failedToAddTaskJobs, 1)
 		return ErrQueueFull
 	}
@@ -169,6 +220,7 @@ func (q *queue) processTaskWithRecovery(ctx context.Context, t Task, handle func
 	var err error
 
 	defer func() {
+		defer atomic.AddInt32(&q.pending, -1)
 		atomic.AddInt32(&q.stats.processingJobs, -1)
 		atomic.AddInt32(&q.stats.processedJobs, 1)
 

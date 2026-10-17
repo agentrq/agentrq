@@ -185,6 +185,10 @@ SIGTERM the instance fails `/readyz` but keeps serving for that long, so the
 balancer moves traffic away before the listener closes. Allow for it in the
 orchestrator's termination grace period.
 
+After the delay, live-update and agent event streams are ended, so their
+clients reconnect to another instance at once. Other requests get up to 15
+seconds to finish, and emails already queued are sent, before the process exits.
+
 ### Database Health
 
 ```bash

@@ -167,7 +167,9 @@ type (
 		// acpV1Hub holds the native ACP v1 connections, told on shutdown.
 		acpV1Hub *acpv1.Hub
 		// probes is told on shutdown, so readiness fails while it drains.
-		probes     *health.Handler
+		probes *health.Handler
+		// memq holds the queued emails, sent before shutdown returns.
+		memq       memq.Service
 		drainDelay time.Duration
 		cancel     context.CancelFunc
 	}
@@ -894,7 +896,7 @@ func New(cfg Config) (*App, error) {
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, probes: probes, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, probes: probes, memq: mqSvc, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1248,15 +1250,19 @@ func eventsHandler(ctrl crud.Controller, bus *eventbus.Bus, tokenSvc auth.TokenS
 	})
 }
 
+// Run serves until the server stops. It leaves the app context alone: the
+// server stops as soon as Shutdown begins, while requests are still draining,
+// and Shutdown cancels the context once they are done.
 func (a *App) Run() error {
-	defer a.cancel()
 	return a.server.Run()
 }
 
-// Shutdown gracefully stops the app: it fails readiness and keeps serving for the
-// drain delay, cancels the app context (signaling background consumers wired to it
-// to stop), flushes buffered telemetry so nothing is lost, and shuts the HTTP server
-// down within ctx's deadline. Safe to call once on SIGINT/SIGTERM.
+// Shutdown gracefully stops the app, within ctx's deadline. Readiness fails
+// and the app keeps serving for the drain delay. Then the native ACP links and
+// the event streams end, in-flight requests finish, and only after them the
+// app context is cancelled, so the consumers wired to it still see what those
+// requests published. Queued emails are sent, and buffered telemetry and agent
+// names written, before it returns. Safe to call once on SIGINT/SIGTERM.
 func (a *App) Shutdown(ctx context.Context) error {
 	if a.probes != nil {
 		a.probes.Drain()
@@ -1265,9 +1271,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 	case <-time.After(a.drainDelay):
 	case <-ctx.Done():
 	}
-	a.cancel()
 	if a.acpV1Hub != nil {
 		a.acpV1Hub.CloseAll("the server is shutting down")
+	}
+	err := a.server.Shutdown(ctx)
+	a.cancel()
+	if a.memq != nil {
+		if qerr := a.memq.Drain(ctx); qerr != nil {
+			zlog.Warn().Err(qerr).Msg("shutdown: queued emails not all sent")
+		}
 	}
 	if a.telemetry != nil {
 		a.telemetry.Close()
@@ -1275,7 +1287,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if a.taskAgents != nil {
 		a.taskAgents.Close()
 	}
-	return a.server.Shutdown(ctx)
+	return err
 }
 
 // pingDB is the readiness check: the database every request depends on.

@@ -84,9 +84,12 @@ type (
 		certStore CertStore
 		// obtainer is built on the first certificate request.
 		obtainer certObtainer
-		server   *http.Server
-		certMu   sync.RWMutex
-		currCert *tls.Certificate
+		// streams ends every long-lived event stream when Shutdown starts.
+		streams     context.Context
+		stopStreams context.CancelFunc
+		server      *http.Server
+		certMu      sync.RWMutex
+		currCert    *tls.Certificate
 	}
 
 	legoUser struct {
@@ -101,11 +104,14 @@ func (u *legoUser) GetRegistration() *registration.Resource { return u.Registrat
 func (u *legoUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
 
 func New(p Params) (Service, error) {
+	streams, stopStreams := context.WithCancel(context.Background())
 	return &service{
-		cfg:       p.Config,
-		router:    p.Router,
-		probes:    p.Probes,
-		certStore: p.CertStore,
+		streams:     streams,
+		stopStreams: stopStreams,
+		cfg:         p.Config,
+		router:      p.Router,
+		probes:      p.Probes,
+		certStore:   p.CertStore,
 	}, nil
 }
 
@@ -178,7 +184,21 @@ func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if isEventStream(r) {
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		defer context.AfterFunc(s.streams, cancel)()
+		r = r.WithContext(ctx)
+	}
+
 	s.router.ServeHTTP(sw, r)
+}
+
+// isEventStream reports whether r opens a long-lived event stream: the web
+// app's live updates, or an agent's MCP stream. Each is a GET that accepts
+// text/event-stream, and the client reconnects when it ends.
+func isEventStream(r *http.Request) bool {
+	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/event-stream")
 }
 
 func (s *service) Run() error {
@@ -515,7 +535,12 @@ func (s *service) newACMEObtainer() (certObtainer, error) {
 	return client.Certificate, nil
 }
 
+// Shutdown ends the event streams first, since they would otherwise hold
+// the drain open until ctx's deadline, then drains the other requests.
 func (s *service) Shutdown(ctx context.Context) error {
+	if s.stopStreams != nil {
+		s.stopStreams()
+	}
 	if s.acmesrv != nil {
 		_ = s.acmesrv.Shutdown(ctx)
 	}
