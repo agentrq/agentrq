@@ -47,8 +47,6 @@ import (
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
 	"github.com/agentrq/agentrq/backend/internal/repository/base"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
-	repopg "github.com/agentrq/agentrq/backend/internal/repository/postgres"
-	reposqlite "github.com/agentrq/agentrq/backend/internal/repository/sqlite"
 	"github.com/agentrq/agentrq/backend/internal/service/auth"
 	"github.com/agentrq/agentrq/backend/internal/service/cleanup"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -226,18 +224,9 @@ func New(cfg Config) (*App, error) {
 	}()
 
 	// ── Database (config-driven) ──────────────────────────────────────────
-	var db dbconn.DBConn
-
-	pg, err := repopg.New(repopg.Params{Config: cfg.ConfigSvc})
-	if err == nil {
-		db = pg
-	} else {
-		zlog.Warn().Err(err).Msg("postgres: disabled or failed to initialize, falling back to sqlite")
-		sq, err := reposqlite.New(reposqlite.Params{Config: cfg.ConfigSvc})
-		if err != nil {
-			return nil, fmt.Errorf("sqlite: %w", err)
-		}
-		db = sq
+	db, err := openDatabase(cfg.ConfigSvc)
+	if err != nil {
+		return nil, err
 	}
 
 	if db == nil {

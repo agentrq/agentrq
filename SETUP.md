@@ -368,7 +368,7 @@ docker logs --tail 100 agentrq
 | `AGENTRQ_SSL_S3_BUCKET` | If SSL S3 | — | Certificate bucket's name |
 | `AGENTRQ_SQLITE_ENABLED` | No | `true` | Use SQLite as database backend |
 | `AGENTRQ_SQLITE_DSN` | If SQLite | `./_storage/agentrq.db` | Path to SQLite database file |
-| `AGENTRQ_POSTGRES_ENABLED` | No | `false` | Use PostgreSQL as database backend |
+| `AGENTRQ_POSTGRES_ENABLED` | No | `false` | Use PostgreSQL as database backend. If it does not answer, startup retries for about 1.5 minutes, then fails; it never falls back to SQLite |
 | `AGENTRQ_POSTGRES_HOST` | If Postgres | — | PostgreSQL host |
 | `AGENTRQ_POSTGRES_PORT` | If Postgres | `5432` | PostgreSQL port |
 | `AGENTRQ_POSTGRES_USER` | If Postgres | — | PostgreSQL user |

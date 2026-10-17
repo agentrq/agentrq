@@ -390,7 +390,7 @@ Attachments are stored on disk under `./_storage/{attachmentID}` as base64-encod
 ## Data Persistence
 
 - **Primary**: PostgreSQL (optional, for production)
-- **Fallback**: SQLite (default for development / single-node deployment)
+- **Fallback**: SQLite (default for development / single-node deployment), used only when PostgreSQL is disabled. An enabled PostgreSQL that does not answer is retried with exponential backoff for about a minute and a half, then startup fails
 - **ORM**: GORM with a repository abstraction layer — controllers never touch the DB directly
 - **IDs**: Monoflake (monotonic snowflake-style) IDs generated in-process for all entities
 - **Encryption**: Workspace tokens encrypted with AES-GCM using a server-side key from config

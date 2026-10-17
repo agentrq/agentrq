@@ -65,7 +65,7 @@ SQLite is used by default (zero config). Switch to PostgreSQL for production wor
 |---|---|---|
 | `AGENTRQ_SQLITE_ENABLED` | `true` | Use SQLite |
 | `AGENTRQ_SQLITE_DSN` | `./_storage/agentrq.db` | SQLite file path |
-| `AGENTRQ_POSTGRES_ENABLED` | `false` | Use PostgreSQL |
+| `AGENTRQ_POSTGRES_ENABLED` | `false` | Use PostgreSQL. If it does not answer, startup retries for about 1.5 minutes, then fails; it never falls back to SQLite |
 | `AGENTRQ_POSTGRES_HOST` | — | PostgreSQL host |
 | `AGENTRQ_POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `AGENTRQ_POSTGRES_USER` | — | PostgreSQL user |

@@ -6,6 +6,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -39,6 +40,24 @@ const (
 	_cfgKey = "postgres"
 
 	_logPrefix = "[postgres] "
+
+	// Connecting is retried with exponential backoff, from connectRetryBase
+	// to at most connectRetryMax between attempts, connectAttempts times in
+	// all: about a minute and a half for a database that is still starting.
+	connectAttempts  = 8
+	connectRetryBase = time.Second
+	connectRetryMax  = 30 * time.Second
+)
+
+// ErrDisabled is returned when postgres.enabled is false: the only case in
+// which the app may run on SQLite instead.
+var ErrDisabled = errors.New("postgres repository is not enabled")
+
+var (
+	openDB = func(dsn string) (*gorm.DB, error) {
+		return gorm.Open(postgres.New(postgres.Config{DSN: dsn}), &gorm.Config{TranslateError: true})
+	}
+	sleep = time.Sleep
 )
 
 func New(p Params) (dbconn.DBConn, error) {
@@ -51,14 +70,12 @@ func New(p Params) (dbconn.DBConn, error) {
 
 	if !cfg.Enabled {
 		zlog.Info().Msg(_logPrefix + "postgres repository is not enabled, skipping")
-		return nil, fmt.Errorf("postgres repository is not enabled")
+		return nil, ErrDisabled
 	}
 
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN: cfg.DSN,
-	}), &gorm.Config{TranslateError: true})
+	db, err := connect(cfg.DSN)
 	if err != nil {
-		return nil, fmt.Errorf(_logPrefix+"failed to connect: %w", err)
+		return nil, err
 	}
 
 	zlog.Info().Msg(_logPrefix + "connected")
@@ -79,6 +96,24 @@ func New(p Params) (dbconn.DBConn, error) {
 	}
 
 	return &repository{db: db}, nil
+}
+
+// connect opens the database, retrying with exponential backoff, and gives
+// up with the last error once every attempt has failed.
+func connect(dsn string) (*gorm.DB, error) {
+	wait := connectRetryBase
+	for attempt := 1; ; attempt++ {
+		db, err := openDB(dsn)
+		if err == nil {
+			return db, nil
+		}
+		if attempt == connectAttempts {
+			return nil, fmt.Errorf(_logPrefix+"failed to connect after %d attempts: %w", attempt, err)
+		}
+		zlog.Warn().Err(err).Int("attempt", attempt).Dur("retryIn", wait).Msg(_logPrefix + "failed to connect, retrying")
+		sleep(wait)
+		wait = min(2*wait, connectRetryMax)
+	}
 }
 
 func (r *repository) Conn(ctx context.Context) *gorm.DB {
