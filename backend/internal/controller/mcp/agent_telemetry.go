@@ -22,6 +22,7 @@ const (
 	agentTelemetryKindThought = "thought"
 	agentTelemetryKindPlan    = "plan"
 	agentTelemetryKindUsage   = "usage"
+	agentTelemetryKindNotice  = "notice"
 )
 
 // The message metadata types the frontend renders these as.
@@ -29,6 +30,7 @@ const (
 	MessageTypeAgentThought = "agent_thought"
 	MessageTypeAgentPlan    = "agent_plan"
 	MessageTypeAgentUsage   = "agent_usage"
+	MessageTypeAgentNotice  = "agent_notice"
 )
 
 // agentTelemetryMessageKey identifies the one chat message that stands for a
@@ -43,8 +45,8 @@ func agentTelemetryMessageKey(taskID int64, kind, planID string) string {
 
 // HandleAgentTelemetry relays one piece of agent telemetry into a task's chat.
 //
-// Reasoning is appended: each block explains a different moment of the turn.
-// Plans and usage counters are revised in place, because a new message every
+// Reasoning and notices are appended: each says something about a different
+// moment of the turn. Plans and usage counters are revised in place, because a new message every
 // time a checkbox ticks or a token counter moves buries the conversation.
 func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID string, p agentlink.TelemetryReport) {
 	taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
@@ -60,6 +62,8 @@ func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID s
 			return
 		}
 		ps.postAgentTelemetryMessage(ctx, taskID, p.Text, agentTelemetryMetadata(MessageTypeAgentThought, p))
+	case agentTelemetryKindNotice:
+		ps.postAgentTelemetryMessage(ctx, taskID, p.Text, agentTelemetryMetadata(MessageTypeAgentNotice, p))
 	case agentTelemetryKindPlan:
 		ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentPlan)
 	case agentTelemetryKindUsage:

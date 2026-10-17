@@ -204,6 +204,19 @@ describe('Toast', () => {
     expect(odd.querySelector('.toast-dot').className).toContain('info')
   })
 
+  it('shows a notice with its pill, and a warning with its own dot', async () => {
+    const { notifyEvent } = useToasts()
+    notifyEvent({ tone: 'warning', kind: 'notice', title: 'Ship it', message: 'MCP server unavailable', taskId: 't1', workspaceId: 'w1' })
+    notifyEvent({ tone: 'error', kind: 'notice', title: 'Ship it', message: 'Quota exceeded', taskId: 't1', workspaceId: 'w1' })
+    const el = await mount()
+    const [warning, error] = el.querySelectorAll('.toast')
+
+    expect([...warning.querySelectorAll('.toast-pill')].map((p) => p.textContent)).toEqual(['Notice'])
+    expect(warning.querySelector('.toast-dot').className).toContain('warn')
+    expect(warning.querySelector('.toast-dot').textContent).toBe('!')
+    expect(error.querySelector('.toast-dot').className).toContain('alert')
+  })
+
   it('shows no pill for news it has no pill for', async () => {
     useToasts().notifyEvent({ tone: 'info', kind: 'mystery', title: 'Odd', message: 'Now.', taskId: '', workspaceId: '' })
     const el = await mount()

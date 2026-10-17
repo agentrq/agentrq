@@ -89,7 +89,7 @@ func TestWireTypes(t *testing.T) {
 
 	t.Run("AgentRQ declares no file system, no terminal and no terminal logins", func(t *testing.T) {
 		b, _ := json.Marshal(initializeRequest{ProtocolVersion: ProtocolVersion, ClientCapabilities: clientCaps, ClientInfo: implementation{Name: "agentrq", Title: "AgentRQ", Version: "0.9.20"}})
-		want := `{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{},"url":{}},"plan":{},"auth":{"terminal":false}},"clientInfo":{"name":"agentrq","title":"AgentRQ","version":"0.9.20"}}`
+		want := `{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{},"url":{}},"plan":{},"auth":{"terminal":false},"session":{"notices":{}}},"clientInfo":{"name":"agentrq","title":"AgentRQ","version":"0.9.20"}}`
 		if string(b) != want {
 			t.Errorf("initialize request was\n%s\nwant\n%s", b, want)
 		}

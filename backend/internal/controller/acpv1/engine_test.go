@@ -497,7 +497,7 @@ func TestEngine(t *testing.T) {
 	t.Run("AgentRQ opens with initialize declaring no fs and no terminal", func(t *testing.T) {
 		a := startAgent(t, &recorder{})
 		req := a.expect("initialize")
-		want := `{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{},"url":{}},"plan":{},"auth":{"terminal":false}},"clientInfo":{"name":"agentrq","title":"AgentRQ","version":"0.9.20"}}`
+		want := `{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false,"elicitation":{"form":{},"url":{}},"plan":{},"auth":{"terminal":false},"session":{"notices":{}}},"clientInfo":{"name":"agentrq","title":"AgentRQ","version":"0.9.20"}}`
 		if string(req.Params) != want {
 			t.Fatalf("initialize params were\n%s\nwant\n%s", req.Params, want)
 		}
@@ -1074,6 +1074,7 @@ func TestEngine(t *testing.T) {
 		l := a.ready(rec, `{"sessionId":"idle-1"}`)
 		a.chunk("idle-1", "agent_thought_chunk", "musing")
 		a.update("idle-1", `{"sessionUpdate":"plan_removed","planId":"p"}`)
+		a.update("idle-1", `{"sessionUpdate":"notice","severity":"info","title":"Nobody to tell"}`)
 		a.chunk("idle-1", "agent_message_chunk", "hello")
 		a.sync(l)
 		a.turn(rec, l, 42, "idle-1", "end_turn")
@@ -1258,6 +1259,29 @@ func TestEngine(t *testing.T) {
 			}
 			if d := rec.telemetry[3].Data; d["planId"] != "default" {
 				t.Fatalf("the legacy plan's data was %v, want planId default", d)
+			}
+		})
+	})
+
+	t.Run("notices are filed under the task, and a notice with no title is not", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		l := a.ready(rec, `{"sessionId":"sess-1"}`)
+		a.turn(rec, l, 42, "sess-1", "end_turn", func() {
+			a.update("sess-1", `{"sessionUpdate":"notice","severity":"warning","title":"MCP server unavailable","description":"Continuing without it."}`)
+			a.update("sess-1", `{"sessionUpdate":"notice","severity":"_custom","title":"Model rerouted","description":null}`)
+			a.update("sess-1", `{"sessionUpdate":"notice","severity":"error","title":"  "}`)
+		})
+		rec.read(func() {
+			want := []string{"notice:MCP server unavailable\n\nContinuing without it.", "notice:Model rerouted"}
+			if !slices.Equal(rec.log, want) {
+				t.Fatalf("the human read %q, want %q", rec.log, want)
+			}
+			if d := rec.telemetry[0].Data; d["severity"] != "warning" || d["title"] != "MCP server unavailable" || d["description"] != "Continuing without it." {
+				t.Fatalf("the warning's data was %v, want its severity, title and description", d)
+			}
+			if d := rec.telemetry[1].Data; d["severity"] != "_custom" || d["description"] != "" {
+				t.Fatalf("the custom notice's data was %v, want its severity kept and no description", d)
 			}
 		})
 	})

@@ -110,8 +110,8 @@
                 <span class="text-gray-800 dark:text-zinc-200">{{ formatAbsolute(selectedItem.createdAt) }}</span>
               </div>
               <div v-else class="grid grid-cols-[80px_1fr] gap-y-1.5 text-[11px]">
-                <span class="text-gray-400 dark:text-zinc-500 font-semibold">{{ selectedItem.lane === 'thought' ? 'Kind' : 'Sender' }}</span>
-                <span class="text-gray-800 dark:text-zinc-200">{{ selectedItem.label }}</span>
+                <span class="text-gray-400 dark:text-zinc-500 font-semibold">{{ selectedItem.lane === 'notice' ? 'Severity' : selectedItem.lane === 'thought' ? 'Kind' : 'Sender' }}</span>
+                <span class="text-gray-800 dark:text-zinc-200">{{ selectedItem.lane === 'notice' ? selectedItem.raw.severity : selectedItem.label }}</span>
                 <span class="text-gray-400 dark:text-zinc-500 font-semibold">Created</span>
                 <span class="text-gray-800 dark:text-zinc-200">{{ formatAbsolute(selectedItem.createdAt) }}</span>
               </div>
@@ -252,6 +252,14 @@ async function copyContentText(id, text) {
   }, 1500);
 }
 
+// A notice is coloured by how serious it is, like a tool call by its outcome.
+const NOTICE_DOTS = { info: 'bg-gray-400', warning: 'bg-amber-400', error: 'bg-red-500' };
+const NOTICE_BADGES = {
+  info: 'text-gray-600 dark:text-zinc-300 bg-gray-100 dark:bg-zinc-800',
+  warning: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10',
+  error: 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-500/10',
+};
+
 function laneDotClass(it) {
   if (it.lane === 'tool') {
     switch (it.raw.status) {
@@ -271,6 +279,7 @@ function laneDotClass(it) {
     }
   }
   if (it.lane === 'agent') return 'bg-violet-500';
+  if (it.lane === 'notice') return NOTICE_DOTS[it.raw.severity];
   return it.lane === 'thought' ? 'bg-teal-500' : 'bg-sky-400';
 }
 
@@ -278,6 +287,7 @@ function laneBadgeClass(it) {
   if (it.lane === 'tool') return 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10';
   if (it.lane === 'agent') return 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10';
   if (it.lane === 'thought') return 'text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-500/10';
+  if (it.lane === 'notice') return NOTICE_BADGES[it.raw.severity];
   return 'text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-500/10';
 }
 

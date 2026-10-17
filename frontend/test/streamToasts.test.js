@@ -102,6 +102,27 @@ describe('toastFor', () => {
     }
   });
 
+  // A notice lives in the trajectory, out of the conversation, so the toast is
+  // where it is seen: on the task already open, and on the desktop too.
+  it('shows a notice by its severity, even on the open task and on desktop', () => {
+    const noticed = (severity) => reply([from('agent', {
+      text: 'MCP server unavailable\n\nContinuing without it.',
+      metadata: { type: 'agent_notice', severity, title: 'MCP server unavailable', description: 'Continuing without it.', text: 'MCP server unavailable\n\nContinuing without it.' },
+    })]);
+    const want = (tone) => ({
+      tone,
+      kind: 'notice',
+      title: 'Ship it',
+      message: 'MCP server unavailable — Continuing without it.',
+      taskId: 't1',
+      workspaceId: 'w1',
+    });
+
+    expect(toastFor(noticed('warning'), { platform: 'desktop', openTaskId: 't1' })).toEqual(want('warning'));
+    expect(toastFor(noticed('error'))).toEqual(want('error'));
+    expect(toastFor(noticed('_custom'))).toEqual(want('info'));
+  });
+
   // The desktop shell runs its own stream and fires a real system notification
   // for this event, and it is the one that honours the per-workspace mute.
   it('leaves an ordinary reply to the shell on desktop', () => {

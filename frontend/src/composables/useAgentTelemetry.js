@@ -21,13 +21,14 @@ export const AGENT_TELEMETRY_MESSAGE_TYPES = {
   agent_thought: 'thought',
   agent_plan: 'plan',
   agent_usage: 'usage',
+  agent_notice: 'notice',
 };
 
 /**
  * Which kind of telemetry a message is, or null if it is an ordinary message.
  *
  * @param {object} message
- * @returns {'thought'|'plan'|'usage'|null}
+ * @returns {'thought'|'plan'|'usage'|'notice'|null}
  */
 export function agentTelemetryKind(message) {
   return AGENT_TELEMETRY_MESSAGE_TYPES[message?.metadata?.type] ?? null;
@@ -45,7 +46,7 @@ export function isAgentTelemetry(message) {
  * to do — and the same card is revised as the agent works, so it reads as part
  * of the conversation.
  *
- * The other two are about the conversation rather than in it. Reasoning is the
+ * The rest are about the conversation rather than in it. Reasoning is the
  * agent thinking aloud, and belongs with the tools it ran, in the trajectory
  * (see belongsInThread in useTrajectory). The context counters describe the
  * session as a whole, and only the current value means anything — so they live
@@ -70,6 +71,32 @@ export function telemetryText(message) {
   const fromMetadata = message?.metadata?.text;
   if (typeof fromMetadata === 'string' && fromMetadata !== '') return fromMetadata;
   return message?.text ?? '';
+}
+
+/**
+ * A notice's severity as the screen shows it. The spec leaves severities open,
+ * and one AgentRQ does not know is shown plainly, as info, rather than guessed
+ * at.
+ *
+ * @param {object} message
+ * @returns {'info'|'warning'|'error'}
+ */
+export function noticeSeverity(message) {
+  const severity = message?.metadata?.severity;
+  return severity === 'warning' || severity === 'error' ? severity : 'info';
+}
+
+/**
+ * A notice on one line, its title and description apart: flattening the text
+ * would run them together with nothing between.
+ *
+ * @param {object} message
+ * @returns {string}
+ */
+export function noticeLine(message) {
+  const { title, description } = message?.metadata ?? {};
+  if (!title) return telemetryText(message);
+  return description ? `${title} — ${description}` : title;
 }
 
 /** Whether the agent has withdrawn the plan this message stands for. */

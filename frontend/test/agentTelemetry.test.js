@@ -10,6 +10,8 @@ import {
   isAgentTelemetry,
   isThreadTelemetry,
   latestUsageMessage,
+  noticeLine,
+  noticeSeverity,
   planContent,
   planIsWithdrawn,
   planProgress,
@@ -26,6 +28,7 @@ describe('agentTelemetryKind', () => {
     expect(agentTelemetryKind(message({ type: 'agent_thought' }))).toBe('thought')
     expect(agentTelemetryKind(message({ type: 'agent_plan' }))).toBe('plan')
     expect(agentTelemetryKind(message({ type: 'agent_usage' }))).toBe('usage')
+    expect(agentTelemetryKind(message({ type: 'agent_notice' }))).toBe('notice')
   })
 
   it('leaves every other message alone', () => {
@@ -37,6 +40,33 @@ describe('agentTelemetryKind', () => {
   it('answers the same question as isAgentTelemetry', () => {
     expect(isAgentTelemetry(message({ type: 'agent_plan' }))).toBe(true)
     expect(isAgentTelemetry(message({ type: 'permission_request' }))).toBe(false)
+  })
+})
+
+describe('noticeSeverity', () => {
+  it('keeps the severities the spec names', () => {
+    expect(noticeSeverity(message({ type: 'agent_notice', severity: 'warning' }))).toBe('warning')
+    expect(noticeSeverity(message({ type: 'agent_notice', severity: 'error' }))).toBe('error')
+    expect(noticeSeverity(message({ type: 'agent_notice', severity: 'info' }))).toBe('info')
+  })
+
+  // The spec keeps severities open: an unknown one is shown plainly.
+  it('shows one it does not know, or none, as info', () => {
+    expect(noticeSeverity(message({ type: 'agent_notice', severity: '_custom' }))).toBe('info')
+    expect(noticeSeverity(message({ type: 'agent_notice' }))).toBe('info')
+    expect(noticeSeverity(undefined)).toBe('info')
+  })
+})
+
+describe('noticeLine', () => {
+  it('keeps the title and description apart on one line', () => {
+    expect(noticeLine(message({ type: 'agent_notice', title: 'MCP server unavailable', description: 'Continuing without it.' }))).toBe('MCP server unavailable — Continuing without it.')
+    expect(noticeLine(message({ type: 'agent_notice', title: 'Model rerouted', description: '' }))).toBe('Model rerouted')
+  })
+
+  it('falls back to the text when there is no title', () => {
+    expect(noticeLine(message({ type: 'agent_notice', text: 'Rerouted' }))).toBe('Rerouted')
+    expect(noticeLine(undefined)).toBe('')
   })
 })
 

@@ -426,7 +426,29 @@ func (e *engineV1) applyUpdate(n sessionNotification) {
 		if lenient(n.Update, &u) {
 			s.proj.setUsage(u)
 		}
+	case "notice":
+		var u notice
+		if lenient(n.Update, &u) && strings.TrimSpace(u.Title) != "" {
+			e.sendNotice(s, u)
+		}
 	}
+}
+
+// sendNotice files a notice under the session's task. An idle session's
+// notice reaches nobody, which the spec allows: a notice is never relied on.
+func (e *engineV1) sendNotice(s *session, u notice) {
+	taskID := e.taskOf(s)
+	if taskID == 0 {
+		return
+	}
+	description := deref(u.Description)
+	text := u.Title
+	if description != "" {
+		text += "\n\n" + description
+	}
+	e.ws.HandleAgentTelemetry(e.ctx, e.linkID, agentlink.TelemetryReport{
+		TaskID: b62(taskID), SessionID: s.id, Kind: "notice", Text: text,
+		Data: map[string]any{"severity": u.Severity, "title": u.Title, "description": description}})
 }
 
 // toolCallUpdate remembers a call and keeps its tool_calls row, and records a

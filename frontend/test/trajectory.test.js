@@ -54,6 +54,13 @@ const plan = (entries, overrides = {}) => message({
   ...overrides,
 })
 
+const notice = (severity, title, text, overrides = {}) => message({
+  id: 'notice-1',
+  text,
+  metadata: { type: 'agent_notice', severity, title, description: text.split('\n\n')[1] ?? '', text },
+  ...overrides,
+})
+
 const toolCall = (overrides = {}) => ({
   id: 'tc1',
   toolName: 'Bash',
@@ -108,6 +115,32 @@ describe('buildTrajectory', () => {
       ['input', 'SLACK'],
       ['tool', 'TOOL'],
     ])
+  })
+
+  it('files a notice under its own lane, badged by its severity', () => {
+    const items = buildTrajectory([
+      notice('warning', 'MCP server unavailable', 'MCP server unavailable\n\nContinuing without it.', { id: 'w', createdAt: at(0) }),
+      notice('error', 'Quota exceeded', 'Quota exceeded', { id: 'e', createdAt: at(1) }),
+      notice('_custom', '', 'Rerouted', { id: 'c', createdAt: at(2) }),
+    ], [])
+
+    expect(items.map((it) => [it.lane, it.laneLabel, it.label, it.preview, it.raw.severity])).toEqual([
+      ['notice', 'WARNING', 'MCP server unavailable', 'MCP server unavailable — Continuing without it.', 'warning'],
+      ['notice', 'ERROR', 'Quota exceeded', 'Quota exceeded', 'error'],
+      ['notice', 'INFO', 'Notice', 'Rerouted', 'info'],
+    ])
+    expect(items[0].raw.text).toBe('MCP server unavailable\n\nContinuing without it.')
+    expect(defaultDetailTab(items[0])).toBe('content')
+  })
+
+  it('previews an empty notice as empty rather than blank', () => {
+    const [item] = buildTrajectory([notice('info', '', '', { metadata: { type: 'agent_notice' } })], [])
+
+    expect(item.preview).toBe('(empty)')
+  })
+
+  it('keeps a notice out of the chat thread', () => {
+    expect(belongsInThread(notice('warning', 'x', 'x'))).toBe(false)
   })
 
   it('orders everything oldest first, whatever order it arrives in', () => {
@@ -327,17 +360,17 @@ describe('trajectoryLaneCounts', () => {
       plan([{ content: 'step', status: 'pending' }], { id: 'd', createdAt: at(3) }),
     ], [toolCall({ id: 'e', createdAt: at(4) })])
 
-    expect(trajectoryLaneCounts(items)).toEqual({ input: 1, agent: 1, thought: 2, tool: 1 })
+    expect(trajectoryLaneCounts(items)).toEqual({ input: 1, agent: 1, thought: 2, tool: 1, notice: 0 })
   })
 
   it('counts an empty trajectory as empty rather than absent', () => {
-    expect(trajectoryLaneCounts([])).toEqual({ input: 0, agent: 0, thought: 0, tool: 0 })
-    expect(trajectoryLaneCounts(undefined)).toEqual({ input: 0, agent: 0, thought: 0, tool: 0 })
+    expect(trajectoryLaneCounts([])).toEqual({ input: 0, agent: 0, thought: 0, tool: 0, notice: 0 })
+    expect(trajectoryLaneCounts(undefined)).toEqual({ input: 0, agent: 0, thought: 0, tool: 0, notice: 0 })
   })
 
   it('ignores an entry filed under no lane at all', () => {
     expect(trajectoryLaneCounts([{ lane: 'nowhere' }, null])).toEqual({
-      input: 0, agent: 0, thought: 0, tool: 0,
+      input: 0, agent: 0, thought: 0, tool: 0, notice: 0,
     })
   })
 

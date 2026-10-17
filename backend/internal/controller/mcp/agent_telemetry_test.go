@@ -131,6 +131,23 @@ func TestHandleAgentTelemetry_ThoughtIsPostedAsItsOwnMessage(t *testing.T) {
 	}
 }
 
+// A notice is appended as its own message, never revising an earlier one.
+func TestHandleAgentTelemetry_NoticeIsPostedAsItsOwnMessage(t *testing.T) {
+	rec := newTelemetryRecorder(t)
+	notice := agentlink.TelemetryReport{SessionID: "sess-1", Kind: "notice", Text: "MCP server unavailable",
+		Data: map[string]any{"severity": "warning", "title": "MCP server unavailable", "description": ""}}
+
+	rec.ps.HandleAgentTelemetry(context.Background(), "sess-1", notice)
+	rec.ps.HandleAgentTelemetry(context.Background(), "sess-1", notice)
+
+	if len(rec.posted) != 2 || len(rec.revisions) != 0 {
+		t.Fatalf("got %d messages and %d revisions, want each notice as its own message", len(rec.posted), len(rec.revisions))
+	}
+	if got := rec.posted[0].metadata; got["type"] != MessageTypeAgentNotice || got["severity"] != "warning" || got["text"] != "MCP server unavailable" {
+		t.Errorf("metadata = %v, want an agent_notice carrying its severity and text", got)
+	}
+}
+
 // An agent that emits an empty reasoning block has said nothing worth showing.
 func TestHandleAgentTelemetry_BlankThoughtIsDropped(t *testing.T) {
 	rec := newTelemetryRecorder(t)

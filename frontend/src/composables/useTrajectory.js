@@ -23,6 +23,8 @@
 import {
   agentTelemetryKind,
   isAgentTelemetry,
+  noticeLine,
+  noticeSeverity,
   planContent,
   planProgress,
   telemetryText,
@@ -41,6 +43,7 @@ export const TRAJECTORY_LANES = [
   { key: 'agent', label: 'AGENT' },
   { key: 'thought', label: 'THINKING' },
   { key: 'tool', label: 'TOOLS' },
+  { key: 'notice', label: 'NOTICES' },
 ];
 
 /** A permission request that has been decided one way or the other. */
@@ -169,6 +172,21 @@ function messageEntry(message, matchedToolCalls) {
   }
 
   const metadata = message.metadata ?? {};
+  // A notice is the agent program saying something about the session — a
+  // server it could not reach, a model it fell back from — not part of the
+  // conversation, so it has a lane of its own, badged by how serious it is.
+  if (kind === 'notice') {
+    const severity = noticeSeverity(message);
+    return {
+      ...base,
+      lane: 'notice',
+      laneLabel: severity.toUpperCase(),
+      label: metadata.title || 'Notice',
+      preview: truncate(noticeLine(message), 140) || '(empty)',
+      raw: { ...message, text: telemetryText(message), severity },
+    };
+  }
+
   if (metadata.type === 'permission_request') {
     const toolName = permissionToolName(metadata);
     const inputPreview = permissionInputPreview(metadata);

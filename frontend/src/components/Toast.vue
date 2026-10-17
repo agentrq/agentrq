@@ -91,6 +91,7 @@ const TYPE_DOTS = {
   error: { tone: 'alert', glyph: '!' },
   success: { tone: 'done', glyph: '✓' },
   info: { tone: 'info', glyph: 'i' },
+  warning: { tone: 'warn', glyph: '!' },
 };
 
 function dotFor(toast) {
@@ -106,6 +107,7 @@ const KIND_PILLS = {
   reply: { tone: 'neutral', label: 'Reply' },
   connected: { tone: 'new', label: 'Live' },
   disconnected: { tone: 'neutral', label: 'Offline' },
+  notice: { tone: 'neutral', label: 'Notice' },
 };
 
 const statusPill = (status) => ({ tone: status, label: STATUS_LABELS[status] ?? status });
@@ -256,6 +258,7 @@ function pillsFor(toast) {
 }
 
 .toast-dot.alert { border-color: #fca5a5; color: #dc2626; }
+.toast-dot.warn { border-color: #fcd34d; color: #d97706; }
 .toast-dot.done { border-color: #86efac; color: #16a34a; }
 .toast-dot.new { border-color: #3d5a42; background: #e8f2ea; color: #3d5a42; animation: pulse 2s ease-in-out infinite; }
 .toast-dot.reply { border-color: #c2c8c0; color: #3d5a42; }
@@ -281,6 +284,7 @@ function pillsFor(toast) {
 
 .dark .toast-dot { border-color: #71717a; color: #a1a1aa; }
 .dark .toast-dot.alert { border-color: #7f1d1d; color: #f87171; }
+.dark .toast-dot.warn { border-color: #78350f; color: #fbbf24; }
 .dark .toast-dot.done { border-color: #166534; color: #4ade80; }
 .dark .toast-dot.new { border-color: #6b9a72; background: rgba(61, 90, 66, 0.35); color: #9cc3a2; }
 .dark .toast-dot.reply { border-color: #52524e; color: #9cc3a2; }

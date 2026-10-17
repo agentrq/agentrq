@@ -25,6 +25,8 @@
  * the commonest thing that happens.
  */
 
+import { agentTelemetryKind, noticeLine, noticeSeverity } from './useAgentTelemetry';
+
 /** The last message on a task, or null when the payload carries none. */
 export function lastMessage(task) {
   const messages = task?.messages;
@@ -78,7 +80,7 @@ export function snippet(text) {
  * a caller can build a link without a special case — empty string means "no
  * task to link to", the same falsy sentinel a route param would reject anyway.
  *
- * @returns {{ tone: 'success'|'info'|'error', kind: string, title: string, message: string, from?: string, to?: string, taskId: string, workspaceId: string }|null}
+ * @returns {{ tone: 'success'|'info'|'warning'|'error', kind: string, title: string, message: string, from?: string, to?: string, taskId: string, workspaceId: string }|null}
  */
 export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
   const payload = event?.payload;
@@ -158,6 +160,12 @@ export function toastFor(event, { platform = 'web', openTaskId = '' } = {}) {
       taskId,
       workspaceId,
     };
+  }
+
+  // A notice is filed in the trajectory, out of the conversation, so this is
+  // where it is seen: on the task already open, and on the desktop as well.
+  if (agentTelemetryKind(message) === 'notice') {
+    return { tone: noticeSeverity(message), kind: 'notice', title, message: snippet(noticeLine(message)), taskId, workspaceId };
   }
 
   // The line the server writes when an agent changes a status. The change

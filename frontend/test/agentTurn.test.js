@@ -106,9 +106,11 @@ describe('agentIsWorking', () => {
   it('is still working while telemetry other than the footer arrives', () => {
     const plan = { id: 't', sender: 'agent', metadata: { type: 'agent_plan' } }
     const thought = { id: 'th', sender: 'agent', metadata: { type: 'agent_thought' } }
+    const notice = { id: 'n', sender: 'agent', text: 'MCP server unavailable', metadata: { type: 'agent_notice', severity: 'warning' } }
 
     expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: [fromHuman(), plan] })).toBe(true)
     expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: [fromHuman(), thought] })).toBe(true)
+    expect(agentIsWorking({ task: ongoing, workspace: gateway, messages: [fromHuman(), notice] })).toBe(true)
   })
 
   // Claude Code speaking MCP directly cannot be stopped and does not queue like

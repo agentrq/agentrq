@@ -59,11 +59,12 @@ type initializeRequest struct {
 }
 
 type clientCapabilities struct {
-	FS          fsCapabilities          `json:"fs"`
-	Terminal    bool                    `json:"terminal"`
-	Elicitation elicitationCapabilities `json:"elicitation"`
-	Plan        struct{}                `json:"plan"`
-	Auth        clientAuthCapabilities  `json:"auth"`
+	FS          fsCapabilities            `json:"fs"`
+	Terminal    bool                      `json:"terminal"`
+	Elicitation elicitationCapabilities   `json:"elicitation"`
+	Plan        struct{}                  `json:"plan"`
+	Auth        clientAuthCapabilities    `json:"auth"`
+	Session     clientSessionCapabilities `json:"session"`
 }
 
 type fsCapabilities struct {
@@ -80,10 +81,15 @@ type clientAuthCapabilities struct {
 	Terminal bool `json:"terminal"`
 }
 
+type clientSessionCapabilities struct {
+	Notices struct{} `json:"notices"`
+}
+
 // clientCaps is what AgentRQ declares: no file system and no terminal, because
 // the server cannot reach the user's machine and the agent's own tools do that
 // work; no terminal logins, because nobody can type into one remotely;
-// questions in both forms; plans.
+// questions in both forms; plans; notices, filed under the task and shown as
+// a toast.
 var clientCaps = clientCapabilities{}
 
 // initializeResponse is decoded leniently: only protocolVersion is required,
@@ -380,6 +386,14 @@ type availableCommand struct {
 
 type commandsUpdate struct {
 	AvailableCommands []availableCommand `json:"availableCommands"`
+}
+
+// notice is a line for the person that is not part of the conversation. Only
+// the title is required; a severity AgentRQ does not know is kept as it is.
+type notice struct {
+	Severity    string  `json:"severity"`
+	Title       string  `json:"title"`
+	Description *string `json:"description"`
 }
 
 type currentModeUpdate struct {
