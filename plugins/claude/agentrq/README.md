@@ -10,8 +10,9 @@ Installed from this repository's marketplace:
 /plugin install agentrq@agentrq
 ```
 
-The supervisor MCP URL is a plugin setting (`agentrq_supervisor_mcp_url`), defaulting to
-`https://mcp.agentrq.com/mcp`.
+The plugin connects to `https://mcp.agentrq.com/mcp` and asks nothing at install; Claude Code
+opens the AgentRQ sign-in the first time a tool is used. For a self-hosted server, install
+[`agentrq-custom-supervisor`](../agentrq-custom-supervisor/README.md) instead.
 
 For a single workspace rather than the whole account, see
 [`agentrq-workspace`](../agentrq-workspace/README.md).

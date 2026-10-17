@@ -4,19 +4,10 @@
   "version": "1.0.14",
   "icon": "./.claude-plugin/icon.png",
   "privacyPolicyUrl": "https://agentrq.com/privacy",
-  "userConfig": {
-    "agentrq_supervisor_mcp_url": {
-      "type": "string",
-      "title": "Supervisor MCP URL",
-      "description": "AgentRQ Supervisor MCP URL (e.g., https://mcp.agentrq.com/mcp)",
-      "required": true,
-      "default": "https://mcp.agentrq.com/mcp"
-    }
-  },
   "mcpServers": {
     "agentrq": {
       "type": "http",
-      "url": "${user_config.agentrq_supervisor_mcp_url}"
+      "url": "https://mcp.agentrq.com/mcp"
     }
   },
   "author": {

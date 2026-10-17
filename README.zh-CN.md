@@ -356,7 +356,7 @@ CoreMCP 使用 OAuth2，让管理型 Agent 在当前用户权限范围内查看�
 - ACP Gateway（Antigravity / Codex）
 - DeepSeek Harness plugin
 
-Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent）：
+Claude Code 插件安装（Marketplace 已迁移到本仓库；`agentrq` 为 Supervisor，`agentrq-workspace` 为单个 Workspace 的执行 Agent；自托管服务器的 Supervisor 请改用 `agentrq-custom-supervisor`，安装时填写其 MCP URL）：
 
 ```bash
 /plugin marketplace add https://github.com/agentrq/agentrq

@@ -17,6 +17,16 @@
       }
     },
     {
+      "name": "agentrq-custom-supervisor",
+      "source": "./plugins/claude/agentrq-custom-supervisor",
+      "description": "Human-in-the-loop agent orchestration for a self-hosted AgentRQ server: the supervisor plugin, pointed at your own server's URL.",
+      "author": {
+        "name": "Mustafa Turan",
+        "email": "dev@agentrq.com",
+        "url": "https://github.com/mustafaturan"
+      }
+    },
+    {
       "name": "agentrq-workspace",
       "source": "./plugins/claude/agentrq-workspace",
       "description": "Human-in-the-loop task manager for AI agents",

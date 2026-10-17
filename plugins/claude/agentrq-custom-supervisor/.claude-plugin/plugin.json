@@ -1,0 +1,26 @@
+{
+  "name": "agentrq-custom-supervisor",
+  "description": "Human-in-the-loop task supervisor for AI agents, for a self-hosted AgentRQ server",
+  "version": "1.0.0",
+  "icon": "./.claude-plugin/icon.png",
+  "privacyPolicyUrl": "https://agentrq.com/privacy",
+  "userConfig": {
+    "agentrq_supervisor_mcp_url": {
+      "type": "string",
+      "title": "Supervisor MCP URL",
+      "description": "Your AgentRQ server's supervisor MCP URL, shown in the supervisor workspace's Setup tab (e.g., https://mcp.example.com/mcp)",
+      "required": true
+    }
+  },
+  "mcpServers": {
+    "agentrq": {
+      "type": "http",
+      "url": "${user_config.agentrq_supervisor_mcp_url}"
+    }
+  },
+  "author": {
+    "name": "Mustafa Turan",
+    "email": "dev@agentrq.com",
+    "url": "https://github.com/mustafaturan"
+  }
+}
