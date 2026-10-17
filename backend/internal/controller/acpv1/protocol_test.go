@@ -93,15 +93,15 @@ func TestWireTypes(t *testing.T) {
 	})
 
 	t.Run("a session with no MCP servers sends an empty list, never null", func(t *testing.T) {
-		b, _ := json.Marshal(newSessionRequest{Cwd: "/home/me/work"})
-		if string(b) != `{"cwd":"/home/me/work","mcpServers":[]}` {
+		b, _ := json.Marshal(newSessionRequest{})
+		if string(b) != `{"mcpServers":[]}` {
 			t.Errorf("session/new request was %s, want mcpServers []", b)
 		}
 	})
 
 	t.Run("a session with an MCP server sends it with its headers", func(t *testing.T) {
-		b, _ := json.Marshal(newSessionRequest{Cwd: "/w", MCPServers: []mcpServerHTTP{{Type: "http", Name: "agentrq-workspace", URL: "https://mcp.example/x", Headers: []httpHeader{{Name: "Authorization", Value: "Bearer t"}}}}})
-		want := `{"cwd":"/w","mcpServers":[{"type":"http","name":"agentrq-workspace","url":"https://mcp.example/x","headers":[{"name":"Authorization","value":"Bearer t"}]}]}`
+		b, _ := json.Marshal(newSessionRequest{MCPServers: []mcpServerHTTP{{Type: "http", Name: "agentrq-workspace", URL: "https://mcp.example/x", Headers: []httpHeader{{Name: "Authorization", Value: "Bearer t"}}}}})
+		want := `{"mcpServers":[{"type":"http","name":"agentrq-workspace","url":"https://mcp.example/x","headers":[{"name":"Authorization","value":"Bearer t"}]}]}`
 		if string(b) != want {
 			t.Errorf("session/new request was\n%s\nwant\n%s", b, want)
 		}

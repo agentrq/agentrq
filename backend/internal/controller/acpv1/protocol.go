@@ -184,8 +184,9 @@ type mcpServerHTTP struct {
 	Headers []httpHeader `json:"headers"`
 }
 
+// newSessionRequest has no cwd: the gateway writes its own into every
+// session/new it forwards, since only it knows the agent's directory.
 type newSessionRequest struct {
-	Cwd        string          `json:"cwd"`
 	MCPServers []mcpServerHTTP `json:"mcpServers"`
 }
 

@@ -125,7 +125,7 @@ func TestPeer(t *testing.T) {
 		w := &wire{}
 		p := newPeer(w.send, w)
 		done := make(chan error, 1)
-		go func() { done <- p.call(context.Background(), methodSessionNew, newSessionRequest{Cwd: "/"}, nil) }()
+		go func() { done <- p.call(context.Background(), methodSessionNew, newSessionRequest{}, nil) }()
 		w.last(t)
 		p.receive([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Authentication required"}}`))
 		var rerr *rpcError

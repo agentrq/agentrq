@@ -100,7 +100,7 @@ func isAuthRequired(err error) bool {
 // openSession asks the agent for a new session, logging it in and asking once
 // more if it says it needs a login.
 func (e *engineV1) openSession(ctx context.Context) (newSessionResponse, error) {
-	req := newSessionRequest{Cwd: e.c.Meta().Cwd, MCPServers: e.mcpServers()}
+	req := newSessionRequest{MCPServers: e.mcpServers()}
 	var resp newSessionResponse
 	err := e.callWithin(ctx, methodSessionNew, req, &resp)
 	if isAuthRequired(err) {

@@ -502,22 +502,22 @@ func TestEngine(t *testing.T) {
 		}
 	})
 
-	t.Run("the idle session gets the bridge's folder and the workspace MCP server", func(t *testing.T) {
+	t.Run("the idle session gets the workspace MCP server and no folder", func(t *testing.T) {
 		a := startAgent(t, &recorder{})
 		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
-		a.expectParams("session/new", `{"cwd":"/home/me/work","mcpServers":[{"type":"http","name":"agentrq-workspace","url":"https://agentrq.test/mcp/ws1","headers":[{"name":"Authorization","value":"Bearer t"}]}]}`)
+		a.expectParams("session/new", `{"mcpServers":[{"type":"http","name":"agentrq-workspace","url":"https://agentrq.test/mcp/ws1","headers":[{"name":"Authorization","value":"Bearer t"}]}]}`)
 	})
 
 	t.Run("an agent that refuses http MCP gets no MCP servers", func(t *testing.T) {
 		a := startAgent(t, &recorder{})
 		a.answer(a.expect("initialize"), `{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"http":false}}}`)
-		a.expectParams("session/new", `{"cwd":"/home/me/work","mcpServers":[]}`)
+		a.expectParams("session/new", `{"mcpServers":[]}`)
 	})
 
 	t.Run("an agent that does not mention http MCP gets no MCP servers", func(t *testing.T) {
 		a := startAgent(t, &recorder{})
 		a.answer(a.expect("initialize"), `{"protocolVersion":1,"agentCapabilities":{"mcpCapabilities":{"sse":true}}}`)
-		a.expectParams("session/new", `{"cwd":"/home/me/work","mcpServers":[]}`)
+		a.expectParams("session/new", `{"mcpServers":[]}`)
 	})
 
 	t.Run("chunks that arrive just before the prompt answer are in the reply", func(t *testing.T) {
@@ -1524,7 +1524,7 @@ func TestEngineEdges(t *testing.T) {
 		t.Helper()
 		ctx, stop := context.WithCancel(context.Background())
 		t.Cleanup(stop)
-		e := &engineV1{c: newConnection("A", 100, "user-1", bridgeMeta{Cwd: "/w"}), ctx: ctx, stop: stop, lim: currentLimits(),
+		e := &engineV1{c: newConnection("A", 100, "user-1", bridgeMeta{}), ctx: ctx, stop: stop, lim: currentLimits(),
 			updates: make(chan update, queue), sessions: newSessionSet(), ws: &recorder{},
 			deps: EngineDeps{MCPURL: func(int64) string { return "https://agentrq.test/mcp" }}}
 		e.peer = newPeer(func(frame []byte) error {

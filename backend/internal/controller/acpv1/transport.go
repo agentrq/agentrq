@@ -132,9 +132,9 @@ type engine interface {
 
 // bridgeMeta is what the bridge said about itself in its upgrade headers.
 type bridgeMeta struct {
-	BridgeVersion, Agent, Model, Effort, AuthMethod, Cwd, Platform string
-	MaxConcurrency                                                 int           // 0 means the default, 1
-	PermissionTimeout                                              time.Duration // <0 means the default; 0 means none
+	BridgeVersion, Agent, Model, Effort, AuthMethod, Platform string
+	MaxConcurrency                                            int           // 0 means the default, 1
+	PermissionTimeout                                         time.Duration // <0 means the default; 0 means none
 }
 
 // timing is a connection's copy of the package's timings, taken when it is

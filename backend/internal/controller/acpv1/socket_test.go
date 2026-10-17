@@ -98,7 +98,6 @@ func newRawServer(t *testing.T, fn func(*websocket.Conn)) *httptest.Server {
 func bridgeHeader(resume string) http.Header {
 	hdr := http.Header{}
 	hdr.Set("Authorization", "Bearer t")
-	hdr.Set("X-AgentRQ-Cwd", "/home/me/work")
 	if resume != "" {
 		hdr.Set("X-AgentRQ-Resume", resume)
 	}
@@ -273,16 +272,6 @@ func TestSocket(t *testing.T) {
 		_, resp, _ := (&websocket.Dialer{}).Dial(wsURL(srv), bridgeHeader(""))
 		if body := bodyOf(resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "agentrq.bridge.1") {
 			t.Fatalf("status was %d with %q, want 400 naming agentrq.bridge.1", resp.StatusCode, body)
-		}
-	})
-
-	t.Run("a relative working directory is 400", func(t *testing.T) {
-		srv, _ := serve(t)
-		hdr := bridgeHeader("")
-		hdr.Set("X-AgentRQ-Cwd", "work")
-		_, resp, _ := dialWith(srv, hdr)
-		if body := bodyOf(resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "X-AgentRQ-Cwd") {
-			t.Fatalf("status was %d with %q, want 400 naming X-AgentRQ-Cwd", resp.StatusCode, body)
 		}
 	})
 
@@ -616,28 +605,20 @@ func TestParseMeta(t *testing.T) {
 			"X-Agentrq-Agent-Effort":       {" high "},
 			"X-Agentrq-Auth-Method":        {"chatgpt"},
 			"X-Agentrq-Platform":           {"linux/arm64"},
-			"X-Agentrq-Cwd":                {"/home/me/work"},
 			"X-Agentrq-Max-Concurrency":    {"3"},
 			"X-Agentrq-Permission-Timeout": {"0"},
 		})
 		want := bridgeMeta{BridgeVersion: "0.3.0", Agent: "codex", Model: "gpt-5", Effort: "high", AuthMethod: "chatgpt",
-			Platform: "linux/arm64", Cwd: "/home/me/work", MaxConcurrency: 3, PermissionTimeout: 0}
+			Platform: "linux/arm64", MaxConcurrency: 3, PermissionTimeout: 0}
 		if err != nil || m != want {
 			t.Fatalf("parseMeta returned %+v (error %v), want %+v", m, err, want)
 		}
 	})
 
 	t.Run("missing optional headers mean their defaults", func(t *testing.T) {
-		m, err := parseMeta(http.Header{"X-Agentrq-Cwd": {"/w"}})
+		m, err := parseMeta(http.Header{})
 		if err != nil || m.MaxConcurrency != 0 || m.PermissionTimeout != -1 {
 			t.Fatalf("parseMeta returned %+v (error %v), want concurrency 0 and timeout -1", m, err)
-		}
-	})
-
-	t.Run("no working directory is accepted: the gateway writes its own", func(t *testing.T) {
-		m, err := parseMeta(http.Header{})
-		if err != nil || m.Cwd != "" {
-			t.Fatalf("parseMeta returned %+v (error %v), want no cwd and no error", m, err)
 		}
 	})
 
@@ -652,7 +633,7 @@ func TestParseMeta(t *testing.T) {
 			{"many", "forever", 0, -1},
 			{"1", "1440", 1, 24 * time.Hour},
 		} {
-			m, _ := parseMeta(http.Header{"X-Agentrq-Cwd": {"/w"}, "X-Agentrq-Max-Concurrency": {c.concurrency}, "X-Agentrq-Permission-Timeout": {c.timeout}})
+			m, _ := parseMeta(http.Header{"X-Agentrq-Max-Concurrency": {c.concurrency}, "X-Agentrq-Permission-Timeout": {c.timeout}})
 			if m.MaxConcurrency != c.wantN || m.PermissionTimeout != c.wantT {
 				t.Errorf("concurrency %q and timeout %q gave %d and %v, want %d and %v", c.concurrency, c.timeout, m.MaxConcurrency, m.PermissionTimeout, c.wantN, c.wantT)
 			}
@@ -660,20 +641,9 @@ func TestParseMeta(t *testing.T) {
 	})
 
 	t.Run("a header past its length is refused by name", func(t *testing.T) {
-		_, err := parseMeta(http.Header{"X-Agentrq-Cwd": {"/w"}, "X-Agentrq-Agent": {strings.Repeat("a", 129)}})
+		_, err := parseMeta(http.Header{"X-Agentrq-Agent": {strings.Repeat("a", 129)}})
 		if err == nil || err.Error() != "X-AgentRQ-Agent is too long" {
 			t.Fatalf("parseMeta returned %v, want X-AgentRQ-Agent is too long", err)
-		}
-	})
-
-	t.Run("Windows and UNC working directories are absolute, relative ones are not", func(t *testing.T) {
-		for p, want := range map[string]bool{
-			`C:\Users\me`: true, `d:/work`: true, `\\server\share`: true, "/home/me": true,
-			"work": false, "": false, `C:work`: false, `~/work`: false,
-		} {
-			if got := isAbsolutePath(p); got != want {
-				t.Errorf("isAbsolutePath(%q) was %v, want %v", p, got, want)
-			}
 		}
 	})
 }

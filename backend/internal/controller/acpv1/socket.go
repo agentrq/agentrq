@@ -148,19 +148,12 @@ func parseMeta(h http.Header) (bridgeMeta, error) {
 		{"X-AgentRQ-Agent-Effort", 64, &m.Effort},
 		{"X-AgentRQ-Auth-Method", 128, &m.AuthMethod},
 		{"X-AgentRQ-Platform", 64, &m.Platform},
-		{"X-AgentRQ-Cwd", 4096, &m.Cwd},
 	} {
 		v := strings.TrimSpace(h.Get(f.name))
 		if len(v) > f.max {
 			return m, errors.New(f.name + " is too long")
 		}
 		*f.to = strings.Clone(v)
-	}
-	// Optional: the gateway writes its own cwd into each session/new it
-	// forwards, which a header cannot carry for a non-ASCII path. Only an
-	// older gateway still sends it, and then it must be absolute.
-	if m.Cwd != "" && !isAbsolutePath(m.Cwd) {
-		return m, errors.New("X-AgentRQ-Cwd must be the bridge's absolute working directory")
 	}
 	if n, err := strconv.Atoi(h.Get("X-AgentRQ-Max-Concurrency")); err == nil {
 		m.MaxConcurrency = min(max(n, 1), 64) // clamped, as the gateway's flag is
@@ -169,10 +162,4 @@ func parseMeta(h http.Header) (bridgeMeta, error) {
 		m.PermissionTimeout = time.Duration(n) * time.Minute
 	}
 	return m, nil
-}
-
-var windowsAbs = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
-
-func isAbsolutePath(p string) bool {
-	return strings.HasPrefix(p, "/") || windowsAbs.MatchString(p) || strings.HasPrefix(p, `\\`)
 }

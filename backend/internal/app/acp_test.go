@@ -222,7 +222,6 @@ func TestMountACP(t *testing.T) {
 		srv, hub, _ := serve(t, true)
 		hdr := http.Header{}
 		hdr.Set("Authorization", "Bearer "+token)
-		hdr.Set("X-AgentRQ-Cwd", "/home/me/work")
 		dialer := websocket.Dialer{Subprotocols: []string{"agentrq.bridge.1"}}
 		ws, resp, err := dialer.Dial("ws"+strings.TrimPrefix(srv.URL, "http")+"/api/acp/v1", hdr)
 		if err != nil {
