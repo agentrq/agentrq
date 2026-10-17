@@ -287,7 +287,8 @@ type (
 		Filename string `json:"filename"`
 		MimeType string `json:"mimeType"`
 		Data     string `json:"data"` // base64
-		// URL is where anyone can read the file, set when it is kept in S3.
+		// URL is where anyone can read the file, set when the store makes
+		// public links.
 		URL string `json:"url,omitempty"`
 	}
 

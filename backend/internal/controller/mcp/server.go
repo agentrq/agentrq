@@ -684,7 +684,7 @@ func (ps *WorkspaceServer) IsAgentConnected() bool {
 // should be: a push is the only thing that starts an idle agent, so the caller
 // that matters — the poller — keeps offering the task until the agent takes it
 // and moves it to ongoing, rather than deciding from here whether it landed.
-func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
+func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string, attachments ...entity.Attachment) {
 	zlog.Debug().Int64("workspace_id", ps.workspaceID).Int64("task_id", taskID).Msg("send MCP channel notification")
 
 	// One native link is offered the task, independently of the MCP
@@ -692,7 +692,7 @@ func (ps *WorkspaceServer) SendChannelNotification(ctx context.Context, taskID i
 	// MCP server to reach. Exactly one, so two native agents never run the
 	// same task (an MCP gateway is still broadcast to, as before).
 	if link := ps.pickLinkFor(taskID); link != nil {
-		link.DeliverTask(ctx, taskID, content)
+		link.DeliverTask(ctx, taskID, content, ps.linkAttachments(taskID, attachments)...)
 	}
 
 	// A workspace whose server has not been built yet has nothing to notify,
@@ -1214,7 +1214,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
 		}
-		ps.SendChannelNotification(context.Background(), nextTask.ID, msg)
+		ps.SendChannelNotification(context.Background(), nextTask.ID, msg, modelAttachments(nextTask.Attachments)...)
 		return nextTask.ID
 	}
 	return 0
@@ -2785,16 +2785,43 @@ func (ps *WorkspaceServer) emitTelemetry(ctx context.Context, action Action, too
 	})
 }
 
+// linkTTL is how long a signed link handed to an agent reads its file.
+const linkTTL = 24 * time.Hour
+
+// linkAttachments are the files of a task a native link is handed, by a link
+// to read each at: signed for linkTTL when the store's public link is only a
+// guess. One the store keeps private has none, and is left to the text, which
+// names it for getAttachment.
+func (ps *WorkspaceServer) linkAttachments(taskID int64, atts []entity.Attachment) []agentlink.Attachment {
+	var out []agentlink.Attachment
+	for _, a := range atts {
+		if a.URL == "" {
+			continue
+		}
+		name := a.Filename
+		if name == "" {
+			name = a.ID
+		}
+		url := storage.ReadURL(ps.storage, storage.AttachmentKey(ps.contentID(), taskID, a.ID), a.URL, linkTTL)
+		out = append(out, agentlink.Attachment{Name: name, MimeType: a.MimeType, URL: url})
+	}
+	return out
+}
+
+// modelAttachments reads the attachments stored as raw JSON on a row, none
+// when they do not parse.
+func modelAttachments(raw []byte) []entity.Attachment {
+	var atts []entity.Attachment
+	if len(raw) > 0 && json.Unmarshal(raw, &atts) != nil {
+		return nil
+	}
+	return atts
+}
+
 // formatModelAttachments builds an attachment summary from raw JSON (model.Task.Attachments)
 // for inclusion in LLM notifications so the agent can call getAttachment.
 func formatModelAttachments(raw []byte) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var atts []entity.Attachment
-	if err := json.Unmarshal(raw, &atts); err != nil {
-		return ""
-	}
+	atts := modelAttachments(raw)
 	parts := make([]string, 0, len(atts))
 	for _, a := range atts {
 		if a.ID != "" {

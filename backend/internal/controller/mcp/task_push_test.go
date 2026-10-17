@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/eventbus"
 	mock_auth "github.com/agentrq/agentrq/backend/internal/service/mocks/auth"
 	mock_pubsub "github.com/agentrq/agentrq/backend/internal/service/mocks/pubsub"
+	mock_s3 "github.com/agentrq/agentrq/backend/internal/service/mocks/s3"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/mustafaturan/monoflake"
 )
@@ -610,4 +613,80 @@ func TestStartPollerTicksAndStopsWhenTheServerCloses(t *testing.T) {
 	close(ps.done)
 	// Nothing to assert beyond not hanging: the goroutine's only exit is the
 	// done channel, so a poller that ignored it would go on ticking here.
+}
+
+// A native link is handed a task's files by their public links, so the agent
+// fetches only what it needs; one with no link is left to the text, which names
+// it for getAttachment.
+func TestSendChannelNotificationHandsALinkTheFilesByTheirLinks(t *testing.T) {
+	ps := pushServer(t)
+	l := attachLink(ps, "acp1:a")
+
+	ps.SendChannelNotification(context.Background(), 7, "go",
+		entity.Attachment{ID: "a1", Filename: "spec.pdf", MimeType: "application/pdf", URL: "https://h/storage/a1"},
+		entity.Attachment{ID: "a2", MimeType: "image/png", URL: "https://h/storage/a2"},
+		entity.Attachment{ID: "a3", Filename: "private.txt"})
+
+	want := []agentlink.Attachment{
+		{Name: "spec.pdf", MimeType: "application/pdf", URL: "https://h/storage/a1"},
+		{Name: "a2", MimeType: "image/png", URL: "https://h/storage/a2"},
+	}
+	if !reflect.DeepEqual(l.attachments, want) {
+		t.Fatalf("the link got %+v, want %+v", l.attachments, want)
+	}
+}
+
+// The poller reads the files off the row it offers, as a push from a handler
+// would carry them.
+func TestPollOnceHandsALinkTheTasksFiles(t *testing.T) {
+	ps := pushServer(t)
+	l := attachLink(ps, "acp1:a")
+	repo := pendingTaskRepo(model.Task{ID: 7, Status: "notstarted", Assignee: "agent",
+		Attachments: []byte(`[{"id":"a1","filename":"spec.pdf","mimeType":"application/pdf","url":"https://h/storage/a1"}]`)})
+
+	ps.pollOnce(repo)
+
+	want := []agentlink.Attachment{{Name: "spec.pdf", MimeType: "application/pdf", URL: "https://h/storage/a1"}}
+	if !reflect.DeepEqual(l.attachments, want) {
+		t.Fatalf("the link got %+v, want %+v", l.attachments, want)
+	}
+}
+
+func TestModelAttachmentsThatDoNotParseAreNone(t *testing.T) {
+	if got := modelAttachments([]byte(`{not json`)); got != nil {
+		t.Fatalf("got %+v, want none", got)
+	}
+	if got := formatModelAttachments([]byte(`{not json`)); got != "" {
+		t.Fatalf("formatted %q, want nothing", got)
+	}
+}
+
+// A bucket with no public base signs the link the agent is handed, keyed where
+// the task's files are kept, so it reads a file the bucket keeps private.
+func TestSendChannelNotificationHandsALinkASignedURL(t *testing.T) {
+	ps := pushServer(t)
+	client := mock_s3.NewMockService(gomock.NewController(t))
+	ps.storage = storage.NewS3Public(client, "artifacts")
+	l := attachLink(ps, "acp1:a")
+
+	client.EXPECT().SignedURL(gomock.Any(), "artifacts", storage.AttachmentKey(100, 7, "a1"), linkTTL).Return("https://s3/signed", nil)
+	ps.SendChannelNotification(context.Background(), 7, "go", entity.Attachment{ID: "a1", Filename: "spec.pdf", URL: "https://s3/b/a1"})
+
+	if len(l.attachments) != 1 || l.attachments[0].URL != "https://s3/signed" {
+		t.Fatalf("the link got %+v, want the signed URL", l.attachments)
+	}
+}
+
+// The manager passes the files on to the workspace's server, as Slack pushes
+// them.
+func TestManagerSendChannelNotificationPassesTheFilesOn(t *testing.T) {
+	ps := pushServer(t)
+	l := attachLink(ps, "acp1:a")
+	m := NewManager(func(int64, string) *WorkspaceServer { return ps })
+
+	m.SendChannelNotification(context.Background(), 100, ps.userID, 7, "go", entity.Attachment{ID: "a1", Filename: "spec.pdf", URL: "https://h/a1"})
+
+	if len(l.attachments) != 1 || l.attachments[0].URL != "https://h/a1" {
+		t.Fatalf("the link got %+v, want spec.pdf", l.attachments)
+	}
 }

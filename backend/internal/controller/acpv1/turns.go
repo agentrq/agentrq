@@ -7,14 +7,17 @@ package acpv1
 import (
 	"container/list"
 	"sync"
+
+	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 )
 
 // delivery is one message for a task, stamped with where it fell in the
 // stream of events so a cancel only stops what was queued before it.
 type delivery struct {
-	taskID  int64
-	content string
-	seq     uint64
+	taskID      int64
+	content     string
+	attachments []agentlink.Attachment
+	seq         uint64
 }
 
 // chain is a task's turns: one running or waiting for a slot, the rest parked
@@ -54,7 +57,7 @@ func clampLimit(limit int) int { return min(max(limit, 1), maxConcurrency) }
 // deliver queues a message. A byte-identical repeat of a task's last message
 // while that task is still queued or running is dropped: the poller re-pushes
 // pending tasks every minute by design.
-func (q *turnQueue) deliver(taskID int64, content string) {
+func (q *turnQueue) deliver(taskID int64, content string, attachments ...agentlink.Attachment) {
 	q.mu.Lock()
 	ch := q.chains[taskID]
 	if ch != nil && ch.last == content {
@@ -62,7 +65,7 @@ func (q *turnQueue) deliver(taskID int64, content string) {
 		return
 	}
 	q.seq++
-	d := delivery{taskID: taskID, content: content, seq: q.seq}
+	d := delivery{taskID: taskID, content: content, attachments: attachments, seq: q.seq}
 	if ch != nil {
 		ch.last = content
 		ch.parked = append(ch.parked, d)

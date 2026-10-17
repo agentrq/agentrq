@@ -48,6 +48,15 @@ func (s *publicS3Service) PublicURL(id string) string {
 	return s.client.PublicURL(context.Background(), s.namespace, id)
 }
 
+func (s *publicS3Service) SignedURL(id string, ttl time.Duration) (string, error) {
+	if err := validKey(id); err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), _s3Timeout)
+	defer cancel()
+	return s.client.SignedURL(ctx, s.namespace, id, ttl)
+}
+
 func (s *s3Service) Save(id string, dataBase64 string) error {
 	return s.put(id, dataBase64, octetStream)
 }

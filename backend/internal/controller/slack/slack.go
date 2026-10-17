@@ -32,7 +32,7 @@ import (
 // permission verdicts and channel notifications without importing the full mcp.Manager.
 type MCPManager interface {
 	SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error
-	SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string)
+	SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment)
 }
 
 // CRUDRespondToTask is a minimal interface for responding to tasks.
@@ -557,7 +557,7 @@ func (c *controller) HandleSlackEvent(ctx context.Context, payload SlackEventPay
 		if atts := formatSlackAttachments(attachments); atts != "" {
 			content += "\n" + atts
 		}
-		c.mcp.SendChannelNotification(ctx, thread.WorkspaceID, ownerID, thread.TaskID, content)
+		c.mcp.SendChannelNotification(ctx, thread.WorkspaceID, ownerID, thread.TaskID, content, attachments...)
 	}
 	return nil
 }
@@ -652,7 +652,7 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
 				content += "\n" + atts
 			}
-			c.mcp.SendChannelNotification(ctx, link.WorkspaceID, ownerID, resp.Task.ID, content)
+			c.mcp.SendChannelNotification(ctx, link.WorkspaceID, ownerID, resp.Task.ID, content, resp.Task.Attachments...)
 		}
 	}
 

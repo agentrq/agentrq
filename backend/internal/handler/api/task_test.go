@@ -717,3 +717,57 @@ func TestUpdateTaskAssignee_ClearsBeforeNotifyingWhenReassignedToAgent(t *testin
 		t.Errorf("cleared task %d wanted=%v, want task %d wanted=true", srv.clearedTaskID, srv.clearContextWanted, reassigned.ID)
 	}
 }
+
+// mockCrudSavesAttachments saves the files a response or reply carries the way
+// the controller does: in place, giving each the link it is read at.
+type mockCrudSavesAttachments struct {
+	crud.Controller
+}
+
+func savedInPlace(atts []entity.Attachment) {
+	for i := range atts {
+		atts[i].URL = "https://h/storage/" + atts[i].Filename
+	}
+}
+
+func (m *mockCrudSavesAttachments) RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error) {
+	savedInPlace(req.Attachments)
+	return &entity.RespondToTaskResponse{Task: entity.Task{ID: req.TaskID}}, nil
+}
+
+func (m *mockCrudSavesAttachments) ReplyToTask(ctx context.Context, req entity.ReplyToTaskRequest) (*entity.ReplyToTaskResponse, error) {
+	savedInPlace(req.Attachments)
+	return &entity.ReplyToTaskResponse{Task: entity.Task{ID: req.TaskID}}, nil
+}
+
+// A response or reply hands the agent its files as saved, links and all, not
+// only as lines of text.
+func TestRespondAndReplyPushTheFilesTheyCarry(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		route      func(h *handler) fiber.Handler
+	}{
+		{"respond", `{"response":{"action":"text","text":"see","attachments":[{"filename":"a.png","mimeType":"image/png","data":"cG5n"}]}}`, (*handler).respondToTask},
+		{"reply", `{"reply":{"text":"see","attachments":[{"filename":"a.png","mimeType":"image/png","data":"cG5n"}]}}`, (*handler).replyToTask},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := fiber.New()
+			srv := &fakeWorkspaceServer{}
+			h := &handler{crud: &mockCrudSavesAttachments{}, mcpManager: &fakeMCPManager{server: srv}, bus: eventbus.New()}
+			app.Post("/api/v1/workspaces/:id/tasks/:taskID", func(c *fiber.Ctx) error {
+				c.Locals("user_id", monoflake.ID(100).String())
+				return tc.route(h)(c)
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/"+monoflake.ID(1).String()+"/tasks/"+monoflake.ID(7).String(), strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := app.Test(req)
+			if err != nil || resp.StatusCode != http.StatusOK {
+				t.Fatalf("got %v, %v; want 200", resp, err)
+			}
+			if len(srv.notifiedAttachments) != 1 || srv.notifiedAttachments[0].URL != "https://h/storage/a.png" {
+				t.Fatalf("pushed %+v, want a.png with its link", srv.notifiedAttachments)
+			}
+		})
+	}
+}

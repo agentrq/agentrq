@@ -9,7 +9,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
+	"time"
 
 	configmocks "github.com/agentrq/agentrq/backend/internal/service/mocks/config"
 	mocks "github.com/agentrq/agentrq/backend/internal/service/mocks/s3"
@@ -128,6 +130,36 @@ func TestS3(t *testing.T) {
 		svc, err = New(Params{Config: mockConfig})
 		assert.NoError(t, err)
 		assert.Equal(t, "https://cdn.example.com/files/attachments/x/y", svc.PublicURL(context.Background(), "attachments", "x/y"))
+	})
+
+	t.Run("SignedURL", func(t *testing.T) {
+		mockConfig.EXPECT().Populate("s3", gomock.Any()).DoAndReturn(func(_ string, v any) error {
+			*v.(*Config) = Config{Endpoint: "https://s3.example.com", Bucket: "b", Region: "us-east-1", AccessKey: "ak", SecretAccessKey: "sk"}
+			return nil
+		})
+		svc, err := New(Params{Config: mockConfig})
+		assert.NoError(t, err)
+		link, err := svc.SignedURL(context.Background(), "attachments", "x/y", time.Hour)
+		assert.NoError(t, err)
+		assert.True(t, strings.HasPrefix(link, "https://s3.example.com/b/attachments/x/y?"), link)
+		assert.Contains(t, link, "X-Amz-Expires=3600")
+		assert.Contains(t, link, "X-Amz-Signature=")
+
+		// A public base of its own needs no signature.
+		mockConfig.EXPECT().Populate("s3", gomock.Any()).DoAndReturn(func(_ string, v any) error {
+			*v.(*Config) = Config{Endpoint: "https://s3.example.com", Bucket: "b", Region: "us-east-1", PublicURL: "https://cdn.example.com"}
+			return nil
+		})
+		svc, err = New(Params{Config: mockConfig})
+		assert.NoError(t, err)
+		link, err = svc.SignedURL(context.Background(), "attachments", "x/y", time.Hour)
+		assert.NoError(t, err)
+		assert.Empty(t, link)
+
+		presign := mocks.NewMockPresigner(ctrl)
+		presign.EXPECT().PresignGetObject(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("no credentials"))
+		_, err = (&service{bucket: "b", presign: presign}).SignedURL(context.Background(), "attachments", "x/y", time.Hour)
+		assert.Error(t, err)
 	})
 
 	t.Run("NewCredentialsProvider", func(t *testing.T) {

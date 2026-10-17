@@ -18,8 +18,9 @@ type Link interface {
 	// ID keys the link's per-session state. It never collides with an MCP
 	// session id: links are "acp1:<connection>" or "acp2:<connection>".
 	ID() string
-	// DeliverTask hands the agent a message for a task.
-	DeliverTask(ctx context.Context, taskID int64, content string)
+	// DeliverTask hands the agent a message for a task, with the files it
+	// carries.
+	DeliverTask(ctx context.Context, taskID int64, content string, attachments ...Attachment)
 	// CancelTask stops the task's turn, reporting whether the link had one
 	// running or waiting.
 	CancelTask(ctx context.Context, taskID int64) bool
@@ -34,4 +35,13 @@ type Link interface {
 	// Dispatch says whether the link already holds a session for the task,
 	// and how many more turns it could start right now.
 	Dispatch(taskID int64) (owns bool, free int)
+}
+
+// Attachment is a file a message carries, named by the public link anyone can
+// read it at: the agent fetches it, so the file itself never travels with the
+// push.
+type Attachment struct {
+	Name     string
+	MimeType string
+	URL      string
 }

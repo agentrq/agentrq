@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 )
 
 // The doubles the handler tests inject through the mcpManager seam.
@@ -92,11 +93,12 @@ type fakeWorkspaceServer struct {
 	// calls records, in order, which of ClearContextForTask/
 	// SendChannelNotification the handler made — a test asserting a push order
 	// needs to see the sequence, not just a count of each.
-	calls              []string
-	clearedTaskID      int64
-	clearContextWanted bool
-	notifiedTaskID     int64
-	notifiedContent    string
+	calls               []string
+	clearedTaskID       int64
+	clearContextWanted  bool
+	notifiedTaskID      int64
+	notifiedContent     string
+	notifiedAttachments []entity.Attachment
 }
 
 func (f *fakeWorkspaceServer) SetAgentModel(ctx context.Context, modelID string) error {
@@ -124,10 +126,11 @@ func (f *fakeWorkspaceServer) SendCancelNotification(ctx context.Context, taskID
 // The rest of the interface, which these tests do not exercise. Present because
 // the handler needs them, not because anything here asserts on them.
 
-func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string) {
+func (f *fakeWorkspaceServer) SendChannelNotification(ctx context.Context, taskID int64, content string, attachments ...entity.Attachment) {
 	f.calls = append(f.calls, "SendChannelNotification")
 	f.notifiedTaskID = taskID
 	f.notifiedContent = content
+	f.notifiedAttachments = attachments
 }
 
 func (f *fakeWorkspaceServer) ClearContextForTask(ctx context.Context, taskID int64, clearContext bool) {

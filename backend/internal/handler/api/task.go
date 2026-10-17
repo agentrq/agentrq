@@ -215,7 +215,7 @@ func (h *handler) pushTaskToAgent(ctx context.Context, userID string, t entity.T
 	// made while nothing was attached recoverable. The clear is the
 	// half that must not repeat, and clearContextFor remembers it.
 	srv.ClearContextForTask(ctx, t.ID, t.ClearContext)
-	srv.SendChannelNotification(ctx, t.ID, content)
+	srv.SendChannelNotification(ctx, t.ID, content, t.Attachments...)
 }
 
 // agentTaskConcurrency is how many tasks the workspace's connected agent will
@@ -334,7 +334,7 @@ func (h *handler) respondToTask() fiber.Handler {
 		if atts := formatAttachments(rq.Attachments); atts != "" {
 			content += "\n" + atts
 		}
-		srv.SendChannelNotification(ctx, rq.TaskID, content)
+		srv.SendChannelNotification(ctx, rq.TaskID, content, rq.Attachments...)
 
 		// Push SSE event to human subscribers (ack)
 		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{
@@ -476,7 +476,7 @@ func (h *handler) replyToTask() fiber.Handler {
 		// Notify LLM of the human's reply via MCP channel
 		srv := h.mcpManager.Get(rq.WorkspaceID, rq.UserID)
 		content := replyChannelContent(rq.TaskID, rq.Text, rq.Attachments, h.mcpManager.AgentCommands(rq.WorkspaceID))
-		srv.SendChannelNotification(ctx, rq.TaskID, content)
+		srv.SendChannelNotification(ctx, rq.TaskID, content, rq.Attachments...)
 
 		// Push reply.received SSE event to human subscribers
 		h.bus.Publish(rq.WorkspaceID, rq.UserID, eventbus.Event{

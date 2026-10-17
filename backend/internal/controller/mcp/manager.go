@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 )
 
 // Manager holds a registry of per-workspace MCP servers.
@@ -160,7 +161,7 @@ func (m *Manager) AgentClient(workspaceID int64) *agentlink.ClientInfo {
 }
 
 // SendChannelNotification forwards a channel notification to the appropriate WorkspaceServer.
-func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
+func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment) {
 	m.mu.RLock()
 	srv, ok := m.servers[workspaceID]
 	m.mu.RUnlock()
@@ -168,6 +169,6 @@ func (m *Manager) SendChannelNotification(ctx context.Context, workspaceID int64
 		srv = m.Get(workspaceID, userID)
 	}
 	if srv != nil {
-		srv.SendChannelNotification(ctx, taskID, content)
+		srv.SendChannelNotification(ctx, taskID, content, attachments...)
 	}
 }

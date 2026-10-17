@@ -617,6 +617,17 @@ func TestEngine(t *testing.T) {
 		a.expectParams("session/prompt", `{"sessionId":"s-42","prompt":[{"type":"text","text":"go"}]}`)
 	})
 
+	t.Run("a task's files go with its text, each as a link to read it at", func(t *testing.T) {
+		rec := &recorder{}
+		a := startAgent(t, rec)
+		a.answer(a.expect("initialize"), string(fixture(t, "initialize.response.json")))
+		a.answer(a.expect("session/new"), `{"sessionId":"s-42"}`)
+		l := rec.link(t)
+		l.DeliverTask(context.Background(), 42, "go", agentlink.Attachment{Name: "spec.pdf", MimeType: "application/pdf", URL: "https://example.com/storage/artifacts/w-1/2/3"})
+		a.expectParams("session/prompt", `{"sessionId":"s-42","prompt":[{"type":"text","text":"go"},`+
+			`{"type":"resource_link","uri":"https://example.com/storage/artifacts/w-1/2/3","name":"spec.pdf","mimeType":"application/pdf"}]}`)
+	})
+
 	t.Run("a task whose session needs a terminal login is told the command", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgentWith(t, rec, agentOpts{header: map[string]string{"X-AgentRQ-Agent": "example-agent"}})

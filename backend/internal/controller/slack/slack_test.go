@@ -103,7 +103,7 @@ func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 	return nil
 }
 
-func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string) {
+func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment) {
 }
 
 type mockTokenSvc struct {

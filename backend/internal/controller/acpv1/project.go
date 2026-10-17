@@ -266,7 +266,7 @@ func (e *engineV1) runTurn(d delivery) {
 	e.mu.Unlock()
 	err = e.peer.call(turnCtx, methodSessionPrompt, promptRequest{
 		SessionID: s.id,
-		Prompt:    []contentBlock{{Type: "text", Text: d.content}},
+		Prompt:    promptOf(d),
 	}, &resp)
 	e.mu.Lock()
 	s.stopTurn = nil
@@ -281,6 +281,17 @@ func (e *engineV1) runTurn(d delivery) {
 	if e.deps.OnTurn != nil {
 		e.deps.OnTurn(e.ctx, e.c.WorkspaceID(), e.c.UserID())
 	}
+}
+
+// promptOf is a delivery as prompt content: its text, then each file it
+// carries as a resource_link to its public URL. A link is baseline ACP, so no
+// capability gates it, and the agent fetches only what it needs.
+func promptOf(d delivery) []contentBlock {
+	prompt := []contentBlock{{Type: "text", Text: d.content}}
+	for _, a := range d.attachments {
+		prompt = append(prompt, contentBlock{Type: "resource_link", URI: a.URL, Name: a.Name, MimeType: a.MimeType})
+	}
+	return prompt
 }
 
 func (e *engineV1) isEnding() bool {

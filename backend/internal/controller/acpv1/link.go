@@ -18,8 +18,8 @@ var _ agentlink.Link = (*link)(nil)
 
 func (l *link) ID() string { return l.e.linkID }
 
-func (l *link) DeliverTask(_ context.Context, taskID int64, content string) {
-	l.e.q.deliver(taskID, content)
+func (l *link) DeliverTask(_ context.Context, taskID int64, content string, attachments ...agentlink.Attachment) {
+	l.e.q.deliver(taskID, content, attachments...)
 }
 
 // CancelTask is Stop: anything queued for the task is skipped, and a running

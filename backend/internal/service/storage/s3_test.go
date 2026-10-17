@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	s3mocks "github.com/agentrq/agentrq/backend/internal/service/mocks/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/s3"
@@ -121,6 +122,41 @@ func TestS3PublicStorage(t *testing.T) {
 	client.EXPECT().PutPrivate(gomock.Any(), "attachments", "a4", []byte("png"), "application/octet-stream").Return("etag", nil)
 	if err := s.Save("a4", b64); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An agent reads a file at a signed link when the bucket signs one, and at
+// its public link when it does not, or cannot.
+func TestS3PublicStorageReadURL(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	client := s3mocks.NewMockService(ctrl)
+	s := WithFallback(NewS3Public(client, "attachments"), NewS3(client, "old"))
+	key := AttachmentKey(1, 2, monoflake.ID(3).String())
+
+	client.EXPECT().SignedURL(gomock.Any(), "attachments", key, time.Hour).Return("https://s3/signed", nil)
+	if got := ReadURL(s, key, "https://s3/public", time.Hour); got != "https://s3/signed" {
+		t.Fatalf("got %q, want the signed link", got)
+	}
+
+	client.EXPECT().SignedURL(gomock.Any(), "attachments", key, time.Hour).Return("", nil)
+	if got := ReadURL(s, key, "https://cdn/public", time.Hour); got != "https://cdn/public" {
+		t.Fatalf("got %q, want the public link when the bucket has a public base", got)
+	}
+
+	client.EXPECT().SignedURL(gomock.Any(), "attachments", key, time.Hour).Return("", errors.New("no credentials"))
+	if got := ReadURL(s, key, "https://s3/public", time.Hour); got != "https://s3/public" {
+		t.Fatalf("got %q, want the public link when signing fails", got)
+	}
+
+	if got := ReadURL(s, "../db", "https://s3/public", time.Hour); got != "https://s3/public" {
+		t.Fatalf("got %q, want a key that is no key left unsigned", got)
+	}
+
+	// Neither a private bucket nor a local store signs.
+	for _, svc := range []Service{NewS3(client, "x"), WithFallback(NewS3(client, "x"), NewS3(client, "y"))} {
+		if got := ReadURL(svc, key, "https://h/public", time.Hour); got != "https://h/public" {
+			t.Fatalf("got %q, want the public link as it is", got)
+		}
 	}
 }
 

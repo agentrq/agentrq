@@ -9,9 +9,11 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	zlog "github.com/rs/zerolog/log"
@@ -27,16 +29,25 @@ type (
 		Delete(ctx context.Context, namespace, key string) error
 		// PublicURL is where anyone can read an object, if the bucket lets them.
 		PublicURL(ctx context.Context, namespace, key string) string
+		// SignedURL is a link that reads an object for ttl, or "" when
+		// publicUrl is set: a base of its own is one that needs no signature.
+		SignedURL(ctx context.Context, namespace, key string, ttl time.Duration) (string, error)
 	}
 	S3API interface {
 		PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 		GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 		DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 	}
+	Presigner interface {
+		PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+	}
 	service struct {
 		client    S3API
 		bucket    string
 		publicURL string
+		// presign is set when publicUrl is not: the endpoint and bucket are
+		// only a guess at a public link, since the bucket may well be private.
+		presign Presigner
 	}
 	// Config is one S3 bucket's settings: the s3 section, or another
 	// section's own bucket, such as ssl.s3.
@@ -86,11 +97,15 @@ func NewFromConfig(cfg Config) (Service, error) {
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
-	return &service{
+	s := &service{
 		client:    client,
 		bucket:    cfg.Bucket,
 		publicURL: publicBase(cfg),
-	}, nil
+	}
+	if strings.TrimSpace(cfg.PublicURL) == "" {
+		s.presign = s3.NewPresignClient(client)
+	}
+	return s, nil
 }
 
 // PutPrivate stores the data in s3
@@ -154,6 +169,20 @@ func (s *service) PublicURL(_ context.Context, namespace, key string) string {
 		segs[i] = url.PathEscape(seg)
 	}
 	return s.publicURL + "/" + strings.Join(segs, "/")
+}
+
+func (s *service) SignedURL(ctx context.Context, namespace, key string, ttl time.Duration) (string, error) {
+	if s.presign == nil {
+		return "", nil
+	}
+	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(namespace + "/" + key),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", err
+	}
+	return req.URL, nil
 }
 
 // publicBase is publicUrl, or the endpoint and bucket, path-style, without a

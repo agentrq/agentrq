@@ -292,9 +292,13 @@ type setConfigOptionResponse struct {
 	ConfigOptions []configOption `json:"configOptions"`
 }
 
+// contentBlock is text, or a resource_link: a file by its uri and name.
 type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	URI      string `json:"uri,omitempty"`
+	Name     string `json:"name,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 type promptRequest struct {

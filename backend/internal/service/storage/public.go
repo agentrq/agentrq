@@ -7,6 +7,7 @@ package storage
 import (
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Publisher is a Service whose blobs anyone can also read, at a public URL.
@@ -25,6 +26,27 @@ func PublicURL(svc Service, id string) string {
 		return ""
 	}
 	return p.PublicURL(id)
+}
+
+// Signer is a Publisher whose public link is only a guess, such as a bucket
+// with no public base configured: it signs a link that reads a blob for ttl,
+// or returns "" when its public link is good as it is.
+type Signer interface {
+	SignedURL(id string, ttl time.Duration) (string, error)
+}
+
+// ReadURL is a link to read the blob svc keeps under id: signed for ttl when
+// svc signs, publicURL otherwise, and publicURL too when signing fails, since
+// a guess still beats no link.
+func ReadURL(svc Service, id, publicURL string, ttl time.Duration) string {
+	s, ok := svc.(Signer)
+	if !ok {
+		return publicURL
+	}
+	if signed, err := s.SignedURL(id, ttl); err == nil && signed != "" {
+		return signed
+	}
+	return publicURL
 }
 
 // WithFallback is primary, except that a blob primary does not have is read
@@ -47,6 +69,13 @@ func (s *fallbackService) SavePublic(id, dataBase64, contentType string) (string
 }
 
 func (s *fallbackService) PublicURL(id string) string { return PublicURL(s.primary, id) }
+
+func (s *fallbackService) SignedURL(id string, ttl time.Duration) (string, error) {
+	if p, ok := s.primary.(Signer); ok {
+		return p.SignedURL(id, ttl)
+	}
+	return "", nil
+}
 
 // SaveBlob saves a blob served with contentType and returns its public URL,
 // or "" when svc keeps blobs to be read through the server only.

@@ -37,6 +37,7 @@ type fakeLink struct {
 	// unreachable makes SetEffort fail, as a link gone mid-call does.
 	unreachable bool
 	limits      []int
+	attachments []agentlink.Attachment
 }
 
 // attachLink attaches a new fakeLink to ps under id.
@@ -48,10 +49,11 @@ func attachLink(ps *WorkspaceServer, id string) *fakeLink {
 
 func (l *fakeLink) ID() string { return l.id }
 
-func (l *fakeLink) DeliverTask(_ context.Context, taskID int64, content string) {
+func (l *fakeLink) DeliverTask(_ context.Context, taskID int64, content string, attachments ...agentlink.Attachment) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.tasks = append(l.tasks, fmtTask(taskID, content))
+	l.attachments = append(l.attachments, attachments...)
 }
 
 func (l *fakeLink) CancelTask(_ context.Context, taskID int64) bool {

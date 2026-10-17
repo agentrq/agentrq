@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentrq/agentrq/backend/internal/controller/agentlink"
 	mcpctrl "github.com/agentrq/agentrq/backend/internal/controller/mcp"
+	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 )
 
 // The handler's view of the MCP controller, narrowed to what it actually uses.
@@ -57,7 +58,7 @@ type (
 		SetAgentModel(ctx context.Context, modelID string) error
 		SetAgentEffort(ctx context.Context, effort string) error
 		SetAgentConcurrency(ctx context.Context, limit int) error
-		SendChannelNotification(ctx context.Context, taskID int64, content string)
+		SendChannelNotification(ctx context.Context, taskID int64, content string, attachments ...entity.Attachment)
 		// ClearContextForTask clears at most once per handover, however many
 		// times the task is then pushed — so a caller pushes freely and never
 		// has to decide whether this one is a repeat.
