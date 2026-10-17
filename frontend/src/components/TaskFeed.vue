@@ -214,7 +214,7 @@ const spinUp = useSpinUp();
 
 function openSpinUp(event, task) {
   const rect = event.currentTarget.getBoundingClientRect();
-  spinUp.open(task, currentWorkspace.value, { x: rect.right, y: rect.bottom });
+  spinUp.open(task, currentWorkspace.value, { x: rect.right, y: rect.bottom, top: rect.top });
 }
 
 // The task left this workspace unless the move itself is what failed.

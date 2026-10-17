@@ -303,7 +303,7 @@ const spinUp = useSpinUp();
 
 function openSpinUp(event, task) {
   const rect = event.currentTarget.getBoundingClientRect();
-  spinUp.open(task, workspaceStore.getWorkspace(workspaceOf(task)), { x: rect.right, y: rect.bottom });
+  spinUp.open(task, workspaceStore.getWorkspace(workspaceOf(task)), { x: rect.right, y: rect.bottom, top: rect.top });
 }
 
 // The same bookkeeping as a move: across every workspace the card stays and

@@ -42,8 +42,16 @@ const style = computed(() => {
     return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '380px', maxHeight: 'calc(100vh - 32px)' }
   }
   const vw = window.innerWidth
-  const left = Math.max(8, Math.min(props.spin.state.x - width + 24, vw - width - 8))
-  return { top: `${props.spin.state.y + 8}px`, left: `${left}px`, width: `${Math.min(width, vw - 16)}px` }
+  const vh = window.innerHeight
+  const { x, y, top } = props.spin.state
+  const left = Math.max(8, Math.min(x - width + 24, vw - width - 8))
+  const box = { left: `${left}px`, width: `${Math.min(width, vw - 16)}px` }
+  // Capped to the screen so the rest scrolls inside it, and on whichever
+  // side of the button has more room: uncapped, it ran off a phone's bottom.
+  const below = vh - y - 16
+  const above = top - 16
+  if (below >= above) return { ...box, top: `${y + 8}px`, maxHeight: `${below}px` }
+  return { ...box, bottom: `${vh - top + 8}px`, maxHeight: `${above}px` }
 })
 
 const runLabel = computed(() => {

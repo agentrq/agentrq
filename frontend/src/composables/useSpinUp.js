@@ -78,7 +78,7 @@ export function useSpinUp(deps = {}) {
     registryAgents,
   } = deps
 
-  const state = reactive({ task: null, workspace: null, x: 0, y: 0 })
+  const state = reactive({ task: null, workspace: null, x: 0, y: 0, top: 0 })
   const machines = ref([])
   const machineId = ref('')
   const kind = ref(KINDS[0].id)
@@ -133,8 +133,8 @@ export function useSpinUp(deps = {}) {
    * Opens for one task, on the parent's last launch where that machine is
    * still online, and on the only machine when there is one.
    */
-  async function open(task, workspace, at = { x: 0, y: 0 }) {
-    Object.assign(state, { task, workspace, x: at.x, y: at.y })
+  async function open(task, workspace, at = { x: 0, y: 0, top: 0 }) {
+    Object.assign(state, { task, workspace, x: at.x, y: at.y, top: at.top ?? at.y })
     error.value = ''
     step.value = ''
     forked.value = null

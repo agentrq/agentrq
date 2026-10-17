@@ -204,6 +204,37 @@ describe('Spin up on a task row', () => {
     }
   })
 
+  it('fits a phone screen and scrolls inside, on the side of the button with more room', async () => {
+    const [wide, tall] = [window.innerWidth, window.innerHeight]
+    const open = async (top) => {
+      const phone = await mount(PARENT)
+      const button = phone.row('Fix login').querySelector('[title="Spin up in a fork"]')
+      button.getBoundingClientRect = () => ({ top, bottom: top + 32, left: 300, right: 332 })
+      button.click()
+      await settle()
+      const dialog = [...document.body.querySelectorAll('[data-test=spin-up]')].at(-1)
+      app.unmount()
+      return dialog
+    }
+    try {
+      window.innerWidth = 390
+      window.innerHeight = 844
+
+      const below = await open(100)
+      expect(below.style.top).toBe('140px')
+      expect(below.style.maxHeight).toBe('696px')
+      expect(below.className).toContain('overflow-y-auto')
+
+      const above = await open(700)
+      expect(above.style.top).toBe('')
+      expect(above.style.bottom).toBe('152px')
+      expect(above.style.maxHeight).toBe('684px')
+    } finally {
+      window.innerWidth = wide
+      window.innerHeight = tall
+    }
+  })
+
   it('keeps the row when the move is what failed', async () => {
     moveTask.mockImplementationOnce(() => Promise.reject(new Error('task not found')))
     const { row } = await mount(PARENT)
