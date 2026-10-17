@@ -234,40 +234,9 @@ func New(cfg Config) (*App, error) {
 		return nil, errors.New("neither postgres nor sqlite must be enabled in config")
 	}
 
-	// Drop old single-column unique index on push_subscriptions.endpoint — replaced
-	// by composite uniqueIndex(endpoint, workspace_id) to allow one subscription per
-	// browser per workspace.
-	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS uni_push_subscriptions_endpoint").Error
-
-	// idx_events_name_user_id / idx_workflows_name_user_id were created over
-	// `name` alone despite their names, because only the Name field carried
-	// the uniqueIndex tag. That made event and workflow names unique across
-	// every account rather than per user. AutoMigrate will not redefine an
-	// index that already exists, so the stale ones are dropped here and
-	// recreated as the composite the model now declares. Dropping is safe:
-	// the new index is strictly looser, so any data valid under the old one
-	// is valid under the new one.
-	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_events_name_user_id").Error
-	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_workflows_name_user_id").Error
-
-	// idx_tool_calls_task_id_id, over (task_id, id), pages a task's tool calls
-	// and covers every query the task_id index served.
-	_ = db.Conn(context.Background()).Exec("DROP INDEX IF EXISTS idx_tool_calls_task_id").Error
-
-	if err := db.Conn(context.Background()).AutoMigrate(migratedModels()...); err != nil {
+	if err := withMigrationLock(db.Conn(context.Background()), migrateSchema); err != nil {
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
-
-	// Sessions that have finished are removed as they finish, but rows written
-	// before that was true are still here — and they are what turns a machine
-	// page into a list of everything that has ever run on it. A session row is
-	// operational state, "what is running here", so a finished one has no
-	// reader; the record of what happened is the audit log.
-	//
-	// Safe to repeat, and it only ever matches rows whose process is over.
-	_ = db.Conn(context.Background()).
-		Where("status IN ?", []string{"exited", "killed", "failed"}).
-		Delete(&model.Session{}).Error
 
 	// ── Core Services ──────────────────────────────────────────────────────────
 	idgenNode := idgenNodeFor(cfg.Idgen.Node, net.Interfaces)
