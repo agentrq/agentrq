@@ -7,6 +7,7 @@ package acpv1
 import (
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -15,10 +16,16 @@ import (
 // also reads that file sees one server, not two.
 const mcpServerName = "agentrq-workspace"
 
+// ownServers are the exact names the workspace's MCP server goes by: the one
+// session/new hands the agent, and agentrq-<workspace id>, which older
+// .mcp.json files use. A lookalike such as agentrq-evil, another workspace's
+// agentrq-<id>, or a title that merely mentions one is some other server.
+func (e *engineV1) ownServers() []string {
+	return []string{mcpServerName, "agentrq-" + b62(e.c.WorkspaceID())}
+}
+
 var (
-	legacyAgentrqTool = regexp.MustCompile(`agentrq-[a-zA-Z0-9]{11}`)
-	agentrqServer     = regexp.MustCompile(`(?i)^agentrq(?:[.\-_][A-Za-z0-9.\-_]*)?$`)
-	attributedCall    = regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*\(\s*([^()\s]+)\s+MCP\b`)
+	attributedCall = regexp.MustCompile(`(?i)^\s*([A-Za-z0-9_]+)\s*\(\s*([^()\s]+)\s+MCP\b`)
 	// RE2 has no back-references, so each separator of the qualified form has
 	// its own pattern.
 	qualifiedCalls = []*regexp.Regexp{
@@ -33,15 +40,13 @@ var (
 )
 
 // workspaceTool reports which of the workspace's own tools a call is, if it
-// is one. Both halves must check out: a server named like AgentRQ's, and a
-// tool the workspace actually offers. A server name alone never grants
-// anything. name is the call's structured name, read only by server and tool:
-// the legacy pattern matches anywhere in a string, so it stays on the title.
-// A name that says nothing of AgentRQ, and is not one of its tools, is final:
-// a title cannot make another tool ours.
-func workspaceTool(title, name string, offered map[string]struct{}) (tool string, ok bool) {
+// is one. Both halves must check out: a server named exactly one of servers,
+// and a tool the workspace actually offers. name is the call's structured name. A
+// name that says nothing of AgentRQ, and is not one of its tools, is final: a
+// title cannot make another tool ours.
+func workspaceTool(title, name string, servers []string, offered map[string]struct{}) (tool string, ok bool) {
 	if name = strings.TrimSpace(name); name != "" {
-		tool, ok, named := namedWorkspaceTool(name, offered)
+		tool, ok, named := namedWorkspaceTool(name, servers, offered)
 		if ok || named {
 			return tool, ok
 		}
@@ -50,25 +55,15 @@ func workspaceTool(title, name string, offered map[string]struct{}) (tool string
 			return "", false
 		}
 	}
-	tool, ok, named := namedWorkspaceTool(title, offered)
-	if ok || named {
-		return tool, ok
-	}
-	if legacyAgentrqTool.MatchString(title) {
-		tool = firstToken(strings.TrimSpace(title))
-		if _, offeredTool := offered[tool]; offeredTool {
-			return tool, true
-		}
-	}
-	return "", false
+	tool, ok, _ = namedWorkspaceTool(title, servers, offered)
+	return tool, ok
 }
 
 // namedWorkspaceTool reads a call named by server and tool. named reports a
-// title that names its two halves outright: its answer is final, and the
-// legacy pattern never gets a second look at it.
-func namedWorkspaceTool(title string, offered map[string]struct{}) (tool string, ok, named bool) {
+// title that names its two halves outright: its answer is final.
+func namedWorkspaceTool(title string, servers []string, offered map[string]struct{}) (tool string, ok, named bool) {
 	ours := func(server, tool string) bool {
-		if !strings.EqualFold(server, mcpServerName) && !agentrqServer.MatchString(server) {
+		if !slices.Contains(servers, server) {
 			return false
 		}
 		_, offeredTool := offered[tool]
@@ -99,15 +94,6 @@ func namedWorkspaceTool(title string, offered map[string]struct{}) (tool string,
 		}
 	}
 	return "", false, false
-}
-
-// firstToken is the title up to its first space or bracket: how the gateway
-// names a call it recognised only by the legacy pattern.
-func firstToken(title string) string {
-	if i := strings.IndexAny(title, " ("); i >= 0 {
-		return title[:i]
-	}
-	return title
 }
 
 // agentReply reads the task and text of a reply the agent sent through the

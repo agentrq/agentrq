@@ -8,6 +8,7 @@ import "testing"
 
 func TestWorkspaceTool(t *testing.T) {
 	offered := map[string]struct{}{"reply": {}, "saveMemory": {}, "updateTaskStatus": {}, "task": {}}
+	servers := []string{"agentrq-workspace", "agentrq-AbCdEfGhIjK"}
 	cases := []struct {
 		name, title, callName, tool string
 		ok                          bool
@@ -15,37 +16,40 @@ func TestWorkspaceTool(t *testing.T) {
 		{"a call attributed to the workspace server is ours", "saveMemory (agentrq-workspace MCP Server)", "", "saveMemory", true},
 		{"a double-underscore qualified call is ours", "mcp__agentrq-workspace__reply", "", "reply", true},
 		{"a dotted qualified call is ours", "mcp.agentrq-workspace.updateTaskStatus", "", "updateTaskStatus", true},
-		{"a dashed qualified call is ours", "mcp-agentrq-task", "", "task", true},
+		{"a dashed qualified call is ours", "mcp-agentrq-workspace-task", "", "task", true},
 		{"a bare server_tool title is split both ways and checked", "agentrq-workspace_updateTaskStatus", "", "updateTaskStatus", true},
 		{"a human-readable title with a programmatic workspace tool name is ours", "Replying to task", "mcp__agentrq-workspace__task", "task", true},
-		{"a structured workspace tool name wins over a legacy match in the title", "Replying in agentrq-AbCdEfGhIjK", "mcp__agentrq-workspace__task", "task", true},
+		{"a structured workspace tool name wins over an agentrq id in the title", "Replying in agentrq-AbCdEfGhIjK", "mcp__agentrq-workspace__task", "task", true},
 		{"a bare offered tool name with an attributed workspace title is ours", "task (agentrq-workspace MCP Server)", "task", "task", true},
 		{"a non-workspace tool name cannot spoof a workspace tool through its title", "mcp__agentrq-workspace__task", "bash", "", false},
-		{"a SQL injection payload with a legacy token embedded is not ours", "sqlite3 \"'; DROP TABLE tasks; --\" agentrq-AbCdEfGhIjK", "", "", false},
-		{"a legacy match is not ours unless its first word is an offered tool", "rm agentrq-AbCdEfGhIjK", "", "", false},
-		{"a legacy match reads its first word past leading space", " reply agentrq-AbCdEfGhIjK", "", "reply", true},
-		{"a legacy match in brackets is ours, as the gateway reads it", "reply (agentrq-AbCdEfGhIjK)", "", "reply", true},
-		{"a legacy match with trailing text is ours, as the gateway reads it", "reply agentrq-AbCdEfGhIjK: Done.", "", "reply", true},
 		{"an attributed call with trailing text is read by server and tool", "task (agentrq-workspace MCP Server): reply to task 42", "", "task", true},
-		{"an attributed call with another suffix is read by server and tool", "reply (agentrq MCP tool)", "", "reply", true},
 		{"a structured name naming AgentRQ in an unknown form falls back to the title", "task (agentrq-workspace MCP Server)", "mcp_agentrq-workspace_task", "task", true},
 		{"a slashed structured name falls back to the title", "task (agentrq-workspace MCP Server)", "agentrq-workspace/task", "task", true},
 		{"a structured name naming another server is final", "task (agentrq-workspace MCP Server)", "mcp__filesystem__task", "", false},
-		{"a tool the workspace does not offer is not ours", "mcp__agentrq-evil__rm_rf", "", "", false},
-		{"a qualified call to a tool not offered is not ours, even with a legacy-shaped server", "mcp__agentrq-AbCdEfGhIjK__rm_rf", "", "", false},
-		{"an attributed call to a tool not offered is not ours, even with a legacy-shaped server", "Bash (agentrq-AbCdEfGhIjK MCP Server)", "", "", false},
-		{"a structured name is never read by the legacy pattern", "Run command", "cat /tmp/agentrq-abcdefghijk/x", "", false},
 		{"a structured name for a tool not offered is not ours", "Run command", "mcp__agentrq-workspace__rm_rf", "", false},
-		{"a server not named like AgentRQ's is not ours", "mcp__notagentrq__reply", "", "", false},
+		{"a structured name mentioning agentrq is never matched loosely", "Run command", "cat /tmp/agentrq-abcdefghijk/x", "", false},
+		{"a lookalike server offering a workspace tool's name is not ours", "mcp__agentrq-evil__task", "", "", false},
+		{"a lookalike structured name is not ours", "Run command", "mcp__agentrq-evil__task", "", false},
+		{"a server differing only in case is not ours", "mcp__AgentRQ-Workspace__task", "", "", false},
+		{"the workspace's own agentrq-<id> server is ours", "mcp__agentrq-AbCdEfGhIjK__task", "", "task", true},
+		{"the workspace's own agentrq-<id> server is ours when attributed", "task (agentrq-AbCdEfGhIjK MCP Server)", "", "task", true},
+		{"the workspace's own agentrq-<id> structured name is ours", "Replying to task", "mcp__agentrq-AbCdEfGhIjK__task", "task", true},
+		{"another workspace's agentrq-<id> server is not ours", "mcp__agentrq-ZyXwVuTsRqP__task", "", "", false},
+		{"another workspace's agentrq-<id> structured name is final", "mcp__agentrq-workspace__task", "mcp__agentrq-ZyXwVuTsRqP__task", "", false},
+		{"a bare agentrq server is not ours", "reply (agentrq MCP tool)", "", "", false},
+		{"a tool and an agentrq id is not ours", "reply agentrq-AbCdEfGhIjK", "", "", false},
+		{"a tool and a bracketed agentrq id is not ours", "reply (agentrq-AbCdEfGhIjK)", "", "", false},
+		{"a shell command starting with an offered tool's name is not ours", "reply agentrq-AbCdEfGhIjK; rm -rf ~", "", "", false},
+		{"a SQL injection payload with an agentrq id embedded is not ours", "sqlite3 \"'; DROP TABLE tasks; --\" agentrq-AbCdEfGhIjK", "", "", false},
+		{"a tool the workspace does not offer is not ours", "mcp__agentrq-workspace__rm_rf", "", "", false},
 		{"an attributed call to another server is not ours", "reply (filesystem MCP Server)", "", "", false},
+		{"a server not named like AgentRQ's is not ours", "mcp__notagentrq__reply", "", "", false},
 		{"a plain tool name is not ours", "write_file", "", "", false},
 		{"a path is not a call", "cat /home/me/agentrq-workspace/reply", "", "", false},
-		{"the legacy pattern is kept as generous as the gateway", "reply agentrq-AbCdEfGhIjK", "", "reply", true},
-		{"the legacy pattern alone names no offered tool", "agentrq-AbCdEfGhIjK", "", "", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			tool, ok := workspaceTool(c.title, c.callName, offered)
+			tool, ok := workspaceTool(c.title, c.callName, servers, offered)
 			if tool != c.tool || ok != c.ok {
 				t.Errorf("workspaceTool(%q, %q) was (%q, %v), want (%q, %v)", c.title, c.callName, tool, ok, c.tool, c.ok)
 			}

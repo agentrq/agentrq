@@ -46,7 +46,7 @@ func (e *engineV1) requestPermission(ctx context.Context, params json.RawMessage
 	if name == "" {
 		name = known.name
 	}
-	if _, ours := workspaceTool(title, name, e.ws.ToolNames()); ours {
+	if _, ours := workspaceTool(title, name, e.ownServers(), e.ws.ToolNames()); ours {
 		return requestPermissionResponse{Outcome: allowOwnTool(req.Options)}, nil
 	}
 	// The request owns the call's row from here: the one already recorded for

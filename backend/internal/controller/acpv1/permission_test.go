@@ -212,11 +212,23 @@ func TestPermissions(t *testing.T) {
 		if got := a.answerTo(7); string(got.Result) != `{"outcome":{"outcome":"selected","optionId":"approved-always"}}` {
 			t.Fatalf("the agent was answered %s, want approved-always", got.Result)
 		}
+		a.request(8, methodRequestPermission, `{"sessionId":"sess-1","toolCall":{"toolCallId":"call-5","title":"mcp__agentrq-`+b62(100)+`__task"},"options":[{"optionId":"approved","name":"Yes","kind":"allow_once"}]}`)
+		if got := a.answerTo(8); string(got.Result) != answerApproved {
+			t.Fatalf("the agent was answered %s, want %s for the workspace's own agentrq-<id> server", got.Result, answerApproved)
+		}
 		rec.read(func() {
 			if len(rec.permissions) != 0 {
 				t.Fatalf("the workspace was asked %+v, want nothing for its own tool", rec.permissions)
 			}
 		})
+	})
+
+	t.Run("another workspace's agentrq-<id> server is asked about", func(t *testing.T) {
+		rec, a, _ := midTurn(t, agentOpts{})
+		a.request(5, methodRequestPermission, `{"sessionId":"sess-1","toolCall":{"toolCallId":"call-3","title":"mcp__agentrq-`+b62(200)+`__task"},"options":[{"optionId":"approved","name":"Yes","kind":"allow_once"}]}`)
+		if got := rec.permissionRequests(t, 1)[0]; got.ToolName != "mcp__agentrq-"+b62(200)+"__task" {
+			t.Fatalf("the workspace was asked about %q, want the other workspace's call", got.ToolName)
+		}
 	})
 
 	t.Run("a verdict reaches the waiting call and answers the agent", func(t *testing.T) {
