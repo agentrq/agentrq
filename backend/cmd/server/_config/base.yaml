@@ -135,5 +135,7 @@ s3:
 # The node id must be unique across running instances: monoflake ids collide
 # otherwise. It is also what identifies this process when a daemon socket is
 # paired to an instance, so the same value has to be right for both reasons.
+# Unset, it is derived from the MAC address (a hash mod 1024), which can still
+# collide: set it per instance (1-1023) to be sure.
 idgen:
-  node: ${MONOFLAKE_NODE:1}
+  node: ${MONOFLAKE_NODE:}

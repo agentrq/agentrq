@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -280,14 +281,7 @@ func New(cfg Config) (*App, error) {
 		Delete(&model.Session{}).Error
 
 	// ── Core Services ──────────────────────────────────────────────────────────
-	// Defaults to 1 rather than 0 only because that is what this was
-	// hardcoded to; changing it would change the node bits of every id a
-	// existing deployment generates from here on. Uniqueness is what matters,
-	// not the value.
-	idgenNode := cfg.Idgen.Node
-	if idgenNode == 0 {
-		idgenNode = 1
-	}
+	idgenNode := idgenNodeFor(cfg.Idgen.Node, net.Interfaces)
 	ids, err := idgen.New(idgenNode)
 	if err != nil {
 		return nil, fmt.Errorf("idgen: %w", err)
@@ -947,18 +941,32 @@ func newLauncher(cfg Config, secure bool, c agentlaunch.Crud, agents agentlaunch
 	}
 }
 
+// idgenNodeFor is the configured node id, or else one derived from this
+// machine's MAC address, so instances left unconfigured still differ. A
+// machine with no MAC gets 1, the value every instance had before.
+func idgenNodeFor(configured uint16, interfaces func() ([]net.Interface, error)) uint16 {
+	if configured != 0 {
+		return configured
+	}
+	node, err := idgen.NodeFromMAC(interfaces)
+	if err != nil {
+		zlog.Warn().Err(err).Msg("idgen: no node id is configured and none could be derived; using 1, so set MONOFLAKE_NODE when running several instances")
+		return 1
+	}
+	zlog.Info().Uint16("node", node).Msg("idgen: node id derived from the MAC address")
+	return node
+}
+
 func instanceID(idgenNode uint16) string {
 	if v := strings.TrimSpace(os.Getenv("AGENTRQ_INSTANCE_ID")); v != "" {
 		return v
 	}
 	// The idgen node id, because it already has to be unique per instance:
-	// monoflake ids collide otherwise. A deployment running several instances
-	// has therefore already set it, and one that has not is running one
-	// instance, where the pairing does not matter anyway.
+	// monoflake ids collide otherwise. It is configured, or derived from the
+	// MAC address, so it holds still across restarts.
 	//
-	// Better than a hostname, which is only usually unique, and far better
-	// than a random value, which changes on every restart and leaves pairings
-	// pointing at an id nothing will ever answer to again.
+	// Far better than a random value, which changes on every restart and
+	// leaves pairings pointing at an id nothing will ever answer to again.
 	return fmt.Sprintf("node-%d", idgenNode)
 }
 
