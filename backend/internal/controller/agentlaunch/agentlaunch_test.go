@@ -294,7 +294,6 @@ func TestLaunch_GatewayStartsInNativeACPMode(t *testing.T) {
 		action  entity.Action
 	}{
 		{"1", "1", entity.ActionAgentLaunchACPNativeV1},
-		{"2", "2", entity.ActionAgentLaunchACPNativeV2},
 		{"", "1", entity.ActionAgentLaunchACPNativeV1},
 	} {
 		t.Run("acpVersion "+tc.version, func(t *testing.T) {
@@ -328,8 +327,10 @@ func TestLaunch_NativeACPRefusals(t *testing.T) {
 	}{
 		{"acpVersion on claude-code is refused", "claude-code", "1", []string{wire.CapabilityACPVersion}, on,
 			entity.ErrLaunchInvalid, "acpVersion applies only to the ACP gateway"},
-		{"an acpVersion other than 1 or 2 is refused", "acp-gateway", "3", []string{wire.CapabilityACPVersion}, on,
-			entity.ErrLaunchInvalid, "acpVersion must be 1 or 2"},
+		{"v2 is refused", "acp-gateway", "2", []string{wire.CapabilityACPVersion}, on,
+			entity.ErrLaunchInvalid, "acpVersion must be 1"},
+		{"any other acpVersion is refused", "acp-gateway", "3", []string{wire.CapabilityACPVersion}, on,
+			entity.ErrLaunchInvalid, "acpVersion must be 1"},
 		{"a daemon without the capability gets the update message", "acp-gateway", "1", nil, on,
 			entity.ErrLaunchBusy, "update agentrqd on this machine to start the ACP gateway"},
 		{"a blank version needs the capability too", "acp-gateway", "", nil, on,
@@ -338,8 +339,8 @@ func TestLaunch_NativeACPRefusals(t *testing.T) {
 			func(string) bool { return false }, entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
 		{"a blank version is refused when v1 is off", "acp-gateway", "", []string{wire.CapabilityACPVersion},
 			func(string) bool { return false }, entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
-		{"a server that offers no native ACP refuses it", "acp-gateway", "2", []string{wire.CapabilityACPVersion}, nil,
-			entity.ErrLaunchBusy, "native ACP v2 is turned off on this server"},
+		{"a server that offers no native ACP refuses it", "acp-gateway", "1", []string{wire.CapabilityACPVersion}, nil,
+			entity.ErrLaunchBusy, "native ACP v1 is turned off on this server"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -544,11 +545,11 @@ func TestStop_PassesOnWhatItCannotRead(t *testing.T) {
 // Every kind the supervisor offers is one this server counts.
 func TestKindsAreAllCounted(t *testing.T) {
 	for _, kind := range Kinds {
-		if _, ok := launchAction(kind, ""); !ok {
+		if _, ok := launchAction(kind); !ok {
 			t.Errorf("%q is offered but not counted", kind)
 		}
 	}
-	if _, ok := launchAction("", ""); ok || slices.Contains(Kinds, "") {
+	if _, ok := launchAction(""); ok || slices.Contains(Kinds, "") {
 		t.Error("an empty kind is counted")
 	}
 }

@@ -278,8 +278,6 @@ func TestTheGatewayStartsInNativeACPMode(t *testing.T) {
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp"},
 		{"v1 passes no flag", Params{Agent: "codex-acp", ACPVersion: "1", Model: "gpt-5"},
 			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --model gpt-5"},
-		{"v2 passes its flag", Params{Agent: "codex-acp", ACPVersion: "2"},
-			"npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 2"},
 		{"v1 passes the effort", Params{Agent: "claude-acp", ACPVersion: "1", Model: "opus", Effort: "high"},
 			"npx -y @agentrq/acp-gateway@latest --agent claude-acp --model opus --effort high"},
 		{"blank passes the effort too", Params{Agent: "claude-acp", Effort: "high"},
@@ -305,6 +303,7 @@ func TestANativeACPVersionIsRefusedWhereItMeansNothing(t *testing.T) {
 		kind Kind
 		p    Params
 	}{
+		{"v2 is refused", KindACPGateway, Params{Agent: "a", ACPVersion: "2"}},
 		{"any other version is refused", KindACPGateway, Params{Agent: "a", ACPVersion: "3"}},
 		{"a flag is refused", KindACPGateway, Params{Agent: "a", ACPVersion: "--1"}},
 		{"claude-code ignores nothing silently", KindClaudeCode, Params{Workspace: "w", ServerName: "s", ACPVersion: "1"}},

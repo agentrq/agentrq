@@ -72,7 +72,7 @@ type (
 		Tokens   Tokens
 		URLs     URLs
 		// ACPEnabled says whether this server offers native ACP of a version
-		// ("1" or "2"). Nil offers none.
+		// ("1"). Nil offers none.
 		ACPEnabled func(version string) bool
 
 		// launching holds the workspaces with a launch between its checks and
@@ -95,8 +95,8 @@ type (
 		// AllowUnverified is the person's consent to the acp-gateway installing
 		// an agent the registry publishes no checksum for.
 		AllowUnverified bool
-		// ACPVersion is the ACP version the acp-gateway runs, "1" or "2";
-		// blank is "1".
+		// ACPVersion is the ACP version the acp-gateway runs: "1", the only
+		// one, or blank for it.
 		ACPVersion string
 		Cols       uint16
 		Rows       uint16
@@ -244,8 +244,8 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 		switch {
 		case rq.Kind != "acp-gateway":
 			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion applies only to the ACP gateway")
-		case rq.ACPVersion != "1" && rq.ACPVersion != "2":
-			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion must be 1 or 2")
+		case rq.ACPVersion != "1":
+			return nil, entity.NewLaunchError(entity.ErrLaunchInvalid, "acpVersion must be 1")
 		case !l.Machines.HasCapability(machineID, wire.CapabilityACPVersion):
 			return nil, busy("update agentrqd on this machine to start the ACP gateway")
 		case l.ACPEnabled == nil || !l.ACPEnabled(rq.ACPVersion):
@@ -321,7 +321,7 @@ func (l *Launcher) Launch(ctx context.Context, rq Request) (*entity.CreateSessio
 	// Counted on the frame actually being sent, not on the request coming
 	// in: a launch refused above never reached a machine, and a launch that
 	// timed out here is a delivery failure, not a spin-up.
-	if launchAction, ok := launchAction(rq.Kind, rq.ACPVersion); ok {
+	if launchAction, ok := launchAction(rq.Kind); ok {
 		if err := l.Crud.RecordTelemetry(ctx, entity.RecordTelemetryRequest{
 			Action:      launchAction,
 			WorkspaceID: workspaceID,
@@ -405,14 +405,11 @@ var Kinds = []string{"claude-code", "acp-gateway"}
 // that counts it. The daemon is the actual authority on valid kinds
 // (supervisor.Resolve); a kind neither server recognises is left uncounted
 // rather than guessed at.
-func launchAction(kind, acpVersion string) (entity.Action, bool) {
+func launchAction(kind string) (entity.Action, bool) {
 	switch kind {
 	case "claude-code":
 		return entity.ActionAgentLaunchClaudeCode, true
 	case "acp-gateway":
-		if acpVersion == "2" {
-			return entity.ActionAgentLaunchACPNativeV2, true
-		}
 		return entity.ActionAgentLaunchACPNativeV1, true
 	}
 	return 0, false

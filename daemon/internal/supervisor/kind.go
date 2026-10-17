@@ -58,8 +58,8 @@ type Params struct {
 	Agent string
 	// AllowUnverified lets the acp-gateway install an agent with no checksum.
 	AllowUnverified bool
-	// ACPVersion is the ACP version the acp-gateway runs: "1" or "2", blank
-	// for "1".
+	// ACPVersion is the ACP version the acp-gateway runs: "1", the only one,
+	// or blank for it.
 	ACPVersion string
 }
 
@@ -224,17 +224,14 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if p.Effort != "" && !claudeEfforts[p.Effort] {
 			return Command{}, fmt.Errorf("%w: effort=%q", ErrBadParameter, p.Effort)
 		}
-		if p.ACPVersion != "" && p.ACPVersion != "1" && p.ACPVersion != "2" {
+		// ACP v1 is the gateway's only mode, so it needs no flag; blank, or a
+		// session saved with "1", starts it the same way.
+		if p.ACPVersion != "" && p.ACPVersion != "1" {
 			return Command{}, fmt.Errorf("%w: acpVersion=%q", ErrBadParameter, p.ACPVersion)
 		}
 		argv := []string{
 			"npx", "-y", "@agentrq/acp-gateway@latest",
 			"--agent", p.Agent,
-		}
-		// ACP v1 is the gateway's only mode, so it needs no flag; blank, or a
-		// session saved with "1", starts it the same way.
-		if p.ACPVersion == "2" {
-			argv = append(argv, "--acp-version", p.ACPVersion)
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)

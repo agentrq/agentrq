@@ -1663,7 +1663,8 @@ const (
 	// /api/acp/v1 socket.
 	ActionACPV1Connect Action = 100
 	ActionACPV1Turn    Action = 101
-	// An acp-gateway launched in native ACP v1 or v2 mode.
+	// An acp-gateway launched in native ACP v1 mode. V2 is retired: no
+	// gateway or server speaks it. Kept for any count already stored.
 	ActionAgentLaunchACPNativeV1 Action = 102
 	ActionAgentLaunchACPNativeV2 Action = 103
 	// A reasoning level asked of the connected agent from the interface;

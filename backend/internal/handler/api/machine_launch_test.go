@@ -889,13 +889,13 @@ func TestLaunchAgent_GatewayCarriesTheConsentToAnUnverifiedInstall(t *testing.T)
 // The native ACP version reaches the shared launch, whose gates answer for it:
 // here a machine too old to pass it on.
 func TestLaunchAgent_GatewayCarriesTheNativeACPVersion(t *testing.T) {
-	body := `{"kind":"acp-gateway","agent":"codex-acp","acpVersion":"2"}`
+	body := `{"kind":"acp-gateway","agent":"codex-acp","acpVersion":"1"}`
 	resp, start := launchWith(t, claudeModelLaunchCrud(), []string{wire.CapabilityACPVersion}, "0.10.3", body)
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("status = %d: %s", resp.StatusCode, responseMessage(t, resp))
 	}
-	if start.ACPVersion != "2" {
-		t.Errorf("the start frame names acpVersion %q, want 2", start.ACPVersion)
+	if start.ACPVersion != "1" {
+		t.Errorf("the start frame names acpVersion %q, want 1", start.ACPVersion)
 	}
 
 	resp, start = launchWith(t, claudeModelLaunchCrud(), nil, "0.10.2", body)
