@@ -90,10 +90,8 @@ jobs:
                   if pv != mv:
                       problems.append(f'{name}: package.json is {pv}, plugin.json is {mv}')
 
-              if 'privacyPolicyUrl' in plugin:
-                  problems.append(
-                      f'{name}: plugin.json sets privacyPolicyUrl; declare the privacy link in README.md instead to avoid portal UNKNOWN_KEY warnings'
-                  )
+              if plugin.get('privacyPolicyUrl') != 'https://agentrq.com/privacy':
+                  problems.append(f'{name}: plugin.json privacyPolicyUrl must be https://agentrq.com/privacy')
 
               readme = d / 'README.md'
               if not readme.is_file() or '[Privacy Policy](https://agentrq.com/privacy)' not in readme.read_text():
