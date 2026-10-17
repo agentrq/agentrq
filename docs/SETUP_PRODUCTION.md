@@ -153,6 +153,22 @@ docker-compose logs --tail 100 agentrq
 docker-compose logs agentrq | grep ERROR
 ```
 
+### Health Probes
+
+Every instance answers two unauthenticated probes on its own port, whatever
+the `Host` header:
+
+- `GET /healthz` — liveness: `200 ok` while the process serves HTTP. It checks
+  nothing else, so a slow database never gets an instance restarted.
+- `GET /readyz` — readiness: `200 ok` when the database answers a ping within
+  2 seconds, `503` otherwise, and `503 draining` from the moment shutdown starts.
+
+When several instances sit behind a load balancer, set
+`AGENTRQ_APP_DRAIN_DELAY` (e.g. `10s`, longer than the probe interval): on
+SIGTERM the instance fails `/readyz` but keeps serving for that long, so the
+balancer moves traffic away before the listener closes. Allow for it in the
+orchestrator's termination grace period.
+
 ### Database Health
 
 ```bash

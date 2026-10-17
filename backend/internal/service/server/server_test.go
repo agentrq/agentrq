@@ -169,3 +169,31 @@ func stringsContains(s, substr string) bool {
 	}
 	return false
 }
+
+// A probe addresses the instance by its own IP, which the host check refuses
+// once a domain is set, so probes are answered before it.
+func TestServeHTTPAnswersProbesBeforeTheHostCheck(t *testing.T) {
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "router")
+	})
+	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "probe:%s", r.URL.Path)
+	})
+	s, _ := New(Params{
+		Config: Config{Domain: "example.com"},
+		Router: router,
+		Probes: map[string]http.Handler{"/healthz": probe, "/readyz": probe},
+	})
+
+	for path, want := range map[string]string{
+		"/healthz":     "probe:/healthz",
+		"/readyz":      "probe:/readyz",
+		"/healthz/sub": "Host 10.0.0.7 not allowed",
+	} {
+		rr := httptest.NewRecorder()
+		s.(*service).ServeHTTP(rr, httptest.NewRequest("GET", "http://10.0.0.7:8080"+path, nil))
+		if rr.Body.String() != want {
+			t.Errorf("%s = %q, want %q", path, rr.Body.String(), want)
+		}
+	}
+}

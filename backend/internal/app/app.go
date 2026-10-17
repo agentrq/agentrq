@@ -41,6 +41,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ddos"
 	"github.com/agentrq/agentrq/backend/internal/handler/api/middleware/ratelimit"
 	handlercoremcp "github.com/agentrq/agentrq/backend/internal/handler/coremcp"
+	"github.com/agentrq/agentrq/backend/internal/handler/health"
 	handlermcp "github.com/agentrq/agentrq/backend/internal/handler/mcp"
 	handlerslack "github.com/agentrq/agentrq/backend/internal/handler/slack"
 	mapper "github.com/agentrq/agentrq/backend/internal/mapper/api"
@@ -83,6 +84,9 @@ type (
 			BasePath     string `yaml:"basePath"`     // e.g. /abc/def for reverse proxy
 			CookieSecure string `yaml:"cookieSecure"` // "true"/"false"/"" (empty = follow SSL)
 			ProxyDomain  string `yaml:"proxyDomain"`  // e.g. example.com for reverse proxy
+			// How long shutdown keeps serving with readiness failed, so a
+			// load balancer stops routing here before the listener closes.
+			DrainDelay time.Duration `yaml:"drainDelay"`
 		} `yaml:"app"`
 		SSL struct {
 			Enabled            bool   `yaml:"enabled"`
@@ -160,7 +164,10 @@ type (
 		taskAgents taskagent.Controller
 		// acpV1Hub holds the native ACP v1 connections, told on shutdown.
 		acpV1Hub *acpv1.Hub
-		cancel   context.CancelFunc
+		// probes is told on shutdown, so readiness fails while it drains.
+		probes     *health.Handler
+		drainDelay time.Duration
+		cancel     context.CancelFunc
 	}
 )
 
@@ -170,6 +177,9 @@ func New(cfg Config) (*App, error) {
 	}
 	if err := applyLimits(cfg); err != nil {
 		return nil, err
+	}
+	if cfg.App.DrainDelay < 0 {
+		return nil, fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
 	}
 
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
@@ -872,6 +882,8 @@ func New(cfg Config) (*App, error) {
 	finalRouter = ratelimit.New(cfg.Ratelimit.Enabled, cfg.Ratelimit.MaxPerIP, cfg.Ratelimit.MaxPerUser, cfg.Ratelimit.Window, tokenSvc)(finalRouter)
 	finalRouter = ddos.New(cfg.Ddos.Enabled, cfg.Ddos.MaxRequestsPerSecond, cfg.Ddos.BlockDuration)(finalRouter)
 
+	probes := health.New(pingDB(db))
+
 	serverSvc, err := server.New(server.Params{
 		Config: server.Config{
 			Port:               cfg.App.Port,
@@ -884,13 +896,14 @@ func New(cfg Config) (*App, error) {
 			CloudflareAPIToken: cfg.SSL.CloudflareAPIToken,
 		},
 		Router: finalRouter,
+		Probes: map[string]http.Handler{health.LivePath: probes, health.ReadyPath: probes},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server service: %w", err)
 	}
 
 	cancelOnErr = nil // App takes ownership; defer must not cancel.
-	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, cancel: appCancel}, nil
+	return &App{server: serverSvc, bus: bus, pubsub: pubsubSvc, telemetry: telemetryCtrl, taskAgents: taskAgentCtrl, acpV1Hub: acpV1Hub, probes: probes, drainDelay: cfg.App.DrainDelay, cancel: appCancel}, nil
 }
 
 // instanceID names this backend process for the (machineId, instanceId)
@@ -1235,10 +1248,18 @@ func (a *App) Run() error {
 	return a.server.Run()
 }
 
-// Shutdown gracefully stops the app: it cancels the app context (signaling background
-// consumers wired to it to stop), flushes buffered telemetry so nothing is lost, and
-// shuts the HTTP server down within ctx's deadline. Safe to call once on SIGINT/SIGTERM.
+// Shutdown gracefully stops the app: it fails readiness and keeps serving for the
+// drain delay, cancels the app context (signaling background consumers wired to it
+// to stop), flushes buffered telemetry so nothing is lost, and shuts the HTTP server
+// down within ctx's deadline. Safe to call once on SIGINT/SIGTERM.
 func (a *App) Shutdown(ctx context.Context) error {
+	if a.probes != nil {
+		a.probes.Drain()
+	}
+	select {
+	case <-time.After(a.drainDelay):
+	case <-ctx.Done():
+	}
 	a.cancel()
 	if a.acpV1Hub != nil {
 		a.acpV1Hub.CloseAll("the server is shutting down")
@@ -1250,6 +1271,17 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.taskAgents.Close()
 	}
 	return a.server.Shutdown(ctx)
+}
+
+// pingDB is the readiness check: the database every request depends on.
+func pingDB(db dbconn.DBConn) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		sqlDB, err := db.Conn(ctx).DB()
+		if err != nil {
+			return err
+		}
+		return sqlDB.PingContext(ctx)
+	}
 }
 
 // startTaskAgents starts the controller that names the agents in a task's

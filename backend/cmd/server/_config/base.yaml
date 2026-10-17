@@ -5,6 +5,8 @@ app:
   basePath: ${AGENTRQ_BASE_PATH:}
   cookieSecure: ${AGENTRQ_COOKIE_SECURE:}
   proxyDomain: ${AGENTRQ_PROXY_DOMAIN:}
+  # On shutdown, how long /readyz fails while requests are still served.
+  drainDelay: ${AGENTRQ_APP_DRAIN_DELAY:0s}
 
 ssl:
   enabled: ${AGENTRQ_SSL_ENABLED:false}

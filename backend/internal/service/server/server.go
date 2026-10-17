@@ -50,6 +50,10 @@ type (
 	Params struct {
 		Config Config
 		Router http.Handler
+		// Probes are the health probe handlers, by exact path. They run
+		// ahead of the host check and the request log: a probe addresses
+		// the instance by its own IP, and arrives every few seconds.
+		Probes map[string]http.Handler
 	}
 
 	Service interface {
@@ -60,6 +64,7 @@ type (
 	service struct {
 		cfg      Config
 		router   http.Handler
+		probes   map[string]http.Handler
 		acmesrv  *http.Server
 		server   *http.Server
 		certMu   sync.RWMutex
@@ -81,10 +86,16 @@ func New(p Params) (Service, error) {
 	return &service{
 		cfg:    p.Config,
 		router: p.Router,
+		probes: p.Probes,
 	}, nil
 }
 
 func (s *service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if probe, ok := s.probes[r.URL.Path]; ok {
+		probe.ServeHTTP(w, r)
+		return
+	}
+
 	start := time.Now()
 	sw := &statusResponseWriter{ResponseWriter: w, status: http.StatusOK}
 

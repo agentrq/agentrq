@@ -85,7 +85,7 @@ func main() {
 		}
 	case sig := <-stop:
 		zlog.Info().Str("signal", sig.String()).Msg("shutdown signal received; shutting down gracefully")
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.App.DrainDelay+15*time.Second)
 		defer cancel()
 		if err := a.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			zlog.Error().Err(err).Msg("graceful shutdown error")

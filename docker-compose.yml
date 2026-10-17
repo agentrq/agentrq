@@ -98,6 +98,7 @@ services:
       # Instance identity
       MONOFLAKE_NODE: ${MONOFLAKE_NODE:-1}
       AGENTRQ_INSTANCE_ID: ${AGENTRQ_INSTANCE_ID:-}
+      AGENTRQ_APP_DRAIN_DELAY: ${AGENTRQ_APP_DRAIN_DELAY:-0s}
 
       # Security
       AGENTRQ_DDOS_ENABLED: ${AGENTRQ_DDOS_ENABLED:-true}
