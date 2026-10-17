@@ -24,6 +24,7 @@ ssl:
     region: "${AGENTRQ_SSL_S3_REGION:us-east-1}"
     bucket: "${AGENTRQ_SSL_S3_BUCKET:}"
 
+# SQLite runs on a single host only; more than one instance needs postgres.
 sqlite:
   enabled: ${AGENTRQ_SQLITE_ENABLED:true}
   dsn: ${AGENTRQ_SQLITE_DSN:./_storage/agentrq.db}

@@ -27,6 +27,11 @@ Will prompt you for:
 
 ### 2. Enable PostgreSQL (Recommended)
 
+SQLite, the default, runs only on a single host: its database is a file on
+that host's disk, in WAL mode, which can't be shared between machines or put on
+a network volume. Use it for one instance only. To run more than one instance,
+use PostgreSQL.
+
 Edit `.env`:
 ```env
 AGENTRQ_POSTGRES_ENABLED=true
