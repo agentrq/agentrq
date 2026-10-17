@@ -264,8 +264,8 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 				t.Errorf("%s does not contain [Privacy Policy](https://agentrq.com/privacy)", readmePath)
 			}
 
-			if manifest.Icon != "" {
-				t.Errorf("%s sets icon = %q; rely on .claude-plugin/icon.png instead to avoid portal UNKNOWN_KEY_CROSS_TOOL notes", manifestPath, manifest.Icon)
+			if manifest.Icon != "./.claude-plugin/icon.png" {
+				t.Errorf("%s icon = %q, want %q", manifestPath, manifest.Icon, "./.claude-plugin/icon.png")
 			}
 
 			iconPath := filepath.Join(pluginDir, ".claude-plugin", "icon.png")

@@ -97,10 +97,8 @@ jobs:
               if not readme.is_file() or '[Privacy Policy](https://agentrq.com/privacy)' not in readme.read_text():
                   problems.append(f'{name}: README.md missing [Privacy Policy](https://agentrq.com/privacy) link')
 
-              if 'icon' in plugin:
-                  problems.append(
-                      f'{name}: plugin.json sets icon; rely on .claude-plugin/icon.png instead to avoid portal UNKNOWN_KEY_CROSS_TOOL notes'
-                  )
+              if plugin.get('icon') != './.claude-plugin/icon.png':
+                  problems.append(f'{name}: plugin.json icon must be ./.claude-plugin/icon.png')
 
               default_icon = d / '.claude-plugin' / 'icon.png'
               if not default_icon.is_file():
