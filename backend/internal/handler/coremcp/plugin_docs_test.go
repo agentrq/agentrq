@@ -5,6 +5,9 @@
 package coremcp
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -215,6 +218,71 @@ func TestPluginDocsDoNotNameInvalidStatuses(t *testing.T) {
 				if regexp.MustCompile(`\b` + bad + `\b`).MatchString(text) {
 					t.Errorf("%s mentions %s, which no longer exists", doc, bad)
 				}
+			}
+		})
+	}
+}
+
+func TestClaudePluginManifestStrictRequirements(t *testing.T) {
+	root := repoRoot(t)
+	pngSig := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+
+	plugins := []string{
+		"plugins/claude/agentrq",
+		"plugins/claude/agentrq-workspace",
+	}
+
+	for _, rel := range plugins {
+		t.Run(rel, func(t *testing.T) {
+			pluginDir := filepath.Join(root, rel)
+			manifestPath := filepath.Join(pluginDir, ".claude-plugin", "plugin.json")
+			raw, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatalf("cannot read %s: %v", manifestPath, err)
+			}
+
+			var manifest struct {
+				Name             string `json:"name"`
+				Version          string `json:"version"`
+				Icon             string `json:"icon"`
+				PrivacyPolicyURL string `json:"privacyPolicyUrl"`
+			}
+			if err := json.Unmarshal(raw, &manifest); err != nil {
+				t.Fatalf("invalid JSON in %s: %v", manifestPath, err)
+			}
+
+			if manifest.PrivacyPolicyURL != "https://agentrq.com/privacy" {
+				t.Errorf("%s privacyPolicyUrl = %q, want %q", manifestPath, manifest.PrivacyPolicyURL, "https://agentrq.com/privacy")
+			}
+
+			readmePath := filepath.Join(pluginDir, "README.md")
+			readmeBytes, err := os.ReadFile(readmePath)
+			if err != nil {
+				t.Fatalf("cannot read %s: %v", readmePath, err)
+			}
+			if !strings.Contains(string(readmeBytes), "https://agentrq.com/privacy") {
+				t.Errorf("%s does not link to https://agentrq.com/privacy", readmePath)
+			}
+
+			if manifest.Icon != "./.claude-plugin/icon.png" {
+				t.Errorf("%s icon = %q, want %q", manifestPath, manifest.Icon, "./.claude-plugin/icon.png")
+			}
+
+			iconPath := filepath.Join(pluginDir, ".claude-plugin", "icon.png")
+			iconBytes, err := os.ReadFile(iconPath)
+			if err != nil {
+				t.Fatalf("cannot read %s: %v", iconPath, err)
+			}
+			if len(iconBytes) >= 2*1024*1024 {
+				t.Errorf("%s size = %d bytes, must be under 2 MB", iconPath, len(iconBytes))
+			}
+			if len(iconBytes) < 24 || !bytes.Equal(iconBytes[:8], pngSig) || string(iconBytes[12:16]) != "IHDR" {
+				t.Fatalf("%s is not a valid PNG", iconPath)
+			}
+			width := binary.BigEndian.Uint32(iconBytes[16:20])
+			height := binary.BigEndian.Uint32(iconBytes[20:24])
+			if width != height || width < 512 || width > 2048 {
+				t.Errorf("%s dimensions = %dx%d, want square 512..2048 px", iconPath, width, height)
 			}
 		})
 	}

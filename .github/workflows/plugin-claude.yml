@@ -90,6 +90,28 @@ jobs:
                   if pv != mv:
                       problems.append(f'{name}: package.json is {pv}, plugin.json is {mv}')
 
+              privacy_url = plugin.get('privacyPolicyUrl', '')
+              if not isinstance(privacy_url, str) or not privacy_url.startswith('https://'):
+                  problems.append(f'{name}: plugin.json missing https privacyPolicyUrl')
+
+              icon_rel = plugin.get('icon') or '.claude-plugin/icon.png'
+              icon_path = (d / icon_rel).resolve()
+              default_icon = d / '.claude-plugin' / 'icon.png'
+              for candidate in {icon_path, default_icon}:
+                  if not candidate.is_file():
+                      problems.append(f'{name}: missing icon at {candidate.relative_to(root)}')
+                      continue
+                  data = candidate.read_bytes()
+                  if len(data) >= 2 * 1024 * 1024:
+                      problems.append(f'{name}: icon {candidate.name} exceeds 2 MB ({len(data)} bytes)')
+                  if data[:8] != b'\x89PNG\r\n\x1a\n' or data[12:16] != b'IHDR':
+                      problems.append(f'{name}: icon {candidate.name} is not a valid PNG')
+                      continue
+                  w = int.from_bytes(data[16:20], 'big')
+                  h = int.from_bytes(data[20:24], 'big')
+                  if w != h or not (512 <= w <= 2048):
+                      problems.append(f'{name}: icon {candidate.name} must be square 512..2048 px, got {w}x{h}')
+
               # A plugin with no skill has nothing to tell the agent.
               if not list(d.glob('skills/*/SKILL.md')):
                   problems.append(f'{name}: no skills/*/SKILL.md')

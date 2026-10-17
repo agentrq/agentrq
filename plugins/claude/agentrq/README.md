@@ -57,3 +57,6 @@ Every tool takes two inputs, `action` and `payload` (the action's fields), e.g.
 The tables here are checked against the server in CI — see
 `backend/internal/handler/coremcp/plugin_docs_test.go`. A tool added to the server
 without a row here fails the build.
+
+[Privacy Policy](https://agentrq.com/privacy)
+
