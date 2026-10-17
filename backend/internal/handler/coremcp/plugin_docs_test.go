@@ -251,8 +251,8 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 				t.Fatalf("invalid JSON in %s: %v", manifestPath, err)
 			}
 
-			if manifest.PrivacyPolicyURL != "https://agentrq.com/privacy" {
-				t.Errorf("%s privacyPolicyUrl = %q, want %q", manifestPath, manifest.PrivacyPolicyURL, "https://agentrq.com/privacy")
+			if manifest.PrivacyPolicyURL != "" {
+				t.Errorf("%s sets privacyPolicyUrl = %q; declare the privacy link in README.md instead to avoid portal UNKNOWN_KEY warnings", manifestPath, manifest.PrivacyPolicyURL)
 			}
 
 			readmePath := filepath.Join(pluginDir, "README.md")
@@ -260,8 +260,8 @@ func TestClaudePluginManifestStrictRequirements(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cannot read %s: %v", readmePath, err)
 			}
-			if !strings.Contains(string(readmeBytes), "https://agentrq.com/privacy") {
-				t.Errorf("%s does not link to https://agentrq.com/privacy", readmePath)
+			if !strings.Contains(string(readmeBytes), "[Privacy Policy](https://agentrq.com/privacy)") {
+				t.Errorf("%s does not contain [Privacy Policy](https://agentrq.com/privacy)", readmePath)
 			}
 
 			if manifest.Icon != "./.claude-plugin/icon.png" {
