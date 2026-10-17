@@ -15,6 +15,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	mathrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -334,8 +335,20 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 	domains := certDomains(strings.ToLower(s.cfg.Domain))
 	for {
 		s.refreshCertificate(context.Background(), certPath, keyPath, domains)
-		time.Sleep(24 * time.Hour)
+		time.Sleep(certCheckInterval())
 	}
+}
+
+// The certificate is checked daily, plus a random 1 to 5 minutes, so
+// instances sharing a certificate bucket do not all check at once.
+const (
+	certCheckEvery     = 24 * time.Hour
+	certCheckJitterMin = time.Minute
+	certCheckJitterMax = 5 * time.Minute
+)
+
+func certCheckInterval() time.Duration {
+	return certCheckEvery + certCheckJitterMin + mathrand.N(certCheckJitterMax-certCheckJitterMin+1)
 }
 
 // certDomains are the names the certificate covers: the app, CoreMCP and

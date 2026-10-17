@@ -552,3 +552,19 @@ func TestRunServesTheLocalCertificateOverTLS(t *testing.T) {
 		t.Errorf("Run returned %v", err)
 	}
 }
+
+// Each wait is a day plus 1 to 5 minutes, and not the same every time.
+func TestCertCheckIntervalIsADayPlusJitter(t *testing.T) {
+	lo, hi := 24*time.Hour+time.Minute, 24*time.Hour+5*time.Minute
+	seen := map[time.Duration]bool{}
+	for range 1000 {
+		d := certCheckInterval()
+		if d < lo || d > hi {
+			t.Fatalf("waited %s, want between %s and %s", d, lo, hi)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 2 {
+		t.Error("every wait was the same: no jitter")
+	}
+}
