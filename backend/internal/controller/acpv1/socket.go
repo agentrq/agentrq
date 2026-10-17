@@ -156,7 +156,10 @@ func parseMeta(h http.Header) (bridgeMeta, error) {
 		}
 		*f.to = strings.Clone(v)
 	}
-	if !isAbsolutePath(m.Cwd) {
+	// Optional: the gateway writes its own cwd into each session/new it
+	// forwards, which a header cannot carry for a non-ASCII path. Only an
+	// older gateway still sends it, and then it must be absolute.
+	if m.Cwd != "" && !isAbsolutePath(m.Cwd) {
 		return m, errors.New("X-AgentRQ-Cwd must be the bridge's absolute working directory")
 	}
 	if n, err := strconv.Atoi(h.Get("X-AgentRQ-Max-Concurrency")); err == nil {

@@ -634,6 +634,13 @@ func TestParseMeta(t *testing.T) {
 		}
 	})
 
+	t.Run("no working directory is accepted: the gateway writes its own", func(t *testing.T) {
+		m, err := parseMeta(http.Header{})
+		if err != nil || m.Cwd != "" {
+			t.Fatalf("parseMeta returned %+v (error %v), want no cwd and no error", m, err)
+		}
+	})
+
 	t.Run("concurrency is clamped and a timeout out of range is ignored", func(t *testing.T) {
 		for _, c := range []struct {
 			concurrency, timeout string

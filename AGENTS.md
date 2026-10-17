@@ -64,10 +64,10 @@ Each line says what the note will stop you getting wrong.
   composer's held messages is sent. Taking a reply for it posts one into the
   running turn, which is the bug the rule exists to fix.
 - **[Native ACP](docs/agents/acp-native.md)** — `controller/acpv1`, where
-  AgentRQ is the ACP client and the gateway only moves bytes. Why version
-  packages never share code, why a native connection is an agent link inside
-  the workspace server, why it never touches the MCP layer, and the turn
-  barrier.
+  AgentRQ is the ACP client and the gateway moves bytes, writing in only its
+  own cwd. Why version packages never share code, why a native connection is
+  an agent link inside the workspace server, why it never touches the MCP
+  layer, and the turn barrier.
 - **[Site tools](docs/agents/site-tools.md)** — agents calling a shared
   website's WebMCP tools through the Chrome extension. Why it is native WebMCP
   and top frame only, why the nonce must be gone before page scripts run, and
