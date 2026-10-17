@@ -63,7 +63,7 @@ func TestStartMachineSweep(t *testing.T) {
 	captureLog(t)
 	f := &fakeMachineSweeper{swept: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	startMachineSweep(ctx, f, time.Millisecond)
+	startMachineSweep(ctx, f, time.Millisecond, 0)
 	for range 2 {
 		select {
 		case <-f.swept:
@@ -81,5 +81,24 @@ func TestStartMachineSweep(t *testing.T) {
 	defer f.mu.Unlock()
 	if f.calls != calls {
 		t.Errorf("swept %d more times after the context ended", f.calls-calls)
+	}
+}
+
+// Each wait is the interval plus 0 to 2 minutes, in whole seconds, and not
+// the same every time.
+func TestSweepWaitAddsJitterInSeconds(t *testing.T) {
+	seen := map[time.Duration]bool{}
+	for range 1000 {
+		d := sweepWait(machineSweepInterval, machineSweepJitter)
+		if d < 5*time.Minute || d > 7*time.Minute || d%time.Second != 0 {
+			t.Fatalf("waited %s, want 5m to 7m in whole seconds", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 2 {
+		t.Error("every wait was the same: no jitter")
+	}
+	if d := sweepWait(time.Minute, 0); d != time.Minute {
+		t.Errorf("with no jitter waited %s, want 1m", d)
 	}
 }

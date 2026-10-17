@@ -505,7 +505,7 @@ machine page into a list of everything that has ever run and the table into one
 that grows forever.
 
 **A machine away for 30 minutes, or deleted, loses its live session rows**
-(`DeleteStaleSessions`, swept every 5 minutes, and `DeleteMachine`): no daemon
+(`DeleteStaleSessions`, swept every 5 minutes plus up to 2 of jitter, and `DeleteMachine`): no daemon
 is left to end them, and a row left "running" blocks the workspace's merge and
 next launch forever.
 
