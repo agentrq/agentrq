@@ -38,7 +38,9 @@ type (
 		bucket    string
 		publicURL string
 	}
-	s3Config struct {
+	// Config is one S3 bucket's settings: the s3 section, or another
+	// section's own bucket, such as ssl.s3.
+	Config struct {
 		Enabled         bool   `yaml:"enabled"`
 		Endpoint        string `yaml:"endpoint"`
 		AccessKey       string `yaml:"accessKey"`
@@ -57,11 +59,16 @@ var loadAWSConfig = awsconfig.LoadDefaultConfig
 
 // New init a new s3 service
 func New(p Params) (Service, error) {
-	var cfg s3Config
+	var cfg Config
 	err := p.Config.Populate(cfgKey, &cfg)
 	if err != nil {
 		return nil, err
 	}
+	return NewFromConfig(cfg)
+}
+
+// NewFromConfig builds a client for the bucket cfg names.
+func NewFromConfig(cfg Config) (Service, error) {
 	fn := newCredentialsProvider(cfg.AccessKey, cfg.SecretAccessKey)
 	ctx := context.Background()
 	acfg, err := loadAWSConfig(
@@ -151,7 +158,7 @@ func (s *service) PublicURL(_ context.Context, namespace, key string) string {
 
 // publicBase is publicUrl, or the endpoint and bucket, path-style, without a
 // trailing slash.
-func publicBase(cfg s3Config) string {
+func publicBase(cfg Config) string {
 	if base := strings.TrimSpace(cfg.PublicURL); base != "" {
 		return strings.TrimRight(base, "/")
 	}

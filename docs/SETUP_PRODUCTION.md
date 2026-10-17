@@ -55,6 +55,17 @@ AGENTRQ_BASE_URL=https://your-domain.com
 
 **Important**: Ports 80 and 443 must be publicly accessible for Let's Encrypt to work.
 
+**Optional: share certificates through S3.** Set a private bucket of its own, separate from the `AGENTRQ_S3_*` one files are stored in, and a redeploy or another instance reuses the certificate instead of obtaining a new one. Each day the server serves the certificate on disk while it is valid for 30 more days and covers every domain; otherwise it takes the bucket's, if that one is; otherwise it obtains a new one and saves it to disk and to the bucket, at `certs/<domain>/combined.crt` and `combined.key`. The key is private: never allow public reads of this bucket.
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENTRQ_SSL_S3_ENABLED` | `false` | Share certificates through the bucket below. |
+| `AGENTRQ_SSL_S3_ENDPOINT` | | The S3 endpoint URL. Addressed path-style. |
+| `AGENTRQ_SSL_S3_ACCESS_KEY` | | Access key id. |
+| `AGENTRQ_SSL_S3_SECRET_ACCESS_KEY` | | Secret access key. |
+| `AGENTRQ_SSL_S3_REGION` | `us-east-1` | Bucket region. |
+| `AGENTRQ_SSL_S3_BUCKET` | | Bucket name, required when enabled. It must already exist. |
+
 ### 4. Start Services
 
 ```bash

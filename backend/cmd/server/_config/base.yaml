@@ -13,6 +13,16 @@ ssl:
   cacheDir: ${AGENTRQ_SSL_CACHE_DIR:/_certs}
   letsencryptEmail: ${AGENTRQ_SSL_LETSENCRYPT_EMAIL:}
   cloudflareApiToken: ${AGENTRQ_SSL_CLOUDFLARE_API_TOKEN:}
+  # Optional private bucket certificates are shared through, apart from the
+  # s3 section below. A certificate missing on disk is looked for here before
+  # one is obtained, and a new one is saved here.
+  s3:
+    enabled: ${AGENTRQ_SSL_S3_ENABLED:false}
+    endpoint: "${AGENTRQ_SSL_S3_ENDPOINT:}"
+    accessKey: "${AGENTRQ_SSL_S3_ACCESS_KEY:}"
+    secretAccessKey: "${AGENTRQ_SSL_S3_SECRET_ACCESS_KEY:}"
+    region: "${AGENTRQ_SSL_S3_REGION:us-east-1}"
+    bucket: "${AGENTRQ_SSL_S3_BUCKET:}"
 
 sqlite:
   enabled: ${AGENTRQ_SQLITE_ENABLED:true}

@@ -54,6 +54,20 @@ type (
 		// ahead of the host check and the request log: a probe addresses
 		// the instance by its own IP, and arrives every few seconds.
 		Probes map[string]http.Handler
+		// CertStore, when set, is the bucket certificates are shared
+		// through: a certificate missing on disk is looked for there
+		// before one is obtained, and a new one is saved to it.
+		CertStore CertStore
+	}
+
+	// CertStore is the part of the S3 service certificates need.
+	CertStore interface {
+		Get(ctx context.Context, namespace, key string) ([]byte, error)
+		PutPrivate(ctx context.Context, namespace, key string, data []byte, contentType string) (string, error)
+	}
+
+	certObtainer interface {
+		Obtain(request certificate.ObtainRequest) (*certificate.Resource, error)
 	}
 
 	Service interface {
@@ -62,10 +76,14 @@ type (
 	}
 
 	service struct {
-		cfg      Config
-		router   http.Handler
-		probes   map[string]http.Handler
-		acmesrv  *http.Server
+		cfg     Config
+		router  http.Handler
+		probes  map[string]http.Handler
+		acmesrv *http.Server
+		// certStore is nil when no certificate bucket is configured.
+		certStore CertStore
+		// obtainer is built on the first certificate request.
+		obtainer certObtainer
 		server   *http.Server
 		certMu   sync.RWMutex
 		currCert *tls.Certificate
@@ -84,9 +102,10 @@ func (u *legoUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
 
 func New(p Params) (Service, error) {
 	return &service{
-		cfg:    p.Config,
-		router: p.Router,
-		probes: p.Probes,
+		cfg:       p.Config,
+		router:    p.Router,
+		probes:    p.Probes,
+		certStore: p.CertStore,
 	}, nil
 }
 
@@ -189,8 +208,8 @@ func (s *service) Run() error {
 	if err := os.MkdirAll(s.cfg.SSLCacheDir, 0700); err != nil {
 		return fmt.Errorf("failed to create ssl cache dir: %w", err)
 	}
-	certFile := filepath.Join(s.cfg.SSLCacheDir, "combined.crt")
-	keyFile := filepath.Join(s.cfg.SSLCacheDir, "combined.key")
+	certFile := filepath.Join(s.cfg.SSLCacheDir, certFileName)
+	keyFile := filepath.Join(s.cfg.SSLCacheDir, keyFileName)
 
 	// 2. Load existing cert if available
 	if err := s.loadCertificate(certFile, keyFile); err != nil {
@@ -200,36 +219,37 @@ func (s *service) Run() error {
 	// 3. Start certificate manager (obtain/renew in background)
 	go s.manageCertificates(certFile, keyFile)
 
-	// 4. Start HTTP -> HTTPS Redirect Server
+	// 4. Start HTTP -> HTTPS Redirect Server. It is set up before the
+	// goroutine starts, so a Shutdown that comes first still sees it.
+	s.acmesrv = &http.Server{
+		Addr: addr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Strip port and ensure lowercase for check
+			host := strings.ToLower(r.Host)
+			if col := strings.IndexByte(host, ':'); col != -1 {
+				host = host[:col]
+			}
+
+			mcpSuffix := ".mcp." + domain
+			coreMCPHost := "mcp." + domain
+			appHost := "app." + domain
+
+			// Only redirect authorized hostnames
+			if strings.HasSuffix(host, mcpSuffix) || host == appHost || host == coreMCPHost {
+				target := "https://" + host
+				if s.cfg.SSLPort != 443 && s.cfg.SSLPort != 0 {
+					target += fmt.Sprintf(":%d", s.cfg.SSLPort)
+				}
+				target += r.RequestURI
+				http.Redirect(w, r, target, http.StatusMovedPermanently)
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprintf(w, "Host %s not allowed for redirect", host)
+			}
+		}),
+	}
 	go func() {
 		zlog.Info().Str("addr", addr).Msg("starting HTTP redirect server")
-		s.acmesrv = &http.Server{
-			Addr: addr,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Strip port and ensure lowercase for check
-				host := strings.ToLower(r.Host)
-				if col := strings.IndexByte(host, ':'); col != -1 {
-					host = host[:col]
-				}
-
-				mcpSuffix := ".mcp." + domain
-				coreMCPHost := "mcp." + domain
-				appHost := "app." + domain
-
-				// Only redirect authorized hostnames
-				if strings.HasSuffix(host, mcpSuffix) || host == appHost || host == coreMCPHost {
-					target := "https://" + host
-					if s.cfg.SSLPort != 443 && s.cfg.SSLPort != 0 {
-						target += fmt.Sprintf(":%d", s.cfg.SSLPort)
-					}
-					target += r.RequestURI
-					http.Redirect(w, r, target, http.StatusMovedPermanently)
-				} else {
-					w.WriteHeader(http.StatusNotFound)
-					fmt.Fprintf(w, "Host %s not allowed for redirect", host)
-				}
-			}),
-		}
 		if err := s.acmesrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			zlog.Error().Err(err).Msg("HTTP redirect server error")
 		}
@@ -283,6 +303,22 @@ func (s *service) Run() error {
 	return s.server.Serve(ln)
 }
 
+// certNamespace is where certificates are kept in the certificate bucket,
+// one folder per domain, so deployments can share a bucket.
+const certNamespace = "certs"
+
+// The certificate and key file names, on disk and in the bucket.
+const (
+	certFileName = "combined.crt"
+	keyFileName  = "combined.key"
+)
+
+// certRenewBefore is how long before expiry a certificate is replaced.
+const certRenewBefore = 30 * 24 * time.Hour
+
+// acmeDirectoryURL is the CA certificates are obtained from.
+var acmeDirectoryURL = lego.LEDirectoryProduction
+
 func (s *service) loadCertificate(certPath, keyPath string) error {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
@@ -295,6 +331,147 @@ func (s *service) loadCertificate(certPath, keyPath string) error {
 }
 
 func (s *service) manageCertificates(certPath, keyPath string) {
+	domains := certDomains(strings.ToLower(s.cfg.Domain))
+	for {
+		s.refreshCertificate(context.Background(), certPath, keyPath, domains)
+		time.Sleep(24 * time.Hour)
+	}
+}
+
+// certDomains are the names the certificate covers: the app, CoreMCP and
+// every workspace's MCP subdomain.
+func certDomains(domain string) []string {
+	return []string{
+		"app." + domain,
+		"mcp." + domain,
+		"*.mcp." + domain,
+	}
+}
+
+// refreshCertificate makes sure a usable certificate is served: the one on
+// disk, else the one in the certificate bucket, else a new one from the CA,
+// which is written to disk and to the bucket.
+func (s *service) refreshCertificate(ctx context.Context, certPath, keyPath string, domains []string) {
+	s.certMu.RLock()
+	curr := s.currCert
+	s.certMu.RUnlock()
+	if s.certificateUsable(curr, domains) {
+		zlog.Info().Msg("certificate still valid, skipping renewal")
+		return
+	}
+
+	if s.certStore != nil {
+		err := s.restoreCertificate(ctx, certPath, keyPath, domains)
+		if err == nil {
+			zlog.Info().Msg("certificate restored from the certificate bucket")
+			return
+		}
+		zlog.Warn().Err(err).Msg("no usable certificate in the certificate bucket, will obtain new one")
+	}
+
+	zlog.Info().Strs("domains", domains).Msg("obtaining/renewing certificate")
+	certs, err := s.obtainCertificate(domains)
+	if err != nil {
+		zlog.Error().Err(err).Msg("failed to obtain certificate")
+		return
+	}
+	if err := s.installCertificate(certPath, keyPath, certs.Certificate, certs.PrivateKey); err != nil {
+		zlog.Error().Err(err).Msg("failed to install certificate")
+		return
+	}
+	zlog.Info().Msg("certificate updated successfully")
+
+	if s.certStore != nil {
+		if err := s.storeCertificate(ctx, certs.Certificate, certs.PrivateKey); err != nil {
+			zlog.Error().Err(err).Msg("failed to save certificate to the certificate bucket")
+		}
+	}
+}
+
+// certificateUsable reports whether cert covers domains and is not due for
+// renewal.
+func (s *service) certificateUsable(cert *tls.Certificate, domains []string) bool {
+	if cert == nil || len(cert.Certificate) == 0 {
+		return false
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return false
+	}
+	return time.Until(leaf.NotAfter) >= certRenewBefore && s.certificateCoversDomains(leaf, domains)
+}
+
+// restoreCertificate installs the bucket's certificate, if it is usable.
+func (s *service) restoreCertificate(ctx context.Context, certPath, keyPath string, domains []string) error {
+	ns := s.certStoreNamespace()
+	certPEM, err := s.certStore.Get(ctx, ns, certFileName)
+	if err != nil {
+		return err
+	}
+	keyPEM, err := s.certStore.Get(ctx, ns, keyFileName)
+	if err != nil {
+		return err
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return err
+	}
+	if !s.certificateUsable(&cert, domains) {
+		return errors.New("certificate in the bucket is expiring or does not cover every domain")
+	}
+	return s.installCertificate(certPath, keyPath, certPEM, keyPEM)
+}
+
+// storeCertificate uploads the certificate and its key to the bucket.
+func (s *service) storeCertificate(ctx context.Context, certPEM, keyPEM []byte) error {
+	ns := s.certStoreNamespace()
+	if _, err := s.certStore.PutPrivate(ctx, ns, certFileName, certPEM, "application/x-pem-file"); err != nil {
+		return err
+	}
+	_, err := s.certStore.PutPrivate(ctx, ns, keyFileName, keyPEM, "application/x-pem-file")
+	return err
+}
+
+func (s *service) certStoreNamespace() string {
+	return certNamespace + "/" + strings.ToLower(s.cfg.Domain)
+}
+
+// installCertificate writes the pair to disk and serves it. A pair that does
+// not parse is refused before the files on disk are touched.
+func (s *service) installCertificate(certPath, keyPath string, certPEM, keyPEM []byte) error {
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
+		return err
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		return err
+	}
+	s.certMu.Lock()
+	s.currCert = &cert
+	s.certMu.Unlock()
+	return nil
+}
+
+// obtainCertificate asks the CA for a certificate. The ACME client is set up,
+// and the account registered, only the first time one is needed.
+func (s *service) obtainCertificate(domains []string) (*certificate.Resource, error) {
+	if s.obtainer == nil {
+		obtainer, err := s.newACMEObtainer()
+		if err != nil {
+			return nil, err
+		}
+		s.obtainer = obtainer
+	}
+	return s.obtainer.Obtain(certificate.ObtainRequest{
+		Domains: domains,
+		Bundle:  true,
+	})
+}
+
+func (s *service) newACMEObtainer() (certObtainer, error) {
 	domain := strings.ToLower(s.cfg.Domain)
 	email := s.cfg.LetsencryptEmail
 	if email == "" {
@@ -308,13 +485,12 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 	}
 
 	config := lego.NewConfig(user)
-	config.CADirURL = lego.LEDirectoryProduction
+	config.CADirURL = acmeDirectoryURL
 	config.Certificate.KeyType = certcrypto.EC256
 
 	client, err := lego.NewClient(config)
 	if err != nil {
-		zlog.Error().Err(err).Msg("lego client creation failed")
-		return
+		return nil, fmt.Errorf("lego client creation failed: %w", err)
 	}
 
 	// Configure Cloudflare DNS Provider
@@ -323,78 +499,20 @@ func (s *service) manageCertificates(certPath, keyPath string) {
 
 	dnsProvider, err := cloudflare.NewDNSProviderConfig(cfConfig)
 	if err != nil {
-		zlog.Error().Err(err).Msg("cloudflare provider creation failed")
-		return
+		return nil, fmt.Errorf("cloudflare provider creation failed: %w", err)
 	}
 
-	if err := client.Challenge.SetDNS01Provider(dnsProvider); err != nil {
-		zlog.Error().Err(err).Msg("failed to set DNS provider")
-		return
+	var reg *registration.Resource
+	err = client.Challenge.SetDNS01Provider(dnsProvider)
+	if err == nil {
+		reg, err = client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 	}
-
-	reg, err := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 	if err != nil {
-		zlog.Error().Err(err).Msg("ACME registration failed")
-		return
+		return nil, fmt.Errorf("ACME registration failed: %w", err)
 	}
 	user.Registration = reg
 
-	// Cert covers root, app subdomain, and nested MCP subdomains
-	domains := []string{
-		// domain,
-		"app." + domain,
-		"mcp." + domain,
-		"*.mcp." + domain,
-	}
-
-	for {
-		needsRenewal := true
-		s.certMu.RLock()
-		if s.currCert != nil && len(s.currCert.Certificate) > 0 {
-			x509Cert, err := x509.ParseCertificate(s.currCert.Certificate[0])
-			if err == nil {
-				// Check if certificate is still valid for at least 30 days
-				needsRenewal = time.Until(x509Cert.NotAfter) < 30*24*time.Hour
-
-				// Also check if all requested domains are covered
-				if !needsRenewal && !s.certificateCoversDomains(x509Cert, domains) {
-					needsRenewal = true
-				}
-			}
-		}
-		s.certMu.RUnlock()
-
-		if needsRenewal {
-			zlog.Info().Strs("domains", domains).Msg("obtaining/renewing certificate")
-
-			request := certificate.ObtainRequest{
-				Domains: domains,
-				Bundle:  true,
-			}
-
-			certs, err := client.Certificate.Obtain(request)
-			if err != nil {
-				zlog.Error().Err(err).Msg("failed to obtain certificate")
-			} else {
-				if err := os.WriteFile(certPath, certs.Certificate, 0600); err != nil {
-					zlog.Error().Err(err).Msg("failed to save cert file")
-				}
-				if err := os.WriteFile(keyPath, certs.PrivateKey, 0600); err != nil {
-					zlog.Error().Err(err).Msg("failed to save key file")
-				}
-
-				if err := s.loadCertificate(certPath, keyPath); err != nil {
-					zlog.Error().Err(err).Msg("failed to reload certificate")
-				} else {
-					zlog.Info().Msg("certificate updated successfully")
-				}
-			}
-		} else {
-			zlog.Info().Msg("certificate still valid, skipping renewal")
-		}
-
-		time.Sleep(24 * time.Hour)
-	}
+	return client.Certificate, nil
 }
 
 func (s *service) Shutdown(ctx context.Context) error {

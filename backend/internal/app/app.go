@@ -60,6 +60,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	svclimit "github.com/agentrq/agentrq/backend/internal/service/ratelimit"
+	"github.com/agentrq/agentrq/backend/internal/service/s3"
 	"github.com/agentrq/agentrq/backend/internal/service/scheduler"
 	"github.com/agentrq/agentrq/backend/internal/service/server"
 	"github.com/agentrq/agentrq/backend/internal/service/skill"
@@ -93,6 +94,8 @@ type (
 			CacheDir           string `yaml:"cacheDir"`
 			LetsencryptEmail   string `yaml:"letsencryptEmail"`
 			CloudflareAPIToken string `yaml:"cloudflareApiToken"`
+			// S3 is an optional bucket certificates are shared through.
+			S3 s3.Config `yaml:"s3"`
 		} `yaml:"ssl"`
 		Auth struct {
 			Google struct {
@@ -180,6 +183,10 @@ func New(cfg Config) (*App, error) {
 	}
 	if cfg.App.DrainDelay < 0 {
 		return nil, fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
+	}
+	certStore, err := newCertStore(cfg.SSL.S3)
+	if err != nil {
+		return nil, err
 	}
 
 	cfg.App.BaseURL = strings.TrimSuffix(cfg.App.BaseURL, "/")
@@ -895,8 +902,9 @@ func New(cfg Config) (*App, error) {
 			LetsencryptEmail:   cfg.SSL.LetsencryptEmail,
 			CloudflareAPIToken: cfg.SSL.CloudflareAPIToken,
 		},
-		Router: finalRouter,
-		Probes: map[string]http.Handler{health.LivePath: probes, health.ReadyPath: probes},
+		Router:    finalRouter,
+		Probes:    map[string]http.Handler{health.LivePath: probes, health.ReadyPath: probes},
+		CertStore: certStore,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("server service: %w", err)

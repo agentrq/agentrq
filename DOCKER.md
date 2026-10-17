@@ -50,6 +50,12 @@ Open **http://localhost:2026** in your browser.
 | `AGENTRQ_SSL_LETSENCRYPT_EMAIL` | — | Email for certificate registration |
 | `AGENTRQ_SSL_CACHE_DIR` | `/_certs` | Directory for TLS certificate cache |
 | `AGENTRQ_SSL_CLOUDFLARE_API_TOKEN` | — | Cloudflare API token for DNS-01 challenge |
+| `AGENTRQ_SSL_S3_ENABLED` | `false` | Share certificates through a private bucket of their own (see docs/SETUP_PRODUCTION.md) |
+| `AGENTRQ_SSL_S3_ENDPOINT` | — | Certificate bucket's S3 endpoint |
+| `AGENTRQ_SSL_S3_ACCESS_KEY` | — | Certificate bucket's access key id |
+| `AGENTRQ_SSL_S3_SECRET_ACCESS_KEY` | — | Certificate bucket's secret access key |
+| `AGENTRQ_SSL_S3_REGION` | `us-east-1` | Certificate bucket's region |
+| `AGENTRQ_SSL_S3_BUCKET` | — | Certificate bucket's name, required when enabled |
 
 ### Optional — Database
 

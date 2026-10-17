@@ -160,6 +160,13 @@ AGENTRQ_SSL_LETSENCRYPT_EMAIL=you@example.com
 AGENTRQ_SSL_CACHE_DIR=/_certs
 # Optional: Cloudflare DNS challenge for wildcard certs
 AGENTRQ_SSL_CLOUDFLARE_API_TOKEN=
+# Optional: share certificates through a private bucket of their own
+AGENTRQ_SSL_S3_ENABLED=false
+AGENTRQ_SSL_S3_ENDPOINT=
+AGENTRQ_SSL_S3_ACCESS_KEY=
+AGENTRQ_SSL_S3_SECRET_ACCESS_KEY=
+AGENTRQ_SSL_S3_REGION=us-east-1
+AGENTRQ_SSL_S3_BUCKET=
 
 # ── Database: PostgreSQL (recommended for production) ────
 AGENTRQ_SQLITE_ENABLED=false
@@ -353,6 +360,12 @@ docker logs --tail 100 agentrq
 | `AGENTRQ_SSL_LETSENCRYPT_EMAIL` | If TLS | — | Email for Let's Encrypt registration |
 | `AGENTRQ_SSL_CACHE_DIR` | No | `/_certs` | Directory for TLS certificate cache |
 | `AGENTRQ_SSL_CLOUDFLARE_API_TOKEN` | No | — | Cloudflare API token for DNS challenge |
+| `AGENTRQ_SSL_S3_ENABLED` | No | `false` | Share certificates through a private bucket of their own, separate from `AGENTRQ_S3_*` |
+| `AGENTRQ_SSL_S3_ENDPOINT` | If SSL S3 | — | Certificate bucket's S3 endpoint |
+| `AGENTRQ_SSL_S3_ACCESS_KEY` | If SSL S3 | — | Certificate bucket's access key id |
+| `AGENTRQ_SSL_S3_SECRET_ACCESS_KEY` | If SSL S3 | — | Certificate bucket's secret access key |
+| `AGENTRQ_SSL_S3_REGION` | No | `us-east-1` | Certificate bucket's region |
+| `AGENTRQ_SSL_S3_BUCKET` | If SSL S3 | — | Certificate bucket's name |
 | `AGENTRQ_SQLITE_ENABLED` | No | `true` | Use SQLite as database backend |
 | `AGENTRQ_SQLITE_DSN` | If SQLite | `./_storage/agentrq.db` | Path to SQLite database file |
 | `AGENTRQ_POSTGRES_ENABLED` | No | `false` | Use PostgreSQL as database backend |
