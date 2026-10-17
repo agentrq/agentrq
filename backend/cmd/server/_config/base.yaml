@@ -116,7 +116,7 @@ pano:
   storage: ${AGENTRQ_PANO_STORAGE:local}
   maxTtlDays: ${AGENTRQ_PANO_MAX_TTL_DAYS:365}
 
-# Native ACP: the endpoints acp-gateway uses in native mode (--acp-version).
+# Native ACP: the endpoints acp-gateway connects to.
 # On by default; off answers 404.
 acp:
   v1:

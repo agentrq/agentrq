@@ -314,13 +314,13 @@ Gateway 再拉取你指定的 Agent。先登录一次，然后在 `.mcp.json` �
 ```bash
 # Antigravity
 npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
-npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --acp-version 1 --allow-unverified-agent
+npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
 ```
 
 ```bash
 # Codex
 npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
-npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
+npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
 Antigravity 以二进制形式发布且 registry 未提供校验和，因此每条命令都需要

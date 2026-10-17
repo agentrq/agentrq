@@ -95,9 +95,8 @@ const CapabilityClaudeOptions = "claudeOptions"
 // claude-code. An older one drops it and starts the default window.
 const CapabilityAutocompact = "autocompact"
 
-// CapabilityACPVersion is a daemon that passes [StartSession.ACPVersion] to
-// acp-gateway as --acp-version. Without it the field would be dropped and the
-// gateway would start in classic mode while the panel said native.
+// CapabilityACPVersion is a daemon that starts acp-gateway in ACP v1 only.
+// An older one starts the gateway in the MCP mode the server no longer serves.
 const CapabilityACPVersion = "acpVersion"
 
 // CapabilityRestart is a daemon that honours [OpRestart], and CapabilityUpdate

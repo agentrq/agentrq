@@ -473,13 +473,13 @@ the agent you name.
 ```bash
 # Using Antigravity
 npx -y @agentrq/acp-gateway@latest --login --agent antigravity-acp --allow-unverified-agent
-npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --acp-version 1 --allow-unverified-agent
+npx -y @agentrq/acp-gateway@latest --agent antigravity-acp --allow-unverified-agent
 ```
 
 ```bash
 # Using Codex
 npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
-npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
+npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
 Antigravity is published as a binary the registry carries no checksum for, so it
@@ -522,7 +522,7 @@ npx -y @agentrq/acp-gateway@latest --login --agent codex-acp
 3. Start the bridge. Run it from the same directory as `.mcp.json`:
 
 ```bash
-npx -y @agentrq/acp-gateway@latest --agent codex-acp --acp-version 1
+npx -y @agentrq/acp-gateway@latest --agent codex-acp
 ```
 
 Sign out again with `--logout` in place of `--login`. The registry publishes

@@ -64,5 +64,5 @@ prompt.
   session, which starts with its first task.
 - **Check what you are connected through.** The menu needs an ACP agent behind
   the gateway; see the gateway's README for which agents those are.
-- **Check the gateway runs in ACP v1.** It reports commands over native ACP,
-  so a gateway started by hand needs `--acp-version 1`.
+- **Check the gateway is up to date.** It reports commands over ACP v1, the
+  only protocol a current gateway speaks.

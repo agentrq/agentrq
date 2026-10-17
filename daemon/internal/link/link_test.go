@@ -992,22 +992,22 @@ func TestALaunchShowsItsCommandInTheTerminal(t *testing.T) {
 	b.send(t, controlFrame(t, wire.OpStartSession, wire.StartSession{
 		SessionID: 7, Kind: "acp-gateway", Dir: t.TempDir(), Agent: "a", Model: "m",
 		ServerName: "agentrq-workspace", MCPURL: "https://agentrq.example/mcp/ws?token=test",
-		// Wide enough that the line does not wrap under a long temp folder.
-		Cols: 400, Rows: 24,
+		Cols: 200, Rows: 24,
 	}))
 	waitFor(t, func() bool { _, err := h.sup.Get(7); return err == nil }, "the session never started")
 
 	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
 	waitFor(t, func() bool {
-		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a --acp-version 1 --model m")
+		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a --model m")
 	}, "the command was never shown in the terminal")
 	if len(h.tty.written()) != 0 {
 		t.Errorf("the command reached the terminal's input: %q", h.tty.written())
 	}
 }
 
-// A launch that asks for native ACP starts the gateway in that mode.
-func TestANativeACPLaunchStartsTheGatewayInNativeMode(t *testing.T) {
+// A launch that names ACP v1 keeps it for the session, and starts the gateway
+// with no flag: v1 is its only mode.
+func TestAnACPV1LaunchStartsTheGateway(t *testing.T) {
 	b := newBackend(t)
 	h := start(t, b)
 
@@ -1025,6 +1025,6 @@ func TestANativeACPLaunchStartsTheGatewayInNativeMode(t *testing.T) {
 	}
 	b.send(t, controlFrame(t, wire.OpAttach, wire.KillSession{SessionID: 7}))
 	waitFor(t, func() bool {
-		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a --acp-version 1")
-	}, "the native command was never shown in the terminal")
+		return outputContains(b, "&& npx -y @agentrq/acp-gateway@latest --agent a")
+	}, "the gateway command was never shown in the terminal")
 }

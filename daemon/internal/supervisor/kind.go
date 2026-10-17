@@ -224,20 +224,17 @@ func Resolve(kind Kind, p Params) (Command, error) {
 		if p.Effort != "" && !claudeEfforts[p.Effort] {
 			return Command{}, fmt.Errorf("%w: effort=%q", ErrBadParameter, p.Effort)
 		}
-		// The gateway always runs native: blank is ACP v1, never the old
-		// MCP mode, which the server no longer serves. A session saved
-		// before this comes back as v1 too.
-		acpVersion := p.ACPVersion
-		if acpVersion == "" {
-			acpVersion = "1"
-		}
-		if acpVersion != "1" && acpVersion != "2" {
+		if p.ACPVersion != "" && p.ACPVersion != "1" && p.ACPVersion != "2" {
 			return Command{}, fmt.Errorf("%w: acpVersion=%q", ErrBadParameter, p.ACPVersion)
 		}
 		argv := []string{
 			"npx", "-y", "@agentrq/acp-gateway@latest",
 			"--agent", p.Agent,
-			"--acp-version", acpVersion,
+		}
+		// ACP v1 is the gateway's only mode, so it needs no flag; blank, or a
+		// session saved with "1", starts it the same way.
+		if p.ACPVersion == "2" {
+			argv = append(argv, "--acp-version", p.ACPVersion)
 		}
 		if p.Model != "" {
 			argv = append(argv, "--model", p.Model)

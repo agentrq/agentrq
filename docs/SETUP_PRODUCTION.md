@@ -286,7 +286,7 @@ Values are whole numbers. The server refuses to start on anything else, or on a 
 
 | Variable | Default | Description |
 |---|---|---|
-| `AGENTRQ_ACP_V1_ENABLED` | `true` | Serve `/api/acp/v1`, the only way acp-gateway connects (`--acp-version 1`). Off, the endpoint answers 404 and the gateway cannot run. |
+| `AGENTRQ_ACP_V1_ENABLED` | `true` | Serve `/api/acp/v1`, the only way acp-gateway connects. Off, the endpoint answers 404 and the gateway cannot run. |
 
 The value is `true` or `false`. The server refuses to start on anything else.
 
