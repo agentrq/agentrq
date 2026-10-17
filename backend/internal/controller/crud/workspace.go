@@ -6,6 +6,7 @@ package crud
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -166,6 +167,86 @@ func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorks
 	}
 
 	return nil
+}
+
+// ResetWorkspaceID gives a workspace a new id, the one way to revoke its MCP
+// tokens: each names the id and nothing else. The attachment files kept under
+// it are copied to the new id first, and the old ones deleted only once the
+// rows have moved, so a failure leaves the workspace as it was.
+func (c *controller) ResetWorkspaceID(ctx context.Context, req entity.ResetWorkspaceIDRequest) (*entity.ResetWorkspaceIDResponse, error) {
+	uid := monoflake.IDFromBase62(req.UserID).Int64()
+	m, err := c.repository.GetWorkspace(ctx, req.ID, uid)
+	if err != nil {
+		return nil, err
+	}
+	var forkIDs []int64
+	if m.ForkOfID == 0 {
+		forks, err := c.repository.ListForks(ctx, m.ID, uid)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range forks {
+			forkIDs = append(forkIDs, f.ID)
+		}
+	}
+
+	newID := c.idgen.NextID()
+	copied, err := c.copyWorkspaceAttachments(ctx, m, forkIDs, newID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.repository.ResetWorkspaceID(ctx, m.ID, newID, uid); err != nil {
+		c.deleteAttachments(newID, copied)
+		return nil, err
+	}
+	c.deleteAttachments(m.ID, copied)
+	c.emitEvent(ctx, entity.CRUDEvent{
+		Action:       entity.ActionWorkspaceResetID,
+		WorkspaceID:  newID,
+		UserID:       uid,
+		ResourceType: entity.ResourceWorkspace,
+		ResourceID:   newID,
+		Actor:        entity.ActorHuman,
+	})
+	return &entity.ResetWorkspaceIDResponse{ID: newID, ForkIDs: forkIDs}, nil
+}
+
+// copyWorkspaceAttachments copies the attachment files kept under a workspace's id,
+// its own tasks' and its forks', to newID and returns those it copied. A fork
+// keeps none: its files are kept under its parent.
+func (c *controller) copyWorkspaceAttachments(ctx context.Context, m model.Workspace, forkIDs []int64, newID int64) ([]entity.TaskAttachment, error) {
+	if m.ForkOfID != 0 {
+		return nil, nil
+	}
+	var copied []entity.TaskAttachment
+	for _, id := range append([]int64{m.ID}, forkIDs...) {
+		atts, err := c.repository.GetWorkspaceAttachments(ctx, id)
+		if err != nil {
+			c.deleteAttachments(newID, copied)
+			return nil, err
+		}
+		for _, a := range atts {
+			data, err := c.storage.LoadRaw(storage.AttachmentKey(m.ID, a.TaskID, a.ID))
+			if err != nil {
+				// Kept under its bare id, from before keys named the
+				// workspace, which is found the same way under the new one.
+				continue
+			}
+			if _, err := storage.SaveAttachment(c.storage, newID, a.TaskID, a.ID, base64.StdEncoding.EncodeToString(data), a.MimeType); err != nil {
+				c.deleteAttachments(newID, copied)
+				return nil, err
+			}
+			copied = append(copied, a)
+		}
+	}
+	return copied, nil
+}
+
+// deleteAttachments deletes the files of atts kept under workspaceID.
+func (c *controller) deleteAttachments(workspaceID int64, atts []entity.TaskAttachment) {
+	for _, a := range atts {
+		_ = c.storage.Delete(storage.AttachmentKey(workspaceID, a.TaskID, a.ID))
+	}
 }
 
 func (c *controller) ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error {

@@ -129,6 +129,7 @@ type WorkspaceController interface {
 	CheckWorkspaceAccess(ctx context.Context, id int64, userID string) (bool, error)
 	ListWorkspaces(ctx context.Context, req entity.ListWorkspacesRequest) (*entity.ListWorkspacesResponse, error)
 	ArchiveWorkspace(ctx context.Context, req entity.ArchiveWorkspaceRequest) error
+	ResetWorkspaceID(ctx context.Context, req entity.ResetWorkspaceIDRequest) (*entity.ResetWorkspaceIDResponse, error)
 	UnarchiveWorkspace(ctx context.Context, req entity.UnarchiveWorkspaceRequest) error
 	UpdateWorkspace(ctx context.Context, req entity.UpdateWorkspaceRequest) (*entity.UpdateWorkspaceResponse, error)
 	UpdateWorkspaceAutoAllowedTools(ctx context.Context, req entity.UpdateWorkspaceAutoAllowedToolsRequest) error

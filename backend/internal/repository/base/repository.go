@@ -15,6 +15,7 @@ import (
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
 	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
+	"github.com/agentrq/agentrq/backend/internal/service/storage"
 	"github.com/agentrq/agentrq/backend/internal/service/tasklatency"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -42,6 +43,9 @@ type Repository interface {
 	// ArchiveWorkspace saves p, which carries its ArchivedAt, and deletes the
 	// triggers and workflow steps that create tasks in it, in one transaction.
 	ArchiveWorkspace(ctx context.Context, p model.Workspace) (model.Workspace, error)
+	// ResetWorkspaceID moves a workspace and every row naming it to newID, in
+	// one transaction.
+	ResetWorkspaceID(ctx context.Context, oldID, newID, userID int64) error
 	// ListForks lists a parent's forks; CountForks counts them.
 	ListForks(ctx context.Context, parentID, userID int64) ([]model.Workspace, error)
 	CountForks(ctx context.Context, parentID, userID int64) (int64, error)
@@ -543,6 +547,59 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 	return nil
 }
 
+// workspaceIDTables are the tables whose workspace_id names the workspace,
+// which a reset moves to its new id. A test fails on a model left out.
+var workspaceIDTables = []any{
+	&model.Task{}, &model.ToolCall{}, &model.TaskStateTransition{}, &model.TaskLatency{},
+	&model.HourlyTaskLatency{}, &model.DailyTaskLatency{}, &model.MonthlyTaskLatency{},
+	&model.Memory{}, &model.Skill{}, &model.WorkspaceSkill{}, &model.EventTrigger{}, &model.WorkflowStep{},
+	&model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Session{}, &model.ForkFolder{},
+	&model.SiteShare{}, &model.SlackWorkspaceLink{}, &model.SlackTaskThread{}, &model.PushSubscription{},
+	&model.Telemetry{}, &model.HourlyTelemetry{}, &model.DailyTelemetry{}, &model.MonthlyTelemetry{},
+}
+
+// ResetWorkspaceID gives a workspace a new id: its row, its forks' link to
+// it, every row naming it, and the attachment links kept under it, all in one
+// transaction. UpdateColumn leaves updated_at alone, so nothing reorders.
+func (r *repository) ResetWorkspaceID(ctx context.Context, oldID, newID, userID int64) error {
+	return r.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&model.Workspace{}).Where("id = ? AND user_id = ?", oldID, userID).UpdateColumn("id", newID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		if err := tx.Model(&model.Workspace{}).Where("fork_of_id = ?", oldID).UpdateColumn("fork_of_id", newID).Error; err != nil {
+			return err
+		}
+		for _, m := range workspaceIDTables {
+			if err := tx.Model(m).Where("workspace_id = ?", oldID).UpdateColumn("workspace_id", newID).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.SkillShare{}).Where("target_workspace_id = ?", oldID).UpdateColumn("target_workspace_id", newID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.PanoDoc{}).Where("created_by_workspace_id = ?", oldID).UpdateColumn("created_by_workspace_id", newID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.PanoDoc{}).Where("updated_by_workspace_id = ?", oldID).UpdateColumn("updated_by_workspace_id", newID).Error; err != nil {
+			return err
+		}
+
+		// A public attachment link names its file, kept under the content
+		// workspace: this one, for its own tasks and its forks'.
+		workspaces := tx.Model(&model.Workspace{}).Select("id").Where("id = ? OR fork_of_id = ?", newID, newID)
+		replace := gorm.Expr("REPLACE(attachments, ?, ?)", storage.AttachmentPrefix(oldID), storage.AttachmentPrefix(newID))
+		if err := tx.Model(&model.Task{}).Where("workspace_id IN (?)", workspaces).UpdateColumn("attachments", replace).Error; err != nil {
+			return err
+		}
+		tasks := tx.Model(&model.Task{}).Select("id").Where("workspace_id IN (?)", workspaces)
+		return tx.Model(&model.Message{}).Where("task_id IN (?)", tasks).UpdateColumn("attachments", replace).Error
+	})
+}
+
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 func (r *repository) CreateTask(ctx context.Context, t model.Task) (model.Task, error) {
@@ -1011,7 +1068,7 @@ func (r *repository) GetWorkspaceAttachments(ctx context.Context, workspaceID in
 		}
 		for _, a := range atts {
 			if a.ID != "" {
-				out = append(out, entity.TaskAttachment{TaskID: rw.TaskID, ID: a.ID})
+				out = append(out, entity.TaskAttachment{TaskID: rw.TaskID, ID: a.ID, MimeType: a.MimeType})
 			}
 		}
 	}

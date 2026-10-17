@@ -33,6 +33,7 @@ func TestPublishWorkspaceListChange(t *testing.T) {
 		{"create", entity.CRUDEvent{Action: entity.ActionWorkspaceCreate, ResourceType: entity.ResourceWorkspace}, true, true},
 		{"delete", entity.CRUDEvent{Action: entity.ActionWorkspaceDelete, ResourceType: entity.ResourceWorkspace}, true, true},
 		{"fork merge", entity.CRUDEvent{Action: entity.ActionWorkspaceForkMerge, ResourceType: entity.ResourceWorkspace}, true, true},
+		{"id reset", entity.CRUDEvent{Action: entity.ActionWorkspaceResetID, ResourceType: entity.ResourceWorkspace}, true, true},
 		// The fork's create is what announces it; a second event would read the list twice.
 		{"fork create", entity.CRUDEvent{Action: entity.ActionWorkspaceForkCreate, ResourceType: entity.ResourceWorkspace}, true, false},
 		{"update", entity.CRUDEvent{Action: entity.ActionWorkspaceUpdate, ResourceType: entity.ResourceWorkspace}, true, true},

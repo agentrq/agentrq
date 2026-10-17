@@ -84,7 +84,7 @@ func publishWorkspaceListChange(bus *eventbus.Bus, ev entity.CRUDEvent) bool {
 	}
 	switch ev.Action {
 	// An update can archive or rename, which moves or removes the row too.
-	case entity.ActionWorkspaceCreate, entity.ActionWorkspaceUpdate, entity.ActionWorkspaceDelete, entity.ActionWorkspaceForkMerge:
+	case entity.ActionWorkspaceCreate, entity.ActionWorkspaceUpdate, entity.ActionWorkspaceDelete, entity.ActionWorkspaceForkMerge, entity.ActionWorkspaceResetID:
 		bus.Publish(0, monoflake.ID(ev.UserID).String(), eventbus.Event{
 			Type:    workspacesChangedEvent,
 			Payload: map[string]string{"workspaceId": monoflake.ID(ev.ResourceID).String()},

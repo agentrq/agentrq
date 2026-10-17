@@ -45,7 +45,12 @@ func (s *fallbackService) Delete(id string) error {
 // AttachmentKey is where an attachment is kept, w-<workspace>/<task>/<id>,
 // every id in base62. svc must accept nested keys (NewNested or S3).
 func AttachmentKey(workspaceID, taskID int64, id string) string {
-	return "w-" + monoflake.ID(workspaceID).String() + "/" + monoflake.ID(taskID).String() + "/" + id
+	return AttachmentPrefix(workspaceID) + monoflake.ID(taskID).String() + "/" + id
+}
+
+// AttachmentPrefix starts the key of every attachment kept under a workspace.
+func AttachmentPrefix(workspaceID int64) string {
+	return "w-" + monoflake.ID(workspaceID).String() + "/"
 }
 
 // SaveAttachment saves an attachment of a task and returns its public URL, or

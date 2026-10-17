@@ -209,6 +209,18 @@ type (
 		UserID string
 	}
 
+	ResetWorkspaceIDRequest struct {
+		ID     int64
+		UserID string
+	}
+
+	// ResetWorkspaceIDResponse is the workspace's new id, and its forks,
+	// whose servers still read its content under the old one.
+	ResetWorkspaceIDResponse struct {
+		ID      int64
+		ForkIDs []int64
+	}
+
 	UnarchiveWorkspaceRequest struct {
 		ID     int64
 		UserID string
@@ -294,8 +306,9 @@ type (
 
 	// TaskAttachment names an attachment and the task it belongs to.
 	TaskAttachment struct {
-		TaskID int64
-		ID     string
+		TaskID   int64
+		ID       string
+		MimeType string
 	}
 
 	Message struct {
@@ -1673,6 +1686,9 @@ const (
 	ActionAgentEffortSelect Action = 104
 	// A native ACP v1 agent logged out on a person's /logout.
 	ActionACPV1Logout Action = 105
+	// A workspace given a new id from its settings, which revokes every MCP
+	// token issued for the old one. Recorded against the new id.
+	ActionWorkspaceResetID Action = 106
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1875,6 +1891,8 @@ func (a Action) String() string {
 		return "agent_effort_select"
 	case ActionACPV1Logout:
 		return "acp_v1_logout"
+	case ActionWorkspaceResetID:
+		return "workspace_reset_id"
 	}
 	return "unknown"
 }

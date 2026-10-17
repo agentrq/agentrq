@@ -464,6 +464,28 @@ paths:
                 properties:
                   status: { type: string, example: unarchived }
 
+  /workspaces/{id}/reset-id:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Give a workspace a new id
+      description: |
+        Revokes every MCP token issued for the workspace, each of which is
+        bound to its id. The workspace, everything in it and its attachment
+        files move to the new id, so its MCP URL and the links to it and its
+        tasks change. Agents connected with the old URL must be set up again.
+      responses:
+        '200':
+          description: The new id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /stats:
     get:
       tags: [Workspaces]

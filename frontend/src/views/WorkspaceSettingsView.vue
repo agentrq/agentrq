@@ -862,6 +862,18 @@
                       </button>
                     </div>
                   </div>
+                  <!-- The MCP token is bound to the workspace id and nothing
+                       else, so a new id is what revokes a leaked one. -->
+                  <div data-test="reset-id-card" class="p-6 border border-red-100 dark:border-red-900/30 bg-red-50/30 dark:bg-red-500/5 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
+                    <div class="flex-1">
+                      <h4 class="text-sm font-bold text-gray-900 dark:text-zinc-100">Reset Workspace ID</h4>
+                      <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1 font-medium">Only needed if this workspace's MCP token has been compromised. The workspace gets a new ID, which revokes every token issued for the old one.</p>
+                      <p class="text-[11px] text-amber-700 dark:text-amber-400 mt-2 font-semibold">The MCP URL will change. Every agent connected with the current URL stops working until you set it up again with the new one.</p>
+                    </div>
+                    <button type="button" @click="showResetIdConfirm = true" class="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-[10px] font-bold text-gray-900 dark:text-zinc-100 hover:border-black dark:hover:border-white transition-all shadow-sm rounded-sm uppercase tracking-widest whitespace-nowrap">
+                      Reset ID
+                    </button>
+                  </div>
                 </div>
 
                 <!-- An extension's own tab.
@@ -925,6 +937,14 @@
     <MergeForkModal :fork="forkActions.state.merging" :parent-name="forkParentName" :busy="forkActions.state.busy"
                     @close="forkActions.cancelMerge()" @confirm="forkActions.confirmMerge($event)" />
     <DeleteModal
+      :show="showResetIdConfirm"
+      title="Reset Workspace ID"
+      :message="`Give '${workspace?.name}' a new ID? Do this only if its MCP token has been compromised. Its MCP URL will change: every agent connected with the current URL stops working until you set it up again with the new one, and links to this workspace and its tasks change too.`"
+      confirmLabel="Reset ID"
+      @close="showResetIdConfirm = false"
+      @confirm="doResetId"
+    />
+    <DeleteModal
       :show="showDeleteConfirm"
       title="Purge Workspace"
       :message="`Are you sure you want to permanently delete '${workspace?.name}'? This will erase all tasks, messages, and configurations. This cannot be undone.`"
@@ -937,7 +957,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
+import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, resetWorkspaceId, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
 import { usePlatformStore } from '../stores/platformStore';
@@ -1052,6 +1072,7 @@ const fileInput = ref(null);
 const iconError = ref('');
 const showArchiveConfirm = ref(false);
 const showDeleteConfirm = ref(false);
+const showResetIdConfirm = ref(false);
 const activeConnectionTab = ref('claude');
 // Machines are known only once the start-an-agent panel has loaded them, so
 // the Machine tab arrives after the page does: it takes over only while the
@@ -1558,6 +1579,19 @@ async function doDelete() {
     router.push('/');
   } catch (err) {
     notifyError("Delete failed: " + err.message);
+  }
+}
+
+async function doResetId() {
+  showResetIdConfirm.value = false;
+  try {
+    const { id } = await resetWorkspaceId(workspaceId.value);
+    // Its tasks are kept under the old id, which no longer exists.
+    await clearWorkspaceData(sharedCache(), workspaceId.value);
+    notifySuccess("Workspace ID reset. Set up your agents again with the new MCP URL.");
+    router.replace(`/workspaces/${id}/settings?tab=setup`);
+  } catch (err) {
+    notifyError("Reset failed: " + err.message);
   }
 }
 

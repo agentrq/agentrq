@@ -665,6 +665,7 @@ func (h *handler) registerWorkspaceRoutes() error {
 	r.Post("/:id/forks", h.forkWorkspace())
 	r.Post("/:id/merge", h.mergeFork())
 	r.Post("/:id/unarchive", h.unarchiveWorkspace())
+	r.Post("/:id/reset-id", h.resetWorkspaceID())
 	r.Get("/:id/stats", h.getWorkspaceStats())
 	r.Get("/:id/stats/latency", h.getTaskLatencyStats(true))
 	r.Get("/:id/memories", h.listWorkspaceMemories())
@@ -1015,6 +1016,37 @@ func (h *handler) deleteWorkspace() fiber.Handler {
 		return c.Send([]byte(""))
 	}
 }
+
+// resetWorkspaceID gives a workspace a new id, revoking every MCP token issued
+// for the old one. The servers held for it and its forks go: they read its
+// content under the old id.
+func (h *handler) resetWorkspaceID() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToResetWorkspaceIDRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.ResetWorkspaceID(ctx, *rq)
+		if err != nil {
+			zlog.Error().Err(err).Msg("Failed to reset workspace id")
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		h.mcpManager.Remove(rq.ID)
+		for _, id := range rs.ForkIDs {
+			h.mcpManager.Remove(id)
+		}
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromResetWorkspaceIDResponseEntityToHTTPResponse(rs))
+	}
+}
+
 func (h *handler) archiveWorkspace() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()

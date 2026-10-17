@@ -106,6 +106,19 @@ func FromHTTPRequestToDeleteWorkspaceRequestEntity(c *fiber.Ctx) *entity.DeleteW
 	return &entity.DeleteWorkspaceRequest{ID: id}
 }
 
+func FromHTTPRequestToResetWorkspaceIDRequestEntity(c *fiber.Ctx) *entity.ResetWorkspaceIDRequest {
+	id := monoflake.IDFromBase62(c.Params("id")).Int64()
+	if id == 0 {
+		return nil
+	}
+	return &entity.ResetWorkspaceIDRequest{ID: id}
+}
+
+func FromResetWorkspaceIDResponseEntityToHTTPResponse(rs *entity.ResetWorkspaceIDResponse) []byte {
+	payload, _ := json.Marshal(view.ResetWorkspaceIDResponse{ID: monoflake.ID(rs.ID).String()})
+	return payload
+}
+
 func FromHTTPRequestToUpdateWorkspaceRequestEntity(c *fiber.Ctx) *entity.UpdateWorkspaceRequest {
 	id := monoflake.IDFromBase62(c.Params("id")).Int64()
 	if id == 0 {

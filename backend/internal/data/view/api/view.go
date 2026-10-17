@@ -63,6 +63,11 @@ type (
 		MovedTasks int    `json:"movedTasks"`
 	}
 
+	// ResetWorkspaceIDResponse is the new id a workspace was given.
+	ResetWorkspaceIDResponse struct {
+		ID string `json:"id"`
+	}
+
 	// AgentModels is what the connected agent can switch between. Omitted
 	// entirely when no agent is connected or none has reported any, so a client
 	// can treat its presence as "a choice exists".

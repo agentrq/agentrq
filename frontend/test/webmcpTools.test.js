@@ -179,6 +179,9 @@ describe('the catalogue as a whole', () => {
         // Not a delete: the tasks survive in the parent. But it stops the
         // fork's agent mid-work and the fork itself is gone.
         'mergeFork',
+        // Not a delete either, but every agent connected with the old MCP URL
+        // stops working, and every link to the workspace changes.
+        'resetWorkspaceId',
       ].sort()
     );
   });
@@ -298,6 +301,7 @@ describe('each tool calls the interface the way the UI does', () => {
     ['archiveWorkspace', { workspaceId: 'ws1' }, 'archiveWorkspace', ['ws1']],
     ['unarchiveWorkspace', { workspaceId: 'ws1' }, 'unarchiveWorkspace', ['ws1']],
     ['deleteWorkspace', { workspaceId: 'ws1' }, 'deleteWorkspace', ['ws1']],
+    ['resetWorkspaceId', { workspaceId: 'ws1' }, 'resetWorkspaceId', ['ws1']],
     ['forkWorkspace', { workspaceId: 'ws1' }, 'forkWorkspace', ['ws1', { name: '' }]],
     ['forkWorkspace', { workspaceId: 'ws1', name: 'try' }, 'forkWorkspace', ['ws1', { name: 'try' }]],
     ['mergeFork', { workspaceId: 'ws2' }, 'mergeFork', ['ws2', { deleteFolder: false }]],
@@ -627,6 +631,7 @@ describe('the page every write tool shows', () => {
     expect(by('createWorkspace').after({}, { workspace: { id: 'w9' } })).toBe('/workspaces/w9');
     expect(by('forkWorkspace').after({ workspaceId: 'w1' }, { workspace: { id: 'w9' } })).toBe('/workspaces/w9');
     expect(by('mergeFork').after({ workspaceId: 'w1' }, { parentId: 'p9' })).toBe('/workspaces/p9');
+    expect(by('resetWorkspaceId').after({ workspaceId: 'w1' }, { id: 'w9' })).toBe('/workspaces/w9/settings?tab=setup');
     expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, { task: { id: 't9' } })).toBe('/workspaces/w1/tasks/t9');
     expect(by('createEvent').after({}, { event: { id: 'e9' } })).toBe('/events/e9');
     expect(by('createWorkflow').after({}, { workflow: { id: 'wf9' } })).toBe('/workflows/wf9');
@@ -639,6 +644,7 @@ describe('the page every write tool shows', () => {
     expect(by('createWorkspace').after({}, {})).toBe('/');
     expect(by('forkWorkspace').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1');
     expect(by('mergeFork').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1');
+    expect(by('resetWorkspaceId').after({ workspaceId: 'w1' }, {})).toBe('/workspaces/w1/settings?tab=danger');
     expect(by('forkTask').after({ workspaceId: 'w1', taskId: 't1' }, {})).toBe('/workspaces/w1/tasks/t1');
     expect(by('createEvent').after({}, {})).toBe('/events');
     expect(by('createWorkflow').after({}, {})).toBe('/workflows');

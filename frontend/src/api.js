@@ -83,6 +83,14 @@ export async function deleteWorkspace(id) {
   return true;
 }
 
+// Gives the workspace a new id, revoking every MCP token issued for the old
+// one: its MCP URL changes. Answers { id }, the new id.
+export async function resetWorkspaceId(id) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${id}/reset-id`, { method: 'POST' });
+  if (!res.ok) throw await refusal(res, 'Failed to reset workspace id');
+  return res.json();
+}
+
 // A workspace fork: a workspace of its own, with its own queue and agent, that
 // inherits the parent's settings and is merged back into it. With no name the
 // server calls it "<parent>-fork".

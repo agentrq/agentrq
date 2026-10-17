@@ -256,6 +256,18 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId }) => api.deleteWorkspace(workspaceId),
     }),
     tool({
+      name: 'resetWorkspaceId',
+      description:
+        "Give a workspace a new id, which revokes every MCP token issued for it. Only for a token " +
+        'that leaked: its MCP URL and the links to it and its tasks change, and every agent connected ' +
+        'with the old URL stops working until it is set up again with the new one.',
+      properties: { workspaceId: WORKSPACE_ID },
+      required: ['workspaceId'],
+      destructive: true,
+      screen: after((a, r) => (r?.id ? `/workspaces/${seg(r.id)}/settings?tab=setup` : settingsPage('danger')(a))),
+      run: ({ workspaceId }) => api.resetWorkspaceId(workspaceId),
+    }),
+    tool({
       name: 'forkWorkspace',
       description:
         'Fork a workspace: a workspace of its own, with its own queue and agent, that shares the ' +
