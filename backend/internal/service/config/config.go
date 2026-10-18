@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 )
 
 const (
-	_configPath   = "./_config"
+	_configPath   = "_config"
 	_envDefault   = "development"
 	_envVar       = "ENV"
 	_appName      = "AgentRQ"
@@ -42,15 +43,22 @@ type (
 	}
 )
 
-// New inits a new Config based on env name
+// New inits a new Config based on env name, from the working directory's
+// _config.
 func New() (Service, error) {
-	baseCfg, err := load(_configPath + "/base.yaml")
+	return NewFS(os.DirFS("."))
+}
+
+// NewFS inits a new Config based on env name, from fsys's _config: the server
+// passes the copy built into its binary.
+func NewFS(fsys fs.FS) (Service, error) {
+	baseCfg, err := load(fsys, _configPath+"/base.yaml")
 	if err != nil {
 		return nil, err
 	}
 
 	env := env()
-	envCfg, err := load(fmt.Sprintf(_configPath+"/%s.yaml", env))
+	envCfg, err := load(fsys, fmt.Sprintf(_configPath+"/%s.yaml", env))
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +124,8 @@ func env() string {
 // load parses a yaml file and only then fills in its ${VAR:default}
 // placeholders, so an env value is always taken as a literal string: a quote,
 // colon or newline in it cannot break the parse.
-func load(filename string) (map[string]any, error) {
-	raw, err := os.ReadFile(filename)
+func load(fsys fs.FS, name string) (map[string]any, error) {
+	raw, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return nil, err
 	}

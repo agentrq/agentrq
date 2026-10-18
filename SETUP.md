@@ -129,6 +129,16 @@ open http://localhost:2026  # macOS
 
 AgentRQ is now running at **http://localhost:2026**.
 
+### Without Docker: the single binary
+
+Every release after v0.12.1 attaches the server as one file per platform, with the web app built in: `agentrq_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows). It takes the same environment variables as the image and keeps its data in `./_storage`, which it creates:
+
+```bash
+tar -xzf agentrq_*_linux_amd64.tar.gz && cd agentrq_*_linux_amd64
+set -a && . ../.env && set +a
+./agentrq
+```
+
 ---
 
 ## Production Setup

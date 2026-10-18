@@ -30,13 +30,9 @@ RUN npm run build
 
 RUN apk add brotli
 
-# Compress files in the root directory (public/)
-RUN	find dist -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec gzip -9 -f -k {} +
-RUN find dist -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec brotli -9 -f -k {} +
-
-# Compress files in the assets directory (public/assets/)
-RUN find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec gzip -9 -f -k {} +
-RUN	find dist/assets -maxdepth 1 -type f -not -name "*.gz" -not -name "*.br" -exec brotli -9 -f -k {} +
+# The .br and .gz copies the server sends to browsers that accept them.
+COPY scripts/compress-web-build.sh /usr/local/bin/
+RUN compress-web-build.sh dist
 
 
 # Also the build platform: this stage already cross-compiles by setting GOARCH
@@ -62,7 +58,6 @@ RUN GO111MODULE=on go mod download
 
 COPY backend/internal internal
 COPY backend/cmd cmd
-COPY backend/cmd/server/_config _config
 
 RUN rm -f cmd/server/.env*
 RUN rm -f cmd/server/_storage/*.db
@@ -70,7 +65,7 @@ RUN rm -rf cmd/server/scripts
 RUN mkdir -p cmd/server/public
 RUN rm -rf cmd/server/public/*
 
-# Copy new public files
+# The web build, which go build embeds along with cmd/server/_config.
 COPY --from=frontendbuild /app/dist cmd/server/public
 
 ARG TARGETOS
@@ -92,8 +87,6 @@ FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build /app/agentrq /
 COPY --from=build /etc_passwd /etc/passwd
-COPY --from=build /app/cmd/server/public /public
-COPY --from=build /app/_config /_config
 
 USER nobody
 

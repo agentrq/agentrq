@@ -1,0 +1,108 @@
+name: Server release
+
+# The server as one file per platform: the web app and the config defaults are
+# built into it, so it runs with nothing beside it.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the v (e.g. 0.12.2)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Work out the version
+        id: version
+        run: |
+          set -eu
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the web app
+        working-directory: frontend
+        run: |
+          set -eu
+          npm ci
+          npm run build
+          sudo apt-get update -q && sudo apt-get install -y -q brotli
+          ../scripts/compress-web-build.sh dist
+          rm -rf ../backend/cmd/server/public
+          cp -r dist ../backend/cmd/server/public
+
+      # Named apart from checksums.txt, which the daemon's assets use and the
+      # agentrqd installer reads.
+      - name: Build every target
+        working-directory: backend
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"; goarch="${target#*/}"
+            name="agentrq_${VERSION}_${goos}_${goarch}"
+            bin=agentrq
+            [ "$goos" = windows ] && bin=agentrq.exe
+            echo "▸ ${name}"
+            rm -rf "build/${name}" && mkdir -p "build/${name}"
+            GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+              -o "build/${name}/${bin}" ./cmd/server
+            cp ../LICENSE "build/${name}/"
+            if [ "$goos" = windows ]; then
+              (cd build && zip -qr "../dist/${name}.zip" "${name}")
+            else
+              tar -C build -czf "dist/${name}.tar.gz" "${name}"
+            fi
+          done
+          (cd dist && sha256sum * > "agentrq_${VERSION}_checksums.txt")
+
+      # The same create-or-upload as the desktop and daemon releases, which
+      # share this tag's release.
+      - name: Publish GitHub release
+        working-directory: backend
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" --clobber dist/*
+          else
+            gh release create "$TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --generate-notes \
+              dist/*
+          fi

@@ -7,6 +7,8 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +55,10 @@ func New(p Params) (dbconn.DBConn, error) {
 	if !cfg.Enabled {
 		zlog.Info().Msg(_logPrefix + "sqlite repository is not enabled, skipping")
 		return nil, nil
+	}
+
+	if err := makeDir(cfg.DSN); err != nil {
+		return nil, fmt.Errorf(_logPrefix+"failed to create the database folder: %w", err)
 	}
 
 	db, err := gorm.Open(sqlite.Open(withConcurrencyPragmas(cfg.DSN)), &gorm.Config{TranslateError: true})
@@ -103,6 +109,16 @@ func withConcurrencyPragmas(dsn string) string {
 		sep = "&"
 	}
 	return base + sep + "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+}
+
+// makeDir creates the folder a file-backed DSN names, as SQLite creates the
+// file but not its folder: a fresh install starts with nothing on disk.
+func makeDir(dsn string) error {
+	path, _, _ := strings.Cut(strings.TrimPrefix(dsn, "file:"), "?")
+	if path == "" || strings.Contains(dsn, ":memory:") || strings.Contains(dsn, "mode=memory") {
+		return nil
+	}
+	return os.MkdirAll(filepath.Dir(path), 0755)
 }
 
 func (r *repository) Conn(ctx context.Context) *gorm.DB {

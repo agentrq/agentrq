@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -328,6 +329,10 @@ func newTestApp(t *testing.T, enabled string) *App {
 		}
 	}
 	cfg.ConfigSvc = svc
+	cfg.Web = fstest.MapFS{
+		"index.html":    {Data: []byte(`<html><head></head><body><script src="./assets/app.js"></script></body></html>`)},
+		"assets/app.js": {Data: []byte("console.log(1)")},
+	}
 	a, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)

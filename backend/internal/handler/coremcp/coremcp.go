@@ -8,9 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,9 +39,9 @@ type Params struct {
 	Domain  string
 	Mux     *http.ServeMux
 	PubSub  pubsub.Service
-	// PublicDir is the web build the static handler serves, for its
-	// robots.txt on the mcp. host. Defaults to ./public, as the app's is.
-	PublicDir string
+	// Public is the web build the static handler serves, for its robots.txt
+	// on the mcp. host.
+	Public fs.FS
 }
 
 type Handler interface{}
@@ -131,12 +131,8 @@ func New(p Params) (Handler, error) {
 		p.Mux.Handle(hostPattern+"/auth.md", authMD)
 		// Every other path on this host is the MCP endpoint, which would
 		// answer robots.txt with a 401.
-		publicDir := p.PublicDir
-		if publicDir == "" {
-			publicDir = "./public"
-		}
 		p.Mux.Handle(hostPattern+"/robots.txt", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, filepath.Join(publicDir, "robots.txt"))
+			http.ServeFileFS(w, r, p.Public, "robots.txt")
 		}))
 	}
 

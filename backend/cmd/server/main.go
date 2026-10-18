@@ -6,7 +6,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,8 +21,20 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
+// The web app and the config defaults are built into the binary, so the
+// server runs from this one file. all: keeps Vite's _-prefixed chunks.
+//
+//go:embed all:public _config
+var bundled embed.FS
+
+// webApp is the built web app inside the binary.
+func webApp() fs.FS {
+	web, _ := fs.Sub(bundled, "public")
+	return web
+}
+
 func main() {
-	cfgSvc, err := config.New()
+	cfgSvc, err := config.NewFS(bundled)
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("config")
 	}
@@ -64,6 +78,7 @@ func main() {
 	}
 
 	cfg.ConfigSvc = cfgSvc
+	cfg.Web = webApp()
 
 	a, err := app.New(cfg)
 	if err != nil {

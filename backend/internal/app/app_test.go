@@ -11,10 +11,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/data/model"
@@ -270,27 +269,15 @@ func TestNamesAFile(t *testing.T) {
 // The static handler really is bypassed for an app route, not merely allowed to
 // miss: a file sitting at that exact path must still lose to the app.
 func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
-	public := t.TempDir()
-	write := func(name, content string) {
-		t.Helper()
-		full := filepath.Join(public, name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
+	public := fstest.MapFS{
+		"assets/app.js": {Data: []byte("console.log(1)")},
+		// A file named exactly like an app route. Serving this would mean the
+		// static handler had been consulted after all.
+		"login": {Data: []byte("STATIC FILE")},
 	}
-	write("assets/app.js", "console.log(1)")
-	// A file named exactly like an app route. Serving this would mean the
-	// static handler had been consulted after all.
-	write("login", "STATIC FILE")
 
 	app := fiber.New()
-	app.Static("/", public, fiber.Static{
-		Compress: false,
-		Next:     func(c *fiber.Ctx) bool { return skipStaticHandler(c.Path()) },
-	})
+	app.Use("/", staticHandler(public))
 	app.Get("/*", func(c *fiber.Ctx) error { return c.SendString("APP SHELL") })
 
 	cases := []struct {
@@ -316,6 +303,72 @@ func TestStaticHandlerIsBypassedForAppRoutes(t *testing.T) {
 		}
 		if buf.String() != tc.body {
 			t.Errorf("GET %s: body %q, want %q", tc.path, buf.String(), tc.body)
+		}
+	}
+}
+
+// A file is sent as the compressed copy the build carries beside it, the best
+// one the client accepts, and as itself when there is none it accepts.
+func TestStaticHandlerServesPrecompressedCopies(t *testing.T) {
+	app := fiber.New()
+	app.Use("/", staticHandler(fstest.MapFS{
+		"assets/app.js":    {Data: []byte("PLAIN")},
+		"assets/app.js.br": {Data: []byte("BROTLI")},
+		"assets/app.js.gz": {Data: []byte("GZIP")},
+		"assets/solo.css":  {Data: []byte("SOLO")},
+	}))
+
+	for _, tc := range []struct {
+		path, accept, body, encoding, contentType string
+	}{
+		{"/assets/app.js", "gzip, deflate, br", "BROTLI", "br", "text/javascript"},
+		{"/assets/app.js", "gzip", "GZIP", "gzip", "text/javascript"},
+		{"/assets/app.js", "br;q=0, gzip", "GZIP", "gzip", "text/javascript"},
+		{"/assets/app.js", "identity", "PLAIN", "", "text/javascript"},
+		{"/assets/app.js", "", "PLAIN", "", "text/javascript"},
+		{"/assets/solo.css", "br, gzip", "SOLO", "", "text/css"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		if tc.accept != "" {
+			req.Header.Set("Accept-Encoding", tc.accept)
+		}
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", tc.path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if string(body) != tc.body || resp.Header.Get("Content-Encoding") != tc.encoding ||
+			!strings.HasPrefix(resp.Header.Get("Content-Type"), tc.contentType) {
+			t.Errorf("GET %s with %q: %q, Content-Encoding %q, Content-Type %q; want %q, %q, %s",
+				tc.path, tc.accept, body, resp.Header.Get("Content-Encoding"), resp.Header.Get("Content-Type"),
+				tc.body, tc.encoding, tc.contentType)
+		}
+		if tc.encoding != "" && resp.Header.Get("Vary") != "Accept-Encoding" {
+			t.Errorf("GET %s with %q: Vary %q, want Accept-Encoding", tc.path, tc.accept, resp.Header.Get("Vary"))
+		}
+	}
+}
+
+// The whole app serves the web build it is given, the index.html behind every
+// app route included, without reading the working directory.
+func TestTheAppServesItsWebBuild(t *testing.T) {
+	a := newTestApp(t, "true")
+	for _, tc := range []struct {
+		path string
+		code int
+		body string
+	}{
+		{"/", http.StatusOK, "window.__AGENTRQ_BASE_PATH__"},
+		{"/workspaces/1/tasks", http.StatusOK, `<script src="/assets/app.js">`},
+		{"/assets/app.js", http.StatusOK, "console.log(1)"},
+		{"/assets/missing.js", http.StatusNotFound, "Not Found"},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "http://localhost"+tc.path, nil)
+		rr := httptest.NewRecorder()
+		a.server.(http.Handler).ServeHTTP(rr, req)
+		if rr.Code != tc.code || !strings.Contains(rr.Body.String(), tc.body) {
+			t.Errorf("GET %s answered %d %.80q, want %d with %q", tc.path, rr.Code, rr.Body.String(), tc.code, tc.body)
 		}
 	}
 }

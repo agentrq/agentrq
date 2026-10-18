@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -71,6 +72,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -154,6 +156,9 @@ type (
 			} `yaml:"v1"`
 		} `yaml:"acp"`
 		ConfigSvc config.Service `yaml:"-"` // injected, not from YAML
+		// The built web app, served at the root; main passes the copy built
+		// into the binary.
+		Web fs.FS `yaml:"-"`
 	}
 
 	App struct {
@@ -649,12 +654,7 @@ func New(cfg Config) (*App, error) {
 	}))
 
 	// Static Assets
-	fiberApp.Static("/", "./public", fiber.Static{
-		Compress: false,
-		Next: func(c *fiber.Ctx) bool {
-			return skipStaticHandler(c.Path())
-		},
-	})
+	fiberApp.Use("/", staticHandler(cfg.Web))
 
 	mux := http.NewServeMux()
 
@@ -683,6 +683,7 @@ func New(cfg Config) (*App, error) {
 		Domain:     cfg.App.Domain,
 		Mux:        mux,
 		PubSub:     pubsubSvc,
+		Public:     cfg.Web,
 	}); err != nil {
 		return nil, fmt.Errorf("coremcp handler: %w", err)
 	}
@@ -743,7 +744,7 @@ func New(cfg Config) (*App, error) {
 		c.Set("Pragma", "no-cache")
 		c.Set("Expires", "0")
 
-		htmlBytes, err := os.ReadFile("./public/index.html")
+		htmlBytes, err := fs.ReadFile(cfg.Web, "index.html")
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString("index.html not found")
 		}
@@ -981,6 +982,38 @@ func taskEventPayload(ctx context.Context, repo base.Repository, taskID int64) (
 func namesAFile(path string) bool {
 	dot := strings.LastIndex(path, ".")
 	return dot != -1 && dot > strings.LastIndex(path, "/")
+}
+
+// staticHandler serves the web app's files from web, each as its .br or .gz
+// copy when the build carries one and the client accepts it.
+func staticHandler(web fs.FS) fiber.Handler {
+	root := http.FS(web)
+	files := filesystem.New(filesystem.Config{Root: root})
+	return func(c *fiber.Ctx) error {
+		if skipStaticHandler(c.Path()) {
+			return c.Next()
+		}
+		if c.Get(fiber.HeaderAcceptEncoding) == "" {
+			return files(c)
+		}
+		// Ours, not the header's, is the order of preference: browsers list
+		// gzip first.
+		name := strings.TrimPrefix(c.Path(), "/")
+		for _, enc := range [][2]string{{"br", ".br"}, {"gzip", ".gz"}} {
+			if c.AcceptsEncodings(enc[0]) == "" {
+				continue
+			}
+			if _, err := fs.Stat(web, name+enc[1]); err != nil {
+				continue
+			}
+			err := filesystem.SendFile(c, root, name+enc[1])
+			c.Type(filepath.Ext(name))
+			c.Set(fiber.HeaderContentEncoding, enc[0])
+			c.Vary(fiber.HeaderAcceptEncoding)
+			return err
+		}
+		return files(c)
+	}
 }
 
 // skipStaticHandler reports whether a request should bypass the static file

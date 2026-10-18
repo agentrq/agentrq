@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 )
 
 func TestBundledJWTSecretRequiresConfiguration(t *testing.T) {
@@ -267,7 +268,7 @@ s3:
 func TestLoadErrors(t *testing.T) {
 	origWd, _ := os.Getwd()
 	dir := t.TempDir()
-	if _, err := load(dir + "/missing.yaml"); err == nil {
+	if _, err := load(os.DirFS(dir), "missing.yaml"); err == nil {
 		t.Error("expected error for a missing file")
 	}
 	os.Chdir(dir)
@@ -280,7 +281,31 @@ func TestLoadErrors(t *testing.T) {
 	}
 
 	os.WriteFile(dir+"/list.yaml", []byte("- a\n- b\n"), 0644)
-	if _, err := load(dir + "/list.yaml"); err == nil {
+	if _, err := load(os.DirFS(dir), "list.yaml"); err == nil {
 		t.Error("expected error for a non-mapping document")
+	}
+}
+
+// The server reads its config from the copy built into the binary, not from
+// the working directory.
+func TestNewFSReadsTheGivenFS(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("ENV", "development")
+	svc, err := NewFS(fstest.MapFS{
+		"_config/base.yaml":        {Data: []byte("app:\n  port: 1\n  name: base\n")},
+		"_config/development.yaml": {Data: []byte("app:\n  port: 2\n")},
+	})
+	if err != nil {
+		t.Fatalf("NewFS: %v", err)
+	}
+	var got struct {
+		Port int    `yaml:"port"`
+		Name string `yaml:"name"`
+	}
+	if err := svc.Populate("app", &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Port != 2 || got.Name != "base" {
+		t.Errorf("app = %+v, want port 2 from development.yaml and name from base.yaml", got)
 	}
 }
