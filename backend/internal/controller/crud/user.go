@@ -148,6 +148,7 @@ func (c *controller) createSupervisorWorkspace(ctx context.Context, userID int64
 		UserID:                userID,
 		Name:                  supervisorWorkspaceName,
 		Description:           defaultSupervisorWorkspaceDescription,
+		ClearContextDefault:   true,
 		SelfLearningLoopNote:  defaultSupervisorWorkspaceSelfLearningLoopNote,
 		InputSendDelaySeconds: defaultInputSendDelaySeconds,
 	})

@@ -104,6 +104,9 @@ func TestFindOrCreateUser_NotFound_CreateNew(t *testing.T) {
 		if w.InputSendDelaySeconds != 5 {
 			return model.Workspace{}, fmt.Errorf("supervisor workspace send delay should default to 5s, got %d", w.InputSendDelaySeconds)
 		}
+		if !w.ClearContextDefault {
+			return model.Workspace{}, fmt.Errorf("supervisor workspace should clear context by default")
+		}
 		return w, nil
 	})
 
@@ -185,7 +188,8 @@ func TestEnsureSupervisorWorkspace_MakesOneWithSignupDefaultsWhenThereIsNone(t *
 	e.idgen.EXPECT().NextID().Return(int64(1000))
 	e.repo.EXPECT().CreateWorkspace(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, w model.Workspace) (model.Workspace, error) {
 		if w.ID != 1000 || w.UserID != 999 || w.Name != "supervisor" || w.Description != defaultSupervisorWorkspaceDescription ||
-			w.SelfLearningLoopNote != defaultSupervisorWorkspaceSelfLearningLoopNote || w.InputSendDelaySeconds != defaultInputSendDelaySeconds {
+			w.SelfLearningLoopNote != defaultSupervisorWorkspaceSelfLearningLoopNote || w.InputSendDelaySeconds != defaultInputSendDelaySeconds ||
+			!w.ClearContextDefault {
 			return model.Workspace{}, fmt.Errorf("the supervisor was made with %+v, want signup's defaults", w)
 		}
 		return w, nil
