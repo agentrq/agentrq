@@ -366,6 +366,7 @@ describe('each tool calls the interface the way the UI does', () => {
     ['listTasks', {}, 'fetchGlobalTasks', [{}]],
     ['getTask', { workspaceId: 'ws1', taskId: 't1' }, 'getTask', ['ws1', 't1']],
     ['listTaskToolCalls', { workspaceId: 'ws1', taskId: 't1', before: 'c9', limit: 50 }, 'listTaskToolCalls', ['ws1', 't1', { before: 'c9', limit: 50 }]],
+    ['getTaskPlan', { workspaceId: 'ws1', taskId: 't1' }, 'getTaskPlan', ['ws1', 't1']],
     [
       'createTask',
       { workspaceId: 'ws1', title: 'T', body: 'B' },

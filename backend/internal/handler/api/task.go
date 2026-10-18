@@ -46,6 +46,7 @@ const (
 	_routePathAttachment  = "/workspaces/:id/tasks/:taskID/attachments/:attachmentID"
 	_routePathCounts      = "/workspaces/:id/tasks/counts"
 	_routePathToolCalls   = "/workspaces/:id/tasks/:taskID/tool-calls"
+	_routePathTaskPlan    = "/workspaces/:id/tasks/:taskID/plan"
 )
 
 func (h *handler) registerTaskRoutes() error {
@@ -56,6 +57,7 @@ func (h *handler) registerTaskRoutes() error {
 	h.router.Get(_routePathCounts, h.getWorkspaceTaskCounts())
 	h.router.Get(_routePathTask, h.getTask())
 	h.router.Get(_routePathToolCalls, h.listTaskToolCalls())
+	h.router.Get(_routePathTaskPlan, h.getTaskPlan())
 	h.router.Post(_routePathRespond, h.respondToTask())
 	h.router.Post(_routePathFork, h.forkTask())
 	h.router.Post(_routePathReply, h.replyToTask())
@@ -302,6 +304,28 @@ func (h *handler) listTaskToolCalls() fiber.Handler {
 		}
 		c.Status(http.StatusOK)
 		return c.Send(mapper.FromListTaskToolCallsResponseEntityToHTTPResponse(rs))
+	}
+}
+
+func (h *handler) getTaskPlan() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(_headerContentType, _mimeJSON)
+		rq := mapper.FromHTTPRequestToGetTaskPlanRequestEntity(c)
+		if rq == nil {
+			c.Status(http.StatusUnprocessableEntity)
+			return c.Send(_invalidPayload)
+		}
+		rq.UserID = c.Locals("user_id").(string)
+		ctx, cancel := newContext(c)
+		defer cancel()
+		rs, err := h.crud.GetTaskPlan(ctx, *rq)
+		if err != nil {
+			e, status := mapper.FromErrorToHTTPResponse(err)
+			c.Status(status)
+			return c.Send(e)
+		}
+		c.Status(http.StatusOK)
+		return c.Send(mapper.FromGetTaskPlanResponseEntityToHTTPResponse(rs))
 	}
 }
 

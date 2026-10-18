@@ -90,34 +90,20 @@ func TestNotes(t *testing.T) {
 		}
 	})
 	t.Run("a plan reads as ticked checklist lines", func(t *testing.T) {
-		got := formatPlan(planContent{Type: "items", PlanID: "p", Entries: []planEntry{
+		got := formatPlan(planContent{Type: "items", Entries: []planEntry{
 			{Content: "Read", Status: "completed"}, {Content: "Fix", Status: "in_progress"}, {Content: "Ship", Status: "weird"}}})
-		if want := "- ✅ Read\n- 🔄 Fix\n- ⬜ Ship"; got != want {
+		if want := "- [x] Read\n- [ ] Fix\n- [ ] Ship"; got != want {
 			t.Errorf("formatPlan was %q, want %q", got, want)
 		}
 	})
-	t.Run("a file plan reads as its uri", func(t *testing.T) {
-		if got := formatPlan(planContent{Type: "file", URI: "file:///plan.md"}); got != "Plan: file:///plan.md" {
-			t.Errorf("formatPlan was %q, want Plan: file:///plan.md", got)
+	t.Run("a file plan is a link to it", func(t *testing.T) {
+		if got := formatPlan(planContent{Type: "file", URI: "file:///plan.md"}); got != "[Plan](file:///plan.md)" {
+			t.Errorf("formatPlan was %q, want [Plan](file:///plan.md)", got)
 		}
 	})
 	t.Run("a markdown plan reads as itself", func(t *testing.T) {
 		if got := formatPlan(planContent{Type: "markdown", Content: "# Plan"}); got != "# Plan" {
 			t.Errorf("formatPlan was %q, want # Plan", got)
-		}
-	})
-	t.Run("plan data drops nothing the card needs", func(t *testing.T) {
-		got, _ := json.Marshal(planData(planContent{Type: "items", PlanID: "p1", Entries: []planEntry{{Content: "Read", Priority: "high", Status: "completed"}}}))
-		if want := `{"entries":[{"content":"Read","priority":"high","status":"completed"}],"planId":"p1","planType":"items"}`; string(got) != want {
-			t.Errorf("planData was %s, want %s", got, want)
-		}
-		got, _ = json.Marshal(planData(planContent{Type: "file", PlanID: "p2", URI: "file:///p"}))
-		if want := `{"planId":"p2","planType":"file","uri":"file:///p"}`; string(got) != want {
-			t.Errorf("planData of a file plan was %s, want %s", got, want)
-		}
-		got, _ = json.Marshal(planData(planContent{Type: "markdown", PlanID: "p3", Content: "x"}))
-		if want := `{"content":"x","planId":"p3","planType":"markdown"}`; string(got) != want {
-			t.Errorf("planData of a markdown plan was %s, want %s", got, want)
 		}
 	})
 }

@@ -167,6 +167,9 @@
             <TaskTimeline class="@min-[48rem]:hidden" compact :transitions="stateTransitions" :current-tone="taskStatusTone(task)" />
           </div>
 
+          <!-- The agent's plan, pinned here so it stays in view however long the conversation gets -->
+          <TaskPlanPanel v-if="taskPlan" class="mb-1" :plan="taskPlan" :messages="task.messages || []" :disabled="offline" @comment="commentOnPlan" />
+
           <!-- Attachments -->
           <div v-if="task.attachments && task.attachments.length > 0" class="mt-8 flex flex-wrap gap-3">
             <div v-for="(att, i) in task.attachments" :key="i"
@@ -992,7 +995,7 @@ import { ref, onMounted, computed, onUnmounted, watch, nextTick } from 'vue';
 import { downloadAttachment } from '../composables/useAttachmentDownload';
 import { useEscapeKey } from '../composables/useEscapeKey';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT } from '../api';
+import { getWorkspace, fetchTasks, archiveWorkspace, unarchiveWorkspace, updateWorkspace, getWorkspaceToken, getTask, listTaskToolCalls, updateTaskStatus, respondToTask, updateTaskAssignee, getAttachmentUrl, sendPermissionVerdict, respondToElicitation, stopTask, updateTaskAllowAllCommands, fetchUser, forkTask, TELEMETRY_UI_COPY_LINK, TELEMETRY_UI_COPY_MARKDOWN, TELEMETRY_UI_SHORTCUT_USE, TELEMETRY_UI_TRAJECTORY_VIEW, TELEMETRY_UI_MESSAGE_REACT, TELEMETRY_UI_PLAN_COMMENT } from '../api';
 import { useTooltipStore } from '../stores/tooltipStore';
 import { useToasts } from '../composables/useToasts';
 import { useViewport } from '../composables/useViewport';
@@ -1025,6 +1028,8 @@ import { useTaskRename } from '../composables/useTaskRename';
 import { elicitOutcome, elicitRows, isElicitExpired } from '../composables/useElicitAnswer';
 import { withRequestAnswered } from '../composables/useRequestAnswer';
 import MarkdownBody from '../components/MarkdownBody.vue';
+import TaskPlanPanel from '../components/TaskPlanPanel.vue';
+import { useTaskPlan, planCommentText } from '../composables/useTaskPlan';
 import EmojiPicker from '../components/EmojiPicker.vue';
 import ComposerBox from '../components/ComposerBox.vue';
 import ComposerNotice from '../components/ComposerNotice.vue';
@@ -1063,6 +1068,7 @@ const workspaceStore = useWorkspaceStore();
 const localWorkspace = ref(null);
 const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value) || localWorkspace.value);
 const task = ref(null);
+const { plan: taskPlan, load: loadTaskPlan, apply: applyTaskPlan } = useTaskPlan();
 // The task's status history, oldest first, from the single-task GET only.
 const stateTransitions = ref([]);
 const user = ref(null);
@@ -1639,6 +1645,7 @@ async function load() {
     task.value = tRes.task;
     stateTransitions.value = tRes.stateTransitions || [];
     cacheTask(sharedCache(), tRes.task);
+    loadTaskPlan(workspaceId.value, taskId.value);
     connect();
     nextTick(() => {
       scrollToBottom();
@@ -1876,6 +1883,13 @@ async function dispatchReply(text, atts) {
   holdMessage({ text, atts, seconds: delaySeconds, target });
 }
 
+// A comment on a plan step is a message to the agent quoting the step, sent the
+// way the composer sends one: held mid-turn, delayed if the workspace asks.
+function commentOnPlan(step, text) {
+  recordUiAction(TELEMETRY_UI_PLAN_COMMENT, route);
+  dispatchReply(planCommentText(step, text), []);
+}
+
 /**
  * Send the message at the head of the queue, and only that one.
  *
@@ -1996,6 +2010,8 @@ watch(events, (evts) => {
       task.value = cacheTaskUpdate(sharedCache(), task.value, last.payload);
     }
   }
+
+  if (last.type === 'taskPlan.updated') applyTaskPlan(last.payload, taskId.value);
 
   // One tool call, never the whole task: see upsertToolCall.
   if (last.type === 'toolCall.updated') {

@@ -630,6 +630,16 @@ export function createToolCatalogue({ api, navigate, currentPage }) {
       run: ({ workspaceId, taskId, before, limit }) => api.listTaskToolCalls(workspaceId, taskId, { before, limit }),
     }),
     tool({
+      name: 'getTaskPlan',
+      description:
+        "The plan a task's agent is working to, as markdown, or null when it has none. Its " +
+        'task-list items are the steps; the first one not ticked is the one being worked on.',
+      properties: { workspaceId: WORKSPACE_ID, taskId: TASK_ID },
+      required: ['workspaceId', 'taskId'],
+      readOnly: true,
+      run: ({ workspaceId, taskId }) => api.getTaskPlan(workspaceId, taskId),
+    }),
+    tool({
       name: 'createTask',
       description:
         'Create a task in a workspace. Assign it to an agent to have it worked on, or to a human ' +

@@ -370,14 +370,9 @@ type planUpdate struct {
 
 type planContent struct {
 	Type    string      `json:"type"` // items | file | markdown
-	PlanID  string      `json:"planId"`
 	Entries []planEntry `json:"entries"`
 	URI     string      `json:"uri"`
 	Content string      `json:"content"`
-}
-
-type planRemoved struct {
-	PlanID string `json:"planId"`
 }
 
 type availableCommand struct {

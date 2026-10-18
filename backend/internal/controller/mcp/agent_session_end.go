@@ -41,7 +41,7 @@ func (ps *WorkspaceServer) rememberUsageMessage(sessionID string, taskID, msgID 
 		byKey = make(map[string]usageMessageRef)
 		ps.agentUsageMessages[sessionID] = byKey
 	}
-	byKey[agentTelemetryMessageKey(taskID, agentTelemetryKindUsage, "")] = usageMessageRef{taskID: taskID, msgID: msgID}
+	byKey[agentTelemetryMessageKey(taskID, agentTelemetryKindUsage)] = usageMessageRef{taskID: taskID, msgID: msgID}
 }
 
 // agentSessionEnded tells the open pages that what a native link reported no

@@ -1559,3 +1559,37 @@ func TestListTaskToolCalls_Failures(t *testing.T) {
 		t.Error("a failed read returned no error")
 	}
 }
+
+// ── GetTaskPlan ───────────────────────────────────────────────────────────────
+
+func TestGetTaskPlan(t *testing.T) {
+	at := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	e := newTestController(t)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10}, nil)
+	e.repo.EXPECT().GetTaskPlan(gomock.Any(), int64(10)).Return(model.TaskPlan{ID: 10, Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at}, nil)
+
+	resp, err := e.controller.GetTaskPlan(context.Background(), entity.GetTaskPlanRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (entity.TaskPlan{ID: 10, Content: "- [ ] Read", Version: 2, CreatedAt: at, UpdatedAt: at}); resp.Plan != want {
+		t.Errorf("plan = %+v, want %+v", resp.Plan, want)
+	}
+}
+
+func TestGetTaskPlan_Failures(t *testing.T) {
+	req := entity.GetTaskPlanRequest{WorkspaceID: 1, TaskID: 10, UserID: testUserIDStr}
+
+	e := newTestController(t)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{}, base.ErrNotFound)
+	if _, err := e.controller.GetTaskPlan(context.Background(), req); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("a task elsewhere: %v, want ErrNotFound", err)
+	}
+
+	e = newTestController(t)
+	e.repo.EXPECT().GetTaskRow(gomock.Any(), int64(1), int64(10), testUserID).Return(model.Task{ID: 10}, nil)
+	e.repo.EXPECT().GetTaskPlan(gomock.Any(), int64(10)).Return(model.TaskPlan{}, base.ErrNotFound)
+	if _, err := e.controller.GetTaskPlan(context.Background(), req); !errors.Is(err, base.ErrNotFound) {
+		t.Errorf("a task with no plan: %v, want ErrNotFound", err)
+	}
+}

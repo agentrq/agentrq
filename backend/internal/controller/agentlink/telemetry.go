@@ -18,13 +18,7 @@ type TelemetryReport struct {
 	Data      map[string]any
 }
 
-// PlanID is the plan a payload refers to, or "" if it names none.
-func (p TelemetryReport) PlanID() string {
-	id, _ := p.Data["planId"].(string)
-	return id
-}
-
-// Removed reports whether the agent withdrew the plan this payload names.
+// Removed reports whether the agent withdrew its plan.
 func (p TelemetryReport) Removed() bool {
 	gone, _ := p.Data["removed"].(bool)
 	return gone

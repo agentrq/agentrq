@@ -403,16 +403,14 @@ func (e *engineV1) applyUpdate(n sessionNotification) {
 	case "plan":
 		var p legacyPlan
 		lenient(n.Update, &p)
-		plan := planContent{Type: "items", PlanID: "default", Entries: p.Entries}
-		e.sendPlan(s, formatPlan(plan), planData(plan))
+		plan := planContent{Type: "items", Entries: p.Entries}
+		e.sendPlan(s, formatPlan(plan), nil)
 	case "plan_update":
 		var p planUpdate
 		lenient(n.Update, &p)
-		e.sendPlan(s, formatPlan(p.Plan), planData(p.Plan))
+		e.sendPlan(s, formatPlan(p.Plan), nil)
 	case "plan_removed":
-		var p planRemoved
-		lenient(n.Update, &p)
-		e.sendPlan(s, "Plan withdrawn.", map[string]any{"planId": p.PlanID, "removed": true})
+		e.sendPlan(s, "Plan withdrawn.", map[string]any{"removed": true})
 	case "available_commands_update":
 		var u commandsUpdate
 		lenient(n.Update, &u)

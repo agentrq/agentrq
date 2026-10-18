@@ -22,6 +22,9 @@ const (
 	// task push. Emitted once per successful /clear, never per attempt — a
 	// failed one changed nothing worth counting.
 	ActionMCPClearContext
+	// A native agent's plan for a task, written or replaced. Emitted once
+	// the plan is stored, never for a failed write.
+	ActionMCPPlanUpdate
 )
 
 func (a Action) String() string {
@@ -36,6 +39,8 @@ func (a Action) String() string {
 		return "connect"
 	case ActionMCPClearContext:
 		return "clear_context"
+	case ActionMCPPlanUpdate:
+		return "plan_update"
 	}
 	return "unknown"
 }

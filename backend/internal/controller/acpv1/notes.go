@@ -111,39 +111,22 @@ func usageData(u usageUpdate) map[string]any {
 	return d
 }
 
-var planMarkers = map[string]string{"completed": "✅", "in_progress": "🔄", "pending": "⬜"}
-
+// formatPlan is a plan as the markdown a task keeps it in: entries as a task
+// list, ticked once completed, and a file plan as a link to it.
 func formatPlan(p planContent) string {
 	switch p.Type {
 	case "file":
-		return "Plan: " + p.URI
+		return "[Plan](" + p.URI + ")"
 	case "markdown":
 		return p.Content
 	}
 	lines := make([]string, 0, len(p.Entries))
 	for _, e := range p.Entries {
-		marker, ok := planMarkers[e.Status]
-		if !ok {
-			marker = planMarkers["pending"]
+		box := "[ ]"
+		if e.Status == "completed" {
+			box = "[x]"
 		}
-		lines = append(lines, "- "+marker+" "+e.Content)
+		lines = append(lines, "- "+box+" "+e.Content)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func planData(p planContent) map[string]any {
-	d := map[string]any{"planId": p.PlanID, "planType": p.Type}
-	switch p.Type {
-	case "file":
-		d["uri"] = p.URI
-	case "markdown":
-		d["content"] = p.Content
-	default:
-		entries := make([]map[string]any, 0, len(p.Entries))
-		for _, e := range p.Entries {
-			entries = append(entries, map[string]any{"content": e.Content, "priority": e.Priority, "status": e.Status})
-		}
-		d["entries"] = entries
-	}
-	return d
 }

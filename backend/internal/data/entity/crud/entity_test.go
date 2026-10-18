@@ -97,6 +97,7 @@ func TestActionString(t *testing.T) {
 		{ActionAgentEffortSelect, "agent_effort_select"},
 		{ActionACPV1Logout, "acp_v1_logout"},
 		{ActionWorkspaceResetID, "workspace_reset_id"},
+		{ActionUIPlanComment, "ui_plan_comment"},
 		// Not a case in the switch today, and the fallback both it and any
 		// truly unknown value share.
 		{ActionTaskRejectManual, "unknown"},

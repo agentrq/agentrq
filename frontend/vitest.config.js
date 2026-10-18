@@ -102,6 +102,8 @@ export default defineConfig({
         'src/composables/useSkills.js',
         'src/composables/usePano.js',
         'src/composables/useTaskOptions.js',
+        'src/composables/useTaskPlan.js',
+        'src/components/TaskPlanPanel.vue',
         'src/components/TaskAttachmentChips.vue',
         'src/components/TaskOptionsTools.vue',
         'src/components/PanoTaskButton.vue',

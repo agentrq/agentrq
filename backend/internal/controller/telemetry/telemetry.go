@@ -283,6 +283,8 @@ func (c *controller) recordCRUD(event entity.CRUDEvent) {
 		action = model.ActionIDACPV1Logout
 	case entity.ActionWorkspaceResetID:
 		action = model.ActionIDWorkspaceResetID
+	case entity.ActionUIPlanComment:
+		action = model.ActionIDUIPlanComment
 	default:
 		return
 	}
@@ -401,6 +403,8 @@ func (c *controller) recordMCP(event mcp.MCPEvent) {
 		action = model.ActionIDMCPConnect
 	case mcp.ActionMCPClearContext:
 		action = model.ActionIDMCPClearContext
+	case mcp.ActionMCPPlanUpdate:
+		action = model.ActionIDMCPPlanUpdate
 	case mcp.ActionMCPNotification:
 		switch event.Method {
 		case "permission_manual_allow":

@@ -224,6 +224,24 @@ type (
 		ToolCall    ToolCall `json:"toolCall"`
 	}
 
+	// TaskPlan is the plan a task's agent works to, as markdown. Its id is
+	// the task's; version counts the agent's updates.
+	TaskPlan struct {
+		ID        string    `json:"id"`
+		Content   string    `json:"content"`
+		Version   int64     `json:"version"`
+		CreatedAt time.Time `json:"createdAt"`
+		UpdatedAt time.Time `json:"updatedAt"`
+	}
+
+	// TaskPlanUpdated is a taskPlan.updated stream event: a task's plan
+	// written or replaced, or withdrawn when Plan is null.
+	TaskPlanUpdated struct {
+		WorkspaceID string    `json:"workspaceId"`
+		TaskID      string    `json:"taskId"`
+		Plan        *TaskPlan `json:"plan"`
+	}
+
 	// CreatedBy: "human" | "agent"
 	// Status:    "notstarted" | "ongoing" | "completed" | "rejected" | "cron" | "blocked"
 	Task struct {

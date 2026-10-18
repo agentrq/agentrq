@@ -180,7 +180,7 @@ func conversationOnly(msgs []model.Message) []model.Message {
 
 const (
 	elicitationType = "elicitation_request"
-	// mcp.MessageTypeAgentPlan; that package imports this one.
+	// The messages plans were kept as before a task had its own plan.
 	planType = "agent_plan"
 )
 

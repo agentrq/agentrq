@@ -1531,6 +1531,22 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/InvalidPayload' }
 
+  /workspaces/{id}/tasks/{taskID}/plan:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      tags: [Tasks]
+      summary: Read the plan the task's agent is working to
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskPlan' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/InvalidPayload' }
+
   /workspaces/{id}/tasks/{taskID}/respond:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -3375,6 +3391,22 @@ components:
         status:
           type: string
           enum: [auto_allowed, pending, allowed, denied]
+
+    TaskPlan:
+      type: object
+      description: |
+        The plan a task's agent is working to: at most one per task, replaced
+        whole on every update.
+      required: [id, content, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: The task's id. }
+        content: { type: string, description: The plan, as markdown. }
+        version:
+          type: integer
+          format: int64
+          description: How many times the agent has written the plan.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     Attachment:
       type: object

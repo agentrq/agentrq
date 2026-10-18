@@ -40,7 +40,7 @@ func newProtocolTestServer(t *testing.T) *httptest.Server {
 		nil, // skills
 		nil, // pano
 		nil, // siteTools
-		nil, nil,
+		nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)
 	srv := httptest.NewServer(ps.Handler())

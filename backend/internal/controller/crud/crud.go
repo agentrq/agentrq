@@ -156,6 +156,7 @@ type TaskController interface {
 	CreateTask(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error)
 	GetTask(ctx context.Context, req entity.GetTaskRequest) (*entity.GetTaskResponse, error)
 	ListTaskToolCalls(ctx context.Context, req entity.ListTaskToolCallsRequest) (*entity.ListTaskToolCallsResponse, error)
+	GetTaskPlan(ctx context.Context, req entity.GetTaskPlanRequest) (*entity.GetTaskPlanResponse, error)
 	ListTasks(ctx context.Context, req entity.ListTasksRequest) (*entity.ListTasksResponse, error)
 	RespondToTask(ctx context.Context, req entity.RespondToTaskRequest) (*entity.RespondToTaskResponse, error)
 	ForkTask(ctx context.Context, req entity.ForkTaskRequest) (*entity.ForkTaskResponse, error)

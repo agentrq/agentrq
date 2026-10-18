@@ -32,7 +32,7 @@ type historyDB struct {
 	db   *gorm.DB
 }
 
-var historyTables = []any{&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}, &model.PanoDoc{}, &model.PanoDocTask{}}
+var historyTables = []any{&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}, &model.EventTrigger{}, &model.WorkflowStep{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Agent{}, &model.AgentModel{}, &model.PanoDoc{}, &model.PanoDocTask{}, &model.TaskPlan{}}
 
 func historyDBs(t *testing.T) []historyDB {
 	t.Helper()

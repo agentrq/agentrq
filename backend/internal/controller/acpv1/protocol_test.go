@@ -178,9 +178,9 @@ func TestWireTypes(t *testing.T) {
 
 		u = updateOf("session_update.plan_update.json")
 		var plan planUpdate
-		if kindOf(u) != "plan_update" || json.Unmarshal(u, &plan) != nil || plan.Plan.Type != "items" || plan.Plan.PlanID != "p1" ||
+		if kindOf(u) != "plan_update" || json.Unmarshal(u, &plan) != nil || plan.Plan.Type != "items" ||
 			len(plan.Plan.Entries) != 2 || plan.Plan.Entries[1].Status != "in_progress" {
-			t.Errorf("plan read as %q %+v, want items plan p1 with its second entry in progress", kindOf(u), plan)
+			t.Errorf("plan read as %q %+v, want an items plan with its second entry in progress", kindOf(u), plan)
 		}
 	})
 

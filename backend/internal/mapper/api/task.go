@@ -87,6 +87,35 @@ func FromHTTPRequestToListTaskToolCallsRequestEntity(c *fiber.Ctx) *entity.ListT
 	return &entity.ListTaskToolCallsRequest{WorkspaceID: workspaceID, TaskID: taskID, Before: before, Limit: c.QueryInt("limit", 0)}
 }
 
+func FromHTTPRequestToGetTaskPlanRequestEntity(c *fiber.Ctx) *entity.GetTaskPlanRequest {
+	workspaceID := monoflake.IDFromBase62(c.Params("id")).Int64()
+	taskID := monoflake.IDFromBase62(c.Params("taskID")).Int64()
+	if workspaceID == 0 || taskID == 0 {
+		return nil
+	}
+	return &entity.GetTaskPlanRequest{WorkspaceID: workspaceID, TaskID: taskID}
+}
+
+func FromGetTaskPlanResponseEntityToHTTPResponse(rs *entity.GetTaskPlanResponse) []byte {
+	p := rs.Plan
+	payload, _ := json.Marshal(view.TaskPlan{
+		ID: monoflake.ID(p.ID).String(), Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+	})
+	return payload
+}
+
+// FromModelTaskPlanToUpdatedView is the taskPlan.updated event for a task's
+// plan, or for its withdrawal when p is nil.
+func FromModelTaskPlanToUpdatedView(workspaceID, taskID int64, p *model.TaskPlan) view.TaskPlanUpdated {
+	ev := view.TaskPlanUpdated{WorkspaceID: monoflake.ID(workspaceID).String(), TaskID: monoflake.ID(taskID).String()}
+	if p != nil {
+		ev.Plan = &view.TaskPlan{
+			ID: monoflake.ID(p.ID).String(), Content: p.Content, Version: p.Version, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+		}
+	}
+	return ev
+}
+
 func FromListTaskToolCallsResponseEntityToHTTPResponse(rs *entity.ListTaskToolCallsResponse) []byte {
 	payload, _ := json.Marshal(view.ListTaskToolCallsResponse{ToolCalls: fromEntityToolCallsToView(rs.ToolCalls)})
 	return payload

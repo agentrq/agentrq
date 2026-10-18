@@ -1261,15 +1261,15 @@ func TestEngine(t *testing.T) {
 			a.update("sess-1", `{"sessionUpdate":"plan","entries":[{"content":"Old style","priority":"low","status":"pending"}]}`)
 		})
 		rec.read(func() {
-			want := []string{"plan:- ✅ Read the code\n- 🔄 Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- ⬜ Old style"}
+			want := []string{"plan:- [x] Read the code\n- [ ] Write the fix", "plan:# Revised", "plan:Plan withdrawn.", "plan:- [ ] Old style"}
 			if !slices.Equal(rec.log, want) {
 				t.Fatalf("the human read %q, want %q", rec.log, want)
 			}
-			if d := rec.telemetry[2].Data; d["planId"] != "p1" || d["removed"] != true {
-				t.Fatalf("the withdrawal's data was %v, want planId p1 removed", d)
+			if d := rec.telemetry[2].Data; len(d) != 1 || d["removed"] != true {
+				t.Fatalf("the withdrawal's data was %v, want only removed", d)
 			}
-			if d := rec.telemetry[3].Data; d["planId"] != "default" {
-				t.Fatalf("the legacy plan's data was %v, want planId default", d)
+			if d := rec.telemetry[3].Data; d != nil {
+				t.Fatalf("the legacy plan's data was %v, want none: the text is the plan", d)
 			}
 		})
 	})

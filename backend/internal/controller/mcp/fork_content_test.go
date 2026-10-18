@@ -30,7 +30,7 @@ func TestContentIDIsTheWorkspaceUnlessGiven(t *testing.T) {
 		t.Errorf("a fork: %d, want its parent %d", got, forkParentID)
 	}
 	ps := NewWorkspaceServer(forkID, forkParentID, "1", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, "", "", "", nil, nil, nil, nil)
 	if got := ps.contentID(); got != forkParentID {
 		t.Errorf("built: %d, want %d", got, forkParentID)

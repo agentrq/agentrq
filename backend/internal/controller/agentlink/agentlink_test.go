@@ -84,12 +84,12 @@ func TestCurrentModelID(t *testing.T) {
 }
 
 func TestTelemetryReport(t *testing.T) {
-	p := TelemetryReport{Data: map[string]any{"planId": "p1", "removed": true}}
-	if p.PlanID() != "p1" || !p.Removed() {
-		t.Errorf("PlanID() = %q and Removed() = %v, want p1 and true", p.PlanID(), p.Removed())
+	p := TelemetryReport{Data: map[string]any{"removed": true}}
+	if !p.Removed() {
+		t.Error("Removed() = false, want true")
 	}
 	var empty TelemetryReport
-	if empty.PlanID() != "" || empty.Removed() {
-		t.Errorf("PlanID() = %q and Removed() = %v with no data, want empty and false", empty.PlanID(), empty.Removed())
+	if empty.Removed() {
+		t.Error("Removed() = true with no data, want false")
 	}
 }

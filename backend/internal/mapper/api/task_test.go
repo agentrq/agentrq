@@ -12,6 +12,7 @@ import (
 
 	entity "github.com/agentrq/agentrq/backend/internal/data/entity/crud"
 	"github.com/agentrq/agentrq/backend/internal/data/model"
+	view "github.com/agentrq/agentrq/backend/internal/data/view/api"
 	"github.com/mustafaturan/monoflake"
 )
 
@@ -77,5 +78,18 @@ func TestTaskViews_CountToolCalls(t *testing.T) {
 	}
 	if got := FromEntityTaskToView(entity.Task{ID: 1, ToolCallCount: 250}); got.ToolCallCount != 250 {
 		t.Errorf("REST view counts %d, want 250", got.ToolCallCount)
+	}
+}
+
+// The stream event carries the task's plan, or no plan once it is withdrawn.
+func TestFromModelTaskPlanToUpdatedView(t *testing.T) {
+	at := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
+	ev := FromModelTaskPlanToUpdatedView(10, 44, &model.TaskPlan{ID: 44, Content: "- [ ] Read", Version: 1, CreatedAt: at, UpdatedAt: at})
+	want := view.TaskPlan{ID: monoflake.ID(44).String(), Content: "- [ ] Read", Version: 1, CreatedAt: at, UpdatedAt: at}
+	if ev.WorkspaceID != monoflake.ID(10).String() || ev.TaskID != monoflake.ID(44).String() || ev.Plan == nil || *ev.Plan != want {
+		t.Errorf("event = %+v, plan %+v", ev, ev.Plan)
+	}
+	if gone := FromModelTaskPlanToUpdatedView(10, 44, nil); gone.Plan != nil || gone.TaskID != monoflake.ID(44).String() {
+		t.Errorf("a withdrawal = %+v, want task 44 with no plan", gone)
 	}
 }

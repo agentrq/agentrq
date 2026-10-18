@@ -271,3 +271,9 @@ func TestActionMCPClearContextStringsAsClearContext(t *testing.T) {
 		t.Errorf("ActionMCPClearContext.String() = %q, want %q", got, "clear_context")
 	}
 }
+
+func TestActionMCPPlanUpdateStringsAsPlanUpdate(t *testing.T) {
+	if got := ActionMCPPlanUpdate.String(); got != "plan_update" {
+		t.Errorf("ActionMCPPlanUpdate.String() = %q, want %q", got, "plan_update")
+	}
+}

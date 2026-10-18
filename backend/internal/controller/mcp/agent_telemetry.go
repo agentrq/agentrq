@@ -25,29 +25,26 @@ const (
 	agentTelemetryKindNotice  = "notice"
 )
 
-// The message metadata types the frontend renders these as.
+// The message metadata types the frontend renders these as. A plan is not a
+// message: it is the task's plan, kept by plans.
 const (
 	MessageTypeAgentThought = "agent_thought"
-	MessageTypeAgentPlan    = "agent_plan"
 	MessageTypeAgentUsage   = "agent_usage"
 	MessageTypeAgentNotice  = "agent_notice"
 )
 
 // agentTelemetryMessageKey identifies the one chat message that stands for a
-// plan, or for a task's usage counters — the things that are revised in place
-// rather than appended to.
-func agentTelemetryMessageKey(taskID int64, kind, planID string) string {
-	if kind == agentTelemetryKindPlan {
-		return fmt.Sprintf("%d:plan:%s", taskID, planID)
-	}
+// task's usage counters, which are revised in place rather than appended to.
+func agentTelemetryMessageKey(taskID int64, kind string) string {
 	return fmt.Sprintf("%d:%s", taskID, kind)
 }
 
-// HandleAgentTelemetry relays one piece of agent telemetry into a task's chat.
+// HandleAgentTelemetry relays one piece of agent telemetry into a task.
 //
 // Reasoning and notices are appended: each says something about a different
-// moment of the turn. Plans and usage counters are revised in place, because a new message every
-// time a checkbox ticks or a token counter moves buries the conversation.
+// moment of the turn. Usage counters are revised in place, because a new message every
+// time a token counter moves buries the conversation. A plan replaces the
+// task's plan.
 func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID string, p agentlink.TelemetryReport) {
 	taskID, ok := ps.resolveTaskID(ctx, sessionID, p.TaskID)
 	if !ok {
@@ -65,7 +62,7 @@ func (ps *WorkspaceServer) HandleAgentTelemetry(ctx context.Context, sessionID s
 	case agentTelemetryKindNotice:
 		ps.postAgentTelemetryMessage(ctx, taskID, p.Text, agentTelemetryMetadata(MessageTypeAgentNotice, p))
 	case agentTelemetryKindPlan:
-		ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentPlan)
+		ps.saveAgentPlan(ctx, taskID, p)
 	case agentTelemetryKindUsage:
 		if msgID := ps.reviseAgentTelemetryMessage(ctx, taskID, p, MessageTypeAgentUsage); msgID != 0 {
 			ps.rememberUsageMessage(sessionID, taskID, msgID)
@@ -118,11 +115,30 @@ func (ps *WorkspaceServer) postAgentTelemetryMessage(ctx context.Context, taskID
 	return msgID
 }
 
+// saveAgentPlan stores the plan as the task's, or removes it when the agent
+// withdrew it.
+func (ps *WorkspaceServer) saveAgentPlan(ctx context.Context, taskID int64, p agentlink.TelemetryReport) {
+	if ps.plans == nil {
+		return
+	}
+	if p.Removed() {
+		if err := ps.plans.Delete(ctx, taskID); err != nil {
+			zlog.Error().Err(err).Int64("task_id", taskID).Msg("failed to remove the agent's plan")
+		}
+		return
+	}
+	if err := ps.plans.Save(ctx, taskID, p.Text); err != nil {
+		zlog.Error().Err(err).Int64("task_id", taskID).Msg("failed to save the agent's plan")
+		return
+	}
+	ps.emitTelemetry(ctx, ActionMCPPlanUpdate, "plan", clientIdentity{})
+}
+
 // reviseAgentTelemetryMessage updates the message already standing for this
-// plan or usage counter, and posts a new one only when there is none. It
-// returns that message's ID, or 0 when nothing stands for it.
+// usage counter, and posts a new one only when there is none. It returns that
+// message's ID, or 0 when nothing stands for it.
 func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, taskID int64, p agentlink.TelemetryReport, messageType string) int64 {
-	key := agentTelemetryMessageKey(taskID, p.Kind, p.PlanID())
+	key := agentTelemetryMessageKey(taskID, p.Kind)
 	metadata := agentTelemetryMetadata(messageType, p)
 
 	ps.agentTelemetryMessagesMu.RLock()
@@ -142,14 +158,7 @@ func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, task
 	}
 
 	if revised {
-		ps.forgetRemovedPlan(key, p)
 		return msgID
-	}
-
-	// A withdrawal notice for a plan that was never shown says nothing to the
-	// human, and posting one would put an orphaned card in the conversation.
-	if p.Removed() {
-		return 0
 	}
 
 	if msgID = ps.postAgentTelemetryMessage(ctx, taskID, p.Text, metadata); msgID == 0 {
@@ -159,16 +168,4 @@ func (ps *WorkspaceServer) reviseAgentTelemetryMessage(ctx context.Context, task
 	ps.agentTelemetryMessages[key] = msgID
 	ps.agentTelemetryMessagesMu.Unlock()
 	return msgID
-}
-
-// forgetRemovedPlan releases a withdrawn plan's message, so that an agent
-// reusing the same plan ID later starts a new card rather than reviving the
-// one marked withdrawn.
-func (ps *WorkspaceServer) forgetRemovedPlan(key string, p agentlink.TelemetryReport) {
-	if !p.Removed() {
-		return
-	}
-	ps.agentTelemetryMessagesMu.Lock()
-	delete(ps.agentTelemetryMessages, key)
-	ps.agentTelemetryMessagesMu.Unlock()
 }

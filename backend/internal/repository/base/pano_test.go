@@ -25,7 +25,7 @@ func panoDB(t *testing.T) (*gorm.DB, Repository) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Message{}, &model.ToolCall{}, &model.SlackTaskThread{}); err != nil {
+	if err := db.AutoMigrate(&model.PanoDoc{}, &model.PanoFile{}, &model.PanoComment{}, &model.PanoDocTask{}, &model.Task{}, &model.TaskStateTransition{}, &model.TaskLatency{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}, &model.SlackTaskThread{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db, New(&mockDB{db: db})

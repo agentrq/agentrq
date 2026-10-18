@@ -113,6 +113,17 @@ type (
 		Status       string `gorm:"type:varchar(16)"` // "auto_allowed" | "pending" | "allowed" | "denied"
 	}
 
+	// TaskPlan is the plan a task's agent is working to, as markdown: at most
+	// one per task, so its ID is the task's. The agent replaces it whole on
+	// every update, and Version counts the updates.
+	TaskPlan struct {
+		ID        int64 `gorm:"primaryKey;autoIncrement:false"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		Content   string `gorm:"type:text"`
+		Version   int64
+	}
+
 	// Event defines a named event that agents can publish after completing a task.
 	// Other workspaces can subscribe to it via EventTrigger.
 	Event struct {
@@ -770,6 +781,10 @@ const (
 	ActionIDACPV1Logout
 	// A workspace given a new id, to revoke its MCP tokens.
 	ActionIDWorkspaceResetID
+	// A native agent's plan for a task, written or replaced.
+	ActionIDMCPPlanUpdate
+	// A comment on a step of a task's plan, sent to the agent.
+	ActionIDUIPlanComment
 )
 
 // SubActionID names which tool, resource or prompt an ActionIDMCPToolCall or

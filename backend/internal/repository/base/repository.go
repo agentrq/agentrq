@@ -172,6 +172,9 @@ type Repository interface {
 	ListToolCalls(ctx context.Context, taskID, before int64, limit int) ([]model.ToolCall, error)
 	UpdateToolCallStatus(ctx context.Context, id int64, status string) (model.ToolCall, error)
 	UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error
+	SaveTaskPlan(ctx context.Context, p model.TaskPlan, workspaceID, userID int64) (model.TaskPlan, error)
+	DeleteTaskPlan(ctx context.Context, taskID, workspaceID, userID int64) error
+	GetTaskPlan(ctx context.Context, taskID int64) (model.TaskPlan, error)
 	ListTaskStateTransitions(ctx context.Context, taskID int64) ([]model.TaskStateTransition, error)
 	CreateAgents(ctx context.Context, agents []model.Agent) error
 	CreateAgentModels(ctx context.Context, models []model.AgentModel) error
@@ -505,6 +508,9 @@ func deleteWorkspaceRows(tx *gorm.DB, id int64, userID int64) error {
 		return err
 	}
 	if err := tx.Where("task_id IN (?)", taskIDs).Delete(&model.ToolCall{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("id IN (?)", taskIDs).Delete(&model.TaskPlan{}).Error; err != nil {
 		return err
 	}
 	if err := tx.Where("workspace_id = ?", id).Delete(&model.SlackTaskThread{}).Error; err != nil {
@@ -925,6 +931,9 @@ func (r *repository) DeleteTask(ctx context.Context, workspaceID, taskID int64, 
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.ToolCall{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("id = ?", taskID).Delete(&model.TaskPlan{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("task_id = ?", taskID).Delete(&model.SlackTaskThread{}).Error; err != nil {
 			return err
 		}
@@ -1037,6 +1046,46 @@ func (r *repository) UpdateToolCallStatus(ctx context.Context, id int64, status 
 // pointing at the task's old workspace.
 func (r *repository) UpdateToolCallsWorkspaceID(ctx context.Context, taskID int64, workspaceID int64) error {
 	return r.conn(ctx).Model(&model.ToolCall{}).Where("task_id = ?", taskID).Update("workspace_id", workspaceID).Error
+}
+
+// SaveTaskPlan writes the plan of a task of workspaceID that userID owns, or
+// replaces it and counts the update, and returns the row; ErrNotFound for any
+// other task. One statement: an agent revises its plan as it works.
+func (r *repository) SaveTaskPlan(ctx context.Context, p model.TaskPlan, workspaceID, userID int64) (model.TaskPlan, error) {
+	var saved []model.TaskPlan
+	err := r.conn(ctx).Raw(`INSERT INTO task_plans (id, created_at, updated_at, content, version)
+		SELECT id, ?, ?, ?, 1 FROM tasks WHERE id = ? AND workspace_id = ? AND user_id = ?
+		ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at, content = excluded.content, version = task_plans.version + 1
+		RETURNING id, created_at, updated_at, content, version`,
+		p.UpdatedAt, p.UpdatedAt, p.Content, p.ID, workspaceID, userID).Scan(&saved).Error
+	if err != nil {
+		return model.TaskPlan{}, err
+	}
+	if len(saved) == 0 {
+		return model.TaskPlan{}, ErrNotFound
+	}
+	return saved[0], nil
+}
+
+// DeleteTaskPlan removes the plan of a task of workspaceID that userID owns.
+// A task with no plan is not an error.
+func (r *repository) DeleteTaskPlan(ctx context.Context, taskID, workspaceID, userID int64) error {
+	task := r.conn(ctx).Model(&model.Task{}).Select("id").Where("id = ? AND workspace_id = ? AND user_id = ?", taskID, workspaceID, userID)
+	return r.conn(ctx).Where("id IN (?)", task).Delete(&model.TaskPlan{}).Error
+}
+
+// GetTaskPlan returns a task's plan, ErrNotFound when it has none. The caller
+// has checked the task is the reader's.
+func (r *repository) GetTaskPlan(ctx context.Context, taskID int64) (model.TaskPlan, error) {
+	// Find, not Take: most tasks have no plan, and Take logs every miss.
+	var ps []model.TaskPlan
+	if err := r.conn(ctx).Where("id = ?", taskID).Limit(1).Find(&ps).Error; err != nil {
+		return model.TaskPlan{}, err
+	}
+	if len(ps) == 0 {
+		return model.TaskPlan{}, ErrNotFound
+	}
+	return ps[0], nil
 }
 
 // GetWorkspaceAttachments lists the attachments of every task in a workspace

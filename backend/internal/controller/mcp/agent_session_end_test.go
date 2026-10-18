@@ -121,7 +121,7 @@ func TestAgentSessionEnded_KeepsAKeyNowPointingElsewhere(t *testing.T) {
 	ctx := context.Background()
 
 	rec.ps.HandleAgentTelemetry(ctx, "sess-1", usageParams(100))
-	key := agentTelemetryMessageKey(42, agentTelemetryKindUsage, "")
+	key := agentTelemetryMessageKey(42, agentTelemetryKindUsage)
 	rec.ps.agentTelemetryMessages[key] = 999
 
 	rec.ps.agentSessionEnded(ctx, "sess-1")
@@ -236,7 +236,7 @@ func TestHandler_ClosedStreamStopsStreaming(t *testing.T) {
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
 		nil, nil, nil, nil, listTasks, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, pub,
 	)
 

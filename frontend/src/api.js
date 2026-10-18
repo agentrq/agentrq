@@ -160,6 +160,14 @@ export async function listTaskToolCalls(workspaceId, taskId, { before = '', limi
   return res.json();
 }
 
+// The plan a task's agent is working to, as markdown, or null when it has none.
+export async function getTaskPlan(workspaceId, taskId) {
+  const res = await apiFetch(`${API_BASE_URL}/workspaces/${workspaceId}/tasks/${taskId}/plan`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to fetch plan');
+  return res.json();
+}
+
 // The trailing eventId/workflowId are mutually exclusive: they are the two
 // forms of "what fires when this completes", and the form only lets one be set.
 // panoDocId links the task to a Pano doc as it is created.
@@ -1219,6 +1227,7 @@ export const TELEMETRY_UI_COPY_LINK = 'ui_copy_link';
 export const TELEMETRY_UI_COPY_MARKDOWN = 'ui_copy_markdown';
 export const TELEMETRY_UI_COPY_CODE = 'ui_copy_code';
 export const TELEMETRY_UI_TRAJECTORY_VIEW = 'ui_trajectory_view';
+export const TELEMETRY_UI_PLAN_COMMENT = 'ui_plan_comment';
 export const TELEMETRY_UI_SPIN_UP = 'ui_spin_up';
 // A dictation done by a phone's own speech recognition rather than Whisper.
 export const TELEMETRY_UI_DICTATION_END = 'ui_dictation_end';

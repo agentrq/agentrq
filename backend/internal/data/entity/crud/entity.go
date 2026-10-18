@@ -404,6 +404,27 @@ type (
 		ToolCalls []ToolCall
 	}
 
+	// GetTaskPlanRequest reads the plan of a task.
+	GetTaskPlanRequest struct {
+		WorkspaceID int64
+		TaskID      int64
+		UserID      string
+	}
+
+	GetTaskPlanResponse struct {
+		Plan TaskPlan
+	}
+
+	// TaskPlan is the plan a task's agent works to, as markdown; its ID is the
+	// task's.
+	TaskPlan struct {
+		ID        int64
+		Content   string
+		Version   int64
+		CreatedAt time.Time
+		UpdatedAt time.Time
+	}
+
 	// TaskStateTransition is one change of a task's status. FromState is ""
 	// on the row written when the task was created.
 	TaskStateTransition struct {
@@ -1689,6 +1710,9 @@ const (
 	// A workspace given a new id from its settings, which revokes every MCP
 	// token issued for the old one. Recorded against the new id.
 	ActionWorkspaceResetID Action = 106
+	// A comment on a step of a task's plan, sent to the agent. Reported by
+	// the browser: the server sees only the message it becomes.
+	ActionUIPlanComment Action = 107
 )
 
 // ClientReportableAction resolves an action name a browser is allowed to
@@ -1731,6 +1755,8 @@ func ClientReportableAction(name string) (Action, bool) {
 		return ActionUIMessageReact, true
 	case "ui_acp_agent_pick":
 		return ActionUIAcpAgentPick, true
+	case "ui_plan_comment":
+		return ActionUIPlanComment, true
 	}
 	return 0, false
 }
@@ -1893,6 +1919,8 @@ func (a Action) String() string {
 		return "acp_v1_logout"
 	case ActionWorkspaceResetID:
 		return "workspace_reset_id"
+	case ActionUIPlanComment:
+		return "ui_plan_comment"
 	}
 	return "unknown"
 }

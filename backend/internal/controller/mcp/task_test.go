@@ -173,7 +173,7 @@ func connectWorkspace(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	ps := NewWorkspaceServer(
 		1, 0, "user", "http://localhost",
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		eventbus.New(), nil, nil, "icon", "name", "desc", nil, nil, nil, nil,
 	)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

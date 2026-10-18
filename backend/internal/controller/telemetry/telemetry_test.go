@@ -128,6 +128,14 @@ func TestTelemetryController(t *testing.T) {
 			Actor:       uint8(entity.ActorAgent),
 		}
 
+		// Send a plan update (a native agent's plan stored)
+		mcpChan <- mcp.MCPEvent{
+			UserID:      1,
+			WorkspaceID: 10,
+			Action:      mcp.ActionMCPPlanUpdate,
+			Actor:       uint8(entity.ActorAgent),
+		}
+
 		// Send MCP Method Call (a resource or prompt read, e.g. from coremcp)
 		mcpChan <- mcp.MCPEvent{
 			UserID:      1,
@@ -140,8 +148,8 @@ func TestTelemetryController(t *testing.T) {
 
 		var count int64
 		db.Model(&model.Telemetry{}).Count(&count)
-		if count != 9 {
-			t.Errorf("expected 9 telemetry records, got %d", count)
+		if count != 10 {
+			t.Errorf("expected 10 telemetry records, got %d", count)
 		}
 
 		var records []model.Telemetry
@@ -151,6 +159,7 @@ func TestTelemetryController(t *testing.T) {
 		denyFound := false
 		connectFound := false
 		clearFound := false
+		planFound := false
 		methodCallFound := false
 		for _, r := range records {
 			if r.Action == model.ActionIDMCPPermissionManual {
@@ -167,6 +176,9 @@ func TestTelemetryController(t *testing.T) {
 			}
 			if r.Action == model.ActionIDMCPClearContext {
 				clearFound = true
+			}
+			if r.Action == model.ActionIDMCPPlanUpdate {
+				planFound = true
 			}
 			if r.Action == model.ActionIDMCPMethodCall {
 				methodCallFound = true
@@ -186,6 +198,9 @@ func TestTelemetryController(t *testing.T) {
 		}
 		if !clearFound {
 			t.Errorf("expected model.ActionIDMCPClearContext record, but not found")
+		}
+		if !planFound {
+			t.Errorf("expected model.ActionIDMCPPlanUpdate record, but not found")
 		}
 		if !methodCallFound {
 			t.Errorf("expected model.ActionIDMCPMethodCall record, but not found")
@@ -481,6 +496,7 @@ func TestUIActionsPersistWithDistinctIDs(t *testing.T) {
 		{entity.ActionAgentEffortSelect, model.ActionIDAgentEffortSelect, "agent effort select"},
 		{entity.ActionACPV1Logout, model.ActionIDACPV1Logout, "acp v1 logout"},
 		{entity.ActionWorkspaceResetID, model.ActionIDWorkspaceResetID, "workspace reset id"},
+		{entity.ActionUIPlanComment, model.ActionIDUIPlanComment, "ui plan comment"},
 	}
 
 	for _, tc := range cases {

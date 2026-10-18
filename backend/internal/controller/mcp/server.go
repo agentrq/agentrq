@@ -100,6 +100,12 @@ type RecordToolCallFunc func(ctx context.Context, tc model.ToolCall) (model.Tool
 // permission request is resolved ("allowed" or "denied").
 type UpdateToolCallStatusFunc func(ctx context.Context, id int64, status string) error
 
+// TaskPlanStore keeps the one plan a task's agent works to, as markdown.
+type TaskPlanStore interface {
+	Save(ctx context.Context, taskID int64, content string) error
+	Delete(ctx context.Context, taskID int64) error
+}
+
 // WorkspaceServer is a per-workspace MCP server that exposes the Claude Channels protocol.
 type WorkspaceServer struct {
 	workspaceID           int64
@@ -126,6 +132,7 @@ type WorkspaceServer struct {
 	siteTools             SiteToolsBackend
 	recordToolCall        RecordToolCallFunc
 	updateToolCallStatus  UpdateToolCallStatusFunc
+	plans                 TaskPlanStore
 	bus                   *eventbus.Bus
 	idgen                 idgen.Service
 	storage               storage.Service
@@ -162,7 +169,7 @@ type WorkspaceServer struct {
 	// The chat message standing for a plan or for a task's usage counters, so
 	// each revision rewrites that message instead of appending another one.
 	agentTelemetryMessagesMu sync.RWMutex
-	agentTelemetryMessages   map[string]int64 // taskID:kind[:planID] -> messageID
+	agentTelemetryMessages   map[string]int64 // taskID:kind -> messageID
 	// The usage messages each session wrote, so they can be marked as belonging
 	// to a session that has gone when its stream closes.
 	agentUsageMessagesMu sync.Mutex
@@ -450,6 +457,7 @@ func NewWorkspaceServer(
 	siteTools SiteToolsBackend,
 	recordToolCall RecordToolCallFunc,
 	updateToolCallStatus UpdateToolCallStatusFunc,
+	plans TaskPlanStore,
 	bus *eventbus.Bus,
 	ids idgen.Service,
 	store storage.Service,
@@ -486,6 +494,7 @@ func NewWorkspaceServer(
 		siteTools:              siteTools,
 		recordToolCall:         recordToolCall,
 		updateToolCallStatus:   updateToolCallStatus,
+		plans:                  plans,
 		bus:                    bus,
 		idgen:                  ids,
 		storage:                store,

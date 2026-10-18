@@ -128,7 +128,7 @@ func TestForwardCRUDEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}); err != nil {
 		t.Fatal(err)
 	}
 	const task, message = int64(101), int64(201)

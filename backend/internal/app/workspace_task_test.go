@@ -29,7 +29,7 @@ func TestWorkspaceTaskRefusesATaskFromElsewhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}, &model.Message{}, &model.ToolCall{}, &model.TaskPlan{}); err != nil {
 		t.Fatal(err)
 	}
 	const otherUser = memUser + 1
