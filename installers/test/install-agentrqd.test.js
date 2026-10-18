@@ -147,8 +147,13 @@ const SHELLS = [
   { shell: undefined, goos: 'linux', want: `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.profile` },
 ];
 
+// bash, which is macOS's `sh`, fills in an unset $SHELL from the user's login
+// shell before the script runs, so there it cannot be unset at all.
+const shFillsShell = spawnSync('sh', ['-c', 'printf %s "${SHELL-}"'], { env: {}, encoding: 'utf8' }).stdout !== '';
+
 for (const { shell, goos, want } of SHELLS) {
-  test(`offers the PATH line for ${shell || 'an unset $SHELL'} on ${goos}`, () => {
+  const skip = shell === undefined && shFillsShell && 'sh sets $SHELL itself';
+  test(`offers the PATH line for ${shell || 'an unset $SHELL'} on ${goos}`, { skip }, () => {
     const out = install(machine({ goos }), { shell });
     assert.equal(hint(out), want);
   });
