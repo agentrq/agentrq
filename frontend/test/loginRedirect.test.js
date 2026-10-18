@@ -104,6 +104,8 @@ async function signInWithToken(el) {
 beforeEach(() => {
   document.body.innerHTML = ''
   vi.clearAllMocks()
+  // The page follows the server's public totals; jsdom has no EventSource.
+  vi.stubGlobal('EventSource', class { close() {} })
 })
 afterEach(() => {
   app?.unmount()

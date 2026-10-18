@@ -5,98 +5,143 @@
 -->
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm" aria-modal="true" role="dialog">
-    <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
-      <div class="mb-10 text-center">
-        <div class="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl transform rotate-3">
-          <svg viewBox="0 0 24 24" class="w-10 h-10 text-white dark:text-black" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <div class="fixed inset-0 z-50 flex flex-col lg:flex-row bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm lg:bg-white lg:dark:bg-zinc-950 lg:backdrop-blur-none" aria-modal="true" role="dialog">
+    <!-- Wide screens: what AgentRQ is, and the live totals, beside the form. -->
+    <aside class="login-art hidden lg:flex w-[54%] shrink-0 flex-col justify-between gap-8 p-12 bg-zinc-950 text-zinc-50 border-r border-zinc-800 overflow-hidden">
+      <p class="flex items-center gap-2.5 text-sm font-bold">
+        <span class="w-7 h-7 bg-white rounded-md flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 text-black" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
             <path d="M12 7l-3.5 8" />
             <path d="M12 7l3.5 8" />
             <path d="M9.5 12h5" />
           </svg>
-        </div>
-        <h2 class="text-3xl font-black text-gray-900 dark:text-zinc-50 tracking-tight mb-2">AgentRQ</h2>
-        <p class="text-gray-500 dark:text-zinc-400 text-sm leading-relaxed">
-          Autonomous Workspace Pipeline
+        </span>
+        AgentRQ
+      </p>
+      <div>
+        <p class="mb-3.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-zinc-400">Claude Code · ACP · MCP</p>
+        <h2 class="mb-4 max-w-[22rem] text-[40px] font-bold leading-[1.05] tracking-tight">Task manager for AI agents.</h2>
+        <p class="max-w-[27rem] text-[15px] leading-relaxed text-zinc-400">
+          Agents assign tasks to you. You assign tasks back to agents. Everyone moves forward simultaneously.
         </p>
+        <dl v-if="stats" class="mt-10 flex flex-wrap gap-x-10 gap-y-6">
+          <div v-for="s in PUBLIC_STATS" :key="s.key" class="flex flex-col-reverse">
+            <dt class="mt-1 text-[10px] font-mono font-bold uppercase tracking-widest text-zinc-500">{{ s.label }}</dt>
+            <dd class="text-3xl font-bold tabular-nums tracking-tight">{{ formatCount(stats[s.key]) }}</dd>
+            <div class="w-8 h-0.5 bg-emerald-500/80 mb-3"></div>
+          </div>
+        </dl>
       </div>
+      <p class="font-mono text-xs text-zinc-500">you → task → agent → you</p>
+    </aside>
 
-      <div class="space-y-4">
-        <div v-if="loadingConfig" class="flex justify-center py-6">
-          <svg class="animate-spin h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
+    <div class="grow min-w-0 flex flex-col items-center justify-center gap-6 p-4 overflow-y-auto">
+      <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800 lg:max-w-sm lg:p-0 lg:bg-transparent lg:dark:bg-transparent lg:rounded-none lg:shadow-none lg:border-0">
+        <div class="mb-10 text-center lg:hidden">
+          <div class="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl transform rotate-3">
+            <svg viewBox="0 0 24 24" class="w-10 h-10 text-white dark:text-black" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <path d="M12 7l-3.5 8" />
+              <path d="M12 7l3.5 8" />
+              <path d="M9.5 12h5" />
+            </svg>
+          </div>
+          <h2 class="text-3xl font-black text-gray-900 dark:text-zinc-50 tracking-tight mb-2">AgentRQ</h2>
+          <p class="text-gray-500 dark:text-zinc-400 text-sm leading-relaxed">
+            Autonomous Workspace Pipeline
+          </p>
+        </div>
+        <div class="hidden lg:block mb-8">
+          <h1 class="text-[26px] font-bold leading-tight tracking-tight text-gray-900 dark:text-zinc-50 mb-2">Sign in</h1>
+          <p class="text-sm text-gray-500 dark:text-zinc-400">Continue to your workspaces and agents.</p>
         </div>
 
-        <template v-else>
-          <a v-if="!rootLoginEnabled" :href="providerLoginUrl(`${API_BASE_URL}/auth/google/login`, redirect)"
-            class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
-            <svg width="20" height="20" viewBox="0 0 24 24">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-              <path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" fill="#FBBC05"/>
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        <div class="space-y-4">
+          <div v-if="loadingConfig" class="flex justify-center py-6">
+            <svg class="animate-spin h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            Continue with Google
-          </a>
-
-          <a v-if="githubLoginEnabled" :href="providerLoginUrl(`${API_BASE_URL}/auth/github/login`, redirect)"
-            class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
-            <svg class="h-5 w-5 text-gray-900 dark:text-zinc-100" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
-            </svg>
-            Continue with GitHub
-          </a>
-
-          <div v-if="rootLoginEnabled" class="relative py-4">
-            <div class="absolute inset-0 flex items-center">
-              <div class="w-full border-t border-gray-100 dark:border-zinc-800"></div>
-            </div>
-            <div class="relative flex justify-center text-xs text-gray-500">
-              <span class="bg-white dark:bg-zinc-900 px-2 font-bold">or use token</span>
-            </div>
           </div>
 
-          <form v-if="rootLoginEnabled" @submit.prevent="submitRootLogin" class="space-y-4">
-            <input
-              v-model="rootToken"
-              type="password"
-              placeholder="Paste access token..."
-              class="w-full px-4 py-4 bg-gray-50 dark:bg-zinc-800/50 text-gray-900 dark:text-zinc-50 border border-gray-100 dark:border-zinc-700/50 rounded-2xl outline-none focus:ring-4 focus:ring-black/5 dark:focus:ring-white/10 focus:border-black dark:focus:border-white transition-all text-center placeholder:text-gray-500"
-              required
-            />
-            <div v-if="errorMsg" class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl">
-              <p class="text-sm text-red-600 dark:text-red-400 font-medium text-center">{{ errorMsg }}</p>
-            </div>
-            <button
-              type="submit"
-              :disabled="loggingIn"
-              class="w-full py-4 bg-gray-900 dark:bg-zinc-800 text-white dark:text-zinc-200 font-bold rounded-2xl hover:bg-black dark:hover:bg-zinc-700 transform active:scale-[0.98] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {{ loggingIn ? 'Verifying...' : 'Access Pipeline' }}
-            </button>
-          </form>
-        </template>
+          <template v-else>
+            <a v-if="!rootLoginEnabled" :href="providerLoginUrl(`${API_BASE_URL}/auth/google/login`, redirect)"
+              class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              Continue with Google
+            </a>
 
-        <div class="mt-8 flex items-center justify-between pt-6 border-t border-gray-100 dark:border-zinc-800 text-[11px] font-bold text-gray-500 dark:text-zinc-500">
-          <div class="flex gap-4">
-            <a href="https://agentrq.com/tos" target="_blank" rel="noopener" class="hover:text-black dark:hover:text-white transition-colors">Terms</a>
-            <a href="https://agentrq.com/privacy" target="_blank" rel="noopener" class="hover:text-black dark:hover:text-white transition-colors">Privacy</a>
+            <a v-if="githubLoginEnabled" :href="providerLoginUrl(`${API_BASE_URL}/auth/github/login`, redirect)"
+              class="w-full py-4 px-6 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 font-bold rounded-2xl border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 flex items-center justify-center gap-3 transform active:scale-[0.98] transition-all shadow-sm">
+              <svg class="h-5 w-5 text-gray-900 dark:text-zinc-100" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+              </svg>
+              Continue with GitHub
+            </a>
+
+            <div v-if="rootLoginEnabled" class="relative py-4">
+              <div class="absolute inset-0 flex items-center">
+                <div class="w-full border-t border-gray-100 dark:border-zinc-800"></div>
+              </div>
+              <div class="relative flex justify-center text-xs text-gray-500">
+                <span class="bg-white dark:bg-zinc-900 lg:dark:bg-zinc-950 px-2 font-bold">or use token</span>
+              </div>
+            </div>
+
+            <form v-if="rootLoginEnabled" @submit.prevent="submitRootLogin" class="space-y-4">
+              <input
+                v-model="rootToken"
+                type="password"
+                placeholder="Paste access token..."
+                class="w-full px-4 py-4 bg-gray-50 dark:bg-zinc-800/50 text-gray-900 dark:text-zinc-50 border border-gray-100 dark:border-zinc-700/50 rounded-2xl outline-none focus:ring-4 focus:ring-black/5 dark:focus:ring-white/10 focus:border-black dark:focus:border-white transition-all text-center placeholder:text-gray-500"
+                required
+              />
+              <div v-if="errorMsg" class="p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl">
+                <p class="text-sm text-red-600 dark:text-red-400 font-medium text-center">{{ errorMsg }}</p>
+              </div>
+              <button
+                type="submit"
+                :disabled="loggingIn"
+                class="w-full py-4 bg-gray-900 dark:bg-zinc-800 text-white dark:text-zinc-200 font-bold rounded-2xl hover:bg-black dark:hover:bg-zinc-700 transform active:scale-[0.98] transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {{ loggingIn ? 'Verifying...' : 'Access Pipeline' }}
+              </button>
+            </form>
+          </template>
+
+          <div class="mt-8 flex items-center justify-between pt-6 border-t border-gray-100 dark:border-zinc-800 text-[11px] font-bold text-gray-500 dark:text-zinc-500">
+            <div class="flex gap-4">
+              <a href="https://agentrq.com/tos" target="_blank" rel="noopener" class="hover:text-black dark:hover:text-white transition-colors">Terms</a>
+              <a href="https://agentrq.com/privacy" target="_blank" rel="noopener" class="hover:text-black dark:hover:text-white transition-colors">Privacy</a>
+            </div>
+            <span class="opacity-40">&copy; 2026 AgentRQ</span>
           </div>
-          <span class="opacity-40">&copy; 2026 AgentRQ</span>
         </div>
       </div>
+
+      <!-- Phones: today's card, with the totals small beneath it. -->
+      <dl v-if="stats" class="lg:hidden w-full max-w-md grid grid-cols-5 gap-1 text-center">
+        <div v-for="s in PUBLIC_STATS" :key="s.key" class="flex flex-col-reverse">
+          <dt class="text-[9px] font-mono font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-500">{{ s.short }}</dt>
+          <dd class="text-sm font-bold tabular-nums text-gray-900 dark:text-zinc-100">{{ formatCount(stats[s.key]) }}</dd>
+        </div>
+      </dl>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API_BASE_URL } from '../api'
 import { loginRedirect, providerLoginUrl } from '../utils/loginRedirect'
+import { PUBLIC_STATS, formatCount, followPublicStats } from '../utils/publicStats'
 
 const router = useRouter()
 // Set when an MCP client's authorize step, or a site on the server's
@@ -107,6 +152,13 @@ const redirect = computed(() => loginRedirect(rawRedirect, window.location.origi
 const rootLoginEnabled = ref(false)
 const githubLoginEnabled = ref(false)
 const loadingConfig = ref(true)
+
+// The server's live totals: null until the first event, so nothing shows
+// where they cannot be streamed.
+const stats = ref(null)
+let stopStats = null
+onMounted(() => { stopStats = followPublicStats((next) => { stats.value = next }) })
+onUnmounted(() => stopStats?.())
 
 const rootToken = ref('')
 const loggingIn = ref(false)
@@ -159,3 +211,10 @@ const submitRootLogin = async () => {
   }
 }
 </script>
+
+<style scoped>
+.login-art {
+  background-image: linear-gradient(#ffffff0d 1px, transparent 1px), linear-gradient(90deg, #ffffff0d 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+</style>

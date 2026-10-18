@@ -76,6 +76,7 @@ export default defineConfig({
       // handshake.
       '/api': { target: apiTarget, ws: true },
       '/mcp': apiTarget,
+      '/pub': apiTarget,
     }
   }
 })

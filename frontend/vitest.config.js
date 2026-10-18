@@ -153,6 +153,7 @@ export default defineConfig({
         'src/utils/workspaceForm.js',
         'src/utils/missionTemplates.js',
         'src/utils/loginRedirect.js',
+        'src/utils/publicStats.js',
         'src/composables/useMissionPicker.js',
         'src/webmcp/*.js',
       ],
