@@ -22,7 +22,8 @@ index: the detail lives in `docs/agents/`, one note per subsystem.
 - `backend/` — Go backend (Fiber HTTP, GORM, MCP server)
 - `frontend/` — Vue3 frontend, and the single source of UI for **both** the web and desktop builds
 - `desktop/` — Electron shell; its renderer is built from `frontend/src`
-- `daemon/` — `agentrqd`, which runs agents on somebody's machine. A **separate Go module**, wired in with a `replace` directive
+- `daemon/` — `agentrqd`, which runs agents on somebody's machine. A **separate Go module**, wired in with a `replace` directive, and **Apache-2.0**: it must never import the AGPL `backend/`
+- `installers/` — the desktop and `agentrqd` install scripts (Apache-2.0); agentrq.com serves agentrq-landing's copy of each
 - `cli/` — `cli/agentrq-ws` (npm `@agentrq/agentrq-ws`), a dependency-free command-line client for a workspace, covering every workspace MCP tool
 - `plugins/` — harness plugins published from this repo (`plugins/deepseek-harness` → the `@agentrq/dsh-plugin-agentrq` bundle for DeepSeek Harness; `plugins/gemini`, the Gemini CLI extension, whose manifest must be the root `gemini-extension.json` — so a root `skills/`, `agents/`, `commands/`, `hooks/` or `policies/` folder would ship inside it), and `plugins/chrome`, the Chrome extension: a toolbar popup framing the server's own web app. It frames the hosted app rather than bundling `frontend/`, because on the extension's origin the `at` cookie never arrives, and the frame gets it only with host access to the server
 - `qa/` — Playwright end-to-end sanity checks: the real web app against a real backend it starts itself, on ports 3911/5912 (see `qa/README.md`)

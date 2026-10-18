@@ -404,3 +404,8 @@ the mock rather than the code. The parts that carry meaning — that arbitrary
 bytes survive, that a missing working directory is reported with its path, that
 `Close` is idempotent and actually kills — are covered. `wire` is at 100%
 because it is pure.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE). The rest of the repository is AGPL-3.0-only;
+the daemon imports none of it.

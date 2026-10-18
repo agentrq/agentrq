@@ -9,6 +9,7 @@ import {
   NOTICE,
   NOTICE_LINES,
   SPDX,
+  SPDX_APACHE,
   carriesNotice,
   extensionOf,
   isOurs,
@@ -71,10 +72,19 @@ describe('NOTICE', () => {
 
 describe('noticeLinesFor', () => {
   it('adds the licence line on the AGPL parts of the repository', () => {
-    for (const path of ['backend/internal/app/app.go', 'daemon/cmd/agentrqd/main.go', 'desktop/src/main/index.js', 'frontend/src/App.vue']) {
+    for (const path of ['backend/internal/app/app.go', 'desktop/src/main/index.js', 'frontend/src/App.vue']) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
     }
     expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
+  })
+
+  it('adds the Apache licence line on the daemon and the installers', () => {
+    for (const path of ['daemon/cmd/agentrqd/main.go', 'installers/test/install-agentrqd.test.js']) {
+      expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX_APACHE])
+    }
+    expect(SPDX_APACHE).toBe('SPDX-License-Identifier: Apache-2.0')
+    // An AGPL line where Apache belongs is a wrong licence, not a missing one.
+    expect(carriesNotice(noticeFor('backend/a.go'), 'daemon/a.go')).toBe(false)
   })
 
   // Published under their own licences, where the line would be false.

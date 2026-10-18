@@ -59,6 +59,8 @@ archives:
         dst: INSTALL.md
       - src: packaging/DAEMON.md
         dst: DAEMON.md
+      - src: LICENSE
+        dst: LICENSE
 
 # The bare binaries and the signed manifest, alongside the archives: the
 # self-update path downloads one file and replaces one file, so it needs the

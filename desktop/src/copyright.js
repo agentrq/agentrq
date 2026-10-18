@@ -46,17 +46,23 @@ export const NOTICE_LINES = Object.freeze([
 export const NOTICE = NOTICE_LINES[0]
 
 /**
- * The licence line, on the AGPL parts of the repository only. The CLI, the
- * plugins and the examples are published under their own licences, and this
- * line in one of them would be false.
+ * The licence line, on the AGPL parts of the repository. The daemon and the
+ * installers are Apache-2.0 and carry that line instead. The CLI, the plugins
+ * and the examples are published under their own licences with no line, and
+ * either line in one of them would be false.
  */
 export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only'
+export const SPDX_APACHE = 'SPDX-License-Identifier: Apache-2.0'
 
-const AGPL = /^(backend|daemon|desktop|frontend)\//
+const AGPL = /^(backend|desktop|frontend)\//
+const APACHE = /^(daemon|installers)\//
 
 /** Every line this file's notice has: the two above, and the licence where it applies. */
 export function noticeLinesFor(path) {
-  return AGPL.test(String(path ?? '')) ? [...NOTICE_LINES, SPDX] : NOTICE_LINES
+  const name = String(path ?? '')
+  if (AGPL.test(name)) return [...NOTICE_LINES, SPDX]
+  if (APACHE.test(name)) return [...NOTICE_LINES, SPDX_APACHE]
+  return NOTICE_LINES
 }
 
 /**

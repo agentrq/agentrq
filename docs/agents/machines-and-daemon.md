@@ -180,9 +180,9 @@ and not the page). Change one, change all three.
 
 Linux and macOS install with `curl -fsSL https://agentrq.com/install-agentrqd.sh | sh`;
 Windows, which has no `sh`, gets its own script instead, piped into `iex`:
-`irm https://agentrq.com/install-agentrqd.ps1 | iex`. Both scripts live in the
-**agentrq-landing** repository, not this one, so changing what either does is a
-change over there. Added 2026-09-20 — before that, Windows had one step more
+`irm https://agentrq.com/install-agentrqd.ps1 | iex`. Both scripts live in
+`installers/` (Apache-2.0), but the site serves **agentrq-landing**'s copy, so a
+change here is not live until it is copied over there. Added 2026-09-20 — before that, Windows had one step more
 than the other two, doing by hand what the script now does.
 
 **This used to forbid the one-liner**, on the grounds that piping unseen code

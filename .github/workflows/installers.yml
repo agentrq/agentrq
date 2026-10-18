@@ -1,0 +1,70 @@
+name: Installers
+
+# The desktop and agentrqd install scripts under installers/. They are run as
+# `curl ... | sh` and `irm ... | iex`, so a syntax error ships straight to the
+# person installing, with nothing in between to catch it.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'installers/**'
+      - '.github/workflows/installers.yml'
+  pull_request:
+    paths:
+      - 'installers/**'
+      - '.github/workflows/installers.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Parse
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # dash, because piped into `sh` that is what most Linux systems run, and
+      # it is /bin/sh on the runner already.
+      - name: POSIX sh syntax
+        run: |
+          for f in installers/*.sh; do dash -n "$f"; done
+
+      # macOS bash 3.2 under `set -u` dies on a UTF-8 byte after a variable name.
+      - name: ASCII only
+        run: |
+          if LC_ALL=C grep -nP '[^\x00-\x7F]' installers/*.sh installers/*.ps1; then exit 1; fi
+
+      - name: PowerShell syntax
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/installers/install-agentrqd.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors; exit 1 }
+
+  test:
+    name: Test ${{ matrix.os }}
+    # macOS too: there /bin/sh is bash 3.2, the shell the scripts are most
+    # likely to break on.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Test
+        run: node --test installers/test/

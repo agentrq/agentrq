@@ -647,4 +647,4 @@ AgentRQ is dual-licensed:
 - **Open source:** [AGPL-3.0-only](LICENSE).
 - **Commercial:** a binary-only [commercial licence](LICENSE-COMMERCIAL) from Contextual, Inc., for proprietary use without the AGPL's obligations. Contact [hi@agentrq.com](mailto:hi@agentrq.com).
 
-The separately published packages — the [`agentrq-ws`](cli/agentrq-ws) command-line client and the plugins under [`plugins/`](plugins) — keep their own Apache-2.0 licence.
+The [`agentrqd`](daemon) machine daemon, the desktop and `agentrqd` [install scripts](installers), and the separately published packages — the [`agentrq-ws`](cli/agentrq-ws) command-line client and the plugins under [`plugins/`](plugins) — keep their own Apache-2.0 licence.
