@@ -106,12 +106,10 @@ describe('LoginView', () => {
       es.send(JSON.stringify([{ action: 'task_create', total: 12345 }, { action: 'user_create', total: 7 }]))
       await nextTick()
 
-      // One list beside the form on wide screens, a small one under it on phones.
-      const lists = el.querySelectorAll('dl')
-      expect(lists).toHaveLength(2)
-      expect(lists[0].textContent).toContain('12.3K')
-      expect(lists[0].textContent).toContain('Tasks Created')
-      expect(lists[1].textContent).toContain('Users')
+      const list = el.querySelector('dl')
+      expect(list.textContent).toContain('12.3K')
+      expect(list.textContent).toContain('Tasks Created')
+      expect(list.textContent).toContain('Users Signed Up')
     } finally {
       app.unmount()
       el.remove()

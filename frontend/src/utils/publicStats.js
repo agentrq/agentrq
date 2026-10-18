@@ -7,13 +7,13 @@
  * figures, from the same `/pub/stats` stream, as the landing page's stats bar.
  */
 
-/** The figures in the order they are shown, with a full and a short label. */
+/** The figures in the order they are shown, with their labels. */
 export const PUBLIC_STATS = [
-  { key: 'tasks', label: 'Tasks Created', short: 'Tasks' },
-  { key: 'users', label: 'Users Signed Up', short: 'Users' },
-  { key: 'messages', label: 'Messages Sent', short: 'Messages' },
-  { key: 'mcpCalls', label: 'MCP Calls', short: 'MCP Calls' },
-  { key: 'approvals', label: 'Approvals', short: 'Approvals' },
+  { key: 'tasks', label: 'Tasks Created' },
+  { key: 'users', label: 'Users Signed Up' },
+  { key: 'messages', label: 'Messages Sent' },
+  { key: 'mcpCalls', label: 'MCP Calls' },
+  { key: 'approvals', label: 'Approvals' },
 ]
 
 /**

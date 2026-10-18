@@ -36,7 +36,7 @@
       <p class="font-mono text-xs text-zinc-500">you → task → agent → you</p>
     </aside>
 
-    <div class="grow min-w-0 flex flex-col items-center justify-center gap-6 p-4 overflow-y-auto">
+    <div class="grow min-w-0 flex flex-col items-center justify-center lg:p-4 overflow-y-auto">
       <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800 lg:max-w-sm lg:p-0 lg:bg-transparent lg:dark:bg-transparent lg:rounded-none lg:shadow-none lg:border-0">
         <div class="mb-10 text-center lg:hidden">
           <div class="w-16 h-16 bg-black dark:bg-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl transform rotate-3">
@@ -124,14 +124,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Phones: today's card, with the totals small beneath it. -->
-      <dl v-if="stats" class="lg:hidden w-full max-w-md grid grid-cols-5 gap-1 text-center">
-        <div v-for="s in PUBLIC_STATS" :key="s.key" class="flex flex-col-reverse">
-          <dt class="text-[9px] font-mono font-bold uppercase tracking-wider text-gray-500 dark:text-zinc-500">{{ s.short }}</dt>
-          <dd class="text-sm font-bold tabular-nums text-gray-900 dark:text-zinc-100">{{ formatCount(stats[s.key]) }}</dd>
-        </div>
-      </dl>
     </div>
   </div>
 </template>
