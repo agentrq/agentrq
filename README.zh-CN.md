@@ -285,7 +285,7 @@ AgentRQ 可以接入多种 Agent CLI 或 MCP 客户端。每个 Workspace 的 MC
 
 连接后，Agent 可以使用以下七个 Workspace MCP 工具。每个工具都接收两个输入：`action` 与 `payload`（该操作的字段），例如 `task {"action": "reply", "payload": {"taskId": "<id>", "text": "On it."}}`；`help` 工具负责说明用法——不传参数时列出所有工具及其操作，`{"action": "task"}` 列出某个工具的操作，`{"action": "task.create"}` 打印某个操作的 payload 和示例。
 
-- `task`：处理本 Workspace 的任务——`create`（创建任务并分配给人类或 Agent，可选定时）、`get`（不传 `taskId` 时返回分配给 Agent 的下一个未开始任务；`includeConversation: true` 一并返回对话历史，游标分页）、`updateStatus`（`notstarted`、`ongoing`、`blocked`、`completed` 等）、`reply`（向 AgentRQ 面板实时发送消息）、`elicit`（向人类提问并等待回答，支持表单模式和链接确认模式）和 `getAttachment`（默认返回公开链接，也可返回 base64 内容）。
+- `task`：处理本 Workspace 的任务——`create`（创建任务并分配给人类或 Agent，可选定时）、`get`（不传 `taskId` 时返回分配给 Agent 的下一个未开始任务；`includeConversation: true` 一并返回对话历史，游标分页）、`updateStatus`（`notstarted`、`ongoing`、`blocked`、`completed` 等）、`reply`（向 AgentRQ 面板实时发送消息）、`elicit`（向人类提问并等待回答，支持表单模式和链接确认模式）和 `getAttachment`（默认返回公开链接，也可返回 base64 内容，文本文件可返回纯文本）。`reply` 或 `create` 附带的附件可用 base64 的 `data`，也可用纯文本的 `textContent`。
 - `memory`：跨任务保留的 Workspace 记忆——`load`（不传 name 时读取 `memory.md`，即所有记忆的索引）、`save`（整条覆盖写入）和 `delete`。
 - `skills`：Workspace 可用的技能（Skill）——`search`（按名称或描述搜索，附带描述和 `skill://` URI）、`load`（读取一个文件；读取 `SKILL.md` 时会附带该技能其他文件的 URI）、`save`（写入 `SKILL.md` 即创建或更新该技能）和 `delete`。
 - `workspace`：`get`（读取工作区名称和任务说明）与 `publishEvent`（触发命名事件，让订阅的 Workspace 自动创建对应的触发任务）。

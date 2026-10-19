@@ -66,7 +66,7 @@ func TestCreateTaskAttachmentSchema(t *testing.T) {
 	if items.Type != "object" {
 		t.Fatalf("attachment items type = %q, want object", items.Type)
 	}
-	for _, field := range []string{"id", "filename", "mimeType", "data"} {
+	for _, field := range []string{"id", "filename", "mimeType", "data", "textContent"} {
 		if items.Properties[field].Type != "string" {
 			t.Errorf("attachment field %s must have a string schema", field)
 		}

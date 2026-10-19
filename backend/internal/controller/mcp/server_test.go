@@ -304,7 +304,10 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	params := ReplyParams{
 		TaskID:      monoflake.ID(42).String(),
 		Text:        "hello",
-		Attachments: []AttachmentParam{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}},
+		Attachments: []AttachmentParam{
+			{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="},
+			{ID: "b", Filename: "n.md", MimeType: "text/markdown", TextContent: "# hi"},
+		},
 	}
 	res, _, err := ps.handleReply(context.Background(), nil, params)
 	if err != nil {
@@ -313,7 +316,11 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	if res.IsError {
 		t.Fatal("expected no error")
 	}
-	want := []entity.Attachment{{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="}}
+	// Plain text is stored as if it had come in base64.
+	want := []entity.Attachment{
+		{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="},
+		{ID: "b", Filename: "n.md", MimeType: "text/markdown", Data: "IyBoaQ=="},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("reply got attachments %#v", got)
 	}
@@ -1567,7 +1574,19 @@ func TestWorkspaceServer_HandleGetAttachment_Formats(t *testing.T) {
 		t.Errorf("no link: %+v", res)
 	}
 
-	if res := call("att-1", "zip"); !res.IsError || !contains(text(res), `"url" or "base64"`) {
+	// Text, as it is, when asked for.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-2")).Return([]byte("# notes\n<b>ü</b>"), nil)
+	if res := call("att-2", "textContent"); text(res) != `{"filename":"local.txt","mimeType":"","textContent":"# notes\n\u003cb\u003eü\u003c/b\u003e"}` {
+		t.Errorf("textContent: %+v", res)
+	}
+
+	// Bytes that are not UTF-8 are refused rather than mangled.
+	mockStor.EXPECT().LoadRaw(storage.AttachmentKey(100, 42, "att-1")).Return([]byte{0x89, 'P', 'N', 'G', 0xff}, nil)
+	if res := call("att-1", "textContent"); !res.IsError || text(res) != `attachment is not text; use format "base64"` {
+		t.Errorf("binary as textContent: %+v", res)
+	}
+
+	if res := call("att-1", "zip"); !res.IsError || !contains(text(res), `"url", "base64" or "textContent"`) {
 		t.Errorf("bad format: %+v", res)
 	}
 	if res := call("att-3", ""); !res.IsError || text(res) != "attachment not found in task" {

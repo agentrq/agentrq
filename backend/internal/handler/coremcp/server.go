@@ -307,7 +307,7 @@ type GetAttachmentParams struct {
 	WorkspaceID  string `json:"workspaceId" jsonschema:"The workspace's ID (base62)."`
 	TaskID       string `json:"taskId" jsonschema:"The task's ID (base62)."`
 	AttachmentID string `json:"attachmentId" jsonschema:"The attachment's ID."`
-	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content as data when it does not. 'base64' always returns the content."`
+	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content as data when it does not. 'base64' always returns the content. 'textContent' returns it as plain text, for a text file such as markdown or HTML."`
 }
 
 type ListMemoriesParams struct {
@@ -788,8 +788,8 @@ func (s *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Call
 	out := mcpevent.AttachmentView{Filename: res.Filename, MimeType: res.MimeType}
 	if format == mcpevent.AttachmentFormatURL && res.URL != "" {
 		out.URL = res.URL
-	} else {
-		out.Data = res.Data
+	} else if err := out.SetContent(format, res.Data); err != nil {
+		return errorResponse(err), nil, nil
 	}
 	return jsonResponse(out), nil, nil
 }

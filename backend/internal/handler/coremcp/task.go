@@ -56,7 +56,7 @@ func (s *WorkspaceServer) taskActions() []mcpevent.ToolAction {
 		mcpevent.NewToolAction("delete", "Delete a task, with its messages and attachments. This cannot be undone.", s.handleDeleteTask).
 			WithDetails("To stop a scheduled task without losing its history, updateStatus it to rejected instead.").
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ"}`),
-		mcpevent.NewToolAction("getAttachment", "Get an attachment of a task: its public link, or its content as base64, and metadata.", s.handleGetAttachment).
+		mcpevent.NewToolAction("getAttachment", "Get an attachment of a task: its public link, or its content as base64 or plain text, and metadata.", s.handleGetAttachment).
 			WithExample(`{"workspaceId": "0ZzhYQG2qtl", "taskId": "0kGogHmaqvZ", "attachmentId": "att-1"}`),
 	}
 }

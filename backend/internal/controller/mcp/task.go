@@ -39,7 +39,7 @@ func (ps *WorkspaceServer) taskActions() []ToolAction {
 			WithExample(`{"taskId": "0kGogHmaqvZ", "text": "Tests pass; opening the pull request."}`),
 		NewToolAction("elicit", "Ask the human a question and wait for the answer: {action, content}, action being accept, decline or cancel.", ps.handleElicit).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "message": "Which branch should I release from?", "mode": "form", "requestedSchema": {"type": "object", "properties": {"branch": {"type": "string", "enum": ["main", "release"]}}, "required": ["branch"]}}`),
-		NewToolAction("getAttachment", "Get an attachment of a task: its name, type and public link, or its content as base64.", ps.handleGetAttachment).
+		NewToolAction("getAttachment", "Get an attachment of a task: its name, type and public link, or its content as base64 or plain text.", ps.handleGetAttachment).
 			WithExample(`{"taskId": "0kGogHmaqvZ", "attachmentId": "att_1"}`),
 	}
 }

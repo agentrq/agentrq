@@ -7,6 +7,7 @@ package mcp
 import (
 	"context"
 
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	zlog "github.com/rs/zerolog/log"
@@ -256,7 +258,7 @@ type CreateTaskParams struct {
 	Title        string            `json:"title" jsonschema:"Short title of the task"`
 	Body         string            `json:"body" jsonschema:"Detailed description of the task or action needed"`
 	Assignee     string            `json:"assignee,omitempty" jsonschema:"Who should complete the task: 'human' or 'agent'. Default is 'agent'."`
-	Attachments  []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments"`
+	Attachments  []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
 	CronSchedule string            `json:"cronSchedule,omitempty" jsonschema:"Optional cron schedule (5-field format: minute hour dom month dow). For RECURRING tasks (dom and month use wildcards) the minimum granularity is hourly — the minute field must be a single integer 0-59, not a wildcard or step (e.g. '30 * * * *'). For ONE-TIME tasks (fixed dom and month, e.g. '30 14 25 4 *') any fixed minute value 0-59 is accepted, enabling minute-level precision."`
 	EventID      string            `json:"eventId,omitempty" jsonschema:"Optional event ID (base62) — when this task completes the named event is published automatically."`
 	ClearContext bool              `json:"clearContext,omitempty" jsonschema:"Ask for a clean slate: /clear is sent to the agent's terminal before this task is handed over, so it starts without the previous task's context. Ignored when the workspace has no running Claude Code session. Defaults to the workspace's own setting."`
@@ -290,7 +292,7 @@ type UpdateTaskStatusParams struct {
 type ReplyParams struct {
 	TaskID      string            `json:"taskId" jsonschema:"The task to reply in (base62): the chat_id it arrived with."`
 	Text        string            `json:"text" jsonschema:"The message text to send"`
-	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply"`
+	Attachments []AttachmentParam `json:"attachments,omitempty" jsonschema:"Optional attachments to include in the reply: {id, filename, mimeType, data (base64) or textContent (plain text)}."`
 }
 
 // AttachmentParam is an attachment as a tool receives it. It is not
@@ -299,7 +301,10 @@ type AttachmentParam struct {
 	ID       string `json:"id"`
 	Filename string `json:"filename"`
 	MimeType string `json:"mimeType"`
-	Data     string `json:"data"` // base64
+	Data     string `json:"data,omitempty"` // base64
+	// TextContent is the content as plain text, for a text file such as
+	// markdown or HTML, so the agent need not encode it. It replaces data.
+	TextContent string `json:"textContent,omitempty"`
 }
 
 func toEntityAttachments(in []AttachmentParam) []entity.Attachment {
@@ -309,6 +314,9 @@ func toEntityAttachments(in []AttachmentParam) []entity.Attachment {
 	out := make([]entity.Attachment, len(in))
 	for i, a := range in {
 		out[i] = entity.Attachment{ID: a.ID, Filename: a.Filename, MimeType: a.MimeType, Data: a.Data}
+		if a.TextContent != "" {
+			out[i].Data = base64.StdEncoding.EncodeToString([]byte(a.TextContent))
+		}
 	}
 	return out
 }
@@ -317,7 +325,7 @@ func toEntityAttachments(in []AttachmentParam) []entity.Attachment {
 type GetAttachmentParams struct {
 	AttachmentID string `json:"attachmentId" jsonschema:"The ID of the attachment"`
 	TaskID       string `json:"taskId" jsonschema:"The ID of the task containing the attachment"`
-	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content when it does not. 'base64' always returns the content."`
+	Format       string `json:"format,omitempty" jsonschema:"'url' (default) returns the attachment's public link when it has one, and its base64 content when it does not. 'base64' always returns the content. 'textContent' returns it as plain text, for a text file such as markdown or HTML."`
 }
 
 // GetTaskParams is the input to the getTask tool.
@@ -1576,7 +1584,12 @@ func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Cal
 				Content: []mcp.Content{&mcp.TextContent{Text: "attachment file not found; it may have passed its retention period"}},
 			}, nil, nil
 		}
-		out.Data = data
+		if err := out.SetContent(format, data); err != nil {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+			}, nil, nil
+		}
 	}
 	b, _ := json.Marshal(out)
 	return &mcp.CallToolResult{
@@ -1587,10 +1600,25 @@ func (ps *WorkspaceServer) handleGetAttachment(ctx context.Context, req *mcp.Cal
 // AttachmentView is what both servers' getAttachment answer: the link or the
 // content, whichever was given.
 type AttachmentView struct {
-	Filename string `json:"filename"`
-	MimeType string `json:"mimeType"`
-	URL      string `json:"url,omitempty"`
-	Data     []byte `json:"data,omitempty"` // base64 in JSON
+	Filename    string `json:"filename"`
+	MimeType    string `json:"mimeType"`
+	URL         string `json:"url,omitempty"`
+	Data        []byte `json:"data,omitempty"` // base64 in JSON
+	TextContent string `json:"textContent,omitempty"`
+}
+
+// SetContent gives v the attachment's content: as text for textContent,
+// refused when it is not UTF-8 rather than mangled, and as base64 otherwise.
+func (v *AttachmentView) SetContent(format string, data []byte) error {
+	if format != AttachmentFormatText {
+		v.Data = data
+		return nil
+	}
+	if !utf8.Valid(data) {
+		return fmt.Errorf("attachment is not text; use format %q", AttachmentFormatBase64)
+	}
+	v.TextContent = string(data)
+	return nil
 }
 
 // The formats an attachment tool answers in. A local attachment has no link,
@@ -1598,6 +1626,7 @@ type AttachmentView struct {
 const (
 	AttachmentFormatURL    = "url"
 	AttachmentFormatBase64 = "base64"
+	AttachmentFormatText   = "textContent"
 )
 
 // AttachmentFormat checks a tool's format argument, where "" means url.
@@ -1605,10 +1634,10 @@ func AttachmentFormat(format string) (string, error) {
 	switch format {
 	case "", AttachmentFormatURL:
 		return AttachmentFormatURL, nil
-	case AttachmentFormatBase64:
-		return AttachmentFormatBase64, nil
+	case AttachmentFormatBase64, AttachmentFormatText:
+		return format, nil
 	}
-	return "", fmt.Errorf("format must be %q or %q", AttachmentFormatURL, AttachmentFormatBase64)
+	return "", fmt.Errorf("format must be %q, %q or %q", AttachmentFormatURL, AttachmentFormatBase64, AttachmentFormatText)
 }
 
 // findAttachment looks for an attachment among a task's own and its messages'.

@@ -40,6 +40,7 @@ func TestGetAttachment_Formats(t *testing.T) {
 		{"link when asked", "url", public, true, `{"filename":"a.png","mimeType":"image/png","url":"https://cdn/attachments/a"}`},
 		{"content when asked", "base64", withData, false, `{"filename":"a.png","mimeType":"image/png","data":"cG5n"}`},
 		{"content when there is no link", "", local, true, `{"filename":"b.txt","mimeType":"text/plain","data":"dHh0"}`},
+		{"text when asked", "textContent", local, false, `{"filename":"b.txt","mimeType":"text/plain","textContent":"txt"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &mockAttachmentCrud{res: tc.res}
@@ -57,7 +58,15 @@ func TestGetAttachment_Formats(t *testing.T) {
 
 	t.Run("bad format", func(t *testing.T) {
 		got := toolResult((&WorkspaceServer{crud: &mockAttachmentCrud{}}).handleGetAttachment(authedContext(), nil, GetAttachmentParams{Format: "zip"}))
-		if !got.isError || !strings.Contains(got.text, `"url" or "base64"`) {
+		if !got.isError || !strings.Contains(got.text, `"url", "base64" or "textContent"`) {
+			t.Errorf("got %+v", got)
+		}
+	})
+
+	t.Run("text that is not UTF-8", func(t *testing.T) {
+		m := &mockAttachmentCrud{res: &entity.GetAttachmentResponse{Filename: "a.png", Data: []byte{0xff, 0xfe}}}
+		got := toolResult((&WorkspaceServer{crud: m}).handleGetAttachment(authedContext(), nil, GetAttachmentParams{Format: "textContent"}))
+		if !got.isError || got.text != `attachment is not text; use format "base64"` {
 			t.Errorf("got %+v", got)
 		}
 	})
