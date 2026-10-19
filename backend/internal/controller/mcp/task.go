@@ -19,6 +19,14 @@ const TaskToolDescription = "Work on this workspace's tasks and talk to the huma
 	"elicit: asks the human and waits for the answer. getAttachment: a task's attachment. create: a new task. " +
 	"taskId is the chat_id a task arrives with."
 
+// TaskCLIHint points a workspace's agent at agentrq-ws for attachments, which
+// reads and writes the files on disk, so no base64 passes through the agent's
+// context. It is for the workspace server only: agentrq-ws reads a workspace's
+// .mcp.json.
+const TaskCLIHint = " Prefer the shell for attachments to save tokens: `npx -y @agentrq/agentrq-ws@latest reply <taskId> \"text\" --attach a.png` " +
+	"and `task create <title> --body @brief.md --attach a.png` upload files from disk, and `attachment get <attachmentId> --task <taskId> --out DIR` " +
+	"downloads one there, printing its path; see `--help`."
+
 // TaskParams is the input to the task tool.
 type TaskParams struct {
 	Action  string         `json:"action" jsonschema:"enum: create, get, updateStatus, reply, elicit, getAttachment, help"`

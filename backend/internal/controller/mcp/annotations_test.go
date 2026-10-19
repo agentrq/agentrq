@@ -143,3 +143,18 @@ func TestPanoToolPointsAtTheCLI(t *testing.T) {
 	}
 	t.Error("the workspace server offers no pano tool")
 }
+
+// The workspace's task tool sends its agent to agentrq-ws for attachments,
+// which keeps their base64 out of the agent's context.
+func TestTaskToolPointsAtTheCLI(t *testing.T) {
+	for _, tool := range toolsOverTheWire(t) {
+		if tool["name"] != "task" {
+			continue
+		}
+		if d, _ := tool["description"].(string); !strings.HasSuffix(d, TaskCLIHint) {
+			t.Errorf("the task tool's description %q does not end with the agentrq-ws hint", d)
+		}
+		return
+	}
+	t.Error("the workspace server offers no task tool")
+}

@@ -560,7 +560,7 @@ func NewWorkspaceServer(
 	// it replaced, so get and getAttachment lose their read-only hint.
 	mcp.AddTool(mcpSrv, &mcp.Tool{
 		Name:        "task",
-		Description: TaskToolDescription,
+		Description: TaskToolDescription + TaskCLIHint,
 		Annotations: mcphint.Write("Work on tasks"),
 	}, ps.handleTask)
 
