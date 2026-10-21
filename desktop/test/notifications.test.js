@@ -29,6 +29,12 @@ const task = (over = {}) => ({
 })
 
 const event = (type, over = {}) => ({ type, payload: task(over) })
+
+/** An agent moving a task, as the server publishes it: only for the agent's own change. */
+const statusChange = (over = {}) => ({
+  type: 'task.status',
+  payload: { taskId: '0hua6QI7nXN', workspaceId: '0ZzhYQG2qtl', title: 'Ship the desktop app', from: 'ongoing', to: 'completed', ...over },
+})
 const names = { workspaceName: () => 'agentrq-code' }
 
 describe('truncate', () => {
@@ -49,7 +55,7 @@ describe('truncate', () => {
 describe('shouldNotify', () => {
   it('accepts the event types worth interrupting someone for', () => {
     for (const type of NOTIFIABLE_TYPES) {
-      expect(shouldNotify(event(type))).toBe(true)
+      expect(shouldNotify(type === 'task.status' ? statusChange() : event(type))).toBe(true)
     }
   })
 
@@ -63,7 +69,28 @@ describe('shouldNotify', () => {
     // Mirrors the push controller, which notifies only on agent activity —
     // being told about your own click is noise, not news.
     expect(shouldNotify(event('task.created', { createdBy: 'human' }))).toBe(false)
-    expect(shouldNotify(event('status.updated', { createdBy: 'human' }))).toBe(false)
+  })
+
+  // The bug: an agent moving a task the human created, or one where the human
+  // spoke last, was judged by them and dropped. task.status is the agent's
+  // own change, so neither matters.
+  it("announces an agent's status change whoever created the task or spoke last", () => {
+    expect(shouldNotify(statusChange())).toBe(true)
+    expect(shouldNotify(statusChange({ createdBy: 'human', messages: [{ id: 'm1', sender: 'human' }] }))).toBe(true)
+  })
+
+  it('says nothing for a status that did not change, or names none', () => {
+    expect(shouldNotify(statusChange({ from: 'ongoing', to: 'ongoing' }))).toBe(false)
+    expect(shouldNotify(statusChange({ to: '' }))).toBe(false)
+    expect(shouldNotify(statusChange({ taskId: undefined }))).toBe(false)
+  })
+
+  // They cannot say who changed the status. Announcing an agent's change is
+  // task.status's job, so these would only repeat it, or tell the human about
+  // their own click on a task the agent spoke last on.
+  it('leaves status.updated and task.updated to task.status', () => {
+    expect(shouldNotify(event('status.updated', { status: 'completed' }))).toBe(false)
+    expect(shouldNotify(event('task.updated'))).toBe(false)
   })
 
   it('always notifies for a reply, which only an agent sends', () => {
@@ -73,6 +100,7 @@ describe('shouldNotify', () => {
   it('stays silent for a muted workspace', () => {
     expect(shouldNotify(event('task.created'), { mutedWorkspaces: ['0ZzhYQG2qtl'] })).toBe(false)
     expect(shouldNotify(event('task.created'), { mutedWorkspaces: ['other'] })).toBe(true)
+    expect(shouldNotify(statusChange(), { mutedWorkspaces: ['0ZzhYQG2qtl'] })).toBe(false)
   })
 
   it('rejects malformed events rather than raising an empty notification', () => {
@@ -95,16 +123,23 @@ describe('mapEventToNotification', () => {
     })
   })
 
-  it('words a status change with the status in caps', () => {
-    expect(mapEventToNotification(event('status.updated', { status: 'completed' }), names)).toMatchObject({
+  it('words a status change with the new status in caps', () => {
+    expect(mapEventToNotification(statusChange(), names)).toEqual({
       title: 'Task COMPLETED: Ship the desktop app',
+      body: 'agentrq-code',
       route: '/workspaces/0ZzhYQG2qtl/tasks/0hua6QI7nXN',
-      tag: 'task-status-0hua6QI7nXN',
+      tag: 'task-status-0hua6QI7nXN-completed',
     })
   })
 
-  it('treats a plain task update the same as a status change', () => {
-    expect(mapEventToNotification(event('task.updated'), names).title).toBe('Task ONGOING: Ship the desktop app')
+  it('keeps two quick changes apart, and collapses one published twice', () => {
+    const gate = createNotificationGate()
+    const ongoing = mapEventToNotification(statusChange({ from: 'notstarted', to: 'ongoing' }), names)
+    const completed = mapEventToNotification(statusChange(), names)
+
+    expect(gate.allow(ongoing.tag)).toBe(true)
+    expect(gate.allow(completed.tag)).toBe(true)
+    expect(gate.allow(completed.tag)).toBe(false)
   })
 
   it('routes every notification to the task itself, not the workspace', () => {
@@ -120,8 +155,8 @@ describe('mapEventToNotification', () => {
     const long = 'y'.repeat(100)
     expect(mapEventToNotification(event('task.created', { title: long }), names).title)
       .toBe(`New task: ${'y'.repeat(60)}…`)
-    expect(mapEventToNotification(event('status.updated', { title: long }), names).title)
-      .toBe(`Task ONGOING: ${'y'.repeat(50)}…`)
+    expect(mapEventToNotification(statusChange({ title: long }), names).title)
+      .toBe(`Task COMPLETED: ${'y'.repeat(50)}…`)
     expect(mapEventToNotification(event('reply.received', { title: long }), names).title)
       .toBe(`Reply on: ${'y'.repeat(55)}…`)
   })
@@ -137,8 +172,7 @@ describe('mapEventToNotification', () => {
   })
 
   it('copes with a status that is missing', () => {
-    expect(mapEventToNotification(event('status.updated', { status: undefined }), names).title)
-      .toBe('Task : Ship the desktop app')
+    expect(mapEventToNotification(statusChange({ to: undefined }), names)).toBeNull()
   })
 })
 
@@ -201,18 +235,13 @@ describe('who the payload says spoke', () => {
   })
 
   // One agent reply publishes two events — `task.updated` directly and
-  // `reply.received` through the forwarder. Tagged by task they were two tags
-  // for one message and both fired; tagged by the message the dedupe gate
-  // collapses them, which is what it is for.
-  it('tags both halves of one reply with the message they are about', () => {
+  // `reply.received` through the forwarder. Only the reply notifies, tagged by
+  // its message so a repeat of it is collapsed.
+  it('announces one reply once, tagged with its message', () => {
     const messages = [{ id: 'm9', sender: 'agent', text: 'done' }]
 
-    const reply = mapEventToNotification(withMessages('reply.received', messages))
-    const updated = mapEventToNotification(withMessages('task.updated', messages))
-
-    expect(reply.tag).toBe('m9')
-    expect(updated.tag).toBe('m9')
-    expect(createNotificationGate().allow(reply.tag)).toBe(true)
+    expect(mapEventToNotification(withMessages('reply.received', messages)).tag).toBe('m9')
+    expect(mapEventToNotification(withMessages('task.updated', messages))).toBeNull()
   })
 
   // A message row carrying no id names nothing, so the task-shaped tag stands
@@ -225,12 +254,13 @@ describe('who the payload says spoke', () => {
     expect(mapEventToNotification(withMessages('task.updated', messages))).toBeNull()
   })
 
-  it('still announces an agent notice, and a task completing after a thought', () => {
+  it('still announces an agent notice, a task completing after a thought, and a new task', () => {
     const notice = [{ id: 'm1', sender: 'agent', text: 'rate limited', metadata: { type: 'agent_notice' } }]
     const thought = [{ id: 'm2', sender: 'agent', text: 'hmm', metadata: { type: 'agent_thought' } }]
 
     expect(mapEventToNotification(withMessages('reply.received', notice))?.title).toContain('Reply on: Ship it')
-    expect(mapEventToNotification(withMessages('status.updated', thought, { status: 'completed' }))?.title).toBe('Task COMPLETED: Ship it')
+    expect(mapEventToNotification(statusChange({ title: 'Ship it' }))?.title).toBe('Task COMPLETED: Ship it')
+    expect(mapEventToNotification(withMessages('task.created', thought))?.title).toBe('New task: Ship it')
   })
 
   it('keeps a tag of its own when the newest message has no id', () => {
@@ -269,20 +299,14 @@ describe('createSelfActionGate', () => {
     expect(gate.isRecentSelfAction(selfEcho('t1', 'reply.received'))).toBe(true)
   })
 
-  it('recognises task.updated as the other type a reply/respond can echo as', () => {
-    const gate = createSelfActionGate()
-    gate.markSelf('t1')
-    expect(gate.isRecentSelfAction(selfEcho('t1', 'task.updated'))).toBe(true)
-  })
-
   it('does not mute a type a reply/respond could never produce', () => {
-    // task.created and status.updated are never the result of sending a
-    // reply, so a real one of either must still notify even for a task this
-    // desktop instance just replied to.
+    // task.created and task.status are never the result of sending a reply, so
+    // a real one of either must still notify even for a task this desktop
+    // instance just replied to.
     const gate = createSelfActionGate()
     gate.markSelf('t1')
     expect(gate.isRecentSelfAction(selfEcho('t1', 'task.created'))).toBe(false)
-    expect(gate.isRecentSelfAction(selfEcho('t1', 'status.updated'))).toBe(false)
+    expect(gate.isRecentSelfAction(selfEcho('t1', 'task.status'))).toBe(false)
   })
 
   it('does not mark a task when given no id', () => {

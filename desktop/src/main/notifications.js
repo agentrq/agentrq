@@ -29,8 +29,16 @@
  * Pure functions, so the mapping and mute rules are testable without Electron.
  */
 
-/** Event types that can produce a notification. Others are UI-only signals. */
-export const NOTIFIABLE_TYPES = ['task.created', 'status.updated', 'task.updated', 'reply.received']
+/**
+ * Event types that can produce a notification. Others are UI-only signals.
+ *
+ * A status change is announced from `task.status` alone: the server publishes
+ * it only for the agent's own change. `status.updated` and `task.updated` cannot
+ * say who changed the status, so judging them by who created the task or spoke
+ * last dropped an agent's change on a human's task, announced the human's own
+ * change on an agent's, and would now repeat `task.status`.
+ */
+export const NOTIFIABLE_TYPES = ['task.created', 'task.status', 'reply.received']
 
 /** Matches the backend's truncation lengths so titles read identically. */
 export function truncate(text, max) {
@@ -50,7 +58,11 @@ export function shouldNotify(event, { mutedWorkspaces = [] } = {}) {
 
   const task = event.payload
   if (!task || typeof task !== 'object') return false
-  if (!task.workspaceId || !task.id) return false
+  if (!task.workspaceId || !taskIdOf(event)) return false
+  if (mutedWorkspaces.includes(task.workspaceId)) return false
+
+  // The agent's by construction, whoever created the task or spoke last.
+  if (event.type === 'task.status') return Boolean(task.to) && task.to !== task.from
 
   // Who just spoke, when the payload says — and it does for every event the
   // forwarder publishes. A reply is not news because it is a reply; it is news
@@ -66,13 +78,13 @@ export function shouldNotify(event, { mutedWorkspaces = [] } = {}) {
 
   // The agent's reasoning, plan and usage counters are messages too, and each
   // one republishes its task. They are the agent working, not saying anything.
-  if (MESSAGE_ECHO_TYPES.has(event.type) && SILENT_TELEMETRY_TYPES.has(lastMessageType(task))) return false
-
-  return !mutedWorkspaces.includes(task.workspaceId)
+  return !(event.type === 'reply.received' && SILENT_TELEMETRY_TYPES.has(lastMessageType(task)))
 }
 
-/** Events a new message on the task publishes. */
-const MESSAGE_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
+/** The task an event is about: `task.status` names it, the others carry it. */
+function taskIdOf(event) {
+  return event.type === 'task.status' ? event.payload.taskId : event.payload.id
+}
 
 /** Agent telemetry metadata types that never notify. A notice still does. */
 const SILENT_TELEMETRY_TYPES = new Set(['agent_thought', 'agent_plan', 'agent_usage'])
@@ -98,7 +110,7 @@ export function mapEventToNotification(event, { mutedWorkspaces = [], workspaceN
 
   const task = event.payload
   const workspace = workspaceName(task.workspaceId) || 'AgentRQ'
-  const taskRoute = `/workspaces/${task.workspaceId}/tasks/${task.id}`
+  const taskRoute = `/workspaces/${task.workspaceId}/tasks/${taskIdOf(event)}`
 
   switch (event.type) {
     case 'task.created':
@@ -109,27 +121,20 @@ export function mapEventToNotification(event, { mutedWorkspaces = [], workspaceN
         tag: `task-create-${task.id}`,
       }
 
-    case 'status.updated':
-    case 'task.updated':
+    case 'task.status':
       return {
-        title: `Task ${String(task.status ?? '').toUpperCase()}: ${truncate(task.title, 50)}`,
+        title: `Task ${String(task.to).toUpperCase()}: ${truncate(task.title, 50)}`,
         body: workspace,
         route: taskRoute,
-        // Same reasoning as the reply below: when this event is the other half
-        // of an agent's reply, the message is what both are about.
-        tag: lastMessageId(task) || `task-status-${task.id}`,
+        // By the new status too: an agent going ongoing then completed in one
+        // breath is two pieces of news, not one deduped away.
+        tag: `task-status-${task.taskId}-${task.to}`,
       }
 
     default:
       // reply.received. The reply text the browser notification shows is not
       // used here — the workspace name is the honest stand-in — but the message
       // id is, as the tag.
-      //
-      // One agent reply publishes two events: `task.updated` directly, and
-      // `reply.received` through the forwarder. Tagged by task they were two
-      // different tags for one message and both fired; tagged by the message
-      // they are the same notification twice, which is what the dedupe gate is
-      // for.
       return {
         title: `Reply on: ${truncate(task.title, 55)}`,
         body: workspace,
@@ -162,23 +167,21 @@ export const SELF_ACTION_WINDOW_MS = 10000
 
 /**
  * Event types that can be the SSE echo of a reply/respond this desktop
- * instance just sent — a message create republishes as `reply.received`, and
- * the task row touched by that same write republishes as `task.updated`.
+ * instance just sent and would notify: a message create republishes as
+ * `reply.received`.
  *
- * Deliberately not "every notifiable type": `task.created` and
- * `status.updated` are never the result of sending a reply, so muting them
- * just because a reply on the same task happened moments ago would drop a
- * genuine, unrelated notification instead of the self-sent echo this gate
- * exists to catch.
+ * Deliberately not "every notifiable type": `task.created` and `task.status`
+ * are never the result of sending a reply, so muting them just because a reply
+ * on the same task happened moments ago would drop a genuine, unrelated
+ * notification instead of the self-sent echo this gate exists to catch.
  */
-const SELF_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
+const SELF_ECHO_TYPES = new Set(['reply.received'])
 
 /**
  * The id of the newest message on a task, or '' when the payload carries none.
  *
- * Used as the notification tag. One agent reply publishes two events, and
- * tagging both by the message they describe is what makes the dedupe gate treat
- * them as the one piece of news they are.
+ * Used as a reply's notification tag, so the dedupe gate collapses a message
+ * published twice into the one piece of news it is.
  */
 export function lastMessageId(task) {
   const messages = task?.messages
