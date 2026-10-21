@@ -1324,17 +1324,28 @@ func TestEngine(t *testing.T) {
 		})
 	})
 
-	t.Run("a model change the agent reports is passed on", func(t *testing.T) {
+	t.Run("a model change the agent reports is passed on, and removing the model option withdraws it", func(t *testing.T) {
 		rec := &recorder{}
 		a := startAgent(t, rec)
-		a.readyAsking(rec)
+		l := a.readyAsking(rec)
 		rec.wait(t, func() bool { return len(rec.models) == 1 })
 		a.update("sess-1", `{"sessionUpdate":"config_option_update","configOptions":[{"id":"model","name":"Model","type":"select","currentValue":"model-small","options":[{"value":"model-small","name":"Small"}]}]}`)
-		a.update("sess-1", `{"sessionUpdate":"config_option_update","configOptions":[{"id":"effort","name":"Effort","type":"select","options":[{"value":"low"}]}]}`)
 		rec.wait(t, func() bool { return len(rec.models) == 2 })
+		a.update("sess-1", `{"sessionUpdate":"config_option_update","configOptions":[{"id":"effort","name":"Effort","type":"select","options":[{"value":"low"}]}]}`)
+		rec.wait(t, func() bool { return len(rec.models) == 3 })
+		a.update("sess-1", `{"sessionUpdate":"config_option_update","configOptions":[]}`)
+		a.sync(l)
+		l.SetModel(context.Background(), "sess-1", "model", "model-small")
+		a.quiet()
 		rec.read(func() {
+			if len(rec.models) != 3 {
+				t.Fatalf("models reports were %+v, want 3 (initial, update, withdrawal)", rec.models)
+			}
 			if m := rec.models[1]; m.CurrentModel != "model-small" || len(m.Models) != 1 {
 				t.Fatalf("models report was %+v, want model-small alone", m)
+			}
+			if m := rec.models[2]; len(m.Models) != 0 || m.CanSet || m.CurrentModel != "" || m.ConfigID != "" {
+				t.Fatalf("withdrawal report was %+v, want no models", m)
 			}
 		})
 	})
