@@ -24,6 +24,9 @@ type MachineManageController interface {
 	GetMachine(ctx context.Context, req entity.GetMachineRequest) (*entity.GetMachineResponse, error)
 	UpdateMachine(ctx context.Context, req entity.UpdateMachineRequest) (*entity.UpdateMachineResponse, error)
 	DeleteMachine(ctx context.Context, req entity.DeleteMachineRequest) error
+	// CountOnlineMachinesPerUser is the operator's count of machines online
+	// now, by owner, across every user.
+	CountOnlineMachinesPerUser(ctx context.Context) (map[string]int, error)
 	// RecordMachineMetrics stores what a daemon reported about its machine.
 	// Not part of the control panel's surface — the daemon socket calls it —
 	// but it belongs here rather than in a handler reaching for the
@@ -252,6 +255,20 @@ func (c *controller) GetMachine(ctx context.Context, req entity.GetMachineReques
 		counts = nil
 	}
 	return &entity.GetMachineResponse{Machine: toMachineView(m, time.Now(), counts[m.ID])}, nil
+}
+
+// CountOnlineMachinesPerUser counts each user's machines online now, keyed by
+// the user's base62 id, by the same rule ListMachines marks one online.
+func (c *controller) CountOnlineMachinesPerUser(ctx context.Context) (map[string]int, error) {
+	counts, err := c.repository.CountOnlineMachinesPerUser(ctx, time.Now().Add(-machinerules.OnlineThreshold))
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(counts))
+	for uid, n := range counts {
+		out[monoflake.ID(uid).String()] = n
+	}
+	return out, nil
 }
 
 // UpdateMachine renames a machine or flips its kill switch.

@@ -49,6 +49,7 @@ type (
 		AgentCommands(workspaceID int64) *agentlink.CommandsSnapshot
 		AgentClient(workspaceID int64) *agentlink.ClientInfo
 		AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot
+		ConnectionsByUser() map[string]int
 	}
 
 	// workspaceServer is the part of one workspace's MCP server this package

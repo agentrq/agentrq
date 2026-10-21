@@ -145,3 +145,34 @@ func TestMachineReadsRejectUnusableIDs(t *testing.T) {
 		t.Error("DeleteMachine accepted an absent user")
 	}
 }
+
+// The cut-off is the online threshold back from now, and the counts come back
+// keyed by each user's base62 id.
+func TestCountOnlineMachinesPerUser(t *testing.T) {
+	env := newTestController(t)
+	before := time.Now().Add(-machinerules.OnlineThreshold)
+	env.repo.EXPECT().CountOnlineMachinesPerUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ any, since time.Time) (map[int64]int, error) {
+			if since.Before(before) || since.After(time.Now().Add(-machinerules.OnlineThreshold)) {
+				t.Errorf("cut-off %v is not the online threshold back from now", since)
+			}
+			return map[int64]int{100: 2, 200: 1}, nil
+		})
+
+	got, err := env.controller.CountOnlineMachinesPerUser(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{monoflake.ID(100).String(): 2, monoflake.ID(200).String(): 1}
+	if len(got) != len(want) || got[monoflake.ID(100).String()] != 2 || got[monoflake.ID(200).String()] != 1 {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestCountOnlineMachinesPerUser_PassesOnAFailure(t *testing.T) {
+	env := newTestController(t)
+	env.repo.EXPECT().CountOnlineMachinesPerUser(gomock.Any(), gomock.Any()).Return(nil, errors.New("database unavailable"))
+	if got, err := env.controller.CountOnlineMachinesPerUser(t.Context()); err == nil || got != nil {
+		t.Errorf("got %v, %v; want nil and the error", got, err)
+	}
+}

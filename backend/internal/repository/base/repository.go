@@ -156,6 +156,7 @@ type Repository interface {
 	RecordAvailableVersion(ctx context.Context, id int64, version string) error
 	RecordMachineVersion(ctx context.Context, id int64, version string) error
 	CountLiveSessionsByUser(ctx context.Context, userID int64) (map[int64]int, error)
+	CountOnlineMachinesPerUser(ctx context.Context, since time.Time) (map[int64]int, error)
 	ReconcileSessions(ctx context.Context, machineID int64, running []int64, at time.Time) error
 	DeleteFinishedSession(ctx context.Context, id int64) error
 	DeleteStaleSessions(ctx context.Context, seenBefore time.Time) (int64, error)

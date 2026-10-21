@@ -95,3 +95,30 @@ func TestManager_SupportsStop(t *testing.T) {
 		t.Fatal("expected a server")
 	}
 }
+
+// Streams are summed per owner across their workspaces, and an owner whose
+// servers have nothing attached is not listed at all.
+func TestManager_ConnectionsByUser(t *testing.T) {
+	m := NewManager(func(workspaceID int64, userID string) *WorkspaceServer {
+		return &WorkspaceServer{workspaceID: workspaceID, userID: userID}
+	})
+	if got := m.ConnectionsByUser(); len(got) != 0 {
+		t.Fatalf("expected no connections with no servers, got %v", got)
+	}
+
+	m.Get(1, "alice").agentConnections.Store(2)
+	m.Get(2, "alice").agentConnections.Store(1)
+	m.Get(3, "bob").agentConnections.Store(1)
+	m.Get(4, "carol")
+
+	got := m.ConnectionsByUser()
+	want := map[string]int{"alice": 3, "bob": 1}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for user, n := range want {
+		if got[user] != n {
+			t.Errorf("%s: expected %d connections, got %d", user, n, got[user])
+		}
+	}
+}

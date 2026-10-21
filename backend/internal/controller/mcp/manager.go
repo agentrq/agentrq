@@ -70,6 +70,20 @@ func (m *Manager) IsAgentConnected(workspaceID int64) bool {
 	return srv.IsAgentConnected()
 }
 
+// ConnectionsByUser counts the agent streams open on this instance, by the
+// owner of the workspace they are attached to. Owners with none are left out.
+func (m *Manager) ConnectionsByUser() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	counts := make(map[string]int)
+	for _, srv := range m.servers {
+		if n := srv.agentConnections.Load(); n > 0 {
+			counts[srv.userID] += int(n)
+		}
+	}
+	return counts
+}
+
 // SendPermissionVerdict dispatches a permission request verdict to the appropriate WorkspaceServer.
 func (m *Manager) SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error {
 	m.mu.RLock()

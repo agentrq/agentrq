@@ -231,6 +231,12 @@ describe('parity with the interface', () => {
     // Where the server is, for the two callers that have to address it from
     // outside the renderer. Not an action.
     serverOrigin: 'returns an address the page uses, not an action',
+    // The operator's admin session, opened with the deployment's root access
+    // token, which no browser agent should hold; none of it is about the
+    // signed-in user's own account.
+    adminLogin: 'takes the root access token; an operator page, not a user capability',
+    adminLogout: 'ends the operator session above; the same non-grant',
+    fetchAdminStats: 'needs the operator session above; the same non-grant',
   };
 
   const apiFunctions = Object.entries(api)

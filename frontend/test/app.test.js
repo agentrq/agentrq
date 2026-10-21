@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { setActivePinia, createPinia } from 'pinia'
 
-import { routes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
+import { routes, adminRoutes, clickOutside, createAuthGuard, createAgentRQApp } from '../src/app'
 import { usePlatformStore } from '../src/stores/platformStore'
 
 /** Flatten the route tree so nested paths can be asserted on directly. */
@@ -251,6 +251,23 @@ describe('createAgentRQApp', () => {
     const { pinia } = createAgentRQApp({ history: createMemoryHistory(), platform: 'desktop' })
 
     expect(usePlatformStore(pinia).isDesktop).toBe(true)
+  })
+
+  it("adds the operator's pages, public and lazy-loaded, in the web build only", async () => {
+    expect(adminRoutes.map((r) => r.path)).toEqual(['/admin', '/admin/login', '/admin/stats'])
+    expect(adminRoutes[0].redirect).toBe('/admin/stats')
+    for (const route of adminRoutes.slice(1)) {
+      expect(route.meta.public).toBe(true)
+      expect(await route.component()).toHaveProperty('default')
+    }
+    // The sign-in is the users' own login page, in its admin mode.
+    expect(adminRoutes[1].props).toEqual({ admin: true })
+    const web = createAgentRQApp({ history: createMemoryHistory() }).router
+    const desktop = createAgentRQApp({ history: createMemoryHistory(), platform: 'desktop' }).router
+    for (const path of ['/admin/login', '/admin/stats']) {
+      expect(web.resolve(path).matched).toHaveLength(1)
+      expect(desktop.resolve(path).matched).toHaveLength(0)
+    }
   })
 
   it('defaults to the web platform', () => {

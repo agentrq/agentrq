@@ -106,6 +106,16 @@ export const routes = [
 ]
 
 /**
+ * The operator's pages, in the web build only. Public to the user guard: they
+ * sign in with the root access token, as an admin session of their own.
+ */
+export const adminRoutes = [
+  { path: '/admin', redirect: '/admin/stats' },
+  { path: '/admin/login', component: () => import('./views/LoginView.vue'), props: { admin: true }, meta: { public: true } },
+  { path: '/admin/stats', component: () => import('./views/AdminStatsView.vue'), meta: { public: true } }
+]
+
+/**
  * Global `v-click-outside` directive: calls the bound handler when a click
  * lands anywhere that is not the element or one of its descendants.
  */
@@ -164,7 +174,7 @@ export function createAuthGuard(fetchUserFn = fetchUser) {
  *          Unmounted, so the caller can do platform-specific setup first.
  */
 export function createAgentRQApp({ history, platform = 'web', os = '' } = {}) {
-  const router = createRouter({ history, routes })
+  const router = createRouter({ history, routes: platform === 'web' ? [...routes, ...adminRoutes] : routes })
   router.beforeEach(createAuthGuard())
 
   const pinia = createPinia()

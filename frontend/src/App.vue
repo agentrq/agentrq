@@ -600,7 +600,9 @@ const { toKebabCase } = useFormat()
 const route = useRoute()
 const router = useRouter()
 const { notifySuccess, notifyInfo, notifyError, notifyEvent } = useToasts()
-const isLoginPage = computed(() => route.path === '/login')
+// Public pages — the login, and the operator's admin pages — are drawn without
+// the app around them: there is no signed-in user to build it for.
+const isLoginPage = computed(() => route.meta.public === true)
 const panoChatOpen = computed(() => isPanoChatRoute(route))
 const user = ref(null)
 const isUserMenuOpen = ref(false)
@@ -1193,6 +1195,8 @@ watch(() => route.fullPath, (fullPath) => {
   const path = route.path;
   if (path === '/') document.title = 'Workspaces | AgentRQ';
   else if (path === '/login') document.title = 'Login | AgentRQ';
+  else if (path === '/admin/login') document.title = 'Admin | AgentRQ';
+  else if (path === '/admin/stats') document.title = 'Admin stats | AgentRQ';
   else if (path === '/kanban') document.title = 'Kanban | AgentRQ';
   else if (path.startsWith('/events')) document.title = 'Events | AgentRQ';
   else if (path.startsWith('/workflows')) document.title = 'Workflows | AgentRQ';

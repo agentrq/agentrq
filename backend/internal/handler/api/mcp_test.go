@@ -38,6 +38,7 @@ type fakeMCPManager struct {
 	concurrency *agentlink.ConcurrencySnapshot
 	connected   bool
 	supportStop bool
+	connections map[string]int
 
 	removed []int64
 }
@@ -64,6 +65,8 @@ func (f *fakeMCPManager) AgentClient(workspaceID int64) *agentlink.ClientInfo { 
 func (f *fakeMCPManager) AgentConcurrency(workspaceID int64) *agentlink.ConcurrencySnapshot {
 	return f.concurrency
 }
+
+func (f *fakeMCPManager) ConnectionsByUser() map[string]int { return f.connections }
 
 // fakeWorkspaceServer records what the handler asked a connected agent to do.
 //

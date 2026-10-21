@@ -77,6 +77,9 @@ export default defineConfig({
       '/api': { target: apiTarget, ws: true },
       '/mcp': apiTarget,
       '/pub': apiTarget,
+      // The operator's API and sign-in; the /admin/* pages stay with vite.
+      '/admin/v1': apiTarget,
+      '/auth/admin': apiTarget,
     }
   }
 })

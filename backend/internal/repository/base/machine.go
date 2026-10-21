@@ -427,6 +427,28 @@ func (r *repository) CountLiveSessionsByUser(ctx context.Context, userID int64) 
 	return out, nil
 }
 
+// CountOnlineMachinesPerUser counts each user's enabled machines heard from
+// since `since`, the online rule the machines page applies one row at a time.
+// Users with none are left out.
+func (r *repository) CountOnlineMachinesPerUser(ctx context.Context, since time.Time) (map[int64]int, error) {
+	var rows []struct {
+		UserID int64
+		N      int
+	}
+	err := r.conn(ctx).Model(&model.Machine{}).
+		Select("user_id, count(*) as n").
+		Where("enabled = ? AND last_seen_at >= ?", true, since).
+		Group("user_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]int, len(rows))
+	for _, row := range rows {
+		out[row.UserID] = row.N
+	}
+	return out, nil
+}
+
 // RecordAvailableVersion stores a release a daemon has found, or clears it.
 //
 // A narrow update, like the other daemon-driven writes: these arrive while a

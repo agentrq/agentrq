@@ -102,6 +102,7 @@ type (
 		basePath         string
 		rootLoginEnabled bool
 		rootToken        string
+		adminLogins      loginAttempts
 		redirectDomains  []string
 		redirectHosts    map[string]struct{}
 		router           fiber.Router
@@ -168,6 +169,7 @@ func New(p Params) (Handler, error) {
 	// A public link carries its own credential; see registerPublicFileRoutes.
 	if p.Root != nil {
 		h.registerPublicFileRoutes(p.Root)
+		h.registerAdminRoutes(p.Root)
 	}
 
 	// Protected routes

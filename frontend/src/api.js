@@ -4,6 +4,8 @@
 
 const cleanBase = (window.__AGENTRQ_BASE_PATH__ || '').replace(/\/$/, '');
 export const API_BASE_URL = `${cleanBase}/api/v1`;
+// The operator's API, apart from the users': it takes the admin session.
+export const ADMIN_BASE_URL = `${cleanBase}/admin/v1`;
 
 import { createAuthedFetch } from './composables/useAuthedFetch';
 
@@ -1253,4 +1255,33 @@ export function recordTelemetry(action, workspaceId) {
     body: JSON.stringify({ action, workspaceId }),
     keepalive: true
   }).catch(() => {});
+}
+
+// The operator's admin session. Plain fetch rather than apiFetch: it is its own
+// short-lived token, set as a cookie from the root access token, so a 401 means
+// signed out of admin and there is no user session to renew.
+export async function adminLogin(rootToken) {
+  const res = await fetch(`${cleanBase}/auth/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rootToken })
+  });
+  if (res.status === 429) {
+    const minutes = Math.ceil(Number(res.headers.get('Retry-After') || 600) / 60);
+    throw new Error(`Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+  }
+  if (res.status === 401) throw new Error('Invalid root access token');
+  if (!res.ok) throw new Error('Failed to sign in');
+}
+
+export async function adminLogout() {
+  await fetch(`${cleanBase}/auth/admin/logout`, { method: 'POST' });
+}
+
+// The operator's per-user figures; null once the admin session has ended.
+export async function fetchAdminStats() {
+  const res = await fetch(`${ADMIN_BASE_URL}/stats`);
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error('Failed to fetch admin stats');
+  return res.json();
 }
