@@ -57,6 +57,7 @@ import (
 	"github.com/agentrq/agentrq/backend/internal/service/image"
 	"github.com/agentrq/agentrq/backend/internal/service/kv"
 	"github.com/agentrq/agentrq/backend/internal/service/latencyaggregator"
+	svclog "github.com/agentrq/agentrq/backend/internal/service/log"
 	"github.com/agentrq/agentrq/backend/internal/service/memq"
 	"github.com/agentrq/agentrq/backend/internal/service/pubsub"
 	svclimit "github.com/agentrq/agentrq/backend/internal/service/ratelimit"
@@ -190,6 +191,7 @@ func New(cfg Config) (*App, error) {
 	if cfg.App.DrainDelay < 0 {
 		return nil, fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
 	}
+	svclog.RouteLibraryLogs()
 	certStore, err := newCertStore(cfg.SSL.S3)
 	if err != nil {
 		return nil, err
@@ -630,7 +632,7 @@ func New(cfg Config) (*App, error) {
 
 	// ── Fiber & Routing ────────────────────────────────────────────────────────
 	fiberApp := fiber.New(fiber.Config{
-		DisableStartupMessage: false,
+		DisableStartupMessage: true,
 		BodyLimit:             4 * 1024 * 1024, // 4 MB
 	})
 	fiberApp.Use(cors.New(cors.Config{

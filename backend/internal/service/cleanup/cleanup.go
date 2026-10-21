@@ -16,6 +16,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 	zlog "github.com/rs/zerolog/log"
+
+	svclog "github.com/agentrq/agentrq/backend/internal/service/log"
 )
 
 type Config struct {
@@ -48,7 +50,7 @@ func New(cfg Config) (Service, error) {
 
 // Start registers a daily midnight UTC cron job that deletes old attachments.
 func (s *service) Start(ctx context.Context) {
-	c := cron.New()
+	c := cron.New(cron.WithLogger(svclog.Cron{}))
 	_, err := c.AddFunc("0 0 * * *", func() {
 		if err := s.RunOnce(context.Background()); err != nil {
 			zlog.Error().Err(err).Msg("cleanup: attachment cleanup failed")
