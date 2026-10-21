@@ -5,6 +5,7 @@
 package idgen
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -24,4 +25,17 @@ func TestIdgen(t *testing.T) {
 			t.Error("expected different IDs")
 		}
 	})
+}
+
+// monoflake keeps 10 bits of the node, so 1024 and up would alias a lower
+// node's ids; New refuses them instead.
+func TestNewRejectsANodeOutOfRange(t *testing.T) {
+	for _, node := range []uint16{MaxNodes, 1025, 65535} {
+		if _, err := New(node); err == nil || !strings.Contains(err.Error(), "must be 1-1023") {
+			t.Errorf("New(%d): %v, want an out-of-range error", node, err)
+		}
+	}
+	if _, err := New(MaxNodes - 1); err != nil {
+		t.Errorf("New(%d): %v, want no error", MaxNodes-1, err)
+	}
 }

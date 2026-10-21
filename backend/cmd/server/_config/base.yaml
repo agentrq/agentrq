@@ -137,6 +137,6 @@ s3:
 # otherwise. It is also what identifies this process when a daemon socket is
 # paired to an instance, so the same value has to be right for both reasons.
 # Unset, it is derived from the MAC address (a hash mod 1024), which can still
-# collide: set it per instance (1-1023) to be sure.
+# collide: set it per instance (1-1023) to be sure. 1024 or more stops startup.
 idgen:
   node: ${MONOFLAKE_NODE:}
