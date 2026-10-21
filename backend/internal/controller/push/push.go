@@ -173,9 +173,9 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		}
 		switch ev.Action {
 		case entity.ActionTaskCreate:
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskCreate, taskCreatePayload(c.basePath, ws.Name, workspaceIDStr, t))
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, ws.ContentID(), PushTypeTaskCreate, taskCreatePayload(c.basePath, ws.Name, workspaceIDStr, t))
 		case entity.ActionTaskUpdate, entity.ActionTaskComplete:
-			c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeTaskUpdate, taskStatusPayload(c.basePath, ws.Name, workspaceIDStr, t))
+			c.sendToUser(ctx, ownerID, ev.WorkspaceID, ws.ContentID(), PushTypeTaskUpdate, taskStatusPayload(c.basePath, ws.Name, workspaceIDStr, t))
 		}
 		return
 
@@ -195,7 +195,7 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		if err != nil {
 			return
 		}
-		c.sendToUser(ctx, ownerID, ev.WorkspaceID, PushTypeMessageCreate, replyPayload(c.basePath, workspaceIDStr, t, m))
+		c.sendToUser(ctx, ownerID, ev.WorkspaceID, ws.ContentID(), PushTypeMessageCreate, replyPayload(c.basePath, workspaceIDStr, t, m))
 		return
 
 	default:
@@ -264,9 +264,21 @@ func replyPayload(basePath, workspaceIDStr string, t model.Task, m model.Message
 	}
 }
 
-func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID int64, eventType string, payload pushPayload) {
+// sendToUser notifies the user's subscriptions for workspaceID. A fork has
+// none of its own — the browser subscribed on the parent's page — so when it has
+// no subscription, those of fallbackID (the parent; 0 or equal means none) are used.
+func (c *controller) sendToUser(ctx context.Context, userID int64, workspaceID, fallbackID int64, eventType string, payload pushPayload) {
 	subs, err := c.repo.ListPushSubscriptionsByUserAndWorkspace(ctx, userID, workspaceID)
-	if err != nil || len(subs) == 0 {
+	if err != nil {
+		return
+	}
+	if len(subs) == 0 && fallbackID != 0 && fallbackID != workspaceID {
+		subs, err = c.repo.ListPushSubscriptionsByUserAndWorkspace(ctx, userID, fallbackID)
+		if err != nil {
+			return
+		}
+	}
+	if len(subs) == 0 {
 		return
 	}
 

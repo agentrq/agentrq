@@ -381,7 +381,7 @@ func TestSendToUser_PrunesExpiredSubscription(t *testing.T) {
 				DeletePushSubscription(gomock.Any(), int64(7), srv.URL).
 				Return(nil)
 
-			c.sendToUser(context.Background(), 7, 3, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
+			c.sendToUser(context.Background(), 7, 3, 0, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
 		})
 	}
 }
@@ -403,7 +403,7 @@ func TestSendToUser_KeepsSubscriptionOnSuccess(t *testing.T) {
 			{Endpoint: srv.URL, P256dh: p256dh, Auth: auth, Types: PushTypeTaskCreate},
 		}, nil)
 
-	c.sendToUser(context.Background(), 7, 3, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
+	c.sendToUser(context.Background(), 7, 3, 0, PushTypeTaskCreate, pushPayload{Title: "hi", Body: "body"})
 }
 
 // ── processEvent ─────────────────────────────────────────────────────────────
@@ -602,4 +602,42 @@ func TestProcessEvent_TypeFiltering_SkipsNonMatchingSub(t *testing.T) {
 		Action:       entity.ActionTaskCreate,
 		Actor:        entity.ActorAgent,
 	})
+}
+
+func TestProcessEvent_Fork_FallsBackToParentSubscriptions(t *testing.T) {
+	c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
+	mockRepo.EXPECT().
+		SystemGetWorkspace(gomock.Any(), int64(10)).
+		Return(model.Workspace{ID: 10, UserID: 1, Name: "fork", ForkOfID: 4}, nil)
+	mockRepo.EXPECT().
+		SystemGetTask(gomock.Any(), int64(5)).
+		Return(model.Task{ID: 5, Title: "Fix bug"}, nil)
+	gomock.InOrder(
+		mockRepo.EXPECT().
+			ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(1), int64(10)).
+			Return([]model.PushSubscription{}, nil),
+		mockRepo.EXPECT().
+			ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(1), int64(4)).
+			Return([]model.PushSubscription{}, nil),
+	)
+
+	c.processEvent(context.Background(), entity.CRUDEvent{
+		WorkspaceID:  10,
+		ResourceType: entity.ResourceTask,
+		ResourceID:   5,
+		Action:       entity.ActionTaskCreate,
+		Actor:        entity.ActorAgent,
+	})
+}
+
+func TestSendToUser_FallbackListError(t *testing.T) {
+	c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
+	mockRepo.EXPECT().
+		ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(1), int64(10)).
+		Return(nil, nil)
+	mockRepo.EXPECT().
+		ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(1), int64(4)).
+		Return(nil, errors.New("boom"))
+
+	c.sendToUser(context.Background(), 1, 10, 4, PushTypeTaskCreate, pushPayload{Title: "hi"})
 }
