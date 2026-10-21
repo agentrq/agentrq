@@ -1200,6 +1200,7 @@ func TestDeleteTask_Success(t *testing.T) {
 	}
 	e.repo.EXPECT().GetWorkspace(gomock.Any(), int64(1), testUserID).Return(activeWorkspace(), nil)
 	e.repo.EXPECT().GetTask(gomock.Any(), int64(1), int64(10), testUserID).Return(task, nil)
+	e.repo.EXPECT().ListPanoDocIDsOfTask(gomock.Any(), testUserID, int64(10)).Return(nil, nil)
 	e.repo.EXPECT().DeleteTask(gomock.Any(), int64(1), int64(10), testUserID).Return(nil)
 	e.storage.EXPECT().Delete(storage.AttachmentKey(1, 10, "a1")).Return(nil)
 	e.storage.EXPECT().Delete(storage.AttachmentKey(1, 10, "a2")).Return(nil)

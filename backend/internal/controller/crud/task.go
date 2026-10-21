@@ -827,11 +827,17 @@ func (c *controller) DeleteTask(ctx context.Context, req entity.DeleteTaskReques
 		}
 	}
 
+	// The delete unlinks the task from its Pano docs, so read them first.
+	// Best effort: a doc's count is recounted on its next save anyway.
+	docIDs, _ := c.repository.ListPanoDocIDsOfTask(ctx, uid, req.TaskID)
+
 	// 2. Delete from DB (repository handles cascaded message delete)
 	err = c.repository.DeleteTask(ctx, req.WorkspaceID, req.TaskID, uid)
 	if err != nil {
 		return nil, err
 	}
+	// Its items lose their assignee, so their docs' counts are recounted.
+	_, _ = c.syncPanoDocs(ctx, uid, docIDs)
 	c.emitEvent(ctx, entity.CRUDEvent{
 		Action:       entity.ActionTaskDelete,
 		WorkspaceID:  req.WorkspaceID,

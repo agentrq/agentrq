@@ -21,6 +21,8 @@
   the task's, laid over the markdown on read, list, edit and save
   (`panoOverlay`), so the stored text can be stale and its box is read-only. The
   count sync uses `UpdateColumn`: stamped as a save, it would reorder the board.
+  An item whose task is not among the doc's (deleted, or never the account's)
+  loses its assignee there; a task delete recounts its docs, which it unlinks.
 - **A doc's tasks are rows in `pano_doc_tasks`, never markdown**: from an
   assigned item, a `#`-tagged chat (`panoDocId`), or an agent's write while it
   has exactly one ongoing task, since a guess between two would mislink. The

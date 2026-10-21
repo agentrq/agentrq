@@ -757,8 +757,9 @@ func TestPanoOverlay(t *testing.T) {
 		{"every item of one task follows it", "- [ ] a → [@api](" + path + ")\n- [ ] b → [@api](" + path + ` "notstarted")`, "completed",
 			"- [x] a → [@api](" + path + ` "completed")` + "\n- [x] b → [@api](" + path + ` "completed")`},
 		{"an unassigned item is the writer's own", "- [x] mine\n- [ ] ship → [@api](" + path + ")", "ongoing", "- [x] mine\n- [ ] ship → [@api](" + path + ` "ongoing")`},
-		{"another task's item is left", "- [x] ship → [@api](" + panoTaskPath(ws, other) + ")", "completed", "- [x] ship → [@api](" + panoTaskPath(ws, other) + ")"},
-		{"the task under another workspace's path is left", "- [ ] ship → [@api](" + panoTaskPath(99, task) + ")", "completed", "- [ ] ship → [@api](" + panoTaskPath(99, task) + ")"},
+		{"another task's item loses its assignee", "- [x] ship → [@api](" + panoTaskPath(ws, other) + ` "notstarted")`, "completed", "- [x] ship"},
+		{"the task under another workspace's path loses it too", "- [ ] ship → [@api](" + panoTaskPath(99, task) + ")  ", "completed", "- [ ] ship"},
+		{"a plain link to another task is left", "- [ ] read [it](" + panoTaskPath(ws, other) + ")", "completed", "- [ ] read [it](" + panoTaskPath(ws, other) + ")"},
 		{"a link that is not an item is left", "see [@api](" + path + ")", "completed", "see [@api](" + path + ")"},
 		{"fenced code is text", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~", "completed", "```\n- [ ] ship → [@api](" + path + ")\n```\n~~~\n~~~"},
 	} {
@@ -766,8 +767,8 @@ func TestPanoOverlay(t *testing.T) {
 			t.Errorf("%s: panoOverlay = %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	if got := panoOverlay("- [ ] ship → [@api]("+path+")", nil); got != "- [ ] ship → [@api]("+path+")" {
-		t.Errorf("with no tasks panoOverlay = %q, want the markdown as it was", got)
+	if got := panoOverlay("- [x] ship → [@api]("+path+` "completed")`, nil); got != "- [x] ship" {
+		t.Errorf("with no tasks panoOverlay = %q, want the item without its assignee", got)
 	}
 }
 
@@ -823,7 +824,7 @@ func TestPano_SaveLinksAssignedTasks(t *testing.T) {
 	want := "- [ ] a → [@alpha](" + panoTaskPath(skWS, 7001) + ` "ongoing")` + "\n" +
 		"- [x] b → [@alpha](" + panoTaskPath(skWS, 7002) + ` "completed")` + "\n" +
 		"- [x] c → [@alpha](" + panoTaskPath(skWS, 7002) + ` "completed")` + "\n" +
-		taskItem("x", theirs) + "\n- [x] mine"
+		"- [ ] x\n- [x] mine"
 	if doc.Markdown != want || doc.ChecklistDone != 3 || doc.ChecklistTotal != 5 {
 		t.Errorf("the saved doc is %q, %d of %d, want %q, 3 of 5", doc.Markdown, doc.ChecklistDone, doc.ChecklistTotal, want)
 	}
@@ -842,8 +843,9 @@ func TestPano_SaveLinksAssignedTasks(t *testing.T) {
 		t.Errorf("after a second save there are %d links, want 2", len(links))
 	}
 	e.db.Delete(&model.Task{}, 7002)
-	if got := e.get(t, doc.ID); len(got.Tasks) != 1 || got.Tasks[0].TaskID != 7001 {
-		t.Errorf("after deleting a task the read returns %+v, want only the task left", got.Tasks)
+	wantLeft := "- [ ] a → [@alpha](" + panoTaskPath(skWS, 7001) + ` "ongoing")` + "\n- [x] b\n- [x] c\n- [ ] x\n- [x] mine"
+	if got := e.get(t, doc.ID); len(got.Tasks) != 1 || got.Tasks[0].TaskID != 7001 || got.Markdown != wantLeft {
+		t.Errorf("after deleting a task the read returns %+v and %q, want only the task left and %q", got.Tasks, got.Markdown, wantLeft)
 	}
 
 	// Deleting the doc deletes its links.
@@ -1001,6 +1003,32 @@ func TestPano_SyncTask(t *testing.T) {
 			t.Error("SyncPanoTask returned no error, want the injected failure")
 		}
 	})
+}
+
+// Deleting a task unassigns its items: they read as the writer's own, and
+// their docs' counts follow, so a completed task deleted leaves no tick behind.
+func TestPano_DeleteTaskUnassignsItems(t *testing.T) {
+	e := newPanoEnv(t)
+	if err := e.db.AutoMigrate(&model.Message{}, &model.ToolCall{}, &model.TaskPlan{}, &model.SlackTaskThread{}, &model.TaskStateTransition{}); err != nil {
+		t.Fatal(err)
+	}
+	tasks := e.panoTasks(t, "ongoing", "ongoing")
+	doc := e.save(t, entity.SavePanoDocRequest{Title: "Launch", Markdown: taskItem("ship", tasks[0]) + "\n" + taskItem("docs", tasks[1])})
+	e.db.Model(&model.Task{}).Where("id = ?", tasks[0].ID).Update("status", "completed")
+	if _, _, err := e.c.SyncPanoTask(e.ctx, tasks[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := e.c.DeleteTask(e.ctx, entity.DeleteTaskRequest{WorkspaceID: skWS, TaskID: tasks[0].ID, UserID: skUserStr}); err != nil {
+		t.Fatal(err)
+	}
+	want := "- [ ] ship\n- [ ] docs → [@alpha](" + panoTaskPath(skWS, tasks[1].ID) + ` "ongoing")`
+	if got := e.get(t, doc.ID); got.Markdown != want || got.ChecklistDone != 0 || got.Version != doc.Version {
+		t.Errorf("after deleting the task the doc is %q, %d done, version %d, want %q, none done, version %d", got.Markdown, got.ChecklistDone, got.Version, want, doc.Version)
+	}
+	if links := e.links(t); len(links) != 1 || links[0].TaskID != tasks[1].ID {
+		t.Errorf("links = %+v, want only the task left", links)
+	}
 }
 
 // failingDocTasks fails reading a doc's tasks, and nothing else.
