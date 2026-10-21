@@ -509,6 +509,57 @@ func TestProcessEvent_MessageCreate_AgentSender(t *testing.T) {
 	})
 }
 
+func TestProcessEvent_MessageCreate_AgentTelemetry_NoNotification(t *testing.T) {
+	for _, kind := range []string{"agent_thought", "agent_plan", "agent_usage"} {
+		t.Run(kind, func(t *testing.T) {
+			c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
+			mockRepo.EXPECT().
+				SystemGetWorkspace(gomock.Any(), int64(10)).
+				Return(model.Workspace{ID: 10, UserID: 1, Name: "ws"}, nil)
+			mockRepo.EXPECT().
+				SystemGetMessage(gomock.Any(), int64(20)).
+				Return(model.Message{ID: 20, TaskID: 5, Sender: "agent", Text: "hmm", Metadata: []byte(`{"type":"` + kind + `"}`)}, nil)
+			// ListPushSubscriptions must NOT be called for agent telemetry
+
+			c.processEvent(context.Background(), entity.CRUDEvent{
+				WorkspaceID:  10,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   20,
+				Action:       entity.ActionMessageCreate,
+				Actor:        entity.ActorAgent,
+			})
+		})
+	}
+}
+
+func TestProcessEvent_MessageCreate_AgentNoticeOrOtherMetadata_Notifies(t *testing.T) {
+	for _, metadata := range []string{`{"type":"agent_notice"}`, `not json`} {
+		t.Run(metadata, func(t *testing.T) {
+			c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
+			mockRepo.EXPECT().
+				SystemGetWorkspace(gomock.Any(), int64(10)).
+				Return(model.Workspace{ID: 10, UserID: 1, Name: "ws"}, nil)
+			mockRepo.EXPECT().
+				SystemGetMessage(gomock.Any(), int64(20)).
+				Return(model.Message{ID: 20, TaskID: 5, Sender: "agent", Text: "rate limited", Metadata: []byte(metadata)}, nil)
+			mockRepo.EXPECT().
+				SystemGetTask(gomock.Any(), int64(5)).
+				Return(model.Task{ID: 5, Title: "Fix bug"}, nil)
+			mockRepo.EXPECT().
+				ListPushSubscriptionsByUserAndWorkspace(gomock.Any(), int64(1), int64(10)).
+				Return([]model.PushSubscription{}, nil)
+
+			c.processEvent(context.Background(), entity.CRUDEvent{
+				WorkspaceID:  10,
+				ResourceType: entity.ResourceMessage,
+				ResourceID:   20,
+				Action:       entity.ActionMessageCreate,
+				Actor:        entity.ActorAgent,
+			})
+		})
+	}
+}
+
 func TestProcessEvent_MessageCreate_HumanSender_NoNotification(t *testing.T) {
 	c, mockRepo, _ := newTestController(t, Config{VAPIDPublicKey: "pub", VAPIDPrivateKey: "priv"})
 	mockRepo.EXPECT().

@@ -187,8 +187,8 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 		if err != nil {
 			return
 		}
-		// Only notify on agent replies
-		if m.Sender != "agent" {
+		// Only notify on agent replies, and not on the agent's own telemetry
+		if m.Sender != "agent" || isSilentTelemetry(m) {
 			return
 		}
 		t, err := c.repo.SystemGetTask(ctx, m.TaskID)
@@ -201,6 +201,25 @@ func (c *controller) processEvent(ctx context.Context, ev entity.CRUDEvent) {
 	default:
 		return
 	}
+}
+
+// silentTelemetryTypes are the agent telemetry message types that never
+// notify: the agent working, not saying anything. A notice still does.
+var silentTelemetryTypes = map[string]bool{
+	"agent_thought": true,
+	"agent_plan":    true,
+	"agent_usage":   true,
+}
+
+// isSilentTelemetry reports whether m is agent telemetry that should not notify.
+func isSilentTelemetry(m model.Message) bool {
+	var meta struct {
+		Type string `json:"type"`
+	}
+	if len(m.Metadata) == 0 || json.Unmarshal(m.Metadata, &meta) != nil {
+		return false
+	}
+	return silentTelemetryTypes[meta.Type]
 }
 
 // taskURL is the path a task-related notification opens on click. It must
