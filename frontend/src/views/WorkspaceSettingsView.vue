@@ -957,7 +957,7 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, resetWorkspaceId, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
+import { API_BASE_URL, getWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace, deleteWorkspace, resetWorkspaceId, getWorkspaceToken, setWorkspaceSlackChannel, removeWorkspaceSlackChannel } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { usePushNotifications } from '../composables/usePushNotifications';
 import { usePlatformStore } from '../stores/platformStore';
@@ -1153,7 +1153,7 @@ async function refreshPushStatus() {
 async function initPushAvailability() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   try {
-    const res = await fetch('/api/v1/push/vapid-public-key');
+    const res = await fetch(`${API_BASE_URL}/push/vapid-public-key`);
     if (!res.ok) return;
     const data = await res.json();
     isPushAvailable.value = !!data.publicKey;
