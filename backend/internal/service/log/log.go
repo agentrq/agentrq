@@ -5,6 +5,7 @@
 package log
 
 import (
+	"os"
 	"time"
 
 	"github.com/agentrq/agentrq/backend/internal/service/config"
@@ -12,28 +13,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type (
-	Params struct {
-		Config config.Service
-	}
-
-	Service interface {
-	}
-
-	service struct {
-	}
-)
-
-func New(p Params) (Service, error) {
+// Setup makes zlog's global logger stamp every line with the app's name,
+// version and environment and a UTC time, and routes library logs to it.
+// It starts from a fresh logger, so calling it again adds no fields twice.
+func Setup(cfg config.Service) {
 	zerolog.TimestampFunc = func() time.Time {
 		return time.Now().UTC()
 	}
 	zerolog.DurationFieldUnit = time.Millisecond
-	log.Logger = log.With().
-		Str("name", p.Config.AppShortName()).
-		Str("version", p.Config.Version()).
-		Str("env", p.Config.Env()).
+	log.Logger = zerolog.New(os.Stderr).With().
+		Timestamp().
+		Str("name", cfg.AppShortName()).
+		Str("version", cfg.Version()).
+		Str("env", cfg.Env()).
 		Logger()
-
-	return &service{}, nil
+	RouteLibraryLogs()
 }

@@ -191,7 +191,6 @@ func New(cfg Config) (*App, error) {
 	if cfg.App.DrainDelay < 0 {
 		return nil, fmt.Errorf("app.drainDelay: %s is negative", cfg.App.DrainDelay)
 	}
-	svclog.RouteLibraryLogs()
 	certStore, err := newCertStore(cfg.SSL.S3)
 	if err != nil {
 		return nil, err
@@ -232,6 +231,8 @@ func New(cfg Config) (*App, error) {
 			cancelOnErr()
 		}
 	}()
+
+	svclog.Setup(cfg.ConfigSvc)
 
 	// ── Database (config-driven) ──────────────────────────────────────────
 	db, err := openDatabase(cfg.ConfigSvc)
