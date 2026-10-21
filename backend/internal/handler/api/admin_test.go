@@ -159,23 +159,21 @@ func TestAdminLogin_AllowsOneTryPerClientInTheWindow(t *testing.T) {
 	}
 }
 
-// Only a proxy on the host or the private network is believed, and only for
-// the hop it wrote itself: the last X-Forwarded-For entry, which the client
-// cannot choose, then X-Real-IP.
-func TestForwardedClient_BelievesOnlyTheNearestPrivateProxy(t *testing.T) {
+// X-Real-IP is believed only from a proxy on the host or the private network,
+// which writes it itself; X-Forwarded-For is never read.
+func TestProxiedClient_BelievesOnlyAPrivateProxysRealIP(t *testing.T) {
 	for name, tc := range map[string]struct {
-		peer, forwardedFor, realIP, want string
+		peer, realIP, want string
 	}{
-		"a public peer's own headers are ignored":     {"203.0.113.7", "198.51.100.1", "198.51.100.2", "203.0.113.7"},
-		"a public IPv6 peer is named as it is":        {"2001:db8::1", "198.51.100.1", "", "2001:db8::1"},
-		"a loopback proxy's last hop is the client":   {"127.0.0.1", "198.51.100.1, 203.0.113.9", "", "203.0.113.9"},
-		"an IPv6 loopback proxy is believed too":      {"::1", " 203.0.113.9 ", "", "203.0.113.9"},
-		"a private proxy's forwarded-for comes first": {"10.0.0.5", "203.0.113.9", "198.51.100.2", "203.0.113.9"},
-		"a private proxy's real-ip is the fallback":   {"192.168.1.2", "", "203.0.113.9", "203.0.113.9"},
-		"a private peer with no headers is itself":    {"172.16.0.3", "", "", "172.16.0.3"},
+		"a public peer's own header is ignored":   {"203.0.113.7", "198.51.100.2", "203.0.113.7"},
+		"a public IPv6 peer is named as it is":    {"2001:db8::1", "198.51.100.2", "2001:db8::1"},
+		"a loopback proxy names the client":       {"127.0.0.1", "203.0.113.9", "203.0.113.9"},
+		"an IPv6 loopback proxy is believed too":  {"::1", "203.0.113.9", "203.0.113.9"},
+		"a private proxy names the client":        {"10.0.0.5", "203.0.113.9", "203.0.113.9"},
+		"a private peer with no header is itself": {"172.16.0.3", "", "172.16.0.3"},
 	} {
-		if got := forwardedClient(net.ParseIP(tc.peer), tc.forwardedFor, tc.realIP); got != tc.want {
-			t.Errorf("%s: forwardedClient named %q, want %q", name, got, tc.want)
+		if got := proxiedClient(net.ParseIP(tc.peer), tc.realIP); got != tc.want {
+			t.Errorf("%s: proxiedClient named %q, want %q", name, got, tc.want)
 		}
 	}
 }

@@ -67,21 +67,15 @@ func (l *loginAttempts) allow(key string, now time.Time, window time.Duration) (
 
 // clientIP names the client the sign-in throttle counts tries for.
 func clientIP(c *fiber.Ctx) string {
-	return forwardedClient(c.Context().RemoteIP(), c.Get(fiber.HeaderXForwardedFor), c.Get("X-Real-IP"))
+	return proxiedClient(c.Context().RemoteIP(), c.Get("X-Real-IP"))
 }
 
-// forwardedClient believes forwarding headers only from a proxy on a loopback
-// or private address, and only the hop that proxy wrote: the last
-// X-Forwarded-For entry, then X-Real-IP. Anything else is what the client
-// sent, so trusting it would give every try a fresh key.
-func forwardedClient(peer net.IP, forwardedFor, realIP string) string {
-	if !peer.IsLoopback() && !peer.IsPrivate() {
-		return peer.String()
-	}
-	if forwardedFor != "" {
-		return strings.TrimSpace(forwardedFor[strings.LastIndexByte(forwardedFor, ',')+1:])
-	}
-	if realIP != "" {
+// proxiedClient believes X-Real-IP only from a proxy on a loopback or private
+// address, which sets it itself; from anyone else it is whatever the client
+// sent. X-Forwarded-For is never read: the client writes its first entries,
+// and trusting them gave every try a fresh key.
+func proxiedClient(peer net.IP, realIP string) string {
+	if realIP != "" && (peer.IsLoopback() || peer.IsPrivate()) {
 		return realIP
 	}
 	return peer.String()
