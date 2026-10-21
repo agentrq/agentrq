@@ -35,7 +35,7 @@ test('the operator signs in with the root token and sees the open agent streams'
   const traffic = watchTraffic(page)
   // One sign-in attempt per client every ten minutes: a client of its own, so
   // a rerun against a reused server is not refused for the last run's.
-  await page.setExtraHTTPHeaders({ 'X-Forwarded-For': `qa-${Date.now()}` })
+  await page.setExtraHTTPHeaders({ 'X-Real-IP': `qa-${Date.now()}` })
 
   // A signed-in user, even the root user, is not the operator.
   expect((await page.request.get(STATS)).status(), 'the admin API with only a user session').toBe(401)
@@ -75,7 +75,7 @@ test('the operator signs in with the root token and sees the open agent streams'
   await expect(page).toHaveURL(/\/admin\/login$/)
 
   // Another client still gets its try, and a wrong token is refused.
-  const wrong = await page.request.post(LOGIN, { headers: { 'X-Forwarded-For': `qa-other-${Date.now()}` }, data: { rootToken: 'not-the-token' } })
+  const wrong = await page.request.post(LOGIN, { headers: { 'X-Real-IP': `qa-other-${Date.now()}` }, data: { rootToken: 'not-the-token' } })
   expect(wrong.status(), 'a wrong root token').toBe(401)
   traffic.expectClean()
 })
