@@ -1,6 +1,6 @@
 module github.com/agentrq/agentrq/daemon
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/aymanbagabas/go-pty v0.2.3

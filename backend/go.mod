@@ -1,6 +1,6 @@
 module github.com/agentrq/agentrq/backend
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
@@ -25,7 +25,7 @@ require (
 	github.com/slack-go/slack v0.29.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/image v0.46.0
-	golang.org/x/net v0.58.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/datatypes v1.2.7
