@@ -102,6 +102,10 @@ type fakeWorkspaceServer struct {
 	notifiedTaskID      int64
 	notifiedContent     string
 	notifiedAttachments []entity.Attachment
+
+	// archivedAt is the last UpdateArchivedAt value; archivedAtCalls counts them.
+	archivedAt      *time.Time
+	archivedAtCalls int
 }
 
 func (f *fakeWorkspaceServer) SetAgentModel(ctx context.Context, modelID string) error {
@@ -150,7 +154,11 @@ func (f *fakeWorkspaceServer) RespondToElicitation(requestID, action string, con
 	return f.elicitErr
 }
 
-func (f *fakeWorkspaceServer) UpdateArchivedAt(at *time.Time)                {}
+func (f *fakeWorkspaceServer) UpdateArchivedAt(at *time.Time) {
+	f.archivedAtCalls++
+	f.archivedAt = at
+}
+
 func (f *fakeWorkspaceServer) UpdateMetadata(name, description, icon string) {}
 func (f *fakeWorkspaceServer) UpdateAutoAllowedTools(tools []string)         { f.autoAllowedCalls++ }
 

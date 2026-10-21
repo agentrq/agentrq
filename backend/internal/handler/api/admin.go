@@ -7,6 +7,7 @@ package api
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,17 +65,26 @@ func (l *loginAttempts) allow(key string, now time.Time, window time.Duration) (
 	return true, 0
 }
 
-// clientIP names the client the way the request rate limiter does: the first
-// X-Forwarded-For entry, then X-Real-IP, then the connection's own address.
+// clientIP names the client the sign-in throttle counts tries for.
 func clientIP(c *fiber.Ctx) string {
-	if xff := c.Get(fiber.HeaderXForwardedFor); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
+	return forwardedClient(c.Context().RemoteIP(), c.Get(fiber.HeaderXForwardedFor), c.Get("X-Real-IP"))
+}
+
+// forwardedClient believes forwarding headers only from a proxy on a loopback
+// or private address, and only the hop that proxy wrote: the last
+// X-Forwarded-For entry, then X-Real-IP. Anything else is what the client
+// sent, so trusting it would give every try a fresh key.
+func forwardedClient(peer net.IP, forwardedFor, realIP string) string {
+	if !peer.IsLoopback() && !peer.IsPrivate() {
+		return peer.String()
 	}
-	if xri := c.Get("X-Real-IP"); xri != "" {
-		return xri
+	if forwardedFor != "" {
+		return strings.TrimSpace(forwardedFor[strings.LastIndexByte(forwardedFor, ',')+1:])
 	}
-	return c.IP()
+	if realIP != "" {
+		return realIP
+	}
+	return peer.String()
 }
 
 // registerAdminRoutes adds the operator's routes, apart from the users' API:

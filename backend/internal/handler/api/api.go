@@ -1067,6 +1067,11 @@ func (h *handler) archiveWorkspace() fiber.Handler {
 			c.Status(status)
 			return c.Send(e)
 		}
+		// Refresh MCP server state if running, so its poller stops offering tasks
+		if srv := h.mcpManager.Get(workspaceID, userID); srv != nil {
+			now := time.Now()
+			srv.UpdateArchivedAt(&now)
+		}
 		c.Status(http.StatusOK)
 		return c.JSON(fiber.Map{"status": "archived"})
 	}

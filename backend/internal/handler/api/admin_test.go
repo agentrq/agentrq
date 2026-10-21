@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -148,16 +149,34 @@ func TestAdminLogin_AllowsOneTryPerClientInTheWindow(t *testing.T) {
 	}
 
 	for name, header := range map[string]map[string]string{
-		"another forwarded client": {"X-Forwarded-For": "203.0.113.8"},
-		"a real-ip client":         {"X-Real-IP": "198.51.100.2"},
-		"the connection itself":    nil,
+		"a forwarded-for header of its own": {"X-Forwarded-For": "203.0.113.8"},
+		"a real-ip header of its own":       {"X-Real-IP": "198.51.100.2"},
+		"no header":                         nil,
 	} {
-		if resp, _ := adminLogin(t, app, "s3cret", header); resp.StatusCode != http.StatusOK {
-			t.Errorf("%s: its first try answered %d, want 200", name, resp.StatusCode)
+		if resp, _ := adminLogin(t, app, "s3cret", header); resp.StatusCode != http.StatusTooManyRequests {
+			t.Errorf("the same connection with %s answered %d, want 429: headers it sets itself must not buy another try", name, resp.StatusCode)
 		}
 	}
-	if resp, _ := adminLogin(t, app, "s3cret", map[string]string{"X-Real-IP": "198.51.100.2"}); resp.StatusCode != http.StatusTooManyRequests {
-		t.Errorf("a real-ip client's second try answered %d, want 429", resp.StatusCode)
+}
+
+// Only a proxy on the host or the private network is believed, and only for
+// the hop it wrote itself: the last X-Forwarded-For entry, which the client
+// cannot choose, then X-Real-IP.
+func TestForwardedClient_BelievesOnlyTheNearestPrivateProxy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		peer, forwardedFor, realIP, want string
+	}{
+		"a public peer's own headers are ignored":     {"203.0.113.7", "198.51.100.1", "198.51.100.2", "203.0.113.7"},
+		"a public IPv6 peer is named as it is":        {"2001:db8::1", "198.51.100.1", "", "2001:db8::1"},
+		"a loopback proxy's last hop is the client":   {"127.0.0.1", "198.51.100.1, 203.0.113.9", "", "203.0.113.9"},
+		"an IPv6 loopback proxy is believed too":      {"::1", " 203.0.113.9 ", "", "203.0.113.9"},
+		"a private proxy's forwarded-for comes first": {"10.0.0.5", "203.0.113.9", "198.51.100.2", "203.0.113.9"},
+		"a private proxy's real-ip is the fallback":   {"192.168.1.2", "", "203.0.113.9", "203.0.113.9"},
+		"a private peer with no headers is itself":    {"172.16.0.3", "", "", "172.16.0.3"},
+	} {
+		if got := forwardedClient(net.ParseIP(tc.peer), tc.forwardedFor, tc.realIP); got != tc.want {
+			t.Errorf("%s: forwardedClient named %q, want %q", name, got, tc.want)
+		}
 	}
 }
 
