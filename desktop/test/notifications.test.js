@@ -90,7 +90,7 @@ describe('mapEventToNotification', () => {
     expect(mapEventToNotification(event('task.created'), names)).toEqual({
       title: 'New task: Ship the desktop app',
       body: 'agentrq-code',
-      route: '/workspaces/0ZzhYQG2qtl',
+      route: '/workspaces/0ZzhYQG2qtl/tasks/0hua6QI7nXN',
       tag: 'task-create-0hua6QI7nXN',
     })
   })
@@ -98,7 +98,7 @@ describe('mapEventToNotification', () => {
   it('words a status change with the status in caps', () => {
     expect(mapEventToNotification(event('status.updated', { status: 'completed' }), names)).toMatchObject({
       title: 'Task COMPLETED: Ship the desktop app',
-      route: '/workspaces/0ZzhYQG2qtl',
+      route: '/workspaces/0ZzhYQG2qtl/tasks/0hua6QI7nXN',
       tag: 'task-status-0hua6QI7nXN',
     })
   })
@@ -107,7 +107,7 @@ describe('mapEventToNotification', () => {
     expect(mapEventToNotification(event('task.updated'), names).title).toBe('Task ONGOING: Ship the desktop app')
   })
 
-  it('routes a reply to the task itself, not the workspace', () => {
+  it('routes every notification to the task itself, not the workspace', () => {
     expect(mapEventToNotification(event('reply.received'), names)).toEqual({
       title: 'Reply on: Ship the desktop app',
       body: 'agentrq-code',
