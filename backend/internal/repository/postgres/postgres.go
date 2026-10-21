@@ -55,7 +55,7 @@ var ErrDisabled = errors.New("postgres repository is not enabled")
 
 var (
 	openDB = func(dsn string) (*gorm.DB, error) {
-		return gorm.Open(postgres.New(postgres.Config{DSN: dsn}), &gorm.Config{TranslateError: true})
+		return gorm.Open(postgres.New(postgres.Config{DSN: dsn}), &gorm.Config{TranslateError: true, Logger: dbconn.Logger})
 	}
 	sleep = time.Sleep
 )

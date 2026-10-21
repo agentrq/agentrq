@@ -61,7 +61,7 @@ func New(p Params) (dbconn.DBConn, error) {
 		return nil, fmt.Errorf(_logPrefix+"failed to create the database folder: %w", err)
 	}
 
-	db, err := gorm.Open(sqlite.Open(withConcurrencyPragmas(cfg.DSN)), &gorm.Config{TranslateError: true})
+	db, err := gorm.Open(sqlite.Open(withConcurrencyPragmas(cfg.DSN)), &gorm.Config{TranslateError: true, Logger: dbconn.Logger})
 	if err != nil {
 		return nil, fmt.Errorf(_logPrefix+"failed to connect: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/agentrq/agentrq/backend/internal/repository/dbconn"
 	"github.com/agentrq/agentrq/backend/internal/service/config"
 )
 
@@ -38,6 +39,9 @@ func TestNewCreatesTheDatabaseFolder(t *testing.T) {
 	defer conn.Close(t.Context())
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("database file: %v", err)
+	}
+	if conn.Conn(t.Context()).Logger != dbconn.Logger {
+		t.Error("the connection does not use the shared logger")
 	}
 }
 
