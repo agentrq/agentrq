@@ -218,6 +218,21 @@ describe('who the payload says spoke', () => {
   // A message row carrying no id names nothing, so the task-shaped tag stands
   // rather than every such event colliding on one empty tag and being deduped
   // into silence.
+  it.each(['agent_thought', 'agent_plan', 'agent_usage'])('says nothing about the agent posting %s', (kind) => {
+    const messages = [{ id: 'm1', sender: 'agent', text: 'hmm', metadata: { type: kind } }]
+
+    expect(mapEventToNotification(withMessages('reply.received', messages))).toBeNull()
+    expect(mapEventToNotification(withMessages('task.updated', messages))).toBeNull()
+  })
+
+  it('still announces an agent notice, and a task completing after a thought', () => {
+    const notice = [{ id: 'm1', sender: 'agent', text: 'rate limited', metadata: { type: 'agent_notice' } }]
+    const thought = [{ id: 'm2', sender: 'agent', text: 'hmm', metadata: { type: 'agent_thought' } }]
+
+    expect(mapEventToNotification(withMessages('reply.received', notice))?.title).toContain('Reply on: Ship it')
+    expect(mapEventToNotification(withMessages('status.updated', thought, { status: 'completed' }))?.title).toBe('Task COMPLETED: Ship it')
+  })
+
   it('keeps a tag of its own when the newest message has no id', () => {
     const event = withMessages('reply.received', [{ sender: 'agent', text: 'done' }])
 

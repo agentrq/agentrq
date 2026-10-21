@@ -64,7 +64,24 @@ export function shouldNotify(event, { mutedWorkspaces = [] } = {}) {
   const actor = sender || (event.type === 'reply.received' ? 'agent' : task.createdBy)
   if (actor !== 'agent') return false
 
+  // The agent's reasoning, plan and usage counters are messages too, and each
+  // one republishes its task. They are the agent working, not saying anything.
+  if (MESSAGE_ECHO_TYPES.has(event.type) && SILENT_TELEMETRY_TYPES.has(lastMessageType(task))) return false
+
   return !mutedWorkspaces.includes(task.workspaceId)
+}
+
+/** Events a new message on the task publishes. */
+const MESSAGE_ECHO_TYPES = new Set(['reply.received', 'task.updated'])
+
+/** Agent telemetry metadata types that never notify. A notice still does. */
+const SILENT_TELEMETRY_TYPES = new Set(['agent_thought', 'agent_plan', 'agent_usage'])
+
+/** The metadata type of the newest message on a task, or '' when it has none. */
+function lastMessageType(task) {
+  const messages = task?.messages
+  if (!Array.isArray(messages) || messages.length === 0) return ''
+  return String(messages[messages.length - 1]?.metadata?.type ?? '')
 }
 
 /**
