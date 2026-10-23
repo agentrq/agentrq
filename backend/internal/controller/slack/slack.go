@@ -648,7 +648,7 @@ func (c *controller) HandleSlashCommand(ctx context.Context, channelID string, t
 		}
 
 		if shouldNotifyMCP {
-			content := fmt.Sprintf("[Task %s] %s\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Title, resp.Task.Body)
+			content := fmt.Sprintf("[Task %s]\n%s", monoflake.ID(resp.Task.ID).String(), resp.Task.Body)
 			if atts := formatSlackAttachments(resp.Task.Attachments); atts != "" {
 				content += "\n" + atts
 			}

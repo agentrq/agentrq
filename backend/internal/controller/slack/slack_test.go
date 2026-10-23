@@ -90,6 +90,7 @@ type mockMCP struct {
 		requestID   string
 		behavior    string
 	}
+	pushed string
 }
 
 func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, userID string, taskID int64, requestID, behavior string) error {
@@ -104,6 +105,7 @@ func (m *mockMCP) SendPermissionVerdict(ctx context.Context, workspaceID int64, 
 }
 
 func (m *mockMCP) SendChannelNotification(ctx context.Context, workspaceID int64, userID string, taskID int64, content string, attachments ...entity.Attachment) {
+	m.pushed = content
 }
 
 type mockTokenSvc struct {
@@ -265,7 +267,7 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	crud := &mockCRUD{
 		createTaskFunc: func(ctx context.Context, req entity.CreateTaskRequest) (*entity.CreateTaskResponse, error) {
 			capturedReq = req
-			return &entity.CreateTaskResponse{}, nil
+			return &entity.CreateTaskResponse{Task: entity.Task{ID: 7, Title: req.Task.Title, Body: req.Task.Body}}, nil
 		},
 	}
 
@@ -304,6 +306,10 @@ func TestHandleSlashCommand_Success_QuotedBoth(t *testing.T) {
 	}
 	if capturedReq.Task.Body != "Description goes in second quotes here" {
 		t.Errorf("expected parsed Body, got %q", capturedReq.Task.Body)
+	}
+	// The agent is handed the task by ID and body; the title stays out.
+	if want := "[Task " + monoflake.ID(7).String() + "]\nDescription goes in second quotes here"; mcp.pushed != want {
+		t.Errorf("pushed %q, want %q", mcp.pushed, want)
 	}
 }
 

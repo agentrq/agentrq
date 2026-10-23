@@ -224,9 +224,8 @@ It and `robots.txt` are public on the `mcp.` host too, which answers every
 other path with the supervisor endpoint, so a new public file there needs its
 own route.
 
-## An untitled task reaches the agent without its title
+## A task reaches the agent without its title
 
-A task created without a title is stored as `Untitled` until a browser's local
-model names it. Every message that hands a task to the agent checks
-`entity.IsUntitledTask` and names it by ID instead, so a new delivery path must
-too — or the agent reads "Untitled" as if somebody wrote it.
+A title may be `Untitled` or written by a browser's local model, so every
+message that hands a task to an agent names it by ID and body only; a new
+delivery path must too, or the agent takes a guessed title for the brief.

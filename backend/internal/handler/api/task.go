@@ -164,23 +164,15 @@ func (h *handler) agentHasRoom(ctx context.Context, workspaceID int64, userID st
 	return ongoing < limit
 }
 
-// taskPushContent is the line an agent is handed a task with. An untitled
-// task is named by its ID alone.
+// taskPushContent is the line an agent is handed a task with: its ID and body.
+// The title is left out, since a browser's local model may have written it.
 func taskPushContent(t entity.Task) string {
-	header := "[Task " + monoflake.ID(t.ID).String() + "]"
-	if !entity.IsUntitledTask(t.Title) {
-		header += " " + t.Title
-	}
-	return header + "\n" + t.Body
+	return "[Task " + monoflake.ID(t.ID).String() + "]\n" + t.Body
 }
 
-// reassignedTaskContent tells the agent a task is now its own: by title, or by
-// ID while the task is untitled.
+// reassignedTaskContent tells the agent a task is now its own, by its ID.
 func reassignedTaskContent(t entity.Task) string {
-	if entity.IsUntitledTask(t.Title) {
-		return "[Task reassigned to agent] " + monoflake.ID(t.ID).String()
-	}
-	return "[Task reassigned to agent] " + t.Title
+	return "[Task reassigned to agent] " + monoflake.ID(t.ID).String()
 }
 
 // pushTaskToAgent hands a task to the workspace's agent now, rather than on

@@ -2374,16 +2374,9 @@ func NewLaunchError(kind error, message string) error {
 
 // UntitledTaskTitle is the title of a task created from the interface without
 // one. The browser that created it may then name it with its local model; a
-// task it does not name keeps this one, so lists, emails and agents always
-// have something to show.
+// task it does not name keeps this one, so lists and emails always have
+// something to show.
 const UntitledTaskTitle = "Untitled"
-
-// IsUntitledTask reports whether a task still has the placeholder title: one
-// nobody wrote and no local model named. Such a title tells an agent nothing,
-// so what reaches the agent names the task by its ID and body instead.
-func IsUntitledTask(title string) bool {
-	return title == UntitledTaskTitle
-}
 
 // TaskTitleEditWindow is how long after it was created a task can be renamed.
 // Past it the interface stops offering a click on the title, using the same number.

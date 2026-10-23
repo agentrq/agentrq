@@ -1227,7 +1227,7 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 		// The ID is part of the push because a task body can instruct the
 		// agent to quote it back when publishing an event, and this path
 		// is how workflow-step tasks are delivered.
-		msg := "Next assigned task:\n" + taskIDAndTitle(nextTask) + "\nDetails: " + nextTask.Body
+		msg := "Next assigned task:\n" + taskIDLine(nextTask) + "\nDetails: " + nextTask.Body
 		if atts := formatModelAttachments(nextTask.Attachments); atts != "" {
 			msg += "\n" + atts
 		}
@@ -1237,24 +1237,15 @@ func (ps *WorkspaceServer) pollOnce(repo taskLister) int64 {
 	return 0
 }
 
-// taskIDAndTitle is the "ID:" and "Title:" lines that name a task to the
-// agent. An untitled task has no "Title:" line: its placeholder says nothing.
-func taskIDAndTitle(t model.Task) string {
-	s := "ID: " + monoflake.ID(t.ID).String()
-	if !entity.IsUntitledTask(t.Title) {
-		s += "\nTitle: " + t.Title
-	}
-	return s
+// taskIDLine is the "ID:" line that names a task to the agent. The title is
+// left out, since a browser's local model may have written it.
+func taskIDLine(t model.Task) string {
+	return "ID: " + monoflake.ID(t.ID).String()
 }
 
-// statusCheckMessage asks the agent for an update on the task it is working
-// on, naming the mission only when the task has a title of its own.
+// statusCheckMessage asks the agent for an update on the task it is working on.
 func statusCheckMessage(t model.Task) string {
-	msg := "Status Check: You are currently working on task " + monoflake.ID(t.ID).String() + ". Please provide a brief status update"
-	if entity.IsUntitledTask(t.Title) {
-		return msg + "."
-	}
-	return msg + " for the mission: " + t.Title
+	return "Status Check: You are currently working on task " + monoflake.ID(t.ID).String() + ". Please provide a brief status update."
 }
 
 // workspaceIcons lists the workspace's own icon, then the AgentRQ logo the
@@ -1992,7 +1983,7 @@ func (ps *WorkspaceServer) handleGetTask(ctx context.Context, req *mcp.CallToolR
 	}
 
 	var sb strings.Builder
-	sb.WriteString(header + "\n" + taskIDAndTitle(task))
+	sb.WriteString(header + "\n" + taskIDLine(task))
 	if task.Status != "" {
 		fmt.Fprintf(&sb, "\nStatus: %s", task.Status)
 	}

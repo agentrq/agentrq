@@ -302,8 +302,8 @@ func TestWorkspaceServer_HandleReply(t *testing.T) {
 	mockPS.EXPECT().Publish(gomock.Any(), gomock.Any()).Return(&pubsub.PublishResponse{}, nil).AnyTimes()
 
 	params := ReplyParams{
-		TaskID:      monoflake.ID(42).String(),
-		Text:        "hello",
+		TaskID: monoflake.ID(42).String(),
+		Text:   "hello",
 		Attachments: []AttachmentParam{
 			{ID: "a", Filename: "f.txt", MimeType: "text/plain", Data: "aGk="},
 			{ID: "b", Filename: "n.md", MimeType: "text/markdown", TextContent: "# hi"},
@@ -731,7 +731,7 @@ func TestWorkspaceServer_HandleGetTask_NextTask(t *testing.T) {
 		t.Fatal("expected no error")
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
-	if !contains(text, "Next assigned task:") || !contains(text, "ID: "+monoflake.ID(42).String()) || !contains(text, "Title: Test Task") {
+	if !contains(text, "Next assigned task:") || !contains(text, "ID: "+monoflake.ID(42).String()) || contains(text, "Title:") {
 		t.Errorf("unexpected content: %s", text)
 	}
 
@@ -810,7 +810,7 @@ func TestWorkspaceServer_HandleGetTask_ByID(t *testing.T) {
 		t.Fatal("expected no error")
 	}
 	text := res.Content[0].(*mcp.TextContent).Text
-	if !contains(text, "Task details:") || !contains(text, "Title: Specific Task") || !contains(text, "Status: ongoing") {
+	if !contains(text, "Task details:") || contains(text, "Title:") || !contains(text, "Status: ongoing") {
 		t.Errorf("unexpected content: %s", text)
 	}
 	if contains(text, "Conversation:") {
