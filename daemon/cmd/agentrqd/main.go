@@ -195,7 +195,24 @@ func cmdEnrol(ctx context.Context, args []string) error {
 	if w := config.InsecureWarning(p); w != "" {
 		fmt.Fprintf(os.Stderr, "\n%s\n", w)
 	}
-	return nil
+	return serveAfterEnrol(ctx, st.dir, time.Now())
+}
+
+// serveEnrolled is cmdServe, as a variable so a test can enrol without
+// connecting.
+var serveEnrolled = cmdServe
+
+// serveAfterEnrol starts serving straight away, so a first enrolment is one
+// command rather than two. Not when a daemon is already running here — a
+// re-enrolment, or the service — because a second one would open a second
+// connection with the same machine token.
+func serveAfterEnrol(ctx context.Context, dir string, now time.Time) error {
+	if _, err := localstatus.Read(dir, now); err == nil {
+		fmt.Println("\nagentrqd is already running here. Restart it to use this enrolment.")
+		return nil
+	}
+	fmt.Println()
+	return serveEnrolled(ctx, nil)
 }
 
 func cmdStatus() error {
