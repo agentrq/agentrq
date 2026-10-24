@@ -83,6 +83,9 @@ The task detail view's History tab lays out a lane-grouped timeline of every too
 <td width="50%"><img src="https://agentrq.com/assets/feature-tool-call-history.gif" alt="AgentRQ tool call history trajectory panel" width="320" /></td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/tool-call-history.svg" width="1200" alt="AgentRQ tool call history: a task's Trajectory view lays out the run on three lanes, Input, Agent and Tools. claude reads, greps and edits; a Bash call waits for you and you deny it, so it turns red; claude tries another way and npm test passes. You open that call to see what ran and what it returned, then search for bash and only the two Bash calls stay lit, while the agents celebrate." /></td>
+</tr>
+<tr>
 <td width="50%"><img src="https://agentrq.com/assets/feature-auto-title.gif" alt="AgentRQ auto-title generation in action" width="320" /></td>
 <td width="50%" valign="middle">
 
