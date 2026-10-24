@@ -202,3 +202,15 @@ describe('DesktopTitleBar', () => {
     remove.mockRestore()
   })
 })
+
+describe('drag region', () => {
+  // Tauri drags by this attribute; Electron ignores it and keeps using `.app-drag`.
+  it('marks the strip for both shells and leaves clickable children out', () => {
+    mount()
+    const strip = el.querySelector('.app-drag')
+    expect(strip.hasAttribute('data-tauri-drag-region')).toBe(true)
+    const noDrag = el.querySelector('.app-no-drag')
+    expect(noDrag).not.toBeNull()
+    expect(noDrag.hasAttribute('data-tauri-drag-region')).toBe(false)
+  })
+})

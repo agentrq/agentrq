@@ -7,7 +7,7 @@
 <template>
   <iframe ref="frame"
           :sandbox="FRAME_SANDBOX"
-          :src="DRAWER_FRAME_URL"
+          :src="frameUrl"
           :style="{ height: `${height}px` }"
           class="block w-full border-0 bg-transparent"
           referrerpolicy="no-referrer"
@@ -32,7 +32,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { DRAWER_FRAME_URL, DRAW_TIMEOUT_MS, FRAME_SANDBOX, readFrameMessage } from '../composables/useDrawerFrame';
+import { drawerFrameUrl, DRAW_TIMEOUT_MS, FRAME_SANDBOX, readFrameMessage } from '../composables/useDrawerFrame';
 import { useThemeStore } from '../stores/themeStore';
 
 const props = defineProps({
@@ -47,6 +47,7 @@ const { isDark } = storeToRefs(themeStore);
 
 const frame = ref(null);
 const height = ref(1);
+const frameUrl = drawerFrameUrl();
 
 /**
  * The `src` never changes, which is the point.

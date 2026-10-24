@@ -68,7 +68,18 @@ export const FRAME_MESSAGES = Object.freeze(['drawn', 'failed']);
  * the app's own `default-src 'self'` — a frame on another host is refused
  * before it loads, with `ERR_BLOCKED_BY_CSP`.
  */
-export const DRAWER_FRAME_URL = 'app://agentrq/__agentrq/drawer-frame.html';
+export function drawerFrameUrl() {
+  return `${appOrigin()}/__agentrq/drawer-frame.html`;
+}
+
+/**
+ * The origin the app itself is served from — `app://agentrq` in Electron, and
+ * whatever the shell serves it from elsewhere. Read when asked, never frozen
+ * into a constant, so a shell on another origin needs no change here.
+ */
+export function appOrigin() {
+  return globalThis.window?.location?.origin ?? '';
+}
 
 /**
  * Where the frame imports a drawer from.
@@ -79,7 +90,7 @@ export const DRAWER_FRAME_URL = 'app://agentrq/__agentrq/drawer-frame.html';
  * caches it; the page never holds it at all.
  */
 export function drawerUrl(format) {
-  return `app://agentrq/__agentrq/drawer/${encodeURIComponent(String(format ?? '').toLowerCase())}.js`;
+  return `${appOrigin()}/__agentrq/drawer/${encodeURIComponent(String(format ?? '').toLowerCase())}.js`;
 }
 
 /**
