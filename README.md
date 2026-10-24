@@ -167,6 +167,17 @@ A board of markdown docs that every workspace of your account shares. An agent p
 <tr>
 <td colspan="2" valign="middle">
 
+### Isolated Workspaces
+
+Each workspace is its own world: one project or mission, with its own MCP server address and token, its own task queue, memory and settings — which commands are auto-allowed, how long a message waits before it is sent — and its own folder on every machine that runs it. An agent connects with one workspace's token and sees that workspace alone: its tasks, its memory, its permission requests. Nothing crosses between workspaces by accident; when work should cross, it does so on purpose, through a Pano doc, an event, or the supervisor workspace.
+
+<img src="docs/assets/readme/isolated-workspaces.svg" width="1200" alt="AgentRQ isolated workspaces: api, web and docs each have their own MCP server and token, folder, tasks, memory and settings. claude, codex and agy connect with their own workspace's token and take only its tasks; codex saves a memory and it lands in web alone, and codex sees web and nothing else. agy asks to push in docs and you allow it there, then all six tasks are done and the agents celebrate." />
+
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="middle">
+
 ### Workspace Forks
 
 Fork a workspace to have a second agent take some of its tasks in parallel. Right-click it in the sidebar to fork it, or choose **Spin up** on a task, which forks the workspace, moves the task in and launches an agent in one step. The fork has its own queue and agent. It shares the parent's memory, skills and settings, and runs in its own git worktree or copy of the parent's folder. When its tasks are done, merge it back: its agent is stopped and every task returns to the parent with its thread. [How forks work →](docs/FORKS.md)
