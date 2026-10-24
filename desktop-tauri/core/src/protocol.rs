@@ -25,8 +25,11 @@
 //!   status instead, because a handler that never settles is the freeze the JS
 //!   code elsewhere goes out of its way to avoid.
 //! - A Tauri request path is **not** dot-collapsed the way a WHATWG `URL`
-//!   pathname is, so [`is_safe_asset_path`] is the primary control there, not
-//!   defence in depth.
+//!   pathname is, so [`traverses`] is the primary control there, not defence in
+//!   depth. It runs before any routing decision, and the forwarded URL is built
+//!   from the path it cleared rather than resolved with `Url::join`, which
+//!   would collapse a `..` *after* the allow-list had already said yes. (The JS
+//!   has that flaw in `isProxyPath`; this is a deliberate divergence.)
 
 use crate::uri::decode_uri_component;
 use url::Url;
@@ -103,6 +106,32 @@ pub fn filter_response_headers<'a>(
     filter_headers(headers, &STRIPPED_RESPONSE_HEADERS)
 }
 
+/// True when a path would climb out of its directory, or cannot be trusted not
+/// to: a `.` or `..` segment, a control character (a URL parser strips tab and
+/// newline, which can complete a `..`), or a NUL.
+///
+/// Checked raw and after each percent-decoding, with `\` a separator at every
+/// level (a WHATWG parser reads it as `/` for `http(s)`, and Windows does for
+/// files). `%2e%2e`, `..%5c` and `%252e%252e` are all caught. A malformed
+/// escape is not traversal by itself: it is a literal `%`, and decoding stops.
+/// Each decoding shortens the path, so the loop ends.
+pub fn traverses(pathname: &str) -> bool {
+    let mut current = pathname.to_string();
+    loop {
+        if current.chars().any(char::is_control)
+            || current
+                .split(['/', '\\'])
+                .any(|segment| segment == "." || segment == "..")
+        {
+            return true;
+        }
+        match decode_uri_component(&current) {
+            Some(next) if next != current => current = next,
+            _ => return false,
+        }
+    }
+}
+
 /// True when a path should be forwarded to the AgentRQ server rather than
 /// served from the bundled renderer assets.
 pub fn is_proxy_path(pathname: &str) -> bool {
@@ -124,6 +153,8 @@ pub fn sends_body(method: &str, has_body: bool) -> bool {
 /// Where a path is answered from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
+    /// 403: the path [`traverses`], whatever it starts with.
+    Forbidden,
     /// The extension drawer's document, matched exactly.
     DrawerFrame,
     /// A drawer's code, by format. `None` when the name's escapes are malformed.
@@ -138,6 +169,11 @@ pub enum Route {
 
 /// Decide where a path is answered from, in the order the JS handler asks.
 pub fn route(pathname: &str, dev: bool) -> Route {
+    // First, before any prefix is compared: what a prefix matches must be what
+    // the path means, and `/api/../x` does not mean `/api/`.
+    if traverses(pathname) {
+        return Route::Forbidden;
+    }
     if pathname == DRAWER_FRAME_PATH {
         return Route::DrawerFrame;
     }
@@ -189,8 +225,24 @@ pub fn plan_static(pathname: &str, exists: bool) -> StaticPlan {
 ///
 /// Checked on the *decoded* path, because decoding is what can reintroduce a
 /// dangerous character: `%00` becomes a NUL, `%2e%2e` becomes `..`.
+///
+/// Beyond [`traverses`], every segment must be a plain name, because the path
+/// ends up joined onto a directory on a platform whose rules this code does not
+/// choose: no `\` (a separator on Windows, at any decoding level), no `:` (a
+/// drive letter, `\\?\`, an alternate stream), and no empty segment (`//` is
+/// a UNC prefix, and a leading one is absolute). Only a trailing `/` may be empty.
 pub fn is_safe_asset_path(pathname: &str) -> bool {
-    !pathname.contains('\0') && !pathname.split('/').any(|segment| segment == "..")
+    if traverses(pathname) || pathname.contains(['\\', ':']) {
+        return false;
+    }
+    let mut segments = pathname.split('/');
+    // The leading `/` leaves one empty segment first.
+    segments.next();
+    let rest: Vec<&str> = segments.collect();
+    match rest.split_last() {
+        Some((_, inner)) => inner.iter().all(|segment| !segment.is_empty()),
+        None => true,
+    }
 }
 
 /// A path is percent-encoded but the filesystem needs real characters; without
@@ -211,6 +263,14 @@ pub struct StaticServe {
 }
 
 impl StaticServe {
+    /// The path without its leading `/`, to join onto the renderer directory:
+    /// `Path::join` with an absolute path *replaces* the base. The shell must
+    /// still canonicalise the result and check it starts with the root before it
+    /// reads anything.
+    pub fn relative_path(&self) -> &str {
+        self.file_path.trim_start_matches('/')
+    }
+
     /// The response headers. `csp` is called only for the SPA entry, so the
     /// policy is built per request and never for an ordinary asset.
     pub fn headers(&self, csp: &dyn Fn() -> String) -> HeaderList {
@@ -296,9 +356,28 @@ pub fn web_socket_origin(server_url: &str) -> String {
     };
     // An http(s) URL always has a host, so there is nothing to refuse here.
     let host = url.host_str().unwrap_or_default();
+    // `;` and `,` are valid in a host, and in a header they end a directive and
+    // a policy. A host that is not a plain name or an IPv6 literal gets no
+    // entry. (The JS lets it through; this is a deliberate divergence.)
+    if !is_plain_host(host) {
+        return String::new();
+    }
     match url.port() {
         Some(port) => format!("{scheme}://{host}:{port}"),
         None => format!("{scheme}://{host}"),
+    }
+}
+
+fn is_plain_host(host: &str) -> bool {
+    let name = |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-';
+    match host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        Some(literal) => {
+            !literal.is_empty()
+                && literal
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+        }
+        None => !host.is_empty() && host.chars().all(name),
     }
 }
 
@@ -463,11 +542,23 @@ pub fn drawer_frame_reply(html: &str, csp: &str) -> Reply {
     }
 }
 
+/// What a drawer's 404 says when nothing supplies drawers at all.
+pub const NO_DRAWER_SOURCE: &str = "Extensions are unavailable.";
+
 /// What the extensions layer says about a drawer format.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrawerLookup {
     Found { code: String },
     Refused { reason: Option<String> },
+}
+
+impl Default for DrawerLookup {
+    /// No source of drawers: every format is refused, saying so.
+    fn default() -> Self {
+        Self::Refused {
+            reason: Some(NO_DRAWER_SOURCE.to_string()),
+        }
+    }
 }
 
 /// The answer for a drawer's code.
@@ -500,6 +591,8 @@ pub fn drawer_code_reply(found: &DrawerLookup) -> Reply {
 pub enum ProxyError {
     /// No server is configured, or the one that is cannot be a base URL.
     NoServer,
+    /// The path [`traverses`]: it is refused rather than forwarded anywhere.
+    Forbidden,
     /// No response headers arrived within the budget.
     Timeout,
     /// The request failed; the message is the failure's own.
@@ -514,6 +607,7 @@ pub enum ProxyError {
 /// response to the renderer rather than a failed handler.
 pub fn proxy_error_reply(error: &ProxyError) -> Reply {
     match error {
+        ProxyError::Forbidden => forbidden_reply(),
         ProxyError::NoServer => Reply::json(
             503,
             r#"{"error":"No AgentRQ server is configured"}"#.to_string(),
@@ -564,6 +658,61 @@ pub fn dev_response_headers<'a>(
     headers
 }
 
+/// Whether a proxied request goes through the attachment store: a `GET` for
+/// `…/tasks/:id/attachments/:id`, and only under a proxied prefix, as the JS
+/// reaches the store only inside its proxy branch. Anything else is forwarded
+/// untouched.
+pub fn serve_from_store(method: &str, pathname: &str) -> bool {
+    method == "GET" && is_proxy_path(pathname) && !traverses(pathname) && {
+        let segments: Vec<&str> = pathname.split('/').collect();
+        matches!(
+            segments.as_slice(),
+            [_, .., "tasks", task, "attachments", attachment]
+                if !task.is_empty() && !attachment.is_empty()
+        )
+    }
+}
+
+/// A response whose body is bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BytesReply {
+    pub status: u16,
+    pub headers: HeaderList,
+    pub body: Vec<u8>,
+}
+
+/// The answer for an attachment found in the store: `content-type` always,
+/// `content-disposition` only when there is one.
+pub fn attachment_hit_reply(
+    body: Vec<u8>,
+    content_type: &str,
+    content_disposition: &str,
+) -> BytesReply {
+    let mut headers = vec![("content-type".to_string(), content_type.to_string())];
+    if !content_disposition.is_empty() {
+        headers.push((
+            "content-disposition".to_string(),
+            content_disposition.to_string(),
+        ));
+    }
+    BytesReply {
+        status: 200,
+        headers,
+        body,
+    }
+}
+
+/// The 502 for an attachment whose body could not be read to the end.
+pub fn bad_gateway_reply() -> Reply {
+    Reply::text(502, "Bad Gateway")
+}
+
+/// What an attachment is stored with, from the upstream header: `""` when the
+/// response had none.
+pub fn stored_content_disposition(upstream: Option<&str>) -> &str {
+    upstream.unwrap_or("")
+}
+
 /// The two budgets for a forwarded request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timeouts {
@@ -593,14 +742,25 @@ impl Timeouts {
     }
 }
 
-/// The URL a path is forwarded to: the path and query on the server, resolved
-/// as `new URL(path + search, base)` does. `search` carries its `?`.
-fn join_target(base: &str, pathname: &str, search: &str) -> Option<String> {
-    Url::parse(base)
-        .ok()?
-        .join(&format!("{pathname}{search}"))
-        .ok()
-        .map(String::from)
+/// The URL a path is forwarded to: the path and query on the server's origin.
+/// `search` carries its `?`.
+///
+/// Built from the origin and the path, never by resolving the path against the
+/// base, so nothing in it can change the host (`//host/x`) or be collapsed
+/// after the fact. A path that [`traverses`] has no URL.
+fn join_target(base: &str, pathname: &str, search: &str) -> Result<String, ProxyError> {
+    if traverses(pathname) {
+        return Err(ProxyError::Forbidden);
+    }
+    let invalid = || ProxyError::Unreachable("invalid server URL".to_string());
+    let mut url = Url::parse(base).map_err(|_| invalid())?;
+    if url.cannot_be_a_base() {
+        return Err(invalid());
+    }
+    url.set_path(pathname);
+    url.set_query(search.strip_prefix('?'));
+    url.set_fragment(None);
+    Ok(url.into())
 }
 
 fn proxy_url(base: &str, pathname: &str, search: &str) -> Result<String, ProxyError> {
@@ -609,8 +769,10 @@ fn proxy_url(base: &str, pathname: &str, search: &str) -> Result<String, ProxyEr
         // to forward to. Saying so plainly beats failing the load.
         return Err(ProxyError::NoServer);
     }
+    if !is_proxy_path(pathname) {
+        return Err(ProxyError::Forbidden);
+    }
     join_target(base, pathname, search)
-        .ok_or_else(|| ProxyError::Unreachable("invalid server URL".to_string()))
 }
 
 /// What the shell reports and the protocol is configured with.
@@ -665,7 +827,7 @@ impl<S: Fn() -> String> AppProtocol<S> {
 
     /// The URL to fetch from the dev server, or the message for the 502.
     pub fn dev_target(&self, pathname: &str, search: &str) -> Result<String, String> {
-        join_target(&self.dev_server_url, pathname, search).ok_or_else(|| "Invalid URL".to_string())
+        join_target(&self.dev_server_url, pathname, search).map_err(|_| "Invalid URL".to_string())
     }
 
     /// How long a forwarded request may take to produce response headers.
@@ -1393,6 +1555,9 @@ mod tests {
     fn is_one_path_and_not_a_prefix() {
         let near = format!("{DRAWER_FRAME_PATH}/extra");
         assert_eq!(route(&near, false), Route::Static);
+        // The drawer branch is asked before the dev branch, so dev changes nothing.
+        assert_eq!(route(&near, true), Route::DevServer);
+        assert_eq!(route(DRAWER_FRAME_PATH, true), Route::DrawerFrame);
 
         // It falls through to the app, which means the app's own policy, not the
         // frame's permissive one, which would be the dangerous way to be wrong.
@@ -1570,13 +1735,75 @@ mod tests {
     }
 
     #[test]
-    fn a_url_parser_collapses_dot_segments_before_the_guard_is_reached() {
-        // What the JS case documents: after parsing, `..` is already gone.
-        let url = url::Url::parse("app://agentrq/%2e%2e/%2e%2e/etc/passwd").unwrap();
-        assert_eq!(url.path(), "/etc/passwd");
-        let probe = Probe::default();
-        plan_with(&probe, url.path());
-        assert_eq!(*probe.paths.borrow(), ["/etc/passwd"]);
+    fn refuses_backslash_double_slash_drive_letter_and_unc_paths() {
+        for raw in [
+            "/..%5c..%5cboot",
+            "/..%5C..%5Cboot",
+            "/..\\..\\boot",
+            "/assets/a%5cb.js",
+            "/%2f%2fetc%2fpasswd",
+            "//etc/passwd",
+            "/assets//x.js",
+            "/C:/Windows/win",
+            "/C%3a/Windows/win",
+            "/%5c%5c%3f%5cC%3a%5cx",
+            "/%5c%5cserver%5cshare",
+            "/assets/a%00b.js",
+            "/%252e%252e/%252e%252e/etc/passwd",
+            "/assets/%252e%252e%255csecret",
+            "/assets/%25252e%25252e/x",
+            "/assets/./x.js",
+            "/assets/.%2e/x.js",
+            "/assets/.\tx",
+        ] {
+            assert_eq!(serve(raw, true), StaticOutcome::Forbidden, "{raw}");
+        }
+    }
+
+    #[test]
+    fn serves_names_that_merely_look_unusual() {
+        // A trailing slash, a dotted name, and a literal percent are fine.
+        for raw in ["/assets/", "/assets/a.b.js", "/assets/100%25.js", "/"] {
+            assert!(serve(raw, true).serve().is_some(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn accepts_the_empty_path_which_is_the_index() {
+        assert!(is_safe_asset_path(""));
+        assert!(serve("", true).serve().unwrap().index);
+    }
+
+    #[test]
+    fn hands_the_shell_a_root_relative_path() {
+        let serve = serve("/assets/app.js", true).serve().unwrap();
+        assert_eq!(serve.file_path, "/assets/app.js");
+        assert_eq!(serve.relative_path(), "assets/app.js");
+    }
+
+    #[test]
+    fn normaliser_finds_traversal_at_every_decoding_level() {
+        for path in [
+            "/a/../b",
+            "/a/./b",
+            "/a/%2e%2e/b",
+            "/a/%2E/b",
+            "/a/..%5cb",
+            "/a/..\\b",
+            "/a/%252e%252e/b",
+            "/a/%2525252e%2525252e/b",
+            "/a/%00",
+            "/a/.\tb",
+            "/a/%0a",
+        ] {
+            assert!(traverses(path), "{path}");
+        }
+        for path in [
+            "/a/b", "/a/.b/c.", "/a/...", "/a/%zz", "/a/100%", "/a/%2561",
+        ] {
+            assert!(!traverses(path), "{path}");
+        }
+        assert!(traverses("/a/%252525252525252e%252525252525252e/b"));
     }
 
     #[test]
@@ -1599,6 +1826,213 @@ mod tests {
                 file_path: "/assets/my file.js".to_string(),
                 index: false
             })
+        );
+    }
+
+    // The allow-list is checked on what the path means, not on its spelling.
+
+    const ESCAPES: [(&str, &str); 9] = [
+        ("/api/../healthz", ""),
+        ("/api/%2e%2e/storage/x", ""),
+        ("/mcp/%2e%2e/%2e%2e/etc", ""),
+        ("/mcp/../oauth/authorize", "?a=1"),
+        ("/.well-known/../x", ""),
+        ("/api/..%5chealthz", ""),
+        ("/api/%252e%252e/x", ""),
+        ("/api/./v1", ""),
+        ("/api/v1/%2E%2E/%2E%2E/x", ""),
+    ];
+
+    #[test]
+    fn refuses_every_dot_segment_before_routing_and_builds_no_url() {
+        for dev in [false, true] {
+            for (path, _) in ESCAPES {
+                assert_eq!(route(path, dev), Route::Forbidden, "{path}");
+            }
+        }
+        for (path, search) in ESCAPES {
+            assert_eq!(
+                proto(SERVER).proxy_target(path, search),
+                Err(ProxyError::Forbidden),
+                "{path}"
+            );
+            assert_eq!(
+                dev_proto().dev_target(path, search),
+                Err("Invalid URL".to_string()),
+                "{path}"
+            );
+        }
+        let reply = proxy_error_reply(&ProxyError::Forbidden);
+        assert_eq!((reply.status, reply.body.as_str()), (403, "Forbidden"));
+    }
+
+    #[test]
+    fn a_forwarded_path_is_in_the_allow_list_and_keeps_the_base_origin() {
+        let base = "https://srv.example:8443/base";
+        let protocol = proto(base);
+        assert_eq!(
+            protocol.proxy_target("/api/v1/tasks", "?a=1&b=%2e"),
+            Ok("https://srv.example:8443/api/v1/tasks?a=1&b=%2e".to_string())
+        );
+        // A name that merely contains dots, and an escaped slash, stay as sent.
+        assert_eq!(
+            protocol.proxy_target("/api/v1/a..b/%2Fc", ""),
+            Ok("https://srv.example:8443/api/v1/a..b/%2Fc".to_string())
+        );
+        // Outside the allow-list there is no target, whichever way it is asked.
+        for path in [
+            "/healthz",
+            "/storage/x",
+            "/etc",
+            "/apix",
+            "//evil.example/api/",
+        ] {
+            assert_eq!(
+                protocol.proxy_target(path, ""),
+                Err(ProxyError::Forbidden),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_double_slash_cannot_change_the_dev_target_host() {
+        assert_eq!(
+            dev_proto().dev_target("//evil.example/x", ""),
+            Ok("http://localhost:5174//evil.example/x".to_string())
+        );
+    }
+
+    #[test]
+    fn a_base_that_cannot_hold_a_path_is_unreachable() {
+        assert_eq!(
+            proto("mailto:a@b.example").proxy_target("/api/v1/x", ""),
+            Err(ProxyError::Unreachable("invalid server URL".to_string()))
+        );
+    }
+
+    #[test]
+    fn a_fragment_in_the_search_is_never_sent() {
+        assert_eq!(
+            proto(SERVER).proxy_target("/api/v1/x", "?a=1#frag"),
+            Ok("http://localhost:3000/api/v1/x?a=1%23frag".to_string())
+        );
+    }
+
+    #[test]
+    fn mcp_is_a_bare_prefix_so_a_longer_name_is_proxied_as_the_js_does() {
+        assert!(is_proxy_path("/mcpx"));
+        assert_eq!(route("/mcpx", false), Route::Proxy);
+    }
+
+    // attachments
+
+    #[test]
+    fn serves_from_the_store_only_a_proxied_get_of_an_attachment() {
+        let path = "/api/v1/workspaces/w/tasks/t/attachments/a";
+        assert!(serve_from_store("GET", path));
+        assert!(!serve_from_store("POST", path));
+        assert!(!serve_from_store("get", path));
+        // The events stream and the task list are forwarded untouched.
+        assert!(!serve_from_store(
+            "GET",
+            "/api/v1/workspaces/w/tasks/t/events"
+        ));
+        assert!(!serve_from_store("GET", "/api/v1/workspaces/w/tasks"));
+        assert!(!serve_from_store(
+            "GET",
+            "/api/v1/workspaces/w/tasks//attachments/a"
+        ));
+        assert!(!serve_from_store(
+            "GET",
+            "/api/v1/workspaces/w/tasks/t/attachments/"
+        ));
+        // Not under a proxied prefix, so never the store's business.
+        assert!(!serve_from_store("GET", "/x/tasks/a/attachments/b"));
+        assert!(!serve_from_store("GET", "/api/../x/tasks/a/attachments/b"));
+    }
+
+    #[test]
+    fn replies_to_a_stored_attachment_with_its_type_and_disposition() {
+        let reply =
+            attachment_hit_reply(b"png".to_vec(), "image/png", "inline; filename=\"a.png\"");
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.body, b"png");
+        assert_eq!(
+            reply.headers,
+            [
+                ("content-type".to_string(), "image/png".to_string()),
+                (
+                    "content-disposition".to_string(),
+                    "inline; filename=\"a.png\"".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_out_an_empty_disposition() {
+        let reply = attachment_hit_reply(Vec::new(), "text/plain", "");
+        assert_eq!(
+            reply.headers,
+            [("content-type".to_string(), "text/plain".to_string())]
+        );
+    }
+
+    #[test]
+    fn answers_502_when_the_body_cannot_be_read_to_the_end() {
+        let reply = bad_gateway_reply();
+        assert_eq!((reply.status, reply.body.as_str()), (502, "Bad Gateway"));
+    }
+
+    #[test]
+    fn stores_an_absent_disposition_as_empty() {
+        assert_eq!(stored_content_disposition(None), "");
+        assert_eq!(stored_content_disposition(Some("inline")), "inline");
+    }
+
+    // drawers
+
+    #[test]
+    fn answers_a_missing_drawer_source_with_the_extensions_message() {
+        assert_eq!(NO_DRAWER_SOURCE, "Extensions are unavailable.");
+        let reply = drawer_code_reply(&DrawerLookup::default());
+        assert_eq!(reply.status, 404);
+        assert_eq!(reply.body, NO_DRAWER_SOURCE);
+    }
+
+    // a host cannot inject into the policy
+
+    #[test]
+    fn gives_a_host_that_could_inject_a_directive_no_entry() {
+        for url in [
+            "http://a;script-src.evil/",
+            "https://a,b.example/",
+            "http://a'b.example:80/",
+            "http://under_score.example/",
+            "http://[::1;x]/",
+        ] {
+            assert_eq!(web_socket_origin(url), "", "{url}");
+        }
+        let csp = build_csp(&opts(false, "", "http://a;script-src.evil/"));
+        assert!(!directive(&csp, "connect-src").contains(';'));
+        assert!(!csp.contains("evil"));
+    }
+
+    #[test]
+    fn still_lists_names_and_ipv6_literals() {
+        assert_eq!(
+            web_socket_origin("https://Srv-1.example:8443/x"),
+            "wss://srv-1.example:8443"
+        );
+        assert_eq!(web_socket_origin("http://[::1]:8443"), "ws://[::1]:8443");
+        assert_eq!(
+            web_socket_origin("http://[::ffff:127.0.0.1]/"),
+            "ws://[::ffff:7f00:1]"
+        );
+        assert_eq!(
+            web_socket_origin("http://127.0.0.1:3000"),
+            "ws://127.0.0.1:3000"
         );
     }
 
