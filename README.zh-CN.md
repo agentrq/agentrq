@@ -38,7 +38,9 @@ AI Agent 通过 MCP 连接到工作区：读取任务、更新状态、回复消
 
 ### Workspace
 
-Workspace 是一个独立的任务空间，通常对应一个项目、仓库或目标。它包含名称、任务说明、Agent 可读取的上下文、MCP 连接地址、令牌和权限设置。每个 Workspace 都有自己的 Workspace MCP endpoint，Agent 连接后只能看到该工作区内的信息。
+Workspace 是一个独立的任务空间，通常对应一个项目、仓库或目标。它包含名称、任务说明、Agent 可读取的上下文、MCP 连接地址、令牌和权限设置。每个 Workspace 都有自己的 Workspace MCP endpoint，Agent 连接后只能看到该工作区内的信息。每个 Workspace 还有自己的任务队列、记忆、设置（自动允许的命令、消息发送延迟），以及在每台运行它的机器上的独立文件夹。工作区之间不会意外互通；需要跨工作区协作时，通过 Pano 文档、事件或 supervisor 工作区显式进行。
+
+<img src="docs/assets/readme/isolated-workspaces.svg" width="1200" alt="AgentRQ 隔离的工作区：api、web 和 docs 各有自己的 MCP 服务器和令牌、文件夹、任务、记忆和设置。claude、codex 和 agy 各用自己工作区的令牌连接，只领取该工作区的任务；codex 保存的记忆只出现在 web 中，codex 也只能看到 web。agy 在 docs 中请求执行 push，你在 docs 中允许，随后六个任务全部完成，Agent 们一起庆祝。" />
 
 ### Workspace Fork
 
