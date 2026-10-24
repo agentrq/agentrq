@@ -84,6 +84,11 @@ export function workspaceTree(workspaces = []) {
     .map((w) => ({ workspace: w, forks: forks.get(String(w.id)) ?? [] }));
 }
 
+/** The same order as a flat list: each workspace, then its forks. */
+export function forksAfterParents(workspaces = []) {
+  return workspaceTree(workspaces).flatMap((g) => [g.workspace, ...g.forks]);
+}
+
 /** "1 task is not finished" / "2 tasks are not finished". */
 export function unfinishedLabel(n) {
   return n === 1 ? '1 task is not finished' : `${n} tasks are not finished`;

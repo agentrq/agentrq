@@ -250,6 +250,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import ForkIcon from '../components/ForkIcon.vue';
+import { forksAfterParents } from '../composables/useWorkspaceForks';
 import { unarchiveWorkspace, fetchGlobalTaskStats } from '../api';
 import { useToasts } from '../composables/useToasts';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -297,8 +298,9 @@ const globalStats = ref({
   scheduledTasks: 0
 });
 
+// Each workspace followed by its forks, as the sidebar lists them.
 const activeWorkspaces = computed(() => {
-  return workspaces.value.filter(p => !p.archivedAt);
+  return forksAfterParents(workspaces.value.filter(p => !p.archivedAt));
 });
 
 const archivedWorkspaces = computed(() => {
