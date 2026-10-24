@@ -8,6 +8,13 @@
 - **A bridge command is named after its Electron channel** (`agentrq:side-panel:permission-answer`
   is `side_panel_permission_answer`). `commands.rs` holds one per channel, as a
   `todo` stub until its work package replaces it.
+- **`bridge/index.js` mirrors `desktop/src/preload/index.js` member for member**, and
+  `test/parity.test.js` loads both. Change the preload and the bridge follows, or CI
+  fails. A call's arguments cross as one object keyed by the preload's parameter names.
+- **A new command is five places:** `commands.rs`, its `generate_handler!`, `COMMANDS` in
+  `build.rs`, `capabilities/main.json` (`allow-<name-with-dashes>`) and the bridge. Naming
+  the commands in `build.rs` is what makes Tauri deny any other, so a command missing
+  from the capability fails at runtime, not at build. The parity test compares all five.
 - **Flatten request bodies in the bridge's `fetch` wrapper.** A Blob or File body
   sent to the `app` scheme segfaults WebKitGTK and arrives empty on WKWebView.
   Same-origin Blob, FormData and stream bodies go as an ArrayBuffer.

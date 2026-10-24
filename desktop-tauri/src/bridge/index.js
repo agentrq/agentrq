@@ -3,15 +3,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /**
- * A stand-in `window.agentrq`, enough for desktop's renderer to boot.
+ * `window.agentrq`, shaped exactly like `desktop/src/preload/index.js`.
  *
- * WP3 replaces this file with the real bridge, shaped exactly like
- * `desktop/src/preload/index.js`. Until then every call rejects and every
- * `on*` listener is a no-op, except `connection.get`, which goes to Rust so the
- * IPC path is exercised: its `todo` answer is the rejection the renderer
- * already treats as "no server yet", so the connection screen goes up.
+ * The renderer is Electron's renderer, so this is the same seam with Tauri
+ * behind it: a call is `invoke('<command>')`, an `on*` listener is `listen()`,
+ * and a command is its Electron channel with `agentrq:` dropped and `:` / `-`
+ * turned into `_` (`agentrq:side-panel:permission-answer` is
+ * `side_panel_permission_answer`). `test/parity.test.js` fails when the two
+ * files drift apart, so a preload change cannot land without this one.
+ *
+ * Arguments cross as one object keyed by the preload's parameter names, which
+ * Tauri maps onto the command's snake_case parameters.
  */
+import { getTauriVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 /** Node's name for the OS, as Electron's `process.platform` gives it. */
 export function platformOf(userAgent) {
@@ -21,35 +27,154 @@ export function platformOf(userAgent) {
   return 'linux'
 }
 
-const notYet = (member) => () => Promise.reject(new Error(`window.agentrq.${member} is not implemented yet`))
-const noListener = () => () => {}
-
-/** Every member of one namespace, stubbed. */
-export function stubNamespace(name, members = {}) {
-  return new Proxy(members, {
-    get(target, key) {
-      if (Object.hasOwn(target, key)) return target[key]
-      // Never a thenable, or `await window.agentrq.x` would wait forever.
-      if (typeof key !== 'string' || key === 'then') return undefined
-      return key.startsWith('on') ? noListener : notYet(`${name}.${key}`)
-    },
-  })
+/**
+ * Listen to an event and hand back an unsubscribe at once, as the preload does.
+ * `listen` is asynchronous, so an unsubscribe that comes first is remembered
+ * and applied when the listener arrives, never lost.
+ *
+ * @returns {() => void}
+ */
+function subscribe(event, deliver) {
+  let stop = null
+  let stopped = false
+  listen(event, (e) => deliver(e.payload))
+    .then((unlisten) => {
+      if (stopped) unlisten()
+      else stop = unlisten
+    })
+    .catch((err) => console.error(`window.agentrq: cannot listen to ${event}`, err))
+  return () => {
+    stopped = true
+    if (stop) stop()
+    stop = null
+  }
 }
 
 export function createBridge(userAgent) {
-  const known = {
+  const versions = { tauri: '', webview: String(userAgent ?? '') }
+  getTauriVersion()
+    .then((v) => {
+      versions.tauri = v
+    })
+    .catch(() => {})
+
+  return {
+    attachments: {
+      forgetWorkspace: (workspaceId) => invoke('attachments_forget_workspace', { workspaceId }),
+      forgetTask: (workspaceId, taskId) => invoke('attachments_forget_task', { workspaceId, taskId }),
+      forgetAll: () => invoke('attachments_forget_all'),
+    },
+
     isDesktop: true,
     platform: platformOf(userAgent),
-    versions: { tauri: '', webview: String(userAgent ?? '') },
-    connection: stubNamespace('connection', { get: () => invoke('connection_get') }),
-  }
-  return new Proxy(known, {
-    get(target, key) {
-      if (Object.hasOwn(target, key)) return target[key]
-      if (typeof key !== 'string' || key === 'then') return undefined
-      return stubNamespace(key)
+    versions,
+
+    connection: {
+      get: () => invoke('connection_get'),
+      validate: (url) => invoke('connection_validate', { url }),
+      save: (url) => invoke('connection_save', { url }),
+      cancel: () => invoke('connection_cancel'),
     },
-  })
+
+    notifications: {
+      get: () => invoke('notifications_get'),
+      setMuted: (workspaceId, muted) => invoke('notifications_set_muted', { workspaceId, muted }),
+    },
+
+    profiles: {
+      get: () => invoke('profiles_get'),
+      switch: (id) => invoke('profiles_switch', { id }),
+      add: (label) => invoke('profiles_add', { label }),
+      rename: (id, label) => invoke('profiles_rename', { id, label }),
+      remove: (id) => invoke('profiles_remove', { id }),
+    },
+
+    files: {
+      open: (fileUrl) => invoke('files_open', { fileUrl }),
+    },
+
+    clipboard: {
+      write: (text) => invoke('clipboard_write', { text }),
+    },
+
+    emoji: {
+      showPanel: () => invoke('emoji_show_panel'),
+    },
+
+    dialog: {
+      chooseDirectory: (currentPath) => invoke('dialog_choose_directory', { currentPath }),
+    },
+
+    navigation: {
+      onNavigate: (callback) => subscribe('agentrq:navigate', (route) => callback(route)),
+    },
+
+    extensions: {
+      state: () => invoke('extensions_state'),
+      refresh: () => invoke('extensions_refresh'),
+      chooseFolder: () => invoke('extensions_choose_folder'),
+      installLocal: (path, { grant = null, config = null } = {}) =>
+        invoke('extensions_install_local', { path, grant, config }),
+      installFromCatalogue: (fullName, { grant = null, config = null } = {}) =>
+        invoke('extensions_install_catalogue', { fullName, grant, config }),
+      uninstall: (name) => invoke('extensions_uninstall', { name }),
+      setEnabled: (name, enabled) => invoke('extensions_set_enabled', { name, enabled }),
+      configure: (name, values) => invoke('extensions_configure', { name, values }),
+      setHookConsent: (name, level) => invoke('extensions_set_hook_consent', { name, level }),
+      supervisor: () => invoke('extensions_supervisor'),
+      authorize: () => invoke('extensions_authorize'),
+      deauthorize: () => invoke('extensions_deauthorize'),
+      onChanged: (callback) => subscribe('agentrq:extensions:changed', (detail) => callback(detail)),
+      entries: (surface, context = {}) => invoke('extensions_entries', { surface, context }),
+      drawer: (format) => invoke('extensions_drawer', { format }),
+      invoke: (target, context = {}) => invoke('extensions_invoke', { target, context }),
+    },
+
+    updates: {
+      get: () => invoke('update_get'),
+      check: () => invoke('update_check'),
+      installNow: () => invoke('update_install'),
+      installViaScript: () => invoke('update_install_via_script'),
+      onStatus: (callback) => {
+        const off = subscribe('agentrq:update:status', (state) => callback(state))
+        // A check runs at launch, so the shell may have settled before this
+        // listener existed: the current state is delivered immediately.
+        invoke('update_get').then(callback).catch(() => {})
+        return off
+      },
+    },
+
+    sidePanel: {
+      // The panel's page lives in a native child webview, not a `<webview>`.
+      guest: 'tauri',
+      onToggle: (callback) => subscribe('agentrq:side-panel:toggle', () => callback()),
+      onOpen: (callback) => subscribe('agentrq:side-panel:open', (url) => callback(url)),
+      onFind: (callback) => subscribe('agentrq:side-panel:find', () => callback()),
+      pages: () => invoke('side_panel_pages'),
+      openExternal: (url) => invoke('side_panel_open_external', { url }),
+      onPermissionRequest: (callback) =>
+        subscribe('agentrq:side-panel:permission-request', (question) => callback(question)),
+      onPermissionSettled: (callback) =>
+        subscribe('agentrq:side-panel:permission-settled', (id) => callback(id)),
+      answerPermission: (id, decision) => invoke('side_panel_permission_answer', { id, decision }),
+      permissions: () => invoke('side_panel_permissions'),
+      removePermission: (origin, permission) =>
+        invoke('side_panel_permission_remove', { origin, permission }),
+    },
+
+    view: {
+      get: () => invoke('view_get'),
+      zoom: (direction) => invoke('view_zoom', { direction }),
+      toggleFullScreen: () => invoke('view_fullscreen'),
+    },
+
+    theme: {
+      set: (theme) => invoke('theme_set', { theme }),
+    },
+  }
 }
 
 window.agentrq = createBridge(navigator.userAgent)
+// WP2 installs its `fetch` wrapper and `EventSource` shim here, before the
+// renderer's first request: Blob/FormData/stream bodies to the app origin are
+// flattened to an ArrayBuffer (docs/agents/desktop-tauri.md).
