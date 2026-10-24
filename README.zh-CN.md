@@ -60,6 +60,8 @@ MCP，即 Model Context Protocol，是 Agent 和 AgentRQ 之间的协议层。�
 
 Skill（技能）是 Agent 在任务匹配时加载的操作手册：一个 `SKILL.md` 加上它引用的文件，格式与 Claude Code 相同。可以从公开的 GitHub 仓库一键导入，可以自己编写，也可以由 Agent 保存；共享给同一账号下的其他 Workspace 时共享的是同一份技能，修改会同步到所有 Workspace。连接到 Workspace 的每个 Agent 都会被要求在任务开始时搜索技能，并通过 MCP 加载匹配的技能，无论它运行在哪个 harness 中。详见下文 [技能（Skills）](#技能skills)。
 
+<img src="docs/assets/readme/skills.svg" width="1200" alt="AgentRQ 技能：你粘贴一个 GitHub 链接，导入 tdd、code-review 和 release 三个技能，再在 api、web 和 docs 三个 Workspace 中启用它们。claude、codex 和 agy 各自收到任务，找到匹配的技能并加载；你修改 code-review 后，这唯一的一份在每个 Workspace 中同步更新，Agent 们完成任务并一起庆祝。" />
+
 ### CoreMCP 与 Workspace MCP
 
 AgentRQ 有两层 MCP：

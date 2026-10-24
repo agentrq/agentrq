@@ -159,6 +159,9 @@ Give a workspace's agents the playbooks your team already follows. A skill is a 
 </td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/skills.svg" width="1200" alt="AgentRQ skills: you paste a GitHub link and import three skills, tdd, code-review and release, then turn them on in the api, web and docs workspaces. Each agent, claude, codex and agy, gets a task, finds the skill that matches and loads it; you edit code-review and the one copy updates in every workspace, and the agents finish and celebrate." /></td>
+</tr>
+<tr>
 <td colspan="2" valign="middle">
 
 ### Pano
