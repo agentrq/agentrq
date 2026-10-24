@@ -196,6 +196,7 @@ pub fn normalize_source(svg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
 
     const RENDERER: &str = "/app/dist/renderer";
     const PROJECT: &str = "/app";
@@ -206,6 +207,33 @@ mod tests {
 
     fn source() -> PathBuf {
         PathBuf::from("/frontend/public").join(ICON_FILENAME)
+    }
+
+    /// A file of the Electron app, or `None` (with a note) once `desktop/` is
+    /// gone after the cutover, so these guards retire with it instead of failing.
+    fn repo_path(relative: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(relative)
+    }
+
+    /// An `Option`, so a test loops over it: no `desktop/`, no iterations.
+    fn read_repo_file(relative: &str) -> Option<Vec<u8>> {
+        read_file_under(&repo_path(""), relative)
+    }
+
+    fn read_file_under(root: &Path, relative: &str) -> Option<Vec<u8>> {
+        std::fs::read(root.join(relative))
+            .map_err(|e| eprintln!("skipped, cannot read {relative}: {e}"))
+            .ok()
+    }
+
+    #[test]
+    fn skips_the_guards_that_read_the_electron_app_once_it_is_gone() {
+        assert_eq!(
+            read_file_under(Path::new("/no/such/checkout"), "desktop/package.json"),
+            None
+        );
     }
 
     /// Resolve against a fixed set of files that "exist".
@@ -352,12 +380,13 @@ mod tests {
 
     #[test]
     fn announces_the_app_under_the_name_its_launcher_entry_is_installed_as() {
-        // Electron: package.json `name` is `agentrq-desktop`, and `desktopName`
-        // has to be `<name>.desktop`.
-        assert_eq!(
-            launcher_entry_name("agentrq-desktop"),
-            "agentrq-desktop.desktop"
-        );
+        // Electron: package.json `desktopName` has to be `<name>.desktop`.
+        for bytes in read_repo_file("desktop/package.json").into_iter() {
+            let package: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            let name = package["name"].as_str().unwrap();
+            assert_eq!(package["desktopName"], launcher_entry_name(name));
+            assert_eq!(package["desktopName"], "agentrq-desktop.desktop");
+        }
         // Tauri: the binary and the bundle id are the parameters.
         assert_eq!(
             launcher_entry_name("agentrq-tauri"),
@@ -386,6 +415,8 @@ mod tests {
         // launcher icon is rendered from the rounded SVG.
         assert_ne!(ICON_FILENAME, "large-icon.png");
         assert_eq!(ICON_SOURCE, "frontend/public/favicon.svg");
+        // The file the window is handed has to exist where the search looks.
+        assert!(repo_path("frontend/public").join(ICON_FILENAME).exists());
     }
 
     // linux icon set
@@ -425,20 +456,49 @@ mod tests {
         assert_eq!(png_dimensions(&png_header(1, 1)[..22]), None);
     }
 
+    fn committed_manifest() -> Option<IconManifest> {
+        let bytes = read_repo_file("desktop/resources/icons/source.json")?;
+        Some(serde_json::from_slice(&bytes).unwrap())
+    }
+
     #[test]
     fn was_rendered_from_the_mark_the_app_actually_uses() {
-        let sizes = ICON_SIZES
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        let manifest: IconManifest = serde_json::from_str(&format!(
-            r#"{{"source":"{ICON_SOURCE}","sha256":"abc","sizes":[{sizes}]}}"#
-        ))
-        .unwrap();
+        for manifest in committed_manifest().into_iter() {
+            assert_eq!(manifest.source, ICON_SOURCE);
+            assert_eq!(manifest.sizes, ICON_SIZES);
+        }
+    }
 
-        assert_eq!(manifest.source, ICON_SOURCE);
-        assert_eq!(manifest.sizes, ICON_SIZES);
+    #[test]
+    fn is_still_in_step_with_that_mark() {
+        for manifest in committed_manifest().into_iter() {
+            let svg = read_repo_file(&manifest.source).unwrap();
+            let svg = normalize_source(&String::from_utf8(svg).unwrap());
+
+            let digest: String = Sha256::digest(svg.as_bytes())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            assert_eq!(manifest.sha256, digest);
+        }
+    }
+
+    #[test]
+    fn commits_every_size_as_an_image_that_is_really_that_size() {
+        for manifest in committed_manifest().into_iter() {
+            let dir = repo_path("desktop/resources/icons");
+            let names: Vec<String> = std::fs::read_dir(&dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+            let present: Vec<&str> = names.iter().map(String::as_str).collect();
+            assert!(is_complete_icon_set(&present));
+
+            for size in manifest.sizes {
+                let bytes = std::fs::read(dir.join(icon_file_name(size))).unwrap();
+                assert_eq!(png_dimensions(&bytes), Some((size, size)));
+            }
+        }
     }
 
     #[test]
