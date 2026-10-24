@@ -70,6 +70,9 @@ A Workflow is Events and workspaces arranged on a graph. Drag a workspace onto a
 </td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/events-workflows.svg" width="1200" alt="AgentRQ workflows: you drag the release workspace onto the deploy_finished event. claude finishes the qa task, so qa_passed fires and a pulse runs into deploy, which gets a new task; codex deploys, deploy_finished fires and release gets its task; hermes writes the release notes and claude, codex and hermes celebrate." /></td>
+</tr>
+<tr>
 <td width="50%" valign="middle">
 
 ### Tool Call History
