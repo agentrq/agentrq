@@ -61,6 +61,20 @@ func TestFromEntityAgentClientToView(t *testing.T) {
 	})
 }
 
+func TestFromEntityWorkspaceTaskSummaryToView(t *testing.T) {
+	if got := fromEntityWorkspaceTaskSummaryToView(nil); got != nil {
+		t.Errorf("an archived workspace's summary is %+v, want nil so it is omitted", got)
+	}
+	got := fromEntityWorkspaceTaskSummaryToView(&entity.WorkspaceTaskSummary{Ongoing: 1, NeedsYou: 2, Done: 3, Total: 7})
+	if got == nil || got.Ongoing != 1 || got.NeedsYou != 2 || got.Done != 3 || got.Total != 7 || got.Current != nil {
+		t.Errorf("got %+v, want the counts and no current task", got)
+	}
+	got = fromEntityWorkspaceTaskSummaryToView(&entity.WorkspaceTaskSummary{Ongoing: 1, Current: &entity.TaskRef{ID: 62, Title: "Fix the build"}})
+	if got.Current == nil || got.Current.ID != "00000000010" || got.Current.Title != "Fix the build" {
+		t.Errorf("the current task is %+v, want the base62 id 00000000010 and its title", got.Current)
+	}
+}
+
 func TestFromEntityAgentConcurrencyToView(t *testing.T) {
 	t.Run("nil stays nil, so the field is omitted entirely", func(t *testing.T) {
 		// A client reads the field's presence as "there is a number to show",

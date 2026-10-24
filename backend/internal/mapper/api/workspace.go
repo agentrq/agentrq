@@ -187,6 +187,7 @@ func fromEntityWorkspaceToView(p entity.Workspace, mcpURL string) view.Workspace
 		WorkingDirectory:      p.WorkingDirectory,
 		ForkCount:             p.ForkCount,
 		UnfinishedTasks:       p.UnfinishedTasks,
+		TaskSummary:           fromEntityWorkspaceTaskSummaryToView(p.TaskSummary),
 	}
 	if p.ForkOfID != 0 {
 		v.ForkOfID = monoflake.ID(p.ForkOfID).String()
@@ -336,6 +337,17 @@ func fromEntityAgentClientToView(c *entity.AgentClient) *view.AgentClient {
 		return nil
 	}
 	return &view.AgentClient{Name: c.Name, Title: c.Title, Version: c.Version}
+}
+
+func fromEntityWorkspaceTaskSummaryToView(s *entity.WorkspaceTaskSummary) *view.WorkspaceTaskSummary {
+	if s == nil {
+		return nil
+	}
+	v := &view.WorkspaceTaskSummary{Ongoing: s.Ongoing, NeedsYou: s.NeedsYou, Done: s.Done, Total: s.Total}
+	if s.Current != nil {
+		v.Current = &view.TaskRef{ID: monoflake.ID(s.Current.ID).String(), Title: s.Current.Title}
+	}
+	return v
 }
 
 // FromHTTPRequestToForkWorkspaceRequestEntity reads a fork request; the body

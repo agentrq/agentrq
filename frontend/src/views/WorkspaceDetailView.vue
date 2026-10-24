@@ -153,6 +153,11 @@
         </div>
       </div>
 
+      <!-- This workspace's forks and what each is doing, when it has any. -->
+      <div v-if="!isFullPane" class="px-4 -mt-4 mb-3 shrink-0" :class="{'hidden @min-[40rem]:block': selectedTaskId}">
+        <WorkspaceForksBar :workspace-id="workspaceId" />
+      </div>
+
       <!-- Content Area (Split Pane) -->
       <div class="flex flex-col @min-[48rem]:flex-row flex-1 min-h-0 w-full bg-transparent">
         <!-- Tasks Sidebar (Left Pane) -->
@@ -266,6 +271,7 @@ import ExtensionViewPanel from '../components/ExtensionViewPanel.vue';
 import TaskFeed from '../components/TaskFeed.vue';
 import LoadingState from '../components/LoadingState.vue';
 import StartAgentPanel from '../components/StartAgentPanel.vue';
+import WorkspaceForksBar from '../components/WorkspaceForksBar.vue';
 
 const { toKebabCase } = useFormat();
 

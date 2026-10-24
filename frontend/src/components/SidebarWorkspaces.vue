@@ -17,6 +17,7 @@ import ForkIcon from './ForkIcon.vue'
 import ForkNameModal from './ForkNameModal.vue'
 import MergeForkModal from './MergeForkModal.vue'
 import { parentName, useForkActions, workspaceTree } from '../composables/useWorkspaceForks'
+import { activityOf, needsYouCount } from '../composables/useWorkspaceActivity'
 import { useWorkspaceContextMenu, workspaceMenuItems } from '../composables/useWorkspaceContextMenu'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useToasts } from '../composables/useToasts'
@@ -42,6 +43,8 @@ const collapsedGroups = ref(new Set((() => {
   try { return JSON.parse(localStorage.getItem(COLLAPSED_FORKS_KEY) ?? '[]') } catch { return [] }
 })()))
 const isGroupCollapsed = (id) => collapsedGroups.value.has(String(id))
+// A parent's folded forks, whose state its row sums up.
+const foldedForks = (ws, group) => (ws === group.workspace && isGroupCollapsed(ws.id) ? group.forks : [])
 function toggleGroup(id) {
   const next = new Set(collapsedGroups.value)
   next.has(String(id)) ? next.delete(String(id)) : next.add(String(id))
@@ -96,11 +99,20 @@ function onWorkspaceMenuSelect(key) {
               ws.forkOfId ? 'pl-6' : 'pl-2',
               route.path.startsWith(`/workspaces/${ws.id}`) ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white font-semibold' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
             ]">
-          <div class="w-1.5 h-1.5 rounded-full shrink-0"
-               :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"
-               :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'"></div>
+          <!-- The dot pulses while the agent works on a task. -->
+          <span class="relative flex items-center justify-center w-1.5 h-1.5 shrink-0"
+                :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'">
+            <span class="w-1.5 h-1.5 rounded-full"
+                  :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"></span>
+            <span v-if="activityOf(ws).working" class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75" data-test="sidebar-working"></span>
+          </span>
           <ForkIcon v-if="ws.forkOfId" class="w-3 h-3 shrink-0 -ml-1 opacity-70" />
           <span class="truncate flex-1">{{ toKebabCase(ws.name) }}</span>
+          <!-- Tasks waiting on the person: blocked, theirs to do, or a
+               question pending. A folded parent counts its forks' too. -->
+          <span v-if="needsYouCount(ws, foldedForks(ws, group)) > 0"
+                class="shrink-0 min-w-4 px-1 rounded-sm text-center text-[9px] font-black leading-4 bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                data-test="sidebar-needs-you">{{ needsYouCount(ws, foldedForks(ws, group)) }}</span>
           <button v-if="!ws.forkOfId && group.forks.length > 0" type="button"
                   @click.prevent.stop="toggleGroup(ws.id)"
                   :aria-expanded="!isGroupCollapsed(ws.id)"

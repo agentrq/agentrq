@@ -2790,6 +2790,24 @@ components:
           description: |
             How many of a fork's tasks keep it from merging, on the list of
             workspaces.
+        taskSummary:
+          type: object
+          description: |
+            What an active workspace's tasks are doing, on the list of
+            workspaces. needsYou counts blocked tasks, tasks not started that
+            are assigned to the human, and ongoing tasks with a question still
+            pending. total leaves out scheduled tasks. current is the ongoing
+            task updated last.
+          properties:
+            ongoing: { type: integer }
+            needsYou: { type: integer }
+            done: { type: integer }
+            total: { type: integer }
+            current:
+              type: object
+              properties:
+                id: { type: string }
+                title: { type: string }
 
     AgentModels:
       type: object

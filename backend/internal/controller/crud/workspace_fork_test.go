@@ -415,6 +415,7 @@ func TestListWorkspaces_FillsInForks(t *testing.T) {
 	env.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, false).
 		Return([]model.Workspace{forkWorkspace(), parentWorkspace(), orphan, {ID: 40, Name: "plain"}}, nil)
 	env.repo.EXPECT().CountUnfinishedTasks(gomock.Any(), []int64{fkFork, 30}).Return(map[int64]int64{fkFork: 2}, nil)
+	env.repo.EXPECT().SummarizeTasks(gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	listed, err := env.controller.ListWorkspaces(context.Background(), entity.ListWorkspacesRequest{UserID: testUserIDStr})
 	if err != nil {

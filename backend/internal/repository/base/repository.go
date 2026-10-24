@@ -52,6 +52,9 @@ type Repository interface {
 	// CountUnfinishedTasks counts, per workspace, the tasks that would keep
 	// a fork from merging. Workspaces with none are absent from the map.
 	CountUnfinishedTasks(ctx context.Context, workspaceIDs []int64) (map[int64]int64, error)
+	// SummarizeTasks counts, per workspace, its tasks by what they wait on.
+	// Workspaces with no tasks are absent from the map.
+	SummarizeTasks(ctx context.Context, workspaceIDs []int64) (map[int64]entity.WorkspaceTaskSummary, error)
 	// MergeForkIntoParent moves every task of a fork, with everything that
 	// follows a task, into its parent and deletes the fork, in one
 	// transaction. It refuses, moving nothing, while any task is unfinished.
@@ -401,6 +404,74 @@ func (r *repository) CountUnfinishedTasks(ctx context.Context, workspaceIDs []in
 		out[row.WorkspaceID] = row.N
 	}
 	return out, err
+}
+
+func (r *repository) SummarizeTasks(ctx context.Context, workspaceIDs []int64) (map[int64]entity.WorkspaceTaskSummary, error) {
+	out := make(map[int64]entity.WorkspaceTaskSummary)
+	if len(workspaceIDs) == 0 {
+		return out, nil
+	}
+	var counts []struct {
+		WorkspaceID int64
+		Status      string
+		Assignee    string
+		N           int64
+	}
+	if err := r.conn(ctx).Model(&model.Task{}).
+		Select("workspace_id, status, assignee, COUNT(*) AS n").
+		Where("workspace_id IN ?", workspaceIDs).
+		Group("workspace_id, status, assignee").Scan(&counts).Error; err != nil {
+		return nil, err
+	}
+	for _, c := range counts {
+		s := out[c.WorkspaceID]
+		n := int(c.N)
+		switch {
+		case c.Status == "ongoing":
+			s.Ongoing += n
+		case c.Status == "blocked", c.Status == "notstarted" && c.Assignee == "human":
+			s.NeedsYou += n
+		case c.Status == "completed", c.Status == "rejected":
+			s.Done += n
+		}
+		if c.Status != "cron" {
+			s.Total += n
+		}
+		out[c.WorkspaceID] = s
+	}
+
+	var ongoing []model.Task
+	if err := r.conn(ctx).Select("id, workspace_id, title").
+		Where("workspace_id IN ? AND status = ?", workspaceIDs, "ongoing").
+		Order("updated_at DESC, id DESC").Find(&ongoing).Error; err != nil {
+		return nil, err
+	}
+	if len(ongoing) == 0 {
+		return out, nil
+	}
+	var asking []int64
+	if err := r.conn(ctx).Model(&model.Message{}).Distinct("task_id").
+		Where("task_id IN (?)", r.conn(ctx).Model(&model.Task{}).Select("id").
+			Where("workspace_id IN ? AND status = ?", workspaceIDs, "ongoing")).
+		Where(pendingRequestClause(r.conn(ctx))).
+		Pluck("task_id", &asking).Error; err != nil {
+		return nil, err
+	}
+	waiting := make(map[int64]bool, len(asking))
+	for _, id := range asking {
+		waiting[id] = true
+	}
+	for _, t := range ongoing {
+		s := out[t.WorkspaceID]
+		if waiting[t.ID] {
+			s.NeedsYou++
+		}
+		if s.Current == nil {
+			s.Current = &entity.TaskRef{ID: t.ID, Title: t.Title}
+		}
+		out[t.WorkspaceID] = s
+	}
+	return out, nil
 }
 
 func (r *repository) MergeForkIntoParent(ctx context.Context, forkID, parentID int64) ([]int64, error) {

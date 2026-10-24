@@ -33,15 +33,32 @@ type (
 		AutoAllowedTools     []string              `json:"autoAllowedTools,omitempty"`
 		AllowAllCommands     bool                  `json:"allowAllCommands"`
 		// ClearContextDefault is what a new task's clearContext starts as.
-		ClearContextDefault   bool          `json:"clearContextDefault"`
-		SelfLearningLoopNote  string        `json:"selfLearningLoopNote,omitempty"`
-		InputSendDelaySeconds int           `json:"inputSendDelaySeconds"`
-		WorkingDirectory      string        `json:"workingDirectory,omitempty"`
-		Slack                 *SlackConfig  `json:"slack,omitempty"`
-		ForkOfID              string        `json:"forkOfId,omitempty"`
-		ForkOf                *WorkspaceRef `json:"forkOf,omitempty"`
-		ForkCount             int           `json:"forkCount,omitempty"`
-		UnfinishedTasks       int           `json:"unfinishedTasks,omitempty"`
+		ClearContextDefault   bool                  `json:"clearContextDefault"`
+		SelfLearningLoopNote  string                `json:"selfLearningLoopNote,omitempty"`
+		InputSendDelaySeconds int                   `json:"inputSendDelaySeconds"`
+		WorkingDirectory      string                `json:"workingDirectory,omitempty"`
+		Slack                 *SlackConfig          `json:"slack,omitempty"`
+		ForkOfID              string                `json:"forkOfId,omitempty"`
+		ForkOf                *WorkspaceRef         `json:"forkOf,omitempty"`
+		ForkCount             int                   `json:"forkCount,omitempty"`
+		UnfinishedTasks       int                   `json:"unfinishedTasks,omitempty"`
+		TaskSummary           *WorkspaceTaskSummary `json:"taskSummary,omitempty"`
+	}
+
+	// WorkspaceTaskSummary is what a workspace's tasks are doing, on the list
+	// of workspaces.
+	WorkspaceTaskSummary struct {
+		Ongoing  int      `json:"ongoing"`
+		NeedsYou int      `json:"needsYou"`
+		Done     int      `json:"done"`
+		Total    int      `json:"total"`
+		Current  *TaskRef `json:"current,omitempty"`
+	}
+
+	// TaskRef names a task.
+	TaskRef struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
 	}
 
 	// WorkspaceRef names another workspace.
