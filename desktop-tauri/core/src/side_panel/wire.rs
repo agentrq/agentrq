@@ -99,14 +99,17 @@ pub const DENY: &str = "deny";
 pub struct SidePanel<H: SidePanelHost> {
     host: H,
     platform: String,
+    webview2_ext_urls: bool,
 }
 
 impl<H: SidePanelHost> SidePanel<H> {
-    /// `platform` is `process.platform`.
-    pub fn new(host: H, platform: &str) -> Self {
+    /// `platform` is `process.platform`. `webview2_ext_urls` is
+    /// `cfg!(windows)`: see `normalize_ext_url`.
+    pub fn new(host: H, platform: &str, webview2_ext_urls: bool) -> Self {
         Self {
             host,
             platform: platform.to_string(),
+            webview2_ext_urls,
         }
     }
 
@@ -163,8 +166,11 @@ impl<H: SidePanelHost> SidePanel<H> {
         KeyAction::Prevent
     }
 
-    fn navigation_options<'a>(server_url: &'a str) -> NavigationOptions<'a> {
-        NavigationOptions { server_url }
+    fn navigation_options<'a>(&self, server_url: &'a str) -> NavigationOptions<'a> {
+        NavigationOptions {
+            server_url,
+            webview2_ext_urls: self.webview2_ext_urls,
+        }
     }
 
     /// `setWindowOpenHandler`. Never a second window. A page that asks for one
@@ -173,7 +179,7 @@ impl<H: SidePanelHost> SidePanel<H> {
     pub fn window_open(&self, guest: u32, url: &str, disposition: &str) -> &'static str {
         let server_url = self.host.server_url();
         let details = OpenDetails { url, disposition };
-        match open_target(details, Self::navigation_options(&server_url)) {
+        match open_target(details, self.navigation_options(&server_url)) {
             PanelTarget::Panel => self.host.load_url(guest, url),
             PanelTarget::Blocked => {}
             _ => self.host.route_link(url),
@@ -185,7 +191,7 @@ impl<H: SidePanelHost> SidePanel<H> {
     /// then off the legacy second argument.
     pub fn will_navigate(&self, url: &str) -> NavigationAction {
         let server_url = self.host.server_url();
-        let target = navigation_target(url, Self::navigation_options(&server_url));
+        let target = navigation_target(url, self.navigation_options(&server_url));
         match target {
             PanelTarget::Panel => NavigationAction::Allow,
             PanelTarget::Blocked => NavigationAction::Prevent,
@@ -277,7 +283,7 @@ mod tests {
             calls: calls.clone(),
             destroyed,
         };
-        (SidePanel::new(host, platform), calls)
+        (SidePanel::new(host, platform, false), calls)
     }
 
     fn key(key: &str, modifiers: &str) -> KeyInput {
@@ -473,7 +479,7 @@ mod tests {
 
     #[test]
     fn carries_on_without_a_broker() {
-        let panel = SidePanel::new(BareHost, "linux");
+        let panel = SidePanel::new(BareHost, "linux", false);
         panel.did_start_navigation(
             1,
             Some(NavigationStart {

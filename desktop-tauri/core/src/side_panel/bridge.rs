@@ -36,9 +36,9 @@ fn fail<T>(reason: impl Into<String>) -> Result<T, Refusal> {
 }
 
 /// The Extension an address belongs to, or `""` for anything that is not one
-/// of its pages.
-pub fn extension_of(raw_url: &str) -> String {
-    match Url::parse(&normalize_ext_url(raw_url)) {
+/// of its pages. `webview2_ext_urls` is as for [`normalize_ext_url`].
+pub fn extension_of(raw_url: &str, webview2_ext_urls: bool) -> String {
+    match Url::parse(&normalize_ext_url(raw_url, webview2_ext_urls)) {
         Ok(url) if url.scheme() == EXT_SCHEME => host_of(&url),
         _ => String::new(),
     }
@@ -96,10 +96,11 @@ pub fn deliver_to(
     owner: &str,
     channel: &str,
     message: &Value,
+    webview2_ext_urls: bool,
 ) -> usize {
     let mut reached = 0;
     for guest in guests {
-        if guest.is_destroyed() || extension_of(&guest.url()) != owner {
+        if guest.is_destroyed() || extension_of(&guest.url(), webview2_ext_urls) != owner {
             continue;
         }
         guest.send(channel, message);
@@ -140,6 +141,8 @@ pub struct OpenTarget {
 /// The hub every Extension's `ctx.panel` is closed over.
 pub struct PanelHub<H: PanelHost> {
     host: H,
+    /// See [`normalize_ext_url`]; the shell sets it to `cfg!(windows)`.
+    webview2_ext_urls: bool,
     /// owner → the one handler its pages talk to. Never held across a call
     /// into an Extension's handler.
     handlers: Mutex<HashMap<String, MessageHandler>>,
@@ -152,9 +155,10 @@ pub struct PanelCapability<'a, H: PanelHost> {
 }
 
 impl<H: PanelHost> PanelHub<H> {
-    pub fn new(host: H) -> Self {
+    pub fn new(host: H, webview2_ext_urls: bool) -> Self {
         Self {
             host,
+            webview2_ext_urls,
             handlers: Mutex::new(HashMap::new()),
         }
     }
@@ -176,7 +180,7 @@ impl<H: PanelHost> PanelHub<H> {
     }
 
     fn send_text(&self, sender: Sender<'_>, text: Option<String>) -> Result<Value, Refusal> {
-        let owner = extension_of(sender.url);
+        let owner = extension_of(sender.url, self.webview2_ext_urls);
         if !sender.is_main_frame || owner.is_empty() {
             return fail("Only an extension’s own pages can send to it.");
         }
@@ -291,7 +295,7 @@ mod tests {
 
     fn setup() -> (PanelHub<Arc<FakeHost>>, Arc<FakeHost>) {
         let host = Arc::new(FakeHost::default());
-        (PanelHub::new(host.clone()), host)
+        (PanelHub::new(host.clone(), false), host)
     }
 
     const NOTES_PAGE: &str = "agentrq-ext://notes/panel/index.html";
@@ -309,20 +313,20 @@ mod tests {
 
     #[test]
     fn extension_of_names_the_extension_an_address_belongs_to() {
-        assert_eq!(extension_of(NOTES_PAGE), "notes");
+        assert_eq!(extension_of(NOTES_PAGE, false), "notes");
     }
 
     #[test]
     fn extension_of_names_none_for_the_web_the_app_or_junk() {
-        assert_eq!(extension_of("https://notes/panel/index.html"), "");
-        assert_eq!(extension_of("app://agentrq/"), "");
-        assert_eq!(extension_of("not a url"), "");
-        assert_eq!(extension_of(""), "");
+        assert_eq!(extension_of("https://notes/panel/index.html", false), "");
+        assert_eq!(extension_of("app://agentrq/", false), "");
+        assert_eq!(extension_of("not a url", false), "");
+        assert_eq!(extension_of("", false), "");
     }
 
     #[test]
     fn extension_of_keeps_the_port_so_notes_1_is_not_notes() {
-        assert_eq!(extension_of("agentrq-ext://notes:1/x"), "notes:1");
+        assert_eq!(extension_of("agentrq-ext://notes:1/x", false), "notes:1");
     }
 
     #[test]
@@ -589,25 +593,44 @@ mod tests {
 
     #[test]
     fn send_answers_a_page_at_the_address_webview2_reports() {
-        let (hub, _) = setup();
+        let host = Arc::new(FakeHost::default());
+        let hub = PanelHub::new(host, true);
         hub.capability_for("notes")
             .on_message(Arc::new(|_| Ok(Some(json!("ok")))));
         assert_eq!(
             hub.handle_send(main("http://agentrq-ext.notes/panel/index.html"), &1),
             Ok(json!("ok"))
         );
-        assert_eq!(extension_of("http://agentrq-ext.notes/x"), "notes");
-        assert_eq!(extension_of("HTTPS://AgentRQ-Ext.notes/x"), "notes");
-        assert_eq!(extension_of("agentrq-ext://notes/x"), "notes");
+        assert_eq!(extension_of("http://agentrq-ext.notes/x", true), "notes");
+        assert_eq!(extension_of("HTTPS://AgentRQ-Ext.notes/x", true), "notes");
+        assert_eq!(extension_of("agentrq-ext://notes/x", true), "notes");
         // Named the way wry names it: all after `agentrq-ext.` is the host.
         assert_eq!(
-            extension_of("http://agentrq-ext.notes.evil.com/"),
+            extension_of("http://agentrq-ext.notes.evil.com/", true),
             "notes.evil.com"
         );
-        assert_eq!(extension_of("http://agentrq-ext/"), "");
-        assert_eq!(extension_of("http://notes.agentrq-ext.example/"), "");
+        assert_eq!(extension_of("http://agentrq-ext/", true), "");
+        assert_eq!(extension_of("http://notes.agentrq-ext.example/", true), "");
     }
 
+    #[test]
+    fn without_the_webview2_flag_the_http_form_is_a_web_page_not_the_extension() {
+        let (hub, _) = setup();
+        hub.capability_for("notes")
+            .on_message(Arc::new(|_| Ok(Some(json!("reached")))));
+        for url in [
+            "http://agentrq-ext.notes/panel/index.html",
+            "https://AgentRQ-Ext.notes/panel/index.html",
+        ] {
+            assert_eq!(
+                reason(hub.handle_send(main(url), &1)),
+                "Only an extension’s own pages can send to it.",
+                "{url}"
+            );
+            assert_eq!(extension_of(url, false), "", "{url}");
+        }
+        assert_eq!(extension_of("http://agentrq-ext.notes/x", true), "notes");
+    }
     /// Its `Drop` calls back into the hub, as a handler holding a session might.
     struct Session {
         hub: Arc<PanelHub<Arc<FakeHost>>>,
@@ -749,6 +772,15 @@ mod tests {
     }
 
     #[test]
+    fn deliver_to_skips_the_http_form_unless_webview2() {
+        let lookalike = FakeGuest::new("http://agentrq-ext.notes/panel/x.html", Some(false));
+        let guests: [&dyn PanelGuest; 1] = [&lookalike];
+        let message = json!(1);
+        assert_eq!(deliver_to(&guests, "notes", "c", &message, false), 0);
+        assert_eq!(deliver_to(&guests, "notes", "c", &message, true), 1);
+    }
+
+    #[test]
     fn deliver_to_reaches_only_open_pages_of_that_extension() {
         let mine = FakeGuest::new(NOTES_PAGE, Some(false));
         let gone = FakeGuest::new(NOTES_PAGE, Some(true));
@@ -762,6 +794,7 @@ mod tests {
             "notes",
             "agentrq:panel:message",
             &json!({ "n": 1 }),
+            false,
         );
 
         assert_eq!(reached, 2);

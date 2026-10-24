@@ -41,7 +41,16 @@ pub fn panel_partition_for(profile_id: &str) -> String {
 /// `revert_uri_work_around` does (everything after `agentrq-ext.` is the host,
 /// so `http://agentrq-ext.notes.evil.com/` names `notes.evil.com`, which no
 /// Extension is). Any other address is returned as it came.
-pub fn normalize_ext_url(raw: &str) -> Cow<'_, str> {
+///
+/// Only when `webview2_ext_urls` is true, and the shell sets that to
+/// `cfg!(windows)`: only wry's WebView2 workaround rewrites `agentrq-ext://` to
+/// `http(s)://agentrq-ext.` and intercepts those requests, so they never reach
+/// the network. Elsewhere the scheme is native and that `http://` form is a
+/// real web page, which anyone on the LAN can serve; it must stay a web page.
+pub fn normalize_ext_url(raw: &str, webview2_ext_urls: bool) -> Cow<'_, str> {
+    if !webview2_ext_urls {
+        return Cow::Borrowed(raw);
+    }
     let trimmed = raw.trim_matches(|c: char| c <= ' ');
     for scheme in ["http", "https"] {
         let prefix = format!("{scheme}://{EXT_SCHEME}.");
@@ -173,6 +182,9 @@ pub enum PanelTarget {
 pub struct NavigationOptions<'a> {
     /// The configured server. Empty means none is chosen yet.
     pub server_url: &'a str,
+    /// Read `http(s)://agentrq-ext.<name>` as an Extension page. See
+    /// [`normalize_ext_url`]; the shell sets it to `cfg!(windows)`.
+    pub webview2_ext_urls: bool,
 }
 
 /// Where a guest navigating to `raw_url` should end up.
@@ -182,7 +194,7 @@ pub struct NavigationOptions<'a> {
 /// succeed and leave the app signed out. Anything else is the existing link
 /// rule, which is what keeps `file:` and `javascript:` out.
 pub fn navigation_target(raw_url: &str, options: NavigationOptions<'_>) -> PanelTarget {
-    let raw_url = &*normalize_ext_url(raw_url);
+    let raw_url = &*normalize_ext_url(raw_url, options.webview2_ext_urls);
     let protocol = protocol_of(raw_url);
     if protocol == format!("{EXT_SCHEME}:") || raw_url == "about:blank" {
         return PanelTarget::Panel;
@@ -219,7 +231,7 @@ pub struct OpenDetails<'a> {
 /// middle-click as `background-tab`, which is somebody asking for the page
 /// *somewhere else* — their browser. Every other disposition opens in the panel.
 pub fn open_target(details: OpenDetails<'_>, options: NavigationOptions<'_>) -> PanelTarget {
-    let url = normalize_ext_url(details.url);
+    let url = normalize_ext_url(details.url, options.webview2_ext_urls);
     let target = navigation_target(&url, options);
     if target == PanelTarget::Panel && details.disposition == "background-tab" {
         let protocol = protocol_of(&url);
@@ -402,7 +414,7 @@ mod tests {
 
     #[test]
     fn normalize_maps_the_webview2_form_back_and_touches_nothing_else() {
-        let n = |raw: &str| normalize_ext_url(raw).into_owned();
+        let n = |raw: &str| normalize_ext_url(raw, true).into_owned();
         assert_eq!(
             n("http://agentrq-ext.notes/panel/x.html?a=1#b"),
             "agentrq-ext://notes/panel/x.html?a=1#b"
@@ -430,10 +442,38 @@ mod tests {
             "",
         ] {
             assert!(
-                matches!(normalize_ext_url(untouched), Cow::Borrowed(same) if same == untouched),
+                matches!(normalize_ext_url(untouched, true), Cow::Borrowed(same) if same == untouched),
                 "{untouched:?}"
             );
         }
+    }
+
+    #[test]
+    fn normalize_does_nothing_without_the_webview2_flag() {
+        let raw = "http://agentrq-ext.notes/panel/x.html";
+        assert!(matches!(normalize_ext_url(raw, false), Cow::Borrowed(same) if same == raw));
+    }
+
+    #[test]
+    fn navigation_and_open_treat_the_http_form_as_a_web_page_without_the_flag() {
+        let off = NavigationOptions {
+            server_url: SERVER_URL,
+            webview2_ext_urls: false,
+        };
+        let url = "http://agentrq-ext.notes/panel/index.html";
+        // Still the panel (it is http), but the web, not the Extension: a
+        // Cmd/Ctrl-click goes to the browser like any other site.
+        assert_eq!(navigation_target(url, off), PanelTarget::Panel);
+        let details = OpenDetails {
+            url,
+            disposition: "background-tab",
+        };
+        assert_eq!(open_target(details, off), PanelTarget::System);
+        let details = OpenDetails {
+            url,
+            disposition: "foreground-tab",
+        };
+        assert_eq!(open_target(details, off), PanelTarget::Panel);
     }
 
     #[test]
@@ -475,6 +515,7 @@ mod tests {
             url,
             NavigationOptions {
                 server_url: SERVER_URL,
+                webview2_ext_urls: true,
             },
         )
     }
@@ -531,6 +572,7 @@ mod tests {
             OpenDetails { url, disposition },
             NavigationOptions {
                 server_url: SERVER_URL,
+                webview2_ext_urls: true,
             },
         )
     }
