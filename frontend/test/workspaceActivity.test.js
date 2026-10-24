@@ -10,6 +10,8 @@ import {
   createActivityRefresher,
   forkProgressLabel,
   forkStatusLabel,
+  forkTooltip,
+  sortForks,
   needsYouCount,
   needsYouLabel,
   workingLabel,
@@ -66,14 +68,47 @@ describe('the sidebar row', () => {
     expect(activityTooltip(undefined)).toBe('');
   });
 
-  it('sums up folded forks, one or many', () => {
-    expect(activityTooltip(quiet, [busy])).toBe('docs\n1 fork · 1 working · 1 needs you');
-    expect(activityTooltip(quiet, [quiet, quiet])).toBe('docs\n2 forks');
+  it('names its busy folded forks, busiest first, and counts the idle ones', () => {
+    const working = { name: 'pg', agentConnected: true, taskSummary: { ongoing: 1, current } };
+    expect(activityTooltip(quiet, [quiet, working, busy])).toBe(
+      'docs\napi — 1 needs you\npg — Working on Fix the build\n1 idle'
+    );
+    expect(activityTooltip(quiet, [working])).toBe('docs\npg — Working on Fix the build');
+    expect(activityTooltip(quiet, [quiet])).toBe('docs\n1 fork idle');
+    const done = { name: 'old', taskSummary: { done: 1, total: 1 } };
+    expect(activityTooltip(quiet, [done, quiet])).toBe('docs\n1 ready to merge · 1 idle');
+    expect(activityTooltip(quiet, [done])).toBe('docs\n1 ready to merge');
+    expect(activityTooltip(quiet, [quiet, quiet])).toBe('docs\n2 forks idle');
+  });
+
+  it('names six busy forks at most, and counts the rest', () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ ...busy, name: `f${i}` }));
+    const lines = activityTooltip(quiet, [...many, quiet]).split('\n');
+    expect(lines).toHaveLength(8);
+    expect(lines.slice(1, 7)).toEqual(['f0', 'f1', 'f2', 'f3', 'f4', 'f5'].map((n) => `${n} — 1 needs you`));
+    expect(lines[7]).toBe('+3 more · 1 idle');
   });
 
   it('counts its own and its folded forks\' tasks that need you', () => {
     expect(needsYouCount(busy, [busy, quiet])).toBe(2);
     expect(needsYouCount(quiet)).toBe(0);
+  });
+});
+
+describe('the forks bar', () => {
+  it('puts what needs you first, then work, then what can merge, then the rest', () => {
+    const idle = { name: 'idle', agentConnected: true };
+    const mergeable = { name: 'done', taskSummary: { done: 2, total: 2 } };
+    const unfinished = { name: 'waiting', unfinishedTasks: 1, taskSummary: { done: 1, total: 2 } };
+    const working = { name: 'pg', agentConnected: true, taskSummary: { ongoing: 1 } };
+    expect(sortForks([idle, mergeable, unfinished, working, busy]).map((f) => f.name)).toEqual(['api', 'pg', 'done', 'idle', 'waiting']);
+    expect(sortForks()).toEqual([]);
+  });
+
+  it('says a fork\'s state and progress on hover', () => {
+    expect(forkTooltip(busy)).toBe('api\n1 needs you\n3/6 done');
+    expect(forkTooltip({ name: 'new', agentConnected: true })).toBe('new\nIdle');
+    expect(forkTooltip(undefined)).toBe('Agent offline');
   });
 });
 

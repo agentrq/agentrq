@@ -312,7 +312,7 @@ describe('what each sidebar row is doing', () => {
     const parent = el.querySelector('[data-test=sidebar-workspace]')
     expect(text(parent.querySelector('[data-test=sidebar-needs-you]'))).toBe('3')
     parent.querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
-    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you\n1 fork · 1 working · 2 need you')
+    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you\nops try — 2 need you')
   })
 })
 
@@ -321,20 +321,45 @@ describe('the forks bar', () => {
   const BUSY = { id: 'f2', name: 'ops pg', forkOfId: 'p1', agentConnected: true, unfinishedTasks: 3, taskSummary: { ongoing: 2, needsYou: 0, done: 1, total: 4, current: { id: 't2', title: 'Try Postgres' } } }
   const bar = (workspaces = [PARENT, DONE, BUSY, WEB]) => mount(WorkspaceForksBar, { workspaceId: 'p1' }, workspaces)
 
-  it('shows each fork of the workspace with its state and progress, and Merge once it is done', async () => {
-    const { el } = bar()
+  it('shows each fork of the workspace busiest first, with Merge once it is done and its state on hover', async () => {
+    const ASKING = { id: 'f3', name: 'ops ask', forkOfId: 'p1', unfinishedTasks: 1, taskSummary: { needsYou: 1, total: 1 } }
+    const { el, pinia } = bar([PARENT, DONE, BUSY, ASKING, WEB])
     await settle()
     const chips = [...el.querySelectorAll('[data-test=fork-chip]')]
-    expect(chips.map((c) => text(c.querySelector('[data-test=fork-status]')))).toEqual(['Idle', 'Working on Try Postgres (+1 more)'])
-    expect(chips.map((c) => text(c.querySelector('[data-test=fork-progress]')))).toEqual(['2/2 done', '1/4 done'])
-    expect(chips.map((c) => c.querySelector('a').getAttribute('href'))).toEqual(['/workspaces/f1', '/workspaces/f2'])
-    expect(chips.map((c) => [...c.querySelectorAll('button')].map(text))).toEqual([['Merge'], []])
+    expect(chips.map((c) => c.querySelector('a').getAttribute('href'))).toEqual(['/workspaces/f3', '/workspaces/f2', '/workspaces/f1'])
+    expect(chips.map((c) => text(c.querySelector('[data-test=fork-needs-you]')))).toEqual(['1', '', ''])
+    expect(chips.map((c) => !!c.querySelector('[data-test=fork-working]'))).toEqual([false, true, false])
+    expect(chips.map((c) => [...c.querySelectorAll('button')].map(text))).toEqual([[], [], ['Merge']])
+    expect(el.querySelector('[data-test=forks-more]')).toBe(null)
+
+    const tooltip = useTooltipStore(pinia)
+    chips[1].dispatchEvent(new MouseEvent('mouseenter'))
+    expect(tooltip.text).toBe('ops pg\nWorking on Try Postgres (+1 more)\n1/4 done')
+    chips[1].dispatchEvent(new MouseEvent('mouseleave'))
+    expect(tooltip.visible).toBe(false)
+  })
+
+  it('shows five forks, and the rest on "+N more"', async () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ id: `m${i}`, name: `try ${i}`, forkOfId: 'p1', unfinishedTasks: 1 }))
+    const { el } = bar([PARENT, ...many])
+    await settle()
+    const chips = () => el.querySelectorAll('[data-test=fork-chip]').length
+    const more = () => el.querySelector('[data-test=forks-more]')
+    expect(chips()).toBe(5)
+    expect(text(more())).toBe('+2 more')
+    more().click()
+    await settle()
+    expect(chips()).toBe(7)
+    expect(text(more())).toBe('Show less')
+    more().click()
+    await settle()
+    expect(chips()).toBe(5)
   })
 
   it('merges a fork from its chip, through the merge dialog', async () => {
     const { el } = bar()
     await settle()
-    el.querySelector('[data-test=fork-chip] button').click()
+    el.querySelector('[data-test=fork-chip]:last-child button').click()
     await settle()
     const dialog = document.body.querySelector('[aria-labelledby=merge-modal-title]')
     expect(text(dialog.querySelector('#merge-modal-title'))).toBe('Merge into ops')
