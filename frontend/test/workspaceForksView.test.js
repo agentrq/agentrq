@@ -35,9 +35,11 @@ vi.mock('../src/api', async (importOriginal) => ({
 }))
 
 const { default: SidebarWorkspaces } = await import('../src/components/SidebarWorkspaces.vue')
+const { default: WorkspaceForksBar } = await import('../src/components/WorkspaceForksBar.vue')
 const { default: MoveTaskModal } = await import('../src/components/MoveTaskModal.vue')
 const { default: ContextMenu } = await import('../src/components/ContextMenu.vue')
 const { useWorkspaceStore } = await import('../src/stores/workspaceStore')
+const { useTooltipStore } = await import('../src/stores/tooltipStore')
 const { useToasts } = await import('../src/composables/useToasts')
 
 const settle = () => new Promise((r) => setTimeout(r, 30))
@@ -62,7 +64,7 @@ function mount(component, props = {}, workspaces = [PARENT, FORK, WEB, SUPERVISO
   })
   app.mount(el)
   apps.push(app)
-  return { el, store: useWorkspaceStore(pinia) }
+  return { el, pinia, store: useWorkspaceStore(pinia) }
 }
 
 const text = (node) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim()
@@ -269,6 +271,83 @@ describe('the sidebar', () => {
     rows[rows.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
     await settle()
     expect(menuButtons()).toHaveLength(0)
+  })
+})
+
+describe('what each sidebar row is doing', () => {
+  const BUSY = { ...PARENT, agentConnected: true, taskSummary: { ongoing: 1, needsYou: 1, current: { id: 't1', title: 'Fix the build' } } }
+  const ASKING = { ...FORK, agentConnected: true, taskSummary: { ongoing: 1, needsYou: 2, current: { id: 't2', title: 'Try Postgres' } } }
+
+  let store
+  const tooltipText = () => store.text
+  const tooltipVisible = () => store.visible
+
+  it('pulses the dot of an agent at work, counts what needs you, and says it on hover', async () => {
+    const tooltip = vi.fn()
+    const hide = vi.fn()
+    const { el, pinia } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB], showTooltip: tooltip, hideTooltip: hide })
+    store = useTooltipStore(pinia)
+    await settle()
+    const rows = [...el.querySelectorAll('[data-test=sidebar-workspace], [data-test=sidebar-fork]')]
+    expect(rows.map((r) => !!r.querySelector('[data-test=sidebar-working]'))).toEqual([true, true, false])
+    expect(rows.map((r) => text(r.querySelector('[data-test=sidebar-needs-you]')))).toEqual(['1', '2', ''])
+
+    rows[0].querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
+    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you')
+    rows[0].querySelector('a').dispatchEvent(new MouseEvent('mouseleave'))
+    expect(tooltipVisible()).toBe(false)
+    expect(hide).toHaveBeenCalled()
+    // A row with nothing going on leaves its name to the shell.
+    rows[2].querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
+    expect(tooltip.mock.calls.at(-1)[1]).toBe('web')
+    expect(tooltipVisible()).toBe(false)
+  })
+
+  it('sums up its folded forks on the parent\'s row', async () => {
+    const { el, pinia } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB] })
+    store = useTooltipStore(pinia)
+    await settle()
+    el.querySelector('[aria-label="Hide forks"]').click()
+    await settle()
+    const parent = el.querySelector('[data-test=sidebar-workspace]')
+    expect(text(parent.querySelector('[data-test=sidebar-needs-you]'))).toBe('3')
+    parent.querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
+    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you\n1 fork · 1 working · 2 need you')
+  })
+})
+
+describe('the forks bar', () => {
+  const DONE = { ...FORK, agentConnected: true, taskSummary: { ongoing: 0, needsYou: 0, done: 2, total: 2 } }
+  const BUSY = { id: 'f2', name: 'ops pg', forkOfId: 'p1', agentConnected: true, unfinishedTasks: 3, taskSummary: { ongoing: 2, needsYou: 0, done: 1, total: 4, current: { id: 't2', title: 'Try Postgres' } } }
+  const bar = (workspaces = [PARENT, DONE, BUSY, WEB]) => mount(WorkspaceForksBar, { workspaceId: 'p1' }, workspaces)
+
+  it('shows each fork of the workspace with its state and progress, and Merge once it is done', async () => {
+    const { el } = bar()
+    await settle()
+    const chips = [...el.querySelectorAll('[data-test=fork-chip]')]
+    expect(chips.map((c) => text(c.querySelector('[data-test=fork-status]')))).toEqual(['Idle', 'Working on Try Postgres (+1 more)'])
+    expect(chips.map((c) => text(c.querySelector('[data-test=fork-progress]')))).toEqual(['2/2 done', '1/4 done'])
+    expect(chips.map((c) => c.querySelector('a').getAttribute('href'))).toEqual(['/workspaces/f1', '/workspaces/f2'])
+    expect(chips.map((c) => [...c.querySelectorAll('button')].map(text))).toEqual([['Merge'], []])
+  })
+
+  it('merges a fork from its chip, through the merge dialog', async () => {
+    const { el } = bar()
+    await settle()
+    el.querySelector('[data-test=fork-chip] button').click()
+    await settle()
+    const dialog = document.body.querySelector('[aria-labelledby=merge-modal-title]')
+    expect(text(dialog.querySelector('#merge-modal-title'))).toBe('Merge into ops')
+    ;[...dialog.querySelectorAll('button')].find((b) => text(b) === 'Merge').click()
+    await settle()
+    expect(mergeFork).toHaveBeenCalledWith('f1', { deleteFolder: false })
+    expect(push).toHaveBeenCalledWith('/workspaces/p1')
+  })
+
+  it('shows nothing for a workspace with no forks', async () => {
+    const { el } = bar([PARENT, WEB])
+    await settle()
+    expect(el.querySelector('[data-test=forks-bar]')).toBe(null)
   })
 })
 

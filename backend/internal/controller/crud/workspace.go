@@ -132,7 +132,32 @@ func (c *controller) ListWorkspaces(ctx context.Context, req entity.ListWorkspac
 	if err := c.withForkInfo(ctx, workspaces); err != nil {
 		return nil, err
 	}
+	if err := c.withTaskSummary(ctx, workspaces); err != nil {
+		return nil, err
+	}
 	return &entity.ListWorkspacesResponse{Workspaces: workspaces}, nil
+}
+
+// withTaskSummary fills in what each active workspace's tasks are doing. An
+// archived workspace runs nothing, so it is not counted.
+func (c *controller) withTaskSummary(ctx context.Context, ws []entity.Workspace) error {
+	var ids []int64
+	for i := range ws {
+		if ws[i].ArchivedAt == nil {
+			ids = append(ids, ws[i].ID)
+		}
+	}
+	summaries, err := c.repository.SummarizeTasks(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range ws {
+		if ws[i].ArchivedAt == nil {
+			s := summaries[ws[i].ID]
+			ws[i].TaskSummary = &s
+		}
+	}
+	return nil
 }
 
 func (c *controller) DeleteWorkspace(ctx context.Context, req entity.DeleteWorkspaceRequest) error {

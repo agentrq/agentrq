@@ -523,6 +523,7 @@ import { fetchUser, fetchWorkspaces, API_BASE_URL, TELEMETRY_UI_COPY_CODE, TELEM
 import * as api from './api'
 import { useToasts } from './composables/useToasts'
 import { useEventBus } from './useEventBus'
+import { createActivityRefresher } from './composables/useWorkspaceActivity'
 import { duplicateNotice, profileDisplay } from './composables/useProfileDisplay'
 import { useWindowTitle } from './composables/useWindowTitle'
 import { connectWebMCP } from './composables/useWebMCP'
@@ -970,6 +971,10 @@ const closeOverlaysOnEscape = (e) => {
 // handler the last one in the flush.
 const { connect, disconnect, isConnected, onEvent } = useEventBus(undefined, { buffer: false })
 
+// The sidebar's and the forks bar's task counts come with the workspace list,
+// so a task event reads it again — batched, as an agent at work sends many.
+const activityRefresher = createActivityRefresher({ refresh: () => workspaceStore.fetchWorkspaces() })
+
 // A stream toast names the workspace it happened in, as the card's eyebrow.
 const showStreamToast = (toast) => notifyEvent(toast, workspaceStore.getWorkspace(toast.workspaceId)?.name ?? '')
 
@@ -991,6 +996,8 @@ const presenceToast = createPresenceToasts({
 })
 
 onEvent((event) => {
+  activityRefresher.onEvent(event)
+
   // Handle agent connection status updates globally
   if (event.type === 'agent.connected') {
     const { connected, workspaceId } = event.payload
@@ -1197,6 +1204,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onExtensionKey, true)
   stopExtensionWatch?.()
   stopAcpRegistry?.()
+  activityRefresher.stop()
   if (sweepTimer) clearInterval(sweepTimer)
 })
 

@@ -40,6 +40,7 @@ var dynamicSQL = map[string]string{
 	"GetNextTask:sortExpr":                             "the per-database sort order",
 	"GetWorkspaceTaskCountsByCategory:metadataExpr":    "the per-database metadata filter",
 	"syncNeedsInput:pendingRequestClause(tx)":          "pendingRequestClause, a per-database constant",
+	"SummarizeTasks:pendingRequestClause(r.conn(ctx))": "pendingRequestClause, a per-database constant",
 	"detailedStats:scopeClause":                        "a scope its two callers pass as a literal",
 	"detailedStats:dateExpr":                           "the per-database date buckets",
 	"detailedStats:bucketExpr":                         "the per-database date buckets",

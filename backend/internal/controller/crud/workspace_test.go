@@ -225,6 +225,7 @@ func TestListWorkspaces_Success(t *testing.T) {
 		{ID: 2, UserID: testUserID, Name: "W2"},
 	}
 	e.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, false).Return(ms, nil)
+	e.repo.EXPECT().SummarizeTasks(gomock.Any(), []int64{1, 2}).Return(nil, nil)
 
 	resp, err := e.controller.ListWorkspaces(context.Background(), entity.ListWorkspacesRequest{UserID: testUserIDStr, IncludeArchived: false})
 	if err != nil {
@@ -232,6 +233,42 @@ func TestListWorkspaces_Success(t *testing.T) {
 	}
 	if len(resp.Workspaces) != 2 {
 		t.Errorf("expected 2 workspaces, got %d", len(resp.Workspaces))
+	}
+}
+
+func TestListWorkspaces_SummarizesActiveWorkspaces(t *testing.T) {
+	e := newTestController(t)
+	archived := time.Now()
+	ms := []model.Workspace{
+		{ID: 1, UserID: testUserID, Name: "busy"},
+		{ID: 2, UserID: testUserID, Name: "quiet"},
+		{ID: 3, UserID: testUserID, Name: "old", ArchivedAt: &archived},
+	}
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, true).Return(ms, nil)
+	e.repo.EXPECT().SummarizeTasks(gomock.Any(), []int64{1, 2}).Return(map[int64]entity.WorkspaceTaskSummary{
+		1: {Ongoing: 1, NeedsYou: 2, Done: 3, Total: 6, Current: &entity.TaskRef{ID: 7, Title: "Fix the build"}},
+	}, nil)
+
+	resp, err := e.controller.ListWorkspaces(context.Background(), entity.ListWorkspacesRequest{UserID: testUserIDStr, IncludeArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy, quiet, old := resp.Workspaces[0], resp.Workspaces[1], resp.Workspaces[2]
+	if busy.TaskSummary == nil || busy.TaskSummary.NeedsYou != 2 || busy.TaskSummary.Current.Title != "Fix the build" {
+		t.Errorf("the busy workspace's summary is %+v, want 2 needing you and the build fix as current", busy.TaskSummary)
+	}
+	if quiet.TaskSummary == nil || *quiet.TaskSummary != (entity.WorkspaceTaskSummary{}) {
+		t.Errorf("the quiet workspace's summary is %+v, want an empty one", quiet.TaskSummary)
+	}
+	if old.TaskSummary != nil {
+		t.Errorf("the archived workspace has a summary %+v, want none", old.TaskSummary)
+	}
+
+	e = newTestController(t)
+	e.repo.EXPECT().ListWorkspaces(gomock.Any(), testUserID, false).Return(ms[:1], nil)
+	e.repo.EXPECT().SummarizeTasks(gomock.Any(), gomock.Any()).Return(nil, errors.New("database unavailable"))
+	if _, err := e.controller.ListWorkspaces(context.Background(), entity.ListWorkspacesRequest{UserID: testUserIDStr}); err == nil {
+		t.Fatal("ListWorkspaces returned no error, want the failed summary's error")
 	}
 }
 

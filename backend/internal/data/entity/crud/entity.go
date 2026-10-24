@@ -56,6 +56,27 @@ type (
 		ForkOf          *WorkspaceRef
 		ForkCount       int
 		UnfinishedTasks int
+		// TaskSummary is what an active workspace's tasks are doing, read for
+		// the list of workspaces so it shows without opening each one.
+		TaskSummary *WorkspaceTaskSummary
+	}
+
+	// WorkspaceTaskSummary counts a workspace's tasks by what they wait on.
+	// NeedsYou is a blocked task, a not started one assigned to the human, or
+	// an ongoing one with a question still pending. Total leaves out schedules.
+	// Current is the ongoing task updated last.
+	WorkspaceTaskSummary struct {
+		Ongoing  int
+		NeedsYou int
+		Done     int
+		Total    int
+		Current  *TaskRef
+	}
+
+	// TaskRef names a task without carrying all of it.
+	TaskRef struct {
+		ID    int64
+		Title string
 	}
 
 	// WorkspaceRef names another workspace without carrying all of it.
