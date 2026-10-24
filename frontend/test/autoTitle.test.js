@@ -174,6 +174,16 @@ describe('useAutoTitle', () => {
     expect(workers).toHaveLength(0)
   })
 
+  it('does nothing on a phone, where the model would crash the tab', () => {
+    vi.stubGlobal('WebAssembly', { instantiate: () => {} })
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)', maxTouchPoints: 5 })
+    const { auto } = setup()
+    expect(auto.isSupported).toBe(false)
+    auto.generateTitle()
+    expect(workers).toHaveLength(0)
+    expect(recordTelemetry).not.toHaveBeenCalled()
+  })
+
   it('counts the use against the workspace, however it is given', () => {
     setup('Fix the login page redirect', 'ws1').auto.generateTitle()
     setup('Fix the login page redirect', ref('ws2')).auto.generateTitle()

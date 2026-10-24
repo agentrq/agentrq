@@ -5,11 +5,14 @@
 import { ref, watch, onUnmounted } from 'vue';
 import TitleWorker from '../workers/titleWorker.js?worker';
 import { recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';
+import { isMobileDevice } from './useNativeDictation';
 
 // Whether this browser can run the local title model at all. Shared with the
-// background naming of untitled tasks, so the two agree.
+// background naming of untitled tasks, so the two agree. Never on a phone: the
+// model takes more memory than a phone browser gives a tab, and the tab crashes.
 export function localTitleModelSupported() {
   return typeof window !== 'undefined' &&
+    !isMobileDevice() &&
     typeof Worker !== 'undefined' &&
     typeof WebAssembly === 'object' &&
     typeof WebAssembly.instantiate === 'function';

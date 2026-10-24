@@ -132,8 +132,9 @@
 
                   <!-- Kept on this device only, like the local copy: drawn the
                        same way so it is not mistaken for a setting that
-                       follows the account. -->
-                  <div data-test="auto-title" class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 bg-gray-50/40 dark:bg-zinc-800/20">
+                       follows the account. Not on a phone, where the
+                       model does not run. -->
+                  <div v-if="autoTitleSupported" data-test="auto-title" class="border border-dashed border-gray-300 dark:border-zinc-700 rounded-sm p-6 bg-gray-50/40 dark:bg-zinc-800/20">
                     <div class="flex items-start justify-between gap-6">
                       <div class="min-w-0">
                         <div class="flex items-center gap-2 flex-wrap">
@@ -142,7 +143,6 @@
                         </div>
                         <p class="text-[11px] text-gray-600 dark:text-zinc-400 mt-1.5 font-medium leading-relaxed">
                           A task you create here without a title is named from its description by the local AI model, in the background.
-                          <span class="block mt-1 text-gray-500 dark:text-zinc-500">Off by default on phones, where the model can run out of memory. The sparkle button on the task form works either way.</span>
                         </p>
                       </div>
                       <button type="button" role="switch" :aria-checked="autoTitleOn" @click="toggleAutoTitle"
@@ -980,6 +980,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { useFormat } from '../composables/useFormat';
 import { isCacheEnabled, sharedCache } from '../composables/useCachedTasks';
 import { isAutoTitleOn, setAutoTitleOn } from '../composables/useUntitledTaskTitles';
+import { localTitleModelSupported } from '../composables/useAutoTitle';
 import {
   clearWorkspaceData,
   estimateUsage,
@@ -1623,6 +1624,7 @@ async function refreshLocalUsage() {
 }
 
 // Naming untitled tasks with the local model: also this device's own choice.
+const autoTitleSupported = localTitleModelSupported();
 const autoTitleOn = ref(false);
 
 function toggleAutoTitle() {

@@ -72,29 +72,29 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('the per-workspace switch', () => {
-  it('is on by default on a computer and off on a phone', () => {
-    expect(isAutoTitleOn('ws1', { storage: memoryStorage(), mobile: false })).toBe(true)
-    expect(isAutoTitleOn('ws1', { storage: memoryStorage(), mobile: true })).toBe(false)
+  it('is on by default', () => {
+    expect(isAutoTitleOn('ws1', { storage: memoryStorage() })).toBe(true)
   })
 
-  it('keeps either answer, whatever the device', () => {
+  it('keeps either answer', () => {
     const storage = memoryStorage()
+    setAutoTitleOn('ws1', false, storage)
+    expect(storage.data[autoTitleKey('ws1')]).toBe('off')
+    expect(isAutoTitleOn('ws1', { storage })).toBe(false)
+    expect(isAutoTitleOn('ws2', { storage })).toBe(true)
+
     setAutoTitleOn('ws1', true, storage)
     expect(storage.data[autoTitleKey('ws1')]).toBe('on')
-    expect(isAutoTitleOn('ws1', { storage, mobile: true })).toBe(true)
-
-    setAutoTitleOn('ws1', false, storage)
-    expect(isAutoTitleOn('ws1', { storage, mobile: false })).toBe(false)
-    expect(isAutoTitleOn('ws2', { storage, mobile: false })).toBe(true)
+    expect(isAutoTitleOn('ws1', { storage })).toBe(true)
   })
 
-  it('falls back to the default when storage cannot be read, and reports a failed write', () => {
+  it('falls back to on when storage cannot be read, and reports a failed write', () => {
     const broken = {
       getItem: () => { throw new Error('SecurityError: storage disabled') },
       setItem: () => { throw new Error('QuotaExceededError: storage full') },
     }
-    expect(isAutoTitleOn('ws1', { storage: broken, mobile: false })).toBe(true)
-    expect(isAutoTitleOn('ws1', { storage: null, mobile: true })).toBe(false)
+    expect(isAutoTitleOn('ws1', { storage: broken })).toBe(true)
+    expect(isAutoTitleOn('ws1', { storage: null })).toBe(true)
     expect(setAutoTitleOn('ws1', true, broken)).toBe(false)
   })
 

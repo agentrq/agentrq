@@ -49,8 +49,12 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   useToasts().toasts.value.splice(0)
+  vi.stubGlobal('Worker', class {})
 })
-afterEach(() => app?.unmount())
+afterEach(() => {
+  app?.unmount()
+  vi.unstubAllGlobals()
+})
 
 describe('the "Name untitled tasks" switch', () => {
   it('starts on, on a computer, and turning it off is kept on this device only', async () => {
@@ -76,5 +80,11 @@ describe('the "Name untitled tasks" switch', () => {
 
     expect(localStorage.getItem(autoTitleKey('ws1'))).toBe('on')
     expect(useToasts().toasts.value.at(-1).message).toBe('Untitled tasks will be named on this device')
+  })
+
+  it('is not offered on a phone, where the model does not run', async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) Mobile' })
+    const { switchButton } = await mount()
+    expect(switchButton()).toBeNull()
   })
 })

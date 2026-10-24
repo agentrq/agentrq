@@ -4,7 +4,6 @@
 
 import TitleWorker from '../workers/titleWorker.js?worker';
 import { getTask, updateTaskTitle, recordTelemetry, TELEMETRY_LOCAL_AI_TITLE_GENERATE } from '../api';
-import { isMobileDevice } from './useNativeDictation';
 import { localTitleModelSupported } from './useAutoTitle';
 
 /**
@@ -15,10 +14,9 @@ import { localTitleModelSupported } from './useAutoTitle';
  * task — unless somebody renamed it first. The work outlives the form: it is
  * queued here, not in a component, so leaving the page does not cancel it.
  *
- * Whether to do it at all is a per-workspace choice kept on this device only.
- * It is on by default, except on a phone: the model takes more memory than a
- * phone browser will give a tab, and the tab crashes. A phone can still turn
- * it on, and the sparkle button on the form works either way.
+ * Whether to do it at all is a per-workspace choice kept on this device only,
+ * on by default. A phone never does it: the model does not run there (see
+ * localTitleModelSupported).
  */
 
 /** What the server calls a task created without a title. */
@@ -33,24 +31,19 @@ export function autoTitleKey(workspaceId) {
 /**
  * Whether untitled tasks in this workspace are named automatically, here.
  *
- * Unset, or unreadable, means the device's default.
+ * Unset, or unreadable, means on.
  */
-export function isAutoTitleOn(workspaceId, { storage = globalThis.localStorage, mobile = isMobileDevice() } = {}) {
+export function isAutoTitleOn(workspaceId, { storage = globalThis.localStorage } = {}) {
   let saved = null;
   try {
     saved = storage?.getItem(autoTitleKey(workspaceId)) ?? null;
   } catch {
     saved = null;
   }
-  if (saved === 'on') return true;
-  if (saved === 'off') return false;
-  return !mobile;
+  return saved !== 'off';
 }
 
-/**
- * Record the choice. Both answers are stored, since the default differs
- * between a phone and a computer.
- */
+/** Record the choice. */
 export function setAutoTitleOn(workspaceId, on, storage = globalThis.localStorage) {
   try {
     storage.setItem(autoTitleKey(workspaceId), on ? 'on' : 'off');
