@@ -57,6 +57,12 @@ pub struct SseParser {
     buffer: String,
 }
 
+/// JavaScript's `trimStart`, whose whitespace also includes U+FEFF, which
+/// Rust's `str::trim_start` does not strip.
+fn trim_start(text: &str) -> &str {
+    text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
+}
+
 impl SseParser {
     pub fn new() -> Self {
         Self::default()
@@ -77,7 +83,7 @@ impl SseParser {
                 // A line starting with ':' is a comment; the backend sends
                 // ': agentrq' as its keepalive.
                 .filter_map(|line| line.strip_prefix("data:"))
-                .map(str::trim_start)
+                .map(trim_start)
                 .collect::<Vec<_>>()
                 .join("\n");
 
@@ -96,6 +102,9 @@ impl SseParser {
 #[derive(Debug, Default)]
 pub struct Utf8Decoder {
     pending: Vec<u8>,
+    /// Whether the start of the stream has been seen. `TextDecoder` drops a
+    /// byte order mark there and nowhere else.
+    started: bool,
 }
 
 impl Utf8Decoder {
@@ -104,6 +113,18 @@ impl Utf8Decoder {
     }
 
     pub fn decode(&mut self, bytes: &[u8]) -> String {
+        let text = self.decode_chunk(bytes);
+        if text.is_empty() || self.started {
+            return text;
+        }
+        self.started = true;
+        match text.strip_prefix('\u{FEFF}') {
+            Some(rest) => rest.to_string(),
+            None => text,
+        }
+    }
+
+    fn decode_chunk(&mut self, bytes: &[u8]) -> String {
         let mut buf = std::mem::take(&mut self.pending);
         buf.extend_from_slice(bytes);
 
@@ -185,6 +206,14 @@ pub trait Timers {
 
 /// What the client reports to. Only the stream URL and the events are
 /// required.
+///
+/// The client calls these from inside its own `&mut self` methods, so the
+/// runtime that owns the client has to serialise `on_*` calls to it, usually
+/// with a `Mutex<EventStreamClient>`, and the callbacks then run **under that
+/// lock**. A handler must therefore not call back into the client (`stop`,
+/// `restart`, `start`) from here, or the lock deadlocks: `on_unauthorized` is
+/// the natural place to be tempted. Queue the call instead (a channel, or a
+/// spawned task) so it runs after the lock is released.
 pub trait Handler {
     /// Resolved per attempt, so a server switch is picked up on reconnect.
     fn stream_url(&self) -> String;
@@ -306,13 +335,17 @@ impl<T: Transport, K: Timers, H: Handler> EventStreamClient<T, K, H> {
             // Stopped, not merely idle: a later `start()`, after a successful
             // sign-in, must not be a silent no-op.
             self.phase = Phase::Stopped;
+            // The response is refused, not read: a transport that keeps a
+            // connection per attempt would hold its socket until the next one.
+            self.transport.abort(attempt);
             self.handler.on_status(false);
             self.handler.on_unauthorized();
             return;
         }
 
         if !(200..300).contains(&head.status) || !head.has_body {
-            self.disconnected();
+            // Same reason: this response will never be read.
+            self.give_up();
             return;
         }
 
@@ -756,6 +789,7 @@ mod tests {
         rig.respond(401, false);
 
         assert_eq!(rig.log.borrow().unauthorized, 1);
+        assert_eq!(rig.aborts(), [1]);
         assert_eq!(rig.requests(), 1);
         assert!(rig.delays().is_empty());
         assert!(!rig.has_pending(TimerKind::Reconnect));
@@ -781,6 +815,7 @@ mod tests {
         rig.client.start();
         rig.respond(503, false);
 
+        assert_eq!(rig.aborts(), [1]);
         assert_eq!(rig.delays(), [1000]);
         rig.fire(TimerKind::Reconnect);
         assert_eq!(rig.requests(), 2);
@@ -1114,6 +1149,36 @@ mod tests {
         rig.client.on_chunk(attempt, &bytes[split..]);
 
         assert_eq!(rig.events(), [json!({"t": "é"})]);
+    }
+
+    #[test]
+    fn drops_a_byte_order_mark_at_the_start_of_the_stream_like_text_decoder() {
+        // Left in, the first line would read `\u{FEFF}data: …` and the first
+        // event would be lost without a trace.
+        let mut rig = rig();
+        rig.client.start();
+        rig.connect_ok();
+        rig.chunk("\u{FEFF}data: {\"n\":1}\n\n");
+        rig.chunk("data: {\"n\":2}\n\n");
+        assert_eq!(rig.events(), [json!({"n": 1}), json!({"n": 2})]);
+
+        // Only the first one: a mark later in the stream is data, and a
+        // decoder that is reset by a new response starts over.
+        let mut decoder = Utf8Decoder::new();
+        assert_eq!(decoder.decode(b"\xEF\xBB"), "");
+        assert_eq!(decoder.decode(b"\xBFa"), "a");
+        assert_eq!(decoder.decode("\u{FEFF}b".as_bytes()), "\u{FEFF}b");
+        assert_eq!(Utf8Decoder::new().decode("\u{FEFF}".as_bytes()), "");
+        assert_eq!(Utf8Decoder::new().decode(b""), "");
+    }
+
+    #[test]
+    fn strips_a_leading_byte_order_mark_from_a_data_value_like_trim_start() {
+        // JS `trimStart` counts U+FEFF as whitespace; Rust's does not.
+        let mut parser = SseParser::new();
+        assert_eq!(parser.feed("data:\u{FEFF} \u{FEFF}x \n\n"), ["x "]);
+        assert_eq!(trim_start("\u{FEFF}\t y"), "y");
+        assert_eq!(trim_start("y\u{FEFF}"), "y\u{FEFF}");
     }
 
     #[test]

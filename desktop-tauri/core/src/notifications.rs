@@ -1401,6 +1401,9 @@ mod tests {
         assert_eq!(last_message_id(&json!({})), "");
     }
 
+    // Deliberate, not parity: in JS a numeric `to`, `taskId`, `id` or
+    // `workspaceId` is truthy and notifies ("Task 7: …"); here an id is a
+    // non-empty string. The backend only ever sends strings.
     #[test]
     fn rejects_an_event_whose_type_is_not_text() {
         assert!(!notify(&json!({"type": 7, "payload": task(json!({}))})));
