@@ -47,7 +47,7 @@ pub const INSTALL_POLL_INTERVAL_MS: u64 = 250;
 /// The one-command installer, which replaces the bundle wholesale instead of
 /// asking Squirrel.Mac to patch it — so the signature check never applies.
 /// Published from the agentrq-static repository (`src/install.sh`).
-pub const INSTALL_COMMAND: &str = "curl -fsSL https://agentrq.com/install.sh | sh";
+pub const INSTALL_COMMAND: &str = "curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri";
 
 /// The same installer, run for the user instead of shown to them, with the two
 /// arguments a running app needs.
@@ -55,13 +55,13 @@ pub const INSTALL_COMMAND: &str = "curl -fsSL https://agentrq.com/install.sh | s
 /// `--quit` because the installer refuses to replace a bundle that is currently
 /// running: it closes the app itself and waits for the process to go. And the
 /// relaunch is appended here because the installer deliberately does not do it
-/// — it prints "Launch it with: open -a AgentRQ" and stops, which is right for
+/// — it prints "Launch it with: open -a 'AgentRQ Tauri'" and stops, which is right for
 /// someone at a terminal and wrong for someone who just pressed a button.
 ///
 /// Chained with `&&`, so a failed install leaves the old app in place rather
 /// than reopening whatever is left of it.
 pub const INSTALL_SCRIPT_COMMAND: &str =
-    "curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit && open -a AgentRQ";
+    "curl -fsSL https://agentrq.com/install.sh | sh -s -- --quit --tauri && open -a 'AgentRQ Tauri'";
 
 const DISABLED_IN_DEVELOPMENT: &str = "Updates are disabled in a development build";
 
@@ -372,7 +372,7 @@ pub fn describe_update_error(error: Option<&str>) -> String {
     }
     // Only a build packaged with a publish configuration carries this file, so
     // its absence means the build was never set up to update itself.
-    if lowercase.contains("app-update.yml") {
+    if lowercase.contains("app-update.yml") || lowercase.contains("pubkey") {
         return "This build has no update configuration".to_string();
     }
     message.to_string()
@@ -1241,6 +1241,10 @@ mod tests {
             )),
             "This build has no update configuration"
         );
+        assert_eq!(
+            describe_update_error(Some("updater pubkey is empty")),
+            "This build has no update configuration"
+        );
     }
 
     #[test]
@@ -1869,11 +1873,13 @@ mod tests {
     #[test]
     fn quits_the_running_app_and_reopens_it() {
         // install.sh refuses to replace a bundle that is running, and does not
-        // relaunch on its own — it prints "Launch it with: open -a AgentRQ".
+        // relaunch on its own — it prints "Launch it with: open -a 'AgentRQ Tauri'".
+        assert!(INSTALL_COMMAND.contains("--tauri"));
         assert!(INSTALL_SCRIPT_COMMAND.contains("--quit"));
-        assert!(INSTALL_SCRIPT_COMMAND.contains("open -a AgentRQ"));
+        assert!(INSTALL_SCRIPT_COMMAND.contains("--tauri"));
+        assert!(INSTALL_SCRIPT_COMMAND.contains("open -a 'AgentRQ Tauri'"));
         // Chained with && so a failed install does not reopen a broken bundle.
-        assert!(INSTALL_SCRIPT_COMMAND.contains("&& open -a AgentRQ"));
+        assert!(INSTALL_SCRIPT_COMMAND.contains("&& open -a 'AgentRQ Tauri'"));
     }
 
     #[test]

@@ -15,7 +15,45 @@
     "security": { "csp": null }
   },
   "bundle": {
-    "active": false,
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+    "active": true,
+    "targets": ["deb", "appimage", "nsis", "dmg"],
+    "createUpdaterArtifacts": true,
+    "category": "DeveloperTool",
+    "copyright": "Copyright © 2026 Contextual, Inc.",
+    "shortDescription": "Task orchestration for coding agents",
+    "longDescription": "Task orchestration for coding agents",
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "infoPlist": "Info.plist"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "section": "devel",
+        "priority": "optional"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/agentrq/agentrq/releases/latest/download/latest-tauri.json"
+      ],
+      "pubkey": ""
+    }
   }
 }

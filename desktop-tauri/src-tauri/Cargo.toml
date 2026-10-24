@@ -23,6 +23,8 @@ tauri = { version = "2.12.5", features = [] }
 http = "1.5.0"
 reqwest = { version = "0.13.5", default-features = false }
 tokio = { version = "1.54.1", features = ["time"] }
+tauri-plugin-updater = "2.14.0"
+serde_json = "1.0.154"
 
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
