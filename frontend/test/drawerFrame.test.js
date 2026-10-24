@@ -7,7 +7,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   DRAW_TIMEOUT_MS,
   FRAME_SANDBOX,
-  DRAWER_FRAME_URL,
+  appOrigin,
+  drawerFrameUrl,
   createDrawerSource,
   drawerUrl,
   readFrameMessage,
@@ -40,7 +41,7 @@ describe('FRAME_SANDBOX', () => {
   });
 });
 
-describe('DRAWER_FRAME_URL', () => {
+describe('drawerFrameUrl', () => {
   /**
    * A real URL, and the reason matters: a `srcdoc`, `data:` or `blob:` document
    * inherits the embedder's CSP, and this app's is `script-src 'self'`. A
@@ -49,9 +50,30 @@ describe('DRAWER_FRAME_URL', () => {
    * and its own policy live in the main process.
    */
   it('is served, not inlined', () => {
-    expect(DRAWER_FRAME_URL).toMatch(/^app:/);
-    expect(DRAWER_FRAME_URL).not.toContain('data:');
-    expect(DRAWER_FRAME_URL).not.toContain('blob:');
+    const url = drawerFrameUrl();
+    expect(url).toBe(`${window.location.origin}/__agentrq/drawer-frame.html`);
+    expect(url).not.toContain('data:');
+    expect(url).not.toContain('blob:');
+  });
+
+  it('follows the origin the app is served from', () => {
+    vi.stubGlobal('window', { location: { origin: 'tauri://localhost' } });
+    try {
+      expect(appOrigin()).toBe('tauri://localhost');
+      expect(drawerFrameUrl()).toBe('tauri://localhost/__agentrq/drawer-frame.html');
+      expect(drawerUrl('mermaid')).toBe('tauri://localhost/__agentrq/drawer/mermaid.js');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('is an empty origin, not a crash, with no window', () => {
+    vi.stubGlobal('window', undefined);
+    try {
+      expect(appOrigin()).toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -198,7 +220,7 @@ describe('DRAW_TIMEOUT_MS', () => {
 
 describe('drawerUrl', () => {
   it('addresses a drawer by format, on this app origin', () => {
-    expect(drawerUrl('mermaid')).toBe('app://agentrq/__agentrq/drawer/mermaid.js');
+    expect(drawerUrl('mermaid')).toBe(`${window.location.origin}/__agentrq/drawer/mermaid.js`);
   });
 
   // The format reaches a URL, so it is encoded rather than trusted to be safe
@@ -208,6 +230,6 @@ describe('drawerUrl', () => {
     expect(drawerUrl('a b')).not.toContain(' ');
     expect(drawerUrl('MERMAID')).toBe(drawerUrl('mermaid'));
     // And nothing at all is still a URL rather than a crash.
-    expect(drawerUrl(undefined)).toBe('app://agentrq/__agentrq/drawer/.js');
+    expect(drawerUrl(undefined)).toBe(`${window.location.origin}/__agentrq/drawer/.js`);
   });
 });

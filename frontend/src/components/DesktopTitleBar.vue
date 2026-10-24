@@ -10,7 +10,7 @@
      title, the profile the window belongs to, and a window menu. Everything clickable in it
      needs `app-no-drag`, or the drag region swallows the click. -->
 <template>
-  <div class="app-drag fixed top-0 inset-x-0 h-10 z-[210] flex items-center gap-3 pl-20 pr-3 select-none">
+  <div data-tauri-drag-region class="app-drag fixed top-0 inset-x-0 h-10 z-[210] flex items-center gap-3 pl-20 pr-3 select-none">
     <p class="min-w-0 flex-1 truncate text-xs font-semibold text-gray-600 dark:text-zinc-300" data-window-title :title="title">{{ title }}</p>
 
     <div v-if="user" ref="menuRef" class="app-no-drag relative shrink-0">

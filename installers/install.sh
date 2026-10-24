@@ -177,6 +177,9 @@ version="${tag#v}"
 assets="$(printf '%s' "$release" |
 	grep -o '"browser_download_url": *"[^"]*"' |
 	sed 's/^[^:]*: *"//; s/"$//' || true)"
+# The Tauri build ships beside the Electron one under AgentRQ-Tauri-* names;
+# this script installs Electron, so none of those may ever be picked.
+assets="$(printf '%s\n' "$assets" | grep -iv -e '-tauri-' -e 'tauri' || true)"
 [ -n "$assets" ] || die "release $tag has no downloadable assets"
 
 pick_asset() {
