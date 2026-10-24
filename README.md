@@ -97,16 +97,6 @@ Under every task, a timeline shows each status it has been in and for how long: 
 </td>
 </tr>
 <tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-auto-title.gif" alt="AgentRQ auto-title generation in action" width="320" /></td>
-<td width="50%" valign="middle">
-
-### Auto-Title Generation
-
-Write your task description, click the sparkle, and a small language model — downloaded once and cached by your browser — reads it and writes the title. No API call, no server, no data leaving your machine.
-
-</td>
-</tr>
-<tr>
 <td width="50%" valign="middle">
 
 ### Speech-to-Text
