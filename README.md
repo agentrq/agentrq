@@ -17,6 +17,10 @@ Think of AgentRQ as a shared workspace where humans and AI agents work together 
 
 Because agents "see" the workspace state via MCP, they can autonomously pull their assigned tasks, update statuses, request permissions for sensitive actions, and communicate with you—all synchronized instantly across the platform in real-time.
 
+<p align="center">
+  <img src="docs/assets/readme/task-board.svg" width="1200" alt="AgentRQ task board: you add five tasks and five agents, claude, codex, agy, hermes and openclaw, each pick up their own. Cards move from Not Started to Ongoing; codex asks a question and its card turns Blocked until you click Allow; then every card lands in Done and the agents celebrate." />
+</p>
+
 ## ✨ Features
 
 Real captures from the running app — no mockups.

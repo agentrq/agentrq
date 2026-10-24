@@ -19,6 +19,10 @@
 
 AgentRQ 是一个面向“人类操作者 + AI Agent”的协作平台。它不是模型本身，也不是某个 Agent CLI 的替代品，而是提供一个可视化工作区，让人和 Agent 围绕任务、状态、消息、权限请求、附件和通知协同。
 
+<p align="center">
+  <img src="docs/assets/readme/task-board.svg" width="1200" alt="AgentRQ 任务看板：你添加五个任务，claude、codex、agy、hermes 和 openclaw 五个 Agent 各自领取自己的任务。卡片从 Not Started 移到 Ongoing；codex 提出问题，卡片变为 Blocked，直到你点击 Allow；最后所有卡片进入 Done，Agent 们一起庆祝。" />
+</p>
+
 AI Agent 通过 MCP 连接到工作区：读取任务、更新状态、回复消息、下载附件或创建新任务；人类则通过 Web UI 观察进度、补充信息或处理需要批准的操作。
 
 官方 README 没有说明 “RQ” 的展开含义，本文不做额外定义。可以把它理解为围绕任务队列或请求队列组织 Agent 工作流的产品名。
