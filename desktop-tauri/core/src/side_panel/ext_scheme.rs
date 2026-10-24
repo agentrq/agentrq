@@ -14,7 +14,7 @@
 //! holds its Node code. The path is checked twice: as a string here, and as the
 //! file it really is once symlinks are followed.
 
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use url::Url;
@@ -32,7 +32,19 @@ pub trait PanelFs {
     fn realpath(&self, path: &Path) -> io::Result<PathBuf>;
     /// Whether the path itself (not what it links to) is a file, and its size.
     fn lstat(&self, path: &Path) -> io::Result<FileStat>;
-    fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+    /// Open the file once and read it: its size from the handle, then at most
+    /// `limit + 1` bytes of it. Asking the path twice would let a file that
+    /// grew, or was swapped, in between be read in full.
+    fn read(&self, path: &Path, limit: u64) -> io::Result<FileRead>;
+}
+
+/// What one read of a file found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileRead {
+    /// The file's size when it was opened.
+    pub size: u64,
+    /// At most one byte more than the limit asked for.
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,8 +67,12 @@ impl PanelFs for StdFs {
             size: meta.len(),
         })
     }
-    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        std::fs::read(path)
+    fn read(&self, path: &Path, limit: u64) -> io::Result<FileRead> {
+        let file = std::fs::File::open(path)?;
+        let size = file.metadata()?.len();
+        let mut body = Vec::new();
+        file.take(limit.saturating_add(1)).read_to_end(&mut body)?;
+        Ok(FileRead { size, body })
     }
 }
 
@@ -233,9 +249,15 @@ pub fn read_panel_file(
     if stat.size > MAX_PANEL_FILE_BYTES {
         return fail(413, "That file is too large to serve.");
     }
-    match fs.read(&file) {
-        Ok(body) => Ok(PanelFile {
-            body,
+    match fs.read(&file, MAX_PANEL_FILE_BYTES) {
+        Ok(read)
+            if read.size > MAX_PANEL_FILE_BYTES
+                || read.body.len() as u64 > MAX_PANEL_FILE_BYTES =>
+        {
+            fail(413, "That file is too large to serve.")
+        }
+        Ok(read) => Ok(PanelFile {
+            body: read.body,
             mime_type: mime_type_for(path),
         }),
         Err(_) => fail(404, "That file cannot be read."),
@@ -582,6 +604,8 @@ mod tests {
         stat: io::Result<FileStat>,
         realpath_error: Option<io::ErrorKind>,
         read_error: bool,
+        /// What the open file turns out to hold, when it differs from the stat.
+        opened: Option<FileRead>,
     }
 
     impl FakeFs {
@@ -593,6 +617,7 @@ mod tests {
                 }),
                 realpath_error: None,
                 read_error: false,
+                opened: None,
             }
         }
     }
@@ -610,11 +635,14 @@ mod tests {
                 Err(error) => Err(error.kind().into()),
             }
         }
-        fn read(&self, _: &Path) -> io::Result<Vec<u8>> {
+        fn read(&self, _: &Path, _: u64) -> io::Result<FileRead> {
             if self.read_error {
                 Err(io::ErrorKind::PermissionDenied.into())
             } else {
-                Ok(b"body".to_vec())
+                Ok(self.opened.clone().unwrap_or(FileRead {
+                    size: 4,
+                    body: b"body".to_vec(),
+                }))
             }
         }
     }
@@ -648,6 +676,59 @@ mod tests {
 
         // Exactly the cap is served.
         assert!(read(&FakeFs::file(MAX_PANEL_FILE_BYTES)).is_ok());
+    }
+
+    #[test]
+    fn read_refuses_a_file_that_grew_after_it_was_measured() {
+        let cap = MAX_PANEL_FILE_BYTES;
+        // The stat said it fit; the open handle says it no longer does.
+        let grown_size = FakeFs {
+            opened: Some(FileRead {
+                size: cap + 1,
+                body: Vec::new(),
+            }),
+            ..FakeFs::file(1)
+        };
+        assert_eq!(
+            read(&grown_size),
+            failure(413, "That file is too large to serve.")
+        );
+        // Or the bytes that arrived exceed it though the size said otherwise.
+        let grown_body = FakeFs {
+            opened: Some(FileRead {
+                size: 1,
+                body: vec![0; cap as usize + 1],
+            }),
+            ..FakeFs::file(1)
+        };
+        assert_eq!(
+            read(&grown_body),
+            failure(413, "That file is too large to serve.")
+        );
+        // Exactly the cap read back is served.
+        let exact = FakeFs {
+            opened: Some(FileRead {
+                size: cap,
+                body: vec![0; cap as usize],
+            }),
+            ..FakeFs::file(1)
+        };
+        assert!(read(&exact).is_ok());
+    }
+
+    #[test]
+    fn std_fs_reads_one_byte_past_the_limit_and_no_more() {
+        let dir = std::env::temp_dir().join(format!("agentrq-extfs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.bin");
+        std::fs::write(&path, [7u8; 15]).unwrap();
+
+        let read = StdFs.read(&path, 10).unwrap();
+        assert_eq!((read.size, read.body.len()), (15, 11));
+        let whole = StdFs.read(&path, 20).unwrap();
+        assert_eq!((whole.size, whole.body.len()), (15, 15));
+        assert!(StdFs.read(&dir.join("missing"), 10).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

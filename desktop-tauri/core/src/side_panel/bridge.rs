@@ -18,7 +18,7 @@ use serde::Serialize;
 use serde_json::Value;
 use url::Url;
 
-use super::guest::{host_of, EXT_SCHEME};
+use super::guest::{host_of, normalize_ext_url, EXT_SCHEME};
 
 /// A message is a request between two pieces of this app, not a file transfer.
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -38,7 +38,7 @@ fn fail<T>(reason: impl Into<String>) -> Result<T, Refusal> {
 /// The Extension an address belongs to, or `""` for anything that is not one
 /// of its pages.
 pub fn extension_of(raw_url: &str) -> String {
-    match Url::parse(raw_url) {
+    match Url::parse(&normalize_ext_url(raw_url)) {
         Ok(url) if url.scheme() == EXT_SCHEME => host_of(&url),
         _ => String::new(),
     }
@@ -61,6 +61,19 @@ fn encode(text: Option<String>, owner: &str) -> Result<Value, Refusal> {
 /// A message as JSON text; `None` for what has no JSON form.
 fn json_text<T: Serialize + ?Sized>(message: &T) -> Option<String> {
     serde_json::to_string(message).ok()
+}
+
+/// The frame a `send` came from.
+///
+/// Electron gives this for free: the preload runs in the main frame only, and
+/// `senderFrame.url` is that frame's own. Tauri reports only the webview's
+/// top-level URL, so the shell **must** fill `is_main_frame` from the real
+/// frame the IPC message came from; a subframe of an Extension page (an
+/// `<iframe>` on any site) must say `false`, and is refused.
+#[derive(Debug, Clone, Copy)]
+pub struct Sender<'a> {
+    pub url: &'a str,
+    pub is_main_frame: bool,
 }
 
 /// A page open in the side panel.
@@ -153,18 +166,18 @@ impl<H: PanelHost> PanelHub<H> {
 
     /// A page's `window.agentrq.panel.send`, answered by its own Extension.
     ///
-    /// `sender_url` is `event.senderFrame.url` — never the message.
+    /// `sender` is the frame the call came from — never the message.
     pub fn handle_send<T: Serialize + ?Sized>(
         &self,
-        sender_url: &str,
+        sender: Sender<'_>,
         message: &T,
     ) -> Result<Value, Refusal> {
-        self.send_text(sender_url, json_text(message))
+        self.send_text(sender, json_text(message))
     }
 
-    fn send_text(&self, sender_url: &str, text: Option<String>) -> Result<Value, Refusal> {
-        let owner = extension_of(sender_url);
-        if owner.is_empty() {
+    fn send_text(&self, sender: Sender<'_>, text: Option<String>) -> Result<Value, Refusal> {
+        let owner = extension_of(sender.url);
+        if !sender.is_main_frame || owner.is_empty() {
             return fail("Only an extension’s own pages can send to it.");
         }
         let handler = self.handlers.lock().unwrap().get(&owner).cloned();
@@ -182,7 +195,9 @@ impl<H: PanelHost> PanelHub<H> {
 
     /// The Extension stopped: its pages are no longer answered.
     pub fn retract(&self, owner: &str) {
-        self.handlers.lock().unwrap().remove(owner);
+        // Dropped after the lock: its captured state may call back into the hub.
+        let old = self.handlers.lock().unwrap().remove(owner);
+        drop(old);
     }
 }
 
@@ -215,11 +230,14 @@ impl<H: PanelHost> PanelCapability<'_, H> {
     /// The one function this Extension's pages are answered by. Replaces any
     /// earlier one.
     pub fn on_message(&self, handler: MessageHandler) {
-        self.hub
+        let old = self
+            .hub
             .handlers
             .lock()
             .unwrap()
             .insert(self.owner.to_string(), handler);
+        // Dropped after the lock, as in `retract`.
+        drop(old);
     }
 
     /// Send to this Extension's open pages. Dropped when none is open.
@@ -277,6 +295,13 @@ mod tests {
     }
 
     const NOTES_PAGE: &str = "agentrq-ext://notes/panel/index.html";
+
+    fn main(url: &str) -> Sender<'_> {
+        Sender {
+            url,
+            is_main_frame: true,
+        }
+    }
 
     fn reason<T: std::fmt::Debug>(result: Result<T, Refusal>) -> String {
         result.unwrap_err().reason
@@ -391,7 +416,7 @@ mod tests {
                 Ok(Some(json!({ "echoed": message })))
             }));
         assert_eq!(
-            hub.handle_send(NOTES_PAGE, &json!({ "type": "refresh" })),
+            hub.handle_send(main(NOTES_PAGE), &json!({ "type": "refresh" })),
             Ok(json!({ "echoed": { "type": "refresh" } }))
         );
         assert_eq!(*seen.lock().unwrap(), [json!({ "type": "refresh" })]);
@@ -402,7 +427,7 @@ mod tests {
         let (hub, _) = setup();
         hub.capability_for("notes")
             .on_message(Arc::new(|_| Ok(None)));
-        assert_eq!(hub.handle_send(NOTES_PAGE, &1), Ok(Value::Null));
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(Value::Null));
     }
 
     #[test]
@@ -410,7 +435,7 @@ mod tests {
         let (hub, _) = setup();
         // Were it reached, the reason would be "notes failed: reached".
         hub.capability_for("notes").on_message(must_not_run());
-        let result = hub.handle_send("https://evil.example/", &json!({ "to": "notes" }));
+        let result = hub.handle_send(main("https://evil.example/"), &json!({ "to": "notes" }));
         assert_eq!(
             reason(result),
             "Only an extension’s own pages can send to it."
@@ -425,7 +450,7 @@ mod tests {
             .on_message(Arc::new(|_| Ok(Some(json!("other")))));
         assert_eq!(
             hub.handle_send(
-                "agentrq-ext://other/panel/x.html",
+                main("agentrq-ext://other/panel/x.html"),
                 &json!({ "to": "notes" })
             ),
             Ok(json!("other"))
@@ -436,7 +461,7 @@ mod tests {
     fn send_says_so_when_the_extension_does_not_listen() {
         let (hub, _) = setup();
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &json!({}))),
+            reason(hub.handle_send(main(NOTES_PAGE), &json!({}))),
             "notes does not listen to its page."
         );
     }
@@ -447,9 +472,9 @@ mod tests {
         let (hub, _) = setup();
         let panel = hub.capability_for("notes");
         panel.on_message(Arc::new(|_| Ok(Some(json!("first")))));
-        assert_eq!(hub.handle_send(NOTES_PAGE, &1), Ok(json!("first")));
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(json!("first")));
         panel.on_message(Arc::new(|_| Ok(Some(json!("second")))));
-        assert_eq!(hub.handle_send(NOTES_PAGE, &1), Ok(json!("second")));
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(json!("second")));
     }
 
     #[test]
@@ -458,12 +483,12 @@ mod tests {
         let panel = hub.capability_for("notes");
         panel.on_message(Arc::new(|_| Err("database unavailable".into())));
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &json!({}))),
+            reason(hub.handle_send(main(NOTES_PAGE), &json!({}))),
             "notes failed: database unavailable"
         );
         panel.on_message(Arc::new(|_| Err("threw a bare string".into())));
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &json!({}))),
+            reason(hub.handle_send(main(NOTES_PAGE), &json!({}))),
             "notes failed: threw a bare string"
         );
     }
@@ -480,19 +505,155 @@ mod tests {
         panel.on_message(must_not_run());
         let big = "x".repeat(MAX_MESSAGE_BYTES);
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &big)),
+            reason(hub.handle_send(main(NOTES_PAGE), &big)),
             "notes: that message is larger than 1 MB."
         );
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &not_data())),
+            reason(hub.handle_send(main(NOTES_PAGE), &not_data())),
             "notes: that message is not plain data."
         );
 
         panel.on_message(Arc::new(|_| Ok(Some(json!("y".repeat(MAX_MESSAGE_BYTES))))));
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, "hi")),
+            reason(hub.handle_send(main(NOTES_PAGE), "hi")),
             "notes: that message is larger than 1 MB."
         );
+    }
+
+    /// A string whose JSON text is exactly `bytes` long (two quotes around it).
+    fn json_of_len(bytes: usize) -> String {
+        "x".repeat(bytes - 2)
+    }
+
+    #[test]
+    fn the_1_mb_boundary_is_exact_in_both_directions_and_counts_bytes() {
+        let (hub, _) = setup();
+        let panel = hub.capability_for("notes");
+        let limit = "notes: that message is larger than 1 MB.";
+
+        panel.on_message(Arc::new(|_| Ok(None)));
+        assert!(hub
+            .handle_send(main(NOTES_PAGE), &json_of_len(MAX_MESSAGE_BYTES))
+            .is_ok());
+        assert_eq!(
+            reason(hub.handle_send(main(NOTES_PAGE), &json_of_len(MAX_MESSAGE_BYTES + 1))),
+            limit
+        );
+        // Two-byte characters count as two: 2 quotes + 2 * 524287 = MAX.
+        let wide = |chars: usize| "é".repeat(chars);
+        assert!(hub
+            .handle_send(main(NOTES_PAGE), &wide(MAX_MESSAGE_BYTES / 2 - 1))
+            .is_ok());
+        assert_eq!(
+            reason(hub.handle_send(main(NOTES_PAGE), &wide(MAX_MESSAGE_BYTES / 2))),
+            limit
+        );
+
+        // The reply is held to the same line.
+        let reply_of = |bytes: usize| -> MessageHandler {
+            let text = json_of_len(bytes);
+            Arc::new(move |_| Ok(Some(json!(text))))
+        };
+        panel.on_message(reply_of(MAX_MESSAGE_BYTES));
+        assert!(hub.handle_send(main(NOTES_PAGE), &1).is_ok());
+        panel.on_message(reply_of(MAX_MESSAGE_BYTES + 1));
+        assert_eq!(reason(hub.handle_send(main(NOTES_PAGE), &1)), limit);
+
+        // And so is `post`.
+        assert_eq!(panel.post(&json_of_len(MAX_MESSAGE_BYTES)), Ok(1));
+        assert_eq!(
+            reason(panel.post(&json_of_len(MAX_MESSAGE_BYTES + 1))),
+            limit
+        );
+        assert_eq!(panel.post(&wide(MAX_MESSAGE_BYTES / 2 - 1)), Ok(1));
+        assert_eq!(reason(panel.post(&wide(MAX_MESSAGE_BYTES / 2))), limit);
+    }
+
+    #[test]
+    fn send_refuses_a_subframe_even_of_an_extensions_own_page() {
+        let (hub, _) = setup();
+        hub.capability_for("notes").on_message(must_not_run());
+        let sender = Sender {
+            url: NOTES_PAGE,
+            is_main_frame: false,
+        };
+        assert_eq!(
+            reason(hub.handle_send(sender, &json!({}))),
+            "Only an extension’s own pages can send to it."
+        );
+        // The same page, in the main frame, is answered.
+        hub.capability_for("notes")
+            .on_message(Arc::new(|_| Ok(Some(json!("ok")))));
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(json!("ok")));
+    }
+
+    #[test]
+    fn send_answers_a_page_at_the_address_webview2_reports() {
+        let (hub, _) = setup();
+        hub.capability_for("notes")
+            .on_message(Arc::new(|_| Ok(Some(json!("ok")))));
+        assert_eq!(
+            hub.handle_send(main("http://agentrq-ext.notes/panel/index.html"), &1),
+            Ok(json!("ok"))
+        );
+        assert_eq!(extension_of("http://agentrq-ext.notes/x"), "notes");
+        assert_eq!(extension_of("HTTPS://AgentRQ-Ext.notes/x"), "notes");
+        assert_eq!(extension_of("agentrq-ext://notes/x"), "notes");
+        // Named the way wry names it: all after `agentrq-ext.` is the host.
+        assert_eq!(
+            extension_of("http://agentrq-ext.notes.evil.com/"),
+            "notes.evil.com"
+        );
+        assert_eq!(extension_of("http://agentrq-ext/"), "");
+        assert_eq!(extension_of("http://notes.agentrq-ext.example/"), "");
+    }
+
+    /// Its `Drop` calls back into the hub, as a handler holding a session might.
+    struct Session {
+        hub: Arc<PanelHub<Arc<FakeHost>>>,
+        retracts: &'static str,
+    }
+
+    impl Drop for Session {
+        fn drop(&mut self) {
+            self.hub.retract(self.retracts);
+        }
+    }
+
+    #[test]
+    fn dropping_a_handler_that_calls_back_into_the_hub_does_not_hang() {
+        let (hub, _) = setup();
+        let hub = Arc::new(hub);
+        let handler = |retracts: &'static str| -> MessageHandler {
+            let session = Session {
+                hub: hub.clone(),
+                retracts,
+            };
+            Arc::new(move |_| {
+                let _ = &session;
+                Ok(None)
+            })
+        };
+        let (done, finished) = std::sync::mpsc::channel();
+        let worker = {
+            let hub = hub.clone();
+            let first = handler("companion");
+            let second = handler("companion");
+            std::thread::spawn(move || {
+                let panel = hub.capability_for("notes");
+                // Replaced: the first handler is dropped by `on_message`.
+                panel.on_message(first);
+                panel.on_message(second);
+                assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(Value::Null));
+                // Removed: the last one is dropped by `retract`.
+                hub.retract("notes");
+                done.send(()).unwrap();
+            })
+        };
+        assert!(finished
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .is_ok());
+        worker.join().unwrap();
     }
 
     #[test]
@@ -500,10 +661,10 @@ mod tests {
         let (hub, _) = setup();
         hub.capability_for("notes")
             .on_message(Arc::new(|_| Ok(Some(json!("hi")))));
-        assert_eq!(hub.handle_send(NOTES_PAGE, &1), Ok(json!("hi")));
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(json!("hi")));
         hub.retract("notes");
         assert_eq!(
-            reason(hub.handle_send(NOTES_PAGE, &json!({}))),
+            reason(hub.handle_send(main(NOTES_PAGE), &json!({}))),
             "notes does not listen to its page."
         );
     }
@@ -518,8 +679,8 @@ mod tests {
             inner.retract("notes");
             Ok(Some(json!("done")))
         }));
-        assert_eq!(hub.handle_send(NOTES_PAGE, &1), Ok(json!("done")));
-        assert!(hub.handle_send(NOTES_PAGE, &1).is_err());
+        assert_eq!(hub.handle_send(main(NOTES_PAGE), &1), Ok(json!("done")));
+        assert!(hub.handle_send(main(NOTES_PAGE), &1).is_err());
     }
 
     #[test]

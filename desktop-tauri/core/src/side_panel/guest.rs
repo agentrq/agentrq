@@ -11,6 +11,8 @@
 //! has no Node, no bridge to the app, and a cookie jar that is never the
 //! profile's, so it can never be sent with the `at` cookie.
 
+use std::borrow::Cow;
+
 use serde_json::{Map, Value};
 use url::Url;
 
@@ -29,6 +31,28 @@ const ATTACHABLE: [&str; 4] = ["http:", "https:", "agentrq-ext:", "about:"];
 /// holds the credential.
 pub fn panel_partition_for(profile_id: &str) -> String {
     format!("persist:panel-{profile_id}")
+}
+
+/// An Extension page's address as the webview reports it.
+///
+/// WebView2 has no custom schemes, so wry serves `agentrq-ext://notes/x` as
+/// `http://agentrq-ext.notes/x` and reports that form from `url()` and the
+/// navigation events. This maps it back, exactly as wry's own
+/// `revert_uri_work_around` does (everything after `agentrq-ext.` is the host,
+/// so `http://agentrq-ext.notes.evil.com/` names `notes.evil.com`, which no
+/// Extension is). Any other address is returned as it came.
+pub fn normalize_ext_url(raw: &str) -> Cow<'_, str> {
+    let trimmed = raw.trim_matches(|c: char| c <= ' ');
+    for scheme in ["http", "https"] {
+        let prefix = format!("{scheme}://{EXT_SCHEME}.");
+        let Some(head) = trimmed.get(..prefix.len()) else {
+            continue;
+        };
+        if head.eq_ignore_ascii_case(&prefix) {
+            return Cow::Owned(format!("{EXT_SCHEME}://{}", &trimmed[prefix.len()..]));
+        }
+    }
+    Cow::Borrowed(raw)
 }
 
 /// `new URL(x).protocol`: the scheme and its colon, or `""` for anything that
@@ -90,7 +114,9 @@ pub fn harden_guest(
             };
         }
     }
-    if src.starts_with("about:") && src != "about:blank" {
+    // On the parsed address, so `ABOUT:config` and ` about:config` are refused
+    // too. The JS tests the raw string; this is a deliberate divergence.
+    if Url::parse(src).is_ok_and(|url| url.scheme() == "about" && url.as_str() != "about:blank") {
         return HardenResult::Refused {
             reason: "The side panel does not open about: pages".to_string(),
         };
@@ -156,6 +182,7 @@ pub struct NavigationOptions<'a> {
 /// succeed and leave the app signed out. Anything else is the existing link
 /// rule, which is what keeps `file:` and `javascript:` out.
 pub fn navigation_target(raw_url: &str, options: NavigationOptions<'_>) -> PanelTarget {
+    let raw_url = &*normalize_ext_url(raw_url);
     let protocol = protocol_of(raw_url);
     if protocol == format!("{EXT_SCHEME}:") || raw_url == "about:blank" {
         return PanelTarget::Panel;
@@ -192,9 +219,10 @@ pub struct OpenDetails<'a> {
 /// middle-click as `background-tab`, which is somebody asking for the page
 /// *somewhere else* — their browser. Every other disposition opens in the panel.
 pub fn open_target(details: OpenDetails<'_>, options: NavigationOptions<'_>) -> PanelTarget {
-    let target = navigation_target(details.url, options);
+    let url = normalize_ext_url(details.url);
+    let target = navigation_target(&url, options);
     if target == PanelTarget::Panel && details.disposition == "background-tab" {
-        let protocol = protocol_of(details.url);
+        let protocol = protocol_of(&url);
         return if protocol == "http:" || protocol == "https:" {
             PanelTarget::System
         } else {
@@ -339,6 +367,91 @@ mod tests {
         assert_eq!(
             refuse("about:config"),
             reason("The side panel does not open about: pages")
+        );
+    }
+
+    #[test]
+    fn harden_judges_about_on_the_parsed_address_not_the_raw_string() {
+        // A deliberate divergence from the JS, which tests the raw string and
+        // so lets these through.
+        for src in [
+            "ABOUT:config",
+            " about:config",
+            "\tabout:config",
+            "about:blank#x",
+        ] {
+            let mut params = object(json!({ "src": src }));
+            assert_eq!(
+                harden_guest(&mut Map::new(), &mut params, OPTIONS),
+                HardenResult::Refused {
+                    reason: "The side panel does not open about: pages".to_string()
+                },
+                "src {src:?}"
+            );
+        }
+        // The empty panel is the empty panel however it is spelled.
+        for src in ["ABOUT:blank", " about:blank", "\tabout:blank"] {
+            let mut params = object(json!({ "src": src }));
+            assert_eq!(
+                harden_guest(&mut Map::new(), &mut params, OPTIONS),
+                HardenResult::Ok,
+                "src {src:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_maps_the_webview2_form_back_and_touches_nothing_else() {
+        let n = |raw: &str| normalize_ext_url(raw).into_owned();
+        assert_eq!(
+            n("http://agentrq-ext.notes/panel/x.html?a=1#b"),
+            "agentrq-ext://notes/panel/x.html?a=1#b"
+        );
+        assert_eq!(n("https://agentrq-ext.notes/x"), "agentrq-ext://notes/x");
+        assert_eq!(n("HTTP://AGENTRQ-EXT.notes/x"), "agentrq-ext://notes/x");
+        assert_eq!(
+            n(" \thttps://AgentRQ-Ext.notes:1/x "),
+            "agentrq-ext://notes:1/x"
+        );
+        // As wry reverts it: all after `agentrq-ext.` is the host.
+        assert_eq!(
+            n("http://agentrq-ext.notes.evil.com/"),
+            "agentrq-ext://notes.evil.com/"
+        );
+        for untouched in [
+            "agentrq-ext://notes/x",
+            "http://agentrq-ext/x",
+            "http://agentrq-extra.notes/x",
+            "http://notes.agentrq-ext.example/x",
+            "http://example.com/agentrq-ext.notes",
+            "ftp://agentrq-ext.notes/x",
+            "http://agentrq-é",
+            "http://",
+            "",
+        ] {
+            assert!(
+                matches!(normalize_ext_url(untouched), Cow::Borrowed(same) if same == untouched),
+                "{untouched:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn navigation_and_open_treat_the_webview2_form_as_the_extension_page() {
+        for url in [
+            "http://agentrq-ext.notes/panel/index.html",
+            "https://AgentRQ-Ext.notes/panel/index.html",
+            "agentrq-ext://notes/panel/index.html",
+        ] {
+            assert_eq!(target(url), PanelTarget::Panel, "{url}");
+            // Cmd/Ctrl-click stays in the panel: never DNS for `agentrq-ext.notes`.
+            assert_eq!(open(url, "background-tab"), PanelTarget::Panel, "{url}");
+            assert_eq!(open(url, "foreground-tab"), PanelTarget::Panel, "{url}");
+        }
+        // Not the Extension scheme: an ordinary site stays an ordinary site.
+        assert_eq!(
+            open("http://agentrq-extra.notes/", "background-tab"),
+            PanelTarget::System
         );
     }
 
