@@ -284,4 +284,18 @@ describe('the overview', () => {
     button('New').click();
     expect(push).toHaveBeenCalledWith('/workspaces/new');
   });
+
+  it('lists each workspace followed by its forks', async () => {
+    fetchWorkspaces.mockResolvedValue({
+      workspaces: [
+        { id: 'f1', name: 'zz-try', forkOfId: 'w1' },
+        { id: 'w2', name: 'web' },
+        { id: 'w1', name: 'billing' },
+      ],
+    });
+    await mount(WorkspaceView);
+    const names = [...el.querySelectorAll('h3')].map((h) => h.textContent.trim());
+    // By name alone the fork would come last; it follows its parent instead.
+    expect(names).toEqual(['billing', 'zz-try', 'web']);
+  });
 });

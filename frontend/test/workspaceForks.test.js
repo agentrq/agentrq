@@ -14,6 +14,7 @@ import {
   mergeConfirmMessage,
   mergedMessage,
   parentName,
+  forksAfterParents,
   unfinishedLabel,
   useForkActions,
   workspaceTree,
@@ -77,6 +78,12 @@ describe('workspaceTree', () => {
   it('keeps a fork whose parent is not listed at the top, so it can still be merged', () => {
     expect(workspaceTree([fork]).map((g) => g.workspace.id)).toEqual(['f1']);
     expect(workspaceTree()).toEqual([]);
+  });
+
+  it('flattens to each workspace followed by its forks', () => {
+    const other = { id: 'o1', name: 'web' };
+    expect(forksAfterParents([fork, other, parent]).map((w) => w.id)).toEqual(['o1', 'p1', 'f1']);
+    expect(forksAfterParents()).toEqual([]);
   });
 });
 
