@@ -114,7 +114,7 @@
            here: its `src` has to be set before it is attached, and a
            `<webview>` is not an element the template compiler knows. -->
       <div class="relative flex-1 min-h-0">
-        <div ref="hostRef" :class="['absolute inset-0', hasPage && !failure ? '' : 'invisible', dragging ? 'pointer-events-none' : '']"></div>
+        <div ref="hostRef" :class="['absolute inset-0', shown ? '' : 'invisible', dragging ? 'pointer-events-none' : '']"></div>
 
         <SidePanelPermissions v-if="showPermissions" :sites="sites" @remove="removeDecision" @close="showPermissions = false" />
 
@@ -146,13 +146,14 @@
  * guest's preferences before it is attached; nothing set here can loosen that.
  */
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { usePanelGuest } from '../composables/usePanelGuest'
 import { isPanelUrl, normaliseAddress, panelWidth, useSidePanel } from '../composables/useSidePanel'
 import { describeQuestion, hasDecisions } from '../composables/useSitePermissions'
 import SidePanelPermissions from './SidePanelPermissions.vue'
 import ResizeHandle from './ResizeHandle.vue'
 
 const props = defineProps({
-  /** Test seam: what makes the guest element. */
+  /** Test seam: what makes the Electron guest's element. */
   createGuest: { type: Function, default: () => document.createElement('webview') },
   /** Test seam: the shell's bridge. */
   bridge: { type: Object, default: () => globalThis.window?.agentrq?.sidePanel },
@@ -178,6 +179,7 @@ let guest = null
 const current = ref(panel.state.url)
 
 const hasPage = computed(() => Boolean(current.value))
+const shown = computed(() => hasPage.value && !failure.value)
 
 // Permissions: the question a page is asking, and what every site has been
 // answered — which also lights the shield for a site that has something.
@@ -311,31 +313,26 @@ function show(url) {
 }
 
 function mountGuest(url) {
-  guest = props.createGuest()
-  guest.setAttribute('src', url)
-  // White, as a browser's canvas is: a guest is transparent by default, and a
-  // page that sets no background of its own would otherwise be dark text on
-  // the app's dark theme.
-  guest.className = 'absolute inset-0 w-full h-full bg-white'
-  guest.addEventListener('did-start-loading', () => { nav.loading = true })
-  guest.addEventListener('did-stop-loading', () => { nav.loading = false; refreshNav() })
-  guest.addEventListener('did-navigate', (event) => {
+  guest = usePanelGuest({ bridge: props.bridge, options: { createElement: props.createGuest } })
+  guest.on('loading', (loading) => {
+    nav.loading = loading
+    if (!loading) refreshNav()
+  })
+  guest.on('navigate', (event) => {
     // Matches were counted in the document that has gone.
-    clearFound()
+    if (!event.inPage) clearFound()
     onNavigate(event)
   })
-  guest.addEventListener('did-navigate-in-page', (event) => { if (event.isMainFrame) onNavigate(event) })
-  guest.addEventListener('found-in-page', (event) => {
-    found.active = event.result?.activeMatchOrdinal ?? 0
-    found.total = event.result?.matches ?? 0
+  guest.on('found', (result) => {
+    found.active = result.active
+    found.total = result.total
   })
-  guest.addEventListener('did-fail-load', (event) => {
-    // -3 is "aborted": a navigation replaced by another, which is not a failure.
-    if (event.errorCode === -3 || event.isMainFrame === false) return
-    failure.value = event.errorDescription || `Error ${event.errorCode}`
+  guest.on('fail', (event) => {
+    failure.value = event.description || `Error ${event.code}`
     nav.loading = false
   })
-  hostRef.value.append(guest)
+  guest.setDragging(dragging.value)
+  guest.mount(hostRef.value, url)
 }
 
 function onNavigate(event) {
@@ -379,6 +376,11 @@ watch(() => panel.state.url, (url) => {
   if (url && url !== current.value && isPanelUrl(url)) show(url)
 })
 
+// The guest decides what hiding it and dragging over it take; Electron's is
+// the host's own classes above.
+watch(shown, (visible) => guest?.setVisible(visible))
+watch(dragging, (isDragging) => guest?.setDragging(isDragging))
+
 // Dragging. Pointer capture keeps the events coming once the pointer is over
 // the guest, and the guest is made transparent to the pointer as well: it is a
 // separate page, and would otherwise swallow the drag the moment it got there.
@@ -413,6 +415,7 @@ onMounted(() => {
 onUnmounted(() => {
   for (const stop of stops) stop?.()
   observer?.disconnect()
+  guest?.destroy()
   globalThis.removeEventListener('resize', onWindowResize)
 })
 

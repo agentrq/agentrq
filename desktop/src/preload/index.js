@@ -306,6 +306,8 @@ contextBridge.exposeInMainWorld('agentrq', {
   },
 
   sidePanel: {
+    /** Which guest the panel shows its page in: Electron's `<webview>`. */
+    guest: 'electron',
     /**
      * The View menu's Side Panel item, and its Cmd/Ctrl+\ accelerator.
      *

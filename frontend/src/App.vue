@@ -554,6 +554,7 @@ import SidePanel from './components/SidePanel.vue'
 import PanoChatColumn from './components/PanoChatColumn.vue'
 import { isPanoChatRoute } from './composables/usePano'
 import { useSidePanel } from './composables/useSidePanel'
+import { watchOverlays } from './composables/useOverlayOpen'
 import ProfileList from './components/ProfileList.vue'
 import { cacheTaskEvent, cacheToolCallEvent, connectCache, sharedCache } from './composables/useCachedTasks'
 import { forgetCachedTask, forgetEverything } from './composables/useCacheStorage'
@@ -942,12 +943,18 @@ async function refreshExtensions() {
 
 const openCommandPaletteHandler = () => openOverlay('palette')
 
+// A native side panel guest has to know when something is drawn over it; only
+// the desktop build has one.
+let stopWatchingOverlays = null
+
 onMounted(() => {
   window.addEventListener('open-command-palette', openCommandPaletteHandler)
+  if (platformStore.isDesktop) stopWatchingOverlays = watchOverlays()
 })
 
 onUnmounted(() => {
   window.removeEventListener('open-command-palette', openCommandPaletteHandler)
+  stopWatchingOverlays?.()
 })
 
 // Capture, and the default prevented, so a page closing something of its own on
