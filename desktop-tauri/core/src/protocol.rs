@@ -113,23 +113,42 @@ pub fn filter_response_headers<'a>(
 /// Checked raw and after each percent-decoding, with `\` a separator at every
 /// level (a WHATWG parser reads it as `/` for `http(s)`, and Windows does for
 /// files). `%2e%2e`, `..%5c` and `%252e%252e` are all caught. A malformed
-/// escape is not traversal by itself: it is a literal `%`, and decoding stops.
+/// escape in the path as given is refused: one bad escape would otherwise stop
+/// the decoding and hide a `%2e%2e` elsewhere in the path, which the URL parser
+/// still collapses. A later level may fail (`%25` decodes to a literal `%`, and
+/// nothing downstream decodes that again), so only the first level refuses. (The
+/// JS lets it through; this is a deliberate divergence, and harmless because the
+/// frontend builds paths with `encodeURIComponent` and never sends one.)
+///
+/// A segment is a dot segment when it is any WHATWG dot form, ASCII
+/// case-insensitively: `.`, `%2e`, `..`, `.%2e`, `%2e.`, `%2e%2e`.
 /// Each decoding shortens the path, so the loop ends.
 pub fn traverses(pathname: &str) -> bool {
+    traverses_with(pathname, true)
+}
+
+/// [`traverses`], where `refuse_malformed` says whether a malformed escape in
+/// the path as given is refused. A path that was already decoded once may hold
+/// a literal `%` (`100%.js`), which is not an escape and must not be.
+fn traverses_with(pathname: &str, refuse_malformed: bool) -> bool {
     let mut current = pathname.to_string();
+    let mut first = refuse_malformed;
     loop {
-        if current.chars().any(char::is_control)
-            || current
-                .split(['/', '\\'])
-                .any(|segment| segment == "." || segment == "..")
-        {
+        if current.chars().any(char::is_control) || current.split(['/', '\\']).any(is_dot_segment) {
             return true;
         }
         match decode_uri_component(&current) {
+            None => return first,
             Some(next) if next != current => current = next,
-            _ => return false,
+            Some(_) => return false,
         }
+        first = false;
     }
+}
+
+fn is_dot_segment(segment: &str) -> bool {
+    const FORMS: [&str; 6] = [".", "%2e", "..", ".%2e", "%2e.", "%2e%2e"];
+    FORMS.iter().any(|form| segment.eq_ignore_ascii_case(form))
 }
 
 /// True when a path should be forwarded to the AgentRQ server rather than
@@ -223,16 +242,23 @@ pub fn plan_static(pathname: &str, exists: bool) -> StaticPlan {
 
 /// Reject paths that must never reach the filesystem.
 ///
-/// Checked on the *decoded* path, because decoding is what can reintroduce a
-/// dangerous character: `%00` becomes a NUL, `%2e%2e` becomes `..`.
+/// Takes the path *after* its one decoding (see [`decode_asset_path`]), so a `%`
+/// in it is a literal one. Checked on the decoded path, because decoding is
+/// what can reintroduce a dangerous character: `%00` becomes a NUL, `%2e%2e`
+/// becomes `..`.
 ///
 /// Beyond [`traverses`], every segment must be a plain name, because the path
 /// ends up joined onto a directory on a platform whose rules this code does not
 /// choose: no `\` (a separator on Windows, at any decoding level), no `:` (a
 /// drive letter, `\\?\`, an alternate stream), and no empty segment (`//` is
 /// a UNC prefix, and a leading one is absolute). Only a trailing `/` may be empty.
+/// Windows also trims a trailing `.` or space from a name and opens a reserved
+/// device name (`con`, `aux.js`) as the device, so neither is a file name.
 pub fn is_safe_asset_path(pathname: &str) -> bool {
-    if traverses(pathname) || pathname.contains(['\\', ':']) {
+    if traverses_with(pathname, false) || pathname.contains(['\\', ':']) {
+        return false;
+    }
+    if pathname.split('/').any(is_windows_unsafe_name) {
         return false;
     }
     let mut segments = pathname.split('/');
@@ -243,6 +269,23 @@ pub fn is_safe_asset_path(pathname: &str) -> bool {
         Some((_, inner)) => inner.iter().all(|segment| !segment.is_empty()),
         None => true,
     }
+}
+
+fn is_windows_unsafe_name(segment: &str) -> bool {
+    if segment.ends_with(['.', ' ']) {
+        return true;
+    }
+    let stem = segment.split('.').next().unwrap_or("");
+    let stem = stem.trim_end_matches(' ');
+    let device = ["CON", "PRN", "AUX", "NUL"]
+        .iter()
+        .any(|name| stem.eq_ignore_ascii_case(name))
+        || ["COM", "LPT"].iter().any(|prefix| {
+            stem.len() == 4
+                && stem[..3].eq_ignore_ascii_case(prefix)
+                && matches!(stem.as_bytes()[3], b'1'..=b'9')
+        });
+    device
 }
 
 /// A path is percent-encoded but the filesystem needs real characters; without
@@ -372,10 +415,7 @@ fn is_plain_host(host: &str) -> bool {
     let name = |c: char| c.is_ascii_alphanumeric() || c == '.' || c == '-';
     match host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
         Some(literal) => {
-            !literal.is_empty()
-                && literal
-                    .chars()
-                    .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+            !literal.is_empty() && literal.chars().all(|c| c.is_ascii_hexdigit() || c == ':')
         }
         None => !host.is_empty() && host.chars().all(name),
     }
@@ -748,7 +788,17 @@ impl Timeouts {
 /// Built from the origin and the path, never by resolving the path against the
 /// base, so nothing in it can change the host (`//host/x`) or be collapsed
 /// after the fact. A path that [`traverses`] has no URL.
-fn join_target(base: &str, pathname: &str, search: &str) -> Result<String, ProxyError> {
+///
+/// After the parser has run, the path must still have the shape it was given: a
+/// parser that collapsed or split a segment is refused, so no gap in
+/// [`traverses`] becomes an escape from the allow-list. `allowed` is that
+/// allow-list, tested on the parsed path.
+fn join_target(
+    base: &str,
+    pathname: &str,
+    search: &str,
+    allowed: &dyn Fn(&str) -> bool,
+) -> Result<String, ProxyError> {
     if traverses(pathname) {
         return Err(ProxyError::Forbidden);
     }
@@ -758,6 +808,15 @@ fn join_target(base: &str, pathname: &str, search: &str) -> Result<String, Proxy
         return Err(invalid());
     }
     url.set_path(pathname);
+    let segments = |path: &str| path.split(['/', '\\']).count();
+    let given = if pathname.starts_with('/') {
+        segments(pathname)
+    } else {
+        segments(pathname) + 1
+    };
+    if segments(url.path()) != given || !allowed(url.path()) {
+        return Err(ProxyError::Forbidden);
+    }
     url.set_query(search.strip_prefix('?'));
     url.set_fragment(None);
     Ok(url.into())
@@ -772,7 +831,7 @@ fn proxy_url(base: &str, pathname: &str, search: &str) -> Result<String, ProxyEr
     if !is_proxy_path(pathname) {
         return Err(ProxyError::Forbidden);
     }
-    join_target(base, pathname, search)
+    join_target(base, pathname, search, &is_proxy_path)
 }
 
 /// What the shell reports and the protocol is configured with.
@@ -827,7 +886,8 @@ impl<S: Fn() -> String> AppProtocol<S> {
 
     /// The URL to fetch from the dev server, or the message for the 502.
     pub fn dev_target(&self, pathname: &str, search: &str) -> Result<String, String> {
-        join_target(&self.dev_server_url, pathname, search).map_err(|_| "Invalid URL".to_string())
+        join_target(&self.dev_server_url, pathname, search, &|_| true)
+            .map_err(|_| "Invalid URL".to_string())
     }
 
     /// How long a forwarded request may take to produce response headers.
@@ -1599,11 +1659,13 @@ mod tests {
 
     #[test]
     fn a_drawer_name_with_a_malformed_escape_routes_without_a_format() {
-        // The JS throws from `decodeURIComponent` and the handler rejects.
+        // The JS throws from `decodeURIComponent` and the handler rejects; here
+        // `traverses` refuses the escape first, so the name never gets that far.
         assert_eq!(
             route(&format!("{DRAWER_CODE_PREFIX}%zz.js"), false),
-            Route::DrawerCode(None)
+            Route::Forbidden
         );
+        assert_eq!(decode_uri_component("%zz"), None);
     }
 
     #[test]
@@ -1760,6 +1822,85 @@ mod tests {
         }
     }
 
+    /// The review's table: one malformed escape after a `%2e%2e` must not hide it
+    /// from `traverses`, because the URL parser collapses the dots anyway.
+    const MALFORMED_WITH_DOTS: [&str; 7] = [
+        "/api/%2e%2e/healthz%zz",
+        "/api/%2e%2e/storage/x%",
+        "/api/%2E%2e/storage/x%4",
+        "/api/.%2e/healthz%zz",
+        "/api/%2e%2e/%2e%2e/etc/passwd%c0",
+        "/mcp/%2e%2e/oauth/authorize%ff",
+        "/.well-known/%2e%2e/healthz%zz",
+    ];
+
+    #[test]
+    fn a_malformed_escape_cannot_hide_a_dot_segment() {
+        for path in MALFORMED_WITH_DOTS {
+            assert!(traverses(path), "{path}");
+            for dev in [false, true] {
+                assert_eq!(route(path, dev), Route::Forbidden, "{path}");
+            }
+            assert_eq!(
+                proto("https://srv.example:8443/base").proxy_target(path, "?q=1"),
+                Err(ProxyError::Forbidden),
+                "{path}"
+            );
+            assert_eq!(
+                dev_proto().dev_target(path, "?q=1"),
+                Err("Invalid URL".to_string()),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_parsed_path_must_keep_the_shape_it_was_given() {
+        let base = "https://srv.example:8443/base";
+        // The allow-list is asked about the parsed path.
+        assert_eq!(
+            join_target(base, "/api/x", "", &|path| path == "/api/x"),
+            Ok("https://srv.example:8443/api/x".to_string())
+        );
+        assert_eq!(
+            join_target(base, "/api/x", "", &|_| false),
+            Err(ProxyError::Forbidden)
+        );
+        // A path with no leading slash gains one, which is not a changed shape.
+        assert_eq!(
+            join_target(base, "api/x", "", &|_| true),
+            Ok("https://srv.example:8443/api/x".to_string())
+        );
+    }
+
+    #[test]
+    fn refuses_windows_device_names_and_trailing_dots_and_spaces() {
+        for raw in [
+            "/con",
+            "/CON",
+            "/assets/aux.js",
+            "/COM1.txt",
+            "/x/lpt9",
+            "/x/nul.tar.gz",
+            "/x/..%20",
+            "/x/a%20",
+            "/x/a.",
+            "/x/con%20.js",
+        ] {
+            assert_eq!(serve(raw, true), StaticOutcome::Forbidden, "{raw}");
+        }
+        for raw in [
+            "/console.js",
+            "/assets/com.js",
+            "/assets/com10.js",
+            "/assets/lpt0",
+            "/assets/auxiliary",
+            "/assets/a b.js",
+        ] {
+            assert!(serve(raw, true).serve().is_some(), "{raw}");
+        }
+    }
+
     #[test]
     fn serves_names_that_merely_look_unusual() {
         // A trailing slash, a dotted name, and a literal percent are fine.
@@ -1798,10 +1939,19 @@ mod tests {
         ] {
             assert!(traverses(path), "{path}");
         }
-        for path in [
-            "/a/b", "/a/.b/c.", "/a/...", "/a/%zz", "/a/100%", "/a/%2561",
-        ] {
+        for path in ["/a/b", "/a/.b/c.", "/a/...", "/a/%2561", "/a/100%25"] {
             assert!(!traverses(path), "{path}");
+        }
+        // A malformed escape is refused, deliberately: see `traverses`.
+        for path in ["/a/%zz", "/a/100%", "/a/%c0", "/a/%4"] {
+            assert!(traverses(path), "{path}");
+        }
+        for segment in [".", "%2e", "%2E", "..", ".%2e", "%2e.", "%2E%2e", ".%2E"] {
+            assert!(is_dot_segment(segment), "{segment}");
+            assert!(traverses(&format!("/a/{segment}/b")), "{segment}");
+        }
+        for segment in ["...", "%2e%2e%2e", "a.", ".a", "%2f", ""] {
+            assert!(!is_dot_segment(segment), "{segment}");
         }
         assert!(traverses("/a/%252525252525252e%252525252525252e/b"));
     }
@@ -2017,6 +2167,15 @@ mod tests {
         let csp = build_csp(&opts(false, "", "http://a;script-src.evil/"));
         assert!(!directive(&csp, "connect-src").contains(';'));
         assert!(!csp.contains("evil"));
+    }
+
+    #[test]
+    fn a_host_with_an_underscore_gets_no_entry() {
+        // The CSP host grammar is alphanumerics and `-`, so a browser ignores a
+        // source with `_`. The JS lists it all the same; a deliberate divergence.
+        for url in ["http://my_host:3000", "http://agentrq_backend:3000"] {
+            assert_eq!(web_socket_origin(url), "", "{url}");
+        }
     }
 
     #[test]
