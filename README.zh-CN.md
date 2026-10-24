@@ -50,6 +50,12 @@ Workspace Fork（工作区分叉）让第二个 Agent 并行处理某个 Workspa
 
 Task 是 AgentRQ 的基本工作单元。任务可以分配给 human 或 agent，状态包括 `notstarted`、`ongoing`、`completed`、`rejected`、`blocked` 和 `cron`。任务内有对话历史、附件、优先级和权限控制信息。
 
+### 任务时间线
+
+每个任务下方都有一条状态时间线：每次状态变化落下一个圆点，到下一个圆点的连线上标出持续时间，等待你输入的时段为黄色，被阻塞的时段为红色。上方的汇总显示哪个 Agent 工作了多久、任务被阻塞和等待输入各多久，以及从开始到关闭用了多久。每次状态变化都与任务本身一起记录，任何变化都会留下一个圆点。
+
+<img src="docs/assets/readme/task-timeline.svg" width="1200" alt="AgentRQ 任务时间线：任务下方每进入一个状态就落下一个圆点，到下一个圆点的连线上标出该状态持续的时间。claude 领取 Migrate users table，等待你允许一条命令（黄色的 needs input 段），之后被阻塞直到你回复（红色段），最后完成任务；汇总显示 claude-code 工作 14 分钟、阻塞 3 分钟、等待输入 2 分钟、从开始到关闭 19 分钟，claude 一起庆祝。" />
+
 ### Human-in-the-loop
 
 AgentRQ 的重点不是让 Agent 无限制执行，而是把人放在工作流中：人可以创建任务、补充上下文、查看状态、处理权限请求、接管或阻塞任务。

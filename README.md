@@ -86,6 +86,17 @@ The task detail view's History tab lays out a lane-grouped timeline of every too
 <td colspan="2"><img src="docs/assets/readme/tool-call-history.svg" width="1200" alt="AgentRQ tool call history: a task's Trajectory view lays out the run on three lanes, Input, Agent and Tools. claude reads, greps and edits; a Bash call waits for you and you deny it, so it turns red; claude tries another way and npm test passes. You open that call to see what ran and what it returned, then search for bash and only the two Bash calls stay lit, while the agents celebrate." /></td>
 </tr>
 <tr>
+<td colspan="2" valign="middle">
+
+### Task Timeline
+
+Under every task, a timeline shows each status it has been in and for how long: a dot per change, with the time spent on the line to the next, stretches waiting on you in yellow and blocked ones in red. Above it, the totals say which agent worked on it and for how long, how long it was blocked or waited for your input, and how long it took from start to close. Every status change is recorded with the task itself, so nothing moves without leaving a dot.
+
+<img src="docs/assets/readme/task-timeline.svg" width="1200" alt="AgentRQ task timeline: under a task, a dot lands for every status it enters, with the time spent on the line to the next. claude picks up Migrate users table, waits on you to allow a command (a yellow needs-input stretch), later is blocked until you reply (a red stretch), and completes it; the totals read claude-code worked 14m, blocked 3m, needs input 2m, start to close 19m, and claude celebrates." />
+
+</td>
+</tr>
+<tr>
 <td width="50%"><img src="https://agentrq.com/assets/feature-auto-title.gif" alt="AgentRQ auto-title generation in action" width="320" /></td>
 <td width="50%" valign="middle">
 
