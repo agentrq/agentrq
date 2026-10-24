@@ -78,9 +78,17 @@ pub fn oauth_start_url(server_url: &str, pathname: &str, search: &str) -> Option
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cookie {
     pub name: String,
-    /// The domain the cookie is stored for, with or without a leading dot.
+    pub value: String,
+    /// The domain the cookie is stored for. wry hands over a `cookie::Cookie`,
+    /// whose `domain()` strips the leading dot, so a host-only cookie and a
+    /// `Domain=` cookie look the same: a host-only `at` of a parent host counts
+    /// for a subdomain server. That is safe only because the shell deletes `at`
+    /// from the webview's store as soon as it has copied it.
     /// `None` cannot be matched to a host, so it never counts.
     pub domain: Option<String>,
+    pub path: Option<String>,
+    /// Expiry in seconds since the Unix epoch. `None` is a session cookie.
+    pub expires: Option<i64>,
 }
 
 /// The profile's cookie jar. A failed read is an `Err`, and counts as no cookie.
@@ -106,39 +114,55 @@ fn bare_host(host: &str) -> String {
 /// Would a browser send a cookie stored for `cookie_domain` to `host`?
 ///
 /// RFC 6265 domain-match: the same host, or a subdomain of the cookie's domain.
-/// A leading dot (`Domain=.example.com`) is not significant, and the port never
-/// is: cookies are not scoped by port. An IP host matches only the identical
-/// address, so `1.10` is not a parent of `192.168.1.10`.
+/// One leading dot (`Domain=.example.com`) is accepted and ignored, and the port
+/// never matters: cookies are not scoped by port. An IP host matches only the
+/// same address, so `1.10` is not a parent of `192.168.1.10`, and `0:0::1` is
+/// `[::1]`. A single-label domain (`.com`) matches only itself, not its
+/// subdomains; deeper public suffixes are left to the store, which refuses them.
 pub fn cookie_domain_matches(cookie_domain: &str, host: &str) -> bool {
     let host = bare_host(host);
     if host.is_empty() {
         return false;
     }
-    if host.parse::<IpAddr>().is_ok() {
-        return bare_host(cookie_domain) == host;
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return bare_host(cookie_domain).parse::<IpAddr>().ok() == Some(ip);
     }
-    let domain = bare_host(cookie_domain.trim_start_matches('.'));
-    !domain.is_empty() && (host == domain || host.ends_with(&format!(".{domain}")))
+    let domain = bare_host(cookie_domain.strip_prefix('.').unwrap_or(cookie_domain));
+    host == domain || (domain.contains('.') && host.ends_with(&format!(".{domain}")))
 }
 
-/// Is the `at` cookie in the jar, for the server's host? A stale cookie of
-/// another server does not count, and neither does a failed read.
-pub fn has_auth_cookie(jar: &dyn CookieJar, server_url: &str) -> bool {
-    let Ok(server) = Url::parse(server_url) else {
-        return false;
-    };
-    let Some(host) = server.host_str() else {
-        return false;
-    };
-    match jar.cookies() {
-        Ok(cookies) => cookies.iter().any(|c| {
+/// The `at` cookie for the server's host, if the jar holds one. When several
+/// match (a stale `.example.com` one beside a fresh `app.example.com` one), the
+/// most specific wins: the longest domain, then the longest path. A cookie of
+/// another server does not count.
+pub fn find_auth_cookie<'a>(cookies: &'a [Cookie], server_url: &str) -> Option<&'a Cookie> {
+    let server = Url::parse(server_url).ok()?;
+    let host = server.host_str()?;
+    cookies
+        .iter()
+        .filter(|c| {
             c.name == AUTH_COOKIE
                 && c.domain
                     .as_deref()
                     .is_some_and(|d| cookie_domain_matches(d, host))
-        }),
-        Err(_) => false,
-    }
+        })
+        .max_by_key(|c| {
+            let domain = c.domain.as_deref().unwrap_or_default();
+            (
+                domain.strip_prefix('.').unwrap_or(domain).len(),
+                c.path.as_deref().map_or(0, str::len),
+            )
+        })
+}
+
+/// Is the `at` cookie in the jar, for the server's host? A failed read counts
+/// as no cookie.
+///
+/// Never call this from a navigation or page-load handler: on Windows,
+/// reading the webview's jar there deadlocks (wry#583). See [`SignInFlow`].
+pub fn has_auth_cookie(jar: &dyn CookieJar, server_url: &str) -> bool {
+    jar.cookies()
+        .is_ok_and(|cookies| find_auth_cookie(&cookies, server_url).is_some())
 }
 
 /// How a sign-in ended.
@@ -148,10 +172,15 @@ pub enum SignInResult {
     Failed { reason: &'static str },
 }
 
-/// One OAuth sign-in. The shell forwards the window's navigations, redirects
-/// included, to [`SignInFlow::on_navigation`] and its closing to
-/// [`SignInFlow::on_closed`]. The first call to settle it returns the result,
-/// and every later call returns `None`, so the shell resolves once.
+/// One OAuth sign-in, in two steps so the cookie jar is never read inside a
+/// webview callback, where it deadlocks on Windows (wry#583).
+///
+/// The shell forwards the window's navigations, redirects included, to
+/// [`SignInFlow::on_navigation`]. When that returns `true`, the shell reads the
+/// jar on another thread and hands the answer to [`SignInFlow::finish`], which
+/// closes the window. The window's closing goes to [`SignInFlow::on_closed`].
+/// The flow settles once: before the jar is read, so the jar is read once and
+/// a close that arrives during the read does not count as giving up.
 #[derive(Debug)]
 pub struct SignInFlow {
     server_url: String,
@@ -169,29 +198,29 @@ impl SignInFlow {
     }
 
     /// The window navigated to `url`. Back on the server outside the auth
-    /// endpoints ends the flow: success if the cookie is in the jar, failure if
-    /// not. The window is closed unless it is already gone.
-    pub fn on_navigation(
-        &mut self,
-        url: &str,
-        win: &mut dyn SignInWindow,
-        jar: &dyn CookieJar,
-    ) -> Option<SignInResult> {
+    /// endpoints ends the flow: returns `true`, once, meaning "read the jar
+    /// now, off this thread, then call [`SignInFlow::finish`]".
+    pub fn on_navigation(&mut self, url: &str) -> bool {
         if self.settled || !is_oauth_return(url, &self.server_url) {
-            return None;
+            return false;
         }
         self.settled = true;
-        let result = if has_auth_cookie(jar, &self.server_url) {
+        true
+    }
+
+    /// The jar has been read: success if it held the cookie. The window is
+    /// closed unless it is already gone.
+    pub fn finish(&mut self, has_cookie: bool, win: &mut dyn SignInWindow) -> SignInResult {
+        if !win.is_destroyed() {
+            win.close();
+        }
+        if has_cookie {
             SignInResult::Ok
         } else {
             SignInResult::Failed {
                 reason: REASON_INCOMPLETE,
             }
-        };
-        if !win.is_destroyed() {
-            win.close();
         }
-        Some(result)
     }
 
     /// The window closed. Before the flow ended, that is the user giving up.
@@ -264,7 +293,10 @@ mod tests {
     fn cookie(name: &str, domain: &str) -> Cookie {
         Cookie {
             name: name.to_string(),
+            value: format!("token-for-{domain}"),
             domain: Some(domain.to_string()),
+            path: Some("/".to_string()),
+            expires: None,
         }
     }
 
@@ -444,6 +476,12 @@ mod tests {
 
     // --- the flow ---
 
+    /// What the shell does once `on_navigation` says so: read the jar (off the
+    /// webview's thread, in the real app) and finish.
+    fn read_and_finish(flow: &mut SignInFlow, jar: &FakeJar, win: &mut FakeWindow) -> SignInResult {
+        flow.finish(has_auth_cookie(jar, SERVER), win)
+    }
+
     #[test]
     fn opens_the_flow_in_its_own_window_at_the_start_url() {
         let mut win = FakeWindow::default();
@@ -453,8 +491,9 @@ mod tests {
             vec![format!("{SERVER}/api/v1/auth/github/login")]
         );
 
-        let result = flow.on_navigation(&format!("{SERVER}/"), &mut win, &FakeJar::signed_in());
-        assert_eq!(result, Some(SignInResult::Ok));
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        let result = read_and_finish(&mut flow, &FakeJar::signed_in(), &mut win);
+        assert_eq!(result, SignInResult::Ok);
     }
 
     #[test]
@@ -462,9 +501,10 @@ mod tests {
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let result = flow.on_navigation(&format!("{SERVER}/"), &mut win, &FakeJar::signed_in());
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        let result = read_and_finish(&mut flow, &FakeJar::signed_in(), &mut win);
 
-        assert_eq!(result, Some(SignInResult::Ok));
+        assert_eq!(result, SignInResult::Ok);
         assert_eq!(win.closes, 1);
     }
 
@@ -473,29 +513,28 @@ mod tests {
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let result = flow.on_navigation(&format!("{SERVER}/"), &mut win, &FakeJar::empty());
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        let result = read_and_finish(&mut flow, &FakeJar::empty(), &mut win);
 
-        assert_eq!(result, failed("Sign-in did not complete"));
+        assert_eq!(
+            result,
+            SignInResult::Failed {
+                reason: "Sign-in did not complete"
+            }
+        );
+        assert_eq!(win.closes, 1);
     }
 
     #[test]
     fn does_not_check_for_a_cookie_while_still_at_the_provider() {
-        let jar = FakeJar::signed_in();
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let provider = "https://github.com/login/oauth/authorize";
-        assert_eq!(flow.on_navigation(provider, &mut win, &jar), None);
-        let callback = format!("{SERVER}/api/v1/auth/github/callback?code=x");
-        assert_eq!(flow.on_navigation(&callback, &mut win, &jar), None);
-        assert_eq!(jar.lookups.get(), 0);
+        assert!(!flow.on_navigation("https://github.com/login/oauth/authorize"));
+        assert!(!flow.on_navigation(&format!("{SERVER}/api/v1/auth/github/callback?code=x")));
+        assert_eq!(win.closes, 0);
 
-        let back = format!("{SERVER}/");
-        assert_eq!(
-            flow.on_navigation(&back, &mut win, &jar),
-            Some(SignInResult::Ok)
-        );
-        assert_eq!(jar.lookups.get(), 1);
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
     }
 
     #[test]
@@ -504,6 +543,8 @@ mod tests {
         let mut flow = start(&mut win);
 
         assert_eq!(flow.on_closed(), failed("Sign-in window was closed"));
+        // Closed is the end: a later return does not ask for the jar.
+        assert!(!flow.on_navigation(&format!("{SERVER}/")));
     }
 
     #[test]
@@ -514,15 +555,9 @@ mod tests {
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let back = format!("{SERVER}/");
-        assert_eq!(
-            flow.on_navigation(&back, &mut win, &jar),
-            Some(SignInResult::Ok)
-        );
-        assert_eq!(
-            flow.on_navigation(&format!("{SERVER}/events"), &mut win, &jar),
-            None
-        );
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        assert_eq!(read_and_finish(&mut flow, &jar, &mut win), SignInResult::Ok);
+        assert!(!flow.on_navigation(&format!("{SERVER}/events")));
         assert_eq!(flow.on_closed(), None);
         assert_eq!(jar.lookups.get(), 1);
     }
@@ -532,29 +567,46 @@ mod tests {
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
         win.destroyed = true;
-        let result = flow.on_navigation(&format!("{SERVER}/"), &mut win, &FakeJar::signed_in());
+        let result = read_and_finish(&mut flow, &FakeJar::signed_in(), &mut win);
 
-        assert_eq!(result, Some(SignInResult::Ok));
+        assert_eq!(result, SignInResult::Ok);
         assert_eq!(win.closes, 0);
     }
 
     #[test]
     fn settles_once_when_two_returns_arrive_back_to_back() {
         // A navigation and the redirect that follows it can both land on the
-        // server. The second finds the flow settled: one result, one close, and
-        // one cookie lookup (the JS made two).
+        // server while the jar is being read. Only the first asks for a read:
+        // one result, one close, one cookie lookup (the JS made two).
         let jar = FakeJar::signed_in();
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let first = flow.on_navigation(&format!("{SERVER}/"), &mut win, &jar);
-        let second = flow.on_navigation(&format!("{SERVER}/events"), &mut win, &jar);
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        assert!(!flow.on_navigation(&format!("{SERVER}/events")));
+        let result = read_and_finish(&mut flow, &jar, &mut win);
 
-        assert_eq!(first, Some(SignInResult::Ok));
-        assert_eq!(second, None);
+        assert_eq!(result, SignInResult::Ok);
         assert_eq!(win.closes, 1);
         assert_eq!(jar.lookups.get(), 1);
+    }
+
+    #[test]
+    fn finishes_when_the_window_closes_while_the_jar_is_read() {
+        // The user closes the window after the return, before the read ends:
+        // that is not giving up, and the cookie decides.
+        let mut win = FakeWindow::default();
+        let mut flow = start(&mut win);
+
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        win.destroyed = true;
+        assert_eq!(flow.on_closed(), None);
+        let result = read_and_finish(&mut flow, &FakeJar::signed_in(), &mut win);
+
+        assert_eq!(result, SignInResult::Ok);
+        assert_eq!(win.closes, 0);
     }
 
     #[test]
@@ -594,7 +646,23 @@ mod tests {
         assert!(!cookie_domain_matches(".192.168.1.10", "192.168.1.10"));
         assert!(cookie_domain_matches("[::1]", "[::1]"));
         assert!(cookie_domain_matches("::1", "[::1]"));
+        assert!(cookie_domain_matches("0:0::1", "[::1]"));
+        assert!(cookie_domain_matches("[0:0::1]", "::1"));
+        assert!(!cookie_domain_matches("::2", "[::1]"));
         assert!(!cookie_domain_matches("localhost", "127.0.0.1"));
+    }
+
+    #[test]
+    fn strips_one_leading_dot_and_never_matches_below_a_single_label() {
+        assert!(!cookie_domain_matches("..example.com", "example.com"));
+        assert!(!cookie_domain_matches("..example.com", "app.example.com"));
+        assert!(!cookie_domain_matches(".com", "example.com"));
+        assert!(!cookie_domain_matches("com", "example.com"));
+        // A single-label host still matches itself: the backend sets a
+        // host-only cookie on localhost.
+        assert!(cookie_domain_matches("localhost", "localhost"));
+        assert!(cookie_domain_matches(".localhost", "localhost"));
+        assert!(!cookie_domain_matches("localhost", "app.localhost"));
     }
 
     #[test]
@@ -620,8 +688,8 @@ mod tests {
             cookie("session", "agentrq.example.com"),
             cookie("at", "other.example.com"),
             Cookie {
-                name: "at".to_string(),
                 domain: None,
+                ..cookie("at", "agentrq.example.com")
             },
         ]);
         assert!(!has_auth_cookie(&jar, SERVER));
@@ -639,7 +707,6 @@ mod tests {
         let jar = FakeJar::signed_in();
         assert!(!has_auth_cookie(&jar, "not a url"));
         assert!(!has_auth_cookie(&jar, "mailto:someone@example.com"));
-        assert_eq!(jar.lookups.get(), 0);
     }
 
     #[test]
@@ -651,8 +718,78 @@ mod tests {
         let mut win = FakeWindow::default();
         let mut flow = start(&mut win);
 
-        let result = flow.on_navigation(&format!("{SERVER}/"), &mut win, &jar);
+        assert!(flow.on_navigation(&format!("{SERVER}/")));
+        let result = read_and_finish(&mut flow, &jar, &mut win);
 
-        assert_eq!(result, failed("Sign-in did not complete"));
+        assert_eq!(
+            result,
+            SignInResult::Failed {
+                reason: "Sign-in did not complete"
+            }
+        );
+    }
+
+    // --- find_auth_cookie ---
+
+    #[test]
+    fn picks_the_most_specific_of_two_matching_cookies() {
+        // A stale parent-domain cookie beside the fresh one the server just set:
+        // the fresh one is the one to copy, in either order.
+        let stale = cookie("at", "example.com");
+        let fresh = cookie("at", "agentrq.example.com");
+        for jar in [
+            vec![stale.clone(), fresh.clone()],
+            vec![fresh.clone(), stale.clone()],
+        ] {
+            assert_eq!(find_auth_cookie(&jar, SERVER), Some(&fresh));
+        }
+    }
+
+    #[test]
+    fn breaks_a_domain_tie_by_the_longest_path() {
+        let root = cookie("at", "agentrq.example.com");
+        let api = Cookie {
+            path: Some("/api".to_string()),
+            ..root.clone()
+        };
+        let no_path = Cookie {
+            path: None,
+            ..root.clone()
+        };
+        let jar = [no_path, api.clone(), root];
+        assert_eq!(find_auth_cookie(&jar, SERVER), Some(&api));
+    }
+
+    #[test]
+    fn ignores_a_leading_dot_when_ranking_domains() {
+        let dotted = cookie("at", ".agentrq.example.com");
+        let parent = cookie("at", "example.com");
+        let jar = [parent, dotted.clone()];
+        assert_eq!(find_auth_cookie(&jar, SERVER), Some(&dotted));
+    }
+
+    #[test]
+    fn hands_over_the_value_path_and_expiry_to_copy() {
+        let at = Cookie {
+            name: "at".to_string(),
+            value: "secret".to_string(),
+            domain: Some("agentrq.example.com".to_string()),
+            path: Some("/".to_string()),
+            expires: Some(1_800_000_000),
+        };
+        let jar = [cookie("session", "agentrq.example.com"), at];
+        let found = find_auth_cookie(&jar, SERVER).expect("the at cookie");
+        assert_eq!(found.value, "secret");
+        assert_eq!(found.path.as_deref(), Some("/"));
+        assert_eq!(found.expires, Some(1_800_000_000));
+    }
+
+    #[test]
+    fn finds_nothing_for_another_server_or_a_server_that_is_not_a_url() {
+        let jar = [cookie("at", "other.example.com")];
+        assert_eq!(find_auth_cookie(&jar, SERVER), None);
+        let jar = [cookie("at", "agentrq.example.com")];
+        assert_eq!(find_auth_cookie(&jar, "not a url"), None);
+        assert_eq!(find_auth_cookie(&jar, "mailto:someone@example.com"), None);
     }
 }
