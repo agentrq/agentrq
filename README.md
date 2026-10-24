@@ -179,6 +179,8 @@ A board of markdown docs that every workspace of your account shares. An agent p
 
 Fork a workspace to have a second agent take some of its tasks in parallel. Right-click it in the sidebar to fork it, or choose **Spin up** on a task, which forks the workspace, moves the task in and launches an agent in one step. The fork has its own queue and agent. It shares the parent's memory, skills and settings, and runs in its own git worktree or copy of the parent's folder. When its tasks are done, merge it back: its agent is stopped and every task returns to the parent with its thread. [How forks work →](docs/FORKS.md)
 
+<img src="docs/assets/readme/workspace-forks.svg" width="1200" alt="AgentRQ workspace forks: claude has six tasks in the api workspace, so you fork it into api-fork and move three tasks there. codex works the fork while claude works api, both sharing the same memory, skills and settings; when the fork's tasks are done you merge it back, its three tasks return to api with their threads, and the agents celebrate." />
+
 </td>
 </tr>
 </table>

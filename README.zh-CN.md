@@ -44,6 +44,8 @@ Workspace 是一个独立的任务空间，通常对应一个项目、仓库或�
 
 Workspace Fork（工作区分叉）让第二个 Agent 并行处理某个 Workspace 的部分任务。在侧边栏右键 Workspace 选择 **Fork workspace**，或在任务上点 **Spin up**（一步完成分叉、移入任务并启动 Agent）。分叉有自己的任务队列和 Agent，与父工作区共享记忆、技能和设置，并在父文件夹的 git worktree 或副本中运行。任务完成后将其合并回父工作区：Agent 会先被停止，所有任务连同对话一起回到父工作区。详见 [docs/FORKS.md](docs/FORKS.md)。
 
+<img src="docs/assets/readme/workspace-forks.svg" width="1200" alt="AgentRQ 工作区分叉：claude 在 api 工作区里有六个任务，于是你把它分叉成 api-fork，并把其中三个任务移过去。codex 处理分叉中的任务，claude 继续处理 api 的任务，两者共享同一份记忆、技能和设置；分叉的任务完成后你将它合并回去，三个任务连同对话回到 api，Agent 们一起庆祝。" />
+
 ### Task
 
 Task 是 AgentRQ 的基本工作单元。任务可以分配给 human 或 agent，状态包括 `notstarted`、`ongoing`、`completed`、`rejected`、`blocked` 和 `cron`。任务内有对话历史、附件、优先级和权限控制信息。
