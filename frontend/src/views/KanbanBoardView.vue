@@ -87,7 +87,7 @@
                 </div>
               </div>
 
-              <h3 class="text-[12px] md:text-[13px] leading-snug line-clamp-2 font-medium transition-colors"
+              <h3 class="text-[12px] md:text-[13px] leading-snug truncate font-medium transition-colors"
                   :class="['completed','rejected'].includes(t.status) ? 'text-gray-400 dark:text-zinc-500' : 'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white'">
                 {{ t.title }}
               </h3>
