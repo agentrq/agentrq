@@ -62,7 +62,11 @@ impl InstallLog for FileInstallLog {
     }
 
     fn read(&self) -> String {
-        std::fs::read_to_string(&self.path).unwrap_or_default()
+        // Lossy, as Node's `readFileSync(path, 'utf8')`: one stray byte must not
+        // read as an empty log.
+        std::fs::read(&self.path)
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_default()
     }
 
     fn close(&self) {
@@ -115,6 +119,17 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
 
         assert_eq!(log.read(), "");
+    }
+
+    #[test]
+    fn reads_a_byte_that_is_not_utf8_as_a_replacement_character() {
+        let dir = temp_dir("install-log-d");
+        let log = create_install_log(&dir).unwrap();
+        std::fs::write(log.path(), b"installed to /home/jos\xE9/Applications\n").unwrap();
+
+        assert_eq!(log.read(), "installed to /home/jos\u{fffd}/Applications\n");
+        log.close();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

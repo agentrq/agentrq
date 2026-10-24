@@ -462,7 +462,11 @@ pub fn parse_installer_log(text: &str) -> InstallerLogState {
     let error = text
         .split(['\n', '\r', '\u{2028}', '\u{2029}'])
         .find_map(|line| line.strip_prefix("error: "))
-        .map(|rest| rest.trim().to_string())
+        // JS `trim()` also strips a byte-order mark, which Rust's does not.
+        .map(|rest| {
+            rest.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+                .to_string()
+        })
         .unwrap_or_default();
 
     if text.contains("installed to ") || text.contains("already installed") {
@@ -673,6 +677,7 @@ impl Updater {
             }
             outbox.delivering = true;
         }
+        let _draining = Draining(&self.inner.outbox);
         loop {
             let next = {
                 let mut outbox = self.inner.outbox.lock().unwrap();
@@ -992,6 +997,20 @@ impl Updater {
             progress: state.progress,
             enabled: self.inner.disabled_reason.is_none(),
             can_install_via_script: self.can_install_via_script(),
+        }
+    }
+}
+
+/// Clears `delivering` if `on_status` unwinds, so one panic does not silence
+/// every later status.
+struct Draining<'a>(&'a Mutex<Outbox>);
+
+impl Drop for Draining<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            if let Ok(mut outbox) = self.0.lock() {
+                outbox.delivering = false;
+            }
         }
     }
 }
@@ -1974,6 +1993,14 @@ mod tests {
     }
 
     #[test]
+    fn trims_a_byte_order_mark_like_js_trim() {
+        assert_eq!(
+            parse_installer_log("error: \u{feff}bom trimmed?\u{feff}\n").error,
+            "bom trimmed?"
+        );
+    }
+
+    #[test]
     fn starts_out_preparing() {
         assert_eq!(
             parse_installer_log(""),
@@ -2322,6 +2349,34 @@ mod tests {
                 UpdateStatus::Installed
             ]
         );
+    }
+
+    #[test]
+    fn a_panic_in_on_status_does_not_silence_later_statuses() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        let first = Arc::new(AtomicBool::new(true));
+        let mut deps = UpdaterDeps::new(
+            Arc::new(FakeAutoUpdater::default()),
+            true,
+            move |published: PublishedStatus| {
+                if first.swap(false, Ordering::SeqCst) {
+                    panic!("on_status failed");
+                }
+                log.lock().unwrap().push(published.status);
+            },
+        );
+        deps.scheduler = Arc::new(FakeScheduler::default());
+        let updater = Updater::new(deps);
+        updater.start();
+
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            updater.handle_event(UpdaterEvent::Checking)
+        }));
+        assert!(unwound.is_err());
+        updater.handle_event(UpdaterEvent::NotAvailable);
+
+        assert_eq!(*seen.lock().unwrap(), vec![UpdateStatus::UpToDate]);
     }
 
     #[test]
