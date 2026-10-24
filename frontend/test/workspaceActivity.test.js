@@ -6,7 +6,6 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   TASK_ACTIVITY_EVENTS,
   activityOf,
-  activityTooltip,
   createActivityRefresher,
   forkProgressLabel,
   forkStatusLabel,
@@ -61,33 +60,6 @@ describe('labels', () => {
 
 describe('the sidebar row', () => {
   const quiet = { name: 'docs', agentConnected: true };
-
-  it('says what is going on under the name', () => {
-    expect(activityTooltip(busy)).toBe('api\nWorking on Fix the build (+1 more)\n1 needs you');
-    expect(activityTooltip(quiet)).toBe('docs');
-    expect(activityTooltip(undefined)).toBe('');
-  });
-
-  it('names its busy folded forks, busiest first, and counts the idle ones', () => {
-    const working = { name: 'pg', agentConnected: true, taskSummary: { ongoing: 1, current } };
-    expect(activityTooltip(quiet, [quiet, working, busy])).toBe(
-      'docs\napi — 1 needs you\npg — Working on Fix the build\n1 idle'
-    );
-    expect(activityTooltip(quiet, [working])).toBe('docs\npg — Working on Fix the build');
-    expect(activityTooltip(quiet, [quiet])).toBe('docs\n1 fork idle');
-    const done = { name: 'old', taskSummary: { done: 1, total: 1 } };
-    expect(activityTooltip(quiet, [done, quiet])).toBe('docs\n1 ready to merge · 1 idle');
-    expect(activityTooltip(quiet, [done])).toBe('docs\n1 ready to merge');
-    expect(activityTooltip(quiet, [quiet, quiet])).toBe('docs\n2 forks idle');
-  });
-
-  it('names six busy forks at most, and counts the rest', () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({ ...busy, name: `f${i}` }));
-    const lines = activityTooltip(quiet, [...many, quiet]).split('\n');
-    expect(lines).toHaveLength(8);
-    expect(lines.slice(1, 7)).toEqual(['f0', 'f1', 'f2', 'f3', 'f4', 'f5'].map((n) => `${n} — 1 needs you`));
-    expect(lines[7]).toBe('+3 more · 1 idle');
-  });
 
   it('counts its own and its folded forks\' tasks that need you', () => {
     expect(needsYouCount(busy, [busy, quiet])).toBe(2);

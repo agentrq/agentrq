@@ -278,41 +278,20 @@ describe('what each sidebar row is doing', () => {
   const BUSY = { ...PARENT, agentConnected: true, taskSummary: { ongoing: 1, needsYou: 1, current: { id: 't1', title: 'Fix the build' } } }
   const ASKING = { ...FORK, agentConnected: true, taskSummary: { ongoing: 1, needsYou: 2, current: { id: 't2', title: 'Try Postgres' } } }
 
-  let store
-  const tooltipText = () => store.text
-  const tooltipVisible = () => store.visible
-
-  it('pulses the dot of an agent at work, counts what needs you, and says it on hover', async () => {
-    const tooltip = vi.fn()
-    const hide = vi.fn()
-    const { el, pinia } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB], showTooltip: tooltip, hideTooltip: hide })
-    store = useTooltipStore(pinia)
+  it('pulses the dot of an agent at work, and counts what needs you', async () => {
+    const { el } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB] })
     await settle()
     const rows = [...el.querySelectorAll('[data-test=sidebar-workspace], [data-test=sidebar-fork]')]
     expect(rows.map((r) => !!r.querySelector('[data-test=sidebar-working]'))).toEqual([true, true, false])
     expect(rows.map((r) => text(r.querySelector('[data-test=sidebar-needs-you]')))).toEqual(['1', '2', ''])
-
-    rows[0].querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
-    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you')
-    rows[0].querySelector('a').dispatchEvent(new MouseEvent('mouseleave'))
-    expect(tooltipVisible()).toBe(false)
-    expect(hide).toHaveBeenCalled()
-    // A row with nothing going on leaves its name to the shell.
-    rows[2].querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
-    expect(tooltip.mock.calls.at(-1)[1]).toBe('web')
-    expect(tooltipVisible()).toBe(false)
   })
 
-  it('sums up its folded forks on the parent\'s row', async () => {
-    const { el, pinia } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB] })
-    store = useTooltipStore(pinia)
+  it('counts its folded forks on the parent\'s row', async () => {
+    const { el } = mount(SidebarWorkspaces, { workspaces: [BUSY, ASKING, WEB] })
     await settle()
     el.querySelector('[aria-label="Hide forks"]').click()
     await settle()
-    const parent = el.querySelector('[data-test=sidebar-workspace]')
-    expect(text(parent.querySelector('[data-test=sidebar-needs-you]'))).toBe('3')
-    parent.querySelector('a').dispatchEvent(new MouseEvent('mouseenter'))
-    expect(tooltipText()).toBe('ops\nWorking on Fix the build\n1 needs you\nops try — 2 need you')
+    expect(text(el.querySelector('[data-test=sidebar-workspace] [data-test=sidebar-needs-you]'))).toBe('3')
   })
 })
 

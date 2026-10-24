@@ -17,10 +17,9 @@ import ForkIcon from './ForkIcon.vue'
 import ForkNameModal from './ForkNameModal.vue'
 import MergeForkModal from './MergeForkModal.vue'
 import { parentName, useForkActions, workspaceTree } from '../composables/useWorkspaceForks'
-import { activityOf, activityTooltip, needsYouCount } from '../composables/useWorkspaceActivity'
+import { activityOf, needsYouCount } from '../composables/useWorkspaceActivity'
 import { useWorkspaceContextMenu, workspaceMenuItems } from '../composables/useWorkspaceContextMenu'
 import { useWorkspaceStore } from '../stores/workspaceStore'
-import { useTooltipStore } from '../stores/tooltipStore'
 import { useToasts } from '../composables/useToasts'
 import { useFormat } from '../composables/useFormat'
 
@@ -46,19 +45,6 @@ const collapsedGroups = ref(new Set((() => {
 const isGroupCollapsed = (id) => collapsedGroups.value.has(String(id))
 // A parent's folded forks, whose state its row sums up.
 const foldedForks = (ws, group) => (ws === group.workspace && isGroupCollapsed(ws.id) ? group.forks : [])
-
-// The shell shows a row's name only while the sidebar is folded. What the
-// agent is doing shows whenever there is something to say.
-const tooltipStore = useTooltipStore()
-function onRowEnter(event, ws, group) {
-  const text = activityTooltip(ws, foldedForks(ws, group))
-  if (text.includes('\n')) tooltipStore.show(event, text)
-  else props.showTooltip(event, ws.name)
-}
-function onRowLeave() {
-  tooltipStore.hide()
-  props.hideTooltip()
-}
 function toggleGroup(id) {
   const next = new Set(collapsedGroups.value)
   next.has(String(id)) ? next.delete(String(id)) : next.add(String(id))
@@ -105,7 +91,7 @@ function onWorkspaceMenuSelect(key) {
       <div v-for="ws in [group.workspace, ...(isGroupCollapsed(group.workspace.id) ? [] : group.forks)]" :key="ws.id"
            class="relative group/row" :data-test="ws.forkOfId ? 'sidebar-fork' : 'sidebar-workspace'">
         <router-link :to="`/workspaces/${ws.id}`"
-            @mouseenter="onRowEnter($event, ws, group)" @mouseleave="onRowLeave"
+            @mouseenter="showTooltip($event, ws.name)" @mouseleave="hideTooltip"
             @contextmenu.prevent.stop="openWorkspaceMenu($event, ws)"
             @keydown="onWorkspaceRowKeydown($event, ws)"
             class="flex items-center gap-2.5 py-1.5 pr-7 text-xs transition-all duration-150 rounded-md group"
@@ -113,9 +99,9 @@ function onWorkspaceMenuSelect(key) {
               ws.forkOfId ? 'pl-6' : 'pl-2',
               route.path.startsWith(`/workspaces/${ws.id}`) ? 'bg-gray-200 dark:bg-zinc-800 text-black dark:text-white font-semibold' : 'text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-900 dark:hover:text-zinc-50'
             ]">
-          <!-- The dot pulses while the agent works on a task; the row's
-               tooltip says which. -->
-          <span class="relative flex items-center justify-center w-1.5 h-1.5 shrink-0">
+          <!-- The dot pulses while the agent works on a task. -->
+          <span class="relative flex items-center justify-center w-1.5 h-1.5 shrink-0"
+                :title="ws.agentConnected ? 'Agent Online' : 'Agent Offline'">
             <span class="w-1.5 h-1.5 rounded-full"
                   :class="ws.agentConnected ? 'bg-green-500 dark:bg-green-400 shadow-[0_0_6px_rgba(34,197,94,0.4)]' : 'bg-gray-300 dark:bg-zinc-600'"></span>
             <span v-if="activityOf(ws).working" class="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75" data-test="sidebar-working"></span>

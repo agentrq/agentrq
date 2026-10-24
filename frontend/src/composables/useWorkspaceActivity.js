@@ -47,33 +47,6 @@ export function workingLabel(a) {
   return more > 0 ? `Working on ${a.current.title} (+${more} more)` : `Working on ${a.current.title}`;
 }
 
-/** How many folded forks a parent's tooltip names before it counts the rest. */
-export const TOOLTIP_FORKS = 6;
-
-/**
- * A sidebar row's tooltip: the name, then what is going on. A parent whose
- * forks are folded away names the busy ones, busiest first, and counts the
- * rest, so ten forks still fit.
- */
-export function activityTooltip(ws, foldedForks = []) {
-  const a = activityOf(ws);
-  const lines = [ws?.name ?? ''];
-  if (a.working) lines.push(workingLabel(a));
-  if (a.needsYou > 0) lines.push(needsYouLabel(a.needsYou));
-  if (foldedForks.length > 0) {
-    const busy = sortForks(foldedForks).filter((f) => rankOf(f) < 2);
-    for (const f of busy.slice(0, TOOLTIP_FORKS)) lines.push(`${f.name} — ${forkStatusLabel(f)}`);
-    const tail = [];
-    if (busy.length > TOOLTIP_FORKS) tail.push(`+${busy.length - TOOLTIP_FORKS} more`);
-    const ready = foldedForks.filter((f) => rankOf(f) === 2).length;
-    if (ready > 0) tail.push(`${ready} ready to merge`);
-    const quiet = foldedForks.length - busy.length - ready;
-    if (quiet > 0) tail.push(busy.length + ready > 0 ? `${quiet} idle` : `${quiet} ${quiet === 1 ? 'fork' : 'forks'} idle`);
-    if (tail.length > 0) lines.push(tail.join(' · '));
-  }
-  return lines.join('\n');
-}
-
 // Needs you, then working, then ready to merge, then the rest.
 function rankOf(fork) {
   const a = activityOf(fork);
