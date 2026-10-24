@@ -244,6 +244,10 @@ pub trait Timers: Send + Sync {
     /// Run `callback` once after `ms`. The handle can be passed to `clear_timer`.
     fn set_timer(&self, ms: u64, callback: Box<dyn FnOnce() + Send>) -> u64;
     fn clear_timer(&self, handle: u64);
+    /// Whether this implementation uses real OS timers / threads.
+    fn is_real(&self) -> bool {
+        false
+    }
 }
 
 /// Real timers: one sleeping thread per pending call. Fine for a debounced
@@ -255,6 +259,10 @@ pub struct StdTimers {
 }
 
 impl Timers for StdTimers {
+    fn is_real(&self) -> bool {
+        true
+    }
+
     fn set_timer(&self, ms: u64, callback: Box<dyn FnOnce() + Send>) -> u64 {
         let handle = self.next.fetch_add(1, Ordering::Relaxed);
         let pending = Arc::clone(&self.pending);

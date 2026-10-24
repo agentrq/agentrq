@@ -16,15 +16,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub const PERMISSIONS_DIR: &str = "side-panel-permissions";
 
 /// The contract a permission store satisfies for the broker.
 pub trait PermissionStoreBackend: Send + Sync {
+    /// Read the permissions file into memory.
+    ///
+    /// # Blocking I/O
+    /// Performs synchronous file reads. The Tauri glue must call this off the
+    /// UI / main thread.
     fn load(&self);
     fn get(&self, origin: &str, permission: &str) -> Option<PermissionDecision>;
-    fn set(&self, origin: &str, permission: &str, decision: &str);
+    fn set(&self, origin: &str, permission: &str, decision: PermissionDecision);
 }
 
 /// Only the two answers a person can give.
@@ -53,12 +58,14 @@ impl PermissionDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionEntry {
     pub permission: String,
     pub decision: PermissionDecision,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SitePermissions {
     pub origin: String,
     pub permissions: Vec<PermissionEntry>,
@@ -155,12 +162,34 @@ pub trait PermissionLogger: Send + Sync {
     fn warn(&self, message: &str);
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ConsoleLogger;
+#[derive(Clone)]
+pub struct ConsoleLogger {
+    sink: Arc<dyn Fn(&str) + Send + Sync>,
+}
+
+impl Default for ConsoleLogger {
+    fn default() -> Self {
+        Self {
+            sink: Arc::new(|msg| eprintln!("{msg}")),
+        }
+    }
+}
+
+impl ConsoleLogger {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_sink(sink: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        Self {
+            sink: Arc::new(sink),
+        }
+    }
+}
 
 impl PermissionLogger for ConsoleLogger {
     fn warn(&self, message: &str) {
-        eprintln!("{message}");
+        (self.sink)(message);
     }
 }
 
@@ -176,11 +205,12 @@ pub struct PermissionStore<F: PermissionFs = StdFs, L: PermissionLogger = Consol
     fs: F,
     logger: L,
     state: Mutex<StoreState>,
+    persist_lock: Mutex<()>,
 }
 
 impl PermissionStore<StdFs, ConsoleLogger> {
     pub fn new(dir: impl AsRef<Path>, profile_id: &str) -> Self {
-        Self::with_fs_and_logger(dir, profile_id, StdFs, ConsoleLogger)
+        Self::with_fs_and_logger(dir, profile_id, StdFs, ConsoleLogger::default())
     }
 }
 
@@ -194,6 +224,7 @@ impl<F: PermissionFs, L: PermissionLogger> PermissionStore<F, L> {
             fs,
             logger,
             state: Mutex::new(StoreState::default()),
+            persist_lock: Mutex::new(()),
         }
     }
 
@@ -206,6 +237,10 @@ impl<F: PermissionFs, L: PermissionLogger> PermissionStore<F, L> {
     }
 
     /// Read the file once; later calls wait on the same read.
+    ///
+    /// # Blocking I/O
+    /// Performs synchronous filesystem reads. The Tauri glue must call this off
+    /// the UI / main thread.
     pub fn load(&self) {
         let mut state = self.state.lock().unwrap();
         if state.loaded {
@@ -236,35 +271,40 @@ impl<F: PermissionFs, L: PermissionLogger> PermissionStore<F, L> {
         let Some(decision) = PermissionDecision::parse(decision) else {
             return;
         };
-        let mut state = self.state.lock().unwrap();
-        state
-            .record
-            .entry(origin.to_string())
-            .or_default()
-            .insert(permission.to_string(), decision);
-        let record = state.record.clone();
-        drop(state);
-        self.persist(&record);
+        self.set_decision(origin, permission, decision);
+    }
+
+    pub fn set_decision(&self, origin: &str, permission: &str, decision: PermissionDecision) {
+        {
+            let mut state = self.state.lock().unwrap();
+            state
+                .record
+                .entry(origin.to_string())
+                .or_default()
+                .insert(permission.to_string(), decision);
+        }
+        self.persist();
     }
 
     /// One permission of a site, or every one of them when none is named.
     pub fn remove(&self, origin: &str, permission: Option<&str>) {
-        let mut state = self.state.lock().unwrap();
-        if !state.record.contains_key(origin) {
-            return;
-        }
-        if let Some(permission) = permission {
-            let perms = state.record.get_mut(origin).unwrap();
-            perms.remove(permission);
-            if perms.is_empty() {
+        let permission = permission.filter(|p| !p.is_empty());
+        {
+            let mut state = self.state.lock().unwrap();
+            if !state.record.contains_key(origin) {
+                return;
+            }
+            if let Some(permission) = permission {
+                let perms = state.record.get_mut(origin).unwrap();
+                perms.remove(permission);
+                if perms.is_empty() {
+                    state.record.remove(origin);
+                }
+            } else {
                 state.record.remove(origin);
             }
-        } else {
-            state.record.remove(origin);
         }
-        let record = state.record.clone();
-        drop(state);
-        self.persist(&record);
+        self.persist();
     }
 
     /// Every decision, by site, for the Site permissions list. Sorted, so it does not shuffle.
@@ -299,11 +339,17 @@ impl<F: PermissionFs, L: PermissionLogger> PermissionStore<F, L> {
         }
     }
 
-    fn persist(&self, record: &BTreeMap<String, BTreeMap<String, PermissionDecision>>) {
+    fn persist(&self) {
+        let _persist_guard = self.persist_lock.lock().unwrap();
+        let record = {
+            let state = self.state.lock().unwrap();
+            state.record.clone()
+        };
+
         let temporary = PathBuf::from(format!("{}.tmp", self.file.display()));
 
         let mut origins = serde_json::Map::new();
-        for (origin, permissions) in record {
+        for (origin, permissions) in &record {
             let mut perms_map = serde_json::Map::new();
             for (permission, decision) in permissions {
                 perms_map.insert(
@@ -382,8 +428,8 @@ impl<F: PermissionFs, L: PermissionLogger> PermissionStoreBackend for Permission
         PermissionStore::get(self, origin, permission)
     }
 
-    fn set(&self, origin: &str, permission: &str, decision: &str) {
-        PermissionStore::set(self, origin, permission, decision);
+    fn set(&self, origin: &str, permission: &str, decision: PermissionDecision) {
+        PermissionStore::set_decision(self, origin, permission, decision);
     }
 }
 
@@ -684,7 +730,8 @@ mod tests {
             vec!["https://maps.example"]
         );
 
-        permissions.remove("https://maps.example", None);
+        // Empty string counts as None and removes the whole site
+        permissions.remove("https://maps.example", Some(""));
         permissions.remove("https://never.example", None);
         assert_eq!(permissions.list(), vec![]);
 
@@ -758,24 +805,35 @@ mod tests {
         *f.fs.mkdir_error.lock().unwrap() = Some(FsError::new("disk unplugged"));
         *f.fs.rm_error.lock().unwrap() = Some(FsError::new("disk unplugged"));
 
-        let permissions =
-            PermissionStore::with_fs_and_logger(&f.dir, "p1", f.fs.clone(), ConsoleLogger);
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured_clone = Arc::clone(&captured);
+        let logger = ConsoleLogger::with_sink(move |msg| {
+            captured_clone.lock().unwrap().push(msg.to_string());
+        });
+
+        let permissions = PermissionStore::with_fs_and_logger(&f.dir, "p1", f.fs.clone(), logger);
         permissions.load();
         permissions.set("https://meet.example", "camera", "allow");
         permissions.forget();
+
+        let warnings = captured.lock().unwrap().clone();
+        assert_eq!(warnings.len(), 3);
+        for warning in &warnings {
+            assert!(warning.contains("disk unplugged"));
+        }
+
+        // Exercise default eprintln sink and constructor for 100% line coverage
+        let default_logger = ConsoleLogger::default();
+        default_logger.warn("test default sink");
+        let new_logger = ConsoleLogger::new();
+        new_logger.warn("test new logger");
     }
 
     #[test]
     fn test_stdfs_coverage() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "agentrq-test-stdfs-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let temp_dir = tempfile::tempdir().unwrap();
         let fs = StdFs;
-        let sub = temp_dir.join("sub");
+        let sub = temp_dir.path().join("sub");
         fs.mkdir(&sub).unwrap();
         let file = sub.join("test.txt");
         fs.write_file(&file, "hello").unwrap();
@@ -787,26 +845,128 @@ mod tests {
         // rm on non-existent file is ok
         fs.rm(&renamed).unwrap();
         // rm on directory should fail
-        assert!(fs.rm(&temp_dir).is_err());
-        let _ = std::fs::remove_dir_all(&temp_dir);
+        assert!(fs.rm(temp_dir.path()).is_err());
 
         // Constructor with defaults coverage
-        let store = PermissionStore::new(&temp_dir, "default");
-        assert_eq!(store.folder(), temp_dir.join(PERMISSIONS_DIR));
+        let store = PermissionStore::new(temp_dir.path(), "default");
+        assert_eq!(store.folder(), temp_dir.path().join(PERMISSIONS_DIR));
         assert_eq!(
             store.file(),
-            temp_dir.join(PERMISSIONS_DIR).join("default.json")
+            temp_dir.path().join(PERMISSIONS_DIR).join("default.json")
         );
 
         // Backend trait methods coverage
         let backend: &dyn PermissionStoreBackend = &store;
         backend.load();
-        backend.set("https://example.com", "camera", "allow");
+        backend.set("https://example.com", "camera", PermissionDecision::Allow);
         assert_eq!(
             backend.get("https://example.com", "camera"),
             Some(PermissionDecision::Allow)
         );
         store.forget();
+    }
+
+    #[test]
+    fn test_stdfs_write_rename_read_round_trip() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = PermissionStore::new(temp_dir.path(), "roundtrip");
+        store.set("https://meet.example", "camera", "allow");
+        store.set("https://meet.example", "microphone", "block");
+
+        let store2 = PermissionStore::new(temp_dir.path(), "roundtrip");
+        store2.load();
+        assert_eq!(
+            store2.get("https://meet.example", "camera"),
+            Some(PermissionDecision::Allow)
+        );
+        assert_eq!(
+            store2.get("https://meet.example", "microphone"),
+            Some(PermissionDecision::Block)
+        );
+
+        let content = std::fs::read_to_string(store2.file()).unwrap();
+        assert!(content.contains("\"camera\": \"allow\""));
+        assert!(content.contains("\"microphone\": \"block\""));
+    }
+
+    #[test]
+    fn concurrent_load_reads_file_once() {
+        let f = Fixture::new();
+        let store = Arc::new(f.store("p1"));
+        let s1 = Arc::clone(&store);
+        let s2 = Arc::clone(&store);
+
+        let t1 = std::thread::spawn(move || {
+            s1.load();
+        });
+        let t2 = std::thread::spawn(move || {
+            s2.load();
+        });
+
+        t1.join().unwrap();
+        t2.join().unwrap();
+
+        assert_eq!(*f.fs.read_count.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn concurrent_persist_from_multiple_threads() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(PermissionStore::new(temp_dir.path(), "concurrent"));
+        let mut handles = Vec::new();
+
+        for i in 0..10 {
+            let s = Arc::clone(&store);
+            handles.push(std::thread::spawn(move || {
+                s.set(&format!("https://site{i}.example"), "camera", "allow");
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let reloaded = PermissionStore::new(temp_dir.path(), "concurrent");
+        reloaded.load();
+        for i in 0..10 {
+            assert_eq!(
+                reloaded.get(&format!("https://site{i}.example"), "camera"),
+                Some(PermissionDecision::Allow)
+            );
+        }
+    }
+
+    #[test]
+    fn reads_file_electron_wrote_and_persists_same_shape() {
+        let f = Fixture::new();
+        // Exact bytes produced by Electron: JSON.stringify({ origins }, null, 2)
+        let electron_fixture = "{\n  \"origins\": {\n    \"https://meet.example\": {\n      \"camera\": \"allow\",\n      \"microphone\": \"block\"\n    }\n  }\n}";
+        f.fs.write_file(&f.file_of("p1"), electron_fixture).unwrap();
+
+        let store = f.store("p1");
+        store.load();
+        assert_eq!(
+            store.get("https://meet.example", "camera"),
+            Some(PermissionDecision::Allow)
+        );
+        assert_eq!(
+            store.get("https://meet.example", "microphone"),
+            Some(PermissionDecision::Block)
+        );
+
+        // Re-persist the loaded state by setting the same answer
+        store.set("https://meet.example", "camera", "allow");
+
+        let persisted = f.fs.read_file(&f.file_of("p1")).unwrap();
+        // Parse both as serde_json::Value to assert identical JSON object shape.
+        // Note: Key order in the serialized JSON text may differ between Electron and Rust
+        // because Rust's BTreeMap sorts object keys alphabetically, whereas JavaScript's
+        // Object.fromEntries preserves key insertion order. Electron's JSON.parse does
+        // not care about key ordering.
+        let parsed_persisted: Value = serde_json::from_str(&persisted).unwrap();
+        let parsed_electron: Value = serde_json::from_str(electron_fixture).unwrap();
+        assert_eq!(parsed_persisted, parsed_electron);
+        assert_eq!(persisted, electron_fixture);
     }
 
     #[test]

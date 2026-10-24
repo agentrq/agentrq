@@ -60,9 +60,7 @@ pub fn origin_of(raw_url: &str) -> String {
     let Ok(url) = Url::parse(raw_url) else {
         return String::new();
     };
-    let Some(host) = url.host_str().filter(|h| !h.is_empty()) else {
-        return String::new();
-    };
+    let host = url.host_str().unwrap_or("");
     match url.port() {
         Some(port) => format!("{}://{}:{}", url.scheme(), host, port),
         None => format!("{}://{}", url.scheme(), host),
@@ -71,7 +69,7 @@ pub fn origin_of(raw_url: &str) -> String {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PermissionDetails {
-    pub media_types: Vec<String>,
+    pub media_types: Option<Vec<String>>,
     pub media_type: Option<String>,
     pub requesting_url: Option<String>,
 }
@@ -84,9 +82,14 @@ pub struct PermissionDetails {
 pub fn permission_keys(permission: &str, details: Option<&PermissionDetails>) -> Vec<String> {
     if permission == "media" {
         let types: Vec<String> = match details {
-            Some(d) if !d.media_types.is_empty() => d.media_types.clone(),
-            Some(d) if d.media_type.is_some() => vec![d.media_type.clone().unwrap()],
-            _ => Vec::new(),
+            Some(d) => match &d.media_types {
+                Some(types) => types.clone(),
+                None => match &d.media_type {
+                    Some(m) => vec![m.clone()],
+                    None => Vec::new(),
+                },
+            },
+            None => Vec::new(),
         };
         let mut keys = Vec::new();
         if types.iter().any(|t| t == "video") {
@@ -122,6 +125,7 @@ impl GuestPage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionQuestion {
     pub id: u64,
     pub guest_id: u64,
@@ -164,18 +168,17 @@ impl<S: PermissionStoreBackend> Clone for PermissionBroker<S> {
     }
 }
 
-fn settle_inner(
+type PendingSettlement = (Box<dyn FnOnce(bool) + Send>, u64, bool);
+
+fn remove_pending(
     state: &mut BrokerState,
     timers: &dyn Timers,
-    settled_cb: &dyn Fn(u64),
     id: u64,
     granted: bool,
-) {
-    if let Some(waiting) = state.pending.remove(&id) {
-        timers.clear_timer(waiting.timer);
-        (waiting.callback)(granted);
-        settled_cb(id);
-    }
+) -> Option<PendingSettlement> {
+    let waiting = state.pending.remove(&id)?;
+    timers.clear_timer(waiting.timer);
+    Some((waiting.callback, id, granted))
 }
 
 impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
@@ -209,6 +212,19 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
         }
     }
 
+    pub fn deadline_ms(&self) -> u64 {
+        self.deadline_ms
+    }
+
+    pub fn timers(&self) -> &Arc<dyn Timers> {
+        &self.timers
+    }
+
+    /// Ask for a permission, or answer immediately if already decided.
+    ///
+    /// # Blocking I/O
+    /// This method calls `store.load()`, which performs blocking filesystem I/O.
+    /// The Tauri glue must call this method off the UI / main thread.
     pub fn request(
         &self,
         guest: Option<&GuestPage>,
@@ -248,6 +264,7 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
         }
 
         let guest_id = guest.map(|g| g.id).unwrap_or(0);
+        let mut to_settle = Vec::new();
         let mut state = self.state.lock().unwrap();
         let earlier_ids: Vec<u64> = state
             .pending
@@ -257,7 +274,9 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
             .collect();
 
         for earlier_id in earlier_ids {
-            settle_inner(&mut state, &*self.timers, &*self.settled, earlier_id, false);
+            if let Some(item) = remove_pending(&mut state, &*self.timers, earlier_id, false) {
+                to_settle.push(item);
+            }
         }
 
         let id = state.next_id;
@@ -272,7 +291,13 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
             Box::new(move || {
                 if let Some(state_arc) = state_weak.upgrade() {
                     let mut state = state_arc.lock().unwrap();
-                    settle_inner(&mut state, &*timers_clone, &*settled_clone, id, false);
+                    if let Some((cb, settled_id, granted)) =
+                        remove_pending(&mut state, &*timers_clone, id, false)
+                    {
+                        drop(state);
+                        cb(granted);
+                        settled_clone(settled_id);
+                    }
                 }
             }),
         );
@@ -295,6 +320,11 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
             },
         );
         drop(state);
+
+        for (cb, settled_id, granted) in to_settle {
+            cb(granted);
+            (self.settled)(settled_id);
+        }
 
         (self.ask)(question);
     }
@@ -319,36 +349,57 @@ impl<S: PermissionStoreBackend + 'static> PermissionBroker<S> {
     }
 
     pub fn answer(&self, id: u64, decision: &str) -> bool {
-        let mut state = self.state.lock().unwrap();
-        let Some(waiting) = state.pending.remove(&id) else {
+        let removed = {
+            let mut state = self.state.lock().unwrap();
+            if let Some(waiting) = state.pending.remove(&id) {
+                self.timers.clear_timer(waiting.timer);
+                Some(waiting)
+            } else {
+                None
+            }
+        };
+        let Some(waiting) = removed else {
             return false;
         };
-        self.timers.clear_timer(waiting.timer);
 
         let granted = decision == "allow";
-        let decision_str = if granted { "allow" } else { "block" };
+        let decision_val = if granted {
+            PermissionDecision::Allow
+        } else {
+            PermissionDecision::Block
+        };
         for key in &waiting.keys {
-            self.store.set(&waiting.origin, key, decision_str);
+            self.store.set(&waiting.origin, key, decision_val);
         }
 
         (waiting.callback)(granted);
         (self.settled)(id);
-        drop(state);
 
         true
     }
 
     pub fn cancel_for(&self, guest_id: u64) {
-        let mut state = self.state.lock().unwrap();
-        let ids: Vec<u64> = state
-            .pending
-            .iter()
-            .filter(|(_, w)| w.guest_id == guest_id)
-            .map(|(&id, _)| id)
-            .collect();
+        let to_settle = {
+            let mut state = self.state.lock().unwrap();
+            let ids: Vec<u64> = state
+                .pending
+                .iter()
+                .filter(|(_, w)| w.guest_id == guest_id)
+                .map(|(&id, _)| id)
+                .collect();
 
-        for id in ids {
-            settle_inner(&mut state, &*self.timers, &*self.settled, id, false);
+            let mut list = Vec::new();
+            for id in ids {
+                if let Some(item) = remove_pending(&mut state, &*self.timers, id, false) {
+                    list.push(item);
+                }
+            }
+            list
+        };
+
+        for (cb, id, granted) in to_settle {
+            cb(granted);
+            (self.settled)(id);
         }
     }
 }
@@ -442,9 +493,8 @@ mod tests {
                 .copied()
         }
 
-        fn set(&self, origin: &str, permission: &str, decision: &str) {
+        fn set(&self, origin: &str, permission: &str, decision: PermissionDecision) {
             *self.set_count.lock().unwrap() += 1;
-            let decision = PermissionDecision::parse(decision).unwrap();
             self.record
                 .lock()
                 .unwrap()
@@ -483,6 +533,8 @@ mod tests {
         clock: Arc<ManualTimers>,
     }
 
+    fn noop_settled(_: u64) {}
+
     fn setup(initial: &[(&str, &[(&str, &str)])]) -> Setup {
         let store = Arc::new(MemoryStore::new(initial));
         let asked = Arc::new(Mutex::new(Vec::new()));
@@ -491,7 +543,7 @@ mod tests {
         let broker = PermissionBroker::with_options(
             Arc::clone(&store),
             move |q| asked_clone.lock().unwrap().push(q),
-            |_| {},
+            noop_settled,
             ANSWER_DEADLINE_MS,
             clock.clone(),
         );
@@ -513,7 +565,7 @@ mod tests {
             permission_keys(
                 "media",
                 Some(&PermissionDetails {
-                    media_types: vec!["video".to_string(), "audio".to_string()],
+                    media_types: Some(vec!["video".to_string(), "audio".to_string()]),
                     ..Default::default()
                 })
             ),
@@ -523,7 +575,7 @@ mod tests {
             permission_keys(
                 "media",
                 Some(&PermissionDetails {
-                    media_types: vec!["audio".to_string()],
+                    media_types: Some(vec!["audio".to_string()]),
                     ..Default::default()
                 })
             ),
@@ -538,6 +590,18 @@ mod tests {
                 })
             ),
             vec!["camera"]
+        );
+        // Some(vec![]) is used as-is and ignores media_type
+        assert_eq!(
+            permission_keys(
+                "media",
+                Some(&PermissionDetails {
+                    media_types: Some(vec![]),
+                    media_type: Some("video".to_string()),
+                    ..Default::default()
+                })
+            ),
+            Vec::<String>::new()
         );
         assert_eq!(
             permission_keys("media", Some(&PermissionDetails::default())),
@@ -574,7 +638,7 @@ mod tests {
         let s = setup(&[]);
         let callback = CallbackSpy::default();
         let details = PermissionDetails {
-            media_types: vec!["video".to_string(), "audio".to_string()],
+            media_types: Some(vec!["video".to_string(), "audio".to_string()]),
             requesting_url: Some("https://meet.example/room".to_string()),
             ..Default::default()
         };
@@ -617,7 +681,7 @@ mod tests {
         let allowed = CallbackSpy::default();
         let blocked = CallbackSpy::default();
         let details = PermissionDetails {
-            media_types: vec!["video".to_string()],
+            media_types: Some(vec!["video".to_string()]),
             ..Default::default()
         };
         s.broker.request(
@@ -642,7 +706,7 @@ mod tests {
     fn asks_only_when_part_of_a_request_is_undecided_and_a_block_anywhere_is_a_block() {
         let s = setup(&[("https://meet.example", &[("camera", "allow")])]);
         let details = PermissionDetails {
-            media_types: vec!["video".to_string(), "audio".to_string()],
+            media_types: Some(vec!["video".to_string(), "audio".to_string()]),
             ..Default::default()
         };
         s.broker.request(
@@ -939,10 +1003,14 @@ mod tests {
     fn uses_the_real_timers_by_default() {
         let store = Arc::new(MemoryStore::default());
         let broker = PermissionBroker::new(store.clone(), |_| {});
-        assert_eq!(broker.deadline_ms, ANSWER_DEADLINE_MS);
+        assert_eq!(broker.deadline_ms(), ANSWER_DEADLINE_MS);
+        assert_eq!(broker.deadline_ms(), 60_000);
+        assert!(broker.timers().is_real());
+        assert!(!ManualTimers::default().is_real());
 
         let clone = broker.clone();
-        assert_eq!(clone.deadline_ms, ANSWER_DEADLINE_MS);
+        assert_eq!(clone.deadline_ms(), ANSWER_DEADLINE_MS);
+        assert!(clone.timers().is_real());
 
         // Exercise the default ask and settled closures
         let callback = CallbackSpy::default();
@@ -969,18 +1037,103 @@ mod tests {
             callback2.call(),
             None,
         );
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        assert_eq!(callback2.value(), Some(false));
+        let start = std::time::Instant::now();
+        let mut settled = false;
+        while start.elapsed() < std::time::Duration::from_millis(2000) {
+            if callback2.value() == Some(false) {
+                settled = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(settled);
+    }
+
+    #[test]
+    fn settled_can_reenter_cancel_for_without_deadlock() {
+        let store = Arc::new(MemoryStore::default());
+        let broker_holder: Arc<std::sync::OnceLock<PermissionBroker<MemoryStore>>> =
+            Arc::new(std::sync::OnceLock::new());
+        let holder_clone = Arc::clone(&broker_holder);
+        let broker = PermissionBroker::with_options(
+            store,
+            |_| {},
+            move |_id| {
+                holder_clone.get().unwrap().cancel_for(7);
+            },
+            ANSWER_DEADLINE_MS,
+            Arc::new(ManualTimers::default()),
+        );
+        let _ = broker_holder.set(broker.clone());
+
+        let callback = CallbackSpy::default();
+        broker.request(
+            Some(&guest_default()),
+            "notifications",
+            callback.call(),
+            None,
+        );
+        assert!(broker.answer(1, "allow"));
+        assert_eq!(callback.value(), Some(true));
+    }
+
+    #[test]
+    fn permission_question_serialises_as_camel_case() {
+        let q = PermissionQuestion {
+            id: 42,
+            guest_id: 7,
+            origin: "https://meet.example".to_string(),
+            permissions: vec!["camera".to_string()],
+        };
+        let val = serde_json::to_value(&q).unwrap();
+        assert_eq!(val["guestId"], 7);
+        assert_eq!(val.get("guest_id"), None);
     }
 
     #[test]
     fn test_origin_of_edges() {
-        assert_eq!(origin_of("file:///path/to/file"), "");
-        assert_eq!(origin_of("data:text/plain,hello"), "");
-        assert_eq!(origin_of("sc:///path"), "");
+        assert_eq!(origin_of("file:///path/to/file"), "file://");
+        assert_eq!(origin_of("data:text/plain,hello"), "data://");
+        assert_eq!(origin_of("sc:///path"), "sc://");
+        assert_eq!(origin_of("about:blank"), "about://");
         assert_eq!(
             origin_of("http://localhost:3000/room"),
             "http://localhost:3000"
         );
+        assert_eq!(origin_of("not a url"), "");
+        assert_eq!(origin_of(""), "");
+    }
+
+    #[test]
+    fn remove_pending_returns_none_for_missing_id() {
+        let mut state = BrokerState {
+            next_id: 1,
+            pending: HashMap::new(),
+        };
+        let timers = ManualTimers::default();
+        assert!(remove_pending(&mut state, &timers, 999, false).is_none());
+    }
+
+    #[test]
+    fn timer_does_nothing_if_broker_was_dropped() {
+        let store = Arc::new(MemoryStore::default());
+        let clock = Arc::new(ManualTimers::default());
+        let broker = PermissionBroker::with_options(
+            store,
+            |_| {},
+            noop_settled,
+            ANSWER_DEADLINE_MS,
+            clock.clone(),
+        );
+        let callback = CallbackSpy::default();
+        broker.request(
+            Some(&guest_default()),
+            "notifications",
+            callback.call(),
+            None,
+        );
+        drop(broker);
+        clock.fire_all();
+        assert!(!callback.was_called());
     }
 }
