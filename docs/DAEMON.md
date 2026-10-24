@@ -190,13 +190,10 @@ agentrqd enroll --server https://your-agentrq-server --code ABCD-EFGH
 There is no remote enrolment. Somebody has to be at the machine, which is what
 makes the code safe to display.
 
-### Run it
+### Keep it running
 
-```sh
-agentrqd serve
-```
-
-To keep it running after you log out, use the service files. The installer
+Enrolling starts it straight away, in the foreground. To keep it running after
+you log out, stop that one (Ctrl-C) and use the service files. The installer
 saves them beside the daemon's own config — `~/.config/agentrqd` on Linux,
 `~/Library/Application Support/agentrqd` on macOS — and a manual install
 leaves them in the archive you unpacked:

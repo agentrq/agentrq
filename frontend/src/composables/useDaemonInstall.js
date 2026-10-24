@@ -88,43 +88,6 @@ export function usesInstaller() {
 }
 
 /**
- * Running it, and keeping it running.
- *
- * `agentrqd serve` is the same everywhere, so it is the first line everywhere.
- * What differs is how you make it survive a logout, and that is worth saying
- * because nothing otherwise tells you the unit files exist.
- *
- * Where they are depends on how it was installed: the script saves them beside
- * the daemon's own config, and a manual install leaves them in the archive.
- * Naming the archive on a platform that installs with the script would point
- * somebody at a file they never downloaded.
- *
- * Both are user-level: a systemd **user** unit and a **LaunchAgent**, not a
- * system service and not a LaunchDaemon. The daemon refuses to run as root, so
- * an instruction that reached for sudo here would be telling somebody to work
- * around the only thing keeping an agent to what they can do themselves.
- */
-export function runSteps(platform) {
-  switch (platform) {
-    case 'macos':
-      return [
-        'agentrqd serve',
-        '# or, to keep it running: copy com.agentrq.agentrqd.plist from',
-        '# ~/Library/Application Support/agentrqd into ~/Library/LaunchAgents',
-        '# and load it',
-      ]
-    case 'windows':
-      return ['agentrqd serve']
-    default:
-      return [
-        'agentrqd serve',
-        '# or, to keep it running: copy agentrqd.service from ~/.config/agentrqd',
-        '# into ~/.config/systemd/user and enable it',
-      ]
-  }
-}
-
-/**
  * What the install step says above its command. Plain text, not a download
  * link: the command is the install, and a link beside it read as a second way.
  */
@@ -133,8 +96,8 @@ export const INSTALL_HINT = 'Copy the following code into your terminal to insta
 /**
  * The whole panel's content for one platform.
  *
- * Assembled here rather than in the template so the ordering — install, enrol,
- * run — is a decision with a test on it rather than the order somebody
+ * Assembled here rather than in the template so the ordering — install, then
+ * enrol — is a decision with a test on it rather than the order somebody
  * happened to write the markup in. Getting it wrong prints an enrol command
  * for a binary that is not there yet, which is the bug this replaces.
  */
@@ -145,7 +108,6 @@ export function installGuide(platform, enrolCommand) {
     steps: [
       { title: 'Install it', lines: installSteps(platform), hint: INSTALL_HINT },
       { title: 'Enrol this machine', lines: enrolCommand ? [enrolCommand] : [] },
-      { title: 'Run it', lines: runSteps(platform) },
     ],
   }
 }

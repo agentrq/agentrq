@@ -80,7 +80,7 @@ func (s *WorkspaceServer) readAgentrqdSetupGuide(ctx context.Context, req *mcp.R
 		"2. Get a one-time enrolment code by calling the **machines** tool's `createEnrolmentCode` action. It is shown once and " +
 		"expires shortly, so mint it right before the human needs it.\n" +
 		"3. Enrol the machine, filling in the code from step 2:\n   `" + enrolCommand + "`\n" +
-		"4. Run it: `agentrqd serve` (see " + daemonDocsURL + " for keeping it running after logout).\n"
+		"   It starts running as soon as it is enrolled (see " + daemonDocsURL + " for keeping it running after logout).\n"
 
 	return &mcp.ReadResourceResult{
 		Contents: []*mcp.ResourceContents{

@@ -7,7 +7,6 @@ import {
   detectPlatform,
   platformLabel,
   installSteps,
-  runSteps,
   installGuide,
   PLATFORMS,
   RELEASES_URL,
@@ -91,49 +90,20 @@ describe('installSteps', () => {
   })
 })
 
-describe('runSteps', () => {
-  it('always starts with the command that runs it', () => {
-    for (const platform of PLATFORMS) {
-      expect(runSteps(platform)[0], platform).toBe('agentrqd serve')
-    }
-  })
-
-  // The archive ships the unit files and nothing else tells you they are there.
-  it('says how to keep it running where a service manager exists', () => {
-    expect(runSteps('linux').join(' ')).toContain('agentrqd.service')
-    expect(runSteps('macos').join(' ')).toContain('LaunchAgents')
-  })
-
-  // Both user-level: a systemd user unit and a LaunchAgent, never a system
-  // service and never a LaunchDaemon.
-  it('never tells anybody to run it as root', () => {
-    for (const platform of PLATFORMS) {
-      const text = runSteps(platform).join('\n')
-      expect(text, platform).not.toContain('sudo')
-      expect(text, platform).not.toContain('LaunchDaemons')
-      expect(text, platform).not.toContain('/etc/systemd/system')
-    }
-  })
-
-  it('falls back to Linux for a platform it does not know', () => {
-    expect(runSteps('haiku')).toEqual(runSteps('linux'))
-  })
-})
-
 describe('installGuide', () => {
   // The order is the point. Printing the enrol command first is exactly the
   // bug this replaces: a command for a binary that is not there yet.
   it('puts the install before the enrolment', () => {
     const guide = installGuide('linux', 'agentrqd enroll --server https://x --code ABCD')
     const titles = guide.steps.map((s) => s.title)
-    expect(titles).toEqual(['Install it', 'Enrol this machine', 'Run it'])
+    expect(titles).toEqual(['Install it', 'Enrol this machine'])
   })
 
-  // Windows installs with a script too now, so it has the same three steps as
+  // Windows installs with a script too now, so it has the same steps as
   // every other platform.
   it('has the same steps on Windows as everywhere else', () => {
     const titles = installGuide('windows', 'cmd').steps.map((s) => s.title)
-    expect(titles).toEqual(['Install it', 'Enrol this machine', 'Run it'])
+    expect(titles).toEqual(['Install it', 'Enrol this machine'])
   })
 
   // The command is the install, so the step says to copy it rather than

@@ -1,7 +1,7 @@
 # Installing agentrqd
 
-`agentrqd` is one static binary. Put it somewhere on your `PATH`, enrol it, and
-run it.
+`agentrqd` is one static binary. Put it somewhere on your `PATH` and enrol it;
+enrolling starts it.
 
 **Read [`DAEMON.md`](DAEMON.md) before you enrol a machine.** Enrolling grants
 the AgentRQ account the ability to run commands on this computer as you, and
@@ -84,13 +84,10 @@ agentrqd enroll --server https://your-agentrq-server --code ABCD-EFGH
 There is no remote enrolment. Somebody has to be at the machine — that is what
 makes the code safe to display.
 
-## 3. Run it
+## 3. Keep it running
 
-**Foreground**, for trying it out:
-
-```sh
-agentrqd serve
-```
+Enrolling starts it in the foreground. To keep it running, stop that one
+(Ctrl-C) and install it as a service.
 
 **Linux (systemd user service)** — the supported way:
 

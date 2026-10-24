@@ -170,7 +170,7 @@ page, and no amount of styling from the page can reach them.
 ## Installation is answered in three places, and they must agree
 
 The enrol command is useless on its own — it names a binary that is not there
-yet — so the "Add machine" panel walks install → enrol → run, and the steps
+yet — so the "Add machine" panel walks install → enrol (which starts it), and the steps
 come from `frontend/src/composables/useDaemonInstall.js` where they are tested
 rather than from the template.
 
