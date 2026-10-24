@@ -147,7 +147,7 @@
                     </div>
                   </div>
 
-                  <h3 :class="[ 'text-[13px] leading-relaxed line-clamp-2 transition-colors', 
+                  <h3 :class="[ 'text-[13px] leading-relaxed truncate transition-colors', 
                                  String(selectedTaskId) === String(task.id) ? 'text-gray-800 dark:text-zinc-200 font-bold' : 
                                  task.status === 'completed' ? 'text-gray-500 dark:text-zinc-500 font-light' : 
                                  'text-gray-700 dark:text-zinc-200 group-hover:text-black dark:group-hover:text-white font-semibold' ]">

@@ -87,8 +87,8 @@ async function mount(component, props = {}) {
   return el
 }
 
-const rows = (el) => [...el.querySelectorAll('h3.line-clamp-2')].map((n) => n.textContent.trim())
-const rowOf = (el, title) => [...el.querySelectorAll('h3.line-clamp-2')].find((n) => n.textContent.trim() === title).closest('.group')
+const rows = (el) => [...el.querySelectorAll('h3.truncate')].map((n) => n.textContent.trim())
+const rowOf = (el, title) => [...el.querySelectorAll('h3.truncate')].find((n) => n.textContent.trim() === title).closest('.group')
 const button = (el, text) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === text)
 
 beforeEach(() => {
