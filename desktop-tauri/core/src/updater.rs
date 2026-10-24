@@ -2437,14 +2437,14 @@ mod tests {
         assert_eq!(failed, InstallerExit::Failed("wait failed".to_string()));
     }
 
-    #[cfg(unix)]
     mod real_process {
         use super::*;
-        use crate::install_log::create_install_log;
+        use crate::install_log::{create_install_log, TEST_SHELL};
 
         fn run(script: &str, stdio: Option<(Stdio, Stdio)>) -> InstallerExit {
+            let (shell, flag) = TEST_SHELL;
             let mut child = StdInstallerSpawner
-                .spawn("/bin/sh", &["-c".to_string(), script.to_string()], stdio)
+                .spawn(shell, &[flag.to_string(), script.to_string()], stdio)
                 .unwrap();
             child.unref();
             let exit = Arc::new(Mutex::new(None));
@@ -2458,9 +2458,15 @@ mod tests {
         #[test]
         fn reports_how_the_process_ended() {
             assert_eq!(run("exit 3", None), InstallerExit::Exited(Some(3)));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn reports_a_process_a_signal_ended_as_having_no_code() {
             assert_eq!(run("kill -9 $$", None), InstallerExit::Exited(None));
         }
 
+        #[cfg(unix)]
         #[test]
         fn starts_the_installer_in_its_own_process_group() {
             // The shell leads its own group, so it outlives us rather than
@@ -2475,17 +2481,24 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             let log = create_install_log(&dir).unwrap();
 
-            let exit = run("echo 'Downloading x...'", Some(log.stdio().unwrap()));
+            let exit = run("echo Downloading x...", Some(log.stdio().unwrap()));
 
             assert_eq!(exit, InstallerExit::Exited(Some(0)));
-            assert_eq!(log.read(), "Downloading x...\n");
+            // cmd ends its lines with CRLF.
+            assert_eq!(log.read().replace("\r\n", "\n"), "Downloading x...\n");
+            // Closed first: Windows will not remove a folder holding an open file.
+            log.close();
             std::fs::remove_dir_all(&dir).unwrap();
         }
 
         #[test]
         fn says_when_there_is_no_shell_to_run() {
+            #[cfg(windows)]
+            const MISSING: &str = "cannot find";
+            #[cfg(not(windows))]
+            const MISSING: &str = "No such file";
             let result = StdInstallerSpawner.spawn("/nonexistent/sh", &[], None);
-            assert!(result.err().unwrap().contains("No such file"));
+            assert!(result.err().unwrap().contains(MISSING));
         }
     }
 }

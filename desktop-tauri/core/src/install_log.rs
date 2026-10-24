@@ -16,6 +16,13 @@ use std::sync::Mutex;
 
 pub const INSTALL_LOG_FILENAME: &str = "agentrq-update.log";
 
+/// This OS's shell and the flag that hands it a script, so the tests that
+/// spawn a real installer run on Windows too.
+#[cfg(all(test, windows))]
+pub(crate) const TEST_SHELL: (&str, &str) = ("cmd", "/C");
+#[cfg(all(test, not(windows)))]
+pub(crate) const TEST_SHELL: (&str, &str) = ("/bin/sh", "-c");
+
 /// Where an installer writes, and how far it got.
 pub trait InstallLog: Send + Sync {
     /// The installer's stdout and stderr: both end up in the same file.
@@ -84,7 +91,6 @@ mod tests {
         dir
     }
 
-    #[cfg(unix)]
     #[test]
     fn gives_the_installer_a_descriptor_and_reads_back_what_it_wrote() {
         let dir = temp_dir("install-log-a");
@@ -94,14 +100,21 @@ mod tests {
         assert_eq!(log.read(), "");
 
         // Both streams land in the same file, in the order they were written.
+        // The script means the same to sh and cmd; `&&` has no space before
+        // it, which cmd's echo would print.
         let (stdout, stderr) = log.stdio().unwrap();
-        std::process::Command::new("/bin/sh")
-            .args(["-c", "echo 'Downloading x.dmg...'; echo 'error: nope' >&2"])
+        let (shell, flag) = TEST_SHELL;
+        std::process::Command::new(shell)
+            .args([flag, "echo Downloading x.dmg...&& 1>&2 echo error: nope"])
             .stdout(stdout)
             .stderr(stderr)
             .status()
             .unwrap();
-        assert_eq!(log.read(), "Downloading x.dmg...\nerror: nope\n");
+        // cmd ends its lines with CRLF.
+        assert_eq!(
+            log.read().replace("\r\n", "\n"),
+            "Downloading x.dmg...\nerror: nope\n"
+        );
 
         log.close();
         // Closing twice is harmless: the updater closes on every way out.
