@@ -23,7 +23,7 @@ Because agents "see" the workspace state via MCP, they can autonomously pull the
 
 ## ✨ Features
 
-Real captures from the running app — no mockups.
+Real captures from the running app, and animated sketches of the main features.
 
 <table>
 <tr>
@@ -45,6 +45,9 @@ Every task Claude creates appears instantly on your board. See what it's working
 Give any task a launch date, or a recurring cadence — every 15 minutes, hourly, daily, weekly, custom days. A background poller ticks every minute and spawns the task the instant it's due, no server or agent needing to stay awake and wait.
 
 </td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/assets/readme/task-scheduling.svg" width="1200" alt="AgentRQ task scheduling: you give a task a cadence, every 15 minutes, and click Save. A poller ticks every minute while five agents, claude, codex, agy, hermes and openclaw, sleep; when a scheduled task comes due its row flashes and a run flies down to its agent, which wakes, works and finishes, and the next run rolls forward." /></td>
 </tr>
 <tr>
 <td width="50%" valign="middle">
