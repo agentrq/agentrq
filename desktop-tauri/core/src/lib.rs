@@ -7,12 +7,16 @@
 //! Nothing here depends on Tauri. Every side effect (disk, network, the OS) is
 //! a trait the caller implements, so the rules can be tested without a window.
 
+pub mod app_icon;
+pub mod attachment_store;
 pub mod deep_link;
+pub mod emoji_panel;
 pub mod files;
 pub mod identity;
 pub mod links;
 pub mod profiles;
 pub mod server_config;
 pub mod side_panel;
+pub mod tray;
 pub mod uri;
 pub mod window_state;
