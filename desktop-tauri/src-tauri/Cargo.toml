@@ -1,0 +1,35 @@
+[package]
+name = "agentrq-tauri"
+version = "0.13.4"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "AgentRQ desktop app on Tauri (preview)"
+publish = false
+
+[lib]
+name = "agentrq_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "agentrq-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+agentrq-desktop-core = { path = "../core" }
+tauri = { version = "2.12.5", features = [] }
+http = "1.5.0"
+reqwest = { version = "0.13.5", default-features = false }
+tokio = { version = "1.54.1", features = ["time"] }
+
+[dev-dependencies]
+tauri = { version = "2.12.5", features = ["test"] }
+tempfile = "3.27.0"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

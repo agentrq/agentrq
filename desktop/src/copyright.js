@@ -54,7 +54,7 @@ export const NOTICE = NOTICE_LINES[0]
 export const SPDX = 'SPDX-License-Identifier: AGPL-3.0-only'
 export const SPDX_APACHE = 'SPDX-License-Identifier: Apache-2.0'
 
-const AGPL = /^(backend|desktop|frontend)\//
+const AGPL = /^(backend|desktop|desktop-tauri|frontend)\//
 const APACHE = /^(daemon|installers)\//
 
 /** Every line this file's notice has: the two above, and the licence where it applies. */
@@ -77,13 +77,14 @@ export const COMMENT = Object.freeze({
   '.go': slashes,
   '.js': slashes,
   '.mjs': slashes,
+  '.rs': slashes,
   '.ts': slashes,
   // One comment rather than two, because two would read as two notices.
   '.vue': (lines) => ['<!--', ...lines.map((line) => `  ${line}`), '-->'].join('\n'),
 })
 
 /** Directories whose contents are not ours to mark. */
-const NOT_OURS = /(^|\/)(node_modules|dist|coverage|lib)\//
+const NOT_OURS = /(^|\/)(node_modules|dist|coverage|lib|target)\//
 
 export function extensionOf(path) {
   const name = String(path ?? '')
@@ -95,8 +96,8 @@ export function extensionOf(path) {
 /**
  * Whether a path is one of ours to mark.
  *
- * Dependencies and build output are excluded because neither is ours and both
- * are regenerated: a notice written into `dist/` is gone on the next build, and
+ * Dependencies and build output (Cargo's `target/` among it) are excluded
+ * because neither is ours and both are regenerated: a notice written into `dist/` is gone on the next build, and
  * a claim on somebody else's code in `node_modules/` would simply be false.
  */
 export function isOurs(path) {

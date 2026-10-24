@@ -5,10 +5,13 @@
 import { describe, it, expect } from 'vitest'
 
 import {
+  VERSION_FORMATS,
   VERSION_SOURCES,
   compareVersions,
+  parseCargoVersion,
   parseGoVersion,
   parsePackageVersion,
+  readVersions,
   tagMatchesVersion,
 } from '../src/version.js'
 
@@ -52,6 +55,68 @@ describe('parseGoVersion', () => {
     expect(parseGoVersion('const _other = "v1.0.0"')).toBeNull()
     expect(parseGoVersion('')).toBeNull()
     expect(parseGoVersion(null)).toBeNull()
+  })
+})
+
+describe('parseCargoVersion', () => {
+  it("reads the package's own version", () => {
+    expect(parseCargoVersion('[package]\nname = "x"\nversion = "0.4.8"\n')).toBe('0.4.8')
+    expect(parseCargoVersion('[package]\r\nversion="1.2.3"\r\n')).toBe('1.2.3')
+  })
+
+  // A dependency's version is somebody else's number.
+  it('never reads a version from another table', () => {
+    const toml = '[dependencies]\nversion = "9.9.9"\n\n[package]\nname = "x"\nversion = "0.4.8"\n'
+    expect(parseCargoVersion(toml)).toBe('0.4.8')
+    expect(parseCargoVersion('[package]\nname = "x"\n\n[dependencies]\nversion = "9.9.9"\n')).toBeNull()
+    expect(parseCargoVersion('version = "9.9.9"\n')).toBeNull()
+  })
+
+  it('returns nothing when there is no version', () => {
+    expect(parseCargoVersion('')).toBeNull()
+    expect(parseCargoVersion(undefined)).toBeNull()
+  })
+})
+
+describe('readVersions', () => {
+  it('reads every source with its own parser', () => {
+    const json = '{"version":"0.5.0"}'
+    const cargo = '[package]\nversion = "0.5.0"\n'
+    expect(
+      readVersions({
+        desktop: json,
+        frontend: json,
+        backend: '_appVersion = "v0.5.0"',
+        tauri: json,
+        tauriConf: json,
+        tauriCargo: cargo,
+        tauriCore: cargo,
+      })
+    ).toEqual({
+      desktop: '0.5.0',
+      frontend: '0.5.0',
+      backend: '0.5.0',
+      tauri: '0.5.0',
+      tauriConf: '0.5.0',
+      tauriCargo: '0.5.0',
+      tauriCore: '0.5.0',
+    })
+  })
+
+  it('covers the Tauri app, all four of its files', () => {
+    expect(VERSION_SOURCES).toMatchObject({
+      tauri: 'desktop-tauri/package.json',
+      tauriConf: 'desktop-tauri/src-tauri/tauri.conf.json',
+      tauriCargo: 'desktop-tauri/src-tauri/Cargo.toml',
+      tauriCore: 'desktop-tauri/core/Cargo.toml',
+    })
+    expect(Object.keys(VERSION_FORMATS)).toEqual(Object.keys(VERSION_SOURCES))
+  })
+
+  it('reports a missing file as an unreadable version', () => {
+    const result = compareVersions(readVersions({ desktop: '{"version":"0.5.0"}' }))
+    expect(result.ok).toBe(false)
+    expect(result.problems).toContain(`could not read the version from ${VERSION_SOURCES.tauriCore}`)
   })
 })
 

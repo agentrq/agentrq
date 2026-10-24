@@ -13,13 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath, URL } from 'node:url'
 
-import {
-  VERSION_SOURCES,
-  compareVersions,
-  parseGoVersion,
-  parsePackageVersion,
-  tagMatchesVersion,
-} from '../src/version.js'
+import { VERSION_SOURCES, compareVersions, readVersions, tagMatchesVersion } from '../src/version.js'
 
 const repoRoot = (p) => fileURLToPath(new URL(`../../${p}`, import.meta.url))
 
@@ -31,17 +25,9 @@ const read = async (path) => {
   }
 }
 
-const [desktop, frontend, backend] = await Promise.all([
-  read(VERSION_SOURCES.desktop),
-  read(VERSION_SOURCES.frontend),
-  read(VERSION_SOURCES.backend),
-])
-
-const result = compareVersions({
-  desktop: parsePackageVersion(desktop),
-  frontend: parsePackageVersion(frontend),
-  backend: parseGoVersion(backend),
-})
+const names = Object.keys(VERSION_SOURCES)
+const files = await Promise.all(names.map((name) => read(VERSION_SOURCES[name])))
+const result = compareVersions(readVersions(Object.fromEntries(names.map((name, i) => [name, files[i]]))))
 
 if (!result.ok) {
   console.error('✗ versions are out of step:')
@@ -55,5 +41,5 @@ if (!tag.ok) {
   process.exit(1)
 }
 
-console.log(`✓ desktop, frontend and backend are all at ${result.version}`)
+console.log(`✓ ${Object.values(VERSION_SOURCES).join(', ')} are all at ${result.version}`)
 if (process.env.GITHUB_REF?.startsWith('refs/tags/')) console.log(`✓ ${tag.reason}`)

@@ -1,0 +1,118 @@
+name: Desktop App (Tauri)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop-tauri/**'
+      - 'frontend/**'
+      - 'desktop/src/renderer/**'
+      - '.github/workflows/desktop-tauri.yml'
+  # The renderer is desktop's renderer, built from frontend/src, so a change
+  # there can break this build without touching desktop-tauri/.
+  pull_request:
+    paths:
+      - 'desktop-tauri/**'
+      - 'frontend/**'
+      - 'desktop/src/renderer/**'
+      - '.github/workflows/desktop-tauri.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test and build
+    # Each OS has its own webview, and the Rust compiles per platform.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
+
+      # WebKitGTK and friends. libxdo is what Tauri's menu accelerators link.
+      - name: Install the Linux webview packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install dependencies
+        working-directory: desktop-tauri
+        run: npm ci
+
+      - name: Check version is in lockstep with the rest of the repo
+        run: node desktop/scripts/check-versions.mjs
+
+      - name: Test the JS with coverage
+        working-directory: desktop-tauri
+        # The thresholds in vitest.config.mjs are the gate.
+        run: npm run test:coverage
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            desktop-tauri/core -> target
+            desktop-tauri/src-tauri -> target
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # tauri::generate_context! reads frontendDist, so it must exist.
+      - name: Build the renderer
+        working-directory: desktop-tauri
+        run: npm run build:renderer
+
+      - name: cargo fmt --check
+        working-directory: desktop-tauri
+        run: |
+          cargo fmt --manifest-path core/Cargo.toml --check
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: cargo clippy
+        working-directory: desktop-tauri
+        run: |
+          cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: desktop-tauri
+        run: npm run test:rust
+
+      # 100% of lines over core/ and the pure src-tauri modules. lib.rs and
+      # main.rs are the wiring and are left out, as desktop/'s index.js is.
+      - name: Rust coverage gate
+        working-directory: desktop-tauri
+        run: npm run coverage:rust
+
+      - name: Build the app
+        working-directory: desktop-tauri
+        run: npx tauri build --no-bundle

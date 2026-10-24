@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AgentRQ Tauri",
+  "mainBinaryName": "agentrq-tauri",
+  "version": "0.13.4",
+  "identifier": "com.agentrq.desktop.tauri",
+  "build": {
+    "beforeDevCommand": "npm run dev:renderer",
+    "devUrl": "http://localhost:5175",
+    "beforeBuildCommand": "npm run build:renderer",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

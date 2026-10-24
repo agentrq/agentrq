@@ -67,12 +67,6 @@ jobs:
 
       - name: Check version is in lockstep with the rest of the repo
         working-directory: desktop
-        shell: bash
-        run: |
-          DESKTOP="$(node -p "require('./package.json').version")"
-          FRONTEND="$(node -p "require('../frontend/package.json').version")"
-          if [ "$DESKTOP" != "$FRONTEND" ]; then
-            echo "desktop $DESKTOP does not match frontend $FRONTEND" >&2
-            exit 1
-          fi
-          echo "desktop and frontend both at $DESKTOP"
+        # Every file in VERSION_SOURCES: the frontend, the backend and the
+        # Tauri app's four files as well as this package.
+        run: node scripts/check-versions.mjs

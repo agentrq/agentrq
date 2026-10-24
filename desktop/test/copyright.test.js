@@ -72,7 +72,13 @@ describe('NOTICE', () => {
 
 describe('noticeLinesFor', () => {
   it('adds the licence line on the AGPL parts of the repository', () => {
-    for (const path of ['backend/internal/app/app.go', 'desktop/src/main/index.js', 'frontend/src/App.vue']) {
+    for (const path of [
+      'backend/internal/app/app.go',
+      'desktop/src/main/index.js',
+      'desktop-tauri/src-tauri/src/lib.rs',
+      'desktop-tauri/core/src/links.rs',
+      'frontend/src/App.vue',
+    ]) {
       expect(noticeLinesFor(path), path).toEqual([...NOTICE_LINES, SPDX])
     }
     expect(SPDX).toBe('SPDX-License-Identifier: AGPL-3.0-only')
@@ -96,6 +102,7 @@ describe('noticeLinesFor', () => {
 
   it('does not match a directory that only starts with the same name', () => {
     expect(noticeLinesFor('frontend-old/a.js')).toEqual(NOTICE_LINES)
+    expect(noticeLinesFor('desktop-old/a.rs')).toEqual(NOTICE_LINES)
     expect(noticeLinesFor('plugins/backend/a.js')).toEqual(NOTICE_LINES)
   })
 })
@@ -117,7 +124,7 @@ describe('extensionOf', () => {
 
 describe('isOurs', () => {
   it('claims the source we write', () => {
-    for (const path of ['backend/internal/app/app.go', 'frontend/src/App.vue', 'desktop/src/main/index.js', 'a/b.mjs', 'c.ts']) {
+    for (const path of ['backend/internal/app/app.go', 'frontend/src/App.vue', 'desktop/src/main/index.js', 'a/b.mjs', 'c.ts', 'desktop-tauri/src-tauri/build.rs']) {
       expect(isOurs(path), path).toBe(true)
     }
   })
@@ -130,6 +137,8 @@ describe('isOurs', () => {
       'desktop/dist/renderer/app.js',
       'frontend/coverage/lcov-report/x.js',
       'plugins/deepseek-harness/lib/index.js',
+      'desktop-tauri/src-tauri/target/debug/build/out/x.rs',
+      'desktop-tauri/core/target/llvm-cov-target/a.rs',
     ]) {
       expect(isOurs(path), path).toBe(false)
     }
@@ -151,6 +160,7 @@ describe('noticeFor', () => {
   it('says it the way each language says it', () => {
     expect(noticeFor('a.go')).toBe(`// ${NOTICE_LINES[0]}\n// ${NOTICE_LINES[1]}`)
     expect(noticeFor('a.js')).toBe(noticeFor('a.go'))
+    expect(noticeFor('a.rs')).toBe(noticeFor('a.go'))
     // Markup at the top level, so the notice is markup too — and one comment
     // rather than two, because two would read as two notices.
     expect(noticeFor('A.vue')).toBe(`<!--\n  ${NOTICE_LINES[0]}\n  ${NOTICE_LINES[1]}\n-->`)
@@ -200,6 +210,14 @@ describe('withNotice', () => {
     const go = '// Package app wires everything together.\npackage app\n'
 
     expect(withNotice(go, 'app.go')).toBe(`${noticeFor('app.go')}\n\n${go}`)
+  })
+
+  // Rust's `//!` is the module's documentation in the same way.
+  it('keeps a Rust module doc comment its own, with the AGPL line under desktop-tauri/', () => {
+    const path = 'desktop-tauri/src-tauri/src/scheme.rs'
+    const rs = '//! The app scheme.\n\nuse http::Response;\n'
+
+    expect(withNotice(rs, path)).toBe(`// ${NOTICE_LINES[0]}\n// ${NOTICE_LINES[1]}\n// ${SPDX}\n\n${rs}`)
   })
 
   it('puts a Vue notice above the template, as markup', () => {
