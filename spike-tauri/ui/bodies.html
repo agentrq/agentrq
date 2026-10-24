@@ -1,0 +1,30 @@
+<!doctype html><meta charset="utf-8"><title>bodies</title><body>bodies
+<script type="module">
+// Which request bodies survive the custom scheme? One report per kind, sent
+// before the next is tried, so a crash names its culprit. Never merge.
+import { report, finish } from '/common.js'
+const big = new Uint8Array(5 * 1024 * 1024).map((_, i) => i % 251)
+const fd = new FormData(); fd.append('file', new Blob([big]), 'big.bin'); fd.append('name', 'x')
+const small = new FormData(); small.append('name', 'x')
+const kinds = {
+  string: () => JSON.stringify({ a: 1 }),
+  bytes64k: () => big.slice(0, 65536),
+  bytes5m: () => big,
+  blob: () => new Blob([big.slice(0, 100000)]),
+  formSmall: () => small,
+  formFile: () => fd,
+  params: () => new URLSearchParams({ a: '1' }),
+}
+const only = new URLSearchParams(location.search).get('only')
+for (const [k, mk] of Object.entries(kinds)) {
+  if (only && !only.split(',').includes(k)) continue
+  await report('body-' + k, 'trying')
+  const body = mk()
+  const expect = typeof body === 'string' ? body.length : body.byteLength ?? body.size ?? null
+  try {
+    const r = await (await fetch('/api/v1/echo', { method: 'POST', body })).json()
+    await report('body-' + k, { sent: expect, received: r.bytes, ok: expect == null ? r.bytes > 0 : r.bytes === expect })
+  } catch (e) { await report('body-' + k, { error: String(e) }) }
+}
+await finish()
+</script>

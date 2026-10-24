@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>S8</title>
+<style>
+  html,body{margin:0;font:13px -apple-system,sans-serif;background:#fafafa}
+  .bar{height:40px;display:flex;align-items:center;gap:12px;padding-left:120px;padding-right:12px;user-select:none}
+  #a{background:#e4e4e7} #b{background:#d4d4d8;margin-top:20px}
+  .title{flex:1} button{height:28px}
+  .nodrag{padding:4px 8px;background:#fde68a}
+</style>
+<body>
+<div class="bar" id="a" data-tauri-drag-region><p class="title" id="a-title">bare attribute: title text</p><button id="a-btn" class="app-no-drag">A button</button></div>
+<div class="bar" id="b" data-tauri-drag-region="deep"><p class="title" id="b-title">deep attribute: title text</p>
+  <div class="app-no-drag nodrag" id="b-nodrag" data-tauri-drag-region="false"><span id="b-nodrag-span">no-drag card</span></div>
+  <button id="b-btn" class="app-no-drag">B button</button></div>
+<script type="module">
+import { T, report } from '/common.js'
+const clicks = {}
+for (const id of ['a-btn', 'b-btn']) document.getElementById(id).addEventListener('click', () => { clicks[id] = (clicks[id] || 0) + 1; report('s8-clicks', clicks) })
+const pos = await T.invoke('win_pos')
+const center = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return { x: pos.x + r.left + r.width / 2, y: pos.y + r.top + r.height / 2 } }
+const targets = { win: pos, aEmpty: { x: pos.x + 100, y: pos.y + 20 }, aTitle: center('a-title'), aBtn: center('a-btn'),
+  bTitle: center('b-title'), bNoDrag: center('b-nodrag-span'), bBtn: center('b-btn') }
+await report('s8-targets', targets)
+await T.invoke('shot', { name: 's8-titlebar' })
+</script>

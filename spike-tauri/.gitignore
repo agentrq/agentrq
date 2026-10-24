@@ -1,0 +1,8 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+ui/vendor/
+ui/src/
+ui/renderer/
+spike-out/

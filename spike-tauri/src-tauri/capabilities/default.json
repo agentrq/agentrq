@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The spike's app-scheme pages only; remote pages (sign-in, panel) get nothing.",
+  "windows": ["*"],
+  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize", "notification:default"]
+}

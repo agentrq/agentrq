@@ -1,0 +1,175 @@
+# WP0 throwaway spike for the Tauri port (pano 0kt2DmAD8h5). Lives only on
+# spike/tauri-wp0. NEVER MERGE.
+name: Spike Tauri WP0
+
+on:
+  push:
+    branches: [spike/tauri-wp0]
+    paths: [spike-tauri/**, .github/workflows/spike-tauri-wp0.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spikes:
+    name: spikes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, macos-15, windows-latest]
+    defaults:
+      run:
+        working-directory: spike-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev xvfb dbus-x11 imagemagick python3-gi
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spike-tauri/src-tauri
+      - run: npm ci
+      - run: node scripts/prepare-ui.mjs
+      - name: Build
+        working-directory: spike-tauri/src-tauri
+        run: cargo build
+      - name: Run spikes (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- node scripts/run-spike.mjs src-tauri/target/debug/agentrq-tauri-spike
+      - name: Run spikes (macOS)
+        if: runner.os == 'macOS'
+        run: node scripts/run-spike.mjs src-tauri/target/debug/agentrq-tauri-spike
+      - name: Run spikes (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/run-spike.mjs src-tauri/target/debug/agentrq-tauri-spike.exe
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          sw_vers 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat spike-out/summary-*.json >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-out-${{ matrix.os }}
+          path: spike-tauri/spike-out
+
+  bundle:
+    name: S9 bundle and memory (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            bundle: deb
+            triple: x86_64-unknown-linux-gnu
+          - os: macos-15
+            bundle: dmg
+            triple: aarch64-apple-darwin
+          - os: windows-latest
+            bundle: nsis
+            triple: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev xvfb dbus-x11 libfuse2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spike-tauri/src-tauri
+      - name: Build the real desktop renderer
+        shell: bash
+        run: |
+          (cd frontend && npm ci --no-audit --no-fund)
+          (cd desktop && npm ci --no-audit --no-fund && npx vite build -c vite.renderer.config.mjs)
+      - name: Prepare spike
+        working-directory: spike-tauri
+        run: |
+          npm ci
+          node scripts/prepare-ui.mjs
+      - name: Bundle (no sidecar)
+        working-directory: spike-tauri
+        shell: bash
+        run: |
+          npx tauri build --bundles ${{ matrix.bundle }}
+          mkdir -p ../s9/plain && cp -r src-tauri/target/release/bundle/${{ matrix.bundle }}/* ../s9/plain/
+          cp src-tauri/target/release/agentrq-tauri-spike* ../s9/ || true
+      - name: Bundle (with a Node sidecar)
+        working-directory: spike-tauri
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          ext=""; [ "$RUNNER_OS" = "Windows" ] && ext=".exe"
+          cp "$(node -p process.execPath)" "src-tauri/binaries/node-${{ matrix.triple }}$ext"
+          rm -rf src-tauri/target/release/bundle
+          npx tauri build --bundles ${{ matrix.bundle }} --config '{"bundle":{"externalBin":["binaries/node"]}}'
+          mkdir -p ../s9/sidecar && cp -r src-tauri/target/release/bundle/${{ matrix.bundle }}/* ../s9/sidecar/
+      - name: Sizes
+        shell: bash
+        run: |
+          find s9 -maxdepth 2 -type f \( -name '*.deb' -o -name '*.dmg' -o -name '*.exe' \) -exec ls -l {} \; | tee s9/sizes.txt
+          ls -l "$(node -p process.execPath)" | tee -a s9/sizes.txt
+      - name: Electron release build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p electron && cd electron
+          case "$RUNNER_OS" in
+            Linux) gh release download -R ${{ github.repository }} -p 'AgentRQ-*.AppImage' -p 'agentrq-desktop_*_amd64.deb'; rm -f *arm64*; chmod +x *.AppImage; ./*.AppImage --appimage-extract >/dev/null ;;
+            macOS) gh release download -R ${{ github.repository }} -p 'AgentRQ-*-arm64.dmg'; hdiutil attach -nobrowse -mountpoint /Volumes/agentrq-electron AgentRQ-*-arm64.dmg ;;
+            Windows) gh release download -R ${{ github.repository }} -p 'AgentRQ-Setup-*.exe'; ./AgentRQ-Setup-*.exe /S; sleep 20; ls "$LOCALAPPDATA/Programs" ;;
+          esac
+          ls -l
+      - name: Memory (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- node spike-tauri/scripts/measure.mjs tauri 20 s9/mem-tauri.json -- env SPIKE=renderer SPIKE_TIMEOUT=120 s9/agentrq-tauri-spike
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- node spike-tauri/scripts/measure.mjs electron 20 s9/mem-electron.json -- electron/squashfs-root/AppRun --no-sandbox
+          node spike-tauri/scripts/measure.mjs node-sidecar-idle 5 s9/mem-node.json -- node -e "setInterval(()=>{},1000)"
+      - name: Memory (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          node spike-tauri/scripts/measure.mjs tauri 20 s9/mem-tauri.json -- env SPIKE=renderer SPIKE_TIMEOUT=120 s9/agentrq-tauri-spike
+          node spike-tauri/scripts/measure.mjs electron 20 s9/mem-electron.json -- /Volumes/agentrq-electron/AgentRQ.app/Contents/MacOS/AgentRQ
+          node spike-tauri/scripts/measure.mjs node-sidecar-idle 5 s9/mem-node.json -- node -e "setInterval(()=>{},1000)"
+      - name: Memory (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          SPIKE=renderer SPIKE_TIMEOUT=120 node spike-tauri/scripts/measure.mjs tauri 20 s9/mem-tauri.json -- s9/agentrq-tauri-spike.exe
+          taskkill //IM AgentRQ.exe //F || true
+          exe=$(find "$LOCALAPPDATA/Programs" -maxdepth 2 -iname 'AgentRQ.exe' | head -1)
+          echo "electron exe: $exe"
+          node spike-tauri/scripts/measure.mjs electron 20 s9/mem-electron.json -- "$exe"
+          node spike-tauri/scripts/measure.mjs node-sidecar-idle 5 s9/mem-node.json -- node -e "setInterval(()=>{},1000)"
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          { echo "### S9 ${{ matrix.os }}"; echo '```'; cat s9/sizes.txt; for f in s9/mem-*.json; do echo "$f"; cat "$f"; echo; done; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s9-${{ matrix.os }}
+          path: |
+            s9/*.txt
+            s9/*.json

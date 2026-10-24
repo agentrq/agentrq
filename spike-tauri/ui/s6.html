@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>S6</title>
+<style>
+  html,body{margin:0;height:100%;font:14px sans-serif;background:#fafafa}
+  header{height:40px;background:#18181b;color:#fff;display:flex;align-items:center;padding:0 12px}
+  #host{position:absolute;left:700px;top:40px;width:500px;height:760px;background:#e4e4e7}
+  #host img{width:100%;height:100%;display:block}
+  #dialog{display:none;position:absolute;left:350px;top:200px;width:600px;height:300px;background:#dc2626;color:#fff;
+    font:28px sans-serif;align-items:center;justify-content:center;z-index:10;box-shadow:0 10px 40px #0008}
+  #toast{display:none;position:absolute;right:16px;bottom:16px;width:320px;height:80px;background:#16a34a;color:#fff;z-index:11;
+    align-items:center;justify-content:center;font:18px sans-serif}
+</style>
+<body><header>S6: child webview</header><main style="padding:12px">app content</main>
+<div id="host"></div><div id="dialog">APP DIALOG</div><div id="toast">toast</div>
+<script type="module" src="/s6.js"></script>

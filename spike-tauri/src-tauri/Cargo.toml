@@ -1,0 +1,45 @@
+[package]
+name = "agentrq-tauri-spike"
+version = "0.0.1"
+edition = "2021"
+publish = false
+description = "WP0 throwaway spike for the Tauri port. Never merge."
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["unstable"] }
+tauri-plugin-notification = "2.7.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.13.5", default-features = false, features = ["cookies", "stream", "json"] }
+tokio = { version = "1.54.1", features = ["time", "sync", "macros", "rt"] }
+futures-util = "0.3"
+include_dir = "0.7"
+http = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+gio = "0.18"
+gtk = "0.18"
+cairo-rs = { version = "0.18", features = ["png"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+block2 = "0.6"
+objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDictionary", "NSError", "NSThread"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSImage", "NSImageRep", "NSBitmapImageRep", "NSGraphics"] }
+objc2-web-kit = { version = "0.3.2", features = ["WKWebView", "WKSnapshotConfiguration", "block2", "objc2-app-kit"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_System_Com_StructuredStorage"] }
+windows-core = "0.62"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,17 @@
+{
+  "name": "agentrq-tauri-spike",
+  "private": true,
+  "version": "0.0.1",
+  "description": "WP0 throwaway spike for the Tauri port. Never merge.",
+  "type": "module",
+  "scripts": {
+    "prepare-ui": "node scripts/prepare-ui.mjs",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

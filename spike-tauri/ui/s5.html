@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>S5</title><body>S5
+<script type="module">
+import { report, T } from '/common.js'
+const who = new URLSearchParams(location.search).get('who')
+const label = window.__TAURI_INTERNALS__.metadata.currentWebview.label
+const before = localStorage.getItem('who')
+let idb = null
+try {
+  idb = await new Promise((res, rej) => {
+    const r = indexedDB.open('spike', 1)
+    r.onupgradeneeded = () => r.result.createObjectStore('kv')
+    r.onsuccess = () => {
+      const tx = r.result.transaction('kv', 'readwrite'); const st = tx.objectStore('kv')
+      const g = st.get('who'); g.onsuccess = () => { const prev = g.result ?? null; if (who) st.put(who, 'who'); tx.oncomplete = () => res(prev) }
+    }
+    r.onerror = () => rej(r.error)
+  })
+} catch (e) { idb = 'error: ' + e }
+if (who) localStorage.setItem('who', who)
+await report('s5-' + label, { origin: location.origin, wrote: who, localStorageBefore: before, indexedDbBefore: idb })
+if (label === 'p2') { setTimeout(() => T.invoke('finish'), 500) }
+</script>

@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><title>login</title><body>login
+<script type="module">
+import { report, finish } from '/common.js'
+await report('s2-401-redirect', { pass: true, path: location.pathname, at: Date.now() })
+await finish()
+</script>
