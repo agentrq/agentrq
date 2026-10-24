@@ -107,6 +107,9 @@ Click the mic on any task description or reply and dictate it instead. Transcrip
 <td width="50%"><img src="https://agentrq.com/assets/feature-speech-to-text.gif" alt="AgentRQ speech-to-text mic entry point" width="320" /></td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/speech-to-text.svg" width="1200" alt="AgentRQ speech-to-text: you click the mic on the New Task form and say 'Add a dark mode toggle to settings'. The first time, a Whisper model downloads into the browser; it turns your voice into text on the device, uploading nothing, and the text lands in the description. agy takes the task, asks a question, you dictate the reply, agy finishes and the agents celebrate." /></td>
+</tr>
+<tr>
 <td width="50%"><img src="https://agentrq.com/assets/feature-message-send-delay.gif" alt="AgentRQ message send delay countdown with Send Now and Cancel" width="320" /></td>
 <td width="50%" valign="middle">
 
