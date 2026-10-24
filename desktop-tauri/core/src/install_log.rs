@@ -70,10 +70,9 @@ impl InstallLog for FileInstallLog {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("agentrq-{name}-{}", std::process::id()));
@@ -81,6 +80,7 @@ mod tests {
         dir
     }
 
+    #[cfg(unix)]
     #[test]
     fn gives_the_installer_a_descriptor_and_reads_back_what_it_wrote() {
         let dir = temp_dir("install-log-a");
@@ -91,7 +91,7 @@ mod tests {
 
         // Both streams land in the same file, in the order they were written.
         let (stdout, stderr) = log.stdio().unwrap();
-        Command::new("/bin/sh")
+        std::process::Command::new("/bin/sh")
             .args(["-c", "echo 'Downloading x.dmg...'; echo 'error: nope' >&2"])
             .stdout(stdout)
             .stderr(stderr)
@@ -110,10 +110,11 @@ mod tests {
     fn reads_as_empty_once_the_file_has_gone() {
         let dir = temp_dir("install-log-b");
         let log = create_install_log(&dir).unwrap();
+        // Closed first: Windows will not remove a folder holding an open file.
+        log.close();
         std::fs::remove_dir_all(&dir).unwrap();
 
         assert_eq!(log.read(), "");
-        log.close();
     }
 
     #[test]

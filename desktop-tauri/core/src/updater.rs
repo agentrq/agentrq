@@ -21,11 +21,13 @@
 //! [`Updater::handle_event`] rather than listeners. `check_for_updates` should
 //! return once the check has *started*; the outcome comes back as events.
 //! `on_status` is never called with an internal lock held, so it may call back
-//! into the updater.
+//! into the updater. Statuses are delivered in the order they were decided: a
+//! call made from inside `on_status` is queued and delivered once the callback
+//! returns.
 
 use crate::install_log::InstallLog;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -572,6 +574,14 @@ struct Inner {
     create_install_log: Option<CreateInstallLog>,
     disabled_reason: Option<&'static str>,
     state: Mutex<State>,
+    outbox: Mutex<Outbox>,
+}
+
+/// Statuses decided but not yet handed to `on_status`, and whether a thread is
+/// already handing them over.
+struct Outbox {
+    queue: VecDeque<PublishedStatus>,
+    delivering: bool,
 }
 
 /// Follows a running installer: `done` and `last` are what the poll and the exit
@@ -614,6 +624,10 @@ impl Updater {
                     progress: None,
                     bound: false,
                 }),
+                outbox: Mutex::new(Outbox {
+                    queue: VecDeque::new(),
+                    delivering: false,
+                }),
             }),
         }
     }
@@ -623,24 +637,55 @@ impl Updater {
     }
 
     fn publish(&self, next: UpdateStatus, detail: &str, remedy: &str, progress: Option<Progress>) {
-        let published = {
-            let mut state = self.inner.state.lock().unwrap();
-            state.status = next;
-            state.detail = detail.to_string();
-            state.remedy = remedy.to_string();
-            state.progress = progress;
-            PublishedStatus {
-                status: next,
-                detail: detail.to_string(),
-                remedy: remedy.to_string(),
-                version: state.version.clone(),
-                progress,
-                manual: state.manual,
-                announce: should_announce(next, state.manual),
-                can_install_via_script: self.can_install_via_script(),
-            }
+        self.enqueue(next, detail, remedy, progress);
+        self.deliver();
+    }
+
+    /// Decide a status: record it and queue it, in one step under the state
+    /// lock, so the queue order is the order the states changed in.
+    fn enqueue(&self, next: UpdateStatus, detail: &str, remedy: &str, progress: Option<Progress>) {
+        let mut state = self.inner.state.lock().unwrap();
+        state.status = next;
+        state.detail = detail.to_string();
+        state.remedy = remedy.to_string();
+        state.progress = progress;
+        let published = PublishedStatus {
+            status: next,
+            detail: detail.to_string(),
+            remedy: remedy.to_string(),
+            version: state.version.clone(),
+            progress,
+            manual: state.manual,
+            announce: should_announce(next, state.manual),
+            can_install_via_script: self.can_install_via_script(),
         };
-        (self.inner.on_status)(published);
+        self.inner.outbox.lock().unwrap().queue.push_back(published);
+    }
+
+    /// Hand the queued statuses to `on_status`, in order, with no lock held. One
+    /// thread drains at a time; a publish from inside the callback, or from
+    /// another thread mid-drain, is picked up by that drain.
+    fn deliver(&self) {
+        {
+            let mut outbox = self.inner.outbox.lock().unwrap();
+            if outbox.delivering {
+                return;
+            }
+            outbox.delivering = true;
+        }
+        loop {
+            let next = {
+                let mut outbox = self.inner.outbox.lock().unwrap();
+                match outbox.queue.pop_front() {
+                    Some(next) => next,
+                    None => {
+                        outbox.delivering = false;
+                        return;
+                    }
+                }
+            };
+            (self.inner.on_status)(next);
+        }
     }
 
     /// What the platform updater reported. Ignored until `start`, and always in
@@ -786,12 +831,16 @@ impl Updater {
             move || {
                 let parsed = parse_installer_log(&log.read());
                 let key = format!("{:?}:{:?}", parsed.phase, parsed.percent);
-                // Held across the publish, so a late poll cannot follow the
-                // exit's verdict with a stale 'installing'.
-                let mut follow = follow.lock().unwrap();
-                if !follow.done && key != follow.last {
+                // Decided under the follow lock, so a late poll cannot queue a
+                // stale 'installing' behind the exit's verdict; delivered after
+                // it is dropped, so `on_status` runs with no lock held.
+                {
+                    let mut follow = follow.lock().unwrap();
+                    if follow.done || key == follow.last {
+                        return;
+                    }
                     follow.last = key;
-                    updater.publish(
+                    updater.enqueue(
                         UpdateStatus::Installing,
                         "",
                         "",
@@ -801,6 +850,7 @@ impl Updater {
                         }),
                     );
                 }
+                updater.deliver();
             }
         };
 
@@ -815,52 +865,57 @@ impl Updater {
 
         let updater = self.clone();
         child.on_exit(Arc::new(move |exit| {
-            let mut follow = follow.lock().unwrap();
-            if follow.done {
-                return;
-            }
-            follow.done = true;
-            let scheduler = &updater.inner.scheduler;
-            follow
-                .poll
-                .iter()
-                .for_each(|&poll| scheduler.clear_interval(poll));
-            let parsed = parse_installer_log(&log.read());
-            log.close();
-
-            let (code, spawn_error) = match exit {
-                InstallerExit::Exited(code) => (code, None),
-                InstallerExit::Failed(error) => (None, Some(error)),
-            };
-            if parsed.error.is_empty()
-                && spawn_error.is_none()
-                && parsed.phase == InstallPhase::Installed
             {
-                updater.publish(
-                    UpdateStatus::Installed,
-                    "Restart AgentRQ to finish updating",
-                    "",
-                    None,
-                );
-                return;
+                let mut follow = follow.lock().unwrap();
+                if follow.done {
+                    return;
+                }
+                follow.done = true;
+                updater.enqueue_verdict(exit, &*log, follow.poll);
             }
-            let reason = if parsed.error.is_empty() {
-                let cause = spawn_error.unwrap_or_else(|| {
-                    format!(
-                        "The installer stopped (exit code {})",
-                        code.map_or("null".to_string(), |c| c.to_string())
-                    )
-                });
-                describe_update_error(Some(&cause))
-            } else {
-                parsed.error
-            };
-            updater
-                .inner
-                .logger
-                .warn(&format!("installer failed: {reason}"));
-            updater.publish(UpdateStatus::Error, &reason, INSTALL_COMMAND, None);
+            updater.deliver();
         }));
+    }
+
+    /// Queue what the installer's exit means, once the poll is stopped.
+    fn enqueue_verdict(&self, exit: InstallerExit, log: &dyn InstallLog, poll: Option<u64>) {
+        if let Some(poll) = poll {
+            self.inner.scheduler.clear_interval(poll);
+        }
+        let parsed = parse_installer_log(&log.read());
+        log.close();
+
+        let (code, spawn_error) = match exit {
+            InstallerExit::Exited(code) => (code, None),
+            InstallerExit::Failed(error) => (None, Some(error)),
+        };
+        if parsed.error.is_empty()
+            && spawn_error.is_none()
+            && parsed.phase == InstallPhase::Installed
+        {
+            self.enqueue(
+                UpdateStatus::Installed,
+                "Restart AgentRQ to finish updating",
+                "",
+                None,
+            );
+            return;
+        }
+        let reason = if parsed.error.is_empty() {
+            let cause = spawn_error.unwrap_or_else(|| {
+                format!(
+                    "The installer stopped (exit code {})",
+                    code.map_or("null".to_string(), |c| c.to_string())
+                )
+            });
+            describe_update_error(Some(&cause))
+        } else {
+            parsed.error
+        };
+        self.inner
+            .logger
+            .warn(&format!("installer failed: {reason}"));
+        self.enqueue(UpdateStatus::Error, &reason, INSTALL_COMMAND, None);
     }
 
     fn launch_installer(
@@ -2010,7 +2065,13 @@ mod tests {
     fn hands_the_installer_the_log_file_not_a_pipe() {
         let s = running("darwin");
 
-        assert!(s.setup.updater.install_via_script().ok);
+        assert_eq!(
+            s.setup.updater.install_via_script(),
+            ActionResult {
+                ok: true,
+                reason: None
+            }
+        );
         let calls = s.spawner.calls.lock().unwrap();
         assert!(calls[0].2, "stdio is the log, not discarded");
     }
@@ -2206,6 +2267,81 @@ mod tests {
 
         assert_eq!(s.setup.published.lock().unwrap().len(), published);
         assert_eq!(s.setup.updater.state().status, UpdateStatus::Error);
+    }
+
+    /// A running install whose `on_status` calls back into the updater, as the
+    /// app's own handler does. `hook` runs for every delivered status, with the
+    /// updater, while the callback is on the stack.
+    fn reentrant(hook: impl Fn(&Updater, &PublishedStatus) + Send + Sync + 'static) -> Spawn {
+        let (s, _) = with_spawn("darwin", Some(FakeSpawner::default()), true);
+        let cell: Arc<Mutex<Option<Updater>>> = Arc::new(Mutex::new(None));
+        let (sink, handle) = (Arc::clone(&s.setup.published), Arc::clone(&cell));
+        let mut deps = UpdaterDeps::new(s.setup.auto.clone(), true, move |p| {
+            sink.lock().unwrap().push(p.clone());
+            let updater = handle.lock().unwrap().clone();
+            hook(
+                &updater.expect("the updater is set before anything runs"),
+                &p,
+            );
+        });
+        deps.scheduler = s.setup.scheduler.clone();
+        deps.logger = s.setup.logger.clone();
+        deps.platform = "darwin".to_string();
+        deps.spawner = Some(s.spawner.clone() as Arc<dyn InstallerSpawner>);
+        let log = Arc::clone(&s.log);
+        deps.create_install_log = Some(Arc::new(move || Ok(log.clone() as Arc<dyn InstallLog>)));
+        let updater = Updater::new(deps);
+        *cell.lock().unwrap() = Some(updater.clone());
+        Spawn {
+            setup: Setup { updater, ..s.setup },
+            ..s
+        }
+    }
+
+    #[test]
+    fn on_status_can_call_back_into_the_updater_while_installing_and_at_the_exit() {
+        let s = reentrant(|updater, _| {
+            updater.state();
+            updater.check_now();
+            updater.stop();
+        });
+        s.setup.updater.install_via_script();
+
+        s.log.write("Downloading x...\n");
+        s.poll();
+        s.log.write("AgentRQ 1.2.0 installed to /Applications\n");
+        s.spawner.child.end(InstallerExit::Exited(Some(0)));
+        s.log.write("Downloading y...\n");
+        s.poll();
+
+        assert_eq!(
+            s.setup.statuses(),
+            vec![
+                UpdateStatus::Installing,
+                UpdateStatus::Installing,
+                UpdateStatus::Installed
+            ]
+        );
+    }
+
+    #[test]
+    fn a_status_published_from_inside_on_status_is_delivered_after_it_returns() {
+        let inside = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&inside);
+        let s = reentrant(move |updater, published| {
+            assert!(!flag.swap(true, Ordering::SeqCst), "callbacks never nest");
+            if published.status == UpdateStatus::Installing {
+                updater.publish(UpdateStatus::Available, "", "", None);
+            }
+            flag.store(false, Ordering::SeqCst);
+        });
+
+        s.setup.updater.install_via_script();
+
+        assert_eq!(
+            s.setup.statuses(),
+            vec![UpdateStatus::Installing, UpdateStatus::Available]
+        );
     }
 
     // ---- the real scheduler and spawner ----
