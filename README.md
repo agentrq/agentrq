@@ -143,6 +143,9 @@ Install `agentrqd` on a computer you own, enrol it once with a single-use code t
 </td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/machines.svg" width="1200" alt="AgentRQ machines: you click Add machine and get a single-use code, and typing it on your own computer enrols it, so dev-box comes online. You pick the agentrq-web workspace and Start agent, and claude starts in that workspace's folder on the machine, straight into its terminal. Back on the machine page one session is running, and Machine Info shows CPU, memory and load climb while claude works and fall when it is done, and claude celebrates." /></td>
+</tr>
+<tr>
 <td width="50%" valign="middle">
 
 ### Live Terminals
@@ -151,6 +154,9 @@ Open a running session from any browser and you are at the prompt. Keystrokes go
 
 </td>
 <td width="50%"><img src="https://agentrq.com/assets/feature-machines-poster.png" alt="AgentRQ live terminal attached to a claude-code session on an enrolled machine" width="320" /></td>
+</tr>
+<tr>
+<td colspan="2"><img src="docs/assets/readme/live-terminals.svg" width="1200" alt="AgentRQ live terminals: on the machine page you open claude's running session and you are at its prompt in the browser. You answer y, then press Esc when claude takes a wrong turn and type a new instruction, every key going down the wire to the machine. The network drops and you close the tab, but on the machine claude keeps working; when you come back the screen is restored and has moved on, claude finishes, hermes opens the same session, and the agents celebrate." /></td>
 </tr>
 <tr>
 <td width="50%"><img src="https://agentrq.com/assets/feature-distributed-skills.gif" alt="AgentRQ Skills: the Skills tab, choosing skills to import from GitHub, and an opened SKILL.md shared with another workspace" width="320" /></td>
