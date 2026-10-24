@@ -130,6 +130,9 @@ Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat
 <td width="50%"><img src="https://agentrq.com/assets/feature-keyboard-shortcuts.gif" alt="AgentRQ task finder and keyboard shortcuts sheet" width="320" /></td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/search-keyboard-shortcuts.svg" width="1200" alt="AgentRQ search and keyboard shortcuts: claude has a question on a task you cannot see in a busy workspace, so you press ⌘K and type 'migration'. The finder narrows the tasks saved on this device to 'Run the users migration' without asking the server; Enter opens it and C flips to the chat, where you answer and claude finishes. Then W, P and ? bring up the workspace switcher, the Pano and the keyboard shortcuts sheet while the agents celebrate." /></td>
+</tr>
+<tr>
 <td width="50%"><img src="https://agentrq.com/assets/feature-machines-detail.png" alt="AgentRQ machine page: start an agent, running sessions, and live resources" width="320" /></td>
 <td width="50%" valign="middle">
 
