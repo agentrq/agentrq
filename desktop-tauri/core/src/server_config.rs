@@ -11,18 +11,18 @@
 //! The file holds a list of profiles. Reading or writing "the" server or mute
 //! list means the *active* profile's.
 //!
-//! Scope: the profile model is only what `migrate_config` and the store need
-//! (cleaning, migration, active, update). Adding, switching, removing and
-//! renaming profiles, and remembering accounts, are WP4's, and so are the
-//! store methods that call them. `account` is carried through untouched until
-//! WP4 ports `identity.js`.
+//! The profile rules themselves live in [`crate::profiles`]; the store loads the
+//! file, applies one of them and writes the result back.
 //!
 //! Rust notes: the store is synchronous, and the network probe is a trait that
 //! returns the status and the body, in place of `fetch`.
 
+use crate::profiles::{
+    activate_profile, add_profile, clean_muted, migrate_profiles, remember_account, remove_profile,
+    rename_profile, update_profile, Profile, ProfilePatch, ProfilesState, FIRST_PROFILE_ID,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashSet;
 use std::io;
 use url::Url;
 
@@ -45,13 +45,8 @@ pub const CONFIG_VERSION: u32 = 3;
 /// Endpoint used to decide whether a URL is really an AgentRQ server.
 pub const CONFIG_PROBE_PATH: &str = "/api/v1/auth/config";
 
-/// Shown when a profile has no name of its own.
-pub const DEFAULT_PROFILE_LABEL: &str = "Default";
-
 /// What `connection:save` answers while `AGENTRQ_SERVER_URL` pins the server.
 pub const CONNECTION_LOCKED_REASON: &str = "Server is pinned by AGENTRQ_SERVER_URL";
-
-const MAX_LABEL: usize = 40;
 
 pub const REASON_REQUIRED: &str = "Server URL is required";
 pub const REASON_INVALID: &str = "Not a valid URL";
@@ -123,20 +118,6 @@ pub fn connection_lock(env_server_url: Option<&str>) -> Option<String> {
     normalize_server_url(env_server_url.unwrap_or("")).ok()
 }
 
-/// One profile, with everything absent or malformed filled in.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Profile {
-    pub id: String,
-    pub label: String,
-    pub partition: String,
-    pub server_url: String,
-    pub muted_workspaces: Vec<String>,
-    /// Who this profile belongs to, as last seen. Opaque until WP4.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub account: Option<Value>,
-}
-
 /// The stored config, always a valid shape with at least one profile.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,110 +125,6 @@ pub struct ServerConfig {
     pub version: u32,
     pub active_profile_id: String,
     pub profiles: Vec<Profile>,
-}
-
-/// Partition name for a profile. `persist:` is what makes the jar survive a
-/// restart. The id is embedded directly, which is why ids are restricted to
-/// characters that are safe in a directory name.
-pub fn partition_for(id: &str) -> String {
-    format!("persist:profile-{id}")
-}
-
-/// Ids are used in a filesystem path, so they are deliberately narrow:
-/// `^[a-z0-9][a-z0-9-]{0,63}$`.
-pub fn is_valid_profile_id(id: &str) -> bool {
-    let mut bytes = id.bytes();
-    id.len() <= 64
-        && bytes
-            .next()
-            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-fn clean_label(label: Option<&str>) -> String {
-    let collapsed = label
-        .unwrap_or("")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if collapsed.is_empty() {
-        DEFAULT_PROFILE_LABEL.to_string()
-    } else {
-        collapsed.chars().take(MAX_LABEL).collect()
-    }
-}
-
-fn clean_muted<S: AsRef<str>>(ids: impl IntoIterator<Item = S>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    ids.into_iter()
-        .map(|id| id.as_ref().to_string())
-        .filter(|id| !id.is_empty() && seen.insert(id.clone()))
-        .collect()
-}
-
-fn muted_from_json(value: Option<&Value>) -> Vec<String> {
-    match value {
-        Some(Value::Array(items)) => clean_muted(items.iter().filter_map(Value::as_str)),
-        _ => Vec::new(),
-    }
-}
-
-fn str_field<'a>(raw: &'a Value, key: &str) -> Option<&'a str> {
-    raw.get(key).and_then(Value::as_str)
-}
-
-/// One stored profile. `None` when the id is unusable, since a profile without a
-/// valid id has no partition and cannot be stored.
-fn make_profile(raw: &Value) -> Option<Profile> {
-    let id = str_field(raw, "id").filter(|id| is_valid_profile_id(id))?;
-    Some(Profile {
-        id: id.to_string(),
-        label: clean_label(str_field(raw, "label")),
-        // Stored rather than derived so the name is stable if the scheme ever
-        // changes: a partition that moved would be an empty jar, a sign-out.
-        partition: str_field(raw, "partition")
-            .filter(|partition| !partition.is_empty())
-            .map_or_else(|| partition_for(id), str::to_string),
-        server_url: str_field(raw, "serverUrl").unwrap_or("").to_string(),
-        muted_workspaces: muted_from_json(raw.get("mutedWorkspaces")),
-        account: raw.get("account").filter(|a| a.is_object()).cloned(),
-    })
-}
-
-/// Bring stored profile state forward, from any shape including none.
-///
-/// A config from before profiles existed becomes a single profile carrying the
-/// settings that were already there.
-fn migrate_profiles(raw: &Value) -> (Vec<Profile>, String) {
-    let mut profiles: Vec<Profile> = match raw.get("profiles") {
-        Some(Value::Array(items)) => items.iter().filter_map(make_profile).collect(),
-        _ => Vec::new(),
-    };
-
-    if profiles.is_empty() {
-        // Either a first run or a pre-profiles config. Both become one profile;
-        // the second keeps the server and mutes that were already configured.
-        let id = "default";
-        profiles.push(Profile {
-            id: id.to_string(),
-            label: DEFAULT_PROFILE_LABEL.to_string(),
-            partition: partition_for(id),
-            server_url: str_field(raw, "serverUrl").unwrap_or("").to_string(),
-            muted_workspaces: muted_from_json(raw.get("mutedWorkspaces")),
-            account: None,
-        });
-    }
-
-    // Two profiles sharing an id would share a partition, which is the one thing
-    // this must never allow: the same account wearing two names.
-    let mut seen = HashSet::new();
-    profiles.retain(|profile| seen.insert(profile.id.clone()));
-
-    let active = str_field(raw, "activeProfileId")
-        .filter(|id| profiles.iter().any(|profile| profile.id == *id))
-        .unwrap_or(&profiles[0].id)
-        .to_string();
-    (profiles, active)
 }
 
 /// Bring a stored config forward to the current shape.
@@ -258,15 +135,16 @@ fn migrate_profiles(raw: &Value) -> (Vec<Profile>, String) {
 /// written by a *newer* build keeps its `serverUrl` if it still looks like a
 /// URL, and every other key is dropped rather than guessed at.
 pub fn migrate_config(raw: &Value) -> ServerConfig {
-    let (profiles, active_profile_id) = migrate_profiles(raw);
+    let state = migrate_profiles(raw, FIRST_PROFILE_ID);
     ServerConfig {
         version: CONFIG_VERSION,
-        active_profile_id,
+        active_profile_id: state.active_profile_id,
         // Each profile's server is re-checked here rather than trusted from
         // disk: a stored `file:///x` reaching the fetch base would be a hole,
         // and an unparseable one would boot the app pointed at nothing. Either
         // becomes "not configured", which is the connection screen.
-        profiles: profiles
+        profiles: state
+            .profiles
             .into_iter()
             .map(|profile| Profile {
                 server_url: normalize_server_url(&profile.server_url).unwrap_or_default(),
@@ -285,15 +163,20 @@ impl ServerConfig {
             .unwrap_or(&self.profiles[0])
     }
 
-    fn update_active(&mut self, server_url: Option<&str>, muted: Option<Vec<String>>) {
-        let id = &self.active_profile_id;
-        if let Some(profile) = self.profiles.iter_mut().find(|profile| profile.id == *id) {
-            if let Some(server_url) = server_url {
-                profile.server_url = server_url.to_string();
-            }
-            if let Some(muted) = muted {
-                profile.muted_workspaces = muted;
-            }
+    /// The profiles and the active one, without the file's version stamp.
+    pub fn state(&self) -> ProfilesState {
+        ProfilesState {
+            profiles: self.profiles.clone(),
+            active_profile_id: self.active_profile_id.clone(),
+        }
+    }
+
+    /// What the file holds for this state: the current shape version, stamped.
+    fn from_state(state: ProfilesState) -> Self {
+        Self {
+            version: CONFIG_VERSION,
+            active_profile_id: state.active_profile_id,
+            profiles: state.profiles,
         }
     }
 }
@@ -316,15 +199,57 @@ pub enum SaveError {
 /// Persisted server choice.
 pub struct ServerConfigStore<F: ConfigFile> {
     file: F,
+    new_profile_id: Box<dyn Fn() -> String>,
+}
+
+/// A short id for a new profile.
+///
+/// Lowercase hex only: the id becomes a directory name, via the session
+/// partition. Uniqueness is checked against what is already stored rather than
+/// assumed, so this only has to make collisions unlikely.
+pub fn random_profile_id() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u128(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos()),
+    );
+    format!("{:016x}", hasher.finish())
 }
 
 impl<F: ConfigFile> ServerConfigStore<F> {
     pub fn new(file: F) -> Self {
-        Self { file }
+        Self::with_profile_ids(file, random_profile_id)
+    }
+
+    /// A store that takes its new profile ids from `new_profile_id`.
+    pub fn with_profile_ids(file: F, new_profile_id: impl Fn() -> String + 'static) -> Self {
+        Self {
+            file,
+            new_profile_id: Box::new(new_profile_id),
+        }
     }
 
     fn write(&self, config: &ServerConfig) -> io::Result<()> {
         self.file.write_file(&serde_json::to_string_pretty(config)?)
+    }
+
+    /// Apply one profile rule to the stored state and write the result.
+    fn change(
+        &self,
+        rule: impl FnOnce(&ProfilesState) -> ProfilesState,
+    ) -> io::Result<ServerConfig> {
+        let next = ServerConfig::from_state(rule(&self.load().state()));
+        self.write(&next)?;
+        Ok(next)
+    }
+
+    fn update_active(&self, patch: ProfilePatch) -> io::Result<ServerConfig> {
+        self.change(|state| update_profile(state, &state.active_profile_id, &patch))
     }
 
     /// Always a valid shape with at least one profile: a missing or corrupt
@@ -347,25 +272,30 @@ impl<F: ConfigFile> ServerConfigStore<F> {
     /// Point the active profile at a server. Returns the normalised URL.
     pub fn save(&self, input: &str) -> Result<String, SaveError> {
         let url = normalize_server_url(input).map_err(SaveError::Invalid)?;
-        let mut config = self.load();
-        config.update_active(Some(&url), None);
-        self.write(&config).map_err(SaveError::Io)?;
+        self.update_active(ProfilePatch {
+            server_url: Some(url.clone()),
+            ..ProfilePatch::default()
+        })
+        .map_err(SaveError::Io)?;
         Ok(url)
     }
 
     /// Forget the active profile's server, sending it back to the first-run
     /// screen.
     pub fn clear(&self) -> io::Result<()> {
-        let mut config = self.load();
-        config.update_active(Some(""), None);
-        self.write(&config)
+        self.update_active(ProfilePatch {
+            server_url: Some(String::new()),
+            ..ProfilePatch::default()
+        })
+        .map(|_| ())
     }
 
     /// Replace the active profile's muted-workspace list. Returns what was kept.
     pub fn set_muted_workspaces(&self, ids: &[&str]) -> io::Result<Vec<String>> {
-        let mut config = self.load();
-        config.update_active(None, Some(clean_muted(ids)));
-        self.write(&config)?;
+        let config = self.update_active(ProfilePatch {
+            muted_workspaces: Some(clean_muted(ids)),
+            ..ProfilePatch::default()
+        })?;
         Ok(config.active().muted_workspaces.clone())
     }
 
@@ -379,6 +309,59 @@ impl<F: ConfigFile> ServerConfigStore<F> {
         }
         let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
         self.set_muted_workspaces(&ids)
+    }
+
+    /// Add a profile and make it the active one.
+    ///
+    /// The id is generated here rather than by the caller so it is guaranteed
+    /// unique against what is already stored: a collision would mean two
+    /// profiles sharing a session, which is the same account twice.
+    pub fn add_profile(&self, label: &str) -> io::Result<ServerConfig> {
+        self.change(|state| {
+            let mut id = (self.new_profile_id)();
+            while state.profiles.iter().any(|p| p.id == id) {
+                id = (self.new_profile_id)();
+            }
+            add_profile(state, &id, label, "")
+        })
+    }
+
+    /// Switch profiles. An unknown id changes nothing.
+    pub fn activate_profile(&self, id: &str) -> io::Result<ServerConfig> {
+        self.change(|state| activate_profile(state, id))
+    }
+
+    /// Remove a profile. The last one is kept, since the app needs a session.
+    ///
+    /// `fallback_id` is where to land when the one removed was active: the
+    /// profile an abandoned one was added from, rather than whichever happens to
+    /// be first.
+    pub fn remove_profile(&self, id: &str, fallback_id: &str) -> io::Result<ServerConfig> {
+        self.change(|state| remove_profile(state, id, fallback_id))
+    }
+
+    /// Rename a profile. A blank name keeps the old one.
+    pub fn rename_profile(&self, id: &str, label: &str) -> io::Result<ServerConfig> {
+        self.change(|state| rename_profile(state, id, label))
+    }
+
+    /// Record who a profile is signed in as, so it can still be named when the
+    /// server cannot be asked.
+    ///
+    /// Written to disk rather than held in memory: the session lasts a day, the
+    /// lookup gives up after four seconds, and every start begins knowing
+    /// nothing, so a switcher that only knew what it had just been told spent
+    /// most of its life showing labels instead of accounts. A lookup that failed
+    /// changes nothing and does not touch the file.
+    pub fn remember_account(&self, id: &str, identity: &Value) -> io::Result<ServerConfig> {
+        let current = self.load();
+        let next = remember_account(&current.state(), id, identity);
+        if next == current.state() {
+            return Ok(current);
+        }
+        let next = ServerConfig::from_state(next);
+        self.write(&next)?;
+        Ok(next)
     }
 }
 
@@ -460,6 +443,8 @@ pub fn validate_server_url(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::Account;
+    use crate::profiles::{is_valid_profile_id, DEFAULT_PROFILE_LABEL, MAX_LABEL};
     use serde_json::json;
     use std::cell::{Cell, RefCell};
 
@@ -750,7 +735,11 @@ mod tests {
         assert_eq!(config.profiles[0].partition, "persist:custom");
         assert_eq!(
             config.profiles[0].account,
-            Some(json!({"email": "sam@example.com"}))
+            Some(Account {
+                name: String::new(),
+                email: "sam@example.com".to_string(),
+                picture: String::new(),
+            })
         );
         assert_eq!(config.profiles[1].label.chars().count(), MAX_LABEL);
         assert_eq!(config.profiles[1].account, None);
@@ -961,8 +950,13 @@ mod tests {
         let mut config = migrate_config(&json!({"profiles": [{"id": "one"}]}));
         config.active_profile_id = "gone".to_string();
         assert_eq!(config.active().id, "one");
-        config.update_active(Some("https://x.example.com"), Some(vec!["ws".to_string()]));
-        assert_eq!(config.profiles[0].server_url, "");
+        let patch = ProfilePatch {
+            server_url: Some("https://x.example.com".to_string()),
+            muted_workspaces: Some(vec!["ws".to_string()]),
+            ..ProfilePatch::default()
+        };
+        let next = update_profile(&config.state(), &config.active_profile_id, &patch);
+        assert_eq!(next.profiles[0].server_url, "");
     }
 
     #[test]
@@ -980,6 +974,191 @@ mod tests {
         let store = ServerConfigStore::new(ReadOnly);
         assert!(matches!(store.save("example.com"), Err(SaveError::Io(_))));
         assert!(store.clear().is_err());
+    }
+
+    // The profile-management cases of `createServerConfigStore`.
+
+    /// A store whose new profile ids are `p1`, `p2`, and so on.
+    fn counting(file: &MemoryFile) -> ServerConfigStore<&MemoryFile> {
+        let next = Cell::new(0);
+        ServerConfigStore::with_profile_ids(file, move || {
+            next.set(next.get() + 1);
+            format!("p{}", next.get())
+        })
+    }
+
+    fn sam() -> Value {
+        json!({"name": "Sam Rivera", "email": "sam@example.com", "picture": ""})
+    }
+
+    // Written to disk rather than held in memory: the session lasts a day, the
+    // lookup gives up after four seconds, and every start begins knowing
+    // nothing, so a switcher that only knew what it had just been told spent
+    // most of its life showing labels instead of accounts.
+    #[test]
+    fn writes_down_who_a_profile_is_signed_in_as() {
+        let file = MemoryFile::default();
+        let store = counting(&file);
+        let profiles = store.load().profiles;
+
+        let next = store.remember_account(&profiles[0].id, &sam()).unwrap();
+
+        assert_eq!(
+            next.profiles[0].account,
+            Some(Account {
+                name: "Sam Rivera".to_string(),
+                email: "sam@example.com".to_string(),
+                picture: String::new(),
+            })
+        );
+        assert_eq!(file.writes.get(), 1);
+        assert_eq!(
+            file.read()["profiles"][0]["account"]["email"],
+            "sam@example.com"
+        );
+    }
+
+    // A lookup that failed must not cost a write, nor the account.
+    #[test]
+    fn does_not_touch_the_file_when_the_lookup_could_not_answer() {
+        let file = MemoryFile::default();
+        let store = counting(&file);
+        let id = store.load().profiles[0].id.clone();
+        store
+            .remember_account(&id, &json!({"name": "Sam", "email": "sam@example.com"}))
+            .unwrap();
+        let writes = file.writes.get();
+
+        let before = store.load();
+        let after = store.remember_account(&id, &Value::Null).unwrap();
+
+        assert_eq!(after.profiles[0].account, before.profiles[0].account);
+        assert_eq!(file.writes.get(), writes);
+    }
+
+    #[test]
+    fn leaves_a_profile_it_does_not_have_alone() {
+        let file = MemoryFile::default();
+        let store = counting(&file);
+        store.load();
+        let writes = file.writes.get();
+
+        store
+            .remember_account("nobody", &json!({"email": "sam@example.com"}))
+            .unwrap();
+
+        assert_eq!(file.writes.get(), writes);
+    }
+
+    #[test]
+    fn settings_belong_to_one_profile_not_to_all_of_them() {
+        // The whole point of a profile: signing a second account into a
+        // different server must not move the first one.
+        let file = MemoryFile::with(&legacy(json!({})));
+        let store = counting(&file);
+        store.add_profile("Work").unwrap();
+        store.save("https://work.example.com").unwrap();
+
+        let config = store.load();
+
+        assert_eq!(config.profiles[0].server_url, "https://example.com");
+        assert_eq!(config.profiles[1].server_url, "https://work.example.com");
+    }
+
+    #[test]
+    fn adds_a_profile_switches_to_it_and_gives_it_its_own_session() {
+        let file = MemoryFile::with(&legacy(json!({})));
+
+        let after = counting(&file).add_profile("Work").unwrap();
+
+        assert_eq!(after.profiles.len(), 2);
+        assert_eq!(after.active_profile_id, after.profiles[1].id);
+        assert_ne!(after.profiles[1].partition, after.profiles[0].partition);
+    }
+
+    #[test]
+    fn never_reuses_an_id_already_stored() {
+        // Two profiles on one id would share a session: the same account twice.
+        let file = MemoryFile::with(r#"{"profiles":[{"id":"p1","label":"Taken"}]}"#);
+
+        let after = counting(&file).add_profile("New").unwrap();
+
+        let ids: Vec<&str> = after.profiles.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, ["p1", "p2"]);
+    }
+
+    #[test]
+    fn switches_renames_and_removes() {
+        let file = MemoryFile::with(&legacy(json!({})));
+        let store = counting(&file);
+        let with_work = store.add_profile("Work").unwrap();
+        let (first, work) = (&with_work.profiles[0], &with_work.profiles[1]);
+
+        assert_eq!(
+            store.activate_profile(&first.id).unwrap().active_profile_id,
+            first.id
+        );
+        assert_eq!(
+            store
+                .rename_profile(&work.id, " Day job ")
+                .unwrap()
+                .profiles[1]
+                .label,
+            "Day job"
+        );
+
+        let removed = store.remove_profile(&work.id, "").unwrap();
+        assert_eq!(removed.profiles.len(), 1);
+        assert_eq!(removed.active_profile_id, first.id);
+    }
+
+    #[test]
+    fn removes_onto_the_profile_the_caller_names() {
+        // Abandoning an added profile has to land back where it was added from,
+        // which the store cannot work out for itself.
+        let file = MemoryFile::with(&legacy(json!({})));
+        let store = counting(&file);
+        let first = store.load().profiles[0].id.clone();
+        store.add_profile("Work").unwrap();
+        let with_third = store.add_profile("Third").unwrap();
+        let third = with_third.profiles[2].id.clone();
+
+        let removed = store.remove_profile(&third, &first).unwrap();
+
+        assert_eq!(removed.active_profile_id, first);
+    }
+
+    #[test]
+    fn keeps_the_last_profile_since_the_app_needs_a_session_to_run_in() {
+        let file = MemoryFile::with(&legacy(json!({})));
+        let store = counting(&file);
+        let config = store.load();
+
+        let after = store.remove_profile(&config.active_profile_id, "").unwrap();
+
+        assert_eq!(after.profiles.len(), 1);
+    }
+
+    // The store is constructed in the main process with only its file I/O, so
+    // a required id generator meant `addProfile` threw the first time anyone
+    // pressed Add profile.
+    #[test]
+    fn can_still_add_a_profile() {
+        let file = MemoryFile::default();
+
+        let after = ServerConfigStore::new(&file).add_profile("Work").unwrap();
+
+        assert_eq!(after.profiles.len(), 2);
+        assert_eq!(after.profiles[1].label, "Work");
+        assert!(is_valid_profile_id(&after.profiles[1].id));
+        assert_eq!(after.active_profile_id, after.profiles[1].id);
+    }
+
+    #[test]
+    fn makes_a_different_profile_id_each_time() {
+        // Not in the vitest file: `randomProfileId` is only reached through
+        // `addProfile`, which retries on a clash.
+        assert_ne!(random_profile_id(), random_profile_id());
     }
 
     // validateServerUrl

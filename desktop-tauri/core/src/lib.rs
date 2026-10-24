@@ -9,7 +9,9 @@
 
 pub mod deep_link;
 pub mod files;
+pub mod identity;
 pub mod links;
+pub mod profiles;
 pub mod server_config;
 pub mod uri;
 pub mod window_state;
