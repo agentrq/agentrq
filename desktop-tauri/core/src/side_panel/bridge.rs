@@ -616,8 +616,7 @@ mod tests {
     #[test]
     fn without_the_webview2_flag_the_http_form_is_a_web_page_not_the_extension() {
         let (hub, _) = setup();
-        hub.capability_for("notes")
-            .on_message(Arc::new(|_| Ok(Some(json!("reached")))));
+        hub.capability_for("notes").on_message(must_not_run());
         for url in [
             "http://agentrq-ext.notes/panel/index.html",
             "https://AgentRQ-Ext.notes/panel/index.html",
