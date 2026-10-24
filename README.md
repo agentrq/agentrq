@@ -23,31 +23,28 @@ Because agents "see" the workspace state via MCP, they can autonomously pull the
 
 ## ✨ Features
 
-Real captures from the running app, and animated sketches of the main features.
+Animated sketches of the main features.
 
 <table>
 <tr>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Visual Task Board
 
 Every task Claude creates appears instantly on your board. See what it's working on, what it needs, and what it just finished — all from a clean, fast dashboard you can open on any device, as a list or a Kanban.
 
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-task-board.gif" alt="AgentRQ active tasks dashboard and kanban board" width="320" /></td>
 </tr>
 <tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-task-scheduling.gif" alt="AgentRQ scheduled task auto-spawning into the dashboard" width="320" /></td>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Task Scheduling
 
 Give any task a launch date, or a recurring cadence — every 15 minutes, hourly, daily, weekly, custom days. A background poller ticks every minute and spawns the task the instant it's due, no server or agent needing to stay awake and wait.
 
+<img src="docs/assets/readme/task-scheduling.svg" width="1200" alt="AgentRQ task scheduling: you give a task a cadence, every 15 minutes, and click Save. A poller ticks every minute while five agents, claude, codex, agy, hermes and openclaw, sleep; when a scheduled task comes due its row flashes and a run flies down to its agent, which wakes, works and finishes, and the next run rolls forward." />
+
 </td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/assets/readme/task-scheduling.svg" width="1200" alt="AgentRQ task scheduling: you give a task a cadence, every 15 minutes, and click Save. A poller ticks every minute while five agents, claude, codex, agy, hermes and openclaw, sleep; when a scheduled task comes due its row flashes and a run flies down to its agent, which wakes, works and finishes, and the next run rolls forward." /></td>
 </tr>
 <tr>
 <td width="50%" valign="middle">
@@ -57,10 +54,6 @@ Give any task a launch date, or a recurring cadence — every 15 minutes, hourly
 Events are named signals — `qa_passed`, `deploy_finished`, `blog_published` — that any task can fire when it completes. Wire one to a workspace and that workspace gets a new task automatically, no polling and no glue code.
 
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-events.gif" alt="AgentRQ events list and configured trigger" width="320" /></td>
-</tr>
-<tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-workflows.gif" alt="AgentRQ workflow node graph" width="320" /></td>
 <td width="50%" valign="middle">
 
 ### Workflows
@@ -73,17 +66,15 @@ A Workflow is Events and workspaces arranged on a graph. Drag a workspace onto a
 <td colspan="2"><img src="docs/assets/readme/events-workflows.svg" width="1200" alt="AgentRQ workflows: you drag the release workspace onto the deploy_finished event. claude finishes the qa task, so qa_passed fires and a pulse runs into deploy, which gets a new task; codex deploys, deploy_finished fires and release gets its task; hermes writes the release notes and claude, codex and hermes celebrate." /></td>
 </tr>
 <tr>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Tool Call History
 
 The task detail view's History tab lays out a lane-grouped timeline of every tool call and message in a run — Input, Agent, and Tools. Search it, click into any entry, and see exactly what ran, what it returned, and whether it was allowed or denied.
 
+<img src="docs/assets/readme/tool-call-history.svg" width="1200" alt="AgentRQ tool call history: a task's Trajectory view lays out the run on three lanes, Input, Agent and Tools. claude reads, greps and edits; a Bash call waits for you and you deny it, so it turns red; claude tries another way and npm test passes. You open that call to see what ran and what it returned, then search for bash and only the two Bash calls stay lit, while the agents celebrate." />
+
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-tool-call-history.gif" alt="AgentRQ tool call history trajectory panel" width="320" /></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/assets/readme/tool-call-history.svg" width="1200" alt="AgentRQ tool call history: a task's Trajectory view lays out the run on three lanes, Input, Agent and Tools. claude reads, greps and edits; a Bash call waits for you and you deny it, so it turns red; claude tries another way and npm test passes. You open that call to see what ran and what it returned, then search for bash and only the two Bash calls stay lit, while the agents celebrate." /></td>
 </tr>
 <tr>
 <td colspan="2" valign="middle">
@@ -97,82 +88,70 @@ Under every task, a timeline shows each status it has been in and for how long: 
 </td>
 </tr>
 <tr>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Speech-to-Text
 
 Click the mic on any task description or reply and dictate it instead. Transcription runs on an in-browser Whisper model — your voice is processed on-device and never uploaded anywhere.
 
+<img src="docs/assets/readme/speech-to-text.svg" width="1200" alt="AgentRQ speech-to-text: you click the mic on the New Task form and say 'Add a dark mode toggle to settings'. The first time, a Whisper model downloads into the browser; it turns your voice into text on the device, uploading nothing, and the text lands in the description. agy takes the task, asks a question, you dictate the reply, agy finishes and the agents celebrate." />
+
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-speech-to-text.gif" alt="AgentRQ speech-to-text mic entry point" width="320" /></td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/assets/readme/speech-to-text.svg" width="1200" alt="AgentRQ speech-to-text: you click the mic on the New Task form and say 'Add a dark mode toggle to settings'. The first time, a Whisper model downloads into the browser; it turns your voice into text on the device, uploading nothing, and the text lands in the description. agy takes the task, asks a question, you dictate the reply, agy finishes and the agents celebrate." /></td>
-</tr>
-<tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-message-send-delay.gif" alt="AgentRQ message send delay countdown with Send Now and Cancel" width="320" /></td>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Message Send Delay
 
 Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat message waits that long in the thread before it reaches the agent. **Send Now** delivers it early, **Cancel** pulls it back unsent and puts the exact text and attachments back in your composer. Off by default, per workspace.
 
+<img src="docs/assets/readme/message-send-delay.svg" width="1200" alt="AgentRQ message send delay: you type 'deploy to prod' and send it, and it waits in the thread with a 5 second countdown and Cancel and Send Now buttons while codex has not seen it yet. At 3 you click Cancel and the text comes back to the composer; you change it to 'deploy to staging', send it, and click Send Now, so codex gets it, deploys, and the agents celebrate." />
+
 </td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/assets/readme/message-send-delay.svg" width="1200" alt="AgentRQ message send delay: you type 'deploy to prod' and send it, and it waits in the thread with a 5 second countdown and Cancel and Send Now buttons while codex has not seen it yet. At 3 you click Cancel and the text comes back to the composer; you change it to 'deploy to staging', send it, and click Send Now, so codex gets it, deploys, and the agents celebrate." /></td>
-</tr>
-<tr>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Search & Keyboard Shortcuts
 
 <kbd>⌘K</kbd> (<kbd>Ctrl+K</kbd> off macOS) opens a task finder that matches any word in a title or description, straight from the copy your device already saved — so it answers offline, and tells you how far it looked. Everything else is a bare letter: <kbd>N</kbd> for a new task, <kbd>W</kbd> and <kbd>M</kbd> to jump to a workspace or a machine, <kbd>P</kbd> for the Pano, <kbd>C</kbd> and <kbd>T</kbd> to flip between a task's chat and its trajectory, <kbd>?</kbd> for the list. Nothing to configure, and nothing to memorise.
 
+<img src="docs/assets/readme/search-keyboard-shortcuts.svg" width="1200" alt="AgentRQ search and keyboard shortcuts: claude has a question on a task you cannot see in a busy workspace, so you press ⌘K and type 'migration'. The finder narrows the tasks saved on this device to 'Run the users migration' without asking the server; Enter opens it and C flips to the chat, where you answer and claude finishes. Then W, P and ? bring up the workspace switcher, the Pano and the keyboard shortcuts sheet while the agents celebrate." />
+
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-keyboard-shortcuts.gif" alt="AgentRQ task finder and keyboard shortcuts sheet" width="320" /></td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/assets/readme/search-keyboard-shortcuts.svg" width="1200" alt="AgentRQ search and keyboard shortcuts: claude has a question on a task you cannot see in a busy workspace, so you press ⌘K and type 'migration'. The finder narrows the tasks saved on this device to 'Run the users migration' without asking the server; Enter opens it and C flips to the chat, where you answer and claude finishes. Then W, P and ? bring up the workspace switcher, the Pano and the keyboard shortcuts sheet while the agents celebrate." /></td>
-</tr>
-<tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-machines-detail.png" alt="AgentRQ machine page: start an agent, running sessions, and live resources" width="320" /></td>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Machines
 
 Install `agentrqd` on a computer you own, enrol it once with a single-use code typed on the machine itself, and it becomes somewhere agents can run — in your repositories, with your toolchain. Pick a workspace and what to run, and it starts in that workspace's folder on that machine. Each machine's page shows what it has left: CPU, memory, uptime, load and free space per filesystem.
 
+<img src="docs/assets/readme/machines.svg" width="1200" alt="AgentRQ machines: you click Add machine and get a single-use code, and typing it on your own computer enrols it, so dev-box comes online. You pick the agentrq-web workspace and Start agent, and claude starts in that workspace's folder on the machine, straight into its terminal. Back on the machine page one session is running, and Machine Info shows CPU, memory and load climb while claude works and fall when it is done, and claude celebrates." />
+
 </td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/assets/readme/machines.svg" width="1200" alt="AgentRQ machines: you click Add machine and get a single-use code, and typing it on your own computer enrols it, so dev-box comes online. You pick the agentrq-web workspace and Start agent, and claude starts in that workspace's folder on the machine, straight into its terminal. Back on the machine page one session is running, and Machine Info shows CPU, memory and load climb while claude works and fall when it is done, and claude celebrates." /></td>
-</tr>
-<tr>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Live Terminals
 
 Open a running session from any browser and you are at the prompt. Keystrokes go straight through as the bytes your keys produced — <kbd>Esc</kbd> and <kbd>Ctrl-C</kbd> included — resizing reflows the program on the far end, and the session keeps running whether or not anybody is watching. Drop the network and the screen is still there when you come back.
 
+<img src="docs/assets/readme/live-terminals.svg" width="1200" alt="AgentRQ live terminals: on the machine page you open claude's running session and you are at its prompt in the browser. You answer y, then press Esc when claude takes a wrong turn and type a new instruction, every key going down the wire to the machine. The network drops and you close the tab, but on the machine claude keeps working; when you come back the screen is restored and has moved on, claude finishes, hermes opens the same session, and the agents celebrate." />
+
 </td>
-<td width="50%"><img src="https://agentrq.com/assets/feature-machines-poster.png" alt="AgentRQ live terminal attached to a claude-code session on an enrolled machine" width="320" /></td>
 </tr>
 <tr>
-<td colspan="2"><img src="docs/assets/readme/live-terminals.svg" width="1200" alt="AgentRQ live terminals: on the machine page you open claude's running session and you are at its prompt in the browser. You answer y, then press Esc when claude takes a wrong turn and type a new instruction, every key going down the wire to the machine. The network drops and you close the tab, but on the machine claude keeps working; when you come back the screen is restored and has moved on, claude finishes, hermes opens the same session, and the agents celebrate." /></td>
-</tr>
-<tr>
-<td width="50%"><img src="https://agentrq.com/assets/feature-distributed-skills.gif" alt="AgentRQ Skills: the Skills tab, choosing skills to import from GitHub, and an opened SKILL.md shared with another workspace" width="320" /></td>
-<td width="50%" valign="middle">
+<td colspan="2" valign="middle">
 
 ### Skills
 
 Give a workspace's agents the playbooks your team already follows. A skill is a `SKILL.md` plus the files it points to, in the same format Claude Code uses. Paste a public GitHub link, such as [obra/superpowers](https://github.com/obra/superpowers), and every skill in it is imported. Write your own, or let an agent save one. Skills belong to your account: turn each one on in the workspaces that need it, and they all read the same copy, so an edit reaches every one of them. Every agent that connects to the workspace is told to search its skills at the start of a task and load the ones that match, over MCP, whatever harness it runs in. [How skills work →](docs/SKILLS.md)
 
+<img src="docs/assets/readme/skills.svg" width="1200" alt="AgentRQ skills: you paste a GitHub link and import three skills, tdd, code-review and release, then turn them on in the api, web and docs workspaces. Each agent, claude, codex and agy, gets a task, finds the skill that matches and loads it; you edit code-review and the one copy updates in every workspace, and the agents finish and celebrate." />
+
 </td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/assets/readme/skills.svg" width="1200" alt="AgentRQ skills: you paste a GitHub link and import three skills, tdd, code-review and release, then turn them on in the api, web and docs workspaces. Each agent, claude, codex and agy, gets a task, finds the skill that matches and loads it; you edit code-review and the one copy updates in every workspace, and the agents finish and celebrate." /></td>
 </tr>
 <tr>
 <td colspan="2" valign="middle">
