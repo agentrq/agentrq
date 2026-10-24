@@ -34,7 +34,9 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { createAppProtocolHandler } from '../src/main/protocol.js'
-import { DRAWER_FRAME_URL, FRAME_SANDBOX } from '../../frontend/src/composables/useDrawerFrame.js'
+import { FRAME_SANDBOX } from '../../frontend/src/composables/useDrawerFrame.js'
+// The composable now derives its URL from window.location.origin, which is app://agentrq in Electron.
+const DRAWER_FRAME_URL = 'app://agentrq/__agentrq/drawer-frame.html'
 import { drawerCodeUrl } from '../src/main/extensions/drawer-frame.js'
 import { createHost } from '../src/main/extensions/host.js'
 import { createInstaller } from '../src/main/extensions/install.js'
