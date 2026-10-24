@@ -81,6 +81,20 @@ export function memoryUsedPercent(metrics) {
   return Math.min(100, Math.max(0, ((metrics.memTotal - available) / metrics.memTotal) * 100))
 }
 
+/** Busy enough to read in amber: past half, more agents here start to slow each other. */
+export function cpuHot(percent) {
+  return Number.isFinite(percent) && percent > 50
+}
+
+/** The CPU meter's cells, ten of them, each one tenth of the processor. */
+export const METER_CELLS = 10
+
+/** How many of the meter's cells a reading fills; none without one. */
+export function meterCells(percent) {
+  if (!Number.isFinite(percent)) return 0
+  return Math.min(METER_CELLS, Math.max(0, Math.round(percent / 10)))
+}
+
 /**
  * The load average, or nothing at all.
  *

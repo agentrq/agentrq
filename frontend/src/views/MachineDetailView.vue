@@ -29,6 +29,9 @@ import {
   formatAge,
   diskUsedPercent,
   memoryUsedPercent,
+  cpuHot,
+  meterCells,
+  METER_CELLS,
   isSessionLive,
   sessionTone,
   sessionLabel,
@@ -127,6 +130,11 @@ const TONES = {
 // row beside it already says which of the two it is.
 const REFRESH_ICON =
   'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15'
+
+// Machine Info's readings, one tile each, as the session cards are drawn.
+const TILE = 'border border-gray-100 dark:border-zinc-800 rounded-lg p-3 bg-gray-50/60 dark:bg-zinc-800/30'
+const TILE_LABEL = 'text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500'
+const HOT = 'text-amber-600 dark:text-amber-400'
 
 const DOTS = {
   good: 'bg-emerald-500',
@@ -602,16 +610,29 @@ async function stopSession(id) {
             This machine has not reported any readings yet.
           </p>
 
-          <div v-else class="space-y-4">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">CPU</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
+          <div v-else class="space-y-2">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div :class="TILE" data-testid="tile-cpu">
+                <p :class="TILE_LABEL">CPU</p>
+                <p
+                  class="text-base font-bold tabular-nums"
+                  :class="cpuHot(machine.metrics.cpuPercent) ? HOT : 'text-gray-900 dark:text-zinc-100'"
+                >
                   {{ formatPercent(machine.metrics.cpuPercent) }}
                 </p>
+                <div class="flex gap-1 mt-1.5" aria-hidden="true">
+                  <span
+                    v-for="c in METER_CELLS"
+                    :key="c"
+                    class="h-1.5 flex-1 max-w-3 rounded-sm"
+                    :class="c > meterCells(machine.metrics.cpuPercent)
+                      ? 'bg-gray-200 dark:bg-zinc-700'
+                      : cpuHot(machine.metrics.cpuPercent) ? 'bg-amber-500 dark:bg-amber-400' : 'bg-emerald-500'"
+                  />
+                </div>
               </div>
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Memory</p>
+              <div :class="TILE">
+                <p :class="TILE_LABEL">Memory</p>
                 <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
                   {{ formatBytes(machine.metrics.memAvailable) }}
                 </p>
@@ -619,40 +640,46 @@ async function stopSession(id) {
                   free of {{ formatBytes(machine.metrics.memTotal) }}
                 </p>
               </div>
-              <div>
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Uptime</p>
+              <div :class="TILE">
+                <p :class="TILE_LABEL">Uptime</p>
                 <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
                   {{ formatUptime(machine.metrics.uptimeSec) }}
                 </p>
               </div>
               <!-- Windows has no load average. Nothing is shown rather than
                    three zeroes, which would read as a perfectly idle machine. -->
-              <div v-if="formatLoadAvg(machine.metrics.loadAvg)">
-                <p class="text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-zinc-500">Load</p>
-                <p class="text-base font-bold text-gray-900 dark:text-zinc-100 tabular-nums">
-                  {{ formatLoadAvg(machine.metrics.loadAvg) }}
-                </p>
+              <div v-if="formatLoadAvg(machine.metrics.loadAvg)" :class="TILE" data-testid="tile-load">
+                <p :class="TILE_LABEL">Load</p>
+                <p
+                  class="text-xs sm:text-sm font-bold font-mono whitespace-pre-wrap"
+                  :class="cpuHot(machine.metrics.cpuPercent) ? HOT : 'text-gray-900 dark:text-zinc-100'"
+                >{{ formatLoadAvg(machine.metrics.loadAvg) }}</p>
+                <p class="text-[11px] text-gray-400 dark:text-zinc-500">1-, 5- and 15-minute</p>
               </div>
             </div>
 
-            <div v-if="machine.metrics.disks?.length" class="space-y-2 pt-2 border-t border-gray-100 dark:border-zinc-800">
-              <!-- Per mount, never one number: a box can be 2% full and still
-                   fail to check out a repository. -->
-              <div v-for="disk in machine.metrics.disks" :key="disk.mount" class="space-y-1">
-                <div class="flex items-baseline justify-between gap-3 text-[11px]">
-                  <span class="font-mono text-gray-600 dark:text-zinc-300 truncate">{{ disk.mount }}</span>
-                  <span class="text-gray-400 dark:text-zinc-500 tabular-nums shrink-0">
-                    {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
-                  </span>
-                </div>
-                <div v-if="diskUsedPercent(disk) !== null" class="h-1.5 rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden">
-                  <div
-                    class="h-full rounded-full"
-                    :class="diskUsedPercent(disk) > 90 ? 'bg-red-500' : 'bg-gray-800 dark:bg-zinc-300'"
-                    :style="{ width: `${diskUsedPercent(disk)}%` }"
-                  />
-                </div>
+            <!-- Per mount, never one number: a box can be 2% full and still
+                 fail to check out a repository. -->
+            <div
+              v-for="disk in machine.metrics.disks || []"
+              :key="disk.mount"
+              :class="TILE"
+              class="flex items-center gap-3 text-[11px]"
+            >
+              <span class="font-mono text-xs text-gray-700 dark:text-zinc-200 truncate min-w-0">{{ disk.mount }}</span>
+              <div
+                v-if="diskUsedPercent(disk) !== null"
+                class="h-1.5 flex-1 max-w-xs rounded-full bg-gray-200 dark:bg-zinc-700 overflow-hidden"
+              >
+                <div
+                  class="h-full rounded-full"
+                  :class="diskUsedPercent(disk) > 90 ? 'bg-red-500' : 'bg-gray-800 dark:bg-zinc-300'"
+                  :style="{ width: `${diskUsedPercent(disk)}%` }"
+                />
               </div>
+              <span class="ml-auto text-gray-400 dark:text-zinc-500 tabular-nums shrink-0">
+                {{ formatBytes(disk.free) }} free of {{ formatBytes(disk.total) }}
+              </span>
             </div>
           </div>
         </div>

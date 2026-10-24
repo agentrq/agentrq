@@ -298,3 +298,47 @@ describe('MachineDetailView: the shape of the page', () => {
     expect(headings).not.toContain('Run an agent here')
   })
 })
+
+describe('MachineDetailView: Machine Info', () => {
+  const metricsWith = (cpuPercent) => ({
+    cpuPercent,
+    memAvailable: 15_400_000_000,
+    memTotal: 32_000_000_000,
+    uptimeSec: 273_600,
+    loadAvg: [3.4, 1.21, 0.55],
+    disks: [{ mount: '/', free: 412_000_000_000, total: 1_000_000_000_000 }],
+    reportedAt: new Date().toISOString(),
+  })
+
+  const shown = async (cpuPercent) => {
+    MACHINE.metrics = metricsWith(cpuPercent)
+    try {
+      const { el, clickTab } = await mount()
+      await clickTab('Machine Info')
+      return el
+    } finally {
+      delete MACHINE.metrics
+    }
+  }
+
+  it('fills the CPU meter and turns it amber past half', async () => {
+    const el = await shown(71.9)
+    const cpu = el.querySelector('[data-testid=tile-cpu]')
+    const cells = [...cpu.querySelectorAll('span')]
+    expect(cells).toHaveLength(10)
+    expect(cells.filter((c) => c.className.includes('bg-amber-500'))).toHaveLength(7)
+    expect(cpu.textContent).toContain('71.9%')
+    expect(cpu.querySelector('p:nth-child(2)').className).toContain('text-amber-600')
+    expect(el.querySelector('[data-testid=tile-load] p:nth-child(2)').className).toContain('text-amber-600')
+    expect(el.textContent).toContain('1-, 5- and 15-minute')
+    expect(el.textContent).toContain('412 GB free of 1.0 TB')
+  })
+
+  it('stays green below half', async () => {
+    const el = await shown(8)
+    const cpu = el.querySelector('[data-testid=tile-cpu]')
+    expect([...cpu.querySelectorAll('span')].filter((c) => c.className.includes('bg-emerald-500'))).toHaveLength(1)
+    expect(cpu.querySelector('p:nth-child(2)').className).not.toContain('text-amber-600')
+    expect(el.querySelector('[data-testid=tile-load] p:nth-child(2)').className).not.toContain('text-amber-600')
+  })
+})

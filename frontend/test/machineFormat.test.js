@@ -11,6 +11,9 @@ import {
   formatUptime,
   diskUsedPercent,
   memoryUsedPercent,
+  cpuHot,
+  meterCells,
+  METER_CELLS,
   formatLoadAvg,
   formatAge,
   isSessionLive,
@@ -100,6 +103,37 @@ describe('memoryUsedPercent', () => {
   })
   it('treats a missing available figure as none free', () => {
     expect(memoryUsedPercent({ memTotal: 100 })).toBe(100)
+  })
+})
+
+describe('cpuHot', () => {
+  it('reads amber only past half', () => {
+    expect(cpuHot(50.1)).toBe(true)
+    expect(cpuHot(50)).toBe(false)
+    expect(cpuHot(8)).toBe(false)
+  })
+
+  it('is not hot without a reading', () => {
+    expect(cpuHot(undefined)).toBe(false)
+    expect(cpuHot(NaN)).toBe(false)
+  })
+})
+
+describe('meterCells', () => {
+  it('fills a cell per tenth, to the nearest', () => {
+    expect(METER_CELLS).toBe(10)
+    expect(meterCells(71.9)).toBe(7)
+    expect(meterCells(75)).toBe(8)
+    expect(meterCells(4)).toBe(0)
+  })
+
+  it('never leaves the meter', () => {
+    expect(meterCells(130)).toBe(10)
+    expect(meterCells(-5)).toBe(0)
+  })
+
+  it('fills nothing without a reading', () => {
+    expect(meterCells(undefined)).toBe(0)
   })
 })
 
