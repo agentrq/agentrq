@@ -116,6 +116,9 @@ Give a workspace a countdown — 3s, 5s, 10s, 15s, 30s or 60s — and every chat
 </td>
 </tr>
 <tr>
+<td colspan="2"><img src="docs/assets/readme/message-send-delay.svg" width="1200" alt="AgentRQ message send delay: you type 'deploy to prod' and send it, and it waits in the thread with a 5 second countdown and Cancel and Send Now buttons while codex has not seen it yet. At 3 you click Cancel and the text comes back to the composer; you change it to 'deploy to staging', send it, and click Send Now, so codex gets it, deploys, and the agents celebrate." /></td>
+</tr>
+<tr>
 <td width="50%" valign="middle">
 
 ### Search & Keyboard Shortcuts
