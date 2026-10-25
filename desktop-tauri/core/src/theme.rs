@@ -111,6 +111,24 @@ pub fn apply_theme(
     AppliedTheme { source, color }
 }
 
+/// A `#rrggbb` colour as its three channels, for a shell whose window takes
+/// colours as numbers rather than CSS strings.
+pub fn rgb_from_hex(color: &str) -> Option<(u8, u8, u8)> {
+    let digits = color.strip_prefix('#')?;
+    if digits.len() != 6 || !digits.is_ascii() {
+        return None;
+    }
+    let channel = |i: usize| u8::from_str_radix(&digits[i..i + 2], 16).ok();
+    Some((channel(0)?, channel(2)?, channel(4)?))
+}
+
+impl AppliedTheme {
+    /// The shape the renderer reads: `{ source, color }`.
+    pub fn to_json(self) -> serde_json::Value {
+        serde_json::json!({ "source": self.source.as_str(), "color": self.color })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +272,31 @@ mod tests {
                 source: ThemeSource::System,
                 color: "#fafafa"
             }
+        );
+    }
+
+    #[test]
+    fn the_two_backgrounds_parse_to_their_channels() {
+        assert_eq!(rgb_from_hex(DARK_BACKGROUND), Some((0x09, 0x09, 0x0b)));
+        assert_eq!(rgb_from_hex(LIGHT_BACKGROUND), Some((0xfa, 0xfa, 0xfa)));
+    }
+
+    #[test]
+    fn a_colour_that_is_not_six_hex_digits_is_refused() {
+        for bad in ["09090b", "#fff", "#09090b0", "#zzzzzz", "#09090é", ""] {
+            assert_eq!(rgb_from_hex(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_applied_theme_goes_to_the_renderer_as_names() {
+        let applied = AppliedTheme {
+            source: ThemeSource::Dark,
+            color: DARK_BACKGROUND,
+        };
+        assert_eq!(
+            applied.to_json(),
+            serde_json::json!({ "source": "dark", "color": "#09090b" })
         );
     }
 }

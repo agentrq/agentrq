@@ -141,6 +141,16 @@ pub fn open_file_link<S: FileShell>(shell: &S, raw_url: &str) -> OpenOutcome {
     }
 }
 
+impl OpenOutcome {
+    /// The shape the renderer reads: `{ ok, revealed }` or `{ ok: false, error }`.
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Self::Done { revealed } => serde_json::json!({ "ok": true, "revealed": revealed }),
+            Self::Failed { error } => serde_json::json!({ "ok": false, "error": error }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,5 +404,20 @@ mod tests {
             }
         );
         assert!(shell.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn an_outcome_goes_to_the_renderer_as_ok_or_an_error() {
+        assert_eq!(
+            OpenOutcome::Done { revealed: true }.to_json(),
+            serde_json::json!({ "ok": true, "revealed": true })
+        );
+        assert_eq!(
+            OpenOutcome::Failed {
+                error: "No such file: /x".to_string()
+            }
+            .to_json(),
+            serde_json::json!({ "ok": false, "error": "No such file: /x" })
+        );
     }
 }

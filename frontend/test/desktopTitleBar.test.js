@@ -208,9 +208,10 @@ describe('drag region', () => {
   it('marks the strip for both shells and leaves clickable children out', () => {
     mount()
     const strip = el.querySelector('.app-drag')
-    expect(strip.hasAttribute('data-tauri-drag-region')).toBe(true)
-    const noDrag = el.querySelector('.app-no-drag')
-    expect(noDrag).not.toBeNull()
-    expect(noDrag.hasAttribute('data-tauri-drag-region')).toBe(false)
+    // "deep" so the title text drags too; a bare attribute drags from the strip itself only.
+    expect(strip.getAttribute('data-tauri-drag-region')).toBe('deep')
+    const noDrag = [...el.querySelectorAll('.app-no-drag')]
+    expect(noDrag.length).toBeGreaterThan(0)
+    for (const zone of noDrag) expect(zone.getAttribute('data-tauri-drag-region')).toBe('false')
   })
 })

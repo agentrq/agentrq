@@ -85,6 +85,24 @@ pub fn toggle_full_screen(window: &dyn ViewWindow) -> ViewState {
     }
 }
 
+impl ZoomDirection {
+    /// What the title bar sends: `in`, `out`, or anything else for a reset.
+    pub fn parse(direction: &str) -> Self {
+        match direction {
+            "in" => Self::In,
+            "out" => Self::Out,
+            _ => Self::Reset,
+        }
+    }
+}
+
+impl ViewState {
+    /// The shape the renderer reads: `{ zoom, fullScreen }`.
+    pub fn to_json(self) -> serde_json::Value {
+        serde_json::json!({ "zoom": self.zoom, "fullScreen": self.full_screen })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +211,25 @@ mod tests {
         window.full_screen.set(true);
         assert!(!toggle_full_screen(&window).full_screen);
         assert_eq!(window.requested.get(), Some(false));
+    }
+
+    #[test]
+    fn a_direction_is_in_out_or_a_reset() {
+        assert_eq!(ZoomDirection::parse("in"), In);
+        assert_eq!(ZoomDirection::parse("out"), Out);
+        assert_eq!(ZoomDirection::parse("reset"), Reset);
+        assert_eq!(ZoomDirection::parse("sideways"), Reset);
+    }
+
+    #[test]
+    fn the_state_goes_to_the_renderer_in_camel_case() {
+        let state = ViewState {
+            zoom: 125,
+            full_screen: true,
+        };
+        assert_eq!(
+            state.to_json(),
+            serde_json::json!({ "zoom": 125, "fullScreen": true })
+        );
     }
 }

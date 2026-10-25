@@ -118,3 +118,69 @@ jobs:
       - name: Build the app
         working-directory: desktop-tauri
         run: npx tauri build --no-bundle
+
+      # Window chrome on each OS, light and dark, for the pull request to read.
+      # Dark is the OS's own appearance, which the renderer follows under its
+      # "system" theme. A look, never a gate.
+      - name: Install the screenshot tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -qq xvfb imagemagick
+
+      - name: Screenshots (Linux)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        working-directory: desktop-tauri
+        run: |
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- bash -c '
+            WEBKIT_DISABLE_DMABUF_RENDERER=1 src-tauri/target/release/agentrq-tauri &
+            APP=$!
+            sleep 25
+            import -window root shots/linux-light.png
+            kill $APP'
+
+      - name: Screenshots (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        working-directory: desktop-tauri
+        run: |
+          mkdir -p shots
+          for mode in light dark; do
+            if [ "$mode" = dark ]; then defaults write -g AppleInterfaceStyle Dark; fi
+            src-tauri/target/release/agentrq-tauri &
+            APP=$!
+            sleep 25
+            screencapture -x shots/macos-$mode.png
+            kill $APP
+            sleep 3
+          done
+          defaults delete -g AppleInterfaceStyle || true
+
+      - name: Screenshots (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        working-directory: desktop-tauri
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+          foreach ($mode in 'light', 'dark') {
+            Set-ItemProperty $key -Name AppsUseLightTheme -Value ($(if ($mode -eq 'light') { 1 } else { 0 }))
+            $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -PassThru
+            Start-Sleep 25
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("shots\windows-$mode.png")
+            Stop-Process -Id $app.Id -Force
+            Start-Sleep 3
+          }
+          Set-ItemProperty $key -Name AppsUseLightTheme -Value 1
+
+      - name: Upload the screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-shots-${{ runner.os }}
+          path: desktop-tauri/shots
+          if-no-files-found: ignore

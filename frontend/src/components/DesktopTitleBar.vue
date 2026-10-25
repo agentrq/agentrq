@@ -10,10 +10,10 @@
      title, the profile the window belongs to, and a window menu. Everything clickable in it
      needs `app-no-drag`, or the drag region swallows the click. -->
 <template>
-  <div data-tauri-drag-region class="app-drag fixed top-0 inset-x-0 h-10 z-[210] flex items-center gap-3 pl-20 pr-3 select-none">
+  <div data-tauri-drag-region="deep" class="app-drag fixed top-0 inset-x-0 h-10 z-[210] flex items-center gap-3 pl-20 pr-3 select-none">
     <p class="min-w-0 flex-1 truncate text-xs font-semibold text-gray-600 dark:text-zinc-300" data-window-title :title="title">{{ title }}</p>
 
-    <div v-if="user" ref="menuRef" class="app-no-drag relative shrink-0">
+    <div v-if="user" ref="menuRef" data-tauri-drag-region="false" class="app-no-drag relative shrink-0">
       <button type="button" @click="open = !open"
               :aria-expanded="open" aria-haspopup="true"
               :title="accountName"
@@ -46,7 +46,7 @@
     <!-- The side panel, which the menu also opens with Cmd+\. -->
     <button type="button" data-side-panel-toggle @click="emit('toggle-side-panel')" :aria-pressed="sidePanelOpen"
             title="Side panel (⌘\)" aria-label="Side panel"
-            class="app-no-drag shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white transition-colors outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
+            data-tauri-drag-region="false" class="app-no-drag shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white transition-colors outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm11 0v14" />
       </svg>

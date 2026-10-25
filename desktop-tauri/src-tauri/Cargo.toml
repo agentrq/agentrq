@@ -19,10 +19,26 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 agentrq-desktop-core = { path = "../core" }
-tauri = { version = "2.12.5", features = [] }
+tauri = { version = "2.12.5", features = ["image-png"] }
+tauri-plugin-clipboard-manager = "2.5.0"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-opener = "2.7.2"
 http = "1.5.0"
+serde_json = "1.0.154"
 reqwest = { version = "0.13.5", default-features = false }
 tokio = { version = "1.54.1", features = ["time"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2.0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std"] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }

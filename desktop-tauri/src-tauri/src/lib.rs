@@ -7,6 +7,8 @@
 //! only connects them to Tauri, so it is left out of coverage, as
 //! `desktop/src/main/index.js` is.
 
+mod chrome;
+mod chrome_state;
 mod commands;
 mod panic_log;
 mod scheme;
@@ -15,11 +17,11 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use scheme::Route;
-use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, Runtime, Url};
 
 /// The renderer's origin: `app://localhost`, which WebView2 spells
 /// `http://app.localhost`.
-fn app_url() -> Url {
+pub(crate) fn app_url() -> Url {
     let url = if cfg!(windows) {
         "http://app.localhost/"
     } else {
@@ -93,17 +95,8 @@ fn status(code: u16, text: &str) -> http::Response<Vec<u8>> {
         .expect("static response")
 }
 
-fn main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(app_url()))
-        .title("AgentRQ Tauri")
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(940.0, 600.0)
-        .build()?;
-    Ok(())
-}
-
 pub fn run() {
-    tauri::Builder::default()
+    chrome::plugins(tauri::Builder::default())
         .register_asynchronous_uri_scheme_protocol("app", |ctx, req, responder| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -115,9 +108,11 @@ pub fn run() {
             if let Ok(dir) = app.path().app_log_dir() {
                 panic_log::install(dir);
             }
-            main_window(app.handle())?;
+            app.manage(chrome::Chrome::new(app.path().app_data_dir()?));
+            chrome::open_main_window(app.handle())?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running AgentRQ Tauri");
+        .build(tauri::generate_context!())
+        .expect("error while building AgentRQ Tauri")
+        .run(|app, event| chrome::on_run_event(app, &event));
 }

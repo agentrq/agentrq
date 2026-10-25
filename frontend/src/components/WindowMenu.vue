@@ -7,7 +7,7 @@
 <!-- The ⋮ menu at the end of the macOS title bar: what an installed web app's
      window menu offers, where it applies to this shell. -->
 <template>
-  <div ref="menuRef" class="app-no-drag relative shrink-0">
+  <div ref="menuRef" data-tauri-drag-region="false" class="app-no-drag relative shrink-0">
     <button type="button" @click="toggle" :aria-expanded="open" aria-haspopup="menu" title="More"
             class="w-7 h-7 rounded-full flex items-center justify-center text-gray-500 dark:text-zinc-400 hover:bg-gray-200 dark:hover:bg-zinc-800 hover:text-gray-900 dark:hover:text-white transition-colors outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:focus-visible:ring-zinc-600">
       <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -39,3 +39,15 @@
   on macOS 14.
 - **`make stop` must leave the Tauri dev app alone**: it skips any vite under
   `desktop-tauri/`, and `tauri dev` exits with its Vite (port 5175).
+- **Zoom goes through `core::window_view` and `set_zoom`, never a native zoom
+  shortcut.** Tauri cannot read a webview's zoom back, so `ZoomTable` is the only
+  record; a native zoom would leave it, and the title bar's menu, wrong.
+- **Never use `tauri-plugin-window-state`.** Its clamping differs from
+  `core::window_state`. The save is read when the debounce fires, never per
+  resize event: a platform can report the maximized size before the state.
+- **`chrome.rs` is wiring and outside the coverage gate**, like `lib.rs`; a rule
+  goes in `core/` or `chrome_state.rs` with its test.
+- **The window starts hidden and is shown on the page's first load** (5 s
+  fallback), so a failed load still appears. Showing earlier is the white flash.
+- **A webview process crash reloads the window** (WebKitGTK, WebView2), at most 3
+  times a minute. WKWebView reports none through wry, so macOS cannot.

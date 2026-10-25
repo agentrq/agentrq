@@ -9,7 +9,7 @@
        sees, and with the title bar hidden there is otherwise nothing on the
        window to grab. A sibling of the dialog rather than a child: it is part
        of the window, not part of the dialog. -->
-  <div v-if="isMac" class="app-drag fixed top-0 inset-x-0 h-10 z-[60]" aria-hidden="true"></div>
+  <div v-if="isMac" data-tauri-drag-region="deep" class="app-drag fixed top-0 inset-x-0 h-10 z-[60]" aria-hidden="true"></div>
 
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-sm" aria-modal="true" role="dialog">
     <div class="w-full max-w-md p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
