@@ -55,6 +55,8 @@
     "allow-side-panel-guest-navigate",
     "allow-side-panel-guest-focus",
     "allow-side-panel-guest-snapshot",
+    "allow-side-panel-guest-find",
+    "allow-side-panel-guest-stop-find",
     "allow-side-panel-guest-close",
     "allow-side-panel-permission-answer",
     "allow-side-panel-permission-remove",

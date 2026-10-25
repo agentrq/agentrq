@@ -232,6 +232,11 @@ impl Profiles {
         server_of(self.config().active(), self.lock.as_deref())
     }
 
+    /// Where a profile's side panel keeps what was answered for each site.
+    pub fn permission_store(&self, id: &str) -> PermissionStore {
+        PermissionStore::new(&self.base, id)
+    }
+
     /// The folder for a profile's webview storage; macOS has a data store instead.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn webview_dir(&self, id: &str) -> PathBuf {
@@ -456,7 +461,7 @@ impl Profiles {
         if let Some(net) = self.network.forget(id) {
             net.jar.clear();
         }
-        PermissionStore::new(&self.base, id).forget();
+        self.permission_store(id).forget();
         if !was_active {
             self.forget_storage(id);
             return Ok(self.view());

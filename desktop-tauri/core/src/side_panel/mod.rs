@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! The desktop side panel: permissions and the permission store, guest rules,
-//! the Extension bridge, the `agentrq-ext` scheme and the window wiring.
+//! find in page, the Extension bridge, the `agentrq-ext` scheme and the window wiring.
 
 pub mod bridge;
 pub mod child;
 pub mod ext_scheme;
+pub mod find;
 pub mod guest;
 pub mod permission_store;
 pub mod permissions;
+pub mod platform_permissions;
 pub mod wire;

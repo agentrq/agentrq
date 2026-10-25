@@ -92,6 +92,24 @@
 - **The page keeps its `activeElement` while a guest has the keyboard**, so the
   guest reports its focus-in and the page blurs. Without it the address bar never
   follows the guest.
+- **A guest's permission request waits for the window, never for wry.** With no
+  handler wry *grants* a WKWebView the camera and microphone, and Tauri's own
+  handler must answer at once; so each platform holds the request (a WebKitGTK
+  request kept, a WebView2 deferral with `SavesInProfile(false)`, a copied
+  WKWebView decision block) and core's broker answers it later, on the main
+  thread. The broker reads its file: never call it on the main thread, and only
+  `main` may answer, list or remove (`panel_permissions.rs`).
+- **What a platform cannot ask about:** WKWebView has no public hook for
+  geolocation, notifications or screen capture (none reaches the broker), and no
+  media request at all before macOS 12; WebKitGTK before 2.42 says a screen request
+  is neither audio nor video, which is how it is told apart. WebView2 autoplay is
+  granted, as Electron's guest plays sound without asking.
+- **The find key is caught natively, before the page:** a GTK `key-press-event` on
+  the guest, `AcceleratorKeyPressed` with `Handled`, and an `NSEvent` local monitor
+  scoped to guest views. A page cannot reach the guest bridge (no token, a
+  cross-origin custom scheme, and its own CSP), so the init script cannot send it.
+- **WebKit counts matches but never says which is active**, so core's
+  `FindSession` keeps the ordinal; WKWebView does not even count, so a script does.
 - **Drag regions are `data-tauri-drag-region="deep"`, and `="false"` on every
   `.app-no-drag`.** A bare attribute drags from that element only, not from the
   title text inside it, and a no-drag card of plain divs would drag without `"false"`.
@@ -108,7 +126,9 @@
 - **`chrome.rs`, `app_menu.rs`, and `side_panel/`'s platform files and `handlers.rs`
   are wiring and outside the coverage gate**, like `lib.rs`; a rule goes in `core/`
   or a gated file with its test. `side_panel.rs` is gated: llvm-cov counts a closure
-  per generic instance, so keep closures out of its commands.
+  per generic instance, so keep closures out of its commands. An async command whose
+  arguments cannot fail (`AppHandle`, `Webview`) leaves its attribute line uncovered:
+  take a `State`, which fails when unmanaged, and test that.
 - **The window starts hidden and is shown on the page's first load** (5 s
   fallback), so a failed load still appears. Showing earlier is the white flash.
 - **A webview process crash reloads the window** (WebKitGTK, WebView2), at most 3

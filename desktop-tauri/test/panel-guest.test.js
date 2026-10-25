@@ -392,6 +392,27 @@ describe('createTauriGuest', () => {
       { label: 'panel-guest-1', action: 'stop' },
     ])
     expect(calls('side_panel_guest_focus')).toEqual([{ label: 'panel-guest-1' }])
+    expect(calls('side_panel_guest_find')).toEqual([{ label: 'panel-guest-1', text: 'x', forward: true, findNext: false }])
+    expect(calls('side_panel_guest_stop_find')).toEqual([{ label: 'panel-guest-1', action: 'clearSelection' }])
+  })
+
+  it('finds as Electron does: a new search, then steps either way, and says what it found', async () => {
+    const { host, guest, calls, emit } = rig()
+    const found = vi.fn()
+    guest.on('found', found)
+    guest.mount(host, 'https://a.example/')
+    guest.findInPage('cat', { findNext: true })
+    guest.findInPage('cat', { forward: false, findNext: false })
+    guest.findInPage('cat')
+    await settle()
+    expect(calls('side_panel_guest_find')).toEqual([
+      { label: 'panel-guest-1', text: 'cat', forward: true, findNext: true },
+      { label: 'panel-guest-1', text: 'cat', forward: false, findNext: false },
+      { label: 'panel-guest-1', text: 'cat', forward: true, findNext: false },
+    ])
+    emit({ kind: 'found', label: 'panel-guest-1', active: 2, total: 5 })
+    emit({ kind: 'found', label: 'panel-guest-2', active: 1, total: 1 })
+    expect(found.mock.calls).toEqual([[{ active: 2, total: 5 }]])
   })
 
   it('swaps the guest for its picture while something is over it, and back', async () => {

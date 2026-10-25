@@ -377,6 +377,12 @@ pub enum GuestEvent {
     },
     /// It took the keyboard, so the page's own focused element no longer has it.
     Focus { label: String },
+    /// Find in page counted its matches: Electron's `found-in-page`.
+    Found {
+        label: String,
+        active: u32,
+        total: u32,
+    },
 }
 
 /// The guest's address as the page should see it: the WebView2 form undone.
@@ -880,6 +886,15 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&focus).unwrap(),
             json!({"kind": "focus", "label": "l"})
+        );
+        let found = GuestEvent::Found {
+            label: "l".to_string(),
+            active: 1,
+            total: 3,
+        };
+        assert_eq!(
+            serde_json::to_value(&found).unwrap(),
+            json!({"kind": "found", "label": "l", "active": 1, "total": 3})
         );
     }
 

@@ -208,7 +208,7 @@ describe('the command pattern', () => {
 
 describe('the Rust side serves what the bridge calls', () => {
   // The handler lives in commands.rs; the commands of a work package beside it.
-  const SOURCES = ['commands', 'chrome', 'app_menu', 'side_panel']
+  const SOURCES = ['commands', 'chrome', 'app_menu', 'side_panel', 'panel_permissions']
   const sources = SOURCES.map((name) => read(`../src-tauri/src/${name}.rs`))
   const rust = sources[0]
   const defined = sources.flatMap((source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])).sort()
@@ -231,11 +231,13 @@ describe('the Rust side serves what the bridge calls', () => {
   // command at all: `agentrq:panel:send` is a POST on its own scheme.
   const GUEST_ONLY = [
     'side_panel_guest_close',
+    'side_panel_guest_find',
     'side_panel_guest_focus',
     'side_panel_guest_navigate',
     'side_panel_guest_open',
     'side_panel_guest_place',
     'side_panel_guest_snapshot',
+    'side_panel_guest_stop_find',
   ]
   // The bridge's own: the key listener's menu commands (Electron's menu runs in
   // the main process), `EventSource` (net.js), and `navigation_ready`; Electron has no channel for either.
