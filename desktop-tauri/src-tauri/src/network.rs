@@ -12,7 +12,12 @@
 //! Which profile is active is WP4's to decide: it calls [`Network::switch`]
 //! after a profile switch, and [`ProfileNet::set_server_url`] after the
 //! connection screen. Until then the first profile is the one in the config.
+//!
+//! A profile is opened once and kept: two jars on one file would each write
+//! over the other's cookies. Opening the first one waits on the keychain, so
+//! nothing that does not talk to the server waits for it.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::Duration;
@@ -22,10 +27,11 @@ use agentrq_desktop_core::protocol::AppProtocol;
 use tokio::sync::OnceCell;
 
 use crate::cookie_jar::ProfileJar;
-use crate::vault::{load_key, random_key, Keychain, Vault};
+use crate::vault::{load_key, Keychain, Vault};
 
 /// How long the keychain may take to hand over the key. It can block on an
-/// unlock prompt; past this the session is kept in memory only.
+/// unlock prompt; past this the sessions are kept in memory only, until the
+/// app restarts.
 pub const KEYCHAIN_DEADLINE: Duration = Duration::from_secs(10);
 
 /// A profile's folder: its jar and its attachments, side by side.
@@ -44,7 +50,13 @@ pub struct ProfileNet {
 }
 
 impl ProfileNet {
-    pub fn new(base: &Path, id: &str, server_url: &str, vault: Vault) -> reqwest::Result<Self> {
+    /// With no `vault`, the jar is kept in memory only.
+    pub fn new(
+        base: &Path,
+        id: &str,
+        server_url: &str,
+        vault: Option<Vault>,
+    ) -> reqwest::Result<Self> {
         let dir = profile_dir(base, id);
         let jar = Arc::new(ProfileJar::open(dir.join("cookies"), vault));
         let client = reqwest::Client::builder()
@@ -89,10 +101,18 @@ impl ProfileNet {
 pub struct Network {
     base: PathBuf,
     keychain: Arc<dyn Keychain + Send + Sync>,
-    vault: OnceCell<Vault>,
+    /// `None` when the keychain refused or was too slow.
+    vault: OnceCell<Option<Vault>>,
     keychain_deadline: Duration,
     first: (String, String),
     active: Mutex<Option<Arc<ProfileNet>>>,
+    opened: Mutex<HashMap<String, Arc<ProfileNet>>>,
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl Network {
@@ -109,20 +129,20 @@ impl Network {
             keychain_deadline: KEYCHAIN_DEADLINE,
             first,
             active: Mutex::new(None),
+            opened: Mutex::new(HashMap::new()),
         }
     }
 
-    async fn vault(&self) -> Vault {
+    async fn vault(&self) -> Option<Vault> {
         self.vault
             .get_or_init(|| async {
                 let keychain = self.keychain.clone();
                 let fallback = self.base.join("cookie.key");
                 let read = tokio::task::spawn_blocking(move || load_key(&*keychain, &fallback));
-                let key = match tokio::time::timeout(self.keychain_deadline, read).await {
-                    Ok(Ok(Ok(key))) => key,
-                    _ => random_key(),
-                };
-                Vault::new(&key)
+                match tokio::time::timeout(self.keychain_deadline, read).await {
+                    Ok(Ok(Ok(key))) => Some(Vault::new(&key)),
+                    _ => None,
+                }
             })
             .await
             .clone()
@@ -135,25 +155,38 @@ impl Network {
         }
         let (id, server_url) = self.first.clone();
         let net = self.open(&id, &server_url).await;
-        self.slot().get_or_insert(net).clone()
-    }
-
-    fn slot(&self) -> MutexGuard<'_, Option<Arc<ProfileNet>>> {
-        self.active
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        lock(&self.active).get_or_insert(net).clone()
     }
 
     fn current(&self) -> Option<Arc<ProfileNet>> {
-        self.slot().clone()
+        lock(&self.active).clone()
     }
 
+    /// The active profile's server, without opening the profile.
+    pub fn server_url(&self) -> String {
+        self.current()
+            .map_or_else(|| self.first.1.clone(), |net| net.server_url())
+    }
+
+    /// The protocol's rules, naming the active profile's server.
+    pub fn protocol(self: &Arc<Self>, dev_server_url: &str) -> AppProtocol<impl Fn() -> String> {
+        let this = self.clone();
+        AppProtocol::new(move || this.server_url(), dev_server_url)
+    }
+
+    /// The profile's network, opened on first use. Nothing is awaited between
+    /// looking it up and keeping it, so it is only ever opened once.
     async fn open(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
         let vault = self.vault().await;
-        Arc::new(
-            ProfileNet::new(&self.base, id, server_url, vault)
-                .expect("the HTTP client builds with the TLS backend it was compiled with"),
-        )
+        lock(&self.opened)
+            .entry(id.to_string())
+            .or_insert_with(|| {
+                Arc::new(
+                    ProfileNet::new(&self.base, id, server_url, vault)
+                        .expect("the HTTP client builds with the TLS backend it was compiled with"),
+                )
+            })
+            .clone()
     }
 
     /// Make another profile the active one. Requests already under way finish
@@ -161,7 +194,8 @@ impl Network {
     #[allow(dead_code)] // WP4, after a profile switch.
     pub async fn switch(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
         let net = self.open(id, server_url).await;
-        *self.slot() = Some(net.clone());
+        net.set_server_url(server_url);
+        *lock(&self.active) = Some(net.clone());
         net
     }
 }
@@ -169,6 +203,7 @@ impl Network {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::vault::KeychainError;
 
     /// No keychain to store a key in, answering after `delay_ms`.
     pub struct NoKeychain {
@@ -176,19 +211,24 @@ pub(crate) mod tests {
     }
 
     impl Keychain for NoKeychain {
-        fn get(&self) -> Result<Option<Vec<u8>>, String> {
+        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
             std::thread::sleep(Duration::from_millis(self.delay_ms));
             Ok(None)
         }
-        fn set(&self, _: &[u8]) -> Result<(), String> {
-            Err("none".into())
+        fn set(&self, _: &[u8]) -> Result<(), KeychainError> {
+            Err(KeychainError::Missing)
         }
     }
 
     pub fn network(dir: &Path, server_url: &str) -> Network {
+        slow_network(dir, server_url, 0)
+    }
+
+    /// A network whose keychain takes `delay_ms` to answer.
+    pub fn slow_network(dir: &Path, server_url: &str, delay_ms: u64) -> Network {
         Network::new(
             dir.to_path_buf(),
-            Arc::new(NoKeychain { delay_ms: 0 }),
+            Arc::new(NoKeychain { delay_ms }),
             ("default".into(), server_url.into()),
         )
     }
@@ -214,6 +254,11 @@ pub(crate) mod tests {
         assert!(!Arc::ptr_eq(&first.jar, &work.jar));
         assert_eq!(work.server_url(), "http://127.0.0.1:2");
 
+        let back = net.switch("default", "http://127.0.0.1:4").await;
+        assert!(Arc::ptr_eq(&back, &first), "one jar per profile file");
+        assert_eq!(first.server_url(), "http://127.0.0.1:4");
+        let work = net.switch("work", "http://127.0.0.1:2").await;
+
         work.set_server_url("http://127.0.0.1:3");
         assert_eq!(work.server_url(), "http://127.0.0.1:3");
         assert_eq!(
@@ -223,16 +268,34 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn opens_a_profile_once_however_many_ask_at_the_same_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = Arc::new(network(dir.path(), "http://127.0.0.1:1"));
+        let (a, b) = tokio::join!(net.active(), net.active());
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[tokio::test]
+    async fn names_the_server_before_the_profile_is_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let net = Arc::new(network(dir.path(), "http://127.0.0.1:1"));
+        assert_eq!(net.server_url(), "http://127.0.0.1:1");
+        assert!(net.current().is_none(), "the keychain was not asked");
+        net.active().await.set_server_url("http://127.0.0.1:5");
+        assert_eq!(
+            net.protocol("").proxy_target("/api/v1/x", "").unwrap(),
+            "http://127.0.0.1:5/api/v1/x"
+        );
+    }
+
+    #[tokio::test]
     async fn keeps_the_session_in_memory_when_the_keychain_hangs() {
         let dir = tempfile::tempdir().unwrap();
-        let mut net = Network::new(
-            dir.path().to_path_buf(),
-            Arc::new(NoKeychain { delay_ms: 1000 }),
-            ("default".into(), String::new()),
-        );
+        let mut net = slow_network(dir.path(), "", 1000);
         net.keychain_deadline = Duration::from_millis(50);
         let opened = net.active().await;
-        assert_eq!(opened.server_url(), "");
+        assert!(opened.jar.is_memory_only());
+        assert!(!dir.path().join("cookie.key").exists());
     }
 
     #[test]
@@ -243,7 +306,7 @@ pub(crate) mod tests {
                 dir.path(),
                 "p",
                 "http://a",
-                Vault::new(&crate::vault::random_key()),
+                Some(Vault::new(&crate::vault::random_key())),
             )
             .unwrap(),
         );

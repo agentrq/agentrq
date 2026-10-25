@@ -23,10 +23,22 @@ const NONCE_LEN: usize = 24;
 /// cipher as if it were this one.
 const MAGIC: &[u8] = b"ARQV1";
 
-/// The OS keychain's entry for the key. `Err` means there is no keychain.
+/// Why the keychain did not answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeychainError {
+    /// There is none here (a Linux box with no Secret Service): a key file
+    /// stands in for it.
+    Missing,
+    /// There is one, and it said no this time (locked, a prompt dismissed). A
+    /// key file made now would seal the jars with a key the keychain does not
+    /// hold, and the next run would find them unreadable: signed out.
+    Refused,
+}
+
+/// The OS keychain's entry for the key.
 pub trait Keychain {
-    fn get(&self) -> Result<Option<Vec<u8>>, String>;
-    fn set(&self, secret: &[u8]) -> Result<(), String>;
+    fn get(&self) -> Result<Option<Vec<u8>>, KeychainError>;
+    fn set(&self, secret: &[u8]) -> Result<(), KeychainError>;
 }
 
 /// Seals and opens what is written to disk.
@@ -61,7 +73,8 @@ impl Vault {
     }
 }
 
-/// A key nobody stored: what is sealed with it lasts until the app quits.
+/// A key nobody stored, for a test's vault.
+#[cfg(test)]
 pub fn random_key() -> [u8; KEY_LEN] {
     random()
 }
@@ -72,9 +85,15 @@ fn random<const N: usize>() -> [u8; N] {
     bytes
 }
 
-/// The key: the keychain's, a new one stored there, or, with no keychain, the
-/// one in `fallback` (created on first use, readable by this user only).
+/// The key: the one in `fallback` if there is one (the jars were sealed with
+/// it when there was no keychain), the keychain's, a new one stored there, or,
+/// with no keychain, a new `fallback` readable by this user only. `Err` when
+/// the keychain refused, or the file could not be written: the caller then
+/// keeps its sessions in memory.
 pub fn load_key(keychain: &dyn Keychain, fallback: &Path) -> io::Result<[u8; KEY_LEN]> {
+    if let Ok(key) = <[u8; KEY_LEN]>::try_from(fs::read(fallback).unwrap_or_default().as_slice()) {
+        return Ok(key);
+    }
     match keychain.get() {
         Ok(Some(found)) => {
             if let Ok(key) = <[u8; KEY_LEN]>::try_from(found.as_slice()) {
@@ -82,21 +101,21 @@ pub fn load_key(keychain: &dyn Keychain, fallback: &Path) -> io::Result<[u8; KEY
             }
         }
         Ok(None) => {}
-        Err(_) => return file_key(fallback),
+        Err(error) => return no_keychain(error, fallback),
     }
     let key = random();
     match keychain.set(&key) {
         Ok(()) => Ok(key),
-        Err(_) => file_key(fallback),
+        Err(error) => no_keychain(error, fallback),
     }
 }
 
-fn file_key(path: &Path) -> io::Result<[u8; KEY_LEN]> {
-    if let Ok(key) = <[u8; KEY_LEN]>::try_from(fs::read(path).unwrap_or_default().as_slice()) {
-        return Ok(key);
+fn no_keychain(error: KeychainError, fallback: &Path) -> io::Result<[u8; KEY_LEN]> {
+    if error == KeychainError::Refused {
+        return Err(io::Error::other("the keychain refused"));
     }
     let key = random();
-    write_private(path, &key)?;
+    write_private(fallback, &key)?;
     Ok(key)
 }
 
@@ -126,20 +145,20 @@ mod tests {
     #[derive(Default)]
     struct Fake {
         secret: RefCell<Option<Vec<u8>>>,
-        no_keychain: bool,
-        refuse_set: bool,
+        get_fails: Option<KeychainError>,
+        set_fails: Option<KeychainError>,
     }
 
     impl Keychain for Fake {
-        fn get(&self) -> Result<Option<Vec<u8>>, String> {
-            if self.no_keychain {
-                return Err("no keychain".into());
+        fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
+            match self.get_fails {
+                Some(error) => Err(error),
+                None => Ok(self.secret.borrow().clone()),
             }
-            Ok(self.secret.borrow().clone())
         }
-        fn set(&self, secret: &[u8]) -> Result<(), String> {
-            if self.refuse_set {
-                return Err("locked".into());
+        fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
+            if let Some(error) = self.set_fails {
+                return Err(error);
             }
             *self.secret.borrow_mut() = Some(secret.to_vec());
             Ok(())
@@ -192,7 +211,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let fallback = dir.path().join("nested").join("key");
         let keychain = Fake {
-            no_keychain: true,
+            get_fails: Some(KeychainError::Missing),
             ..Fake::default()
         };
 
@@ -208,11 +227,11 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_the_file_when_the_keychain_will_not_store_it() {
+    fn falls_back_to_the_file_when_there_is_no_keychain_to_store_it_in() {
         let dir = tempfile::tempdir().unwrap();
         let fallback = dir.path().join("key");
         let keychain = Fake {
-            refuse_set: true,
+            set_fails: Some(KeychainError::Missing),
             ..Fake::default()
         };
 
@@ -221,12 +240,51 @@ mod tests {
     }
 
     #[test]
+    fn makes_no_key_file_when_the_keychain_refuses_this_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let fallback = dir.path().join("key");
+        for keychain in [
+            Fake {
+                get_fails: Some(KeychainError::Refused),
+                ..Fake::default()
+            },
+            Fake {
+                set_fails: Some(KeychainError::Refused),
+                ..Fake::default()
+            },
+        ] {
+            assert!(load_key(&keychain, &fallback).is_err());
+            assert!(!fallback.exists());
+        }
+    }
+
+    #[test]
+    fn keeps_using_a_key_file_once_the_keychain_appears() {
+        let dir = tempfile::tempdir().unwrap();
+        let fallback = dir.path().join("key");
+        let missing = Fake {
+            get_fails: Some(KeychainError::Missing),
+            ..Fake::default()
+        };
+        let key = load_key(&missing, &fallback).unwrap();
+
+        let keychain = Fake::default();
+        assert_eq!(load_key(&keychain, &fallback).unwrap(), key);
+        assert_eq!(*keychain.secret.borrow(), None, "never asked");
+        let refused = Fake {
+            get_fails: Some(KeychainError::Refused),
+            ..Fake::default()
+        };
+        assert_eq!(load_key(&refused, &fallback).unwrap(), key);
+    }
+
+    #[test]
     fn reports_a_key_file_it_cannot_write() {
         let dir = tempfile::tempdir().unwrap();
         let blocker = dir.path().join("file");
         fs::write(&blocker, b"x").unwrap();
         let keychain = Fake {
-            no_keychain: true,
+            get_fails: Some(KeychainError::Missing),
             ..Fake::default()
         };
         assert!(load_key(&keychain, &blocker.join("key")).is_err());

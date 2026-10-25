@@ -15,16 +15,20 @@ use std::sync::Arc;
 
 use agentrq_desktop_core::attachment_store::{should_cache_response, WriteOptions};
 use agentrq_desktop_core::protocol::{
-    attachment_hit_reply, bad_gateway_reply, dev_response_headers, dev_unreachable_reply,
-    drawer_code_reply, filter_request_headers, filter_response_headers, forbidden_reply,
-    not_found_reply, plan_static_request, proxy_error_reply, sends_body, serve_from_store,
-    stored_content_disposition, timeout_message, AppProtocol, DrawerLookup, HeaderList, ProxyError,
-    Reply, Route, StaticOutcome, PROXY_TIMEOUT_MS,
+    attachment_hit_reply, bad_gateway_reply, dev_failure_message, dev_response_headers,
+    dev_unreachable_reply, drawer_code_reply, filter_request_headers, forbidden_reply,
+    not_found_reply, plan_static_request, proxied_response_headers, proxy_error_reply, sends_body,
+    serve_from_store, stored_content_disposition, AppProtocol, DrawerLookup, HeaderList,
+    ProxyError, Reply, Route, StaticOutcome, PROXY_TIMEOUT_MS,
 };
 use http::{HeaderName, HeaderValue, Request, Response};
 
 use crate::network::{Network, ProfileNet};
-use crate::upstream::{self, pairs, Outgoing};
+use crate::upstream::{self, pairs, BodyLimits, Incoming, Outgoing};
+
+/// The webview the renderer runs in: the only one whose requests carry the
+/// profile's cookies to the server.
+pub const MAIN_WEBVIEW: &str = "main";
 
 /// The built renderer. Paths are `/`-rooted and already decoded.
 pub trait Assets: Send + Sync {
@@ -45,6 +49,7 @@ pub struct Scheme {
     on_proxied: OnProxied,
     /// For Vite only: it is not the server, so it gets no profile's cookies.
     dev_client: reqwest::Client,
+    limits: BodyLimits,
 }
 
 impl Scheme {
@@ -55,6 +60,7 @@ impl Scheme {
             dev_server_url: dev_server_url.to_string(),
             on_proxied: Box::new(|_, _| {}),
             dev_client: reqwest::Client::new(),
+            limits: BodyLimits::default(),
         }
     }
 
@@ -64,9 +70,11 @@ impl Scheme {
         self
     }
 
-    pub async fn handle(&self, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
-        let net = self.network.active().await;
-        let protocol = net.protocol(&self.dev_server_url);
+    /// Answer `request`, made by the webview labelled `webview`. Only a proxied
+    /// request opens the profile, which can wait on the keychain: the renderer
+    /// itself never does.
+    pub async fn handle(&self, webview: &str, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+        let protocol = self.network.protocol(&self.dev_server_url);
         let path = request.uri().path().to_string();
         let search = request
             .uri()
@@ -78,7 +86,12 @@ impl Scheme {
             // Extensions are WP9: until then neither has anything to serve.
             Route::DrawerFrame => text(not_found_reply()),
             Route::DrawerCode(_) => text(drawer_code_reply(&DrawerLookup::default())),
-            Route::Proxy => self.proxy(&net, &protocol, request, &path, &search).await,
+            Route::Proxy if webview != MAIN_WEBVIEW => text(forbidden_reply()),
+            Route::Proxy => {
+                let net = self.network.active().await;
+                let protocol = net.protocol(&self.dev_server_url);
+                self.proxy(&net, &protocol, request, &path, &search).await
+            }
             Route::DevServer => self.dev_server(&protocol, &path, &search).await,
             Route::Static => self.bundled(&protocol, &path),
         }
@@ -119,6 +132,7 @@ impl Scheme {
             headers: filter_request_headers(headers),
             body: has_body.then(|| request.into_body()),
             timeout_ms: protocol.timeout_ms(has_body),
+            limits: self.limits,
         };
         let mut answer = match upstream::send(&net.client, out).await {
             Ok(answer) => answer,
@@ -126,8 +140,8 @@ impl Scheme {
         };
         let body = match std::mem::replace(&mut answer.body, Ok(Vec::new())) {
             Ok(body) => body,
-            Err(_) if cached => return text(bad_gateway_reply()),
-            Err(detail) => return text(proxy_error_reply(&ProxyError::Unreachable(detail))),
+            Err(ProxyError::Unreachable(_)) if cached => return text(bad_gateway_reply()),
+            Err(error) => return text(proxy_error_reply(&error)),
         };
         // Only a successful body is worth keeping: an error page cached under an
         // attachment's name would outlive whatever caused it.
@@ -145,7 +159,7 @@ impl Scheme {
                 },
             );
         }
-        let headers = filter_response_headers(pairs(&answer.headers));
+        let headers = proxied_response_headers(pairs(&answer.headers));
         respond(answer.status, &headers, body)
     }
 
@@ -165,19 +179,23 @@ impl Scheme {
             headers: Vec::new(),
             body: None,
             timeout_ms: PROXY_TIMEOUT_MS,
+            limits: self.limits,
         };
         let failure = match upstream::send(&self.dev_client, out).await {
-            Ok(answer) => match answer.body {
-                Ok(body) => {
-                    let headers = dev_response_headers(pairs(&answer.headers), &|| protocol.csp());
-                    return respond(answer.status, &headers, body);
-                }
-                Err(detail) => detail,
-            },
-            Err(ProxyError::Unreachable(detail)) => detail,
-            Err(_) => timeout_message(PROXY_TIMEOUT_MS),
+            Ok(Incoming {
+                status,
+                headers,
+                body: Ok(body),
+            }) => {
+                let headers = dev_response_headers(pairs(&headers), &|| protocol.csp());
+                return respond(status, &headers, body);
+            }
+            Ok(Incoming {
+                body: Err(error), ..
+            })
+            | Err(error) => error,
         };
-        text(dev_unreachable_reply(&failure))
+        text(dev_unreachable_reply(&dev_failure_message(&failure)))
     }
 
     fn bundled(
@@ -298,7 +316,9 @@ mod tests {
     }
 
     async fn get(rig: &Rig, uri: &str) -> Response<Vec<u8>> {
-        rig.scheme.handle(request("GET", uri, b"")).await
+        rig.scheme
+            .handle(MAIN_WEBVIEW, request("GET", uri, b""))
+            .await
     }
 
     fn header<'a>(res: &'a Response<Vec<u8>>, name: &str) -> Option<&'a str> {
@@ -341,12 +361,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streams_a_request_body_and_drops_the_app_origin_headers() {
+    async fn forwards_a_request_body_and_drops_the_app_origin_headers() {
         let server = TestServer::start(echo).await;
         let rig = rig(&server.url, "");
         let res = rig
             .scheme
-            .handle(request("POST", "/mcp/ws1", b"{\"a\":1}"))
+            .handle(MAIN_WEBVIEW, request("POST", "/mcp/ws1", b"{\"a\":1}"))
             .await;
         assert_eq!(body(&res), "POST /mcp/ws1 {\"a\":1}");
         let seen = &server.requests()[0];
@@ -364,11 +384,20 @@ mod tests {
     async fn sends_no_body_for_get_and_head_and_omits_an_empty_one() {
         let server = TestServer::start(echo).await;
         let rig = rig(&server.url, "");
+        for method in ["GET", "HEAD"] {
+            rig.scheme
+                .handle(MAIN_WEBVIEW, request(method, "/api/v1/x", b"ignored"))
+                .await;
+        }
         rig.scheme
-            .handle(request("GET", "/api/v1/x", b"ignored"))
+            .handle(MAIN_WEBVIEW, request("POST", "/api/v1/x", b""))
             .await;
-        rig.scheme.handle(request("POST", "/api/v1/x", b"")).await;
-        for seen in server.requests() {
+        let seen = server.requests();
+        assert_eq!(
+            seen.iter().map(|s| s.method.as_str()).collect::<Vec<_>>(),
+            ["GET", "HEAD", "POST"]
+        );
+        for seen in seen {
             assert!(seen.body.is_empty());
             assert_eq!(seen.header("content-length").unwrap_or("0"), "0");
         }
@@ -433,10 +462,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn answers_504_when_the_body_stops_arriving_after_the_headers() {
+        // Real time: a paused clock jumps ahead while the socket is still busy.
+        let server = TestServer::start(|_| {
+            vec![
+                send("HTTP/1.1 200 OK\r\ncontent-type: image/png\r\ncontent-length: 9\r\n\r\nab"),
+                Step::Wait(5_000),
+            ]
+        })
+        .await;
+        let mut rig = rig(&server.url, "");
+        rig.scheme.limits.idle_ms = 150;
+        for path in ["/api/v1/x", ATTACHMENT] {
+            let res = get(&rig, path).await;
+            assert_eq!(res.status(), 504, "{path}");
+            assert_eq!(
+                body(&res),
+                r#"{"error":"The AgentRQ server stopped sending its response"}"#
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn answers_502_for_a_body_over_the_cap() {
+        let server = TestServer::start(echo).await;
+        let mut rig = rig(&server.url, "");
+        rig.scheme.limits.max_bytes = 4;
+        let res = get(&rig, "/api/v1/x").await;
+        assert_eq!(res.status(), 502);
+        assert_eq!(
+            body(&res),
+            r#"{"error":"The AgentRQ server's response is too large"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn sandboxes_every_forwarded_response() {
+        let server = TestServer::start(|_| {
+            reply(
+                "200 OK",
+                &[
+                    "content-type: text/html;pdf",
+                    "content-security-policy: default-src *",
+                    "keep-alive: timeout=5",
+                ],
+                "<script>parent.__TAURI_INTERNALS__</script>",
+            )
+        })
+        .await;
+        let rig = rig(&server.url, "");
+        for _ in 0..2 {
+            let res = get(&rig, ATTACHMENT).await;
+            assert_eq!(header(&res, "content-type"), Some("text/html;pdf"));
+            assert_eq!(
+                header(&res, "content-security-policy"),
+                Some("sandbox; default-src 'none'")
+            );
+            assert_eq!(header(&res, "x-content-type-options"), Some("nosniff"));
+            assert_eq!(header(&res, "keep-alive"), None);
+        }
+        assert_eq!(server.requests().len(), 1, "the second was the cache's");
+    }
+
+    #[tokio::test]
+    async fn forwards_nothing_for_another_webview_but_still_serves_it_the_renderer() {
+        let server = TestServer::start(echo).await;
+        let rig = rig(&server.url, "");
+        let res = rig
+            .scheme
+            .handle("side-panel", request("GET", "/api/v1/workspaces", b""))
+            .await;
+        assert_eq!(res.status(), 403);
+        assert!(server.requests().is_empty());
+        let page = rig
+            .scheme
+            .handle("side-panel", request("GET", "/", b""))
+            .await;
+        assert_eq!(body(&page), "<html>app</html>");
+    }
+
+    #[tokio::test]
+    async fn serves_the_renderer_without_waiting_for_the_keychain() {
+        let dir = tempfile::tempdir().unwrap();
+        let network = crate::network::tests::slow_network(dir.path(), "https://a.example", 5_000);
+        let scheme = Scheme::new(Arc::new(network), renderer(), "");
+        let started = std::time::Instant::now();
+        let res = scheme.handle(MAIN_WEBVIEW, request("GET", "/", b"")).await;
+        assert_eq!(body(&res), "<html>app</html>");
+        let csp = header(&res, "content-security-policy").unwrap();
+        assert!(csp.contains("wss://a.example"), "{csp}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[tokio::test]
     async fn reports_every_forwarded_request_to_on_proxied_before_fetching() {
         let rig = rig("", "");
         rig.scheme
-            .handle(request("POST", "/api/v1/workspaces/w/tasks/t/reply", b"x"))
+            .handle(
+                MAIN_WEBVIEW,
+                request("POST", "/api/v1/workspaces/w/tasks/t/reply", b"x"),
+            )
             .await;
         assert_eq!(
             *rig.proxied.lock().unwrap(),
@@ -454,7 +579,7 @@ mod tests {
         let scheme = Scheme::new(Arc::new(network(dir.path(), "")), renderer(), "");
         assert_eq!(
             scheme
-                .handle(request("GET", "/api/v1/x", b""))
+                .handle(MAIN_WEBVIEW, request("GET", "/api/v1/x", b""))
                 .await
                 .status(),
             503
@@ -544,7 +669,7 @@ mod tests {
         let scheme = Scheme::new(Arc::new(network(dir.path(), "")), renderer(), "");
         assert_eq!(
             scheme
-                .handle(request("GET", "/gone.js", b""))
+                .handle(MAIN_WEBVIEW, request("GET", "/gone.js", b""))
                 .await
                 .status(),
             404
@@ -733,8 +858,12 @@ mod tests {
     async fn does_not_intercept_a_write_to_an_attachment_path_or_any_other_request() {
         let server = TestServer::start(png).await;
         let rig = rig(&server.url, "");
-        rig.scheme.handle(request("POST", ATTACHMENT, b"x")).await;
-        rig.scheme.handle(request("POST", ATTACHMENT, b"x")).await;
+        rig.scheme
+            .handle(MAIN_WEBVIEW, request("POST", ATTACHMENT, b"x"))
+            .await;
+        rig.scheme
+            .handle(MAIN_WEBVIEW, request("POST", ATTACHMENT, b"x"))
+            .await;
         get(&rig, "/api/v1/workspaces/ws1/tasks").await;
         get(&rig, "/api/v1/workspaces/ws1/tasks").await;
         assert_eq!(server.requests().len(), 4);

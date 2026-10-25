@@ -26,12 +26,13 @@ use std::sync::Arc;
 use agentrq_desktop_core::server_config::{
     connection_lock, ConfigFile, ServerConfigStore, CONFIG_FILENAME,
 };
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder};
 
 use event_source::Streams;
 use network::Network;
-use scheme::{Assets, Scheme};
-use vault::Keychain;
+use scheme::{Assets, Scheme, MAIN_WEBVIEW};
+use vault::{Keychain, KeychainError};
 
 /// The renderer's origin: `app://localhost`, which WebView2 spells
 /// `http://app.localhost`.
@@ -76,22 +77,34 @@ impl<R: Runtime> Assets for Bundled<R> {
 struct OsKeychain;
 
 impl OsKeychain {
-    fn entry() -> Result<keyring::Entry, String> {
-        keyring::Entry::new("com.agentrq.desktop.tauri", "cookie-jar-key")
-            .map_err(|e| e.to_string())
+    fn entry() -> Result<keyring::Entry, KeychainError> {
+        keyring::Entry::new("com.agentrq.desktop.tauri", "cookie-jar-key").map_err(keychain_error)
+    }
+}
+
+/// A locked keychain, or a dismissed prompt, is a refusal this time. macOS and
+/// Windows always have a keychain, so anything else there is passing too; on
+/// Linux it means there is no Secret Service.
+fn keychain_error(error: keyring::Error) -> KeychainError {
+    match error {
+        keyring::Error::NoStorageAccess(_) => KeychainError::Refused,
+        #[cfg(any(target_os = "macos", windows))]
+        _ => KeychainError::Refused,
+        #[cfg(not(any(target_os = "macos", windows)))]
+        _ => KeychainError::Missing,
     }
 }
 
 impl Keychain for OsKeychain {
-    fn get(&self) -> Result<Option<Vec<u8>>, String> {
+    fn get(&self) -> Result<Option<Vec<u8>>, KeychainError> {
         match Self::entry()?.get_secret() {
             Ok(secret) => Ok(Some(secret)),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(error.to_string()),
+            Err(error) => Err(keychain_error(error)),
         }
     }
-    fn set(&self, secret: &[u8]) -> Result<(), String> {
-        Self::entry()?.set_secret(secret).map_err(|e| e.to_string())
+    fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
+        Self::entry()?.set_secret(secret).map_err(keychain_error)
     }
 }
 
@@ -117,7 +130,13 @@ fn first_profile(data_dir: &std::path::Path) -> (String, String) {
 }
 
 fn main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::CustomProtocol(app_url()))
+    WebviewWindowBuilder::new(app, MAIN_WEBVIEW, WebviewUrl::CustomProtocol(app_url()))
+        // A reload or a navigation leaves the old page's event streams running.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started {
+                webview.state::<Streams>().close_all();
+            }
+        })
         .title("AgentRQ Tauri")
         .inner_size(1280.0, 820.0)
         .min_inner_size(940.0, 600.0)
@@ -129,9 +148,10 @@ pub fn run() {
     tauri::Builder::default()
         .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
+            let webview = ctx.webview_label().to_string();
             tauri::async_runtime::spawn(async move {
                 let scheme = app.state::<Scheme>();
-                responder.respond(scheme.handle(request).await);
+                responder.respond(scheme.handle(&webview, request).await);
             });
         })
         .invoke_handler(commands::handler())

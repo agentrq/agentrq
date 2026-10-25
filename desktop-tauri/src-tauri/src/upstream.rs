@@ -4,19 +4,23 @@
 
 //! One request to the server (or to Vite), bounded by a deadline.
 //!
-//! The deadline is a race around the wait for response headers, never only an
-//! abort (docs/agents/desktop.md): the scheme's responder is what the
-//! renderer's `fetch` waits on, so a future that never settles is a frozen app.
-//! Losing the race drops the request. The body is read after the race, so a
-//! long download is not cut off: the budget covers headers only, as
-//! `core::protocol::PROXY_TIMEOUT_MS` says.
+//! Every wait is a race, never only an abort (docs/agents/desktop.md): the
+//! scheme's responder is what the renderer's `fetch` waits on, so a future
+//! that never settles is a frozen app. Losing a race drops the request. The
+//! headers get one budget (`core::protocol::PROXY_TIMEOUT_MS`); the body then
+//! gets an idle deadline per read rather than a total, so a long download is
+//! not cut off but one that stops is, and a cap on its size, because it is
+//! buffered whole.
 //!
 //! The scheme buffers every response (WP0 S1), so nothing streamed goes this
 //! way: the event stream has its own path, `event_source`.
 
 use std::time::Duration;
 
-use agentrq_desktop_core::protocol::{HeaderList, ProxyError};
+use agentrq_desktop_core::protocol::{
+    HeaderList, ProxyError, MAX_PROXIED_BODY_BYTES, PROXY_IDLE_TIMEOUT_MS,
+};
+use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 /// Request headers that never go upstream, beyond the ones core strips. The
@@ -33,15 +37,33 @@ pub struct Outgoing {
     pub headers: HeaderList,
     pub body: Option<Vec<u8>>,
     pub timeout_ms: u64,
+    pub limits: BodyLimits,
+}
+
+/// What the answer's body may do once its headers are in.
+#[derive(Debug, Clone, Copy)]
+pub struct BodyLimits {
+    /// The longest silence between two reads.
+    pub idle_ms: u64,
+    pub max_bytes: u64,
+}
+
+impl Default for BodyLimits {
+    fn default() -> Self {
+        Self {
+            idle_ms: PROXY_IDLE_TIMEOUT_MS,
+            max_bytes: MAX_PROXIED_BODY_BYTES,
+        }
+    }
 }
 
 /// What came back, headers unfiltered (names lowercase). The body is an error
-/// when it broke off after the headers had arrived.
+/// when it broke off, stalled or grew too large after the headers had arrived.
 #[derive(Debug)]
 pub struct Incoming {
     pub status: u16,
     pub headers: HeaderList,
-    pub body: Result<Vec<u8>, String>,
+    pub body: Result<Vec<u8>, ProxyError>,
 }
 
 impl Incoming {
@@ -91,12 +113,34 @@ pub async fn send(client: &reqwest::Client, out: Outgoing) -> Result<Incoming, P
         .iter()
         .filter_map(|(name, value)| Some((name.to_string(), value.to_str().ok()?.to_string())))
         .collect();
-    let body = response.bytes().await;
+    let body = read_body(response, out.limits).await;
     Ok(Incoming {
         status,
         headers,
-        body: body.map(|b| b.to_vec()).map_err(|error| error.to_string()),
+        body,
     })
+}
+
+async fn read_body(response: reqwest::Response, limits: BodyLimits) -> Result<Vec<u8>, ProxyError> {
+    if response.content_length().unwrap_or(0) > limits.max_bytes {
+        return Err(ProxyError::TooLarge);
+    }
+    let idle = Duration::from_millis(limits.idle_ms);
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+    loop {
+        match tokio::time::timeout(idle, stream.next()).await {
+            Err(_) => return Err(ProxyError::Stalled),
+            Ok(None) => return Ok(body),
+            Ok(Some(Err(error))) => return Err(ProxyError::Unreachable(error.to_string())),
+            Ok(Some(Ok(chunk))) => {
+                if (body.len() + chunk.len()) as u64 > limits.max_bytes {
+                    return Err(ProxyError::TooLarge);
+                }
+                body.extend_from_slice(&chunk);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -111,6 +155,7 @@ mod tests {
             headers: Vec::new(),
             body: None,
             timeout_ms,
+            limits: BodyLimits::default(),
         }
     }
 
@@ -138,7 +183,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn streams_a_request_body_and_sends_the_headers_it_was_given() {
+    async fn sends_a_request_body_and_the_headers_it_was_given() {
         let server = TestServer::start(|_| reply("201 Created", &[], "")).await;
         let out = Outgoing {
             method: http::Method::POST,
@@ -152,6 +197,7 @@ mod tests {
             ],
             body: Some(b"{\"a\":1}".to_vec()),
             timeout_ms: 1000,
+            limits: BodyLimits::default(),
         };
         assert_eq!(
             send(&reqwest::Client::new(), out).await.unwrap().status,
@@ -197,7 +243,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn does_not_cut_off_a_body_that_streams_for_longer_than_the_budget() {
+    async fn does_not_cut_off_a_body_that_arrives_over_longer_than_the_headers_budget() {
         let server = TestServer::start(|_| {
             vec![
                 step("HTTP/1.1 200 OK\r\ncontent-length: 4\r\nconnection: close\r\n\r\nab"),
@@ -241,7 +287,47 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(answer.status, 200);
-        assert!(answer.body.is_err());
+        assert!(matches!(answer.body, Err(ProxyError::Unreachable(_))));
+    }
+
+    #[tokio::test]
+    async fn gives_up_on_a_body_that_goes_silent_after_the_headers() {
+        // Real time: a paused clock jumps ahead while the socket is still busy.
+        let server = TestServer::start(|_| {
+            vec![
+                step("HTTP/1.1 200 OK\r\ncontent-length: 4\r\nconnection: close\r\n\r\nab"),
+                Step::Wait(5_000),
+            ]
+        })
+        .await;
+        let mut out = get(format!("{}/api/v1/x", server.url), 1000);
+        out.limits.idle_ms = 150;
+        let started = std::time::Instant::now();
+        let answer = send(&reqwest::Client::new(), out).await.unwrap();
+        assert_eq!(answer.body.unwrap_err(), ProxyError::Stalled);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn refuses_a_body_over_the_cap_whether_declared_or_not() {
+        let declared = TestServer::start(|_| reply("200 OK", &[], "0123456789")).await;
+        let chunked = TestServer::start(|_| {
+            vec![step(
+                "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n4\r\n0123\r\n6\r\n456789\r\n0\r\n\r\n",
+            )]
+        })
+        .await;
+        for url in [&declared.url, &chunked.url] {
+            let mut out = get(format!("{url}/x"), 1000);
+            out.limits.max_bytes = 9;
+            let answer = send(&reqwest::Client::new(), out).await.unwrap();
+            assert_eq!(answer.body.unwrap_err(), ProxyError::TooLarge, "{url}");
+
+            let mut out = get(format!("{url}/x"), 1000);
+            out.limits.max_bytes = 10;
+            let answer = send(&reqwest::Client::new(), out).await.unwrap();
+            assert_eq!(answer.body.unwrap(), b"0123456789", "exactly the cap");
+        }
     }
 
     #[test]

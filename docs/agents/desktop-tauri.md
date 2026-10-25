@@ -13,6 +13,12 @@
   Same-origin Blob, FormData and stream bodies go as an ArrayBuffer.
 - **Every server call goes through the active profile's client** (`network.rs`):
   its jar is the session. A shared or default client signs two profiles in as one.
+- **Every proxied or cached response carries `nosniff` and `sandbox` (core's
+  `PROXIED_RESPONSE_GUARDS`).** It is served on the app's own origin, so a framed
+  HTML attachment would otherwise run as the app and reach `__TAURI_INTERNALS__`.
+- **A cookie jar with no vault never writes its file.** A slow or refused
+  keychain leaves the session in memory; a jar resealed with a stand-in key
+  would sign the person out for good.
 - **The proxy buffers; an `EventSource` goes over IPC.** The scheme answers only
   once it has the whole body, so an endless stream through it never answers.
 - **Same-origin in the bridge compares scheme and host, never `origin`**: a

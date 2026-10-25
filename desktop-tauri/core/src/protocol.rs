@@ -56,10 +56,32 @@ pub const PROXY_TIMEOUT_MS: u64 = 30_000;
 /// server cannot answer until it has read the upload.
 pub const UPLOAD_TIMEOUT_MS: u64 = 120_000;
 
+/// How long a forwarded response's body may go without a byte once its headers
+/// are in. The headers budget ends at the headers, and a connection that dies
+/// after them would otherwise hold the renderer's `fetch` for the life of the
+/// page.
+pub const PROXY_IDLE_TIMEOUT_MS: u64 = 30_000;
+
+/// The most a forwarded response's body may hold: the shell buffers it whole.
+pub const MAX_PROXIED_BODY_BYTES: u64 = 128 * 1024 * 1024;
+
 /// Request headers that must not be forwarded to the server: the first three
 /// carry the `app://` origin, and the length describes a body the shell
 /// re-frames.
 const STRIPPED_REQUEST_HEADERS: [&str; 4] = ["origin", "referer", "host", "content-length"];
+
+/// Hop-by-hop headers (RFC 9110 7.6.1), which describe one connection and
+/// never cross a proxy, in either direction: the shell's client frames its own
+/// request, and the renderer gets a body already de-chunked. Any `proxy-*`
+/// header, and any header a `connection` header names, is one too.
+const HOP_BY_HOP_HEADERS: [&str; 6] = [
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
 
 /// Response headers that must not be forwarded to the renderer.
 const STRIPPED_RESPONSE_HEADERS: [&str; 8] = [
@@ -85,10 +107,24 @@ fn filter_headers<'a>(
     headers: impl IntoIterator<Item = (&'a str, &'a str)>,
     stripped: &[&str],
 ) -> HeaderList {
-    headers
+    let headers: HeaderList = headers
         .into_iter()
         .map(|(name, value)| (name.to_ascii_lowercase(), value.to_string()))
-        .filter(|(name, _)| !stripped.contains(&name.as_str()))
+        .collect();
+    let named_by_connection: Vec<String> = headers
+        .iter()
+        .filter(|(name, _)| name == "connection")
+        .flat_map(|(_, value)| value.split(','))
+        .map(|token| token.trim().to_ascii_lowercase())
+        .collect();
+    headers
+        .into_iter()
+        .filter(|(name, _)| {
+            !stripped.contains(&name.as_str())
+                && !HOP_BY_HOP_HEADERS.contains(&name.as_str())
+                && !name.starts_with("proxy-")
+                && !named_by_connection.contains(name)
+        })
         .collect()
 }
 
@@ -104,6 +140,38 @@ pub fn filter_response_headers<'a>(
     headers: impl IntoIterator<Item = (&'a str, &'a str)>,
 ) -> HeaderList {
     filter_headers(headers, &STRIPPED_RESPONSE_HEADERS)
+}
+
+/// What every response from the server is served with, forwarded or replayed
+/// from the attachment store. An attachment keeps the uploader's type and
+/// `inline`, on the renderer's own origin: framed (the PDF preview frames any
+/// type containing `pdf`), an HTML one would run same-origin and reach the
+/// bridge. `sandbox` gives such a document an opaque origin and no scripts, and
+/// `nosniff` stops a type being guessed from the bytes. They replace any the
+/// server sent.
+pub const PROXIED_RESPONSE_GUARDS: [(&str, &str); 2] = [
+    ("x-content-type-options", "nosniff"),
+    ("content-security-policy", "sandbox; default-src 'none'"),
+];
+
+fn guarded(mut headers: HeaderList) -> HeaderList {
+    headers.retain(|(name, _)| {
+        PROXIED_RESPONSE_GUARDS
+            .iter()
+            .all(|(guard, _)| guard != name)
+    });
+    for (name, value) in PROXIED_RESPONSE_GUARDS {
+        headers.push((name.to_string(), value.to_string()));
+    }
+    headers
+}
+
+/// The headers a response forwarded from the server is served with: filtered,
+/// then guarded.
+pub fn proxied_response_headers<'a>(
+    headers: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> HeaderList {
+    guarded(filter_response_headers(headers))
 }
 
 /// True when a path would climb out of its directory, or cannot be trusted not
@@ -635,6 +703,10 @@ pub enum ProxyError {
     Forbidden,
     /// No response headers arrived within the budget.
     Timeout,
+    /// The body went silent for [`PROXY_IDLE_TIMEOUT_MS`].
+    Stalled,
+    /// The body is over [`MAX_PROXIED_BODY_BYTES`].
+    TooLarge,
     /// The request failed; the message is the failure's own.
     Unreachable(String),
 }
@@ -656,6 +728,14 @@ pub fn proxy_error_reply(error: &ProxyError) -> Reply {
             504,
             r#"{"error":"The AgentRQ server did not respond in time"}"#.to_string(),
         ),
+        ProxyError::Stalled => Reply::json(
+            504,
+            r#"{"error":"The AgentRQ server stopped sending its response"}"#.to_string(),
+        ),
+        ProxyError::TooLarge => Reply::json(
+            502,
+            r#"{"error":"The AgentRQ server's response is too large"}"#.to_string(),
+        ),
         ProxyError::Unreachable(detail) => Reply::json(
             502,
             format!(
@@ -675,6 +755,17 @@ pub fn dev_unreachable_reply(message: &str) -> Reply {
 /// The message a deadline carries, which a dev request surfaces in its 502.
 pub fn timeout_message(ms: u64) -> String {
     format!("no response headers after {ms}ms")
+}
+
+/// What a dev request that failed surfaces in its 502.
+pub fn dev_failure_message(error: &ProxyError) -> String {
+    match error {
+        ProxyError::Unreachable(detail) => detail.clone(),
+        ProxyError::Stalled => format!("no data for {PROXY_IDLE_TIMEOUT_MS}ms"),
+        ProxyError::TooLarge => format!("over {MAX_PROXIED_BODY_BYTES} bytes"),
+        // A dev request has no server to miss and no path to refuse.
+        _ => timeout_message(PROXY_TIMEOUT_MS),
+    }
 }
 
 fn json_string(value: &str) -> String {
@@ -722,7 +813,8 @@ pub struct BytesReply {
 }
 
 /// The answer for an attachment found in the store: `content-type` always,
-/// `content-disposition` only when there is one.
+/// `content-disposition` only when there is one, and the guards a forwarded
+/// response gets.
 pub fn attachment_hit_reply(
     body: Vec<u8>,
     content_type: &str,
@@ -737,7 +829,7 @@ pub fn attachment_hit_reply(
     }
     BytesReply {
         status: 200,
-        headers,
+        headers: guarded(headers),
         body,
     }
 }
@@ -1164,6 +1256,47 @@ mod tests {
         assert_eq!(names(&out), ["cache-control"]);
     }
 
+    #[test]
+    fn drops_hop_by_hop_headers_both_ways() {
+        let hop = [
+            ("Connection", "keep-alive, X-Conn-Only"),
+            ("keep-alive", "timeout=5"),
+            ("te", "trailers"),
+            ("trailer", "x-sum"),
+            ("transfer-encoding", "chunked"),
+            ("upgrade", "websocket"),
+            ("proxy-authorization", "Basic x"),
+            ("Proxy-Authenticate", "Basic"),
+            ("x-conn-only", "1"),
+            ("x-kept", "1"),
+        ];
+        assert_eq!(names(&filter_request_headers(pairs(&hop))), ["x-kept"]);
+        assert_eq!(names(&filter_response_headers(pairs(&hop))), ["x-kept"]);
+    }
+
+    // proxiedResponseHeaders
+
+    #[test]
+    fn sandboxes_every_forwarded_response_in_place_of_the_servers_own_policy() {
+        let out = proxied_response_headers(pairs(&[
+            ("content-type", "text/html;pdf"),
+            ("content-security-policy", "default-src *"),
+            ("X-Content-Type-Options", "sniff"),
+            ("set-cookie", "at=1"),
+        ]));
+        assert_eq!(
+            out,
+            [
+                ("content-type".to_string(), "text/html;pdf".to_string()),
+                ("x-content-type-options".to_string(), "nosniff".to_string()),
+                (
+                    "content-security-policy".to_string(),
+                    "sandbox; default-src 'none'".to_string()
+                ),
+            ]
+        );
+    }
+
     // buildCSP
 
     #[test]
@@ -1538,6 +1671,36 @@ mod tests {
             reply.body,
             r#"{"error":"The AgentRQ server did not respond in time"}"#
         );
+    }
+
+    #[test]
+    fn answers_504_for_a_body_that_stalls_and_502_for_one_too_large() {
+        let stalled = proxy_error_reply(&ProxyError::Stalled);
+        assert_eq!(stalled.status, 504);
+        assert_eq!(
+            stalled.body,
+            r#"{"error":"The AgentRQ server stopped sending its response"}"#
+        );
+        let large = proxy_error_reply(&ProxyError::TooLarge);
+        assert_eq!(large.status, 502);
+        assert_eq!(
+            large.body,
+            r#"{"error":"The AgentRQ server's response is too large"}"#
+        );
+        assert_eq!(PROXY_IDLE_TIMEOUT_MS, 30_000);
+        assert_eq!(MAX_PROXIED_BODY_BYTES, 128 * 1024 * 1024);
+    }
+
+    #[test]
+    fn says_why_a_dev_request_failed() {
+        let say = |error| dev_failure_message(&error);
+        assert_eq!(say(ProxyError::Unreachable("refused".into())), "refused");
+        assert_eq!(
+            say(ProxyError::Timeout),
+            "no response headers after 30000ms"
+        );
+        assert_eq!(say(ProxyError::Stalled), "no data for 30000ms");
+        assert_eq!(say(ProxyError::TooLarge), "over 134217728 bytes");
     }
 
     #[test]
@@ -2109,23 +2272,37 @@ mod tests {
         assert_eq!(reply.status, 200);
         assert_eq!(reply.body, b"png");
         assert_eq!(
-            reply.headers,
+            names(&reply.headers),
             [
-                ("content-type".to_string(), "image/png".to_string()),
-                (
-                    "content-disposition".to_string(),
-                    "inline; filename=\"a.png\"".to_string()
-                ),
+                "content-type",
+                "content-disposition",
+                "x-content-type-options",
+                "content-security-policy"
             ]
+        );
+        assert_eq!(get(&reply.headers, "content-type"), Some("image/png"));
+        assert_eq!(
+            get(&reply.headers, "content-disposition"),
+            Some("inline; filename=\"a.png\"")
         );
     }
 
     #[test]
     fn leaves_out_an_empty_disposition() {
         let reply = attachment_hit_reply(Vec::new(), "text/plain", "");
+        assert_eq!(get(&reply.headers, "content-disposition"), None);
+    }
+
+    #[test]
+    fn sandboxes_a_stored_attachment_so_framed_html_cannot_run_as_the_app() {
+        let reply = attachment_hit_reply(b"<script>".to_vec(), "text/html;pdf", "inline");
         assert_eq!(
-            reply.headers,
-            [("content-type".to_string(), "text/plain".to_string())]
+            get(&reply.headers, "content-security-policy"),
+            Some("sandbox; default-src 'none'")
+        );
+        assert_eq!(
+            get(&reply.headers, "x-content-type-options"),
+            Some("nosniff")
         );
     }
 

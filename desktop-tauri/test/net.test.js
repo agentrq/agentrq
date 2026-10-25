@@ -104,7 +104,7 @@ describe('installEventSource', () => {
       this.native = { url, init }
     })
     const invoke = vi.fn(async (cmd, args) => (cmd === 'event_source_open' ? open(args) : undefined))
-    const win = { location, EventSource: Native }
+    const win = Object.assign(new EventTarget(), { location, EventSource: Native })
     installEventSource(win, invoke, FakeChannel)
     return { win, invoke, Native }
   }
@@ -203,6 +203,23 @@ describe('installEventSource', () => {
     new win.EventSource('/api/v1/events').close()
     await flush()
     expect(invoke).toHaveBeenLastCalledWith('event_source_close', { id: 7 })
+  })
+
+  it('closes every stream still open when the page goes away', async () => {
+    let next = 0
+    const { win, invoke } = rig({ open: async () => ++next })
+    const kept = new win.EventSource('/api/v1/events')
+    const closed = new win.EventSource('/api/v1/events?w=1')
+    const failed = new win.EventSource('/api/v1/events?w=2')
+    await flush()
+    closed.close()
+    invoke.mock.calls[2][1].onEvent.onmessage({ type: 'error', readyState: 2 })
+    invoke.mockClear()
+
+    win.dispatchEvent(new Event('pagehide'))
+    expect(kept.readyState).toBe(2)
+    expect(failed.readyState).toBe(2)
+    expect(invoke.mock.calls).toEqual([['event_source_close', { id: 1 }]])
   })
 
   it('fails the source for good when Rust refuses to open it', async () => {

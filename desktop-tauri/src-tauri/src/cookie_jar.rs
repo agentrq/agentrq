@@ -11,7 +11,9 @@
 //! trap in `docs/agents/desktop.md`).
 //!
 //! The jar is written to disk sealed by the [`Vault`] on every change, and only
-//! its persistent, unexpired cookies, as a browser keeps them.
+//! its persistent, unexpired cookies, as a browser keeps them. A jar with no
+//! vault (the keychain refused, or was too slow) lives in memory only: it never
+//! reads the file, and never writes over a session it could not open.
 
 use std::fs;
 use std::io::BufReader;
@@ -27,16 +29,17 @@ use crate::vault::{write_private, Vault};
 pub struct ProfileJar {
     store: Mutex<CookieStore>,
     file: PathBuf,
-    vault: Vault,
+    vault: Option<Vault>,
 }
 
 impl ProfileJar {
     /// The jar saved in `file`, or an empty one when there is none or it cannot
-    /// be opened (another key, a damaged file): signed out, which is safe.
-    pub fn open(file: PathBuf, vault: Vault) -> Self {
-        let store = fs::read(&file)
-            .ok()
-            .and_then(|sealed| vault.open(&sealed))
+    /// be opened (no vault, another key, a damaged file): signed out, which is
+    /// safe.
+    pub fn open(file: PathBuf, vault: Option<Vault>) -> Self {
+        let store = vault
+            .as_ref()
+            .and_then(|vault| vault.open(&fs::read(&file).ok()?))
             .and_then(|json| cookie_store::serde::json::load(BufReader::new(json.as_slice())).ok())
             .unwrap_or_default();
         Self {
@@ -53,12 +56,15 @@ impl ProfileJar {
     }
 
     fn save(&self, store: &CookieStore) {
+        let Some(vault) = &self.vault else {
+            return;
+        };
         let mut json = Vec::new();
         // Writing JSON to memory only fails on a cookie serde cannot encode,
         // and then the jar on disk keeps its previous contents.
         if cookie_store::serde::json::save(store, &mut json).is_ok() {
             // A jar that cannot be written stays in memory: signed in until quit.
-            let _ = write_private(&self.file, &self.vault.seal(&json));
+            let _ = write_private(&self.file, &vault.seal(&json));
         }
     }
 
@@ -83,6 +89,11 @@ impl ProfileJar {
     #[cfg(test)]
     pub fn has(&self, name: &str, url: &Url) -> bool {
         self.lock().matches(url).iter().any(|c| c.name() == name)
+    }
+
+    #[cfg(test)]
+    pub fn is_memory_only(&self) -> bool {
+        self.vault.is_none()
     }
 
     /// Every cookie, for signing out.
@@ -154,7 +165,7 @@ mod tests {
     static KEY: LazyLock<[u8; 32]> = LazyLock::new(random_key);
 
     fn jar_in(dir: &tempfile::TempDir) -> ProfileJar {
-        ProfileJar::open(dir.path().join("jar"), Vault::new(&KEY))
+        ProfileJar::open(dir.path().join("jar"), Some(Vault::new(&KEY)))
     }
 
     fn server() -> Url {
@@ -234,7 +245,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         set(&jar_in(&dir), &[AT]);
 
-        let other_key = ProfileJar::open(dir.path().join("jar"), Vault::new(&random_key()));
+        let other_key = ProfileJar::open(dir.path().join("jar"), Some(Vault::new(&random_key())));
         assert!(other_key.cookies(&server()).is_none());
 
         let vault = Vault::new(&KEY);
@@ -243,10 +254,25 @@ mod tests {
     }
 
     #[test]
+    fn never_writes_over_a_saved_session_without_its_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        set(&jar_in(&dir), &[AT]);
+        let saved = fs::read(dir.path().join("jar")).unwrap();
+
+        let memory_only = ProfileJar::open(dir.path().join("jar"), None);
+        assert!(memory_only.cookies(&server()).is_none());
+        set(&memory_only, &["at=other; Path=/; Max-Age=60"]);
+        assert_eq!(memory_only.cookies(&server()).unwrap(), "at=other");
+        memory_only.clear();
+        assert_eq!(fs::read(dir.path().join("jar")).unwrap(), saved);
+        assert_eq!(jar_in(&dir).cookies(&server()).unwrap(), "at=token");
+    }
+
+    #[test]
     fn stays_signed_in_in_memory_when_the_disk_refuses() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("file"), b"x").unwrap();
-        let jar = ProfileJar::open(dir.path().join("file").join("jar"), Vault::new(&KEY));
+        let jar = ProfileJar::open(dir.path().join("file").join("jar"), Some(Vault::new(&KEY)));
         set(&jar, &[AT]);
         assert_eq!(jar.cookies(&server()).unwrap(), "at=token");
     }

@@ -58,6 +58,9 @@ pub struct Parser {
     after_cr: bool,
     event: String,
     data: String,
+    /// What the last `id` field said; it becomes the last event id only when
+    /// its event is dispatched.
+    id_buffer: String,
     last_event_id: String,
     retry: Option<u64>,
 }
@@ -97,7 +100,7 @@ impl Parser {
                 self.data.push_str(value);
                 self.data.push('\n');
             }
-            "id" if !value.contains('\0') => self.last_event_id = value.to_string(),
+            "id" if !value.contains('\0') => self.id_buffer = value.to_string(),
             "retry" if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) => {
                 self.retry = value.parse().ok().or(self.retry);
             }
@@ -108,6 +111,8 @@ impl Parser {
     }
 
     fn dispatch(&mut self) -> Option<Frame> {
+        // Committed even when there is no data to dispatch, as the spec says.
+        self.last_event_id.clone_from(&self.id_buffer);
         let event = std::mem::take(&mut self.event);
         let mut data = std::mem::take(&mut self.data);
         // No data, no event: the type is still reset.
@@ -123,9 +128,11 @@ impl Parser {
         })
     }
 
-    /// A new connection: half a line from the old one is dropped, the last
-    /// event id and the retry delay are kept.
+    /// A new connection: half a line or half an event from the old one is
+    /// dropped, an `id` among it too; the last event id and the retry delay are
+    /// kept. Chromium starts a new parser from the last event id the same way.
     pub fn reconnected(&mut self) {
+        self.id_buffer.clone_from(&self.last_event_id);
         self.line.clear();
         self.after_cr = false;
         self.event.clear();
@@ -202,7 +209,10 @@ async fn read(client: reqwest::Client, url: String, sink: Box<dyn Sink>, deadlin
     }
 }
 
-/// The streams the page has open, by the id it closes them with.
+/// The streams the page has open, by the id it closes them with. Only the main
+/// webview can open one (its capability is the only one granting the command),
+/// so they are all its: the shell closes every one when it starts loading a
+/// page, since a reloaded page never closes the old page's.
 #[derive(Default)]
 pub struct Streams {
     next: AtomicU32,
@@ -234,8 +244,16 @@ impl Streams {
         }
     }
 
+    /// Every stream, for a page that went away without closing them.
+    pub fn close_all(&self) {
+        let running = std::mem::take(&mut *self.running.lock().unwrap_or_else(|p| p.into_inner()));
+        for handle in running.into_values() {
+            handle.abort();
+        }
+    }
+
     #[cfg(test)]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.running.lock().unwrap().len()
     }
 }
@@ -329,13 +347,28 @@ mod tests {
     }
 
     #[test]
-    fn drops_half_a_line_when_it_reconnects() {
+    fn commits_an_id_only_when_its_event_is_dispatched() {
         let mut parser = Parser::default();
-        parser.feed("id: 3\nevent: x\ndata: half\nda");
+        parser.feed("id: 1\ndata: a\n");
+        assert_eq!(parser.last_event_id(), "", "not dispatched yet");
+        parser.feed("\nid: 2\n\n");
+        assert_eq!(
+            parser.last_event_id(),
+            "2",
+            "a blank line commits it, data or not"
+        );
+    }
+
+    #[test]
+    fn drops_half_an_event_and_its_id_when_it_reconnects() {
+        let mut parser = Parser::default();
+        parser.feed("id: 2\n\nid: 3\nevent: x\ndata: half\nda");
+        assert_eq!(parser.last_event_id(), "2");
         parser.reconnected();
+        assert_eq!(parser.last_event_id(), "2", "what reconnecting sends");
         assert_eq!(
             parser.feed("ta: lost\n\ndata: whole\n\n"),
-            [message("message", "whole", "3")]
+            [message("message", "whole", "2")]
         );
     }
 
@@ -519,6 +552,18 @@ mod tests {
         assert_eq!(streams.len(), 1, "the ended one was swept");
     }
 
+    #[tokio::test]
+    async fn closes_every_stream_when_the_page_goes_away() {
+        let streams = Streams::default();
+        let (tx, mut rx) = mpsc::unbounded_channel::<()>();
+        streams.open(Hold(tx.clone()));
+        streams.open(Hold(tx));
+        tokio::task::yield_now().await;
+        streams.close_all();
+        assert_eq!(streams.len(), 0);
+        assert_eq!(rx.recv().await, None, "both aborted");
+    }
+
     #[test]
     fn a_poisoned_registry_still_answers() {
         let streams = Arc::new(Streams::default());
@@ -535,6 +580,7 @@ mod tests {
             let id = streams.open(async {});
             tokio::task::yield_now().await;
             streams.close(id);
+            streams.close_all();
         });
     }
 }

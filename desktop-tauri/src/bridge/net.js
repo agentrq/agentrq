@@ -55,6 +55,12 @@ const CLOSED = 2
 
 export function installEventSource(win, invoke, Channel) {
   const Native = win.EventSource
+  // A page that goes away never closes its streams itself; Rust would keep
+  // reading them, and reconnecting, for a page that is gone.
+  const open = new Set()
+  win.addEventListener('pagehide', () => {
+    for (const source of [...open]) source.close()
+  })
 
   class EventSource extends EventTarget {
     #id = null
@@ -73,6 +79,7 @@ export function installEventSource(win, invoke, Channel) {
       this.onmessage = null
       this.onerror = null
 
+      open.add(this)
       const channel = new Channel()
       channel.onmessage = (frame) => this.#receive(frame)
       invoke('event_source_open', { url: resolved.pathname + resolved.search, onEvent: channel }).then(
@@ -104,6 +111,7 @@ export function installEventSource(win, invoke, Channel) {
       } else {
         // 0 while Rust reconnects after the server's retry delay, 2 when it gave up.
         this.readyState = frame.readyState
+        if (this.readyState === CLOSED) open.delete(this)
         this.#fire(new Event('error'))
       }
     }
@@ -111,6 +119,7 @@ export function installEventSource(win, invoke, Channel) {
     close() {
       if (this.readyState === CLOSED) return
       this.readyState = CLOSED
+      open.delete(this)
       if (this.#id !== null) invoke('event_source_close', { id: this.#id })
     }
   }

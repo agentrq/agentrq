@@ -37,6 +37,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::io;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Attachment bytes above this are streamed every time rather than kept.
 pub const MAX_ATTACHMENT_BYTES: u64 = 2 * 1024 * 1024;
@@ -441,8 +442,21 @@ impl StoreFs for DiskFs {
         std::fs::read(path)
     }
 
+    /// Whole or not at all: a reader of a miss being written beside it would
+    /// otherwise serve a truncated body as a 200. The sibling's name is unique,
+    /// so two misses for one attachment never write the same file, and its `.`
+    /// keeps it out of the store's listing.
     fn write(&self, path: &str, body: &[u8]) -> io::Result<()> {
-        std::fs::write(path, body)
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let part = format!(
+            "{path}.{}-{}.part",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        std::fs::write(&part, body)?;
+        std::fs::rename(&part, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&part);
+        })
     }
 
     fn create_dir_all(&self, path: &str) -> io::Result<()> {
@@ -1093,6 +1107,29 @@ mod tests {
     }
 
     // The real disk, once, in a directory that is removed afterwards.
+
+    #[test]
+    fn writes_a_file_whole_through_a_sibling_it_never_leaves_behind() {
+        let dir = std::env::temp_dir().join(format!(
+            "agentrq-attachment-store-{}-{}",
+            std::process::id(),
+            "atomic"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("taken")).unwrap();
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+
+        DiskFs.write(&path("a"), b"one").unwrap();
+        DiskFs.write(&path("a"), b"two").unwrap();
+        assert_eq!(std::fs::read(dir.join("a")).unwrap(), b"two");
+
+        // A directory in the way: the rename fails, and the sibling goes too.
+        assert!(DiskFs.write(&path("taken"), b"x").is_err());
+        let mut left = DiskFs.read_dir(dir.to_str().unwrap()).unwrap();
+        left.sort();
+        assert_eq!(left, ["a", "taken"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn round_trips_through_a_real_directory() {

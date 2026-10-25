@@ -422,6 +422,7 @@ mod tests {
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
     use tauri::webview::InvokeRequest;
+    use tauri::Manager;
 
     /// The origin Tauri trusts as its own, which WebView2 spells over http.
     #[cfg(windows)]
@@ -601,18 +602,20 @@ mod tests {
                 serde_json::json!({"url": url, "onEvent": "__CHANNEL__:7"}),
             )
         };
-        let id = open("/api/v1/events?x=1").unwrap();
-        assert!(id.as_u64().unwrap() > 0);
-        assert_eq!(
-            open("/api/v1/events").unwrap().as_u64(),
-            Some(id.as_u64().unwrap() + 1)
-        );
+        let streams = || rig._app.state::<Streams>();
+        let first = open("/api/v1/events?x=1").unwrap();
+        let second = open("/api/v1/events").unwrap();
+        assert_eq!(second.as_u64(), Some(first.as_u64().unwrap() + 1));
         assert_eq!(open("/pub/stats").unwrap_err(), "Forbidden");
         assert_eq!(open("/api/%2e%2e/x").unwrap_err(), "Forbidden");
-        assert_eq!(
-            call(&rig, "event_source_close", serde_json::json!({"id": id})),
-            Ok(serde_json::Value::Null)
-        );
+        assert_eq!(streams().len(), 2, "only the two it forwarded");
+        for id in [first, second] {
+            assert_eq!(
+                call(&rig, "event_source_close", serde_json::json!({"id": id})),
+                Ok(serde_json::Value::Null)
+            );
+        }
+        assert_eq!(streams().len(), 0, "none left retrying");
     }
 
     #[test]

@@ -11,7 +11,11 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke, Channel }))
 
 let bridge
 beforeAll(async () => {
-  globalThis.window = { location: { href: 'app://localhost/' }, fetch: nativeFetch, EventSource: class {} }
+  globalThis.window = Object.assign(new EventTarget(), {
+    location: { href: 'app://localhost/' },
+    fetch: nativeFetch,
+    EventSource: class {},
+  })
   bridge = await import('../src/bridge/index.js')
 })
 
