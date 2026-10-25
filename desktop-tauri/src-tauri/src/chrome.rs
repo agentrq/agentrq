@@ -332,9 +332,17 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
 
 // ---- the window's view: zoom and full screen ----
 
-struct View<'a, R: Runtime> {
+pub struct View<'a, R: Runtime> {
     window: &'a WebviewWindow<R>,
     zoom: &'a ZoomTable,
+}
+
+/// The view of a window, for the menu as well as the title bar's commands.
+pub fn view_of<'a, R: Runtime>(window: &'a WebviewWindow<R>, chrome: &'a Chrome) -> View<'a, R> {
+    View {
+        window,
+        zoom: &chrome.zoom,
+    }
 }
 
 impl<R: Runtime> ViewWindow for View<'_, R> {

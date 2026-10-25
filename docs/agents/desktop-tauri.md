@@ -45,7 +45,7 @@
 - **Never use `tauri-plugin-window-state`.** Its clamping differs from
   `core::window_state`. The save is read when the debounce fires, never per
   resize event: a platform can report the maximized size before the state.
-- **`chrome.rs` is wiring and outside the coverage gate**, like `lib.rs`; a rule
+- **`chrome.rs` and `app_menu.rs` are wiring and outside the coverage gate**, like `lib.rs`; a rule
   goes in `core/` or `chrome_state.rs` with its test.
 - **The window starts hidden and is shown on the page's first load** (5 s
   fallback), so a failed load still appears. Showing earlier is the white flash.

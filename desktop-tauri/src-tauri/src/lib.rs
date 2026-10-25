@@ -7,6 +7,7 @@
 //! only connects them to Tauri, so it is left out of coverage, as
 //! `desktop/src/main/index.js` is.
 
+mod app_menu;
 mod chrome;
 mod chrome_state;
 mod commands;
@@ -110,6 +111,7 @@ pub fn run() {
             }
             app.manage(chrome::Chrome::new(app.path().app_data_dir()?));
             chrome::open_main_window(app.handle())?;
+            app_menu::install(app.handle())?;
             Ok(())
         })
         .build(tauri::generate_context!())
