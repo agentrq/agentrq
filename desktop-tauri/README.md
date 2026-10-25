@@ -19,7 +19,7 @@ native WebDriver:
 | OS | Native driver | Notes |
 | --- | --- | --- |
 | Linux | `WebKitWebDriver`, from the `webkit2gtk-driver` package | Run under Xvfb and a session bus. `xclip` lets the clipboard check read back what the app copied. |
-| Windows | `msedgedriver` matching the WebView2 runtime; set `VERIFY_NATIVE_DRIVER` to its path | The shell-call assertions are skipped: there is no opener to stand in for. |
+| Windows | `msedgedriver` matching the WebView2 runtime; `VERIFY_NATIVE_DRIVER` is its path | Not in CI: on a runner msedgedriver answers "DevToolsActivePort file doesn't exist" and the app never starts. Untried by hand; the shell-call assertions would be skipped, with no opener to stand in for. |
 | macOS | none | WKWebView has no WebDriver. Those rows of the parity checklist are manual. |
 
 ```sh
