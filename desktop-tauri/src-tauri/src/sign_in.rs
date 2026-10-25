@@ -48,11 +48,12 @@ pub fn to_core(cookie: &RawCookie<'_>) -> Cookie {
 /// the refresh cookie, scoped to `/api/v1/auth/refresh`, is what keeps the
 /// session past a day, and Electron's partition keeps both. Returns whether
 /// the jar now holds the `at` the webview had, which is what success means,
-/// and the cookies taken, for the caller to delete from the webview.
+/// and the cookies taken, for the caller to delete from the webview. With no
+/// jar nothing is kept, and the cookies are only handed back.
 pub fn take_session(
     cookies: Vec<RawCookie<'static>>,
     server_url: &str,
-    jar: &ProfileJar,
+    jar: Option<&ProfileJar>,
 ) -> (bool, Vec<RawCookie<'static>>) {
     let Some((server, host)) = Url::parse(server_url)
         .ok()
@@ -66,6 +67,9 @@ pub fn take_session(
         .into_iter()
         .filter(|c| c.domain().is_some_and(|d| cookie_domain_matches(d, &host)))
         .collect();
+    let Some(jar) = jar else {
+        return (false, taken);
+    };
     let mut kept_at = false;
     for cookie in &taken {
         let kept = jar.adopt(&for_jar(cookie, &host), &server);
@@ -123,24 +127,28 @@ async fn off_thread(deadline: Duration, job: Box<dyn FnOnce() -> bool + Send>) -
     matches!(tokio::time::timeout(deadline, job).await, Ok(Ok(true)))
 }
 
-/// A sign-in window is done: its session goes into the profile's jar and out
-/// of the webview's store, where it would sit in plaintext and sign the next
-/// sign-in straight back in. Whether the jar holds `at` now.
-pub async fn finish(
+/// A finished sign-in window's cookies, and whether they came within
+/// `deadline`. A late read is still waited for: the sign-in has failed, but
+/// its session must leave the webview before the window closes, or it sits
+/// there in plaintext. A webview that never answers takes no delete anyway,
+/// and the person can close its window.
+pub async fn read(
     webview: Arc<dyn CookieWebview>,
-    server_url: String,
-    jar: Arc<ProfileJar>,
     deadline: Duration,
-) -> bool {
-    off_thread(
-        deadline,
-        Box::new(move || {
-            let (signed_in, taken) = take_session(webview.cookies(), &server_url, &jar);
-            delete(&*webview, &taken);
-            signed_in
-        }),
-    )
-    .await
+) -> (Vec<RawCookie<'static>>, bool) {
+    let mut job = tokio::task::spawn_blocking(move || webview.cookies());
+    let (done, in_time) = match tokio::time::timeout(deadline, &mut job).await {
+        Ok(done) => (done, true),
+        Err(_) => (job.await, false),
+    };
+    (done.unwrap_or_default(), in_time)
+}
+
+/// Take `cookies` out of the webview's store, where they would sign the next
+/// sign-in straight back in. Waited for, since the window closes next and a
+/// delete sent to a closed webview is lost.
+pub async fn forget(webview: Arc<dyn CookieWebview>, cookies: Vec<RawCookie<'static>>) {
+    let _ = tokio::task::spawn_blocking(move || delete(&*webview, &cookies)).await;
 }
 
 /// Log Out: every cookie in the profile's webview store, as Electron clears
@@ -257,13 +265,10 @@ pub(crate) mod tests {
             ),
             ("_gh_sess=x; Path=/", ".github.com"),
         ]));
-        let signed_in = finish(
-            webview.clone(),
-            "https://app.agentrq.com".into(),
-            jar.clone(),
-            COOKIE_DEADLINE,
-        )
-        .await;
+        let (cookies, in_time) = read(webview.clone(), COOKIE_DEADLINE).await;
+        assert!(in_time);
+        let (signed_in, taken) = take_session(cookies, "https://app.agentrq.com", Some(&jar));
+        forget(webview.clone(), taken).await;
         assert!(signed_in);
         assert!(jar.has("at", &url("https://app.agentrq.com/")));
         assert_eq!(webview.names(), ["_gh_sess"], "the provider's stays");
@@ -271,14 +276,14 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn gives_up_on_a_webview_that_does_not_answer() {
-        let dir = tempfile::tempdir().unwrap();
-        let jar = Arc::new(jar(&dir));
         let mut webview = FakeWebview::with(&[("at=a1; Max-Age=600", "127.0.0.1")]);
         webview.delay = Duration::from_millis(500);
         let webview = Arc::new(webview);
         let deadline = Duration::from_millis(20);
-        let server = "http://127.0.0.1:3000".to_string();
-        assert!(!finish(webview.clone(), server, jar, deadline).await);
+        // Late, but read all the same, so the session can still be deleted.
+        let (cookies, in_time) = read(webview.clone(), deadline).await;
+        assert!(!in_time);
+        assert_eq!(cookies.len(), 1);
         assert!(!clear(webview, deadline).await);
     }
 
@@ -305,7 +310,7 @@ pub(crate) mod tests {
                 cookie("nodomain=x; Path=/"),
             ],
             "http://127.0.0.1:3000",
-            &jar,
+            Some(&jar),
         );
         assert!(signed_in);
         let names: Vec<&str> = taken.iter().map(|c| c.name()).collect();
@@ -332,7 +337,7 @@ pub(crate) mod tests {
                 "at=a1; Domain=.agentrq.com; Path=/; Secure; Max-Age=600",
             )],
             "https://app.agentrq.com",
-            &jar,
+            Some(&jar),
         );
         assert!(signed_in);
         assert_eq!(taken.len(), 1);
@@ -345,17 +350,17 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let jar = jar(&dir);
         let only_refresh = vec![cookie("rt=r1; Domain=127.0.0.1; Path=/; Max-Age=600")];
-        let (signed_in, taken) = take_session(only_refresh, "http://127.0.0.1:3000", &jar);
+        let (signed_in, taken) = take_session(only_refresh, "http://127.0.0.1:3000", Some(&jar));
         assert!(!signed_in);
         assert_eq!(taken.len(), 1);
 
         let at = vec![cookie("at=a1; Domain=127.0.0.1; Max-Age=600")];
         assert_eq!(
-            take_session(at.clone(), "not a url", &jar),
+            take_session(at.clone(), "not a url", Some(&jar)),
             (false, Vec::new())
         );
         assert_eq!(
-            take_session(at, "data:text/plain,x", &jar),
+            take_session(at, "data:text/plain,x", Some(&jar)),
             (false, Vec::new())
         );
     }
@@ -367,7 +372,7 @@ pub(crate) mod tests {
         let expired = vec![cookie(
             "at=old; Domain=127.0.0.1; Path=/; Expires=Wed, 21 Oct 2015 07:28:00 GMT",
         )];
-        let (signed_in, taken) = take_session(expired, "http://127.0.0.1:3000", &jar);
+        let (signed_in, taken) = take_session(expired, "http://127.0.0.1:3000", Some(&jar));
         assert!(!signed_in);
         assert_eq!(taken.len(), 1, "still deleted from the webview");
     }

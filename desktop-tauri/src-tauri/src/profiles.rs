@@ -458,18 +458,35 @@ impl Profiles {
     /// A sign-in window of profile `id` is done: move its session into the
     /// profile's jar. Nothing for a profile removed while it was open, which
     /// would otherwise come back with its files. Whether it is signed in.
+    ///
+    /// `busy` is held only to check the profile and write its jar: the
+    /// webview can take up to `COOKIE_DEADLINE` over its cookies.
     pub async fn finish_sign_in(&self, id: &str, webview: Arc<dyn CookieWebview>) -> bool {
-        let _busy = self.busy.lock().await;
-        let Some(profile) = self.config().profiles.into_iter().find(|p| p.id == id) else {
+        let Some(server) = self.server_of_profile(id) else {
             return false;
         };
-        let server = server_of(&profile, self.lock.as_deref());
-        let net = self.network.profile(id, &server).await;
-        let signed_in = sign_in::finish(webview, server, net.jar.clone(), COOKIE_DEADLINE).await;
+        let (cookies, in_time) = sign_in::read(webview.clone(), COOKIE_DEADLINE).await;
+        let busy = self.busy.lock().await;
+        // Removed or pointed elsewhere while it was read: keep nothing.
+        let kept = in_time && self.server_of_profile(id).as_ref() == Some(&server);
+        let jar = if kept {
+            Some(self.network.profile(id, &server).await.jar.clone())
+        } else {
+            None
+        };
+        let (signed_in, taken) = sign_in::take_session(cookies, &server, jar.as_deref());
         if signed_in {
             self.signed_in(id);
         }
+        drop(busy);
+        sign_in::forget(webview, taken).await;
         signed_in
+    }
+
+    fn server_of_profile(&self, id: &str) -> Option<String> {
+        let config = self.config();
+        let profile = config.profiles.iter().find(|p| p.id == id)?;
+        Some(server_of(profile, self.lock.as_deref()))
     }
 
     /// The app reloads into a sign-in, unless another profile was switched to
@@ -1135,10 +1152,50 @@ pub(crate) mod tests {
     }
 
     fn sign_in_window() -> Arc<FakeWebview> {
-        Arc::new(FakeWebview::with(&[
+        Arc::new(slow_sign_in_window(Duration::ZERO))
+    }
+
+    fn slow_sign_in_window(delay: Duration) -> FakeWebview {
+        let mut window = FakeWebview::with(&[
             ("at=a1; Path=/; Max-Age=600", "127.0.0.1"),
             ("rt=r1; Path=/api/v1/auth/refresh; Max-Age=600", "127.0.0.1"),
-        ]))
+        ]);
+        window.delay = delay;
+        window
+    }
+
+    #[tokio::test]
+    async fn reads_a_sign_in_without_holding_up_the_other_profile_calls() {
+        let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        let window = Arc::new(slow_sign_in_window(Duration::from_millis(300)));
+        let renamed = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            rig.profiles.rename("work", "Job").await.unwrap();
+            window.names()
+        };
+        let (signed_in, during) =
+            tokio::join!(rig.profiles.finish_sign_in("work", window.clone()), renamed);
+        assert!(signed_in);
+        assert_eq!(during, ["at", "rt"], "renamed while the cookies were read");
+        assert!(window.names().is_empty());
+    }
+
+    #[tokio::test]
+    async fn keeps_nothing_of_a_profile_removed_while_its_cookies_were_read() {
+        let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        let window = Arc::new(slow_sign_in_window(Duration::from_millis(300)));
+        let removed = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            rig.profiles.remove("work").await.unwrap();
+        };
+        let (signed_in, ()) =
+            tokio::join!(rig.profiles.finish_sign_in("work", window.clone()), removed);
+        assert!(!signed_in);
+        assert!(!profile_dir(rig.dir.path(), "work").exists());
+        assert!(
+            window.names().is_empty(),
+            "the session still left the webview"
+        );
     }
 
     #[tokio::test]

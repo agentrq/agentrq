@@ -32,6 +32,9 @@
 - **A cookie jar with no vault never writes its file.** A slow or refused
   keychain leaves the session in memory; a jar resealed with a stand-in key
   would sign the person out for good.
+- **With no vault, only the active profile's network is kept** (`Network::open`).
+  Any other is opened afresh on each use: its jar can never read its file, so a
+  kept one would show that profile signed out for the rest of the session.
 - **The proxy buffers; an `EventSource` goes over IPC.** The scheme answers only
   once it has the whole body, so an endless stream through it never answers.
 - **Same-origin in the bridge compares scheme and host, never `origin`**: a
