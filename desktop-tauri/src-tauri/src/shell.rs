@@ -407,6 +407,11 @@ mod tests {
     use std::sync::Arc;
     use tauri::Listener;
 
+    #[cfg(windows)]
+    const LOCAL: &str = "http://tauri.localhost";
+    #[cfg(not(windows))]
+    const LOCAL: &str = "tauri://localhost";
+
     fn test_app() -> (
         tauri::App<tauri::test::MockRuntime>,
         tauri::AppHandle<tauri::test::MockRuntime>,
@@ -740,7 +745,7 @@ mod tests {
                 cmd: "navigation_ready".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "tauri://localhost".parse().unwrap(),
+                url: LOCAL.parse().unwrap(),
                 body: tauri::ipc::InvokeBody::default(),
                 headers: Default::default(),
                 invoke_key: tauri::test::INVOKE_KEY.to_string(),
@@ -756,7 +761,7 @@ mod tests {
                 cmd: "navigation_ready".into(),
                 callback: tauri::ipc::CallbackFn(0),
                 error: tauri::ipc::CallbackFn(1),
-                url: "tauri://localhost".parse().unwrap(),
+                url: LOCAL.parse().unwrap(),
                 body: tauri::ipc::InvokeBody::default(),
                 headers: Default::default(),
                 invoke_key: tauri::test::INVOKE_KEY.to_string(),
