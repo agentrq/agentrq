@@ -22,7 +22,6 @@ use agentrq_desktop_core::normal_bounds::{to_logical, NormalBounds};
 use agentrq_desktop_core::theme::{
     apply_theme, background_color_for, rgb_from_hex, NativeTheme, ThemeSource, ThemedWindow,
 };
-use agentrq_desktop_core::webview_crash::ReloadGuard;
 use agentrq_desktop_core::window_state::{
     capture_window_state, clamp_to_displays, debounce, Bounds, Rect, StdTimers, WindowStateStore,
     WINDOW_STATE_FILENAME,
@@ -49,7 +48,9 @@ pub struct Chrome {
     zoom: ZoomTable,
     /// `currentTheme` in `index.js`: what the renderer last asked for.
     theme: Mutex<Option<String>>,
-    reloads: ReloadGuard,
+    /// Not on macOS, where wry reports no crash to guard.
+    #[cfg(not(target_os = "macos"))]
+    reloads: agentrq_desktop_core::webview_crash::ReloadGuard,
     /// Where the main window last sat un-maximized, which the quit-time save
     /// needs as much as the window's own handlers do.
     normal: Mutex<Arc<NormalBounds>>,
@@ -61,7 +62,8 @@ impl Chrome {
             store: WindowStateStore::new(StateFile(data_dir.join(WINDOW_STATE_FILENAME))),
             zoom: ZoomTable::default(),
             theme: Mutex::new(None),
-            reloads: ReloadGuard::default(),
+            #[cfg(not(target_os = "macos"))]
+            reloads: Default::default(),
             normal: Mutex::new(Arc::new(NormalBounds::default())),
         }
     }
