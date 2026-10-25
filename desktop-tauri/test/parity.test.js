@@ -208,7 +208,7 @@ describe('the command pattern', () => {
 
 describe('the Rust side serves what the bridge calls', () => {
   // The handler lives in commands.rs; the commands of a work package beside it.
-  const SOURCES = ['commands', 'chrome', 'app_menu']
+  const SOURCES = ['commands', 'chrome', 'app_menu', 'side_panel']
   const sources = SOURCES.map((name) => read(`../src-tauri/src/${name}.rs`))
   const rust = sources[0]
   const defined = sources.flatMap((source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])).sort()
@@ -226,8 +226,17 @@ describe('the Rust side serves what the bridge calls', () => {
     .map((p) => p.slice('allow-'.length).replace(/-/g, '_'))
     .sort()
 
-  // The guest preload's, which WP7b gives the `agentrq-ext:` page's own webview.
-  const GUEST_ONLY = ['panel_send']
+  // The Tauri side panel guest's (bridge/panel-guest.js): Electron's guest is a
+  // `<webview>` element, which needs no channel. The guest itself has no
+  // command at all: `agentrq:panel:send` is a POST on its own scheme.
+  const GUEST_ONLY = [
+    'side_panel_guest_close',
+    'side_panel_guest_focus',
+    'side_panel_guest_navigate',
+    'side_panel_guest_open',
+    'side_panel_guest_place',
+    'side_panel_guest_snapshot',
+  ]
   // The bridge's own: the key listener's menu commands (Electron's menu runs in
   // the main process), `EventSource` (net.js), and `navigation_ready`; Electron has no channel for either.
   const BRIDGE_ONLY = ['event_source_close', 'event_source_open', 'menu_key_bindings', 'menu_run', 'navigation_ready']
@@ -238,12 +247,15 @@ describe('the Rust side serves what the bridge calls', () => {
     expect(defined).toEqual([...new Set([...channels, ...GUEST_ONLY, ...BRIDGE_ONLY])].sort())
     const net = read('../src/bridge/net.js')
     expect([...new Set([...net.matchAll(/invoke\('(\w+)'/g)].map((m) => m[1]))].sort()).toEqual(['event_source_close', 'event_source_open'])
+    const guest = read('../src/bridge/panel-guest.js')
+    expect([...new Set([...guest.matchAll(/(?:invoke|send)\('(\w+)'/g)].map((m) => m[1]))].sort()).toEqual(GUEST_ONLY)
+    expect(defined).not.toContain('panel_send')
   })
 
   it('registers every command in the handler, the manifest and the capability', () => {
     expect(handler).toEqual(defined)
     expect(named).toEqual(defined)
-    expect(allowed).toEqual(defined.filter((name) => !GUEST_ONLY.includes(name)))
+    expect(allowed).toEqual(defined)
   })
 
   it('invokes only commands that exist', async () => {

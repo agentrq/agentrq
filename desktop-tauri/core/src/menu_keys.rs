@@ -220,6 +220,118 @@ pub fn item_parts(platform: Platform, item: &ActionItem) -> (String, Option<&'st
     }
 }
 
+/// A key as the page's `keydown` would see it, lower case, and its modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pressed<'a> {
+    pub key: &'a str,
+    /// `KeyboardEvent.code`, where the platform knows it.
+    pub code: Option<&'a str>,
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub meta: bool,
+}
+
+/// The action a key runs, matched as the bridge's listener matches it. For a
+/// key a side panel guest left unhandled: the guest is another page, so the
+/// app's own listener never hears it.
+pub fn action_for(bindings: &[KeyBinding], pressed: Pressed<'_>) -> Option<ActionId> {
+    let key = pressed.key;
+    let function =
+        key.len() > 1 && key.starts_with('f') && key[1..].bytes().all(|c| c.is_ascii_digit());
+    let ascii = key.len() == 1 && key.as_bytes()[0].is_ascii_graphic();
+    let typed = |b: &KeyBinding| {
+        if ascii || function {
+            return b.key == key;
+        }
+        non_latin_letter(key) && b.code.is_some() && b.code.as_deref() == pressed.code
+    };
+    bindings
+        .iter()
+        .find(|b| {
+            b.ctrl == pressed.ctrl
+                && b.shift == pressed.shift
+                && b.alt == pressed.alt
+                && b.meta == pressed.meta
+                && typed(b)
+        })
+        .map(|b| b.action)
+}
+
+/// A single letter of a script other than Latin, the bridge's
+/// `NON_LATIN_LETTER`: `ц` is, `ß`, `é`, `¡` and `´` are not.
+fn non_latin_letter(key: &str) -> bool {
+    let mut chars = key.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else {
+        return false;
+    };
+    let latin = matches!(c as u32,
+        0x41..=0x5A | 0x61..=0x7A | 0xAA | 0xBA | 0xC0..=0x24F | 0x1D00..=0x1DBF
+        | 0x1E00..=0x1EFF | 0x2C60..=0x2C7F | 0xA720..=0xA7FF | 0xAB30..=0xAB6F
+        | 0xFB00..=0xFB06 | 0xFF21..=0xFF3A | 0xFF41..=0xFF5A);
+    c.is_alphabetic() && !latin
+}
+
+/// `KeyboardEvent.code` of an XKB keycode (GTK's hardware keycode, evdev + 8)
+/// for the keys the menu binds: where the key is, whatever it types.
+pub fn xkb_code(keycode: u16) -> Option<&'static str> {
+    const ROWS: [(u16, &str); 4] = [
+        (24, "qwertyuiop"),
+        (38, "asdfghjkl"),
+        (52, "zxcvbnm"),
+        (10, "1234567890"),
+    ];
+    const LETTERS: [&str; 26] = [
+        "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ", "KeyK",
+        "KeyL", "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT", "KeyU", "KeyV",
+        "KeyW", "KeyX", "KeyY", "KeyZ",
+    ];
+    const DIGITS: [&str; 10] = [
+        "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
+        "Digit9",
+    ];
+    match keycode {
+        20 => return Some("Minus"),
+        21 => return Some("Equal"),
+        51 => return Some("Backslash"),
+        _ => {}
+    }
+    let (first, row) = ROWS
+        .into_iter()
+        .find(|(first, row)| (*first..*first + row.len() as u16).contains(&keycode))?;
+    let c = row.as_bytes()[usize::from(keycode - first)];
+    Some(if c.is_ascii_digit() {
+        DIGITS[usize::from(c - b'0')]
+    } else {
+        LETTERS[usize::from(c - b'a')]
+    })
+}
+
+/// GTK's key as `KeyboardEvent.key` spells it, lower case: the character it
+/// types, or its name (`F11`) when it types none.
+pub fn gtk_key(typed: Option<char>, name: &str) -> String {
+    match typed {
+        Some(c) if !c.is_control() => c.to_lowercase().collect(),
+        _ => name.to_lowercase(),
+    }
+}
+
+/// A Windows virtual key as `KeyboardEvent.key` spells the menu's keys on a
+/// US layout, Shift included, or `None` for one no menu item uses.
+pub fn windows_key(vk: u32, shift: bool) -> Option<String> {
+    let key = match vk {
+        0x30..=0x39 | 0x41..=0x5A => char::from_u32(vk)?.to_ascii_lowercase().to_string(),
+        0x70..=0x87 => format!("f{}", vk - 0x6F),
+        0xBB if shift => "+".to_string(),
+        0xBB => "=".to_string(),
+        0xBD if shift => "_".to_string(),
+        0xBD => "-".to_string(),
+        0xDC => "\\".to_string(),
+        _ => return None,
+    };
+    Some(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,5 +552,124 @@ mod tests {
         let mut found = Vec::new();
         actions(&nested, &mut found);
         assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn a_guests_unhandled_key_runs_what_the_page_would() {
+        let bindings = key_bindings(options(Platform::Linux));
+        let pressed = Pressed {
+            key: "\\",
+            ctrl: true,
+            ..Pressed::default()
+        };
+        assert_eq!(
+            action_for(&bindings, pressed),
+            Some(ActionId::ToggleSidePanel)
+        );
+        let shifted = Pressed {
+            shift: true,
+            ..pressed
+        };
+        assert_eq!(action_for(&bindings, shifted), None);
+    }
+
+    #[test]
+    fn gtk_and_windows_keys_are_spelled_as_the_page_spells_them() {
+        assert_eq!(gtk_key(Some('R'), "R"), "r");
+        assert_eq!(gtk_key(Some('\\'), "backslash"), "\\");
+        assert_eq!(gtk_key(None, "F11"), "f11");
+        assert_eq!(gtk_key(Some('\u{1b}'), "Escape"), "escape");
+        assert_eq!(windows_key(0x52, false).as_deref(), Some("r"));
+        assert_eq!(windows_key(0x30, false).as_deref(), Some("0"));
+        assert_eq!(windows_key(0x7A, false).as_deref(), Some("f11"));
+        assert_eq!(windows_key(0xBB, false).as_deref(), Some("="));
+        assert_eq!(windows_key(0xBB, true).as_deref(), Some("+"));
+        assert_eq!(windows_key(0xBD, false).as_deref(), Some("-"));
+        assert_eq!(windows_key(0xBD, true).as_deref(), Some("_"));
+        assert_eq!(windows_key(0xDC, false).as_deref(), Some("\\"));
+        assert_eq!(windows_key(0x10, false), None);
+        // Ctrl+Shift+= zooms in, from the guest as from the app.
+        let bindings = key_bindings(options(Platform::Windows));
+        let plus = windows_key(0xBB, true).unwrap();
+        let pressed = Pressed {
+            key: &plus,
+            ctrl: true,
+            shift: true,
+            ..Pressed::default()
+        };
+        assert_eq!(action_for(&bindings, pressed), Some(ActionId::ZoomIn));
+    }
+
+    fn ctrl(key: &'static str, code: Option<&'static str>) -> Pressed<'static> {
+        Pressed {
+            key,
+            code,
+            ctrl: true,
+            ..Pressed::default()
+        }
+    }
+
+    #[test]
+    fn a_guest_key_of_another_script_runs_by_its_place_as_the_bridge_does() {
+        let bindings = key_bindings(options(Platform::Linux));
+        // Ctrl+W on a Cyrillic layout types ц, on QWERTY's W.
+        assert_eq!(
+            action_for(&bindings, ctrl("ц", Some("KeyW"))),
+            Some(ActionId::Close)
+        );
+        assert_eq!(action_for(&bindings, ctrl("ц", None)), None);
+        // On AZERTY the key at QWERTY's W types z: what it types wins.
+        assert_eq!(action_for(&bindings, ctrl("z", Some("KeyW"))), None);
+        // A Latin layout's own letters and punctuation never go by place.
+        for key in ["ß", "é", "¡", "´", "dead_acute"] {
+            assert_eq!(
+                action_for(&bindings, ctrl(key, Some("KeyW"))),
+                None,
+                "{key}"
+            );
+        }
+        assert_eq!(
+            action_for(&bindings, ctrl("r", Some("KeyQ"))),
+            Some(ActionId::Reload)
+        );
+        let f11 = Pressed {
+            key: "f11",
+            code: Some("KeyW"),
+            ..Pressed::default()
+        };
+        assert_eq!(action_for(&bindings, f11), Some(ActionId::ToggleFullScreen));
+        assert_eq!(action_for(&bindings, Pressed { key: "f99", ..f11 }), None);
+    }
+
+    #[test]
+    fn non_latin_letters_are_single_letters_of_another_script() {
+        for key in ["ц", "λ", "א", "ب", "あ", "中"] {
+            assert!(non_latin_letter(key), "{key}");
+        }
+        for key in ["w", "W", "ß", "é", "ł", "ﬁ", "ｗ", "¡", "´", "1", "цц", ""] {
+            assert!(!non_latin_letter(key), "{key}");
+        }
+    }
+
+    #[test]
+    fn an_xkb_keycode_names_the_place_of_a_menu_key() {
+        assert_eq!(xkb_code(25), Some("KeyW"));
+        assert_eq!(xkb_code(24), Some("KeyQ"));
+        assert_eq!(xkb_code(38), Some("KeyA"));
+        assert_eq!(xkb_code(58), Some("KeyM"));
+        assert_eq!(xkb_code(10), Some("Digit1"));
+        assert_eq!(xkb_code(19), Some("Digit0"));
+        assert_eq!(xkb_code(20), Some("Minus"));
+        assert_eq!(xkb_code(21), Some("Equal"));
+        assert_eq!(xkb_code(51), Some("Backslash"));
+        for code in [0, 9, 22, 34, 47, 59, 300] {
+            assert_eq!(xkb_code(code), None, "{code}");
+        }
+        // Every bound key's place is one the table names.
+        for b in key_bindings(options(Platform::Linux)) {
+            if let Some(code) = b.code.as_deref().filter(|c| !c.starts_with('F')) {
+                assert!((0..300).any(|k| xkb_code(k) == Some(code)), "{code}");
+            }
+        }
     }
 }

@@ -17,7 +17,7 @@
   from the capability fails at runtime, not at build. The parity test compares all five.
 - **Scope the capability with `webviews`, never `windows`.** A window grant also covers
   every child webview in it, so WP7b's side-panel guests and `agentrq-ext:` pages would
-  inherit all our commands. Guests get a capability of their own, keyed on their labels.
+  inherit all our commands. Guests get no capability; a test reads every capability file.
 - **`window.agentrq` is deep-frozen and non-writable** (`versions` stays mutable until the
   Tauri version resolves), as Electron's contextBridge leaves it. Page code must not be
   able to replace a member.
@@ -69,6 +69,29 @@
 - **On Linux, Tauri stacks child webviews in a GtkBox**, so the side panel lands
   below the page. Put the main webview in a GtkOverlay and place the child with
   `get-child-position`.
+- **Once a window has a child webview, `get_webview_window` finds nothing**, and a
+  `WebviewWindow` command argument fails: Tauri sees a webview window only while
+  every webview shares the window's label. Use `chrome::main_webview` and a
+  `Webview` argument.
+- **Every webview but `main` gets 403 from the `app` scheme**, and only a
+  `panel-guest-*` gets anything from `agentrq-ext`: schemes are app-wide. A guest
+  has no capability, so its bridge is a `POST` to `/.agentrq/panel-send` on
+  `agentrq-ext`, routed by the guest's own URL. It must carry the guest's token,
+  which Rust pushes to the top frame on each load: WebKit sends no `Origin` on a
+  same-origin custom-scheme request, so a missing `Origin` proves nothing.
+- **The app registers its own `tauri` scheme, a 403**, so no guest reaches the
+  built-in asset server (`tauri://localhost`, `http://tauri.localhost`).
+- **Every guest is destroyed when `main` starts a load** (reload, crash, sign-out,
+  profile switch); the new page knows none of them.
+- **WebKit makes no new window of a Cmd/Ctrl-click**, unlike Chromium, and wry
+  reports no keys: the guest reads them natively in `on_navigation`, and only for
+  a user's link click (a GLib emission hook on `decide-policy`, since wry's handler
+  stops the signal), so a script's redirect never opens the browser.
+- **Before macOS 14 a guest is `incognito`**: wry ignores `data_store_identifier`
+  there and the guest would share the default store.
+- **The page keeps its `activeElement` while a guest has the keyboard**, so the
+  guest reports its focus-in and the page blurs. Without it the address bar never
+  follows the guest.
 - **Drag regions are `data-tauri-drag-region="deep"`, and `="false"` on every
   `.app-no-drag`.** A bare attribute drags from that element only, not from the
   title text inside it, and a no-drag card of plain divs would drag without `"false"`.
@@ -82,8 +105,10 @@
 - **Never use `tauri-plugin-window-state`.** Its clamping differs from
   `core::window_state`. The save is read when the debounce fires, never per
   resize event: a platform can report the maximized size before the state.
-- **`chrome.rs` and `app_menu.rs` are wiring and outside the coverage gate**, like `lib.rs`; a rule
-  goes in `core/` or `chrome_state.rs` with its test.
+- **`chrome.rs`, `app_menu.rs`, and `side_panel/`'s platform files and `handlers.rs`
+  are wiring and outside the coverage gate**, like `lib.rs`; a rule goes in `core/`
+  or a gated file with its test. `side_panel.rs` is gated: llvm-cov counts a closure
+  per generic instance, so keep closures out of its commands.
 - **The window starts hidden and is shown on the page's first load** (5 s
   fallback), so a failed load still appears. Showing earlier is the white flash.
 - **A webview process crash reloads the window** (WebKitGTK, WebView2), at most 3
@@ -97,8 +122,10 @@
   says which keys repeat (zoom only); `menu_run` takes only an id that has a key here and
   now. A key's physical place is used only for a letter of a non-Latin script, never for
   `ß`, `¡`, `´` or a dead key. WebView2's own accelerator keys are switched off, or Ctrl+R
-  would reload twice. Windows is otherwise unmeasured. A guest page's keys (WP7b's side
-  panel) never reach it, so the guest must forward them.
+  would reload twice, in a side panel guest too. Windows is otherwise unmeasured. A
+  guest's keys never reach that listener: on Linux the GtkOverlay takes the keys WebKit
+  sends up unhandled; on Windows `AcceleratorKeyPressed` only notes the key and the
+  guest's init script posts it if the page left it.
 - **A command's arguments are required unless the page may leave them out.** An `Option`
   turns a key the bridge misspelled (`fileUrl` for `rawUrl`) into `None`, silently.
   The parity test checks every implemented command's parameter names against the bridge.

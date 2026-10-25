@@ -332,16 +332,11 @@ pub fn update_install_via_script<R: Runtime>(
     }
 }
 
-/// `agentrq:side-panel:open-external`
+/// `agentrq:side-panel:pages`: the installed Extensions' panel pages. WP9
+/// installs Extensions; until then there are none.
 #[tauri::command]
-pub fn side_panel_open_external() -> Result<(), String> {
-    todo("sidePanel.openExternal", "WP7b")
-}
-
-/// `agentrq:side-panel:pages`
-#[tauri::command]
-pub fn side_panel_pages() -> Result<(), String> {
-    todo("sidePanel.pages", "WP7b")
+pub fn side_panel_pages() -> Vec<serde_json::Value> {
+    Vec::new()
 }
 
 /// `agentrq:side-panel:permission-answer`
@@ -360,12 +355,6 @@ pub fn side_panel_permission_remove() -> Result<(), String> {
 #[tauri::command]
 pub fn side_panel_permissions() -> Result<(), String> {
     todo("sidePanel.permissions", "WP7c")
-}
-
-/// `agentrq:panel:send`
-#[tauri::command]
-pub fn panel_send() -> Result<(), String> {
-    todo("panel.send", "WP7b / WP9")
 }
 
 /// `agentrq:navigation:ready`
@@ -415,12 +404,17 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         update_get,
         update_install,
         update_install_via_script,
-        side_panel_open_external,
+        crate::side_panel::side_panel_open_external,
         side_panel_pages,
         side_panel_permission_answer,
         side_panel_permission_remove,
         side_panel_permissions,
-        panel_send,
+        crate::side_panel::side_panel_guest_open,
+        crate::side_panel::side_panel_guest_place,
+        crate::side_panel::side_panel_guest_navigate,
+        crate::side_panel::side_panel_guest_focus,
+        crate::side_panel::side_panel_guest_snapshot,
+        crate::side_panel::side_panel_guest_close,
         navigation_ready,
         crate::chrome::view_fullscreen,
         crate::chrome::view_get,
@@ -484,12 +478,9 @@ mod tests {
         ("extensions_state", "extensions.state"),
         ("extensions_supervisor", "extensions.supervisor"),
         ("extensions_uninstall", "extensions.uninstall"),
-        ("side_panel_open_external", "sidePanel.openExternal"),
-        ("side_panel_pages", "sidePanel.pages"),
         ("side_panel_permission_answer", "sidePanel.answerPermission"),
         ("side_panel_permission_remove", "sidePanel.removePermission"),
         ("side_panel_permissions", "sidePanel.permissions"),
-        ("panel_send", "panel.send"),
     ];
 
     /// The commands WP2 and WP4 have replaced; every other one is still a stub.
@@ -563,7 +554,7 @@ mod tests {
     #[test]
     fn every_command_is_registered_and_the_stubs_answer_todo() {
         let rig = rig();
-        assert_eq!(STUB_COMMANDS.len(), 35, "stub commands answering todo");
+        assert_eq!(STUB_COMMANDS.len(), 32, "stub commands answering todo");
         for (cmd, member) in STUB_COMMANDS.iter().filter(|(cmd, _)| !DONE.contains(cmd)) {
             let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
             let text = err.as_str().unwrap_or_default();
@@ -583,6 +574,13 @@ mod tests {
             call(&rig, "navigation_ready", serde_json::json!({})),
             Ok(serde_json::Value::Null)
         );
+    }
+
+    #[test]
+    fn lists_no_panel_pages_until_extensions_arrive() {
+        let rig = rig();
+        let pages = call(&rig, "side_panel_pages", serde_json::json!({})).unwrap();
+        assert_eq!(pages, serde_json::json!([]));
     }
 
     #[test]

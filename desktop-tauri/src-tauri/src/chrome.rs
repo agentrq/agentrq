@@ -19,6 +19,7 @@ use agentrq_desktop_core::app_icon::needs_window_icon;
 use agentrq_desktop_core::emoji_panel::{show_emoji_panel, EmojiPanelHost};
 use agentrq_desktop_core::files::{open_file_link, FileShell};
 use agentrq_desktop_core::normal_bounds::{seed, to_logical, NormalBounds, Shown};
+use agentrq_desktop_core::side_panel::child::is_guest_label;
 use agentrq_desktop_core::theme::{
     apply_theme, background_color_for, rgb_from_hex, NativeTheme, ThemeSource, ThemedWindow,
 };
@@ -32,8 +33,8 @@ use agentrq_desktop_core::window_view::{
 use serde_json::Value;
 use tauri::window::Color;
 use tauri::{
-    AppHandle, Manager, RunEvent, Runtime, Theme, Url, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Manager, RunEvent, Runtime, Theme, Url, Webview, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, Window, WindowEvent,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
@@ -42,6 +43,13 @@ use crate::chrome_state::{chooser_start, StateFile, ZoomTable};
 use crate::profiles::{app_origin, Profiles};
 
 pub const MAIN: &str = "main";
+
+/// The main window's own webview. Never `get_webview_window(MAIN)`: Tauri
+/// counts a window as a webview window only while every webview in it shares
+/// its label, so that is `None` whenever the side panel's guest is open.
+pub fn main_webview<R: Runtime>(app: &AppHandle<R>) -> Option<Webview<R>> {
+    app.get_webview(MAIN)
+}
 
 /// What the chrome keeps for the whole app.
 pub struct Chrome {
@@ -103,7 +111,7 @@ fn work_areas<R: Runtime>(app: &AppHandle<R>) -> Vec<Rect> {
 
 /// Where the window is, in logical pixels: its outer position and inner size,
 /// the two a window builder takes back.
-fn bounds_of<R: Runtime>(window: &WebviewWindow<R>) -> Option<Rect> {
+fn bounds_of<R: Runtime>(window: &Window<R>) -> Option<Rect> {
     let scale = window.scale_factor().ok()?;
     let position = window.outer_position().ok()?;
     let size = window.inner_size().ok()?;
@@ -119,7 +127,7 @@ fn bounds_of<R: Runtime>(window: &WebviewWindow<R>) -> Option<Rect> {
 }
 
 /// `captureWindowState` and `save`, for the window as it is now.
-fn save_state<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, normal: &NormalBounds) {
+fn save_state<R: Runtime>(app: &AppHandle<R>, window: &Window<R>, normal: &NormalBounds) {
     let Some(bounds) = bounds_of(window) else {
         return;
     };
@@ -210,17 +218,10 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
         .visible(false)
         .background_color(background)
         .on_page_load(move |window, payload| {
-            match payload.event() {
-                // A reload or a navigation leaves the old page's event streams
-                // running (WP2).
-                tauri::webview::PageLoadEvent::Started => {
-                    if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
-                        streams.close_all();
-                    }
-                }
-                tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
+            main_page_load(window.app_handle(), &payload.event());
+            if let tauri::webview::PageLoadEvent::Finished = payload.event() {
+                reveal(&window, &on_load);
             }
-            crate::shell::on_page_load(window.app_handle(), &payload.event());
         })
         .on_navigation(move |url| crate::shell::dispatch_navigation(&navigating, url))
         .on_new_window(move |url, _features| crate::shell::dispatch_new_window(&win_app, &url));
@@ -259,7 +260,7 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
     let normal = NormalBounds::seeded(seed(
         (placement.x, placement.y),
         (placement.width, placement.height),
-        bounds_of(&window),
+        bounds_of(&window.as_ref().window()),
     ));
     if restored.maximized {
         let _ = window.maximize();
@@ -271,6 +272,20 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
     #[cfg(windows)]
     switch_browser_accelerators_off(&window);
     Ok(())
+}
+
+/// What the main webview's every load start and finish does, beside showing
+/// the window.
+pub fn main_page_load<R: Runtime>(app: &AppHandle<R>, event: &tauri::webview::PageLoadEvent) {
+    // A reload or a navigation leaves the old page's event streams running
+    // (WP2), and its side panel guest over the new page.
+    if let tauri::webview::PageLoadEvent::Started = event {
+        if let Some(streams) = app.try_state::<crate::event_source::Streams>() {
+            streams.close_all();
+        }
+        crate::side_panel::close_all(app);
+    }
+    crate::shell::on_page_load(app, event);
 }
 
 fn reveal<R: Runtime>(window: &WebviewWindow<R>, shown: &AtomicBool) {
@@ -285,14 +300,14 @@ fn wire_state<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, normal:
     let normal = Arc::new(normal);
     *app.state::<Chrome>().normal.lock().unwrap() = Arc::clone(&normal);
     let persist = {
-        let (app, window, normal) = (app.clone(), window.clone(), Arc::clone(&normal));
+        let (app, window, normal) = (app.clone(), window.as_ref().window(), Arc::clone(&normal));
         debounce(
             move |()| save_state(&app, &window, &normal),
             500,
             Arc::new(StdTimers::default()),
         )
     };
-    let (app, saved) = (app.clone(), window.clone());
+    let (app, saved) = (app.clone(), window.as_ref().window());
     window.on_window_event(move |event| match event {
         WindowEvent::Resized(_) | WindowEvent::Moved(_) => persist.call(()),
         WindowEvent::CloseRequested { .. } => save_state(&app, &saved, &normal),
@@ -399,7 +414,7 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
             has_visible_windows: false,
             ..
         } => {
-            if app.get_webview_window(MAIN).is_none() {
+            if main_webview(app).is_none() {
                 let _ = open_active_main_window(app);
             }
         }
@@ -414,25 +429,32 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
 /// The main window's place, now. `destroy()` raises no `CloseRequested`, so
 /// whatever destroys it saves first.
 pub fn save_main<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window(MAIN) {
+    if let Some(webview) = main_webview(app) {
         let normal = Arc::clone(&app.state::<Chrome>().normal.lock().unwrap());
-        save_state(app, &window, &normal);
+        save_state(app, &webview.window(), &normal);
     }
 }
 
 // ---- the window's view: zoom and full screen ----
 
 pub struct View<'a, R: Runtime> {
-    window: &'a WebviewWindow<R>,
+    webview: &'a Webview<R>,
+    window: Window<R>,
     zoom: &'a ZoomTable,
 }
 
 /// The view of a window, for the menu as well as the title bar's commands.
-pub fn view_of<'a, R: Runtime>(window: &'a WebviewWindow<R>, chrome: &'a Chrome) -> View<'a, R> {
+pub fn view_of<'a, R: Runtime>(webview: &'a Webview<R>, chrome: &'a Chrome) -> View<'a, R> {
     View {
-        window,
+        webview,
+        window: webview.window(),
         zoom: &chrome.zoom,
     }
+}
+
+/// The main window's zoom factor, which the side panel's guest is placed by.
+pub fn zoom_of<R: Runtime>(app: &AppHandle<R>) -> f64 {
+    app.state::<Chrome>().zoom.get(MAIN)
 }
 
 impl<R: Runtime> MaximizeWindow for View<'_, R> {
@@ -449,11 +471,11 @@ impl<R: Runtime> MaximizeWindow for View<'_, R> {
 
 impl<R: Runtime> ViewWindow for View<'_, R> {
     fn zoom_factor(&self) -> f64 {
-        self.zoom.get(self.window.label())
+        self.zoom.get(self.webview.label())
     }
     fn set_zoom_factor(&self, factor: f64) {
-        if self.window.set_zoom(factor).is_ok() {
-            self.zoom.set(self.window.label(), factor);
+        if self.webview.set_zoom(factor).is_ok() {
+            self.zoom.set(self.webview.label(), factor);
         }
     }
     fn is_full_screen(&self) -> bool {
@@ -466,24 +488,17 @@ impl<R: Runtime> ViewWindow for View<'_, R> {
 
 /// `agentrq:view:get`
 #[tauri::command]
-pub fn view_get<R: Runtime>(window: WebviewWindow<R>) -> Value {
-    let chrome = window.state::<Chrome>();
-    view_state(&View {
-        window: &window,
-        zoom: &chrome.zoom,
-    })
-    .to_json()
+pub fn view_get<R: Runtime>(webview: Webview<R>) -> Value {
+    let chrome = webview.state::<Chrome>();
+    view_state(&view_of(&webview, &chrome)).to_json()
 }
 
 /// `agentrq:view:zoom`
 #[tauri::command]
-pub fn view_zoom<R: Runtime>(window: WebviewWindow<R>, direction: String) -> Value {
-    let chrome = window.state::<Chrome>();
+pub fn view_zoom<R: Runtime>(webview: Webview<R>, direction: String) -> Value {
+    let chrome = webview.state::<Chrome>();
     zoom_window(
-        &View {
-            window: &window,
-            zoom: &chrome.zoom,
-        },
+        &view_of(&webview, &chrome),
         ZoomDirection::parse(&direction),
     )
     .to_json()
@@ -491,13 +506,9 @@ pub fn view_zoom<R: Runtime>(window: WebviewWindow<R>, direction: String) -> Val
 
 /// `agentrq:view:fullscreen`
 #[tauri::command]
-pub fn view_fullscreen<R: Runtime>(window: WebviewWindow<R>) -> Value {
-    let chrome = window.state::<Chrome>();
-    toggle_full_screen(&View {
-        window: &window,
-        zoom: &chrome.zoom,
-    })
-    .to_json()
+pub fn view_fullscreen<R: Runtime>(webview: Webview<R>) -> Value {
+    let chrome = webview.state::<Chrome>();
+    toggle_full_screen(&view_of(&webview, &chrome)).to_json()
 }
 
 // ---- theme ----
@@ -513,26 +524,26 @@ impl<R: Runtime> NativeTheme for Native<R> {
         });
     }
     fn should_use_dark_colors(&self) -> bool {
-        self.0
-            .get_webview_window(MAIN)
-            .and_then(|window| window.theme().ok())
-            == Some(Theme::Dark)
+        main_webview(&self.0).and_then(|webview| webview.window().theme().ok()) == Some(Theme::Dark)
     }
 }
 
-struct Paint<R: Runtime>(WebviewWindow<R>);
+struct Paint<R: Runtime>(Webview<R>);
 
 impl<R: Runtime> ThemedWindow for Paint<R> {
     fn set_background_color(&self, color: &str) {
+        let _ = self.0.window().set_background_color(color_of(color));
         let _ = self.0.set_background_color(color_of(color));
     }
 }
 
 fn repaint<R: Runtime>(app: &AppHandle<R>, theme: Option<&str>) -> Value {
     apply_theme(theme, &Native(app.clone()), || {
-        app.webview_windows()
+        // Not the side panel's guests: a page there paints its own, on white.
+        app.webviews()
             .into_values()
-            .map(|window| Arc::new(Paint(window)) as Arc<dyn ThemedWindow>)
+            .filter(|webview| !is_guest_label(webview.label()))
+            .map(|webview| Arc::new(Paint(webview)) as Arc<dyn ThemedWindow>)
             .collect()
     })
     .to_json()
@@ -552,7 +563,7 @@ pub fn theme_set<R: Runtime>(app: AppHandle<R>, theme: String) -> Value {
 #[tauri::command]
 pub async fn dialog_choose_directory<R: Runtime>(
     app: AppHandle<R>,
-    window: WebviewWindow<R>,
+    webview: Webview<R>,
     current_path: Option<String>,
 ) -> String {
     let mut dialog = app
@@ -560,7 +571,7 @@ pub async fn dialog_choose_directory<R: Runtime>(
         .file()
         .set_title("Choose a working directory")
         .set_can_create_directories(true)
-        .set_parent(&window);
+        .set_parent(&webview.window());
     if let Some(start) = chooser_start(current_path.as_deref()) {
         dialog = dialog.set_directory(start);
     }

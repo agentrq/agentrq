@@ -84,6 +84,17 @@ pub fn menu_key_bindings<R: Runtime>(app: AppHandle<R>) -> serde_json::Value {
         .collect()
 }
 
+/// The menu action of a key a side panel guest pressed, as the app's page
+/// would match it (`side_panel::menu_key` runs it).
+#[cfg(not(target_os = "macos"))]
+pub fn key_action<R: Runtime>(
+    app: &AppHandle<R>,
+    pressed: agentrq_desktop_core::menu_keys::Pressed<'_>,
+) -> Option<ActionId> {
+    let name = app_name(app);
+    agentrq_desktop_core::menu_keys::action_for(&key_bindings(options(&name)), pressed)
+}
+
 /// An action the bridge dispatched from a key the page left unhandled.
 #[tauri::command]
 pub fn menu_run<R: Runtime>(app: AppHandle<R>, id: String) -> bool {
@@ -160,12 +171,13 @@ fn add_role<R: Runtime>(
 }
 
 /// A click, or a key, carried out.
-fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
-    let Some(window) = app.get_webview_window(chrome::MAIN) else {
+pub(crate) fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
+    let Some(webview) = chrome::main_webview(app) else {
         return;
     };
+    let window = webview.window();
     let state = app.state::<Chrome>();
-    let view = chrome::view_of(&window, &state);
+    let view = chrome::view_of(&webview, &state);
     if let Some(direction) = action.zoom_direction() {
         zoom_window(&view, direction);
         return;
@@ -182,18 +194,18 @@ fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
             let _ = app.emit_to(chrome::MAIN, "agentrq:navigate", "/");
         }
         ActionId::Reload | ActionId::ForceReload => {
-            let _ = window.eval("location.reload()");
+            let _ = webview.eval("location.reload()");
         }
         #[cfg(debug_assertions)]
-        ActionId::ToggleDevTools => window.open_devtools(),
+        ActionId::ToggleDevTools => webview.open_devtools(),
         ActionId::Undo => {
-            let _ = window.eval("document.execCommand('undo')");
+            let _ = webview.eval("document.execCommand('undo')");
         }
         ActionId::Redo => {
-            let _ = window.eval("document.execCommand('redo')");
+            let _ = webview.eval("document.execCommand('redo')");
         }
         ActionId::Delete => {
-            let _ = window.eval("document.execCommand('delete')");
+            let _ = webview.eval("document.execCommand('delete')");
         }
         ActionId::Minimize => {
             let _ = window.minimize();

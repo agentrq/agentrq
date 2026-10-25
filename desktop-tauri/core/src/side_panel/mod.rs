@@ -6,6 +6,7 @@
 //! the Extension bridge, the `agentrq-ext` scheme and the window wiring.
 
 pub mod bridge;
+pub mod child;
 pub mod ext_scheme;
 pub mod guest;
 pub mod permission_store;

@@ -72,8 +72,13 @@ impl Scheme {
 
     /// Answer `request`, made by the webview labelled `webview`. Only a proxied
     /// request opens the profile, which can wait on the keychain: the renderer
-    /// itself never does.
+    /// itself never does. Any other webview (a side panel guest) gets nothing,
+    /// not even the renderer: the scheme is app-wide, and a page in the panel
+    /// could otherwise frame the app.
     pub async fn handle(&self, webview: &str, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+        if webview != MAIN_WEBVIEW {
+            return text(forbidden_reply());
+        }
         let protocol = self.network.protocol(&self.dev_server_url);
         let path = request.uri().path().to_string();
         let search = request
@@ -86,7 +91,6 @@ impl Scheme {
             // Extensions are WP9: until then neither has anything to serve.
             Route::DrawerFrame => text(not_found_reply()),
             Route::DrawerCode(_) => text(drawer_code_reply(&DrawerLookup::default())),
-            Route::Proxy if webview != MAIN_WEBVIEW => text(forbidden_reply()),
             Route::Proxy => {
                 let net = self.network.active().await;
                 let protocol = net.protocol(&self.dev_server_url);
@@ -525,7 +529,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forwards_nothing_for_another_webview_but_still_serves_it_the_renderer() {
+    async fn answers_another_webview_with_nothing_at_all() {
         let server = TestServer::start(echo).await;
         let rig = rig(&server.url, "");
         let res = rig
@@ -536,9 +540,9 @@ mod tests {
         assert!(server.requests().is_empty());
         let page = rig
             .scheme
-            .handle("side-panel", request("GET", "/", b""))
+            .handle("panel-guest-1", request("GET", "/", b""))
             .await;
-        assert_eq!(body(&page), "<html>app</html>");
+        assert_eq!(page.status(), 403);
     }
 
     #[tokio::test]

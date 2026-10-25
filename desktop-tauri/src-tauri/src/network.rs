@@ -160,6 +160,13 @@ impl Network {
         lock(&self.active).clone()
     }
 
+    /// The active profile's id, without opening the profile. The side
+    /// panel's storage is named after it.
+    pub fn active_id(&self) -> String {
+        self.current()
+            .map_or_else(|| self.first.0.clone(), |net| net.id.clone())
+    }
+
     /// The active profile's server, without opening the profile.
     pub fn server_url(&self) -> String {
         self.current()
@@ -276,10 +283,12 @@ pub(crate) mod tests {
     async fn switching_gives_another_profile_its_own_jar_and_cache() {
         let dir = tempfile::tempdir().unwrap();
         let net = network(dir.path(), "http://127.0.0.1:1");
+        assert_eq!(net.active_id(), "default", "before it is opened");
         let first = net.active().await;
         let work = net.profile("work", "http://127.0.0.1:2").await;
         assert!(Arc::ptr_eq(&first, &net.active().await), "not active yet");
         net.activate(work.clone());
+        assert_eq!(net.active_id(), "work");
         assert!(Arc::ptr_eq(&work, &net.active().await));
         assert!(!Arc::ptr_eq(&first.jar, &work.jar));
         assert_eq!(work.server_url(), "http://127.0.0.1:2");
