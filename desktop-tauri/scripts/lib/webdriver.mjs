@@ -14,12 +14,19 @@
  */
 import { spawn } from 'node:child_process'
 
+/** No single WebDriver command may take longer: a hung driver is an error, not a wait. */
+const COMMAND_TIMEOUT = 90000
+
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** What the run is waiting for now, so a run that hangs can say where. */
+export const pending = { what: 'nothing' }
 
 /** Poll `probe` until it returns something truthy, or throw once `timeout` passes. */
 export async function waitFor(what, probe, { timeout = 30000, interval = 150 } = {}) {
   const deadline = Date.now() + timeout
   let last
+  pending.what = what
   for (;;) {
     try {
       const value = await probe()
@@ -76,7 +83,9 @@ export class Session {
 
   /** Open a session that launches `application`. */
   static async create(base, application) {
+    pending.what = 'the app to start (POST /session)'
     const res = await fetch(`${base}/session`, {
+      signal: AbortSignal.timeout(COMMAND_TIMEOUT),
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -89,10 +98,12 @@ export class Session {
   }
 
   async command(method, path, payload) {
+    pending.what = `${method} ${path}`
     const res = await fetch(`${this.base}/session/${this.id}${path}`, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: payload === undefined ? undefined : JSON.stringify(payload),
+      signal: AbortSignal.timeout(COMMAND_TIMEOUT),
     })
     const body = await res.json()
     if (!res.ok) throw new Error(`${method} ${path}: ${body.value?.error}: ${body.value?.message}`)

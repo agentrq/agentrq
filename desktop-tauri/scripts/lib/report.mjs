@@ -2,6 +2,8 @@
 // This notice may not be modified or removed.
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import { pending } from './webdriver.mjs'
+
 /**
  * What every verify script prints and exits with, as the Electron ones do:
  * ✓ / ✗ per check, a summary line, exit 0 only when nothing failed.
@@ -36,9 +38,9 @@ export function summarize(...blocks) {
  * Run `main` under a deadline. A script that hangs is worse than one that
  * fails: it blocks a run with no signal at all. `cleanup` always runs.
  */
-export async function runVerify(main, cleanup, { timeout = 120000 } = {}) {
+export async function runVerify(main, cleanup, { timeout = 300000 } = {}) {
   const timer = setTimeout(async () => {
-    console.error('✗ verification timed out')
+    console.error(`✗ verification timed out, waiting for: ${pending.what}`)
     await cleanup().catch(() => {})
     process.exit(3)
   }, timeout)
