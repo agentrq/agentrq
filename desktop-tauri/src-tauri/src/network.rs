@@ -238,8 +238,15 @@ pub(crate) mod tests {
     #[test]
     fn a_poisoned_lock_still_answers() {
         let dir = tempfile::tempdir().unwrap();
-        let profile =
-            Arc::new(ProfileNet::new(dir.path(), "p", "http://a", Vault::new(&[0; 32])).unwrap());
+        let profile = Arc::new(
+            ProfileNet::new(
+                dir.path(),
+                "p",
+                "http://a",
+                Vault::new(&crate::vault::random_key()),
+            )
+            .unwrap(),
+        );
         let held = profile.clone();
         let _ = std::thread::spawn(move || {
             let _guard = held.server_url.write().unwrap();

@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn opens_what_it_sealed_and_nothing_else() {
-        let vault = Vault::new(&[7; KEY_LEN]);
+        let vault = Vault::new(&random_key());
         let sealed = vault.seal(b"at=1");
         assert!(sealed.starts_with(MAGIC));
         assert!(!sealed.windows(4).any(|w| w == b"at=1"));
@@ -160,7 +160,7 @@ mod tests {
         let mut changed = sealed.clone();
         *changed.last_mut().unwrap() ^= 1;
         assert_eq!(vault.open(&changed), None);
-        assert_eq!(Vault::new(&[8; KEY_LEN]).open(&sealed), None);
+        assert_eq!(Vault::new(&random_key()).open(&sealed), None);
         assert_eq!(vault.open(b"plain json"), None);
         assert_eq!(vault.open(b"ARQV1short"), None);
     }

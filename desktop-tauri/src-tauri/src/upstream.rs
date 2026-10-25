@@ -219,7 +219,8 @@ mod tests {
     async fn reports_an_unreachable_server_with_what_went_wrong() {
         let failed = send(
             &reqwest::Client::new(),
-            get(format!("{}/api/v1/x", closed_port().await), 1000),
+            // Windows takes ~2 s to give up on a refused connection.
+            get(format!("{}/api/v1/x", closed_port().await), 30_000),
         )
         .await;
         assert!(matches!(failed, Err(ProxyError::Unreachable(detail)) if !detail.is_empty()));

@@ -146,9 +146,15 @@ pub fn domain_match(cookie_domain: &str, host: &str) -> bool {
 mod tests {
     use super::*;
     use reqwest::cookie::CookieStore as _;
+    use std::sync::LazyLock;
+
+    use crate::vault::random_key;
+
+    /// One random key for every jar in these tests, so a reopened jar can read the file.
+    static KEY: LazyLock<[u8; 32]> = LazyLock::new(random_key);
 
     fn jar_in(dir: &tempfile::TempDir) -> ProfileJar {
-        ProfileJar::open(dir.path().join("jar"), Vault::new(&[1; 32]))
+        ProfileJar::open(dir.path().join("jar"), Vault::new(&KEY))
     }
 
     fn server() -> Url {
@@ -228,10 +234,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         set(&jar_in(&dir), &[AT]);
 
-        let other_key = ProfileJar::open(dir.path().join("jar"), Vault::new(&[2; 32]));
+        let other_key = ProfileJar::open(dir.path().join("jar"), Vault::new(&random_key()));
         assert!(other_key.cookies(&server()).is_none());
 
-        let vault = Vault::new(&[1; 32]);
+        let vault = Vault::new(&KEY);
         fs::write(dir.path().join("jar"), vault.seal(b"not json")).unwrap();
         assert!(jar_in(&dir).cookies(&server()).is_none());
     }
@@ -240,7 +246,7 @@ mod tests {
     fn stays_signed_in_in_memory_when_the_disk_refuses() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("file"), b"x").unwrap();
-        let jar = ProfileJar::open(dir.path().join("file").join("jar"), Vault::new(&[1; 32]));
+        let jar = ProfileJar::open(dir.path().join("file").join("jar"), Vault::new(&KEY));
         set(&jar, &[AT]);
         assert_eq!(jar.cookies(&server()).unwrap(), "at=token");
     }

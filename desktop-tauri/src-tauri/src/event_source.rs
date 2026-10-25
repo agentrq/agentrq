@@ -158,6 +158,12 @@ fn is_event_stream(response: &reqwest::Response) -> bool {
 
 /// Read the stream at `url` until it fails for good or the sink goes away.
 pub async fn run(client: reqwest::Client, url: String, sink: Box<dyn Sink>) {
+    let deadlines = (PROXY_TIMEOUT_MS, IDLE_TIMEOUT);
+    read(client, url, sink, deadlines).await
+}
+
+/// `run`, with the headers and idle deadlines in milliseconds.
+async fn read(client: reqwest::Client, url: String, sink: Box<dyn Sink>, deadlines: (u64, u64)) {
     let mut parser = Parser::default();
     loop {
         let mut request = client
@@ -167,7 +173,7 @@ pub async fn run(client: reqwest::Client, url: String, sink: Box<dyn Sink>) {
         if !parser.last_event_id().is_empty() {
             request = request.header("last-event-id", parser.last_event_id());
         }
-        let deadline = Duration::from_millis(PROXY_TIMEOUT_MS);
+        let deadline = Duration::from_millis(deadlines.0);
         if let Ok(Ok(response)) = tokio::time::timeout(deadline, request.send()).await {
             if !is_event_stream(&response) {
                 sink.send(Frame::Error { ready_state: 2 });
@@ -178,7 +184,7 @@ pub async fn run(client: reqwest::Client, url: String, sink: Box<dyn Sink>) {
             }
             let mut decoder = Utf8Decoder::new();
             let mut stream = response.bytes_stream();
-            let idle = Duration::from_millis(IDLE_TIMEOUT);
+            let idle = Duration::from_millis(deadlines.1);
             while let Ok(Some(Ok(chunk))) = tokio::time::timeout(idle, stream.next()).await {
                 for frame in parser.feed(&decoder.decode(&chunk)) {
                     if !sink.send(frame) {
@@ -450,10 +456,17 @@ mod tests {
 
     #[tokio::test]
     async fn treats_a_silent_stream_as_dropped() {
-        tokio::time::pause();
-        let server = TestServer::start(|_| vec![send(STREAM), Step::Wait(IDLE_TIMEOUT * 2)]).await;
+        // Real time: a paused clock jumps ahead while the socket is still busy.
+        let server = TestServer::start(|_| vec![send(STREAM), Step::Wait(5_000)]).await;
         let (sink, mut rx) = collect(2);
-        run(reqwest::Client::new(), server.url.clone(), Box::new(sink)).await;
+        let deadlines = (PROXY_TIMEOUT_MS, 200);
+        read(
+            reqwest::Client::new(),
+            server.url.clone(),
+            Box::new(sink),
+            deadlines,
+        )
+        .await;
         assert_eq!(
             drain(&mut rx).await,
             [Frame::Open, Frame::Error { ready_state: 0 }]
