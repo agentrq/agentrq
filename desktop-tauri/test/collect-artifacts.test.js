@@ -97,6 +97,23 @@ describe('collectArtifacts', () => {
     expect(Object.keys(collected(outDir))).toEqual(['AgentRQ-Tauri-0.13.4-x64.AppImage', 'AgentRQ-Tauri-0.13.4-x64.deb'])
   })
 
+  it('collects the dmg alone from an unsigned macOS build, which has no app.tar.gz', () => {
+    const outDir = path.join(tmp, 'out')
+    const bundleDir = bundleTree('macos-arm64', {
+      drop: ['macos/AgentRQ Tauri.app.tar.gz', 'macos/AgentRQ Tauri.app.tar.gz.sig'],
+    })
+    const names = collectArtifacts({ bundleDir, outDir, version: '0.13.4', platform: 'macos', arch: 'arm64' })
+    expect(names).toEqual(['AgentRQ-Tauri-0.13.4-arm64.dmg'])
+    expect(Object.keys(collected(outDir))).toEqual(['AgentRQ-Tauri-0.13.4-arm64.dmg'])
+  })
+
+  it('still requires the app.tar.gz of a signed macOS build', () => {
+    const bundleDir = bundleTree('macos-arm64', { drop: ['macos/AgentRQ Tauri.app.tar.gz'] })
+    expect(() => collectArtifacts({ bundleDir, outDir: tmp, version: '0.13.4', platform: 'macos', arch: 'arm64', signed: true })).toThrow(
+      'no *.app.tar.gz in bundle/macos'
+    )
+  })
+
   it('names files after tauri.conf.json when no version is given', () => {
     const outDir = path.join(tmp, 'out')
     collectArtifacts({ bundleDir: bundleTree('windows-x64'), outDir, platform: 'windows', arch: 'x64' })

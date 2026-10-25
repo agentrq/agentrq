@@ -20,10 +20,11 @@ const REPO_ROOT = join(TAURI_ROOT, '..')
 
 // Only the top level of each target dir: the rest of `bundle/` is the bundler's
 // working files (the AppDir, the deb staging dir, the dmg scripts).
-// `updater` marks the files Tauri v2 signs for the updater.
+// `updater` marks the files Tauri v2 signs for the updater. `updaterOnly` ones exist only
+// when updater artifacts are built, so an unsigned build neither has nor needs them.
 const BUNDLES = {
   dmg: { dir: 'dmg', suffix: '.dmg' },
-  'app.tar.gz': { dir: 'macos', suffix: '.app.tar.gz', updater: true },
+  'app.tar.gz': { dir: 'macos', suffix: '.app.tar.gz', updater: true, updaterOnly: true },
   AppImage: { dir: 'appimage', suffix: '.AppImage', updater: true },
   deb: { dir: 'deb', suffix: '.deb' },
   exe: { dir: 'nsis', suffix: '-setup.exe', updater: true },
@@ -70,7 +71,8 @@ export function collectArtifacts({
   const problems = []
   const copies = []
   for (const ext of kinds) {
-    const { dir, suffix, updater } = BUNDLES[ext]
+    const { dir, suffix, updater, updaterOnly } = BUNDLES[ext]
+    if (updaterOnly && !signed) continue
     const name = `AgentRQ-Tauri-${version}-${arch}.${ext}`
     const found = topLevelFiles(join(bundleDir, dir)).filter((f) => f.endsWith(suffix))
     if (found.length === 0) {
