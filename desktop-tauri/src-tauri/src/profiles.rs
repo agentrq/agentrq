@@ -68,6 +68,7 @@ pub fn first_profile(base: &Path, lock: Option<&str>) -> (String, String) {
 
 /// Where a profile's webviews keep their storage on Linux and Windows, beside
 /// its cookie jar and attachments, so removing the profile removes all three.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn webview_dir(base: &Path, id: &str) -> PathBuf {
     profile_dir(base, id).join("webview")
 }
@@ -224,7 +225,8 @@ impl Profiles {
         server_of(self.config().active(), self.lock.as_deref())
     }
 
-    /// The folder for a profile's webview storage.
+    /// The folder for a profile's webview storage; macOS has a data store instead.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub fn webview_dir(&self, id: &str) -> PathBuf {
         webview_dir(&self.base, id)
     }
