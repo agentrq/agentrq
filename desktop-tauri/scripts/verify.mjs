@@ -18,7 +18,14 @@ import { join } from 'node:path'
 
 import { buildBackend } from './lib/backend.mjs'
 
-const SCRIPTS = ['verify-e2e.mjs', 'verify-connection.mjs', 'verify-markdown-links.mjs']
+const SCRIPTS = [
+  'verify-e2e.mjs',
+  'verify-connection.mjs',
+  'verify-markdown-links.mjs',
+  'verify-side-panel.mjs',
+  'verify-webmcp.mjs',
+  'verify-ui-telemetry.mjs',
+]
 
 const run = (script, env) =>
   new Promise((resolveRun) => {

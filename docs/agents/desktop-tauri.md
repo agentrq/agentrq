@@ -147,3 +147,8 @@
   or switch rebuilds `main` under the *same* handle, so `replaceWindow` tells old from new
   by a marker. A check that follows a rebuild must wait for the new page's own state
   (`/login`), or its first fetch goes out before the network has moved.
+- **WebDriver cannot reach a side panel guest**, so a verify script reads one from a
+  stand-in site's log (`scripts/lib/site.mjs`): its requests, and a beat its page sends
+  every 100 ms. A closed guest is a beat that never comes again after a page known to
+  have started later. Take the log's position *before* the action that makes the page
+  load, or its hello can land first and the wait never sees it.
