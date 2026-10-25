@@ -205,3 +205,85 @@ jobs:
           name: chrome-shots-${{ runner.os }}
           path: desktop-tauri/shots
           if-no-files-found: ignore
+
+  # The headless parity checks (desktop-tauri/scripts/verify-*.mjs): the real
+  # debug app, driven by tauri-driver, against a scratch backend built from
+  # backend/. macOS has no WKWebView driver, so it stays a manual row.
+  verify:
+    name: Verify scripts
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
+
+      # WebKitGTK to build against; WebKitWebDriver for tauri-driver; Xvfb and a
+      # session bus to run the app on; xclip to read the clipboard it writes.
+      - name: Install the Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip dbus-x11
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri -> target
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      # Edge's driver must match the WebView2 runtime on the machine.
+      - name: Install msedgedriver
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo install --git https://github.com/chippers/msedgedriver-tool --locked
+          & "$HOME/.cargo/bin/msedgedriver-tool.exe"
+          "VERIFY_NATIVE_DRIVER=$PWD\msedgedriver.exe" >> $env:GITHUB_ENV
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install dependencies
+        working-directory: desktop-tauri
+        run: npm ci
+
+      - name: Build the debug app
+        working-directory: desktop-tauri
+        run: npm run build:debug
+
+      - name: Verify scripts (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop-tauri
+        run: xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- npm run verify
+
+      - name: Verify scripts (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop-tauri
+        run: npm run verify

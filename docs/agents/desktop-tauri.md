@@ -135,3 +135,8 @@
 - **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
   the theme until WP4 lets the renderer reach the app (`test/e2e/`). Only a debug build or
   `--features e2e` reads it; a release must not run an environment's script in the webview.
+- **The verify scripts see one profile's window only.** WebKitWebDriver automates the web
+  context it launched with, so after `profiles.add()` the session has no window; a save
+  or switch rebuilds `main` under the *same* handle, so `replaceWindow` tells old from new
+  by a marker. A check that follows a rebuild must wait for the new page's own state
+  (`/login`), or its first fetch goes out before the network has moved.
