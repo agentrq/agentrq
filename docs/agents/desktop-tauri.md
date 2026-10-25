@@ -41,6 +41,17 @@
 - **Read `at` with `cookies()` and our own domain-match, never `cookies_for_url`.**
   On macOS it matches the domain exactly, so it misses an IP host and the
   production `Domain=.<domain>` cookie.
+- **Only the webview labelled `main` gets the proxy and the capability**, so a
+  profile switch cannot build the new window beside the old one. Destroy `main`
+  and build the new one in the run loop's `Destroyed` event: the label is free
+  by then and the window count never reaches zero, so Linux and Windows don't quit.
+- **A sign-in window moves every cookie for the server's host into the jar**,
+  not only `at`. The refresh cookie `rt` is what keeps the session past a day.
+  The sign-in window gets no capability.
+- **A profile's webview storage lives under `profiles/<id>/`** (or its macOS
+  data store), and start-up sweeps any profile folder that no profile owns.
+- **The connection probe uses a client with no cookies that follows
+  redirects**, never a profile's client. A probe must not sign anyone in.
 - **Windows' `delete_cookie` is asynchronous.** Check the deletion after the next
   navigation, never straight after the call.
 - **On Linux, Tauri stacks child webviews in a GtkBox**, so the side panel lands
