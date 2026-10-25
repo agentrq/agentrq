@@ -50,6 +50,17 @@ function subscribe(event, deliver) {
   }
 }
 
+/**
+ * Freeze the bridge as Electron's contextBridge does, so page code cannot
+ * replace a member. `versions` stays mutable until the Tauri version resolves.
+ */
+function deepFreeze(object) {
+  for (const [key, value] of Object.entries(object)) {
+    if (key !== 'versions' && value && typeof value === 'object') deepFreeze(value)
+  }
+  return Object.freeze(object)
+}
+
 export function createBridge(userAgent) {
   const versions = { tauri: '', webview: String(userAgent ?? '') }
   getTauriVersion()
@@ -58,7 +69,7 @@ export function createBridge(userAgent) {
     })
     .catch(() => {})
 
-  return {
+  return deepFreeze({
     attachments: {
       forgetWorkspace: (workspaceId) => invoke('attachments_forget_workspace', { workspaceId }),
       forgetTask: (workspaceId, taskId) => invoke('attachments_forget_task', { workspaceId, taskId }),
@@ -171,10 +182,15 @@ export function createBridge(userAgent) {
     theme: {
       set: (theme) => invoke('theme_set', { theme }),
     },
-  }
+  })
 }
 
-window.agentrq = createBridge(navigator.userAgent)
 // WP2 installs its `fetch` wrapper and `EventSource` shim here, before the
 // renderer's first request: Blob/FormData/stream bodies to the app origin are
 // flattened to an ArrayBuffer (docs/agents/desktop-tauri.md).
+Object.defineProperty(window, 'agentrq', {
+  value: createBridge(navigator.userAgent),
+  enumerable: true,
+  writable: false,
+  configurable: false,
+})

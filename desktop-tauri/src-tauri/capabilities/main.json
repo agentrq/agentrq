@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window, on the app scheme: our commands, listening to events, and the title-bar drag. Remote pages (sign-in, side-panel guests) get no capability.",
-  "windows": [
+  "description": "The main window's own webview, on the app scheme: our commands, listening to events, and the title-bar drag. Remote pages (sign-in, side-panel guests) get no capability.",
+  "webviews": [
     "main"
   ],
   "permissions": [
@@ -53,7 +53,6 @@
     "allow-side-panel-permission-answer",
     "allow-side-panel-permission-remove",
     "allow-side-panel-permissions",
-    "allow-panel-send",
     "allow-view-fullscreen",
     "allow-view-get",
     "allow-view-zoom",

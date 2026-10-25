@@ -15,6 +15,12 @@
   `build.rs`, `capabilities/main.json` (`allow-<name-with-dashes>`) and the bridge. Naming
   the commands in `build.rs` is what makes Tauri deny any other, so a command missing
   from the capability fails at runtime, not at build. The parity test compares all five.
+- **Scope the capability with `webviews`, never `windows`.** A window grant also covers
+  every child webview in it, so WP7b's side-panel guests and `agentrq-ext:` pages would
+  inherit all our commands. Guests get a capability of their own, keyed on their labels.
+- **`window.agentrq` is deep-frozen and non-writable** (`versions` stays mutable until the
+  Tauri version resolves), as Electron's contextBridge leaves it. Page code must not be
+  able to replace a member.
 - **Flatten request bodies in the bridge's `fetch` wrapper.** A Blob or File body
   sent to the `app` scheme segfaults WebKitGTK and arrives empty on WKWebView.
   Same-origin Blob, FormData and stream bodies go as an ArrayBuffer.

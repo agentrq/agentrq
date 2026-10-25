@@ -54,6 +54,26 @@ describe('window.agentrq', () => {
     expect(window.agentrq.platform).toBe(bridge.platformOf(navigator.userAgent))
   })
 
+  it('cannot be replaced by page code, nor can its members', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'agentrq')
+    expect(descriptor).toMatchObject({ writable: false, configurable: false, enumerable: true })
+    const original = window.agentrq
+    const save = original.connection.save
+    expect(() => {
+      'use strict'
+      window.agentrq = {}
+    }).toThrow(TypeError)
+    expect(() => {
+      'use strict'
+      original.connection.save = () => 'hijacked'
+    }).toThrow(TypeError)
+    expect(window.agentrq).toBe(original)
+    expect(window.agentrq.connection.save).toBe(save)
+    expect(Object.isFrozen(original)).toBe(true)
+    expect(Object.isFrozen(original.connection)).toBe(true)
+    expect(Object.isFrozen(original.sidePanel.guest)).toBe(true)
+  })
+
   it('carries the webview, and the Tauri version once it is known', async () => {
     const agentrq = bridge.createBridge('Macintosh')
     expect(agentrq.versions).toEqual({ tauri: '', webview: 'Macintosh' })

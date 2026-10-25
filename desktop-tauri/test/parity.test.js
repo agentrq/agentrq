@@ -15,6 +15,9 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke }))
 vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }))
 vi.mock('@tauri-apps/api/app', () => ({ getTauriVersion: tauri.getTauriVersion }))
 
+/** A `#[tauri::command]` function, however it is declared. */
+const COMMAND_PATTERN = /#\[tauri::command[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:async\s+)?fn\s+(\w+)/g
+
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 const read = (p) => readFileSync(here(p), 'utf8')
 
@@ -136,9 +139,29 @@ describe('the bridge mirrors the Electron preload', () => {
   })
 })
 
+describe('the command pattern', () => {
+  const names = (source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])
+
+  it('finds sync, async and attribute-laden commands, and nothing else', () => {
+    const source = `
+      #[tauri::command]
+      pub fn plain() {}
+      #[tauri::command]
+      pub async fn asynchronous() {}
+      #[tauri::command(rename_all = "snake_case")]
+      #[allow(clippy::too_many_arguments)]
+      pub async fn decorated() {}
+      #[tauri::command]
+      fn private() {}
+      pub fn unmarked() {}
+    `
+    expect(names(source)).toEqual(['plain', 'asynchronous', 'decorated'])
+  })
+})
+
 describe('the Rust side serves what the bridge calls', () => {
   const rust = read('../src-tauri/src/commands.rs')
-  const defined = [...rust.matchAll(/#\[tauri::command\]\s*pub fn (\w+)/g)].map((m) => m[1]).sort()
+  const defined = [...rust.matchAll(COMMAND_PATTERN)].map((m) => m[1]).sort()
   const handler = rust.match(/generate_handler!\[([^\]]*)\]/)[1].split(',').map((s) => s.trim()).filter(Boolean).sort()
   const manifest = read('../src-tauri/build.rs').match(/COMMANDS: &\[&str\] = &\[([^\]]*)\]/)[1]
   const named = [...manifest.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort()
@@ -160,7 +183,7 @@ describe('the Rust side serves what the bridge calls', () => {
   it('registers every command in the handler, the manifest and the capability', () => {
     expect(handler).toEqual(defined)
     expect(named).toEqual(defined)
-    expect(allowed).toEqual(defined)
+    expect(allowed).toEqual(defined.filter((name) => !GUEST_ONLY.includes(name)))
   })
 
   it('invokes only commands that exist', async () => {
@@ -182,7 +205,8 @@ describe('the Rust side serves what the bridge calls', () => {
       'core:window:allow-start-dragging',
       'core:window:allow-toggle-maximize',
     ])
-    expect(capability.windows).toEqual(['main'])
+    expect(capability.webviews).toEqual(['main'])
+    expect(capability.windows).toBeUndefined()
     expect(capability.remote).toBeUndefined()
   })
 })
