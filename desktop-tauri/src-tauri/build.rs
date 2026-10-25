@@ -55,6 +55,8 @@ const COMMANDS: &[&str] = &[
     "view_get",
     "view_zoom",
     "theme_set",
+    "menu_key_bindings",
+    "menu_run",
 ];
 
 fn main() {

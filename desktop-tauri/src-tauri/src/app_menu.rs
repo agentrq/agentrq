@@ -11,9 +11,10 @@
 use agentrq_desktop_core::menu::{
     build_menu, ActionId, MenuItem, MenuOptions, Platform, Role, Submenu,
 };
-use agentrq_desktop_core::window_view::{toggle_full_screen, zoom_window};
+use agentrq_desktop_core::menu_keys::{item_parts, key_bindings};
+use agentrq_desktop_core::window_view::{toggle_full_screen, toggle_maximize, zoom_window};
 use tauri::menu::{
-    IsMenuItem, Menu, MenuEvent, MenuItem as NativeItem, PredefinedMenuItem, Submenu as NativeMenu,
+    IsMenuItem, Menu, MenuItem as NativeItem, PredefinedMenuItem, Submenu as NativeMenu,
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -29,29 +30,59 @@ const fn platform() -> Platform {
     }
 }
 
-/// `installMenu`.
-pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let name = app
-        .config()
+fn app_name<R: Runtime>(app: &AppHandle<R>) -> String {
+    app.config()
         .product_name
         .clone()
-        .unwrap_or_else(|| agentrq_desktop_core::menu::DEFAULT_APP_NAME.to_string());
-    let model = build_menu(MenuOptions {
+        .unwrap_or_else(|| agentrq_desktop_core::menu::DEFAULT_APP_NAME.to_string())
+}
+
+fn options(name: &str) -> MenuOptions<'_> {
+    MenuOptions {
         platform: platform(),
-        app_name: &name,
+        app_name: name,
         debug_build: cfg!(debug_assertions),
         // The updater is WP6/WP8's: until it is wired the item is disabled.
         can_check_for_updates: false,
         // The panel listens for `agentrq:side-panel:toggle` (WP7b).
         can_toggle_side_panel: true,
-    });
+    }
+}
+
+/// `installMenu`.
+pub fn install<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let model = build_menu(options(&app_name(app)));
     let menu = Menu::new(app)?;
     for submenu in &model {
         menu.append(&native_submenu(app, submenu)?)?;
     }
     app.set_menu(menu)?;
-    app.on_menu_event(|app, event| dispatch(app, &event));
+    app.on_menu_event(|app, event| {
+        if let Some(action) = ActionId::parse(event.id().as_ref()) {
+            run(app, action);
+        }
+    });
     Ok(())
+}
+
+/// The keys the page dispatches itself, for the bridge's `keydown` listener.
+#[tauri::command]
+pub fn menu_key_bindings<R: Runtime>(app: AppHandle<R>) -> serde_json::Value {
+    let name = app_name(&app);
+    key_bindings(options(&name))
+        .iter()
+        .map(|binding| binding.to_json())
+        .collect()
+}
+
+/// An action the bridge dispatched from a key the page left unhandled.
+#[tauri::command]
+pub fn menu_run<R: Runtime>(app: AppHandle<R>, id: String) -> bool {
+    let action = ActionId::parse(&id);
+    if let Some(action) = action {
+        run(&app, action);
+    }
+    action.is_some()
 }
 
 fn native_submenu<R: Runtime>(app: &AppHandle<R>, model: &Submenu) -> tauri::Result<NativeMenu<R>> {
@@ -60,13 +91,18 @@ fn native_submenu<R: Runtime>(app: &AppHandle<R>, model: &Submenu) -> tauri::Res
         match item {
             MenuItem::Separator => submenu.append(&PredefinedMenuItem::separator(app)?)?,
             MenuItem::Role { role, label } => add_role(app, &submenu, *role, label)?,
-            MenuItem::Action(action) => submenu.append(&NativeItem::with_id(
-                app,
-                action.id.as_str(),
-                action.label,
-                action.enabled,
-                action.accelerator,
-            )?)?,
+            MenuItem::Action(action) => {
+                // Off macOS the keys are the page's, not GTK's or Windows':
+                // see `core::menu_keys`.
+                let (label, accelerator) = item_parts(platform(), action);
+                submenu.append(&NativeItem::with_id(
+                    app,
+                    action.id.as_str(),
+                    label,
+                    action.enabled,
+                    accelerator,
+                )?)?;
+            }
             MenuItem::Submenu(nested) => submenu.append(&native_submenu(app, nested)?)?,
         }
     }
@@ -111,11 +147,8 @@ fn add_role<R: Runtime>(
     submenu.append(item.as_ref())
 }
 
-/// A click, by the id it carries.
-fn dispatch<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
-    let Some(action) = ActionId::parse(event.id().as_ref()) else {
-        return;
-    };
+/// A click, or a key, carried out.
+fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
     let Some(window) = app.get_webview_window(chrome::MAIN) else {
         return;
     };
@@ -153,13 +186,7 @@ fn dispatch<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
         ActionId::Minimize => {
             let _ = window.minimize();
         }
-        ActionId::Zoom => {
-            let _ = if window.is_maximized().unwrap_or(false) {
-                window.unmaximize()
-            } else {
-                window.maximize()
-            };
-        }
+        ActionId::Zoom => toggle_maximize(&view),
         ActionId::Close => {
             let _ = window.close();
         }

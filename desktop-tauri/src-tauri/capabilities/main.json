@@ -56,6 +56,8 @@
     "allow-view-fullscreen",
     "allow-view-get",
     "allow-view-zoom",
-    "allow-theme-set"
+    "allow-theme-set",
+    "allow-menu-key-bindings",
+    "allow-menu-run"
   ]
 }

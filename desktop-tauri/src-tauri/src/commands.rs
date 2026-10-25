@@ -303,6 +303,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::chrome::view_get,
         crate::chrome::view_zoom,
         crate::chrome::theme_set,
+        crate::app_menu::menu_key_bindings,
+        crate::app_menu::menu_run,
     ]
 }
 

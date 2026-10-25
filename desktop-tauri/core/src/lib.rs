@@ -17,6 +17,7 @@ pub mod identity;
 pub mod install_log;
 pub mod links;
 pub mod menu;
+pub mod menu_keys;
 pub mod normal_bounds;
 pub mod notifications;
 pub mod profiles;

@@ -42,6 +42,11 @@ impl ZoomTable {
     pub fn set(&self, label: &str, factor: f64) {
         self.0.lock().unwrap().insert(label.to_string(), factor);
     }
+
+    /// A window made again under the same label starts at 1 again.
+    pub fn forget(&self, label: &str) {
+        self.0.lock().unwrap().remove(label);
+    }
 }
 
 /// Where the folder chooser opens: where the field already points, when that
@@ -93,6 +98,8 @@ mod tests {
         zoom.set("main", 1.25);
         zoom.set("other", 0.5);
         assert_eq!((zoom.get("main"), zoom.get("other")), (1.25, 0.5));
+        zoom.forget("main");
+        assert_eq!((zoom.get("main"), zoom.get("other")), (1.0, 0.5));
     }
 
     fn config() -> serde_json::Value {

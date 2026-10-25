@@ -215,3 +215,107 @@ describe('an on* listener', () => {
     expect(cb).not.toHaveBeenCalled()
   })
 })
+
+describe('the menu keys', () => {
+  const REDO = { id: 'redo', key: 'z', ctrl: true, shift: true, alt: false, meta: false }
+  const CLOSE = { id: 'close', key: 'w', ctrl: true, shift: false, alt: false, meta: false }
+  const PLUS = { id: 'zoom-in', key: '+', ctrl: true, shift: true, alt: false, meta: false }
+
+  /** A window that keeps its `keydown` listener, with the bindings the shell would answer. */
+  async function install(platform, bindings = [CLOSE, REDO, PLUS]) {
+    let listener
+    const target = { addEventListener: (type, fn) => type === 'keydown' && (listener = fn) }
+    tauri.invoke.mockImplementation((command) =>
+      command === 'menu_key_bindings' ? Promise.resolve(bindings) : Promise.resolve(true)
+    )
+    bridge.installMenuKeys(target, platform)
+    await Promise.resolve()
+    await Promise.resolve()
+    return (init) => {
+      const e = { key: 'x', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...init }
+      e.defaultPrevented = e.defaultPrevented ?? false
+      e.preventDefault = vi.fn()
+      listener?.(e)
+      return e
+    }
+  }
+
+  const runs = () => tauri.invoke.mock.calls.filter(([c]) => c === 'menu_run').map(([, a]) => a)
+
+  it('runs the action of a key the page left unhandled, and keeps the page from it too', async () => {
+    const press = await install('linux')
+    const e = press({ key: 'w', ctrlKey: true })
+    expect(runs()).toEqual([{ id: 'close' }])
+    expect(e.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a key the page handled to the page', async () => {
+    const press = await install('linux')
+    const e = press({ key: 'w', ctrlKey: true, defaultPrevented: true })
+    press({ key: 'w', ctrlKey: true, isComposing: true })
+    expect(runs()).toEqual([])
+    expect(e.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('matches every modifier exactly, and the key whatever its case', async () => {
+    const press = await install('win32')
+    press({ key: 'w' })
+    press({ key: 'w', ctrlKey: true, shiftKey: true })
+    press({ key: 'w', ctrlKey: true, altKey: true })
+    press({ key: 'w', ctrlKey: true, metaKey: true })
+    press({ key: 'q', ctrlKey: true })
+    expect(runs()).toEqual([])
+    press({ key: 'Z', ctrlKey: true, shiftKey: true })
+    press({ key: '+', ctrlKey: true, shiftKey: true })
+    expect(runs()).toEqual([{ id: 'redo' }, { id: 'zoom-in' }])
+  })
+
+  it('waits for the table, and survives a shell that cannot give it', async () => {
+    let listener
+    const target = { addEventListener: (_, fn) => (listener = fn) }
+    tauri.invoke.mockRejectedValue(new Error('denied'))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    bridge.installMenuKeys(target, 'linux')
+    await Promise.resolve()
+    await Promise.resolve()
+    listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    expect(error).toHaveBeenCalled()
+    expect(runs()).toEqual([])
+
+    tauri.invoke.mockResolvedValue('not a list')
+    bridge.installMenuKeys(target, 'linux')
+    await Promise.resolve()
+    await Promise.resolve()
+    listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    expect(runs()).toEqual([])
+  })
+
+  it('reports an action the shell could not run', async () => {
+    const press = await install('linux')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    tauri.invoke.mockRejectedValue(new Error('no'))
+    press({ key: 'w', ctrlKey: true })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(error).toHaveBeenCalled()
+  })
+
+  it('does nothing on macOS, whose menu bar takes its own keys', async () => {
+    const target = { addEventListener: vi.fn() }
+    bridge.installMenuKeys(target, 'darwin')
+    expect(target.addEventListener).not.toHaveBeenCalled()
+    expect(tauri.invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('installing the bridge in a page', () => {
+  it('listens for the menu keys when the page can listen, and keeps window.agentrq read-only', async () => {
+    vi.resetModules()
+    const addEventListener = vi.fn()
+    globalThis.window = { addEventListener }
+    await import('../src/bridge/index.js')
+    expect(addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function))
+    expect(tauri.invoke).toHaveBeenCalledWith('menu_key_bindings')
+    expect(Object.getOwnPropertyDescriptor(window, 'agentrq').writable).toBe(false)
+  })
+})

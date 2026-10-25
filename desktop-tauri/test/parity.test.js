@@ -200,9 +200,17 @@ describe('the command pattern', () => {
 })
 
 describe('the Rust side serves what the bridge calls', () => {
-  const rust = read('../src-tauri/src/commands.rs')
-  const defined = [...rust.matchAll(COMMAND_PATTERN)].map((m) => m[1]).sort()
-  const handler = rust.match(/generate_handler!\[([^\]]*)\]/)[1].split(',').map((s) => s.trim()).filter(Boolean).sort()
+  // The handler lives in commands.rs; the commands of a work package beside it.
+  const SOURCES = ['commands', 'chrome', 'app_menu']
+  const sources = SOURCES.map((name) => read(`../src-tauri/src/${name}.rs`))
+  const rust = sources[0]
+  const defined = sources.flatMap((source) => [...source.matchAll(COMMAND_PATTERN)].map((m) => m[1])).sort()
+  const handler = rust
+    .match(/generate_handler!\[([^\]]*)\]/)[1]
+    .split(',')
+    .map((s) => s.trim().replace(/^crate::\w+::/, ''))
+    .filter(Boolean)
+    .sort()
   const manifest = read('../src-tauri/build.rs').match(/COMMANDS: &\[&str\] = &\[([^\]]*)\]/)[1]
   const named = [...manifest.matchAll(/"(\w+)"/g)].map((m) => m[1]).sort()
   const capability = JSON.parse(read('../src-tauri/capabilities/main.json'))
@@ -213,11 +221,14 @@ describe('the Rust side serves what the bridge calls', () => {
 
   // The guest preload's, which WP7b gives the `agentrq-ext:` page's own webview.
   const GUEST_ONLY = ['panel_send']
+  // The bridge's own, which the key listener calls and `window.agentrq` does not
+  // expose: Electron has no such channel, its menu runs in the main process.
+  const BRIDGE_ONLY = ['menu_key_bindings', 'menu_run']
 
   it('has one command per channel the preload invokes, plus the guest one', () => {
     const preload = read('../../desktop/src/preload/index.js')
     const channels = [...preload.matchAll(/invoke\(\s*'(agentrq:[\w:-]+)'/g)].map((m) => commandOf(m[1]))
-    expect(defined).toEqual([...new Set([...channels, ...GUEST_ONLY])].sort())
+    expect(defined).toEqual([...new Set([...channels, ...GUEST_ONLY, ...BRIDGE_ONLY])].sort())
   })
 
   it('registers every command in the handler, the manifest and the capability', () => {
@@ -231,9 +242,64 @@ describe('the Rust side serves what the bridge calls', () => {
     for (const [path] of members(agentrq).filter(([p]) => !/\.on[A-Z]/.test(p))) {
       await at(agentrq, path)(...argsFor(path))
     }
+    // The key listener calls its two on a key, as a page would.
+    let keydown
+    const target = { addEventListener: (_, fn) => (keydown = fn) }
+    tauri.invoke.mockImplementation((name) =>
+      Promise.resolve(name === 'menu_key_bindings' ? [{ id: 'close', key: 'w', ctrl: true, shift: false, alt: false, meta: false }] : undefined)
+    )
+    const { installMenuKeys } = await import('../src/bridge/index.js')
+    installMenuKeys(target, 'linux')
+    await Promise.resolve()
+    await Promise.resolve()
+    keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault() {} })
     const invoked = new Set(tauri.invoke.mock.calls.map(([name]) => name))
     expect([...invoked].filter((name) => !defined.includes(name))).toEqual([])
     expect(defined.filter((name) => !invoked.has(name))).toEqual(GUEST_ONLY)
+  })
+
+  // A mismatch must reject, not pass `None`: Tauri maps a payload key onto the
+  // command's parameter (`fileUrl` onto `file_url`), and an `Option` parameter
+  // turns a key that is not there into `None` without a word.
+  it('names each argument the way the command takes it, and requires what the page always sends', async () => {
+    const camel = (name) => name.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+    const INJECTED = /^(?:tauri::)?(?:AppHandle|WebviewWindow|Window|Webview|State)\b/
+    const params = new Map()
+    for (const source of sources) {
+      for (const m of source.matchAll(
+        /#\[tauri::command[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:async\s+)?fn\s+(\w+)(?:<[^>]*>)?\(([^)]*)\)/g
+      )) {
+        const list = m[2]
+          .split(/,\s*(?=\w+\s*:)/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .map((p) => ({ name: camel(p.slice(0, p.indexOf(':')).trim()), type: p.slice(p.indexOf(':') + 1).trim() }))
+          .filter((p) => !INJECTED.test(p.type))
+        params.set(m[1], list)
+      }
+    }
+    // A work package's stub takes no arguments until the package replaces it.
+    const stubs = new Set([...rust.matchAll(/pub fn (\w+)\(\)[^{]*\{\s*todo\(/g)].map((m) => m[1]))
+    tauri.invoke.mockReset().mockResolvedValue(undefined)
+    for (const [path] of members(agentrq).filter(([p]) => !/\.on[A-Z]/.test(p))) {
+      await at(agentrq, path)(...argsFor(path))
+    }
+    const bridge = tauri.invoke.mock.calls.filter(([n]) => !stubs.has(n))
+    expect(stubs.size).toBeGreaterThan(0)
+    expect(bridge.length).toBeGreaterThan(0)
+    for (const [command, payload] of bridge) {
+      const taken = params.get(command)
+      expect(taken, command).toBeDefined()
+      expect(taken.map((p) => p.name).sort(), command).toEqual(Object.keys(payload ?? {}).sort())
+    }
+    // The commands of this package take what the page always sends as required.
+    const required = { files_open: ['fileUrl'], clipboard_write: ['text'], view_zoom: ['direction'], theme_set: ['theme'], menu_run: ['id'] }
+    for (const [command, names] of Object.entries(required)) {
+      for (const name of names) {
+        const param = params.get(command).find((p) => p.name === name)
+        expect(param?.type, `${command}.${name}`).not.toMatch(/^Option</)
+      }
+    }
   })
 
   it('grants the main window events and the title-bar drag, and nothing broader', () => {

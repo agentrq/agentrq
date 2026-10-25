@@ -18,7 +18,7 @@ use std::time::Duration;
 use agentrq_desktop_core::app_icon::needs_window_icon;
 use agentrq_desktop_core::emoji_panel::{show_emoji_panel, EmojiPanelHost};
 use agentrq_desktop_core::files::{open_file_link, FileShell};
-use agentrq_desktop_core::normal_bounds::{to_logical, NormalBounds};
+use agentrq_desktop_core::normal_bounds::{seed, to_logical, NormalBounds, Shown};
 use agentrq_desktop_core::theme::{
     apply_theme, background_color_for, rgb_from_hex, NativeTheme, ThemeSource, ThemedWindow,
 };
@@ -27,7 +27,7 @@ use agentrq_desktop_core::window_state::{
     WINDOW_STATE_FILENAME,
 };
 use agentrq_desktop_core::window_view::{
-    toggle_full_screen, view_state, zoom_window, ViewWindow, ZoomDirection,
+    toggle_full_screen, view_state, zoom_window, MaximizeWindow, ViewWindow, ZoomDirection,
 };
 use serde_json::Value;
 use tauri::window::Color;
@@ -122,11 +122,14 @@ fn save_state<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, normal:
     let Some(bounds) = bounds_of(window) else {
         return;
     };
-    let maximized = window.is_maximized().unwrap_or(false);
-    let settled = !(maximized
-        || window.is_fullscreen().unwrap_or(false)
-        || window.is_minimized().unwrap_or(false));
-    let seen = normal.look(bounds, settled, maximized);
+    let seen = normal.look(
+        bounds,
+        Shown {
+            maximized: window.is_maximized().unwrap_or(false),
+            full_screen: window.is_fullscreen().unwrap_or(false),
+            minimized: window.is_minimized().unwrap_or(false),
+        },
+    );
     let _ = app
         .state::<Chrome>()
         .store
@@ -142,6 +145,8 @@ fn color_of(hex: &str) -> Option<Color> {
 /// no white flash.
 pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let chrome = app.state::<Chrome>();
+    // A window made again starts at 100%, whatever the last one was at.
+    chrome.zoom.forget(MAIN);
     let restored = chrome.store.load();
     let placement = clamp_to_displays(
         Some(Bounds {
@@ -174,6 +179,11 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                     reveal(&window, &on_load);
                 }
             });
+    // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
+    // first. Whoever sets the variable already controls this process.
+    if let Ok(script) = std::env::var("AGENTRQ_E2E_INIT_SCRIPT") {
+        builder = builder.initialization_script(script);
+    }
     builder = match (placement.x, placement.y) {
         (Some(x), Some(y)) => builder.position(x, y),
         _ => builder.center(),
@@ -197,12 +207,18 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         reveal(&fallback, &shown);
     });
 
+    // Seeded before it can be maximized, from what it was built with.
+    let normal = NormalBounds::seeded(seed(
+        (placement.x, placement.y),
+        (placement.width, placement.height),
+        bounds_of(&window),
+    ));
     if restored.maximized {
         let _ = window.maximize();
     }
     // Under "system" the real preference is known now; the window is still hidden.
     repaint(app, theme.as_deref());
-    wire_state(app, &window, &restored);
+    wire_state(app, &window, normal);
     watch_crashes(app, &window);
     Ok(())
 }
@@ -215,18 +231,8 @@ fn reveal<R: Runtime>(window: &WebviewWindow<R>, shown: &AtomicBool) {
 }
 
 /// The 500 ms debounce, and the save on close (`createWindow`'s `persist`).
-fn wire_state<R: Runtime>(
-    app: &AppHandle<R>,
-    window: &WebviewWindow<R>,
-    restored: &agentrq_desktop_core::window_state::WindowState,
-) {
-    let seed = restored.x.zip(restored.y).map(|(x, y)| Rect {
-        x,
-        y,
-        width: restored.width,
-        height: restored.height,
-    });
-    let normal = Arc::new(NormalBounds::seeded(seed));
+fn wire_state<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, normal: NormalBounds) {
+    let normal = Arc::new(normal);
     *app.state::<Chrome>().normal.lock().unwrap() = Arc::clone(&normal);
     let persist = {
         let (app, window, normal) = (app.clone(), window.clone(), Arc::clone(&normal));
@@ -305,9 +311,19 @@ fn watch_crashes<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>) {
 #[cfg(target_os = "macos")]
 fn watch_crashes<R: Runtime>(_app: &AppHandle<R>, _window: &WebviewWindow<R>) {}
 
-/// `app.on('activate')`, `before-quit` and nothing else.
+/// `app.on('activate')`, `before-quit`, `window-all-closed` and nothing else.
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
     match event {
+        // Closing the last window keeps the app running on macOS, as
+        // `window-all-closed` does, so a Dock click can open another. Tauri
+        // exits on every platform unless this says otherwise.
+        #[cfg(target_os = "macos")]
+        RunEvent::ExitRequested {
+            code: None, api, ..
+        } => {
+            api.prevent_exit();
+            save_main(app);
+        }
         // The Dock icon was clicked with no window open.
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {
@@ -318,15 +334,18 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
                 let _ = open_main_window(app);
             }
         }
-        // A quit that did not close the window first (Cmd+Q, the tray's Quit)
-        // would lose what the debounced save had not yet written.
-        RunEvent::ExitRequested { .. } => {
-            if let Some(window) = app.get_webview_window(MAIN) {
-                let normal = Arc::clone(&app.state::<Chrome>().normal.lock().unwrap());
-                save_state(app, &window, &normal);
-            }
-        }
+        // A quit that did not close the window first would lose what the
+        // debounced save had not yet written. Cmd+Q and Windows' Exit raise
+        // only `Exit`, never `ExitRequested`.
+        RunEvent::ExitRequested { .. } | RunEvent::Exit => save_main(app),
         _ => {}
+    }
+}
+
+fn save_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let normal = Arc::clone(&app.state::<Chrome>().normal.lock().unwrap());
+        save_state(app, &window, &normal);
     }
 }
 
@@ -342,6 +361,18 @@ pub fn view_of<'a, R: Runtime>(window: &'a WebviewWindow<R>, chrome: &'a Chrome)
     View {
         window,
         zoom: &chrome.zoom,
+    }
+}
+
+impl<R: Runtime> MaximizeWindow for View<'_, R> {
+    fn is_maximized(&self) -> bool {
+        self.window.is_maximized().unwrap_or(false)
+    }
+    fn maximize(&self) {
+        let _ = self.window.maximize();
+    }
+    fn unmaximize(&self) {
+        let _ = self.window.unmaximize();
     }
 }
 
@@ -375,14 +406,14 @@ pub fn view_get<R: Runtime>(window: WebviewWindow<R>) -> Value {
 
 /// `agentrq:view:zoom`
 #[tauri::command]
-pub fn view_zoom<R: Runtime>(window: WebviewWindow<R>, direction: Option<String>) -> Value {
+pub fn view_zoom<R: Runtime>(window: WebviewWindow<R>, direction: String) -> Value {
     let chrome = window.state::<Chrome>();
     zoom_window(
         &View {
             window: &window,
             zoom: &chrome.zoom,
         },
-        ZoomDirection::parse(direction.as_deref().unwrap_or_default()),
+        ZoomDirection::parse(&direction),
     )
     .to_json()
 }
@@ -438,14 +469,15 @@ fn repaint<R: Runtime>(app: &AppHandle<R>, theme: Option<&str>) -> Value {
 
 /// `agentrq:theme:set`
 #[tauri::command]
-pub fn theme_set<R: Runtime>(app: AppHandle<R>, theme: Option<String>) -> Value {
-    *app.state::<Chrome>().theme.lock().unwrap() = theme.clone();
-    repaint(&app, theme.as_deref())
+pub fn theme_set<R: Runtime>(app: AppHandle<R>, theme: String) -> Value {
+    *app.state::<Chrome>().theme.lock().unwrap() = Some(theme.clone());
+    repaint(&app, Some(&theme))
 }
 
 // ---- the small native calls ----
 
-/// `agentrq:dialog:chooseDirectory`: `''` when dismissed.
+/// `agentrq:dialog:chooseDirectory`: `''` when dismissed. `current_path` is
+/// optional because the form may have nothing in the field yet.
 #[tauri::command]
 pub async fn dialog_choose_directory<R: Runtime>(
     app: AppHandle<R>,
@@ -470,12 +502,9 @@ pub async fn dialog_choose_directory<R: Runtime>(
 
 /// `agentrq:clipboard:write`
 #[tauri::command]
-pub fn clipboard_write<R: Runtime>(
-    app: AppHandle<R>,
-    text: Option<String>,
-) -> Result<bool, String> {
+pub fn clipboard_write<R: Runtime>(app: AppHandle<R>, text: String) -> Result<bool, String> {
     app.clipboard()
-        .write_text(text.unwrap_or_default())
+        .write_text(text)
         .map(|()| true)
         .map_err(|e| e.to_string())
 }
@@ -498,8 +527,8 @@ impl FileShell for Shell {
 /// path it composed, and `core` decides open or reveal; no `file:` URL is ever
 /// made followable.
 #[tauri::command]
-pub async fn files_open(raw_url: Option<String>) -> Value {
-    open_file_link(&Shell, raw_url.as_deref().unwrap_or_default()).to_json()
+pub async fn files_open(file_url: String) -> Value {
+    open_file_link(&Shell, &file_url).to_json()
 }
 
 struct Emoji<R: Runtime>(AppHandle<R>);

@@ -120,65 +120,83 @@ jobs:
         run: npx tauri build --no-bundle
 
       # Window chrome on each OS, light and dark, for the pull request to read.
-      # Dark is the OS's own appearance, which the renderer follows under its
-      # "system" theme. A look, never a gate.
+      # test/e2e/theme-seed.js seeds localStorage `theme` and asks the shell to
+      # paint the window, as the renderer's main.js does once a server is set
+      # (WP4); then it hides the page, so the second shot of each pair is the
+      # window's own background, which pixel.mjs holds to the theme's colour.
       - name: Install the screenshot tools
         if: runner.os == 'Linux'
         run: sudo apt-get install -y -qq xvfb imagemagick
 
-      - name: Screenshots (Linux)
+      - name: Screenshots and window background (Linux)
         if: runner.os == 'Linux'
-        continue-on-error: true
         working-directory: desktop-tauri
         run: |
           mkdir -p shots
           xvfb-run -a -s "-screen 0 1400x900x24" dbus-run-session -- bash -c '
-            WEBKIT_DISABLE_DMABUF_RENDERER=1 src-tauri/target/release/agentrq-tauri &
-            APP=$!
-            sleep 25
-            import -window root shots/linux-light.png
-            kill $APP'
+            set -e
+            for mode in light dark; do
+              if [ "$mode" = dark ]; then want="#09090b"; else want="#fafafa"; fi
+              export AGENTRQ_E2E_INIT_SCRIPT="$(sed "s/__THEME__/$mode/" test/e2e/theme-seed.js)"
+              WEBKIT_DISABLE_DMABUF_RENDERER=1 src-tauri/target/release/agentrq-tauri &
+              APP=$!
+              sleep 10
+              import -window root PNG24:shots/linux-$mode.png
+              sleep 12
+              import -window root PNG24:shots/linux-$mode-window.png
+              kill $APP
+              wait $APP || true
+              node test/e2e/pixel.mjs shots/linux-$mode-window.png "$want"
+            done'
 
-      - name: Screenshots (macOS)
+      - name: Screenshots and window background (macOS)
         if: runner.os == 'macOS'
-        continue-on-error: true
         working-directory: desktop-tauri
         run: |
           mkdir -p shots
           for mode in light dark; do
-            if [ "$mode" = dark ]; then defaults write -g AppleInterfaceStyle Dark; fi
+            if [ "$mode" = dark ]; then want="#09090b"; else want="#fafafa"; fi
+            export AGENTRQ_E2E_INIT_SCRIPT="$(sed "s/__THEME__/$mode/" test/e2e/theme-seed.js)"
             src-tauri/target/release/agentrq-tauri &
             APP=$!
-            sleep 25
+            sleep 10
             screencapture -x shots/macos-$mode.png
+            sleep 12
+            screencapture -x shots/macos-$mode-window.png
             kill $APP
             sleep 3
+            node test/e2e/pixel.mjs shots/macos-$mode-window.png "$want" 12
           done
-          defaults delete -g AppleInterfaceStyle || true
 
-      - name: Screenshots (Windows)
+      - name: Screenshots and window background (Windows)
         if: runner.os == 'Windows'
-        continue-on-error: true
         working-directory: desktop-tauri
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force shots | Out-Null
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-          foreach ($mode in 'light', 'dark') {
-            Set-ItemProperty $key -Name AppsUseLightTheme -Value ($(if ($mode -eq 'light') { 1 } else { 0 }))
-            $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -PassThru
-            Start-Sleep 25
+          function Shoot($path) {
             $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
             $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
             [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
-            $bmp.Save("shots\windows-$mode.png")
+            $bmp.Save($path)
+          }
+          foreach ($mode in 'light', 'dark') {
+            $want = if ($mode -eq 'dark') { '#09090b' } else { '#fafafa' }
+            $env:AGENTRQ_E2E_INIT_SCRIPT = (Get-Content -Raw test\e2e\theme-seed.js).Replace('__THEME__', $mode)
+            $app = Start-Process src-tauri\target\release\agentrq-tauri.exe -PassThru
+            Start-Sleep 10
+            Shoot "shots\windows-$mode.png"
+            Start-Sleep 12
+            Shoot "shots\windows-$mode-window.png"
             Stop-Process -Id $app.Id -Force
             Start-Sleep 3
+            node test/e2e/pixel.mjs "shots\windows-$mode-window.png" $want 12
+            if ($LASTEXITCODE -ne 0) { exit 1 }
           }
-          Set-ItemProperty $key -Name AppsUseLightTheme -Value 1
 
       - name: Upload the screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: chrome-shots-${{ runner.os }}

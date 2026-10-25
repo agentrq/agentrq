@@ -57,6 +57,23 @@ pub trait ViewWindow {
     fn set_full_screen(&self, full_screen: bool);
 }
 
+/// A window that can be maximized, for the Window menu's Zoom on Windows and
+/// Linux, where it is a toggle.
+pub trait MaximizeWindow {
+    fn is_maximized(&self) -> bool;
+    fn maximize(&self);
+    fn unmaximize(&self);
+}
+
+/// Maximizes a window that is not, and restores one that is.
+pub fn toggle_maximize(window: &dyn MaximizeWindow) {
+    if window.is_maximized() {
+        window.unmaximize();
+    } else {
+        window.maximize();
+    }
+}
+
 /// JS's `Math.round`, which rounds halves toward +infinity.
 fn round(value: f64) -> f64 {
     (value + 0.5).floor()
@@ -231,5 +248,28 @@ mod tests {
             state.to_json(),
             serde_json::json!({ "zoom": 125, "fullScreen": true })
         );
+    }
+
+    struct Maximizable(Cell<bool>);
+
+    impl MaximizeWindow for Maximizable {
+        fn is_maximized(&self) -> bool {
+            self.0.get()
+        }
+        fn maximize(&self) {
+            self.0.set(true);
+        }
+        fn unmaximize(&self) {
+            self.0.set(false);
+        }
+    }
+
+    #[test]
+    fn zoom_maximizes_a_window_and_restores_a_maximized_one() {
+        let window = Maximizable(Cell::new(false));
+        toggle_maximize(&window);
+        assert!(window.is_maximized());
+        toggle_maximize(&window);
+        assert!(!window.is_maximized());
     }
 }

@@ -32,9 +32,13 @@ pub const QUICK_CREATE_ACCELERATOR: &str = "CmdOrCtrl+Shift+N";
 /// app's own key handlers.
 pub const SIDE_PANEL_ACCELERATOR: &str = "CmdOrCtrl+\\";
 
-/// Zoom In: Electron's `CmdOrCtrl+Plus`, whose `Plus` is the shifted `=` key.
-/// muda has no `Plus` key name and would refuse the accelerator.
+/// Zoom In on macOS: Electron's `CmdOrCtrl+Plus`, whose `Plus` is the shifted
+/// `=` key. muda has no `Plus` key name and would refuse the accelerator.
 pub const ZOOM_IN_ACCELERATOR: &str = "Shift+CmdOrCtrl+=";
+
+/// Zoom In elsewhere: GTK matches `Shift+Ctrl+=` against the key `plus`, so it
+/// never fires. [`crate::menu_keys`] adds the `+` forms.
+pub const ZOOM_IN_PLAIN_ACCELERATOR: &str = "CmdOrCtrl+=";
 
 /// Default application name, the macOS application menu's label.
 pub const DEFAULT_APP_NAME: &str = "AgentRQ";
@@ -108,6 +112,34 @@ pub enum ActionId {
 }
 
 impl ActionId {
+    /// Every action, for turning a clicked id back into one.
+    pub const ALL: [ActionId; 19] = [
+        ActionId::SwitchServer,
+        ActionId::LogOut,
+        ActionId::NewTask,
+        ActionId::CheckForUpdates,
+        ActionId::ToggleSidePanel,
+        ActionId::Reload,
+        ActionId::ForceReload,
+        ActionId::ToggleDevTools,
+        ActionId::ResetZoom,
+        ActionId::ZoomIn,
+        ActionId::ZoomOut,
+        ActionId::ToggleFullScreen,
+        ActionId::Undo,
+        ActionId::Redo,
+        ActionId::Delete,
+        ActionId::Minimize,
+        ActionId::Zoom,
+        ActionId::Close,
+        ActionId::Quit,
+    ];
+
+    /// The action a clicked item's id names, `None` for an id that is not one.
+    pub fn parse(id: &str) -> Option<ActionId> {
+        Self::ALL.into_iter().find(|action| action.as_str() == id)
+    }
+
     /// The id a click is dispatched by.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -294,7 +326,15 @@ fn view_items(options: &MenuOptions<'_>) -> Vec<MenuItem> {
         }),
         MenuItem::Separator,
         action(ActionId::ResetZoom, "Actual Size", Some("CmdOrCtrl+0")),
-        action(ActionId::ZoomIn, "Zoom In", Some(ZOOM_IN_ACCELERATOR)),
+        action(
+            ActionId::ZoomIn,
+            "Zoom In",
+            Some(if is_mac {
+                ZOOM_IN_ACCELERATOR
+            } else {
+                ZOOM_IN_PLAIN_ACCELERATOR
+            }),
+        ),
         action(ActionId::ZoomOut, "Zoom Out", Some("CmdOrCtrl+-")),
         MenuItem::Separator,
         action(
@@ -775,7 +815,7 @@ mod tests {
             [
                 "File => item:new-task|New Task|CmdOrCtrl+Shift+N|enabled ; --- ; item:switch-server|Switch Server…||enabled ; item:log-out|Log Out||enabled ; --- ; item:check-for-updates|Check for Updates…||enabled ; --- ; item:quit|Quit|CmdOrCtrl+Q|enabled",
                 "Edit => item:undo|Undo|CmdOrCtrl+Z|enabled ; item:redo|Redo|Shift+CmdOrCtrl+Z|enabled ; --- ; role:cut|Cut ; role:copy|Copy ; role:paste|Paste ; item:delete|Delete||enabled ; --- ; role:selectAll|Select All",
-                "View => item:reload|Reload|CmdOrCtrl+R|enabled ; item:force-reload|Force Reload|Shift+CmdOrCtrl+R|enabled ; item:toggle-dev-tools|Toggle Developer Tools|Ctrl+Shift+I|enabled ; --- ; item:toggle-side-panel|Side Panel|CmdOrCtrl+\\|enabled ; --- ; item:reset-zoom|Actual Size|CmdOrCtrl+0|enabled ; item:zoom-in|Zoom In|Shift+CmdOrCtrl+=|enabled ; item:zoom-out|Zoom Out|CmdOrCtrl+-|enabled ; --- ; item:toggle-full-screen|Toggle Full Screen|F11|enabled",
+                "View => item:reload|Reload|CmdOrCtrl+R|enabled ; item:force-reload|Force Reload|Shift+CmdOrCtrl+R|enabled ; item:toggle-dev-tools|Toggle Developer Tools|Ctrl+Shift+I|enabled ; --- ; item:toggle-side-panel|Side Panel|CmdOrCtrl+\\|enabled ; --- ; item:reset-zoom|Actual Size|CmdOrCtrl+0|enabled ; item:zoom-in|Zoom In|CmdOrCtrl+=|enabled ; item:zoom-out|Zoom Out|CmdOrCtrl+-|enabled ; --- ; item:toggle-full-screen|Toggle Full Screen|F11|enabled",
                 "Window => item:minimize|Minimize|CmdOrCtrl+M|enabled ; item:zoom|Zoom||enabled ; item:close|Close|CmdOrCtrl+W|enabled",
                 "Help => role:about|About",
             ]
@@ -792,7 +832,7 @@ mod tests {
             [
                 "File => item:new-task|New Task|CmdOrCtrl+Shift+N|enabled ; --- ; item:switch-server|Switch Server…||enabled ; item:log-out|Log Out||enabled ; --- ; item:check-for-updates|Check for Updates…||disabled ; --- ; role:quit|Exit",
                 "Edit => role:undo|Undo ; role:redo|Redo ; --- ; role:cut|Cut ; role:copy|Copy ; role:paste|Paste ; item:delete|Delete||enabled ; --- ; role:selectAll|Select All",
-                "View => item:reload|Reload|CmdOrCtrl+R|enabled ; item:force-reload|Force Reload|Shift+CmdOrCtrl+R|enabled ; item:toggle-dev-tools|Toggle Developer Tools|Ctrl+Shift+I|enabled ; --- ; item:toggle-side-panel|Side Panel|CmdOrCtrl+\\|disabled ; --- ; item:reset-zoom|Actual Size|CmdOrCtrl+0|enabled ; item:zoom-in|Zoom In|Shift+CmdOrCtrl+=|enabled ; item:zoom-out|Zoom Out|CmdOrCtrl+-|enabled ; --- ; item:toggle-full-screen|Toggle Full Screen|F11|enabled",
+                "View => item:reload|Reload|CmdOrCtrl+R|enabled ; item:force-reload|Force Reload|Shift+CmdOrCtrl+R|enabled ; item:toggle-dev-tools|Toggle Developer Tools|Ctrl+Shift+I|enabled ; --- ; item:toggle-side-panel|Side Panel|CmdOrCtrl+\\|disabled ; --- ; item:reset-zoom|Actual Size|CmdOrCtrl+0|enabled ; item:zoom-in|Zoom In|CmdOrCtrl+=|enabled ; item:zoom-out|Zoom Out|CmdOrCtrl+-|enabled ; --- ; item:toggle-full-screen|Toggle Full Screen|F11|enabled",
                 "Window => role:minimize|Minimize ; role:zoom|Zoom ; role:close|Close",
                 "Help => role:about|About AgentRQ",
             ]
@@ -861,6 +901,7 @@ mod tests {
             }
         }
         assert_eq!(ZOOM_IN_ACCELERATOR, "Shift+CmdOrCtrl+=");
+        assert_eq!(ZOOM_IN_PLAIN_ACCELERATOR, "CmdOrCtrl+=");
     }
 
     // --- the developer tools (new: the JS always offered them) ---
@@ -949,5 +990,17 @@ mod tests {
             vec![MenuItem::Separator, role(Role::Quit, "Quit")],
         )];
         assert!(find_menu_items(&view_only, ActionId::LogOut).is_empty());
+    }
+
+    #[test]
+    fn a_clicked_id_parses_back_to_its_action() {
+        for action in ActionId::ALL {
+            assert_eq!(ActionId::parse(action.as_str()), Some(action));
+        }
+        assert_eq!(ActionId::parse("no-such-action"), None);
+        let mut ids: Vec<&str> = ActionId::ALL.iter().map(|a| a.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), ActionId::ALL.len(), "two actions share an id");
     }
 }

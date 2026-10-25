@@ -64,6 +64,38 @@ function deepFreeze(object) {
   return Object.freeze(object)
 }
 
+/**
+ * Off macOS the menu's keys are the page's to run, not GTK's or Windows': a
+ * native accelerator takes the key before the page, so Ctrl+W would close the
+ * app under a terminal that wanted it. Electron runs a menu key only when the
+ * page left it unhandled, and so does this: a bubbling `keydown` that is not
+ * `defaultPrevented`, against the table `core::menu_keys` makes.
+ */
+export function installMenuKeys(target, platform) {
+  if (platform === 'darwin') return
+  let table = []
+  invoke('menu_key_bindings')
+    .then((bindings) => {
+      if (Array.isArray(bindings)) table = bindings
+    })
+    .catch((err) => console.error('window.agentrq: no menu keys', err))
+  target.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented || e.isComposing) return
+    const key = String(e.key).toLowerCase()
+    const hit = table.find(
+      (b) =>
+        b.key === key &&
+        b.ctrl === e.ctrlKey &&
+        b.shift === e.shiftKey &&
+        b.alt === e.altKey &&
+        b.meta === e.metaKey
+    )
+    if (!hit) return
+    e.preventDefault()
+    invoke('menu_run', { id: hit.id }).catch((err) => console.error('window.agentrq: menu key', err))
+  })
+}
+
 export function createBridge(userAgent) {
   const versions = { tauri: '', webview: String(userAgent ?? '') }
   getTauriVersion()
@@ -197,3 +229,4 @@ Object.defineProperty(window, 'agentrq', {
   writable: false,
   configurable: false,
 })
+if (typeof window.addEventListener === 'function') installMenuKeys(window, platformOf(navigator.userAgent))
