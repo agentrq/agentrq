@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::event_source::{self, Frame, Sink, Streams};
 use crate::network::Network;
@@ -172,16 +172,24 @@ pub async fn profiles_remove(
     profiles.remove(&id).await
 }
 
-/// `agentrq:notifications:get`
+/// `agentrq:notifications:get`. Every desktop this is built for shows
+/// native notifications. Electron's `isSupported()` only asks whether it
+/// could load libnotify on Linux, so a session with no notification server
+/// reports support there too, and shows nothing.
 #[tauri::command]
-pub fn notifications_get() -> Result<(), String> {
-    todo("notifications.get", "WP6")
+pub fn notifications_get(profiles: State<'_, Arc<Profiles>>) -> Value {
+    json!({"supported": true, "mutedWorkspaces": profiles.muted()})
 }
 
 /// `agentrq:notifications:setMuted`
 #[tauri::command]
-pub fn notifications_set_muted() -> Result<(), String> {
-    todo("notifications.setMuted", "WP6")
+pub async fn notifications_set_muted(
+    profiles: State<'_, Arc<Profiles>>,
+    workspace_id: String,
+    muted: bool,
+) -> Result<Value, String> {
+    let muted = profiles.set_muted(&workspace_id, muted).await?;
+    Ok(json!({"mutedWorkspaces": muted}))
 }
 
 /// `agentrq:extensions:authorize`
@@ -492,8 +500,9 @@ mod tests {
         ("panel_send", "panel.send"),
     ];
 
-    /// The commands WP2 and WP4 have replaced; every other one is still a stub.
-    const DONE: [&str; 12] = [
+    /// The commands WP2, WP4 and WP6 have replaced; every other one is still a
+    /// stub.
+    const DONE: [&str; 14] = [
         "attachments_forget_all",
         "attachments_forget_task",
         "attachments_forget_workspace",
@@ -501,6 +510,8 @@ mod tests {
         "connection_get",
         "connection_save",
         "connection_validate",
+        "notifications_get",
+        "notifications_set_muted",
         "profiles_add",
         "profiles_get",
         "profiles_remove",
@@ -672,6 +683,7 @@ mod tests {
             "profiles_switch",
             "profiles_rename",
             "profiles_remove",
+            "notifications_set_muted",
         ] {
             assert!(call(&rig, cmd, serde_json::json!({})).is_err(), "{cmd}");
         }
@@ -686,6 +698,10 @@ mod tests {
             ),
             ("profiles_rename", serde_json::json!({"id": "default"})),
             ("profiles_add", serde_json::json!({"label": 5})),
+            (
+                "notifications_set_muted",
+                serde_json::json!({"workspaceId": "w"}),
+            ),
         ] {
             assert!(call(&rig, cmd, args).is_err(), "{cmd}");
         }
@@ -767,6 +783,38 @@ mod tests {
     }
 
     #[test]
+    fn mutes_and_unmutes_a_workspace() {
+        let rig = rig();
+        let set = |id: &str, muted: bool| {
+            call(
+                &rig,
+                "notifications_set_muted",
+                serde_json::json!({"workspaceId": id, "muted": muted}),
+            )
+        };
+        assert_eq!(
+            call(&rig, "notifications_get", serde_json::json!({})),
+            Ok(serde_json::json!({"supported": true, "mutedWorkspaces": []}))
+        );
+        assert_eq!(
+            set("w1", true),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w1"]}))
+        );
+        assert_eq!(
+            set("w2", true),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w1", "w2"]}))
+        );
+        assert_eq!(
+            set("w1", false),
+            Ok(serde_json::json!({"mutedWorkspaces": ["w2"]}))
+        );
+        assert_eq!(
+            call(&rig, "notifications_get", serde_json::json!({})).unwrap()["mutedWorkspaces"],
+            serde_json::json!(["w2"])
+        );
+    }
+
+    #[test]
     fn answers_an_error_before_the_network_is_managed() {
         let app = mock_builder()
             .invoke_handler(super::handler())
@@ -791,8 +839,10 @@ mod tests {
             "profiles_add",
             "profiles_rename",
             "profiles_remove",
+            "notifications_get",
+            "notifications_set_muted",
         ] {
-            let args = serde_json::json!({"url": "", "id": "x", "label": "y"});
+            let args = serde_json::json!({"url": "", "id": "x", "label": "y", "workspaceId": "w", "muted": true});
             assert!(call(&rig, cmd, args).is_err(), "{cmd}");
         }
     }

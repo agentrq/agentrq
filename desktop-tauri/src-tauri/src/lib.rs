@@ -13,7 +13,9 @@ mod chrome_state;
 mod commands;
 mod cookie_jar;
 mod event_source;
+mod events;
 mod network;
+mod notify;
 mod panic_log;
 mod profiles;
 mod scheme;
@@ -38,10 +40,14 @@ use tauri::{
     AppHandle, Emitter, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 
+use agentrq_desktop_core::notifications::Notification;
 use event_source::Streams;
+use events::EventStream;
 use network::Network;
+use notify::{Desk, Feed, Notifier};
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
 use sign_in::CookieWebview;
@@ -396,6 +402,37 @@ impl<R: Runtime> Shell for Windows<R> {
     }
 }
 
+/// What notify.rs asks of the app. The badge and the tray are WP6a's: until
+/// they land, the count and the recent workspaces go nowhere.
+struct TauriDesk<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> Desk for TauriDesk<R> {
+    fn show(&self, notification: &Notification) -> bool {
+        self.0
+            .notification()
+            .builder()
+            .title(&notification.title)
+            .body(&notification.body)
+            .extra(notify::ROUTE_KEY, &notification.route)
+            .show()
+            .is_ok()
+    }
+
+    fn navigate(&self, route: &str) {
+        if let Some(webview) = chrome::main_webview(&self.0) {
+            let window = webview.window();
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        let _ = self.0.emit_to(MAIN_WEBVIEW, "agentrq:navigate", route);
+    }
+
+    fn set_unread(&self, _count: u32) {}
+
+    fn touch_workspace(&self, _id: &str, _name: &str) {}
+}
+
 /// A removed profile's store that a quit kept from being deleted, deleted now.
 #[cfg(target_os = "macos")]
 fn sweep_data_stores<R: Runtime>(app: &AppHandle<R>) {
@@ -506,6 +543,7 @@ async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: St
 pub fn run() {
     let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let webview = ctx.webview_label().to_string();
@@ -527,14 +565,32 @@ pub fn run() {
                 profiles::first_profile(&data_dir, lock.as_deref()),
             ));
             let handle = app.handle().clone();
+            let notifier = Arc::new(Notifier::new(
+                network.clone(),
+                Arc::new(TauriDesk(handle.clone())),
+            ));
+            let feed = Arc::new(Feed {
+                stream: EventStream::spawn(network.clone(), notifier.clone()),
+                notifier: notifier.clone(),
+            });
             let profiles = Arc::new(Profiles::new(
                 data_dir.clone(),
                 lock,
                 network.clone(),
                 Box::new(Windows(handle.clone())),
+                feed,
             ));
             profiles.sweep();
+            profiles.watch();
             app.manage(profiles);
+            let clicked = notifier.clone();
+            handle.notification().on_action(move |action| {
+                let extra = action.notification().map(|n| n.extra());
+                if let Some(route) = notify::tapped(action.action_id(), extra) {
+                    clicked.clicked(&route);
+                }
+            })?;
+            app.manage(notifier.clone());
             app.manage(Reopening::default());
             #[cfg(target_os = "macos")]
             sweep_data_stores(&handle);
@@ -549,7 +605,9 @@ pub fn run() {
             });
             app.manage(network.clone());
             app.manage(Streams::default());
-            app.manage(Scheme::new(network, assets, &dev_url(&handle)));
+            let scheme = Scheme::new(network, assets, &dev_url(&handle))
+                .on_proxied(Box::new(move |method, path| notifier.proxied(method, path)));
+            app.manage(scheme);
             init_updater(&handle);
             app.manage(chrome::Chrome::new(data_dir));
             shell::init(&handle)?;
@@ -572,6 +630,15 @@ pub fn run() {
                 && app.state::<Reopening>().0.swap(false, Ordering::SeqCst) =>
             {
                 rebuild_main(app);
+            }
+            // A badge answers "is there anything new"; looking at the app
+            // answers it.
+            RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::Focused(true),
+                ..
+            } if label == MAIN_WEBVIEW => {
+                app.state::<Arc<Notifier>>().clear_unread();
             }
             RunEvent::Exit => {
                 if let Some(installer) = app.try_state::<ExitInstaller>() {
