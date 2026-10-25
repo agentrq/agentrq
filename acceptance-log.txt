@@ -1,0 +1,15 @@
+# notifd (stand-in org.freedesktop.Notifications) log
+{"event": "owned", "t": "09:47:36"}
+{"event": "notify", "id": 1, "app": "agentrq-tauri", "summary": "Reply on: Write the release notes", "body": "AgentRQ", "actions": ["default", ""], "t": "09:50:39"}
+{"event": "click", "id": 1, "t": "09:50:40"}
+{"event": "notify", "id": 2, "app": "agentrq-tauri", "summary": "New task: Review the WP6b PR", "body": "WP6b acceptance", "actions": ["default", ""], "t": "09:50:57"}
+{"event": "click", "id": 2, "t": "09:50:58"}
+{"event": "notify", "id": 3, "app": "agentrq-tauri", "summary": "Reply on: Write the release notes", "body": "WP6b acceptance", "actions": ["default", ""], "t": "09:51:56"}
+{"event": "click", "id": 3, "t": "09:51:57"}
+
+# backend: the event stream, signed out (09:46:07), then nothing until the relaunch
+09:46:07 GET /api/v1/events/stream 401
+09:46:07 GET /api/v1/events/stream 401
+09:46:07 GET /api/v1/events/stream 401
+09:52:09 GET /api/v1/events/stream 200
+09:52:09 GET /api/v1/events/stream 200
