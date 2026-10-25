@@ -305,8 +305,20 @@ describe('the Rust side serves what the bridge calls', () => {
       expect(taken, command).toBeDefined()
       expect(taken.map((p) => p.name).sort(), command).toEqual(Object.keys(payload ?? {}).sort())
     }
-    // The commands of this package take what the page always sends as required.
-    const required = { files_open: ['fileUrl'], clipboard_write: ['text'], view_zoom: ['direction'], theme_set: ['theme'], menu_run: ['id'] }
+    // The commands take what the page always sends as required; `profiles.add()`
+    // may come with no label, which numbers the profile.
+    const required = {
+      files_open: ['fileUrl'],
+      clipboard_write: ['text'],
+      view_zoom: ['direction'],
+      theme_set: ['theme'],
+      menu_run: ['id'],
+      connection_validate: ['url'],
+      connection_save: ['url'],
+      profiles_switch: ['id'],
+      profiles_rename: ['id', 'label'],
+      profiles_remove: ['id'],
+    }
     for (const [command, names] of Object.entries(required)) {
       for (const name of names) {
         const param = params.get(command).find((p) => p.name === name)

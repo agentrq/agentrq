@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agentrq_desktop_core::app_icon::needs_window_icon;
+use agentrq_desktop_core::auth::sign_in_start;
 use agentrq_desktop_core::emoji_panel::{show_emoji_panel, EmojiPanelHost};
 use agentrq_desktop_core::files::{open_file_link, FileShell};
 use agentrq_desktop_core::normal_bounds::{seed, to_logical, NormalBounds, Shown};
@@ -32,13 +33,14 @@ use agentrq_desktop_core::window_view::{
 use serde_json::Value;
 use tauri::window::Color;
 use tauri::{
-    AppHandle, Manager, RunEvent, Runtime, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-    WindowEvent,
+    AppHandle, Manager, RunEvent, Runtime, Theme, Url, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::chrome_state::{chooser_start, StateFile, ZoomTable};
+use crate::profiles::{app_origin, Profiles};
 
 pub const MAIN: &str = "main";
 
@@ -140,10 +142,39 @@ fn color_of(hex: &str) -> Option<Color> {
     rgb_from_hex(hex).map(|(r, g, b)| Color(r, g, b, 255))
 }
 
+/// A profile's webviews get its storage when they are built: a folder on Linux
+/// and Windows, a WKWebView store on macOS (14 and later; below that the
+/// profile's own origin separates it).
+pub fn isolate<'a, R: Runtime>(
+    builder: WebviewWindowBuilder<'a, R, AppHandle<R>>,
+    profiles: &Profiles,
+    profile: &str,
+) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+    #[cfg(target_os = "macos")]
+    let _ = profiles;
+    #[cfg(target_os = "macos")]
+    return builder.data_store_identifier(agentrq_desktop_core::profiles::data_store_id(profile));
+    #[cfg(not(target_os = "macos"))]
+    builder.data_directory(profiles.webview_dir(profile))
+}
+
+/// The main window on the active profile, from a Dock click or a profile
+/// switch alike.
+pub fn open_active_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let profile = app.state::<Arc<Profiles>>().active_id();
+    open_main_window(app, &profile)
+}
+
 /// `createWindow`: the saved place, clamped to the displays; hidden, painted in
 /// the theme's own background, and shown once the page has loaded, so there is
-/// no white flash.
-pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+/// no white flash. On `profile`'s storage and origin, the only window that is
+/// `main`; one builder, since Tauri keeps only the last `on_navigation` and
+/// `on_page_load` it is given.
+///
+/// Built inside the run loop's `Destroyed` for the old one, so it must not
+/// `listen` for anything aimed at `main`: Tauri drops those listeners after
+/// that callback returns.
+pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri::Result<()> {
     let chrome = app.state::<Chrome>();
     // A window made again starts at 100%, whatever the last one was at.
     chrome.zoom.forget(MAIN);
@@ -162,28 +193,46 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // window made under "system" starts light and is repainted before it shows.
     let background = color_of(background_color_for(theme.as_deref(), false)).expect("static");
 
+    let profiles = app.state::<Arc<Profiles>>().inner().clone();
+    let origin = app_origin(profile);
+    let url = Url::parse(&format!("{origin}/")).expect("a profile id is a host");
+    let navigating = app.clone();
+
     let shown = Arc::new(AtomicBool::new(false));
     let on_load = Arc::clone(&shown);
-    let mut builder =
-        WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(crate::app_url()))
-            .title("AgentRQ Tauri")
-            .inner_size(placement.width, placement.height)
-            .min_inner_size(
-                agentrq_desktop_core::window_state::MIN_WIDTH,
-                agentrq_desktop_core::window_state::MIN_HEIGHT,
-            )
-            .visible(false)
-            .background_color(background)
-            .on_page_load(move |window, payload| match payload.event() {
-                // A reload or a navigation leaves the old page's event streams
-                // running (WP2).
-                tauri::webview::PageLoadEvent::Started => {
-                    if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
-                        streams.close_all();
-                    }
+    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(url))
+        .title("AgentRQ Tauri")
+        .inner_size(placement.width, placement.height)
+        .min_inner_size(
+            agentrq_desktop_core::window_state::MIN_WIDTH,
+            agentrq_desktop_core::window_state::MIN_HEIGHT,
+        )
+        .visible(false)
+        .background_color(background)
+        .on_page_load(move |window, payload| match payload.event() {
+            // A reload or a navigation leaves the old page's event streams
+            // running (WP2).
+            tauri::webview::PageLoadEvent::Started => {
+                if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
+                    streams.close_all();
                 }
-                tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
-            });
+            }
+            tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
+        })
+        // The login view's buttons are plain links: followed here, the
+        // provider's redirects would run against the app's origin and lose
+        // the callback, so the sign-in runs in a window of its own on the
+        // server.
+        .on_navigation(move |url| {
+            let server = navigating.state::<Arc<Profiles>>().server_url();
+            let Some(start) = sign_in_start(url.as_str(), &origin, &server) else {
+                return true;
+            };
+            // Not built inside a webview callback: that deadlocks on Windows.
+            let app = navigating.clone();
+            tauri::async_runtime::spawn(async move { crate::open_sign_in(&app, start) });
+            false
+        });
     // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
     // first. Whoever sets the variable already controls this process.
     if let Ok(script) = std::env::var("AGENTRQ_E2E_INIT_SCRIPT") {
@@ -203,7 +252,7 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if needs_window_icon(platform()) {
         builder = builder.icon(tauri::include_image!("icons/128x128@2x.png"))?;
     }
-    let window = builder.build()?;
+    let window = isolate(builder, &profiles, profile).build()?;
 
     // A window that never finishes loading must still appear.
     let fallback = window.clone();
@@ -336,7 +385,7 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
             ..
         } => {
             if app.get_webview_window(MAIN).is_none() {
-                let _ = open_main_window(app);
+                let _ = open_active_main_window(app);
             }
         }
         // A quit that did not close the window first would lose what the
@@ -347,7 +396,9 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
     }
 }
 
-fn save_main<R: Runtime>(app: &AppHandle<R>) {
+/// The main window's place, now. `destroy()` raises no `CloseRequested`, so
+/// whatever destroys it saves first.
+pub fn save_main<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN) {
         let normal = Arc::clone(&app.state::<Chrome>().normal.lock().unwrap());
         save_state(app, &window, &normal);

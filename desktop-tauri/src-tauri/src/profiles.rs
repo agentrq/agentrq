@@ -20,7 +20,7 @@ use agentrq_desktop_core::identity::{
     fetch_profile_identity, Account, ThreadDeadline, UserFetch, UserReply, IDENTITY_TIMEOUT_MS,
 };
 use agentrq_desktop_core::profiles::{
-    can_discard_active_profile, duplicate_of, orphaned_profile_dirs, Profile,
+    can_discard_active_profile, duplicate_of, orphaned_data_stores, orphaned_profile_dirs, Profile,
 };
 use agentrq_desktop_core::server_config::{
     normalize_server_url, validate_server_url, ConfigFile, ConfigProbe, ProbeResponse, SaveError,
@@ -30,7 +30,8 @@ use agentrq_desktop_core::side_panel::permission_store::PermissionStore;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::network::{profile_dir, Network};
+use crate::network::{profile_dir, Network, ProfileNet};
+use crate::sign_in::{self, CookieWebview, COOKIE_DEADLINE};
 use crate::vault;
 
 /// How long the connection screen's probe may take, start to body. Every
@@ -94,12 +95,27 @@ pub fn app_origin(_id: &str) -> String {
 pub trait Shell: Send + Sync {
     /// Replace the main window with one on the active profile's storage. A
     /// webview's storage is fixed when it is built, so reloading would show the
-    /// previous account's data under the new profile's name.
+    /// previous account's data under the new profile's name. The old window
+    /// goes first, and [`Profiles::main_window_closed`] is called once it has,
+    /// before the new one is built.
     fn reopen(&self);
     /// Send the main window back to the app's root.
     fn reload(&self);
     /// Drop a removed profile's webview store where it is not a folder (macOS).
     fn forget_store(&self, id: &str);
+    /// The main window's cookie store, which is its profile's; `None` with no
+    /// window.
+    fn main_webview(&self) -> Option<Arc<dyn CookieWebview>>;
+}
+
+/// What waits for the old main window to be gone.
+#[derive(Default)]
+struct Closing {
+    /// The network the next window uses: the old window keeps its own until
+    /// then, or its last requests would go out on the new profile's session.
+    net: Option<Arc<ProfileNet>>,
+    /// Removed profiles whose storage the old window may still have open.
+    forget: Vec<String>,
 }
 
 /// `connection.get`.
@@ -151,6 +167,7 @@ pub struct Profiles {
     return_to: Mutex<Option<String>>,
     /// One change at a time: each reads the file, changes it and acts on it.
     busy: tokio::sync::Mutex<()>,
+    closing: Mutex<Closing>,
 }
 
 /// A poisoned lock still answers: what it guards is replaced whole, never
@@ -181,6 +198,7 @@ impl Profiles {
             identities: Mutex::new(HashMap::new()),
             return_to: Mutex::new(None),
             busy: tokio::sync::Mutex::new(()),
+            closing: Mutex::new(Closing::default()),
         }
     }
 
@@ -224,6 +242,13 @@ impl Profiles {
         for name in orphaned_profile_dirs(&names, &self.config().state()) {
             let _ = std::fs::remove_dir_all(profile_dir(&self.base, name));
         }
+    }
+
+    /// Of the app's macOS data stores, those no profile owns: the sweep's
+    /// counterpart for a store.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn orphaned_stores(&self, stores: &[[u8; 16]]) -> Vec<[u8; 16]> {
+        orphaned_data_stores(stores, &self.config().state())
     }
 
     pub fn connection(&self) -> ConnectionState {
@@ -336,15 +361,36 @@ impl Profiles {
         Ok(self.view())
     }
 
-    /// Point the network at the active profile and rebuild the window on it.
+    /// Rebuild the window on the active profile. Its network is opened now,
+    /// which can wait on the keychain, and made active once the old window is
+    /// gone.
     async fn reopen(&self) -> ProfilesView {
         let config = self.config();
         let active = config.active();
-        self.network
-            .switch(&active.id, &server_of(active, self.lock.as_deref()))
-            .await;
+        let server = server_of(active, self.lock.as_deref());
+        let net = self.network.profile(&active.id, &server).await;
+        net.set_server_url(&server);
+        lock(&self.closing).net = Some(net);
         self.shell.reopen();
         self.view()
+    }
+
+    /// The old main window is gone and the new one not yet built: the network
+    /// moves to the new profile, and a removed profile's storage, which the
+    /// old window had open, is deleted.
+    pub fn main_window_closed(&self) {
+        let closing = std::mem::take(&mut *lock(&self.closing));
+        if let Some(net) = closing.net {
+            self.network.activate(net);
+        }
+        for id in closing.forget {
+            self.forget_storage(&id);
+        }
+    }
+
+    fn forget_storage(&self, id: &str) {
+        let _ = std::fs::remove_dir_all(profile_dir(&self.base, id));
+        self.shell.forget_store(id);
     }
 
     /// `profiles.switch`. The same or an unknown id changes nothing.
@@ -394,37 +440,55 @@ impl Profiles {
         }
         self.keep(after);
         lock(&self.identities).remove(id);
-        // Off its storage before that storage is deleted.
-        let view = if was_active {
-            self.reopen().await
-        } else {
-            self.view()
-        };
         if let Some(net) = self.network.forget(id) {
             net.jar.clear();
         }
-        let _ = std::fs::remove_dir_all(profile_dir(&self.base, id));
         PermissionStore::new(&self.base, id).forget();
-        self.shell.forget_store(id);
-        Ok(view)
+        if !was_active {
+            self.forget_storage(id);
+            return Ok(self.view());
+        }
+        // The window still on it has its storage open until it is gone.
+        lock(&self.closing).forget.push(id.to_string());
+        Ok(self.reopen().await)
     }
 
-    /// A sign-in of profile `id` has finished: the app reloads into it, unless
-    /// another profile was switched to meanwhile.
-    pub fn signed_in(&self, id: &str) {
+    /// A sign-in window of profile `id` is done: move its session into the
+    /// profile's jar. Nothing for a profile removed while it was open, which
+    /// would otherwise come back with its files. Whether it is signed in.
+    pub async fn finish_sign_in(&self, id: &str, webview: Arc<dyn CookieWebview>) -> bool {
+        let _busy = self.busy.lock().await;
+        let Some(profile) = self.config().profiles.into_iter().find(|p| p.id == id) else {
+            return false;
+        };
+        let server = server_of(&profile, self.lock.as_deref());
+        let net = self.network.profile(id, &server).await;
+        let signed_in = sign_in::finish(webview, server, net.jar.clone(), COOKIE_DEADLINE).await;
+        if signed_in {
+            self.signed_in(id);
+        }
+        signed_in
+    }
+
+    /// The app reloads into a sign-in, unless another profile was switched to
+    /// meanwhile.
+    fn signed_in(&self, id: &str) {
         if id == self.active_id() {
             self.shell.reload();
         }
     }
 
-    #[allow(dead_code)] // WP5's menu item calls it once #1037 is merged.
-    /// The menu's Log Out: the active profile's cookies, and nothing else.
+    /// The menu's Log Out: the active profile's cookies, and nothing else. The
+    /// webview's go too, the provider's among them, as Electron clears the
+    /// partition's.
     pub async fn log_out(&self) {
         self.network.active().await.jar.clear();
+        if let Some(webview) = self.shell.main_webview() {
+            sign_in::clear(webview, COOKIE_DEADLINE).await;
+        }
         self.shell.reload();
     }
 
-    #[allow(dead_code)] // WP5's menu item calls it once #1037 is merged.
     /// The menu's Switch Server: forget the active profile's server, back to
     /// the connection screen. Nothing while `AGENTRQ_SERVER_URL` pins it.
     pub async fn switch_server(&self) -> Result<(), String> {
@@ -525,6 +589,7 @@ impl UserFetch for ClientFetch {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::sign_in::tests::FakeWebview;
     use crate::test_server::{reply, Step, TestServer};
     use agentrq_desktop_core::profiles::data_store_id;
 
@@ -540,10 +605,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// What the shell was asked to do.
+    /// What the shell was asked to do. Like the real one, it only starts
+    /// closing the window: a test says when it is gone, with
+    /// `main_window_closed`.
     #[derive(Default)]
     pub struct FakeShell {
         pub calls: Arc<Mutex<Vec<String>>>,
+        pub webview: Option<Arc<FakeWebview>>,
     }
 
     impl Shell for FakeShell {
@@ -555,6 +623,11 @@ pub(crate) mod tests {
         }
         fn forget_store(&self, id: &str) {
             lock(&self.calls).push(format!("forget {id}"));
+        }
+        fn main_webview(&self) -> Option<Arc<dyn CookieWebview>> {
+            self.webview
+                .clone()
+                .map(|webview| webview as Arc<dyn CookieWebview>)
         }
     }
 
@@ -580,6 +653,10 @@ pub(crate) mod tests {
     /// Profiles on a fresh data dir, its config written as `config` (or none),
     /// with `lock` as `AGENTRQ_SERVER_URL`.
     pub fn rig_with(config: Option<Value>, lock: Option<&str>) -> Rig {
+        rig_on(config, lock, FakeShell::default())
+    }
+
+    fn rig_on(config: Option<Value>, lock: Option<&str>, shell: FakeShell) -> Rig {
         let dir = tempfile::tempdir().unwrap();
         if let Some(config) = config {
             std::fs::write(dir.path().join(CONFIG_FILENAME), config.to_string()).unwrap();
@@ -590,7 +667,6 @@ pub(crate) mod tests {
             Arc::new(NoKeychain),
             first,
         ));
-        let shell = FakeShell::default();
         let calls = shell.calls.clone();
         let profiles = Arc::new(Profiles::new(
             dir.path().to_path_buf(),
@@ -795,7 +871,9 @@ pub(crate) mod tests {
     async fn adds_a_profile_and_cancels_back_to_the_one_it_came_from() {
         let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
         rig.profiles.switch("work").await.unwrap();
+        rig.profiles.main_window_closed();
         let added = rig.profiles.add("").await.unwrap();
+        rig.profiles.main_window_closed();
         let new_id = added.active_profile_id.clone();
         assert_eq!(added.profiles.len(), 3);
         assert_eq!(added.profiles[2].label, "Profile 3");
@@ -803,7 +881,8 @@ pub(crate) mod tests {
         assert_eq!(rig.calls(), ["reopen", "reopen"]);
         assert!(rig.profiles.connection().can_cancel);
 
-        // Something the abandoned profile left on disk goes with it.
+        // Something the abandoned profile left on disk goes with it, once its
+        // window no longer has it open.
         std::fs::create_dir_all(rig.profiles.webview_dir(&new_id)).unwrap();
         assert_eq!(rig.profiles.cancel().await, Ok(true));
         assert_eq!(
@@ -811,12 +890,12 @@ pub(crate) mod tests {
             "work",
             "back where it was added from"
         );
+        assert!(profile_dir(rig.dir.path(), &new_id).exists());
+        assert_eq!(rig.calls(), ["reopen"]);
+        rig.profiles.main_window_closed();
         assert_eq!(rig.network.active().await.id, "work");
         assert!(!profile_dir(rig.dir.path(), &new_id).exists());
-        assert_eq!(
-            rig.calls(),
-            ["reopen".to_string(), format!("forget {new_id}")]
-        );
+        assert_eq!(rig.calls(), [format!("forget {new_id}")]);
 
         // Nothing to cancel now: "work" has a server.
         assert_eq!(rig.profiles.cancel().await, Ok(false));
@@ -833,6 +912,12 @@ pub(crate) mod tests {
         let view = rig.profiles.switch("work").await.unwrap();
         assert_eq!(view.active_profile_id, "work");
         assert!(view.profiles[1].active);
+        assert_eq!(
+            rig.network.active().await.id,
+            "default",
+            "the old window keeps its own session until it is gone"
+        );
+        rig.profiles.main_window_closed();
         let net = rig.network.active().await;
         assert_eq!(
             (net.id.as_str(), net.server_url()),
@@ -882,10 +967,25 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn removing_the_active_profile_moves_the_window_off_it_first() {
         let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        let old = rig.network.active().await;
+        let server = url::Url::parse("http://127.0.0.1:9/").unwrap();
+        let cookie = cookie_store::RawCookie::parse("at=t; Max-Age=600").unwrap();
+        assert!(old.jar.adopt(&cookie, &server));
+        let dir = profile_dir(rig.dir.path(), "default");
+        std::fs::create_dir_all(dir.join("webview")).unwrap();
+
         let view = rig.profiles.remove("default").await.unwrap();
         assert_eq!(view.active_profile_id, "work");
+        assert!(!old.jar.has("at", &server), "signed out at once");
+        assert!(dir.exists(), "its window still has it open");
+        assert_eq!(rig.calls(), ["reopen"]);
+
+        rig.profiles.main_window_closed();
         assert_eq!(rig.network.active().await.id, "work");
-        assert_eq!(rig.calls(), ["reopen", "forget default"]);
+        assert!(!dir.exists());
+        assert_eq!(rig.calls(), ["forget default"]);
+        rig.profiles.main_window_closed();
+        assert!(rig.calls().is_empty(), "nothing left to do");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -968,7 +1068,15 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn logs_out_by_clearing_only_the_active_jar() {
-        let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        let webview = Arc::new(FakeWebview::with(&[
+            ("at=stale; Path=/", "127.0.0.1"),
+            ("_gh_sess=x; Path=/", ".github.com"),
+        ]));
+        let shell = FakeShell {
+            webview: Some(webview.clone()),
+            ..FakeShell::default()
+        };
+        let rig = rig_on(Some(two_profiles("http://127.0.0.1:9")), None, shell);
         let server = url::Url::parse("http://127.0.0.1:9/").unwrap();
         let cookie = cookie_store::RawCookie::parse("at=t; Max-Age=600").unwrap();
         let active = rig.network.active().await;
@@ -977,6 +1085,12 @@ pub(crate) mod tests {
 
         rig.profiles.log_out().await;
         assert!(!active.jar.has("at", &server));
+        assert!(webview.names().is_empty(), "the provider's cookies too");
+
+        // No window, no webview store to clear.
+        let windowless = rig_with(None, None);
+        windowless.profiles.log_out().await;
+        assert_eq!(windowless.calls(), ["reload"]);
         assert!(
             work.jar.has("at", &server),
             "another profile stays signed in"
@@ -1018,13 +1132,55 @@ pub(crate) mod tests {
         assert_eq!(html.requests()[0].target, "/api/v1/auth/user");
     }
 
-    #[test]
-    fn reloads_into_a_sign_in_only_if_it_is_still_the_active_profile() {
-        let rig = rig();
-        rig.profiles.signed_in("work");
-        assert!(rig.calls().is_empty());
-        rig.profiles.signed_in("default");
+    fn sign_in_window() -> Arc<FakeWebview> {
+        Arc::new(FakeWebview::with(&[
+            ("at=a1; Path=/; Max-Age=600", "127.0.0.1"),
+            ("rt=r1; Path=/api/v1/auth/refresh; Max-Age=600", "127.0.0.1"),
+        ]))
+    }
+
+    #[tokio::test]
+    async fn moves_a_finished_sign_in_into_its_profiles_jar() {
+        let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        let server = url::Url::parse("http://127.0.0.1:9/").unwrap();
+        let window = sign_in_window();
+        assert!(rig.profiles.finish_sign_in("work", window.clone()).await);
+        let work = rig.network.profile("work", "http://127.0.0.1:9").await;
+        assert!(work.jar.has("at", &server));
+        assert!(window.names().is_empty(), "nothing left in the webview");
+        assert!(rig.calls().is_empty(), "not the profile on screen");
+
+        assert!(
+            rig.profiles
+                .finish_sign_in("default", sign_in_window())
+                .await
+        );
         assert_eq!(rig.calls(), ["reload"]);
+
+        // A window closed with no session in it.
+        let empty = Arc::new(FakeWebview::default());
+        assert!(!rig.profiles.finish_sign_in("default", empty).await);
+        assert!(rig.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn ignores_a_sign_in_of_a_profile_removed_meanwhile() {
+        let rig = rig_with(Some(two_profiles("http://127.0.0.1:9")), None);
+        rig.profiles.remove("work").await.unwrap();
+        rig.calls();
+        let window = sign_in_window();
+        assert!(!rig.profiles.finish_sign_in("work", window.clone()).await);
+        assert!(!profile_dir(rig.dir.path(), "work").exists());
+        assert_eq!(window.names(), ["at", "rt"], "never read");
+        assert!(rig.calls().is_empty());
+    }
+
+    #[test]
+    fn names_the_data_stores_no_profile_owns() {
+        let rig = rig_with(Some(two_profiles("")), None);
+        let gone = data_store_id("gone");
+        let stores = [data_store_id("default"), gone, data_store_id("work")];
+        assert_eq!(rig.profiles.orphaned_stores(&stores), [gone]);
     }
 
     #[tokio::test]

@@ -443,6 +443,22 @@ pub fn orphaned_profile_dirs<'a>(names: &'a [String], state: &ProfilesState) -> 
         .collect()
 }
 
+/// The macOS data stores that belong to no profile: a removed profile's store
+/// is deleted once its window is gone, and whatever a quit cut short is swept
+/// on the next start. Every store the app has is one of its profiles'.
+pub fn orphaned_data_stores(stores: &[[u8; 16]], state: &ProfilesState) -> Vec<[u8; 16]> {
+    stores
+        .iter()
+        .filter(|store| {
+            !state
+                .profiles
+                .iter()
+                .any(|p| data_store_id(&p.id) == **store)
+        })
+        .copied()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1187,5 +1203,14 @@ mod tests {
             .collect();
         assert_eq!(orphaned_profile_dirs(&names, &state), ["gone"]);
         assert!(orphaned_profile_dirs(&[], &state).is_empty());
+    }
+
+    #[test]
+    fn sweeps_only_the_stores_of_profiles_that_are_gone() {
+        let state = add(&base(), "work", "Work");
+        let gone = data_store_id("gone");
+        let stores = [data_store_id("work"), gone, data_store_id(FIRST_PROFILE_ID)];
+        assert_eq!(orphaned_data_stores(&stores, &state), [gone]);
+        assert!(orphaned_data_stores(&[], &state).is_empty());
     }
 }

@@ -27,14 +27,12 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use agentrq_desktop_core::auth::{sign_in_start, SignInFlow, SignInResult, SignInWindow};
-#[cfg(target_os = "macos")]
-use agentrq_desktop_core::profiles::data_store_id;
+use agentrq_desktop_core::auth::{SignInFlow, SignInWindow};
 use agentrq_desktop_core::server_config::connection_lock;
 use agentrq_desktop_core::updater::{
     AutoUpdater, PublishedStatus, StdInstallerSpawner, Updater, UpdaterDeps, UpdaterEvent,
 };
-use tauri::webview::PageLoadEvent;
+use tauri::webview::{Cookie, PageLoadEvent};
 use tauri::{
     AppHandle, Emitter, Manager, RunEvent, Runtime, Url, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
@@ -45,6 +43,7 @@ use event_source::Streams;
 use network::Network;
 use profiles::{app_origin, Profiles, Shell};
 use scheme::{Assets, Scheme, MAIN_WEBVIEW};
+use sign_in::CookieWebview;
 use vault::{Keychain, KeychainError};
 
 /// The Vite dev server, when this is `tauri dev`. The scheme forwards to it,
@@ -112,22 +111,6 @@ impl Keychain for OsKeychain {
     fn set(&self, secret: &[u8]) -> Result<(), KeychainError> {
         Self::entry()?.set_secret(secret).map_err(keychain_error)
     }
-}
-
-/// The main window's webview gets its profile's storage when it is built: a
-/// folder on Linux and Windows, a WKWebView store on macOS (14 and later; below
-/// that the profile's own origin separates it).
-fn isolate<'a, R: Runtime>(
-    builder: WebviewWindowBuilder<'a, R, AppHandle<R>>,
-    profiles: &Profiles,
-    id: &str,
-) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
-    #[cfg(target_os = "macos")]
-    let _ = profiles;
-    #[cfg(target_os = "macos")]
-    return builder.data_store_identifier(data_store_id(id));
-    #[cfg(not(target_os = "macos"))]
-    builder.data_directory(profiles.webview_dir(id))
 }
 
 type DownloadedUpdate = Arc<Mutex<Option<(tauri_plugin_updater::Update, Vec<u8>)>>>;
@@ -335,44 +318,32 @@ fn init_updater<R: Runtime>(app: &AppHandle<R>) {
     updater.start();
 }
 
-/// The main window, on the active profile.
-fn main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
-    let profiles = app.state::<Arc<Profiles>>().inner().clone();
-    let id = profiles.active_id();
-    let origin = app_origin(&id);
-    let url = Url::parse(&format!("{origin}/")).expect("a profile id is a host");
-    let navigating = app.clone();
-    let builder = WebviewWindowBuilder::new(app, MAIN_WEBVIEW, WebviewUrl::CustomProtocol(url))
-        // A reload or a navigation leaves the old page's event streams running.
-        .on_page_load(|webview, payload| {
-            if payload.event() == PageLoadEvent::Started {
-                webview.state::<Streams>().close_all();
-            }
-        })
-        // The login view's buttons are plain links: followed here, the
-        // provider's redirects would run against the app's origin and lose the
-        // callback, so the sign-in runs in a window of its own on the server.
-        .on_navigation(move |url| {
-            let server = navigating.state::<Arc<Profiles>>().server_url();
-            let Some(start) = sign_in_start(url.as_str(), &origin, &server) else {
-                return true;
-            };
-            // Not built inside a webview callback: that deadlocks on Windows.
-            let app = navigating.clone();
-            tauri::async_runtime::spawn(async move { open_sign_in(&app, start) });
-            false
-        })
-        .title("AgentRQ Tauri")
-        .inner_size(1280.0, 820.0)
-        .min_inner_size(940.0, 600.0);
-    isolate(builder, &profiles, &id).build()?;
-    Ok(())
-}
-
 /// Set while the main window is being replaced: its `Destroyed` event builds
 /// the next one.
 #[derive(Default)]
 struct Reopening(AtomicBool);
+
+/// The old main window is gone: the new one, on the active profile.
+fn rebuild_main<R: Runtime>(app: &AppHandle<R>) {
+    app.state::<Arc<Profiles>>().main_window_closed();
+    if let Err(error) = chrome::open_active_main_window(app) {
+        eprintln!("[profiles] could not reopen the window: {error}");
+    }
+}
+
+/// A webview's cookie store, for `sign_in`.
+struct TauriCookies<R: Runtime>(WebviewWindow<R>);
+
+impl<R: Runtime> CookieWebview for TauriCookies<R> {
+    fn cookies(&self) -> Vec<Cookie<'static>> {
+        self.0.cookies().unwrap_or_default()
+    }
+    fn delete_cookie(&self, cookie: Cookie<'static>) {
+        // WebView2 deletes later, which is fine: nothing on the app's origin
+        // sends it.
+        let _ = self.0.delete_cookie(cookie);
+    }
+}
 
 /// What profiles.rs asks of the windows.
 struct Windows<R: Runtime>(AppHandle<R>);
@@ -384,18 +355,18 @@ impl<R: Runtime> Shell for Windows<R> {
     /// the windows that are left, so building it there means the count never
     /// reaches zero and Linux and Windows do not quit mid-switch.
     fn reopen(&self) {
-        match self.0.get_webview_window(MAIN_WEBVIEW) {
-            Some(window) => {
-                self.0.state::<Reopening>().0.store(true, Ordering::SeqCst);
-                let _ = window.destroy();
+        let app = self.0.clone();
+        let _ = self.0.run_on_main_thread(move || {
+            let Some(window) = app.get_webview_window(MAIN_WEBVIEW) else {
+                return rebuild_main(&app);
+            };
+            chrome::save_main(&app);
+            app.state::<Reopening>().0.store(true, Ordering::SeqCst);
+            if window.destroy().is_err() {
+                app.state::<Reopening>().0.store(false, Ordering::SeqCst);
+                rebuild_main(&app);
             }
-            None => {
-                let app = self.0.clone();
-                let _ = self.0.run_on_main_thread(move || {
-                    let _ = main_window(&app);
-                });
-            }
-        }
+        });
     }
 
     fn reload(&self) {
@@ -411,12 +382,31 @@ impl<R: Runtime> Shell for Windows<R> {
         #[cfg(target_os = "macos")]
         {
             let app = self.0.clone();
-            let store = data_store_id(_id);
+            let store = agentrq_desktop_core::profiles::data_store_id(_id);
             tauri::async_runtime::spawn(async move {
                 let _ = app.remove_data_store(store).await;
             });
         }
     }
+
+    fn main_webview(&self) -> Option<Arc<dyn CookieWebview>> {
+        let window = self.0.get_webview_window(MAIN_WEBVIEW)?;
+        Some(Arc::new(TauriCookies(window)))
+    }
+}
+
+/// A removed profile's store that a quit kept from being deleted, deleted now.
+#[cfg(target_os = "macos")]
+fn sweep_data_stores<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(stores) = app.fetch_data_store_identifiers().await else {
+            return;
+        };
+        for store in app.state::<Arc<Profiles>>().orphaned_stores(&stores) {
+            let _ = app.remove_data_store(store).await;
+        }
+    });
 }
 
 /// Sign-in windows are numbered: one closing must never free a label another
@@ -451,14 +441,14 @@ impl<R: Runtime> SignInWindow for SignInWebview<'_, R> {
 /// Sign the active profile in, in a window on the real server and on that
 /// profile's webview storage. Never the system browser: the cookie would land
 /// in a jar the app cannot read.
-fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
+pub(crate) fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
     let profiles = app.state::<Arc<Profiles>>().inner().clone();
     let id = profiles.active_id();
     let server = profiles.server_url();
     let label = format!("sign-in-{}", SIGN_INS.fetch_add(1, Ordering::Relaxed));
     let flow: Flow = Arc::default();
     let on_load = flow.clone();
-    let (profile, profile_server) = (id.clone(), server.clone());
+    let profile = id.clone();
     let blank = Url::parse("about:blank").expect("static url");
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(blank))
         .title("Sign in to AgentRQ")
@@ -477,11 +467,10 @@ fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
                     window,
                     on_load.clone(),
                     profile.clone(),
-                    profile_server.clone(),
                 ));
             }
         });
-    let window = match isolate(builder, &profiles, &id).build() {
+    let window = match chrome::isolate(builder, &profiles, &id).build() {
         Ok(window) => window,
         Err(error) => {
             eprintln!("[sign-in] could not open the window: {error}");
@@ -504,38 +493,17 @@ fn open_sign_in<R: Runtime>(app: &AppHandle<R>, start_url: String) {
     ));
 }
 
-async fn finish_sign_in<R: Runtime>(
-    window: WebviewWindow<R>,
-    flow: Flow,
-    id: String,
-    server: String,
-) {
-    let app = window.app_handle().clone();
-    let reader = window.clone();
-    // `cookies()`, never `cookies_for_url` (WP0 S4).
-    let cookies = tauri::async_runtime::spawn_blocking(move || reader.cookies())
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .unwrap_or_default();
-    let net = app.state::<Arc<Network>>().profile(&id, &server).await;
-    let (signed_in, taken) = sign_in::take_session(cookies, &server, &net.jar);
-    // Out of the webview's store: the profile's session is the jar now.
-    // WebView2 deletes later, which is fine: nothing on the app's origin
-    // sends it.
-    for cookie in taken {
-        let _ = window.delete_cookie(cookie);
-    }
-    let result = lock_flow(&flow)
-        .as_mut()
-        .map(|flow| flow.finish(signed_in, &mut SignInWebview(&window)));
-    if result == Some(SignInResult::Ok) {
-        app.state::<Arc<Profiles>>().signed_in(&id);
+async fn finish_sign_in<R: Runtime>(window: WebviewWindow<R>, flow: Flow, id: String) {
+    let profiles = window.state::<Arc<Profiles>>().inner().clone();
+    let cookies = Arc::new(TauriCookies(window.clone()));
+    let signed_in = profiles.finish_sign_in(&id, cookies).await;
+    if let Some(flow) = lock_flow(&flow).as_mut() {
+        flow.finish(signed_in, &mut SignInWebview(&window));
     }
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = chrome::plugins(tauri::Builder::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .register_asynchronous_uri_scheme_protocol("app", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
@@ -559,7 +527,7 @@ pub fn run() {
             ));
             let handle = app.handle().clone();
             let profiles = Arc::new(Profiles::new(
-                data_dir,
+                data_dir.clone(),
                 lock,
                 network.clone(),
                 Box::new(Windows(handle.clone())),
@@ -567,6 +535,8 @@ pub fn run() {
             profiles.sweep();
             app.manage(profiles);
             app.manage(Reopening::default());
+            #[cfg(target_os = "macos")]
+            sweep_data_stores(&handle);
             let keys = handle
                 .asset_resolver()
                 .iter()
@@ -580,12 +550,16 @@ pub fn run() {
             app.manage(Streams::default());
             app.manage(Scheme::new(network, assets, &dev_url(&handle)));
             init_updater(&handle);
-            main_window(&handle)?;
+            app.manage(chrome::Chrome::new(data_dir));
+            chrome::open_active_main_window(&handle)?;
+            app_menu::install(&handle)?;
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building AgentRQ Tauri")
-        .run(|app, event| match &event {
+        .expect("error while building AgentRQ Tauri");
+
+    app.run(|app, event| {
+        match &event {
             RunEvent::WindowEvent {
                 label,
                 event: WindowEvent::Destroyed,
@@ -593,9 +567,7 @@ pub fn run() {
             } if label == MAIN_WEBVIEW
                 && app.state::<Reopening>().0.swap(false, Ordering::SeqCst) =>
             {
-                if let Err(error) = main_window(app) {
-                    eprintln!("[profiles] could not reopen the window: {error}");
-                }
+                rebuild_main(app);
             }
             RunEvent::Exit => {
                 if let Some(installer) = app.try_state::<ExitInstaller>() {
@@ -603,7 +575,9 @@ pub fn run() {
                 }
             }
             _ => {}
-        });
+        }
+        chrome::on_run_event(app, &event);
+    });
 }
 
 #[cfg(test)]

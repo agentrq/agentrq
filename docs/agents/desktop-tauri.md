@@ -45,11 +45,20 @@
   profile switch cannot build the new window beside the old one. Destroy `main`
   and build the new one in the run loop's `Destroyed` event: the label is free
   by then and the window count never reaches zero, so Linux and Windows don't quit.
+  Only `chrome::open_main_window` builds it, with one builder: Tauri keeps just the
+  last `on_navigation` and `on_page_load`.
+- **The network and a removed profile's storage change only once the old `main`
+  is `Destroyed`** (`Profiles::main_window_closed`). Sooner, the old window's last
+  requests go out on the new profile's session, and WebKit refuses to delete a
+  store still in use.
 - **A sign-in window moves every cookie for the server's host into the jar**,
   not only `at`. The refresh cookie `rt` is what keeps the session past a day.
   The sign-in window gets no capability.
+- **Delete a webview cookie as both `host` and `.host`** (`sign_in::deletion_forms`).
+  `cookie`'s `domain()` strips the leading dot and the stores match exactly, so
+  passing back what `cookies()` gave deletes nothing.
 - **A profile's webview storage lives under `profiles/<id>/`** (or its macOS
-  data store), and start-up sweeps any profile folder that no profile owns.
+  data store), and start-up sweeps any profile folder or store that no profile owns.
 - **The connection probe uses a client with no cookies that follows
   redirects**, never a profile's client. A probe must not sign anyone in.
 - **Windows' `delete_cookie` is asynchronous.** Check the deletion after the next

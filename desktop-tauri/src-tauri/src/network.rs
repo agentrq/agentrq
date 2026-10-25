@@ -10,7 +10,7 @@
 //! two profiles would be one account.
 //!
 //! Which profile is active is `profiles.rs`'s to decide: it calls
-//! [`Network::switch`] after a profile switch, and
+//! [`Network::activate`] after a profile switch, and
 //! [`ProfileNet::set_server_url`] after the connection screen.
 //!
 //! A profile is opened once and kept: two jars on one file would each write
@@ -174,17 +174,28 @@ impl Network {
 
     /// The profile's network, opened on first use. Nothing is awaited between
     /// looking it up and keeping it, so it is only ever opened once.
+    ///
+    /// One opened with no vault is not kept unless it is the active one: its
+    /// jar can never read its file, so kept it would show the profile signed
+    /// out for the rest of the session and lose a sign-in at quit.
     async fn open(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
         let vault = self.vault().await;
-        lock(&self.opened)
-            .entry(id.to_string())
-            .or_insert_with(|| {
-                Arc::new(
-                    ProfileNet::new(&self.base, id, server_url, vault)
-                        .expect("the HTTP client builds with the TLS backend it was compiled with"),
-                )
-            })
-            .clone()
+        if let Some(net) = self.current().filter(|net| net.id == id) {
+            return net;
+        }
+        let new = |vault| {
+            Arc::new(
+                ProfileNet::new(&self.base, id, server_url, vault)
+                    .expect("the HTTP client builds with the TLS backend it was compiled with"),
+            )
+        };
+        match vault {
+            Some(vault) => lock(&self.opened)
+                .entry(id.to_string())
+                .or_insert_with(|| new(Some(vault)))
+                .clone(),
+            None => new(None),
+        }
     }
 
     /// A profile's network, active or not: its identity is asked through its
@@ -196,16 +207,15 @@ impl Network {
     /// Let go of a removed profile's network, so it is never opened on its old
     /// files again. Returns it, for a last clear of its jar.
     pub fn forget(&self, id: &str) -> Option<Arc<ProfileNet>> {
-        lock(&self.opened).remove(id)
+        let kept = lock(&self.opened).remove(id);
+        kept.or_else(|| self.current().filter(|net| net.id == id))
     }
 
-    /// Make another profile the active one. Requests already under way finish
-    /// on the profile they started on.
-    pub async fn switch(&self, id: &str, server_url: &str) -> Arc<ProfileNet> {
-        let net = self.open(id, server_url).await;
-        net.set_server_url(server_url);
-        *lock(&self.active) = Some(net.clone());
-        net
+    /// Make another profile's network the active one, once nothing of the
+    /// previous profile's window is left to use it. Requests already under
+    /// way finish on the profile they started on.
+    pub fn activate(&self, net: Arc<ProfileNet>) {
+        *lock(&self.active) = Some(net);
     }
 }
 
@@ -258,15 +268,17 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let net = network(dir.path(), "http://127.0.0.1:1");
         let first = net.active().await;
-        let work = net.switch("work", "http://127.0.0.1:2").await;
+        let work = net.profile("work", "http://127.0.0.1:2").await;
+        assert!(Arc::ptr_eq(&first, &net.active().await), "not active yet");
+        net.activate(work.clone());
         assert!(Arc::ptr_eq(&work, &net.active().await));
         assert!(!Arc::ptr_eq(&first.jar, &work.jar));
         assert_eq!(work.server_url(), "http://127.0.0.1:2");
 
-        let back = net.switch("default", "http://127.0.0.1:4").await;
+        let back = net.profile("default", "http://127.0.0.1:4").await;
         assert!(Arc::ptr_eq(&back, &first), "one jar per profile file");
-        assert_eq!(first.server_url(), "http://127.0.0.1:4");
-        let work = net.switch("work", "http://127.0.0.1:2").await;
+        let work = net.profile("work", "http://127.0.0.1:9").await;
+        assert_eq!(work.server_url(), "http://127.0.0.1:2", "opened once");
 
         work.set_server_url("http://127.0.0.1:3");
         assert_eq!(work.server_url(), "http://127.0.0.1:3");
@@ -305,6 +317,13 @@ pub(crate) mod tests {
         let opened = net.active().await;
         assert!(opened.jar.is_memory_only());
         assert!(!dir.path().join("cookie.key").exists());
+
+        // The active one is kept, in memory; any other is opened afresh.
+        assert!(Arc::ptr_eq(&opened, &net.profile("default", "").await));
+        let work = net.profile("work", "").await;
+        assert!(!Arc::ptr_eq(&work, &net.profile("work", "").await));
+        assert!(net.forget("work").is_none(), "nothing kept to forget");
+        assert!(Arc::ptr_eq(&opened, &net.forget("default").unwrap()));
     }
 
     #[test]

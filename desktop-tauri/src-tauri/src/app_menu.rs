@@ -18,7 +18,10 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use std::sync::Arc;
+
 use crate::chrome::{self, Chrome};
+use crate::profiles::Profiles;
 
 const fn platform() -> Platform {
     if cfg!(target_os = "macos") {
@@ -191,8 +194,15 @@ fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
             let _ = window.close();
         }
         ActionId::Quit => app.exit(0),
-        // Switch Server and Log Out are WP4's (the server config and the cookie
-        // jar), Check for Updates is WP6's: all disabled or inert until then.
+        ActionId::LogOut => {
+            let profiles = app.state::<Arc<Profiles>>().inner().clone();
+            tauri::async_runtime::spawn(async move { profiles.log_out().await });
+        }
+        ActionId::SwitchServer => {
+            let profiles = app.state::<Arc<Profiles>>().inner().clone();
+            tauri::async_runtime::spawn(async move { profiles.switch_server().await });
+        }
+        // Check for Updates is WP6's: disabled until then.
         _ => {}
     }
 }
