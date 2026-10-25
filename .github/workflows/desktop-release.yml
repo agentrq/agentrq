@@ -332,11 +332,6 @@ jobs:
 
           npx tauri build "${args[@]}"
 
-      # TEMPORARY: lists the real bundle trees for the test fixtures.
-      - name: List the bundle tree
-        shell: bash
-        run: find "desktop-tauri/src-tauri/target/${{ matrix.target && format('{0}/', matrix.target) || '' }}release/bundle" -mindepth 1 \( -type f -o -type l \) | sort
-
       - name: Collect Tauri release artifacts
         shell: bash
         env:

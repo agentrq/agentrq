@@ -6,9 +6,6 @@ appimage/AgentRQ Tauri.AppDir/AppRun.wrapped
 appimage/AgentRQ Tauri.AppDir/agentrq-tauri.png
 appimage/AgentRQ Tauri.AppDir/apprun-hooks/linuxdeploy-plugin-gtk.sh
 appimage/AgentRQ Tauri.AppDir/usr/bin/agentrq-tauri
-appimage/AgentRQ Tauri.AppDir/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess
-appimage/AgentRQ Tauri.AppDir/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess
-appimage/AgentRQ Tauri.AppDir/usr/lib/aarch64-linux-gnu/webkit2gtk-4.1/injected-bundle/libwebkit2gtkinjectedbundle.so
 appimage/AgentRQ Tauri.AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache
 appimage/AgentRQ Tauri.AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-ani.so
 appimage/AgentRQ Tauri.AppDir/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-bmp.so
@@ -111,6 +108,7 @@ appimage/AgentRQ Tauri.AppDir/usr/lib/libXrandr.so.2
 appimage/AgentRQ Tauri.AppDir/usr/lib/libXrender.so.1
 appimage/AgentRQ Tauri.AppDir/usr/lib/libatk-1.0.so.0
 appimage/AgentRQ Tauri.AppDir/usr/lib/libatk-bridge-2.0.so.0
+appimage/AgentRQ Tauri.AppDir/usr/lib/libatomic.so.1
 appimage/AgentRQ Tauri.AppDir/usr/lib/libatspi.so.0
 appimage/AgentRQ Tauri.AppDir/usr/lib/libavahi-client.so.3
 appimage/AgentRQ Tauri.AppDir/usr/lib/libavahi-common.so.3
@@ -251,9 +249,13 @@ appimage/AgentRQ Tauri.AppDir/usr/lib/libxkbcommon.so.0
 appimage/AgentRQ Tauri.AppDir/usr/lib/libxml2.so.2
 appimage/AgentRQ Tauri.AppDir/usr/lib/libxslt.so.1
 appimage/AgentRQ Tauri.AppDir/usr/lib/libzstd.so.1
+appimage/AgentRQ Tauri.AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess
+appimage/AgentRQ Tauri.AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitWebProcess
+appimage/AgentRQ Tauri.AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/injected-bundle/libwebkit2gtkinjectedbundle.so
 appimage/AgentRQ Tauri.AppDir/usr/share/applications/AgentRQ Tauri.desktop
 appimage/AgentRQ Tauri.AppDir/usr/share/doc/libatk-bridge2.0-0t64/copyright
 appimage/AgentRQ Tauri.AppDir/usr/share/doc/libatk1.0-0t64/copyright
+appimage/AgentRQ Tauri.AppDir/usr/share/doc/libatomic1/copyright
 appimage/AgentRQ Tauri.AppDir/usr/share/doc/libatspi2.0-0t64/copyright
 appimage/AgentRQ Tauri.AppDir/usr/share/doc/libavahi-client3/copyright
 appimage/AgentRQ Tauri.AppDir/usr/share/doc/libavahi-common3/copyright

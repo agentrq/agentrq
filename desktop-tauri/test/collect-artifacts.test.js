@@ -24,11 +24,12 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-// Lays out a bundle tree from a fixture: every file a real v2 build left under
-// bundle/, each holding its own path so a copy can be traced to its source.
+// Lays out a bundle tree from a fixture: every file a real v2 build in CI left
+// under bundle/, each holding its own path so a copy can be traced to its source.
+// Split on \r too: a Windows checkout gives the fixtures CRLF endings.
 function bundleTree(leg, { drop = [], add = [] } = {}) {
   const dir = path.join(tmp, leg, 'bundle')
-  const files = fs.readFileSync(path.join(FIXTURES, `${leg}.txt`), 'utf8').split('\n').filter(Boolean)
+  const files = fs.readFileSync(path.join(FIXTURES, `${leg}.txt`), 'utf8').split(/\r?\n/).filter(Boolean)
   for (const rel of [...files.filter((f) => !drop.includes(f)), ...add]) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
     fs.writeFileSync(path.join(dir, rel), rel)
