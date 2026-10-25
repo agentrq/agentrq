@@ -82,12 +82,16 @@ impl OsKeychain {
     }
 }
 
-/// A locked keychain, or a dismissed prompt, is a refusal this time. macOS and
-/// Windows always have a keychain, so anything else there is passing too; on
-/// Linux it means there is no Secret Service.
+/// A locked keychain, or a dismissed prompt, is a refusal this time; no store
+/// at all is a missing one. macOS and Windows always have a keychain, so any
+/// other failure there is passing too; on Linux it means there is no Secret
+/// Service.
 fn keychain_error(error: keyring::Error) -> KeychainError {
     match error {
         keyring::Error::NoStorageAccess(_) => KeychainError::Refused,
+        keyring::Error::NoDefaultStore | keyring::Error::NotSupportedByStore(_) => {
+            KeychainError::Missing
+        }
         #[cfg(any(target_os = "macos", windows))]
         _ => KeychainError::Refused,
         #[cfg(not(any(target_os = "macos", windows)))]
