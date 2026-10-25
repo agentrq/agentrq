@@ -5,11 +5,13 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const invoke = vi.fn(() => Promise.reject(new Error('connection_get is not implemented yet (WP4)')))
-vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+class Channel {}
+const nativeFetch = () => {}
+vi.mock('@tauri-apps/api/core', () => ({ invoke, Channel }))
 
 let bridge
 beforeAll(async () => {
-  globalThis.window = {}
+  globalThis.window = { location: { href: 'app://localhost/' }, fetch: nativeFetch, EventSource: class {} }
   bridge = await import('../src/bridge/index.js')
 })
 
@@ -23,7 +25,9 @@ describe('platformOf', () => {
 })
 
 describe('the stand-in window.agentrq', () => {
-  it('is installed on window when the module loads', () => {
+  it('is installed on window when the module loads, after the fetch and EventSource the scheme needs', () => {
+    expect(window.fetch).not.toBe(nativeFetch)
+    expect(window.EventSource.CLOSED).toBe(2)
     expect(window.agentrq.isDesktop).toBe(true)
     expect(window.agentrq.platform).toBe(bridge.platformOf(navigator.userAgent))
   })

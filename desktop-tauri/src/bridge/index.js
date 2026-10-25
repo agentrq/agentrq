@@ -11,7 +11,8 @@
  * IPC path is exercised: its `todo` answer is the rejection the renderer
  * already treats as "no server yet", so the connection screen goes up.
  */
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
+import { installEventSource, installFetch } from './net.js'
 
 /** Node's name for the OS, as Electron's `process.platform` gives it. */
 export function platformOf(userAgent) {
@@ -52,4 +53,7 @@ export function createBridge(userAgent) {
   })
 }
 
+// Before the renderer loads: the app scheme cannot carry these as they are.
+installFetch(window)
+installEventSource(window, invoke, Channel)
 window.agentrq = createBridge(navigator.userAgent)

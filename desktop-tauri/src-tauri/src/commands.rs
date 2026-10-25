@@ -11,6 +11,14 @@
 //! (`agentrq:side-panel:permission-answer` is `side_panel_permission_answer`).
 //! The `on*` listeners are events, not commands, so they are not here.
 
+use std::sync::Arc;
+
+use tauri::ipc::Channel;
+use tauri::State;
+
+use crate::event_source::{self, Frame, Sink, Streams};
+use crate::network::Network;
+
 /// The error a stub answers: the member, and the work package that owns it.
 pub fn todo(member: &str, owner: &str) -> Result<(), String> {
     Err(format!(
@@ -18,22 +26,74 @@ pub fn todo(member: &str, owner: &str) -> Result<(), String> {
     ))
 }
 
-/// `agentrq:attachments:forgetAll`
+/// `agentrq:attachments:forgetAll`: signing out.
 #[tauri::command]
-pub fn attachments_forget_all() -> Result<(), String> {
-    todo("attachments.forgetAll", "WP2")
+pub async fn attachments_forget_all(network: State<'_, Arc<Network>>) -> Result<bool, String> {
+    Ok(network.active().await.attachments.forget_all())
 }
 
 /// `agentrq:attachments:forgetTask`
 #[tauri::command]
-pub fn attachments_forget_task() -> Result<(), String> {
-    todo("attachments.forgetTask", "WP2")
+pub async fn attachments_forget_task(
+    network: State<'_, Arc<Network>>,
+    workspace_id: String,
+    task_id: String,
+) -> Result<bool, String> {
+    Ok(network
+        .active()
+        .await
+        .attachments
+        .forget_task(&workspace_id, &task_id))
 }
 
 /// `agentrq:attachments:forgetWorkspace`
 #[tauri::command]
-pub fn attachments_forget_workspace() -> Result<(), String> {
-    todo("attachments.forgetWorkspace", "WP2")
+pub async fn attachments_forget_workspace(
+    network: State<'_, Arc<Network>>,
+    workspace_id: String,
+) -> Result<bool, String> {
+    Ok(network
+        .active()
+        .await
+        .attachments
+        .forget_workspace(&workspace_id))
+}
+
+/// Not an Electron channel: the bridge's `EventSource` opens a stream at a
+/// same-origin `url` (path and query) and is sent its frames on `on_event`.
+/// The URL is checked and built by `core::protocol`, as a proxied request is.
+#[tauri::command]
+pub async fn event_source_open(
+    network: State<'_, Arc<Network>>,
+    streams: State<'_, Streams>,
+    url: String,
+    on_event: Channel<Frame>,
+) -> Result<u32, String> {
+    let net = network.active().await;
+    let (path, search) = match url.find('?') {
+        Some(at) => url.split_at(at),
+        None => (url.as_str(), ""),
+    };
+    let target = net
+        .protocol("")
+        .proxy_target(path, search)
+        .map_err(|error| format!("{error:?}"))?;
+    let sink = Box::new(ChannelSink(on_event));
+    Ok(streams.open(event_source::run(net.client.clone(), target, sink)))
+}
+
+/// Not an Electron channel: the bridge's `EventSource.close()`.
+#[tauri::command]
+pub fn event_source_close(streams: State<'_, Streams>, id: u32) {
+    streams.close(id);
+}
+
+struct ChannelSink(Channel<Frame>);
+
+impl Sink for ChannelSink {
+    fn send(&self, frame: Frame) -> bool {
+        self.0.send(frame).is_ok()
+    }
 }
 
 /// `agentrq:connection:cancel`
@@ -351,11 +411,14 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         view_get,
         view_zoom,
         theme_set,
+        event_source_open,
+        event_source_close,
     ]
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{Arc, Streams};
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
     use tauri::webview::InvokeRequest;
@@ -423,31 +486,66 @@ mod tests {
         ("theme_set", "theme.set"),
     ];
 
-    #[test]
-    fn every_command_is_registered_and_answers_todo() {
+    /// The commands WP2 has replaced; every other one is still a stub.
+    const WP2: [&str; 3] = [
+        "attachments_forget_all",
+        "attachments_forget_task",
+        "attachments_forget_workspace",
+    ];
+
+    struct Rig {
+        _app: tauri::App<tauri::test::MockRuntime>,
+        webview: tauri::WebviewWindow<tauri::test::MockRuntime>,
+        dir: tempfile::TempDir,
+    }
+
+    fn rig() -> Rig {
+        let dir = tempfile::tempdir().unwrap();
         let app = mock_builder()
             .invoke_handler(super::handler())
+            .manage(Arc::new(crate::network::tests::network(
+                dir.path(),
+                "http://127.0.0.1:9",
+            )))
+            .manage(Streams::default())
             .build(mock_context(noop_assets()))
             .expect("mock app");
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .expect("mock window");
+        Rig {
+            _app: app,
+            webview,
+            dir,
+        }
+    }
 
+    fn call(
+        rig: &Rig,
+        cmd: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, serde_json::Value> {
+        get_ipc_response(
+            &rig.webview,
+            InvokeRequest {
+                cmd: cmd.into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: LOCAL.parse().unwrap(),
+                body: InvokeBody::Json(args),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+        .map(|body| body.deserialize().unwrap())
+    }
+
+    #[test]
+    fn every_command_is_registered_and_the_stubs_answer_todo() {
+        let rig = rig();
         assert_eq!(COMMANDS.len(), 47, "one command per Electron IPC channel");
-        for (cmd, member) in COMMANDS {
-            let res = get_ipc_response(
-                &webview,
-                InvokeRequest {
-                    cmd: (*cmd).into(),
-                    callback: CallbackFn(0),
-                    error: CallbackFn(1),
-                    url: LOCAL.parse().unwrap(),
-                    body: InvokeBody::default(),
-                    headers: Default::default(),
-                    invoke_key: INVOKE_KEY.to_string(),
-                },
-            );
-            let err = res.expect_err(cmd);
+        for (cmd, member) in COMMANDS.iter().filter(|(cmd, _)| !WP2.contains(cmd)) {
+            let err = call(&rig, cmd, serde_json::json!({})).expect_err(cmd);
             let text = err.as_str().unwrap_or_default();
             assert!(
                 text.starts_with(&format!(
@@ -456,5 +554,106 @@ mod tests {
                 "{cmd}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn forgets_attachments_by_task_workspace_or_all() {
+        let rig = rig();
+        let store = rig.dir.path().join("profiles/default/attachments");
+        let task = store.join("ws1/t1");
+        std::fs::create_dir_all(&task).unwrap();
+        std::fs::create_dir_all(store.join("ws2/t2")).unwrap();
+
+        let forget_task = serde_json::json!({"workspaceId": "ws1", "taskId": "t1"});
+        assert_eq!(
+            call(&rig, "attachments_forget_task", forget_task),
+            Ok(true.into())
+        );
+        assert!(!task.exists() && store.join("ws1").exists());
+
+        let forget_ws = serde_json::json!({"workspaceId": "ws1"});
+        assert_eq!(
+            call(&rig, "attachments_forget_workspace", forget_ws),
+            Ok(true.into())
+        );
+        assert!(!store.join("ws1").exists() && store.join("ws2").exists());
+
+        let bad = serde_json::json!({"workspaceId": "../x"});
+        assert_eq!(
+            call(&rig, "attachments_forget_workspace", bad),
+            Ok(false.into())
+        );
+
+        assert_eq!(
+            call(&rig, "attachments_forget_all", serde_json::json!({})),
+            Ok(true.into())
+        );
+        assert!(!store.exists());
+    }
+
+    #[test]
+    fn opens_an_event_stream_only_where_the_proxy_would_forward() {
+        let rig = rig();
+        let open = |url: &str| {
+            call(
+                &rig,
+                "event_source_open",
+                serde_json::json!({"url": url, "onEvent": "__CHANNEL__:7"}),
+            )
+        };
+        let id = open("/api/v1/events?x=1").unwrap();
+        assert!(id.as_u64().unwrap() > 0);
+        assert_eq!(
+            open("/api/v1/events").unwrap().as_u64(),
+            Some(id.as_u64().unwrap() + 1)
+        );
+        assert_eq!(open("/pub/stats").unwrap_err(), "Forbidden");
+        assert_eq!(open("/api/%2e%2e/x").unwrap_err(), "Forbidden");
+        assert_eq!(
+            call(&rig, "event_source_close", serde_json::json!({"id": id})),
+            Ok(serde_json::Value::Null)
+        );
+    }
+
+    #[test]
+    fn answers_an_error_for_arguments_it_cannot_read() {
+        let rig = rig();
+        for cmd in [
+            "attachments_forget_task",
+            "attachments_forget_workspace",
+            "event_source_open",
+            "event_source_close",
+        ] {
+            assert!(call(&rig, cmd, serde_json::json!({})).is_err(), "{cmd}");
+        }
+        for (cmd, args) in [
+            (
+                "attachments_forget_task",
+                serde_json::json!({"workspaceId": "w"}),
+            ),
+            (
+                "event_source_open",
+                serde_json::json!({"url": "/api/v1/events"}),
+            ),
+        ] {
+            assert!(call(&rig, cmd, args).is_err(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn answers_an_error_before_the_network_is_managed() {
+        let app = mock_builder()
+            .invoke_handler(super::handler())
+            .build(mock_context(noop_assets()))
+            .expect("mock app");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("mock window");
+        let rig = Rig {
+            _app: app,
+            webview,
+            dir: tempfile::tempdir().unwrap(),
+        };
+        assert!(call(&rig, "attachments_forget_all", serde_json::json!({})).is_err());
     }
 }

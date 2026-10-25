@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:rust": "cargo test --manifest-path core/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml",
-    "coverage:rust": "cargo llvm-cov --manifest-path core/Cargo.toml --fail-under-lines 100 && cargo llvm-cov --manifest-path src-tauri/Cargo.toml --ignore-filename-regex \"desktop-tauri.(core.|src-tauri.src.(lib|main)\\.rs)\" --fail-under-lines 100",
+    "coverage:rust": "cargo llvm-cov --manifest-path core/Cargo.toml --fail-under-lines 100 && cargo llvm-cov --manifest-path src-tauri/Cargo.toml --ignore-filename-regex \"desktop-tauri.(core.|src-tauri.src.(lib|main|test_server)\\.rs)\" --fail-under-lines 100",
     "tauri": "tauri"
   },
   "author": {

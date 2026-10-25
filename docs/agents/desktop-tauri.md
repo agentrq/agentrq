@@ -11,6 +11,14 @@
 - **Flatten request bodies in the bridge's `fetch` wrapper.** A Blob or File body
   sent to the `app` scheme segfaults WebKitGTK and arrives empty on WKWebView.
   Same-origin Blob, FormData and stream bodies go as an ArrayBuffer.
+- **Every server call goes through the active profile's client** (`network.rs`):
+  its jar is the session. A shared or default client signs two profiles in as one.
+- **The proxy buffers; an `EventSource` goes over IPC.** The scheme answers only
+  once it has the whole body, so an endless stream through it never answers.
+- **Same-origin in the bridge compares scheme and host, never `origin`**: a
+  custom scheme's origin is opaque (`"null"`).
+- **Tauri's asset resolver answers `index.html` for any missing path.** Ask the
+  embedded keys whether a file exists, or `plan_static_request`'s 404 never fires.
 - **Read `at` with `cookies()` and our own domain-match, never `cookies_for_url`.**
   On macOS it matches the domain exactly, so it misses an IP host and the
   production `Domain=.<domain>` cookie.
