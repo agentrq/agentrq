@@ -65,15 +65,26 @@ const checksFor = (testServer) => `(async () => {
     el.value = v;
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  const settled = () => new Promise((r) => setTimeout(r, 400));
+  // Yield one task, so Vue's own update after an input event has run.
+  const settled = () => new Promise((r) => setTimeout(r, 0));
+  const until = async (what, probe, timeout = 15000) => {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      const value = probe();
+      if (value) return value;
+      if (Date.now() > deadline) return null;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  };
 
   // A URL that parses but is not a server: the screen must say so rather than
   // storing it and failing mysteriously later.
   setValue(input, 'http://localhost:1');
   await settled();
   button.click();
-  await new Promise((r) => setTimeout(r, 1500));
-  const error = document.querySelector('[role=dialog] p.text-red-600, [role=dialog] .text-red-600');
+  // The probe of a server that is not there ends in an error on the screen.
+  const errorOf = () => document.querySelector('[role=dialog] p.text-red-600, [role=dialog] .text-red-600');
+  const error = await until('the refusal', () => errorOf()?.textContent?.trim() && errorOf());
   record('bad server is refused with a reason', !!error?.textContent?.trim(),
     (error?.textContent ?? 'no error shown').trim());
 
@@ -136,8 +147,17 @@ await runVerify(
       // The server is set, so the router sends the signed-out visitor to /login.
       "location.pathname === '/login'"
     )
-    results.push({ name: 'good server is accepted and stored', pass: saved?.ok === true, detail: JSON.stringify(saved) })
-    results.push(...(await session.evaluate(checksAfterSave(backend.url))))
+    const afterSave = await session.evaluate(checksAfterSave(backend.url))
+    // The shell rebuilds the window before it answers a save, so the answer
+    // may be lost with the old page: then what the new page was stored with
+    // is the answer (checksAfterSave asserts the same, by name).
+    const stored = afterSave.find((r) => r.name === 'connection is now configured')?.pass === true
+    results.push({
+      name: 'good server is accepted and stored',
+      pass: saved?.ok === true || (saved === undefined && stored),
+      detail: saved === undefined ? 'answer lost with the old window; stored: ' + stored : JSON.stringify(saved),
+    })
+    results.push(...afterSave)
     printResults('first-run connection screen', [...results, ...CANCEL_SKIPPED])
 
     return summarize(results, CANCEL_SKIPPED)

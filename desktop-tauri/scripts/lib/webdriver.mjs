@@ -13,11 +13,24 @@
  * fixed time and hopes: a slow runner makes a wait longer, never a check wrong.
  */
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:net'
 
 /** No single WebDriver command may take longer: a hung driver is an error, not a wait. */
 const COMMAND_TIMEOUT = 90000
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** A port the OS says is free right now. */
+export function freePort() {
+  return new Promise((resolvePort, reject) => {
+    const probe = createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address()
+      probe.close(() => resolvePort(port))
+    })
+  })
+}
 
 /** What the run is waiting for now, so a run that hangs can say where. */
 export const pending = { what: 'nothing' }
@@ -50,10 +63,17 @@ export async function waitFor(what, probe, { timeout = 30000, interval = 150 } =
  * own data folder.
  */
 export async function startDriver({ port, env, nativeDriver } = {}) {
-  const args = ['--port', String(port)]
+  // Both ports are picked, not fixed: a driver still exiting from the last
+  // script, or anything else on 4444/4445, would otherwise answer in its place.
+  port ??= await freePort()
+  const args = ['--port', String(port), '--native-port', String(await freePort())]
   if (nativeDriver) args.push('--native-driver', nativeDriver)
   const child = spawn('tauri-driver', args, { env: { ...process.env, ...env }, stdio: ['ignore', 'inherit', 'inherit'] })
   let exited = null
+  const gone = new Promise((resolveGone) => {
+    child.once('exit', resolveGone)
+    child.once('error', resolveGone)
+  })
   child.once('error', (err) => {
     exited = err
   })
@@ -72,7 +92,14 @@ export async function startDriver({ port, env, nativeDriver } = {}) {
     child.kill()
     throw err
   })
-  return { base, stop: () => child.kill() }
+  return {
+    base,
+    // Resolves once the driver, and so the port, is really gone.
+    stop: () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill()
+      return gone
+    },
+  }
 }
 
 export class Session {

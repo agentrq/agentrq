@@ -7,16 +7,18 @@
  * starts it: built from `backend/` (read only), on an empty SQLite database in
  * a temp folder, with root login enabled and a throwaway JWT secret.
  *
+ * `npm run verify` builds the server once and hands it to each script as
+ * VERIFY_SERVER_BIN; a script run on its own builds it itself.
+ *
  * Set AGENTRQ_SERVER_URL (and AGENTRQ_ROOT_TOKEN) to run against a server you
  * started yourself, as the Electron scripts do. It is then left alone.
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { waitFor } from './webdriver.mjs'
+import { freePort, waitFor } from './webdriver.mjs'
 
 const REPO = resolve(import.meta.dirname, '../../..')
 const SERVER_DIR = join(REPO, 'backend/cmd/server')
@@ -25,15 +27,18 @@ const EXE = process.platform === 'win32' ? 'agentrq-server.exe' : 'agentrq-serve
 /** The root login token of a scratch backend. */
 export const ROOT_TOKEN = 'agentrq-verify'
 
-/** A port the OS says is free right now. */
-function freePort() {
-  return new Promise((resolvePort, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address()
-      probe.close(() => resolvePort(port))
-    })
+/**
+ * Build the server into `dir`: `backend/` stays as it was found. Asynchronous,
+ * so a run's deadline can still fire during a cold build.
+ */
+export function buildBackend(dir) {
+  const exe = join(dir, EXE)
+  return new Promise((resolveBuild, reject) => {
+    const build = spawn('go', ['build', '-o', exe, '.'], { cwd: SERVER_DIR, stdio: 'inherit' })
+    build.once('error', reject)
+    build.once('exit', (code) =>
+      code === 0 ? resolveBuild(exe) : reject(new Error('go build of the backend failed'))
+    )
   })
 }
 
@@ -50,10 +55,12 @@ export async function startBackend({ env = process.env } = {}) {
   }
 
   const dir = await mkdtemp(join(tmpdir(), 'agentrq-verify-backend-'))
-  const exe = join(dir, EXE)
-  // Built into the temp folder: `backend/` stays as it was found.
-  const build = spawnSync('go', ['build', '-o', exe, '.'], { cwd: SERVER_DIR, stdio: 'inherit' })
-  if (build.status !== 0) throw new Error('go build of the backend failed')
+  const exe =
+    env.VERIFY_SERVER_BIN ??
+    (await buildBackend(dir).catch(async (err) => {
+      await rm(dir, { recursive: true, force: true })
+      throw err
+    }))
 
   const port = await freePort()
   const url = `http://localhost:${port}`
@@ -74,6 +81,9 @@ export async function startBackend({ env = process.env } = {}) {
     },
   })
   let exited = null
+  child.once('error', (err) => {
+    exited = err
+  })
   child.once('exit', (code) => {
     exited = new Error(`the backend exited with ${code}`)
   })

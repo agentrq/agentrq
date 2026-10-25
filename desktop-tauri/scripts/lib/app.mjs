@@ -52,7 +52,7 @@ export async function launchApp({ serverUrl, env: extra } = {}) {
   else delete process.env.AGENTRQ_SERVER_URL
 
   const driver = await startDriver({
-    port: Number(process.env.VERIFY_DRIVER_PORT ?? 4444),
+    port: process.env.VERIFY_DRIVER_PORT ? Number(process.env.VERIFY_DRIVER_PORT) : undefined,
     env,
     nativeDriver: process.env.VERIFY_NATIVE_DRIVER,
   })
@@ -60,14 +60,14 @@ export async function launchApp({ serverUrl, env: extra } = {}) {
   try {
     session = await Session.create(driver.base, BINARY)
   } catch (err) {
-    driver.stop()
+    await driver.stop()
     throw err
   }
   return {
     session,
     close: async () => {
       await session.quit()
-      driver.stop()
+      await driver.stop()
       await rm(home, { recursive: true, force: true }).catch(() => {})
     },
   }

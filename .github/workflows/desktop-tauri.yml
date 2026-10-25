@@ -9,6 +9,7 @@ on:
       - 'frontend/**'
       - 'desktop/src/renderer/**'
       - 'desktop/src/preload/**'
+      - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
   # The renderer is desktop's renderer, built from frontend/src, so a change
   # there can break this build without touching desktop-tauri/.
@@ -18,6 +19,7 @@ on:
       - 'frontend/**'
       - 'desktop/src/renderer/**'
       - 'desktop/src/preload/**'
+      - 'backend/**'
       - '.github/workflows/desktop-tauri.yml'
   workflow_dispatch:
 
@@ -235,7 +237,7 @@ jobs:
       - name: Install the Linux packages
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip dbus-x11
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb xclip dbus-x11 python3-gi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -252,7 +254,7 @@ jobs:
           workspaces: desktop-tauri/src-tauri -> target
 
       - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
+        run: cargo install tauri-driver --locked --version 2.1.0
 
       - name: Install frontend dependencies
         working-directory: frontend
