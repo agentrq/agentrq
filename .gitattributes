@@ -9,3 +9,7 @@
 *.js diff
 *.mjs diff
 *.cjs diff
+
+# Served byte for byte as Electron's drawer frame (test/drawer-frame.test.js):
+# a CRLF checkout on Windows would change the document the shell embeds.
+desktop-tauri/core/src/drawer_frame.html text eol=lf
