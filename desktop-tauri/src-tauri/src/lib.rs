@@ -17,6 +17,7 @@ mod network;
 mod panic_log;
 mod profiles;
 mod scheme;
+mod shell;
 mod sign_in;
 #[cfg(test)]
 mod test_server;
@@ -551,8 +552,11 @@ pub fn run() {
             app.manage(Scheme::new(network, assets, &dev_url(&handle)));
             init_updater(&handle);
             app.manage(chrome::Chrome::new(data_dir));
+            shell::init(&handle)?;
             chrome::open_active_main_window(&handle)?;
             app_menu::install(&handle)?;
+            let _ = app_menu::install_tray(&handle);
+            chrome::install_hooks(&handle);
             Ok(())
         })
         .build(tauri::generate_context!())

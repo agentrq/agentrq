@@ -210,6 +210,14 @@ pub fn tray_tooltip(unread_count: i64) -> String {
     format!("AgentRQ — {unread_count} unread notification{plural}")
 }
 
+/// Where "New Task" goes: the most recent workspace, else the workspace list.
+pub fn new_task_route(workspaces: &[RecentWorkspace]) -> String {
+    match workspaces.first() {
+        Some(recent) => format!("/workspaces/{}/tasks/new", recent.id),
+        None => "/".to_string(),
+    }
+}
+
 /// The OS tray, implemented by the shell.
 pub trait Tray {
     fn set_menu(&mut self, template: &[TrayMenuItem]);
@@ -238,6 +246,14 @@ pub fn dispatch(action: &TrayAction, actions: &mut impl TrayActions) {
         TrayAction::OpenWorkspace(id) => actions.open_workspace(id),
         TrayAction::Quit => actions.quit(),
     }
+}
+
+/// Find the TrayAction corresponding to a menu item ID from the template.
+pub fn action_for_id(template: &[TrayMenuItem], id: &str) -> Option<TrayAction> {
+    template
+        .iter()
+        .find(|item| item.id() == Some(id))
+        .and_then(|item| item.chosen().cloned())
 }
 
 #[cfg(test)]
@@ -475,5 +491,33 @@ mod tests {
 
         assert_eq!(label_of(&tray.menu, "status"), "2 unread");
         assert_eq!(tray.tooltip, "AgentRQ — 2 unread notifications");
+    }
+
+    // newTaskRoute
+
+    #[test]
+    fn new_task_routes_to_most_recent_workspace_or_root() {
+        assert_eq!(
+            new_task_route(&[ws("ws1", "Alpha"), ws("ws2", "Beta")]),
+            "/workspaces/ws1/tasks/new"
+        );
+        assert_eq!(new_task_route(&[]), "/");
+    }
+
+    #[test]
+    fn parses_action_for_id_from_template() {
+        let template = build_tray_menu_template(&[ws("ws1", "Alpha")], 1);
+        assert_eq!(action_for_id(&template, "open"), Some(TrayAction::Open));
+        assert_eq!(
+            action_for_id(&template, "new-task"),
+            Some(TrayAction::NewTask)
+        );
+        assert_eq!(
+            action_for_id(&template, "workspace-ws1"),
+            Some(TrayAction::OpenWorkspace("ws1".to_string()))
+        );
+        assert_eq!(action_for_id(&template, "quit"), Some(TrayAction::Quit));
+        assert_eq!(action_for_id(&template, "status"), None);
+        assert_eq!(action_for_id(&template, "unknown"), None);
     }
 }

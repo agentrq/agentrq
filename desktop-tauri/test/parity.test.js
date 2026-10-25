@@ -10,9 +10,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), getTauriVersion: vi.fn() }))
+const tauri = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), emit: vi.fn().mockResolvedValue(undefined), getTauriVersion: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke, Channel: class {} }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }))
+vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen, emit: tauri.emit }))
 vi.mock('@tauri-apps/api/app', () => ({ getTauriVersion: tauri.getTauriVersion }))
 
 /** A `#[tauri::command]` function, however it is declared. */

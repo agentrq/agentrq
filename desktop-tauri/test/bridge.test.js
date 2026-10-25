@@ -7,10 +7,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 const tauri = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(),
+  emit: vi.fn().mockResolvedValue(undefined),
   getTauriVersion: vi.fn(),
 }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: tauri.invoke, Channel: class {} }))
-vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen }))
+vi.mock('@tauri-apps/api/event', () => ({ listen: tauri.listen, emit: tauri.emit }))
 vi.mock('@tauri-apps/api/app', () => ({ getTauriVersion: tauri.getTauriVersion }))
 
 let bridge
@@ -137,6 +138,14 @@ describe('an on* listener', () => {
     agentrq.navigation.onNavigate(cb)
     emit('agentrq:navigate', '/workspaces/w')
     expect(cb).toHaveBeenCalledExactlyOnceWith('/workspaces/w')
+  })
+
+  it('ignores a readiness emit error on navigation subscribe', async () => {
+    fakeListen()
+    tauri.emit.mockRejectedValue(new Error('fail'))
+    const off = bridge.createBridge('Linux').navigation.onNavigate(() => {})
+    await Promise.resolve()
+    off()
   })
 
   it('calls a no-argument callback with nothing', () => {

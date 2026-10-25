@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agentrq_desktop_core::app_icon::needs_window_icon;
-use agentrq_desktop_core::auth::sign_in_start;
 use agentrq_desktop_core::emoji_panel::{show_emoji_panel, EmojiPanelHost};
 use agentrq_desktop_core::files::{open_file_link, FileShell};
 use agentrq_desktop_core::normal_bounds::{seed, to_logical, NormalBounds, Shown};
@@ -200,6 +199,7 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
 
     let shown = Arc::new(AtomicBool::new(false));
     let on_load = Arc::clone(&shown);
+    let win_app = app.clone();
     let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(url))
         .title("AgentRQ Tauri")
         .inner_size(placement.width, placement.height)
@@ -209,30 +209,21 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
         )
         .visible(false)
         .background_color(background)
-        .on_page_load(move |window, payload| match payload.event() {
-            // A reload or a navigation leaves the old page's event streams
-            // running (WP2).
-            tauri::webview::PageLoadEvent::Started => {
-                if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
-                    streams.close_all();
+        .on_page_load(move |window, payload| {
+            match payload.event() {
+                // A reload or a navigation leaves the old page's event streams
+                // running (WP2).
+                tauri::webview::PageLoadEvent::Started => {
+                    if let Some(streams) = window.try_state::<crate::event_source::Streams>() {
+                        streams.close_all();
+                    }
                 }
+                tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
             }
-            tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
+            crate::shell::on_page_load(window.app_handle(), &payload.event());
         })
-        // The login view's buttons are plain links: followed here, the
-        // provider's redirects would run against the app's origin and lose
-        // the callback, so the sign-in runs in a window of its own on the
-        // server.
-        .on_navigation(move |url| {
-            let server = navigating.state::<Arc<Profiles>>().server_url();
-            let Some(start) = sign_in_start(url.as_str(), &origin, &server) else {
-                return true;
-            };
-            // Not built inside a webview callback: that deadlocks on Windows.
-            let app = navigating.clone();
-            tauri::async_runtime::spawn(async move { crate::open_sign_in(&app, start) });
-            false
-        });
+        .on_navigation(move |url| crate::shell::dispatch_navigation(&navigating, url))
+        .on_new_window(move |url, _features| crate::shell::dispatch_new_window(&win_app, &url));
     // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
     // first. Only a debug build or the `e2e` feature reads it: a release
     // would run whatever a launcher's environment holds in the app's webview.
@@ -255,6 +246,7 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>, profile: &str) -> tauri:
         builder = builder.icon(tauri::include_image!("icons/128x128@2x.png"))?;
     }
     let window = isolate(builder, &profiles, profile).build()?;
+    crate::shell::reapply_badge(app);
 
     // A window that never finishes loading must still appear.
     let fallback = window.clone();
@@ -672,7 +664,51 @@ pub fn emoji_show_panel<R: Runtime>(app: AppHandle<R>) -> bool {
 
 /// What the loader above uses, so `lib.rs` need not name the plugins.
 pub fn plugins<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    #[cfg(not(test))]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            crate::shell::handle_second_instance(app, &argv);
+        }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
+        .on_window_event(|window, event| {
+            crate::shell::handle_window_event(window, event);
+        })
+}
+
+/// Wire desktop shell hooks for shortcuts and deep links.
+pub fn install_hooks<R: Runtime>(app: &AppHandle<R>) {
+    use tauri_plugin_deep_link::DeepLinkExt;
+    #[cfg(not(test))]
+    {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+        let app_shortcut = app.clone();
+        let _ = app.global_shortcut().on_shortcut(
+            "CmdOrCtrl+Shift+N",
+            move |_app, _shortcut, event| {
+                crate::shell::handle_shortcut_event(&app_shortcut, event.state);
+            },
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    let should_register = tauri::is_dev() || std::env::var_os("APPIMAGE").is_some();
+    #[cfg(not(target_os = "linux"))]
+    let should_register = tauri::is_dev();
+    if should_register {
+        let _ = app
+            .deep_link()
+            .register(agentrq_desktop_core::deep_link::DEEP_LINK_SCHEME_TAURI);
+    }
+
+    let app_open = app.clone();
+    app.deep_link().on_open_url(move |event| {
+        crate::shell::handle_open_urls(&app_open, &event.urls());
+    });
 }

@@ -17,7 +17,7 @@
  */
 import { getTauriVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
 import { installEventSource, installFetch } from './net.js'
 
 /** Node's name for the OS, as Electron's `process.platform` gives it. */
@@ -171,7 +171,11 @@ export function createBridge(userAgent) {
     },
 
     navigation: {
-      onNavigate: (callback) => subscribe('agentrq:navigate', (route) => callback(route)),
+      onNavigate: (callback) => {
+        const unsub = subscribe('agentrq:navigate', (route) => callback(route))
+        emit('agentrq:navigate:ready').catch(() => {})
+        return unsub
+      },
     },
 
     extensions: {

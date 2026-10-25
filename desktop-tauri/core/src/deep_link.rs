@@ -87,6 +87,68 @@ pub fn deep_link_from_argv<S: AsRef<str>>(argv: &[S], scheme: &str) -> Option<St
         .map(str::to_string)
 }
 
+/// Tracks whether the renderer has loaded and subscribed, and holds any route
+/// that arrives before that point so it can be delivered once ready.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PendingRoute {
+    route: Option<String>,
+    page_loaded: bool,
+    subscribed: bool,
+}
+
+impl PendingRoute {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// When a navigate request arrives:
+    /// Returns Some(route) if both page_loaded and subscribed, else buffers it and returns None.
+    pub fn navigate(&mut self, route: &str) -> Option<String> {
+        if route.is_empty() {
+            return None;
+        }
+        if self.page_loaded && self.subscribed {
+            Some(route.to_string())
+        } else {
+            self.route = Some(route.to_string());
+            None
+        }
+    }
+
+    /// When page load starts (e.g. navigation or reload).
+    pub fn on_page_load_started(&mut self) {
+        self.page_loaded = false;
+        self.subscribed = false;
+    }
+
+    /// When page load finishes:
+    /// Returns Some(route) to deliver if there is a pending route.
+    /// Route is kept until subscribed if not subscribed yet.
+    pub fn on_page_load_finished(&mut self) -> Option<String> {
+        self.page_loaded = true;
+        self.route.clone()
+    }
+
+    /// When the renderer subscribes (ready signal):
+    /// Returns Some(route) if there was a pending route waiting to be taken.
+    pub fn on_subscribed(&mut self) -> Option<String> {
+        self.subscribed = true;
+        self.route.take()
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.page_loaded && self.subscribed
+    }
+
+    pub fn pending(&self) -> Option<&str> {
+        self.route.as_deref()
+    }
+
+    pub fn set_pending(&mut self, route: &str) {
+        self.route = Some(route.to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +296,45 @@ mod tests {
             deep_link_from_argv(&argv, DEEP_LINK_SCHEME).as_deref(),
             Some("agentrq://events")
         );
+    }
+
+    #[test]
+    fn pending_route_holds_routes_until_page_ready() {
+        let mut pr = PendingRoute::new();
+        assert!(!pr.is_ready());
+        assert_eq!(pr.pending(), None);
+
+        // Empty route does nothing
+        assert_eq!(pr.navigate(""), None);
+
+        // Pre-load navigate holds the route
+        assert_eq!(pr.navigate("/tasks/1"), None);
+        assert_eq!(pr.pending(), Some("/tasks/1"));
+
+        // Setting pending directly
+        pr.set_pending("/workspaces/2");
+        assert_eq!(pr.pending(), Some("/workspaces/2"));
+
+        // Page load finished returns route for delivery
+        assert_eq!(
+            pr.on_page_load_finished(),
+            Some("/workspaces/2".to_string())
+        );
+        // Route is retained until subscribed
+        assert_eq!(pr.pending(), Some("/workspaces/2"));
+
+        // Subscribing takes the route and makes it ready
+        assert_eq!(pr.on_subscribed(), Some("/workspaces/2".to_string()));
+        assert_eq!(pr.pending(), None);
+        assert!(pr.is_ready());
+
+        // Subsequent navigation immediately returns route
+        assert_eq!(pr.navigate("/tasks/3"), Some("/tasks/3".to_string()));
+
+        // Page reload resets ready state
+        pr.on_page_load_started();
+        assert!(!pr.is_ready());
+        assert_eq!(pr.navigate("/tasks/4"), None);
+        assert_eq!(pr.pending(), Some("/tasks/4"));
     }
 }

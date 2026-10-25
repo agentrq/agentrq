@@ -157,6 +157,7 @@ jobs:
         run: |
           mkdir -p shots
           for mode in light dark; do
+            killall -9 agentrq-tauri 2>/dev/null || true
             if [ "$mode" = dark ]; then want="#09090b"; else want="#fafafa"; fi
             export AGENTRQ_E2E_INIT_SCRIPT="$(sed "s/__THEME__/$mode/" test/e2e/theme-seed.js)"
             src-tauri/target/release/agentrq-tauri &
@@ -165,7 +166,7 @@ jobs:
             screencapture -x shots/macos-$mode.png
             sleep 12
             screencapture -x shots/macos-$mode-window.png
-            kill $APP
+            kill -9 $APP 2>/dev/null || kill $APP || true
             sleep 3
             node test/e2e/pixel.mjs shots/macos-$mode-window.png "$want" 12
           done

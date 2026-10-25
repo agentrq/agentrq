@@ -44,11 +44,19 @@
     "linux": {
       "deb": {
         "section": "devel",
-        "priority": "optional"
+        "priority": "optional",
+        "depends": ["libayatana-appindicator3-1"]
       }
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "agentrq-tauri"
+        ]
+      }
+    },
     "updater": {
       "endpoints": [
         "https://github.com/agentrq/agentrq/releases/latest/download/latest-tauri.json"

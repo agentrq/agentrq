@@ -166,6 +166,13 @@ impl Network {
             .map_or_else(|| self.first.1.clone(), |net| net.server_url())
     }
 
+    /// The active profile's id, without opening the profile.
+    #[allow(dead_code)]
+    pub fn active_id(&self) -> String {
+        self.current()
+            .map_or_else(|| self.first.0.clone(), |net| net.id.clone())
+    }
+
     /// The protocol's rules, naming the active profile's server.
     pub fn protocol(self: &Arc<Self>, dev_server_url: &str) -> AppProtocol<impl Fn() -> String> {
         let this = self.clone();
@@ -256,8 +263,10 @@ pub(crate) mod tests {
     async fn opens_the_first_profile_once_and_keeps_it() {
         let dir = tempfile::tempdir().unwrap();
         let net = network(dir.path(), "http://127.0.0.1:1");
+        assert_eq!(net.active_id(), "default");
         let first = net.active().await;
         assert_eq!(first.id, "default");
+        assert_eq!(net.active_id(), "default");
         assert_eq!(first.server_url(), "http://127.0.0.1:1");
         assert!(Arc::ptr_eq(&first, &net.active().await));
         assert!(dir.path().join("cookie.key").exists(), "no keychain here");

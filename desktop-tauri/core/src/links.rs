@@ -91,6 +91,65 @@ pub fn classify_link(raw_url: &str, options: LinkOptions<'_>) -> LinkTarget {
     }
 }
 
+/// The action to take when a navigation or new window is requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavigationDecision {
+    /// Allow the navigation to proceed in the webview.
+    Allow,
+    /// Open the URL via the system (opener).
+    OpenExternal,
+    /// Block the navigation.
+    Block,
+}
+
+/// Map a link classification to the action the shell should take.
+pub fn decide_navigation(raw_url: &str, options: LinkOptions<'_>) -> NavigationDecision {
+    match classify_link(raw_url, options) {
+        LinkTarget::App | LinkTarget::SignIn => NavigationDecision::Allow,
+        LinkTarget::System => NavigationDecision::OpenExternal,
+        LinkTarget::Blocked => NavigationDecision::Block,
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub const PLATFORM: &str = "win32";
+#[cfg(target_os = "macos")]
+pub const PLATFORM: &str = "darwin";
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub const PLATFORM: &str = "linux";
+
+/// The renderer's origin for a profile on a given platform.
+pub fn app_origin_for(profile_id: &str, platform: &str) -> String {
+    if platform == "win32" {
+        "http://app.localhost".to_string()
+    } else if platform == "darwin" {
+        if profile_id.is_empty() || profile_id == "default" || profile_id == "localhost" {
+            "app://localhost".to_string()
+        } else {
+            format!("app://{profile_id}")
+        }
+    } else {
+        "app://localhost".to_string()
+    }
+}
+
+/// The renderer's origin for a profile on the current platform.
+pub fn app_origin(profile_id: &str) -> String {
+    app_origin_for(profile_id, PLATFORM)
+}
+
+/// Whether this navigation URL is an app-origin download (blob: with app origin or data:).
+pub fn is_allowed_download(url: &Url, app_origin: &str) -> bool {
+    match url.scheme() {
+        "data" => true,
+        "blob" => {
+            let inner = &url.as_str()["blob:".len()..];
+            Url::parse(inner).is_ok_and(|parsed| origin_of(&parsed) == app_origin)
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +311,73 @@ mod tests {
             on("http://localhost:3001/api/v1/auth/google/login"),
             LinkTarget::System
         );
+    }
+
+    #[test]
+    fn maps_classification_to_navigation_decision() {
+        let options = LinkOptions {
+            app_origin: APP_ORIGIN,
+            server_url: SERVER_URL,
+        };
+        // App and SignIn allow in-app navigation
+        assert_eq!(
+            decide_navigation("app://agentrq/tasks", options),
+            NavigationDecision::Allow
+        );
+        assert_eq!(
+            decide_navigation(&format!("{SERVER_URL}/api/v1/auth/google/login"), options),
+            NavigationDecision::Allow
+        );
+        // System URLs (web, mailto, etc.) open externally
+        assert_eq!(
+            decide_navigation("https://agentrq.com/docs", options),
+            NavigationDecision::OpenExternal
+        );
+        assert_eq!(
+            decide_navigation("mailto:hi@agentrq.com", options),
+            NavigationDecision::OpenExternal
+        );
+        // Blocked URLs (file:, javascript:, invalid) are blocked
+        assert_eq!(
+            decide_navigation("file:///etc/passwd", options),
+            NavigationDecision::Block
+        );
+        assert_eq!(
+            decide_navigation("javascript:alert(1)", options),
+            NavigationDecision::Block
+        );
+        assert_eq!(
+            decide_navigation("invalid url", options),
+            NavigationDecision::Block
+        );
+    }
+
+    #[test]
+    fn chooses_app_origin_per_platform() {
+        assert_eq!(app_origin_for("default", "win32"), "http://app.localhost");
+        assert_eq!(app_origin_for("work", "darwin"), "app://work");
+        assert_eq!(app_origin_for("default", "darwin"), "app://localhost");
+        assert_eq!(app_origin_for("", "darwin"), "app://localhost");
+        assert_eq!(app_origin_for("default", "linux"), "app://localhost");
+        assert_eq!(app_origin("default"), app_origin_for("default", PLATFORM));
+    }
+
+    #[test]
+    fn allows_app_origin_blob_and_data_downloads() {
+        let origin = "app://localhost";
+        let valid_blob = Url::parse("blob:app://localhost/8b248a37-58b2-4d2b-bbd7").unwrap();
+        assert!(is_allowed_download(&valid_blob, origin));
+
+        let data_url = Url::parse("data:application/pdf;base64,JVBERi0xLjQK").unwrap();
+        assert!(is_allowed_download(&data_url, origin));
+
+        let evil_blob = Url::parse("blob:https://evil.example.com/8b248a37").unwrap();
+        assert!(!is_allowed_download(&evil_blob, origin));
+
+        let invalid_blob = Url::parse("blob:not-a-valid-url").unwrap();
+        assert!(!is_allowed_download(&invalid_blob, origin));
+
+        let app_page = Url::parse("app://localhost/tasks").unwrap();
+        assert!(!is_allowed_download(&app_page, origin));
     }
 }
