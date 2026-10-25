@@ -10,7 +10,7 @@
     "core:event:allow-unlisten",
     "core:app:allow-tauri-version",
     "core:window:allow-start-dragging",
-    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
     "allow-attachments-forget-all",
     "allow-attachments-forget-task",
     "allow-attachments-forget-workspace",

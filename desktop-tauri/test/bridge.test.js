@@ -175,6 +175,16 @@ describe('an on* listener', () => {
     await vi.waitFor(() => expect(unlisten).toHaveBeenCalledTimes(1))
   })
 
+  it('drops an event that arrives after an early unsubscribe', async () => {
+    const { emit, unlisten } = fakeListen()
+    const cb = vi.fn()
+    const off = bridge.createBridge('Linux').sidePanel.onOpen(cb)
+    off()
+    emit('agentrq:side-panel:open', '/late')
+    await vi.waitFor(() => expect(unlisten).toHaveBeenCalledTimes(1))
+    expect(cb).not.toHaveBeenCalled()
+  })
+
   it('reports a listener that could not be attached, and still returns an unsubscribe', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     tauri.listen.mockRejectedValue(new Error('not allowed'))

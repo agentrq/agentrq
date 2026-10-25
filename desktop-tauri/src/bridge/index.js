@@ -30,14 +30,17 @@ export function platformOf(userAgent) {
 /**
  * Listen to an event and hand back an unsubscribe at once, as the preload does.
  * `listen` is asynchronous, so an unsubscribe that comes first is remembered
- * and applied when the listener arrives, never lost.
+ * and applied when the listener arrives, never lost; an event that lands in
+ * between is dropped.
  *
  * @returns {() => void}
  */
 function subscribe(event, deliver) {
   let stop = null
   let stopped = false
-  listen(event, (e) => deliver(e.payload))
+  listen(event, (e) => {
+    if (!stopped) deliver(e.payload)
+  })
     .then((unlisten) => {
       if (stopped) unlisten()
       else stop = unlisten

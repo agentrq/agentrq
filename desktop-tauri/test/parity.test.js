@@ -60,12 +60,45 @@ const commandOf = (channel) =>
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     .toLowerCase()
 
-/** What a call sends, ignoring how it is packed: the leaf values, sorted. */
-function leaves(value) {
-  if (value && typeof value === 'object') return Object.values(value).flatMap(leaves)
-  return value === undefined ? [] : [value]
+
+/** A function's named parameters; a destructured one is an options object and has none. */
+function paramNames(fn) {
+  const source = fn.toString()
+  const start = source.indexOf('(')
+  let depth = 0
+  let end = -1
+  for (let i = start; i < source.length; i++) {
+    if ('([{'.includes(source[i])) depth++
+    else if (')]}'.includes(source[i]) && --depth === 0) {
+      end = i
+      break
+    }
+  }
+  const names = []
+  let part = ''
+  depth = 0
+  for (const ch of source.slice(start + 1, end) + ',') {
+    if ('([{'.includes(ch)) depth++
+    else if (')]}'.includes(ch)) depth--
+    if (ch === ',' && depth === 0) {
+      const name = part.split('=')[0].trim()
+      if (name && !/^[{[]/.test(name)) names.push(name)
+      part = ''
+    } else part += ch
+  }
+  return names
 }
-const sorted = (list) => list.map(String).sort()
+
+/**
+ * What Electron's call carries, keyed as Tauri's payload must be: its own
+ * object when it sends one, else the preload's parameter names zipped onto
+ * the positional values.
+ */
+function keyed(fn, args) {
+  const [first] = args
+  if (args.length === 1 && first && typeof first === 'object') return first
+  return Object.fromEntries(paramNames(fn).map((name, i) => [name, args[i]]))
+}
 
 /** Arguments that name each parameter uniquely; the install calls take an options object. */
 const OPTIONS_CALLS = new Set(['extensions.installLocal', 'extensions.installFromCatalogue'])
@@ -118,7 +151,7 @@ describe('the bridge mirrors the Electron preload', () => {
       expect(tauri.invoke).toHaveBeenCalledTimes(1)
       const [command, payload] = tauri.invoke.mock.calls[0]
       expect(command).toBe(commandOf(electron.invoked[0].channel))
-      expect(sorted(leaves(payload))).toEqual(sorted(leaves(electron.invoked[0].args)))
+      expect(payload ?? {}).toEqual(keyed(at(electron.exposed.agentrq, path), electron.invoked[0].args))
     })
   })
 
@@ -127,7 +160,9 @@ describe('the bridge mirrors the Electron preload', () => {
 
     it.each(listeners.map(([path]) => [path]))('%s listens to the same channel, and unsubscribes', async (path) => {
       electron.listened.length = 0
-      tauri.listen.mockReset().mockResolvedValue(() => {})
+      const unlisten = vi.fn()
+      tauri.invoke.mockReset().mockResolvedValue(undefined)
+      tauri.listen.mockReset().mockResolvedValue(unlisten)
       const off = at(electron.exposed.agentrq, path)(() => {})
       const ours = at(agentrq, path)(() => {})
       expect(electron.listened).toHaveLength(1)
@@ -135,6 +170,11 @@ describe('the bridge mirrors the Electron preload', () => {
       expect(tauri.listen.mock.calls[0][0]).toBe(electron.listened[0])
       expect(typeof off).toBe(typeof ours)
       expect(typeof ours).toBe('function')
+      await tauri.listen.mock.results[0].value
+      await Promise.resolve()
+      expect(unlisten).not.toHaveBeenCalled()
+      ours()
+      expect(unlisten).toHaveBeenCalledTimes(1)
     })
   })
 })
@@ -203,7 +243,7 @@ describe('the Rust side serves what the bridge calls', () => {
       'core:event:allow-unlisten',
       'core:app:allow-tauri-version',
       'core:window:allow-start-dragging',
-      'core:window:allow-toggle-maximize',
+      'core:window:allow-internal-toggle-maximize',
     ])
     expect(capability.webviews).toEqual(['main'])
     expect(capability.windows).toBeUndefined()
