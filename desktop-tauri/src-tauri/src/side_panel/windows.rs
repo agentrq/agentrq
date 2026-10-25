@@ -87,7 +87,7 @@ fn watch_permissions<R: Runtime>(
             &label,
             &uri,
             webview2_ask(kind.0, &uri),
-            Box::new(move |granted| {
+            crate::panel_permissions::Answer::new(move |granted| {
                 let _ = main.run_on_main_thread(move || settle(id, granted));
             }),
         );
@@ -194,6 +194,8 @@ pub fn find<R: Runtime>(
                     let _ = options.SetFindTerm(&windows::core::HSTRING::from(text.as_str()));
                     let _ = options.SetIsCaseSensitive(false);
                     let _ = options.SetShouldHighlightAllMatches(true);
+                    // The window's find bar is the only one.
+                    let _ = options.SetSuppressDefaultFindDialog(true);
                     find.Start(
                         &options,
                         &FindStartCompletedHandler::create(Box::new(|_| Ok(()))),

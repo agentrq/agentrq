@@ -521,6 +521,7 @@ pub async fn side_panel_guest_open<R: Runtime>(
 
     let main = chrome::main_webview(&app).ok_or("The app's window has gone.")?;
     lock(&state.guests).insert(label.clone(), Seen::default());
+    crate::panel_permissions::opened(&app, number, &profile);
     let added = main.window().add_child(
         builder,
         LogicalPosition::new(placement.x, placement.y),
@@ -696,6 +697,7 @@ fn forget<R: Runtime>(app: &AppHandle<R>, label: &str) {
     state.keys.forget(label);
     if let Some(number) = guest_number(label) {
         state.rules.guest_destroyed(number);
+        crate::panel_permissions::closed(app, number);
     }
     platform::forget(label);
 }

@@ -99,6 +99,15 @@
   WKWebView decision block) and core's broker answers it later, on the main
   thread. The broker reads its file: never call it on the main thread, and only
   `main` may answer, list or remove (`panel_permissions.rs`).
+- **A WebKitGTK request is keyed by the guest's *committed* URI, never `uri()`**,
+  which is already the next site's once a load starts while the old page can still
+  ask: it would get that site's stored Allow. WebKitGTK names no frame, so a frame
+  asks as its page (Permissions Policy limits that to delegated frames), and
+  storage access, always a third party's, is refused. So is a screen, which
+  Electron's guest cannot share.
+- **An `Answer` dropped unanswered is a Block**, and a request is decided only
+  for the guest's own profile and the document that made it. WebView2 raises one
+  `getUserMedia` as two requests: halves within 250 ms are one question.
 - **What a platform cannot ask about:** WKWebView has no public hook for
   geolocation, notifications or screen capture (none reaches the broker), and no
   media request at all before macOS 12; WebKitGTK before 2.42 says a screen request
@@ -109,7 +118,8 @@
   scoped to guest views. A page cannot reach the guest bridge (no token, a
   cross-origin custom scheme, and its own CSP), so the init script cannot send it.
 - **WebKit counts matches but never says which is active**, so core's
-  `FindSession` keeps the ordinal; WKWebView does not even count, so a script does.
+  `FindSession` keeps the ordinal; WKWebView does not even count, so a script does,
+  in a content world of its own so the page never reads the text.
 - **Drag regions are `data-tauri-drag-region="deep"`, and `="false"` on every
   `.app-no-drag`.** A bare attribute drags from that element only, not from the
   title text inside it, and a no-drag card of plain divs would drag without `"false"`.

@@ -204,7 +204,7 @@ pub fn find<R: Runtime>(
 ) {
     use agentrq_desktop_core::side_panel::find::{count_script, FindStep, CLEAR_SELECTION_SCRIPT};
     use objc2::MainThreadMarker;
-    use objc2_web_kit::{WKFindConfiguration, WKFindResult};
+    use objc2_web_kit::{WKContentWorld, WKFindConfiguration, WKFindResult};
     let text = text.to_string();
     let app = guest.app_handle().clone();
     let label = guest.label().to_string();
@@ -224,8 +224,10 @@ pub fn find<R: Runtime>(
         config.setBackwards(step == FindStep::Previous);
         config.setCaseSensitive(false);
         config.setWraps(true);
-        // WKWebView says only whether there was a match: the page counts them.
+        // WKWebView says only whether there was a match: a script counts
+        // them, in a world of its own, so the page never reads the text.
         let counter = view.retain();
+        let world = WKContentWorld::defaultClientWorld(mtm);
         let script = NSString::from_str(&count_script(&text));
         let done = RcBlock::new(move |_: NonNull<WKFindResult>| {
             let (app, label) = (app.clone(), label.clone());
@@ -237,7 +239,12 @@ pub fn find<R: Runtime>(
                 };
                 super::counted(&app, &label, u32::try_from(total).unwrap_or(0));
             });
-            counter.evaluateJavaScript_completionHandler(&script, Some(&counted));
+            counter.evaluateJavaScript_inFrame_inContentWorld_completionHandler(
+                &script,
+                None,
+                &world,
+                Some(&counted),
+            );
         });
         view.findString_withConfiguration_completionHandler(
             &NSString::from_str(&text),
@@ -303,7 +310,7 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
                 &name,
                 url,
                 native,
-                Box::new(move |granted| {
+                crate::panel_permissions::Answer::new(move |granted| {
                     let _ = main.run_on_main_thread(move || settle(id, granted));
                 }),
             );

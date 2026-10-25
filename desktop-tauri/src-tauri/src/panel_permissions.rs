@@ -12,14 +12,17 @@
 //! answers or remove one. A guest has no command at all, and these refuse any
 //! webview but `main` besides.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use agentrq_desktop_core::side_panel::child::guest_number;
 use agentrq_desktop_core::side_panel::permission_store::{PermissionStore, SitePermissions};
 use agentrq_desktop_core::side_panel::permissions::{
-    GuestPage, PermissionBroker, PermissionQuestion,
+    origin_of, GuestPage, PermissionBroker, PermissionQuestion,
 };
 use agentrq_desktop_core::side_panel::platform_permissions::{Ask, NativeAsk};
+use tauri::async_runtime::{spawn, spawn_blocking};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, Webview};
 
 use crate::chrome::MAIN;
@@ -29,7 +32,33 @@ use crate::profiles::Profiles;
 type Broker = PermissionBroker<PermissionStore>;
 
 /// What a platform's request is answered through, once: `true` grants it.
-pub type Answer = Box<dyn FnOnce(bool) + Send>;
+/// Dropped unanswered, it is a Block, so the page is never left waiting on a
+/// broker that went with its profile.
+pub struct Answer(Option<Box<dyn FnOnce(bool) + Send>>);
+
+impl Answer {
+    pub fn new(give: impl FnOnce(bool) + Send + 'static) -> Self {
+        Self(Some(Box::new(give)))
+    }
+
+    pub fn give(mut self, granted: bool) {
+        if let Some(give) = self.0.take() {
+            give(granted);
+        }
+    }
+}
+
+impl Drop for Answer {
+    fn drop(&mut self) {
+        if let Some(give) = self.0.take() {
+            give(false);
+        }
+    }
+}
+
+/// How long WebView2's camera waits for the microphone of the same
+/// `getUserMedia`, or the microphone for the camera.
+const MEDIA_PAIR_WINDOW: Duration = Duration::from_millis(250);
 
 /// The broker and store of the profile they were made for.
 struct Current {
@@ -38,15 +67,35 @@ struct Current {
     broker: Broker,
 }
 
-/// The active profile's broker, made when it is first needed.
+/// A guest's profile, and how many documents it has started loading: a
+/// request is decided for the document that made it, or not at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Page {
+    profile: String,
+    document: u64,
+}
+
+/// The camera and microphone halves of one WebView2 request, so far.
 #[derive(Default)]
-pub struct PanelPermissions(Mutex<Option<Arc<Current>>>);
+struct Halves {
+    types: Vec<String>,
+    answers: Vec<Answer>,
+}
+
+/// The active profile's broker, made when it is first needed, and what is
+/// known of each guest.
+#[derive(Default)]
+pub struct PanelPermissions {
+    current: Mutex<Option<Arc<Current>>>,
+    pages: Mutex<HashMap<u32, Page>>,
+    halves: Mutex<HashMap<(u32, String), Halves>>,
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn ask<R: Runtime>(app: &AppHandle<R>, question: PermissionQuestion) {
+fn question<R: Runtime>(app: &AppHandle<R>, question: PermissionQuestion) {
     let _ = app.emit_to(MAIN, "agentrq:side-panel:permission-request", question);
 }
 
@@ -55,14 +104,14 @@ fn settled<R: Runtime>(app: &AppHandle<R>, id: u64) {
 }
 
 /// The active profile's, replacing another profile's: every guest of that
-/// one closed with its window, and their questions with them.
+/// one closed with its window, and what it still waited on is a Block.
 fn current<R: Runtime>(app: &AppHandle<R>) -> Arc<Current> {
     current_in(app, &app.state::<PanelPermissions>())
 }
 
 fn current_in<R: Runtime>(app: &AppHandle<R>, state: &PanelPermissions) -> Arc<Current> {
     let profile = app.state::<Arc<Network>>().active_id();
-    let mut kept = lock(&state.0);
+    let mut kept = lock(&state.current);
     if let Some(current) = kept.as_ref().filter(|c| c.profile == profile) {
         return Arc::clone(current);
     }
@@ -70,7 +119,7 @@ fn current_in<R: Runtime>(app: &AppHandle<R>, state: &PanelPermissions) -> Arc<C
     let (asking, settling) = (app.clone(), app.clone());
     let broker = Broker::with_options(
         Arc::clone(&store),
-        move |question| ask(&asking, question),
+        move |q| question(&asking, q),
         move |id| settled(&settling, id),
         agentrq_desktop_core::side_panel::permissions::ANSWER_DEADLINE_MS,
         Arc::new(agentrq_desktop_core::side_panel::permissions::StdTimers::default()),
@@ -80,14 +129,35 @@ fn current_in<R: Runtime>(app: &AppHandle<R>, state: &PanelPermissions) -> Arc<C
         store,
         broker,
     });
-    *kept = Some(Arc::clone(&current));
+    let earlier = kept.replace(Arc::clone(&current));
+    // Its answers go to the pages after the lock is let go.
+    drop(kept);
+    drop(earlier);
     current
+}
+
+/// A guest was made for `profile`.
+pub fn opened<R: Runtime>(app: &AppHandle<R>, guest: u32, profile: &str) {
+    if let Some(state) = app.try_state::<PanelPermissions>() {
+        let page = Page {
+            profile: profile.to_string(),
+            document: 0,
+        };
+        lock(&state.pages).insert(guest, page);
+    }
+}
+
+/// The guest has gone: whatever it asks from now on is refused.
+pub fn closed<R: Runtime>(app: &AppHandle<R>, guest: u32) {
+    if let Some(state) = app.try_state::<PanelPermissions>() {
+        lock(&state.pages).remove(&guest);
+    }
 }
 
 /// A guest's page asked: `answer` is told once, never on the caller's stack
 /// unless nothing had to be looked up. The broker reads its file, so it is
-/// asked on the async runtime, never on the main thread a webview's
-/// callback runs on. Anything but a guest is refused.
+/// asked on a blocking thread, never on the main thread a webview's
+/// callback runs on. Anything but an open guest is refused.
 pub fn request<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
@@ -95,29 +165,65 @@ pub fn request<R: Runtime>(
     native: NativeAsk,
     answer: Answer,
 ) {
-    let Some(number) = guest_number(label) else {
-        return answer(false);
+    let state = app.state::<PanelPermissions>();
+    let page = guest_number(label).and_then(|n| Some((n, lock(&state.pages).get(&n)?.clone())));
+    let Some((guest, page)) = page else {
+        return answer.give(false);
     };
-    let (app, page) = (app.clone(), GuestPage::new(u64::from(number), page_url));
+    let (app, page_url) = (app.clone(), page_url.to_string());
     match native {
-        NativeAsk::Granted => answer(true),
+        NativeAsk::Granted => answer.give(true),
+        NativeAsk::Refused => answer.give(false),
         NativeAsk::AnyAllowed(asks) => {
-            tauri::async_runtime::spawn(async move { any_allowed(&app, &asks, answer) });
+            spawn_blocking(move || any_allowed(&app, guest, &page, &asks, answer));
         }
         NativeAsk::Request(ask) => {
-            tauri::async_runtime::spawn(async move {
-                let current = current(&app);
-                current
-                    .broker
-                    .request(Some(&page), &ask.permission, answer, Some(&ask.details));
-            });
+            spawn_blocking(move || decide(&app, guest, &page, &page_url, &ask, answer));
         }
+        NativeAsk::MediaPart(ask) => half(&app, guest, page, page_url, ask, answer),
     }
 }
 
+/// The broker of the guest's profile, while that profile is active and the
+/// guest is on the document that asked; `None` for a page that has gone.
+fn broker_for<R: Runtime>(app: &AppHandle<R>, guest: u32, asked: &Page) -> Option<Arc<Current>> {
+    let state = app.state::<PanelPermissions>();
+    if lock(&state.pages).get(&guest) != Some(asked) {
+        return None;
+    }
+    Some(current_in(app, &state)).filter(|current| current.profile == asked.profile)
+}
+
+fn decide<R: Runtime>(
+    app: &AppHandle<R>,
+    guest: u32,
+    asked: &Page,
+    page_url: &str,
+    ask: &Ask,
+    answer: Answer,
+) {
+    let Some(current) = broker_for(app, guest, asked) else {
+        return answer.give(false);
+    };
+    current.broker.request(
+        Some(&GuestPage::new(u64::from(guest), page_url)),
+        &ask.permission,
+        move |granted| answer.give(granted),
+        Some(&ask.details),
+    );
+}
+
 /// Whether the site already has any of `asks`, without asking.
-fn any_allowed<R: Runtime>(app: &AppHandle<R>, asks: &[Ask], answer: Answer) {
-    let current = current(app);
+fn any_allowed<R: Runtime>(
+    app: &AppHandle<R>,
+    guest: u32,
+    asked: &Page,
+    asks: &[Ask],
+    answer: Answer,
+) {
+    let Some(current) = broker_for(app, guest, asked) else {
+        return answer.give(false);
+    };
     current.store.load();
     let allowed = asks.iter().any(|ask| {
         let origin = ask.details.requesting_url.as_deref().unwrap_or("");
@@ -125,15 +231,55 @@ fn any_allowed<R: Runtime>(app: &AppHandle<R>, asks: &[Ask], answer: Answer) {
             .broker
             .check(None, &ask.permission, origin, Some(&ask.details))
     });
-    answer(allowed);
+    answer.give(allowed);
 }
 
-/// The page went away: what it was asking is a Block. Nothing to do before
-/// any page has asked.
+/// A camera or a microphone alone: the other half of the same request, if
+/// it comes within [`MEDIA_PAIR_WINDOW`], is asked about with it.
+fn half<R: Runtime>(
+    app: &AppHandle<R>,
+    guest: u32,
+    page: Page,
+    page_url: String,
+    ask: Ask,
+    answer: Answer,
+) {
+    let url = ask.details.requesting_url.clone().unwrap_or_default();
+    let key = (guest, origin_of(&url));
+    let types = ask.details.media_types.clone().unwrap_or_default();
+    {
+        let state = app.state::<PanelPermissions>();
+        let mut halves = lock(&state.halves);
+        if let Some(waiting) = halves.get_mut(&key) {
+            waiting.types.extend(types);
+            waiting.answers.push(answer);
+            return;
+        }
+        let answers = vec![answer];
+        halves.insert(key.clone(), Halves { types, answers });
+    }
+    let app = app.clone();
+    spawn(async move {
+        tokio::time::sleep(MEDIA_PAIR_WINDOW).await;
+        let halves = lock(&app.state::<PanelPermissions>().halves).remove(&key);
+        let Halves { types, answers } = halves.unwrap_or_default();
+        let mut whole = ask;
+        whole.details.media_types = Some(types);
+        let answer = Answer::new(move |granted| answers.into_iter().for_each(|a| a.give(granted)));
+        spawn_blocking(move || decide(&app, guest, &page, &page_url, &whole, answer));
+    });
+}
+
+/// The page went away: what it was asking is a Block, and what it asks
+/// next is a new document's. Nothing to do before any page has asked.
 pub fn cancel<R: Runtime>(app: &AppHandle<R>, guest: u32) {
-    let kept = app
-        .try_state::<PanelPermissions>()
-        .and_then(|state| lock(&state.0).clone());
+    let Some(state) = app.try_state::<PanelPermissions>() else {
+        return;
+    };
+    if let Some(page) = lock(&state.pages).get_mut(&guest) {
+        page.document += 1;
+    }
+    let kept = lock(&state.current).clone();
     if let Some(current) = kept {
         current.broker.cancel_for(u64::from(guest));
     }
@@ -157,7 +303,9 @@ pub async fn side_panel_permission_answer<R: Runtime>(
     } else {
         "block"
     };
-    current(&app).broker.answer(id, decision)
+    spawn_blocking(move || current(&app).broker.answer(id, decision))
+        .await
+        .unwrap_or(false)
 }
 
 /// `agentrq:side-panel:permissions`: every answer, by site. Never an error,
@@ -172,8 +320,12 @@ pub async fn side_panel_permissions<R: Runtime>(
         return Ok(Vec::new());
     }
     let current = current_in(&app, &permissions);
-    current.store.load();
-    Ok(current.store.list())
+    Ok(spawn_blocking(move || {
+        current.store.load();
+        current.store.list()
+    })
+    .await
+    .unwrap_or_default())
 }
 
 /// `agentrq:side-panel:permission-remove`: one permission of a site, or all
@@ -188,15 +340,20 @@ pub async fn side_panel_permission_remove<R: Runtime>(
     if webview.label() != MAIN {
         return Vec::new();
     }
-    let current = current(&app);
-    current.store.load();
-    current.store.remove(&origin, permission.as_deref());
-    current.store.list()
+    spawn_blocking(move || {
+        let current = current(&app);
+        current.store.load();
+        current.store.remove(&origin, permission.as_deref());
+        current.store.list()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agentrq_desktop_core::side_panel::permissions::PermissionDetails;
     use agentrq_desktop_core::side_panel::platform_permissions::{webkit_ask, webview2_ask};
     use serde_json::{json, Value};
     use std::time::Duration;
@@ -238,7 +395,7 @@ mod tests {
                 label,
                 PAGE,
                 native,
-                Box::new(move |granted| *lock(&to) = Some(granted)),
+                Answer::new(move |granted| *lock(&to) = Some(granted)),
             );
             answered
         }
@@ -274,6 +431,10 @@ mod tests {
         let main = WebviewWindowBuilder::new(&app, MAIN, Default::default())
             .build()
             .expect("mock window");
+        let active = profiles.network.active_id();
+        for guest in [1, 2] {
+            opened(app.handle(), guest, &active);
+        }
         Rig {
             app,
             main,
@@ -314,6 +475,25 @@ mod tests {
 
     fn camera() -> NativeAsk {
         webkit_ask("WebKitUserMediaPermissionRequest", false, true, false, PAGE)
+    }
+
+    fn switch_to_home(rig: &Rig) {
+        let network = rig.handle().state::<Arc<Network>>();
+        let home = tauri::async_runtime::block_on(network.profile("home", "https://home.example"));
+        network.activate(home);
+    }
+
+    fn two_profiles() -> Rig {
+        rig_with(json!({"activeProfileId": "work", "profiles": [
+            {"id": "work", "serverUrl": "https://app.agentrq.com"},
+            {"id": "home", "serverUrl": "https://home.example"}
+        ]}))
+    }
+
+    fn page(rig: &Rig, guest: u32) -> Page {
+        let state = rig.handle().state::<PanelPermissions>();
+        let page = lock(&state.pages).get(&guest).cloned();
+        page.expect("an open guest")
     }
 
     #[test]
@@ -514,9 +694,133 @@ mod tests {
         let refused = rig.request("panel-guest-1", webview2_ask(7, PAGE));
         wait_for(|| lock(&refused).is_some());
         assert_eq!(*lock(&refused), Some(false));
+        let screen = rig.request("panel-guest-1", NativeAsk::Refused);
+        assert_eq!(*lock(&screen), Some(false));
         let app_itself = rig.request(MAIN, camera());
         assert_eq!(*lock(&app_itself), Some(false), "never the app's own");
         assert!(rig.heard().is_empty());
+    }
+
+    #[test]
+    fn webview2s_camera_and_microphone_halves_are_one_question() {
+        let rig = rig();
+        let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
+        let camera = rig.request("panel-guest-1", webview2_ask(2, PAGE));
+        wait_for(|| !lock(&rig.heard).is_empty());
+        assert_eq!(
+            rig.heard(),
+            [(
+                "agentrq:side-panel:permission-request".to_string(),
+                json!({"id": 1, "guestId": 1, "origin": SITE, "permissions": ["camera", "microphone"]})
+            )]
+        );
+        let answered = call(
+            &rig.main,
+            "side_panel_permission_answer",
+            json!({"id": 1, "decision": "allow"}),
+        );
+        assert_eq!(answered, Ok(json!(true)));
+        assert_eq!(
+            (*lock(&microphone), *lock(&camera)),
+            (Some(true), Some(true))
+        );
+    }
+
+    #[test]
+    fn a_lone_webview2_half_is_asked_about_alone() {
+        let rig = rig();
+        let microphone = rig.request("panel-guest-1", webview2_ask(1, PAGE));
+        // Another guest's half is another request.
+        let other = rig.request("panel-guest-2", webview2_ask(2, PAGE));
+        wait_for(|| lock(&rig.heard).len() == 2);
+        let mut asked: Vec<Value> = rig.heard().into_iter().map(|(_, q)| q).collect();
+        asked.sort_by_key(|q| q["guestId"].as_u64());
+        assert_eq!(asked[0]["permissions"], json!(["microphone"]));
+        assert_eq!(asked[1]["permissions"], json!(["camera"]));
+        assert_eq!((*lock(&microphone), *lock(&other)), (None, None));
+    }
+
+    #[test]
+    fn an_answer_dropped_unanswered_is_a_block() {
+        let given = Arc::new(Mutex::new(Vec::new()));
+        let (dropped, answered) = (Arc::clone(&given), Arc::clone(&given));
+        drop(Answer::new(move |granted| lock(&dropped).push(granted)));
+        Answer::new(move |granted| lock(&answered).push(granted)).give(true);
+        assert_eq!(*lock(&given), [false, true], "once each");
+    }
+
+    #[test]
+    fn a_profile_switch_blocks_what_the_last_profile_was_asking() {
+        let rig = two_profiles();
+        let answered = rig.request("panel-guest-1", camera());
+        wait_for(|| !lock(&rig.heard).is_empty());
+        assert_eq!(*lock(&answered), None);
+        switch_to_home(&rig);
+        assert_eq!(current(rig.handle()).profile, "home");
+        assert_eq!(*lock(&answered), Some(false));
+        assert!(!rig.store_file("work").exists(), "a Block is not an answer");
+    }
+
+    #[test]
+    fn a_guest_asks_with_its_own_profile_or_not_at_all() {
+        let rig = two_profiles();
+        std::fs::create_dir_all(rig.store_file("home").parent().unwrap()).unwrap();
+        std::fs::write(
+            rig.store_file("home"),
+            json!({"origins": {SITE: {"camera": "allow", "microphone": "allow"}}}).to_string(),
+        )
+        .unwrap();
+        // Guest 1 was opened for "work"; "home" is active now.
+        switch_to_home(&rig);
+        let camera = rig.request("panel-guest-1", camera());
+        let labels = rig.request(
+            "panel-guest-1",
+            webkit_ask(
+                "WebKitDeviceInfoPermissionRequest",
+                false,
+                false,
+                false,
+                PAGE,
+            ),
+        );
+        wait_for(|| lock(&camera).is_some() && lock(&labels).is_some());
+        assert_eq!((*lock(&camera), *lock(&labels)), (Some(false), Some(false)));
+        assert!(rig.heard().is_empty());
+    }
+
+    #[test]
+    fn a_request_is_decided_for_the_document_that_made_it() {
+        let rig = rig();
+        let asked = page(&rig, 1);
+        // The page started loading another document before its request
+        // reached the broker.
+        cancel(rig.handle(), 1);
+        assert_eq!(page(&rig, 1).document, asked.document + 1);
+        let answered = Arc::new(Mutex::new(None));
+        let to = Arc::clone(&answered);
+        let ask = Ask {
+            permission: "media".to_string(),
+            details: PermissionDetails {
+                media_types: Some(vec!["video".to_string()]),
+                requesting_url: Some(PAGE.to_string()),
+                media_type: None,
+            },
+        };
+        decide(
+            rig.handle(),
+            1,
+            &asked,
+            PAGE,
+            &ask,
+            Answer::new(move |granted| *lock(&to) = Some(granted)),
+        );
+        assert_eq!(*lock(&answered), Some(false));
+        assert!(rig.heard().is_empty(), "never asked about");
+
+        // A closed guest asks nothing.
+        closed(rig.handle(), 1);
+        let gone = rig.request("panel-guest-1", NativeAsk::Granted);
+        assert_eq!(*lock(&gone), Some(false));
     }
 
     #[test]
@@ -545,7 +849,7 @@ mod tests {
         )
         .unwrap();
         // The file is read once a run; a fresh profile's broker reads it.
-        *lock(&rig.app.state::<PanelPermissions>().0) = None;
+        *lock(&rig.app.state::<PanelPermissions>().current) = None;
         assert_eq!(device_info(), Some(true));
         assert!(rig.heard().is_empty());
     }

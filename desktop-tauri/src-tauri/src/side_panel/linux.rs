@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use agentrq_desktop_core::side_panel::child::{
     is_guest_label, link_click, Modifiers, NavigationKind, Placement,
 };
+use agentrq_desktop_core::side_panel::platform_permissions::{CommittedPages, WebKitLoad};
 use gtk::prelude::*;
 use tauri::webview::WebviewBuilder;
 use tauri::{Runtime, Webview};
@@ -33,6 +34,8 @@ thread_local! {
     /// broker answers them.
     static WAITING: RefCell<HashMap<u64, webkit2gtk::PermissionRequest>> = RefCell::new(HashMap::new());
     static NEXT_REQUEST: Cell<u64> = const { Cell::new(1) };
+    /// Each guest's committed address, which its requests come from.
+    static COMMITTED: RefCell<CommittedPages> = RefCell::new(CommittedPages::default());
 }
 
 pub fn isolate<R: Runtime>(
@@ -191,6 +194,7 @@ pub fn forget(label: &str) {
     gtk::glib::MainContext::default().invoke(move || {
         BOXES.with(|boxes| boxes.borrow_mut().remove(&label));
         NAVIGATIONS.with(|navigations| navigations.borrow_mut().remove(&label));
+        COMMITTED.with(|committed| committed.borrow_mut().forget(&label));
     });
 }
 
@@ -306,6 +310,22 @@ fn watch_find<R: Runtime>(view: &webkit2gtk::WebView, app: tauri::AppHandle<R>, 
     finder.connect_failed_to_find_text(move |_| super::counted(&failed_app, &failed_label, 0));
 }
 
+/// The address a guest's document has committed to: its own `uri()` is the
+/// next one's as soon as a load starts.
+fn watch_commits(view: &webkit2gtk::WebView, label: String) {
+    use webkit2gtk::LoadEvent;
+    view.connect_load_changed(move |view, event| {
+        let step = match event {
+            LoadEvent::Started => WebKitLoad::Started,
+            LoadEvent::Redirected => WebKitLoad::Redirected,
+            LoadEvent::Committed => WebKitLoad::Committed,
+            _ => WebKitLoad::Finished,
+        };
+        let uri = view.uri().map(|u| u.to_string()).unwrap_or_default();
+        COMMITTED.with(|committed| committed.borrow_mut().load_changed(&label, step, &uri));
+    });
+}
+
 /// A page's permission request, held until the broker answers it on the
 /// main thread. The page never answers its own: only the window does.
 fn watch_permissions<R: Runtime>(
@@ -316,13 +336,13 @@ fn watch_permissions<R: Runtime>(
     use agentrq_desktop_core::side_panel::platform_permissions::webkit_ask;
     use gtk::glib::object::Cast;
     use webkit2gtk::{UserMediaPermissionRequest, UserMediaPermissionRequestExt};
-    view.connect_permission_request(move |view, request| {
+    view.connect_permission_request(move |_, request| {
         let media = request.downcast_ref::<UserMediaPermissionRequest>();
         let audio = media.is_some_and(|m| m.is_for_audio_device());
         let video = media.is_some_and(|m| m.is_for_video_device());
         // A screen is neither, which is all WebKit before 2.42 says of it.
         let display = media.is_some() && !audio && !video;
-        let url = view.uri().map(|u| u.to_string()).unwrap_or_default();
+        let url = COMMITTED.with(|committed| committed.borrow().requesting_url(&label));
         let native = webkit_ask(request.type_().name(), audio, video, display, &url);
         let id = NEXT_REQUEST.get();
         NEXT_REQUEST.set(id + 1);
@@ -333,7 +353,7 @@ fn watch_permissions<R: Runtime>(
             &label,
             &url,
             native,
-            Box::new(move |granted| {
+            crate::panel_permissions::Answer::new(move |granted| {
                 let _ = main.run_on_main_thread(move || settle(id, granted));
             }),
         );
@@ -401,8 +421,9 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
     let label = guest.label().to_string();
     let _ = guest.with_webview(move |view| {
         hook_navigations();
-        // WebKitGTK ships without `getUserMedia` and WebRTC, so a page could
-        // never ask for the camera: the broker answers whether it may.
+        // WebKitGTK ships without `getUserMedia` and WebRTC, which Electron's
+        // guest has: the broker answers whether a page may use the camera.
+        // A screen is refused (`webkit_ask`), as Electron's guest has none.
         if let Some(settings) = WebViewExt::settings(&view.inner()) {
             use webkit2gtk::SettingsExt;
             settings.set_enable_media_stream(true);
@@ -410,6 +431,7 @@ pub fn watch<R: Runtime>(guest: &Webview<R>) {
         }
         watch_find_key(&view.inner(), app.clone());
         watch_find(&view.inner(), app.clone(), label.clone());
+        watch_commits(&view.inner(), label.clone());
         watch_permissions(&view.inner(), app.clone(), label.clone());
         let (focus_app, focus_label) = (app.clone(), label.clone());
         view.inner().connect_focus_in_event(move |_, _| {

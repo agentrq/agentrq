@@ -8,6 +8,8 @@
 //! A kind with no Electron name keeps a name of its own, which the broker
 //! refuses without asking, as it refuses anything it does not know.
 
+use std::collections::HashMap;
+
 use super::permissions::PermissionDetails;
 
 /// One request, as Electron's `session.setPermissionRequestHandler` sees it.
@@ -27,6 +29,12 @@ pub enum NativeAsk {
     AnyAllowed(Vec<Ask>),
     /// Granted without asking, as Electron's guest has it without a request.
     Granted,
+    /// Refused without asking, as Electron's guest never gets it.
+    Refused,
+    /// The camera or the microphone alone, which WebView2 raises as two
+    /// requests for one `getUserMedia({audio, video})`: the halves that come
+    /// together are one question, as Electron asks it.
+    MediaPart(Ask),
 }
 
 fn ask(permission: &str, url: &str) -> Ask {
@@ -52,7 +60,14 @@ fn media(types: &[&str], url: &str) -> Ask {
 
 /// A WebKitGTK `permission-request`, by its request's GObject type name;
 /// `audio`, `video` and `display` are a user media request's devices. `url`
-/// is the guest's address.
+/// is the guest's committed address ([`CommittedPages`]): WebKitGTK names no
+/// frame, so a frame's request is the page's, which Permissions Policy keeps
+/// to the frames the page delegated to.
+///
+/// A screen is refused: Electron's guest has no `getDisplayMedia`. So is
+/// storage access, which is always a third-party frame's, and which WebKit
+/// names only by domain, so it could never be kept per frame as Electron
+/// keeps it.
 pub fn webkit_ask(
     type_name: &str,
     audio: bool,
@@ -61,7 +76,7 @@ pub fn webkit_ask(
     url: &str,
 ) -> NativeAsk {
     let name = match type_name {
-        "WebKitUserMediaPermissionRequest" if display => "display-capture",
+        "WebKitUserMediaPermissionRequest" if display => return NativeAsk::Refused,
         "WebKitUserMediaPermissionRequest" => {
             let types: Vec<&str> = [(video, "video"), (audio, "audio")]
                 .into_iter()
@@ -76,7 +91,7 @@ pub fn webkit_ask(
         "WebKitNotificationPermissionRequest" => "notifications",
         "WebKitPointerLockPermissionRequest" => "pointerLock",
         "WebKitClipboardPermissionRequest" => "clipboard-read",
-        "WebKitWebsiteDataAccessPermissionRequest" => "storage-access",
+        "WebKitWebsiteDataAccessPermissionRequest" => return NativeAsk::Refused,
         // Encrypted media and missing codecs, which Electron never asks about.
         other => other,
     };
@@ -87,8 +102,8 @@ pub fn webkit_ask(
 /// `url` is the frame that asked.
 pub fn webview2_ask(kind: i32, url: &str) -> NativeAsk {
     let name = match kind {
-        1 => return NativeAsk::Request(media(&["audio"], url)),
-        2 => return NativeAsk::Request(media(&["video"], url)),
+        1 => return NativeAsk::MediaPart(media(&["audio"], url)),
+        2 => return NativeAsk::MediaPart(media(&["video"], url)),
         3 => "geolocation",
         4 => "notifications",
         5 => "sensors",
@@ -127,6 +142,39 @@ pub fn security_origin_url(protocol: &str, host: &str, port: isize) -> String {
     }
 }
 
+/// A step of a WebKitGTK main-frame load, as `load-changed` reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebKitLoad {
+    Started,
+    Redirected,
+    Committed,
+    Finished,
+}
+
+/// Each WebKitGTK guest's committed address, which its permission requests
+/// come from. `webkit_web_view_get_uri` is already the next page's once a
+/// load starts, while the old page still runs and can still ask: it would
+/// ask with the next site's answers.
+#[derive(Debug, Default)]
+pub struct CommittedPages(HashMap<String, String>);
+
+impl CommittedPages {
+    pub fn load_changed(&mut self, label: &str, step: WebKitLoad, uri: &str) {
+        if step == WebKitLoad::Committed {
+            self.0.insert(label.to_string(), uri.to_string());
+        }
+    }
+
+    /// Empty before anything has committed, which the broker refuses.
+    pub fn requesting_url(&self, label: &str) -> String {
+        self.0.get(label).cloned().unwrap_or_default()
+    }
+
+    pub fn forget(&mut self, label: &str) {
+        self.0.remove(label);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,7 +184,7 @@ mod tests {
 
     fn request(native: NativeAsk) -> Option<Ask> {
         match native {
-            NativeAsk::Request(ask) => Some(ask),
+            NativeAsk::Request(ask) | NativeAsk::MediaPart(ask) => Some(ask),
             _ => None,
         }
     }
@@ -164,15 +212,23 @@ mod tests {
         assert_eq!(media(true, false), ["microphone"]);
         assert_eq!(media(true, true), ["camera", "microphone"]);
         assert!(media(false, false).is_empty());
+    }
+
+    #[test]
+    fn webkit_refuses_a_screen_and_storage_access_without_asking() {
         assert_eq!(
-            keys(webkit_ask(
-                "WebKitUserMediaPermissionRequest",
-                true,
-                true,
-                true,
+            webkit_ask("WebKitUserMediaPermissionRequest", true, true, true, URL),
+            NativeAsk::Refused
+        );
+        assert_eq!(
+            webkit_ask(
+                "WebKitWebsiteDataAccessPermissionRequest",
+                false,
+                false,
+                false,
                 URL
-            )),
-            ["display-capture"]
+            ),
+            NativeAsk::Refused
         );
     }
 
@@ -183,7 +239,6 @@ mod tests {
             ("WebKitNotificationPermissionRequest", "notifications"),
             ("WebKitPointerLockPermissionRequest", "pointer-lock"),
             ("WebKitClipboardPermissionRequest", "clipboard-read"),
-            ("WebKitWebsiteDataAccessPermissionRequest", "storage-access"),
         ] {
             assert_eq!(keys(webkit_ask(type_name, false, false, false, URL)), [key]);
         }
@@ -238,6 +293,41 @@ mod tests {
             assert!(keys(webview2_ask(kind, URL)).is_empty(), "{kind}");
         }
         assert_eq!(webview2_ask(9, URL), NativeAsk::Granted);
+        assert_eq!(
+            webview2_ask(2, URL),
+            NativeAsk::MediaPart(media(&["video"], URL))
+        );
+    }
+
+    #[test]
+    fn a_webkit_request_comes_from_the_committed_page_not_the_one_loading() {
+        let mut pages = CommittedPages::default();
+        assert_eq!(pages.requesting_url("panel-guest-1"), "");
+        pages.load_changed("panel-guest-1", WebKitLoad::Started, "https://a.example/");
+        assert_eq!(
+            pages.requesting_url("panel-guest-1"),
+            "",
+            "nothing committed"
+        );
+        pages.load_changed("panel-guest-1", WebKitLoad::Committed, "https://a.example/");
+        pages.load_changed("panel-guest-1", WebKitLoad::Finished, "https://a.example/");
+        // `location = B`: A still runs until B commits.
+        pages.load_changed("panel-guest-1", WebKitLoad::Started, "https://b.example/");
+        pages.load_changed(
+            "panel-guest-1",
+            WebKitLoad::Redirected,
+            "https://b.example/x",
+        );
+        assert_eq!(pages.requesting_url("panel-guest-1"), "https://a.example/");
+        assert_eq!(pages.requesting_url("panel-guest-2"), "", "another guest's");
+        pages.load_changed(
+            "panel-guest-1",
+            WebKitLoad::Committed,
+            "https://b.example/x",
+        );
+        assert_eq!(pages.requesting_url("panel-guest-1"), "https://b.example/x");
+        pages.forget("panel-guest-1");
+        assert_eq!(pages.requesting_url("panel-guest-1"), "");
     }
 
     #[test]
