@@ -1,0 +1,2 @@
+nsis/AgentRQ Tauri_0.13.4_x64-setup.exe
+nsis/AgentRQ Tauri_0.13.4_x64-setup.exe.sig
