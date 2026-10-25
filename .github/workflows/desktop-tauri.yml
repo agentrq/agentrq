@@ -104,6 +104,8 @@ jobs:
         run: |
           cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
           cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          # The configuration that ships: no `e2e` feature, so its `#[cfg]` code is gone.
+          cargo clippy --manifest-path src-tauri/Cargo.toml --release -- -D warnings
 
       - name: cargo test
         working-directory: desktop-tauri

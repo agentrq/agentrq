@@ -229,36 +229,41 @@ describe('the menu keys', () => {
     id, key: k, code, ctrl: true, shift, alt: false, meta: false,
   })
   const CLOSE = key('close', 'w', 'KeyW')
-  const REDO = key('redo', 'z', 'KeyZ', true)
-  const PLUS = key('zoom-in', '+', 'Equal', true)
-  const MINUS = key('zoom-out', '-', 'Minus')
+  const PLUS = { ...key('zoom-in', '+', 'Equal', true), repeat: true }
+  const MINUS = { ...key('zoom-out', '-', 'Minus'), repeat: true }
   const RELOAD = key('reload', 'r', 'KeyR')
 
-  /** A window that keeps its `keydown` listener, with the bindings the shell would answer. */
-  async function install(platform, bindings = [CLOSE, REDO, PLUS, MINUS, RELOAD]) {
-    let listener
-    const target = { addEventListener: (type, fn) => type === 'keydown' && (listener = fn) }
+  /** A real event target, with the bindings the shell would answer. */
+  async function install(platform, bindings = [CLOSE, PLUS, MINUS, RELOAD], before) {
+    const target = new EventTarget()
+    before?.(target)
     tauri.invoke.mockImplementation((command) =>
       command === 'menu_key_bindings' ? Promise.resolve(bindings) : Promise.resolve(true)
     )
     bridge.installMenuKeys(target, platform)
     await Promise.resolve()
     await Promise.resolve()
-    return (init) => {
-      const e = {
-        key: 'x', code: '', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false,
-        defaultPrevented: false, ...init,
-      }
-      listener?.(e)
-      return e
-    }
+    return Object.assign(
+      (init) => {
+        const e = Object.assign(new Event('keydown', { cancelable: true }), {
+          key: 'x', code: '', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false,
+          ...init,
+        })
+        target.dispatchEvent(e)
+        return e
+      },
+      { target }
+    )
   }
 
   const runs = () => tauri.invoke.mock.calls.filter(([c]) => c === 'menu_run').map(([, a]) => a)
   const later = () => vi.runAllTimers()
 
   beforeEach(() => vi.useFakeTimers())
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
 
   it('runs the action of a key the page left unhandled', async () => {
     const press = await install('linux')
@@ -268,31 +273,54 @@ describe('the menu keys', () => {
     expect(runs()).toEqual([{ id: 'close' }])
   })
 
-  it('leaves a key the page handled to the page, even one that cancels it after us', async () => {
-    const press = await install('linux')
-    press({ key: 'w', ctrlKey: true, defaultPrevented: true })
-    press({ key: 'w', ctrlKey: true, isComposing: true })
-    // A page listener on window, registered after ours, cancels the key.
-    const e = press({ key: 'w', ctrlKey: true })
-    e.defaultPrevented = true
+  it('leaves a key the page cancelled before us to the page', async () => {
+    const press = await install('linux', undefined, (t) =>
+      t.addEventListener('keydown', (e) => e.preventDefault())
+    )
+    press({ key: 'w', ctrlKey: true })
     later()
     expect(runs()).toEqual([])
   })
 
-  it('ignores a held key, except the zoom keys', async () => {
+  it('leaves a key the page cancels after us to the page', async () => {
+    const press = await install('linux')
+    // A page listener on window, registered after ours, runs after it.
+    press.target.addEventListener('keydown', (e) => e.preventDefault())
+    const e = press({ key: 'w', ctrlKey: true })
+    expect(e.defaultPrevented).toBe(true)
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('leaves a key typed into an IME composition to the IME', async () => {
+    const press = await install('linux')
+    press({ key: 'w', ctrlKey: true, isComposing: true })
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('ignores a held key that does not repeat', async () => {
     const press = await install('linux')
     press({ key: 'r', ctrlKey: true, repeat: true })
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('leaves undo and redo to the webview, held or not: the table has no key for them', async () => {
+    const press = await install('linux')
+    press({ key: 'z', ctrlKey: true })
+    press({ key: 'z', ctrlKey: true, repeat: true })
+    press({ key: 'Z', ctrlKey: true, shiftKey: true })
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('repeats a held key that says it does', async () => {
+    const press = await install('linux')
     press({ key: '+', ctrlKey: true, shiftKey: true, repeat: true })
     press({ key: '-', ctrlKey: true, repeat: true })
     later()
     expect(runs()).toEqual([{ id: 'zoom-in' }, { id: 'zoom-out' }])
-  })
-
-  it('leaves undo and redo to the webview, which does them itself', async () => {
-    const press = await install('linux')
-    press({ key: 'Z', ctrlKey: true, shiftKey: true })
-    later()
-    expect(runs()).toEqual([])
   })
 
   it('matches every modifier exactly, and the key whatever its case', async () => {
@@ -310,17 +338,39 @@ describe('the menu keys', () => {
     expect(runs()).toEqual([{ id: 'close' }, { id: 'zoom-in' }])
   })
 
-  it('falls back on the physical key when the layout types no Latin letter', async () => {
+  it('falls back on the physical key for a letter of another script', async () => {
     const press = await install('linux')
-    press({ key: 'ц', code: 'KeyW', ctrlKey: true })
-    press({ key: 'Dead', code: 'KeyW', ctrlKey: true })
-    // Latin keys are the letter typed: AZERTY's `z` is QWERTY's KeyW place.
+    for (const key of ['ц', 'ω', 'ש', 'ض', '中']) press({ key, code: 'KeyW', ctrlKey: true })
+    later()
+    expect(runs()).toHaveLength(5)
+    expect(runs().every((r) => r.id === 'close')).toBe(true)
+  })
+
+  it('types a Latin letter by the letter, not the place: AZERTY\'s z is QWERTY\'s KeyW', async () => {
+    const press = await install('linux')
     press({ key: 'z', code: 'KeyW', ctrlKey: true })
-    // No place for the key, or another place.
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('does not zoom on a Latin layout\'s own punctuation or a dead key', async () => {
+    const press = await install('linux')
+    // German ß is on Minus, Spanish ¡ on Equal, Swedish ´ is a dead key on Equal.
+    press({ key: 'ß', code: 'Minus', ctrlKey: true })
+    press({ key: '¡', code: 'Equal', ctrlKey: true })
+    press({ key: '´', code: 'Equal', ctrlKey: true })
+    press({ key: 'Dead', code: 'Equal', ctrlKey: true })
+    press({ key: 'Dead', code: 'Minus', ctrlKey: true })
+    later()
+    expect(runs()).toEqual([])
+  })
+
+  it('has no place for a key typed on no place', async () => {
+    const press = await install('linux')
     press({ key: 'ц', code: 'KeyQ', ctrlKey: true })
     press({ key: 'ц', ctrlKey: true })
     later()
-    expect(runs()).toEqual([{ id: 'close' }, { id: 'close' }])
+    expect(runs()).toEqual([])
   })
 
   it('has no physical fallback for a binding with no code', async () => {

@@ -28,6 +28,8 @@ pub struct KeyBinding {
     pub action: ActionId,
     pub key: String,
     pub code: Option<String>,
+    /// Whether a held key keeps running the action; only zoom does.
+    pub repeat: bool,
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
@@ -41,6 +43,7 @@ impl KeyBinding {
             "id": self.action.as_str(),
             "key": self.key,
             "code": self.code,
+            "repeat": self.repeat,
             "ctrl": self.ctrl,
             "shift": self.shift,
             "alt": self.alt,
@@ -49,13 +52,36 @@ impl KeyBinding {
     }
 }
 
+/// The actions that run again while their key is held.
+pub fn repeats(action: ActionId) -> bool {
+    matches!(action, ActionId::ZoomIn | ActionId::ZoomOut)
+}
+
+/// The webview undoes and redoes on its own keys, and a key the page left
+/// unhandled can no longer be cancelled by then: running them too would undo
+/// twice. They are never bound, so `menu_run` refuses them as well.
+pub fn webview_does(action: ActionId) -> bool {
+    matches!(action, ActionId::Undo | ActionId::Redo)
+}
+
+/// WebView2 runs its own browser accelerators (Ctrl+R, Ctrl+Shift+I...) as the
+/// key's default action, which the page's deferred check can no longer cancel:
+/// the key would act twice. They are switched off, and the page's table is the
+/// only one.
+pub fn disables_browser_accelerators(platform: Platform) -> bool {
+    platform == Platform::Windows
+}
+
 /// `KeyboardEvent.code` of a key the menu binds, `None` for one with no fixed
 /// place. `+` is Shift on the `=` key, as GTK reports Ctrl+Shift+=.
 pub fn physical_code(key: &str) -> Option<String> {
     let mut chars = key.chars();
     let first = chars.next()?;
     if chars.next().is_some() {
-        return key.starts_with('f').then(|| key.to_uppercase());
+        let digits = key.strip_prefix('f')?;
+        let number = digits.parse::<u8>().ok()?;
+        let plain = digits.bytes().all(|b| b.is_ascii_digit()) && !digits.starts_with('0');
+        return (plain && number <= 24).then(|| key.to_uppercase());
     }
     match first {
         'a'..='z' => Some(format!("Key{}", first.to_ascii_uppercase())),
@@ -72,6 +98,9 @@ pub fn physical_code(key: &str) -> Option<String> {
 /// and every action on macOS (the menu bar's) are refused.
 pub fn dispatchable(options: MenuOptions<'_>, id: &str) -> Option<ActionId> {
     let action = ActionId::parse(id)?;
+    if webview_does(action) {
+        return None;
+    }
     key_bindings(options)
         .iter()
         .any(|binding| binding.action == action)
@@ -134,7 +163,10 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
         actions(&submenu.items, &mut items);
     }
     let mut bindings = Vec::new();
-    for item in items.into_iter().filter(|item| item.enabled) {
+    for item in items
+        .into_iter()
+        .filter(|item| item.enabled && !webview_does(item.id))
+    {
         let Some(accelerator) = item.accelerator else {
             continue;
         };
@@ -143,6 +175,7 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
             action: item.id,
             key: key.to_lowercase(),
             code: physical_code(&key.to_lowercase()),
+            repeat: repeats(item.id),
             ctrl: chord.ctrl,
             shift,
             alt: chord.alt,
@@ -221,8 +254,6 @@ mod tests {
                 ("w", false, ActionId::Close),
                 ("r", false, ActionId::Reload),
                 ("r", true, ActionId::ForceReload),
-                ("z", false, ActionId::Undo),
-                ("z", true, ActionId::Redo),
                 ("q", false, ActionId::Quit),
                 ("m", false, ActionId::Minimize),
                 ("0", false, ActionId::ResetZoom),
@@ -276,13 +307,13 @@ mod tests {
     fn a_binding_reads_as_json() {
         let binding = key_bindings(options(Platform::Linux))
             .into_iter()
-            .find(|b| b.action == ActionId::Redo)
+            .find(|b| b.action == ActionId::ZoomOut)
             .unwrap();
         assert_eq!(
             binding.to_json(),
             serde_json::json!({
-                "id": "redo", "key": "z", "code": "KeyZ",
-                "ctrl": true, "shift": true, "alt": false, "meta": false,
+                "id": "zoom-out", "key": "-", "code": "Minus", "repeat": true,
+                "ctrl": true, "shift": false, "alt": false, "meta": false,
             })
         );
     }
@@ -330,10 +361,14 @@ mod tests {
             ("+", "Equal"),
             ("\\", "Backslash"),
             ("f11", "F11"),
+            ("f1", "F1"),
+            ("f24", "F24"),
         ] {
             assert_eq!(physical_code(key).as_deref(), Some(code), "{key}");
         }
-        for key in ["", "ц", "enter", ","] {
+        for key in [
+            "", "ц", "enter", ",", "foo", "fn", "f0", "f25", "f01", "f+1", "f1x",
+        ] {
             assert_eq!(physical_code(key), None, "{key}");
         }
     }
@@ -354,6 +389,9 @@ mod tests {
         // Not an action; an action with no key; a disabled one; macOS's.
         assert_eq!(dispatchable(linux, "nope"), None);
         assert_eq!(dispatchable(linux, "log-out"), None);
+        // The webview's own keys: a bound-looking id still never runs.
+        assert_eq!(dispatchable(linux, "undo"), None);
+        assert_eq!(dispatchable(linux, "redo"), None);
         assert_eq!(dispatchable(linux, "switch-server"), None);
         let off = MenuOptions {
             can_toggle_side_panel: false,
@@ -364,6 +402,22 @@ mod tests {
         assert_eq!(dispatchable(off, "toggle-side-panel"), None);
         assert_eq!(dispatchable(off, "toggle-dev-tools"), None);
         assert_eq!(dispatchable(options(Platform::MacOs), "close"), None);
+    }
+
+    #[test]
+    fn undo_and_redo_are_left_to_the_webview_and_only_zoom_repeats() {
+        let all = key_bindings(options(Platform::Linux));
+        assert!(!all.iter().any(|b| webview_does(b.action)));
+        assert!(all.iter().all(|b| b.repeat == repeats(b.action)));
+        assert!(repeats(ActionId::ZoomIn) && repeats(ActionId::ZoomOut));
+        assert!(!repeats(ActionId::Reload) && !repeats(ActionId::Close));
+    }
+
+    #[test]
+    fn only_windows_switches_the_browser_accelerators_off() {
+        assert!(disables_browser_accelerators(Platform::Windows));
+        assert!(!disables_browser_accelerators(Platform::Linux));
+        assert!(!disables_browser_accelerators(Platform::MacOs));
     }
 
     #[test]

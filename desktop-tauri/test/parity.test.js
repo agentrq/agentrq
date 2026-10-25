@@ -262,9 +262,12 @@ describe('the Rust side serves what the bridge calls', () => {
     await Promise.resolve()
     await Promise.resolve()
     vi.useFakeTimers()
-    keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })
-    vi.runAllTimers()
-    vi.useRealTimers()
+    try {
+      keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })
+      vi.runAllTimers()
+    } finally {
+      vi.useRealTimers()
+    }
     const invoked = new Set(tauri.invoke.mock.calls.map(([name]) => name))
     expect([...invoked].filter((name) => !defined.includes(name))).toEqual([])
     // Left over: the guest's own, and net.js's EventSource, which this walk of

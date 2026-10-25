@@ -70,9 +70,12 @@
   Z, Q, M, 0 and - went the same way. The label keeps a hint; the bridge runs the key
   from a bubbling `keydown` that is not `defaultPrevented`, checked a task later so a
   page listener on `window` can cancel it, against the table in `core::menu_keys`
-  (Electron's rule). A held key is ignored but for zoom, undo/redo are the webview's
-  own, and `menu_run` takes only an id that has a key here and now. Windows is treated alike, unmeasured. A guest
-  page's keys (WP7b's side panel) never reach it, so the guest must forward them.
+  (Electron's rule). The table leaves out undo/redo, which the webview does itself, and
+  says which keys repeat (zoom only); `menu_run` takes only an id that has a key here and
+  now. A key's physical place is used only for a letter of a non-Latin script, never for
+  `ß`, `¡`, `´` or a dead key. WebView2's own accelerator keys are switched off, or Ctrl+R
+  would reload twice. Windows is otherwise unmeasured. A guest page's keys (WP7b's side
+  panel) never reach it, so the guest must forward them.
 - **A command's arguments are required unless the page may leave them out.** An `Option`
   turns a key the bridge misspelled (`fileUrl` for `rawUrl`) into `None`, silently.
   The parity test checks every implemented command's parameter names against the bridge.
