@@ -8,6 +8,7 @@ on:
       - 'desktop-tauri/**'
       - 'frontend/**'
       - 'desktop/src/renderer/**'
+      - 'desktop/src/preload/**'
       - '.github/workflows/desktop-tauri.yml'
   # The renderer is desktop's renderer, built from frontend/src, so a change
   # there can break this build without touching desktop-tauri/.
@@ -16,6 +17,7 @@ on:
       - 'desktop-tauri/**'
       - 'frontend/**'
       - 'desktop/src/renderer/**'
+      - 'desktop/src/preload/**'
       - '.github/workflows/desktop-tauri.yml'
   workflow_dispatch:
 
