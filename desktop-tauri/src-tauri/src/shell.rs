@@ -683,9 +683,19 @@ mod tests {
         let data_url = Url::parse("data:text/plain;base64,aGVsbG8=").unwrap();
         assert!(dispatch_navigation(&handle, &data_url));
 
-        // Top-level HTML data navigation is blocked
+        // Top-level HTML, SVG, and XML data navigation is blocked
         let data_html = Url::parse("data:text/html,<script>alert(1)</script>").unwrap();
         assert!(!dispatch_navigation(&handle, &data_html));
+
+        let data_svg = Url::parse("data:image/svg+xml,<svg onload='alert(1)'/>").unwrap();
+        assert!(!dispatch_navigation(&handle, &data_svg));
+
+        let data_xml = Url::parse("data:text/xml,<root/>").unwrap();
+        assert!(!dispatch_navigation(&handle, &data_xml));
+
+        // Allowed download: PDF
+        let data_pdf = Url::parse("data:application/pdf;base64,JVBERi0xLjQK").unwrap();
+        assert!(dispatch_navigation(&handle, &data_pdf));
 
         // 3. External URLs are rejected and opened via opener
         let ext_url = Url::parse("https://agentrq.com/docs").unwrap();

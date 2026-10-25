@@ -140,12 +140,62 @@ describe('an on* listener', () => {
     expect(cb).toHaveBeenCalledExactlyOnceWith('/workspaces/w')
   })
 
-  it('calls navigation_ready command on subscribe without hiding errors', () => {
+  it('calls navigation_ready command on subscribe without hiding errors', async () => {
     fakeListen()
     const agentrq = bridge.createBridge('Linux')
     const off = agentrq.navigation.onNavigate(() => {})
+    await Promise.resolve()
     expect(tauri.invoke).toHaveBeenCalledWith('navigation_ready')
     off()
+  })
+
+  it('calls navigation_ready only after listen resolves late, and not before', async () => {
+    let resolveListen
+    tauri.listen.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveListen = resolve
+        }),
+    )
+    const agentrq = bridge.createBridge('Linux')
+    const off = agentrq.navigation.onNavigate(() => {})
+
+    // listen has not resolved yet -> invoke must not have happened
+    expect(tauri.invoke).not.toHaveBeenCalledWith('navigation_ready')
+
+    // resolve listen
+    const unlisten = vi.fn()
+    resolveListen(unlisten)
+    await Promise.resolve()
+
+    // invoke happens only after listen resolves
+    expect(tauri.invoke).toHaveBeenCalledWith('navigation_ready')
+    off()
+    expect(unlisten).toHaveBeenCalled()
+  })
+
+  it('does not invoke navigation_ready if unsubscribed before listen resolves', async () => {
+    let resolveListen
+    tauri.listen.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveListen = resolve
+        }),
+    )
+    const agentrq = bridge.createBridge('Linux')
+    const off = agentrq.navigation.onNavigate(() => {})
+
+    // Unsubscribe before listen resolves
+    off()
+
+    // Now resolve listen
+    const unlisten = vi.fn()
+    resolveListen(unlisten)
+    await Promise.resolve()
+
+    // invoke was never called
+    expect(tauri.invoke).not.toHaveBeenCalledWith('navigation_ready')
+    expect(unlisten).toHaveBeenCalled()
   })
 
   it('calls a no-argument callback with nothing', () => {

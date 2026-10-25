@@ -138,6 +138,34 @@ pub fn app_origin(profile_id: &str) -> String {
     app_origin_for(profile_id, PLATFORM)
 }
 
+/// Safe data: MIME types that cannot execute scripts in a browser or webview.
+const ALLOWED_DATA_MIME_TYPES: &[&str] = &[
+    "application/json",
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+    "audio/aac",
+    "audio/flac",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    "audio/webm",
+    "image/avif",
+    "image/bmp",
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/csv",
+    "text/plain",
+    "video/mp4",
+    "video/mpeg",
+    "video/ogg",
+    "video/webm",
+];
+
 /// Whether this navigation URL is an app-origin download (blob: with app origin or safe data:).
 pub fn is_allowed_download(url: &Url, app_origin: &str) -> bool {
     match url.scheme() {
@@ -150,7 +178,12 @@ pub fn is_allowed_download(url: &Url, app_origin: &str) -> bool {
                 .unwrap_or("")
                 .trim()
                 .to_ascii_lowercase();
-            !matches!(mime.as_str(), "text/html" | "application/xhtml+xml")
+            let effective = if mime.is_empty() {
+                "text/plain"
+            } else {
+                mime.as_str()
+            };
+            ALLOWED_DATA_MIME_TYPES.contains(&effective)
         }
         "blob" => {
             let inner = &url.as_str()["blob:".len()..];
@@ -393,6 +426,27 @@ mod tests {
 
         let data_xhtml = Url::parse("data:application/xhtml+xml,<html/>").unwrap();
         assert!(!is_allowed_download(&data_xhtml, origin));
+
+        // SVG, XML, and +xml data navigations must be blocked
+        let data_svg = Url::parse("data:image/svg+xml,<svg onload='alert(1)'/>").unwrap();
+        assert!(!is_allowed_download(&data_svg, origin));
+
+        let data_text_xml = Url::parse("data:text/xml,<root/>").unwrap();
+        assert!(!is_allowed_download(&data_text_xml, origin));
+
+        let data_app_xml = Url::parse("data:application/xml,<root/>").unwrap();
+        assert!(!is_allowed_download(&data_app_xml, origin));
+
+        let data_rss = Url::parse("data:application/rss+xml,<rss/>").unwrap();
+        assert!(!is_allowed_download(&data_rss, origin));
+
+        // Empty MIME defaults to text/plain and is allowed
+        let data_default_plain = Url::parse("data:,hello%20world").unwrap();
+        assert!(is_allowed_download(&data_default_plain, origin));
+
+        // Safe media types are allowed
+        let data_png = Url::parse("data:image/png;base64,iVBORw0KGgo=").unwrap();
+        assert!(is_allowed_download(&data_png, origin));
 
         let evil_blob = Url::parse("blob:https://evil.example.com/8b248a37").unwrap();
         assert!(!is_allowed_download(&evil_blob, origin));

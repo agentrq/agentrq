@@ -36,15 +36,19 @@ export function platformOf(userAgent) {
  *
  * @returns {() => void}
  */
-function subscribe(event, deliver) {
+function subscribe(event, deliver, onReady) {
   let stop = null
   let stopped = false
   listen(event, (e) => {
     if (!stopped) deliver(e.payload)
   })
     .then((unlisten) => {
-      if (stopped) unlisten()
-      else stop = unlisten
+      if (stopped) {
+        unlisten()
+        return
+      }
+      stop = unlisten
+      if (onReady) onReady()
     })
     .catch((err) => console.error(`window.agentrq: cannot listen to ${event}`, err))
   return () => {
@@ -171,11 +175,12 @@ export function createBridge(userAgent) {
     },
 
     navigation: {
-      onNavigate: (callback) => {
-        const unsub = subscribe('agentrq:navigate', (route) => callback(route))
-        invoke('navigation_ready')
-        return unsub
-      },
+      onNavigate: (callback) =>
+        subscribe(
+          'agentrq:navigate',
+          (route) => callback(route),
+          () => invoke('navigation_ready'),
+        ),
     },
 
     extensions: {
