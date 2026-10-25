@@ -117,7 +117,7 @@ jobs:
 
       - name: Build the app
         working-directory: desktop-tauri
-        run: npx tauri build --no-bundle
+        run: npx tauri build --no-bundle --features e2e
 
       # Window chrome on each OS, light and dark, for the pull request to read.
       # test/e2e/theme-seed.js seeds localStorage `theme` and asks the shell to

@@ -21,11 +21,13 @@ pub fn native_accelerators(platform: Platform) -> bool {
 }
 
 /// One key that runs one action, as `KeyboardEvent` spells it: `key` is
-/// lower case, and every modifier is exact.
+/// lower case, and every modifier is exact. `code` is the physical key, for a
+/// layout whose `key` is not Latin (Ctrl+W on a Cyrillic one types `ц`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyBinding {
     pub action: ActionId,
     pub key: String,
+    pub code: Option<String>,
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
@@ -38,12 +40,42 @@ impl KeyBinding {
         serde_json::json!({
             "id": self.action.as_str(),
             "key": self.key,
+            "code": self.code,
             "ctrl": self.ctrl,
             "shift": self.shift,
             "alt": self.alt,
             "meta": self.meta,
         })
     }
+}
+
+/// `KeyboardEvent.code` of a key the menu binds, `None` for one with no fixed
+/// place. `+` is Shift on the `=` key, as GTK reports Ctrl+Shift+=.
+pub fn physical_code(key: &str) -> Option<String> {
+    let mut chars = key.chars();
+    let first = chars.next()?;
+    if chars.next().is_some() {
+        return key.starts_with('f').then(|| key.to_uppercase());
+    }
+    match first {
+        'a'..='z' => Some(format!("Key{}", first.to_ascii_uppercase())),
+        '0'..='9' => Some(format!("Digit{first}")),
+        '-' => Some("Minus".to_string()),
+        '=' | '+' => Some("Equal".to_string()),
+        '\\' => Some("Backslash".to_string()),
+        _ => None,
+    }
+}
+
+/// The action an id names, if the page may run it here: an id with a key on
+/// this platform, in this state. A disabled item, one another platform draws,
+/// and every action on macOS (the menu bar's) are refused.
+pub fn dispatchable(options: MenuOptions<'_>, id: &str) -> Option<ActionId> {
+    let action = ActionId::parse(id)?;
+    key_bindings(options)
+        .iter()
+        .any(|binding| binding.action == action)
+        .then_some(action)
 }
 
 /// An accelerator, taken apart. `CmdOrCtrl` is Ctrl here: only the platforms
@@ -110,6 +142,7 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
         let binding = |key: &str, shift: bool| KeyBinding {
             action: item.id,
             key: key.to_lowercase(),
+            code: physical_code(&key.to_lowercase()),
             ctrl: chord.ctrl,
             shift,
             alt: chord.alt,
@@ -142,7 +175,13 @@ pub fn item_parts(platform: Platform, item: &ActionItem) -> (String, Option<&'st
                 }
             }
             hint.push_str(&chord.key.to_uppercase());
-            (format!("{}\t{hint}", item.label), None)
+            // Win32 right-aligns after a tab; GTK draws it as a short gap.
+            let text = if platform == Platform::Windows {
+                format!("{}\t{hint}", item.label)
+            } else {
+                format!("{} ({hint})", item.label)
+            };
+            (text, None)
         }
         accelerator => (item.label.to_string(), accelerator),
     }
@@ -242,7 +281,7 @@ mod tests {
         assert_eq!(
             binding.to_json(),
             serde_json::json!({
-                "id": "redo", "key": "z",
+                "id": "redo", "key": "z", "code": "KeyZ",
                 "ctrl": true, "shift": true, "alt": false, "meta": false,
             })
         );
@@ -259,21 +298,72 @@ mod tests {
 
     #[test]
     fn off_macos_the_accelerator_is_only_a_hint_in_the_label() {
-        for (accelerator, label) in [
-            ("CmdOrCtrl+R", "Reload\tCtrl+R"),
-            ("Shift+CmdOrCtrl+R", "Reload\tCtrl+Shift+R"),
-            ("Ctrl+Shift+I", "Reload\tCtrl+Shift+I"),
-            ("Alt+Cmd+I", "Reload\tAlt+Super+I"),
-            ("F11", "Reload\tF11"),
-            ("CmdOrCtrl+-", "Reload\tCtrl+-"),
+        for (accelerator, hint) in [
+            ("CmdOrCtrl+R", "Ctrl+R"),
+            ("Shift+CmdOrCtrl+R", "Ctrl+Shift+R"),
+            ("Ctrl+Shift+I", "Ctrl+Shift+I"),
+            ("Alt+Cmd+I", "Alt+Super+I"),
+            ("F11", "F11"),
+            ("CmdOrCtrl+-", "Ctrl+-"),
         ] {
+            // GTK draws a tab as a short gap, so Linux gets a parenthesis.
             let (text, native) = item_parts(Platform::Linux, &item(Some(accelerator)));
-            assert_eq!((text, native), (label.to_string(), None));
+            assert_eq!((text, native), (format!("Reload ({hint})"), None));
+            // Win32 right-aligns what follows a tab.
+            let (text, native) = item_parts(Platform::Windows, &item(Some(accelerator)));
+            assert_eq!((text, native), (format!("Reload\t{hint}"), None));
         }
         assert_eq!(
             item_parts(Platform::Windows, &item(None)),
             ("Reload".to_string(), None)
         );
+    }
+
+    #[test]
+    fn a_key_has_a_physical_place_unless_it_is_not_a_fixed_one() {
+        for (key, code) in [
+            ("w", "KeyW"),
+            ("z", "KeyZ"),
+            ("0", "Digit0"),
+            ("-", "Minus"),
+            ("=", "Equal"),
+            ("+", "Equal"),
+            ("\\", "Backslash"),
+            ("f11", "F11"),
+        ] {
+            assert_eq!(physical_code(key).as_deref(), Some(code), "{key}");
+        }
+        for key in ["", "ц", "enter", ","] {
+            assert_eq!(physical_code(key), None, "{key}");
+        }
+    }
+
+    #[test]
+    fn every_binding_carries_the_physical_key_for_a_non_latin_layout() {
+        let bindings = key_bindings(options(Platform::Linux));
+        assert!(bindings.iter().all(|b| b.code.is_some()));
+        let close = bindings.iter().find(|b| b.action == ActionId::Close);
+        assert_eq!(close.unwrap().code.as_deref(), Some("KeyW"));
+    }
+
+    #[test]
+    fn only_an_action_with_a_key_here_is_dispatchable() {
+        let linux = options(Platform::Linux);
+        assert_eq!(dispatchable(linux, "close"), Some(ActionId::Close));
+        assert_eq!(dispatchable(linux, "zoom-in"), Some(ActionId::ZoomIn));
+        // Not an action; an action with no key; a disabled one; macOS's.
+        assert_eq!(dispatchable(linux, "nope"), None);
+        assert_eq!(dispatchable(linux, "log-out"), None);
+        assert_eq!(dispatchable(linux, "switch-server"), None);
+        let off = MenuOptions {
+            can_toggle_side_panel: false,
+            can_check_for_updates: false,
+            debug_build: false,
+            ..linux
+        };
+        assert_eq!(dispatchable(off, "toggle-side-panel"), None);
+        assert_eq!(dispatchable(off, "toggle-dev-tools"), None);
+        assert_eq!(dispatchable(options(Platform::MacOs), "close"), None);
     }
 
     #[test]

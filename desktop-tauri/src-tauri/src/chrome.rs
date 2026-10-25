@@ -185,7 +185,9 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 tauri::webview::PageLoadEvent::Finished => reveal(&window, &on_load),
             });
     // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
-    // first. Whoever sets the variable already controls this process.
+    // first. Only a debug build or the `e2e` feature reads it: a release
+    // would run whatever a launcher's environment holds in the app's webview.
+    #[cfg(any(debug_assertions, feature = "e2e"))]
     if let Ok(script) = std::env::var("AGENTRQ_E2E_INIT_SCRIPT") {
         builder = builder.initialization_script(script);
     }

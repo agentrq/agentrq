@@ -225,12 +225,17 @@ describe('an on* listener', () => {
 })
 
 describe('the menu keys', () => {
-  const REDO = { id: 'redo', key: 'z', ctrl: true, shift: true, alt: false, meta: false }
-  const CLOSE = { id: 'close', key: 'w', ctrl: true, shift: false, alt: false, meta: false }
-  const PLUS = { id: 'zoom-in', key: '+', ctrl: true, shift: true, alt: false, meta: false }
+  const key = (id, k, code, shift = false) => ({
+    id, key: k, code, ctrl: true, shift, alt: false, meta: false,
+  })
+  const CLOSE = key('close', 'w', 'KeyW')
+  const REDO = key('redo', 'z', 'KeyZ', true)
+  const PLUS = key('zoom-in', '+', 'Equal', true)
+  const MINUS = key('zoom-out', '-', 'Minus')
+  const RELOAD = key('reload', 'r', 'KeyR')
 
   /** A window that keeps its `keydown` listener, with the bindings the shell would answer. */
-  async function install(platform, bindings = [CLOSE, REDO, PLUS]) {
+  async function install(platform, bindings = [CLOSE, REDO, PLUS, MINUS, RELOAD]) {
     let listener
     const target = { addEventListener: (type, fn) => type === 'keydown' && (listener = fn) }
     tauri.invoke.mockImplementation((command) =>
@@ -240,29 +245,54 @@ describe('the menu keys', () => {
     await Promise.resolve()
     await Promise.resolve()
     return (init) => {
-      const e = { key: 'x', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...init }
-      e.defaultPrevented = e.defaultPrevented ?? false
-      e.preventDefault = vi.fn()
+      const e = {
+        key: 'x', code: '', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false,
+        defaultPrevented: false, ...init,
+      }
       listener?.(e)
       return e
     }
   }
 
   const runs = () => tauri.invoke.mock.calls.filter(([c]) => c === 'menu_run').map(([, a]) => a)
+  const later = () => vi.runAllTimers()
 
-  it('runs the action of a key the page left unhandled, and keeps the page from it too', async () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('runs the action of a key the page left unhandled', async () => {
     const press = await install('linux')
-    const e = press({ key: 'w', ctrlKey: true })
+    press({ key: 'w', ctrlKey: true })
+    expect(runs()).toEqual([])
+    later()
     expect(runs()).toEqual([{ id: 'close' }])
-    expect(e.preventDefault).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves a key the page handled to the page', async () => {
+  it('leaves a key the page handled to the page, even one that cancels it after us', async () => {
     const press = await install('linux')
-    const e = press({ key: 'w', ctrlKey: true, defaultPrevented: true })
+    press({ key: 'w', ctrlKey: true, defaultPrevented: true })
     press({ key: 'w', ctrlKey: true, isComposing: true })
+    // A page listener on window, registered after ours, cancels the key.
+    const e = press({ key: 'w', ctrlKey: true })
+    e.defaultPrevented = true
+    later()
     expect(runs()).toEqual([])
-    expect(e.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('ignores a held key, except the zoom keys', async () => {
+    const press = await install('linux')
+    press({ key: 'r', ctrlKey: true, repeat: true })
+    press({ key: '+', ctrlKey: true, shiftKey: true, repeat: true })
+    press({ key: '-', ctrlKey: true, repeat: true })
+    later()
+    expect(runs()).toEqual([{ id: 'zoom-in' }, { id: 'zoom-out' }])
+  })
+
+  it('leaves undo and redo to the webview, which does them itself', async () => {
+    const press = await install('linux')
+    press({ key: 'Z', ctrlKey: true, shiftKey: true })
+    later()
+    expect(runs()).toEqual([])
   })
 
   it('matches every modifier exactly, and the key whatever its case', async () => {
@@ -272,10 +302,32 @@ describe('the menu keys', () => {
     press({ key: 'w', ctrlKey: true, altKey: true })
     press({ key: 'w', ctrlKey: true, metaKey: true })
     press({ key: 'q', ctrlKey: true })
+    later()
     expect(runs()).toEqual([])
-    press({ key: 'Z', ctrlKey: true, shiftKey: true })
+    press({ key: 'W', ctrlKey: true })
     press({ key: '+', ctrlKey: true, shiftKey: true })
-    expect(runs()).toEqual([{ id: 'redo' }, { id: 'zoom-in' }])
+    later()
+    expect(runs()).toEqual([{ id: 'close' }, { id: 'zoom-in' }])
+  })
+
+  it('falls back on the physical key when the layout types no Latin letter', async () => {
+    const press = await install('linux')
+    press({ key: 'ц', code: 'KeyW', ctrlKey: true })
+    press({ key: 'Dead', code: 'KeyW', ctrlKey: true })
+    // Latin keys are the letter typed: AZERTY's `z` is QWERTY's KeyW place.
+    press({ key: 'z', code: 'KeyW', ctrlKey: true })
+    // No place for the key, or another place.
+    press({ key: 'ц', code: 'KeyQ', ctrlKey: true })
+    press({ key: 'ц', ctrlKey: true })
+    later()
+    expect(runs()).toEqual([{ id: 'close' }, { id: 'close' }])
+  })
+
+  it('has no physical fallback for a binding with no code', async () => {
+    const press = await install('linux', [{ ...CLOSE, code: null }])
+    press({ key: 'ц', code: 'KeyW', ctrlKey: true })
+    later()
+    expect(runs()).toEqual([])
   })
 
   it('waits for the table, and survives a shell that cannot give it', async () => {
@@ -286,7 +338,8 @@ describe('the menu keys', () => {
     bridge.installMenuKeys(target, 'linux')
     await Promise.resolve()
     await Promise.resolve()
-    listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    listener({ key: 'w', ctrlKey: true })
+    later()
     expect(error).toHaveBeenCalled()
     expect(runs()).toEqual([])
 
@@ -294,7 +347,8 @@ describe('the menu keys', () => {
     bridge.installMenuKeys(target, 'linux')
     await Promise.resolve()
     await Promise.resolve()
-    listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    listener({ key: 'w', ctrlKey: true })
+    later()
     expect(runs()).toEqual([])
   })
 
@@ -303,6 +357,7 @@ describe('the menu keys', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     tauri.invoke.mockRejectedValue(new Error('no'))
     press({ key: 'w', ctrlKey: true })
+    later()
     await Promise.resolve()
     await Promise.resolve()
     expect(error).toHaveBeenCalled()

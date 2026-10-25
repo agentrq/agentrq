@@ -255,13 +255,16 @@ describe('the Rust side serves what the bridge calls', () => {
     let keydown
     const target = { addEventListener: (_, fn) => (keydown = fn) }
     tauri.invoke.mockImplementation((name) =>
-      Promise.resolve(name === 'menu_key_bindings' ? [{ id: 'close', key: 'w', ctrl: true, shift: false, alt: false, meta: false }] : undefined)
+      Promise.resolve(name === 'menu_key_bindings' ? [{ id: 'close', key: 'w', code: 'KeyW', ctrl: true, shift: false, alt: false, meta: false }] : undefined)
     )
     const { installMenuKeys } = await import('../src/bridge/index.js')
     installMenuKeys(target, 'linux')
     await Promise.resolve()
     await Promise.resolve()
-    keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault() {} })
+    vi.useFakeTimers()
+    keydown({ key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })
+    vi.runAllTimers()
+    vi.useRealTimers()
     const invoked = new Set(tauri.invoke.mock.calls.map(([name]) => name))
     expect([...invoked].filter((name) => !defined.includes(name))).toEqual([])
     // Left over: the guest's own, and net.js's EventSource, which this walk of

@@ -82,19 +82,42 @@ export function installMenuKeys(target, platform) {
     .catch((err) => console.error('window.agentrq: no menu keys', err))
   target.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.isComposing) return
-    const key = String(e.key).toLowerCase()
-    const hit = table.find(
-      (b) =>
-        b.key === key &&
-        b.ctrl === e.ctrlKey &&
-        b.shift === e.shiftKey &&
-        b.alt === e.altKey &&
-        b.meta === e.metaKey
-    )
-    if (!hit) return
-    e.preventDefault()
-    invoke('menu_run', { id: hit.id }).catch((err) => console.error('window.agentrq: menu key', err))
+    const hit = table.find((b) => matches(b, e))
+    // A held key repeats; only the zoom keys are meant to.
+    if (!hit || (e.repeat && !REPEATS.has(hit.id)) || WEBVIEW_DOES.has(hit.id)) return
+    // This listener is on `window`, the last stop of the event, yet a page
+    // listener on `window` registered after it runs after it. A task later
+    // every listener has run, and `defaultPrevented` stays set on the event.
+    setTimeout(() => {
+      if (e.defaultPrevented) return
+      invoke('menu_run', { id: hit.id }).catch((err) =>
+        console.error('window.agentrq: menu key', err)
+      )
+    }, 0)
   })
+}
+
+/** The keys that repeat while held. */
+const REPEATS = new Set(['zoom-in', 'zoom-out'])
+
+/**
+ * The webview undoes and redoes on these keys itself, and the key can no
+ * longer be cancelled once we know the page left it: running them too would
+ * undo twice.
+ */
+const WEBVIEW_DOES = new Set(['undo', 'redo'])
+
+/**
+ * A key the menu binds, by what it types, or by where it is when the layout
+ * types no Latin letter (`ц` for Ctrl+W on a Cyrillic one). Never by place
+ * alone: on AZERTY the key that is `W` on QWERTY types `Z`.
+ */
+function matches(b, e) {
+  if (b.ctrl !== e.ctrlKey || b.shift !== e.shiftKey || b.alt !== e.altKey || b.meta !== e.metaKey) {
+    return false
+  }
+  const key = String(e.key).toLowerCase()
+  return /^[\x21-\x7e]$|^f\d+$/.test(key) ? b.key === key : b.code != null && b.code === e.code
 }
 
 export function createBridge(userAgent) {
