@@ -45,6 +45,8 @@ Each line says what the note will stop you getting wrong.
   Where pure logic goes, how a bridge command is named, and the WebKit,
   WebView2 and WKWebView traps the WP0 spikes found: request bodies, the `at`
   cookie, the child webview on Linux, drag regions and a lost write at quit.
+  Its [parity checklist](docs/agents/desktop-tauri-parity.md) says what proves
+  each feature on each OS; update a row with the change that moves it.
 - **[Machines and the daemon](docs/agents/machines-and-daemon.md)** — `daemon/`,
   the machines pages, terminals. Why a reconnect must not kill the agents and a
   shutdown must; why the browser names no session; why the terminal socket

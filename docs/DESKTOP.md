@@ -273,6 +273,68 @@ server.
 
 ---
 
+## Tauri preview
+
+There is a second build of the desktop app, on [Tauri](https://tauri.app)
+instead of Electron. It is the same application: the same views, built from the
+same code, with the features above. What changes is the shell around it. Tauri
+uses the webview your operating system already has (WebKit on macOS and Linux,
+WebView2 on Windows) rather than shipping a browser of its own, so the
+download is around 15 MB instead of 100 to 230 MB, and the app uses less
+memory.
+
+**Electron stays the default.** The install command, the downloads in the table
+above and the updates of an installed app are all Electron's. The Tauri build
+is a preview: try it if you are curious, and expect the gaps listed below.
+
+### Installing the preview
+
+On macOS and Linux, add `--tauri` to the install command:
+
+```sh
+curl -fsSL https://agentrq.com/install.sh | sh -s -- --tauri
+```
+
+Run it again to update. On Windows, or by hand, take the files whose names
+start with `AgentRQ-Tauri-` from the
+[latest release](https://github.com/agentrq/agentrq/releases/latest): `.dmg`
+for macOS (Apple silicon and Intel), `.exe` for Windows (x64), `.AppImage` or
+`.deb` for Linux (x64). There is no Linux arm64 build of the preview yet.
+
+> **Not released yet.** The release job that publishes the preview has not
+> landed, so no release carries it so far, and `--tauri` stops with *"release
+> has no downloadable Tauri assets"*. Until then,
+> [build it yourself](../desktop-tauri/README.md).
+
+The preview installs beside the Electron app, not over it. It is called
+**AgentRQ Tauri**, it opens `agentrq-tauri://` links rather than `agentrq://`,
+and it keeps its own data, so you connect and sign in again the first time:
+
+| Platform | Data directory |
+|---|---|
+| macOS | `~/Library/Application Support/com.agentrq.desktop.tauri/` |
+| Windows | `%APPDATA%\com.agentrq.desktop.tauri\` |
+| Linux | `~/.local/share/com.agentrq.desktop.tauri/` |
+
+The first-launch security warning and the rest of this guide apply to it as
+they do to the Electron app.
+
+### Known gaps
+
+- **The side panel cannot ask about site permissions, or find in its page,
+  yet.** No bar asks about the camera, microphone or location, and
+  `Cmd/Ctrl+F` does nothing there. This is in progress.
+- **Extensions are not there yet.** The extensions settings do not work in the
+  preview. This is in progress too.
+- **Check for Updates… is greyed out.** The app still checks at launch and every
+  fifteen minutes, and shows the banner when an update is ready.
+- **On macOS 13 and earlier, the side panel keeps no cookies**, so a site you
+  signed in to there asks you to sign in again next time.
+- **On macOS, a crashed page stays blank** until you reload it with
+  `Cmd+R`. On Windows and Linux it reloads by itself.
+
+---
+
 ## Building it yourself
 
 ```bash
@@ -291,6 +353,9 @@ AGENTRQ_SERVER_URL=https://agentrq.example.com make desktop-dev
 
 The renderer is built from `frontend/src`, so a change to the web app appears in
 the desktop app with no separate step.
+
+The Tauri preview builds with `make desktop-tauri-dev` and `make desktop-tauri`;
+its setup is in [`desktop-tauri/README.md`](../desktop-tauri/README.md).
 
 Deeper detail — how the app:// proxy works, why the connection screen lives
 where it does, how to run the verification scripts — is in

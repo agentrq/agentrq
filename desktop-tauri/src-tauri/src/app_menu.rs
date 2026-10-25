@@ -29,15 +29,17 @@ use std::sync::Arc;
 use crate::chrome::{self, Chrome};
 use crate::profiles::Profiles;
 
-const fn platform() -> Platform {
-    if cfg!(target_os = "macos") {
-        Platform::MacOs
-    } else if cfg!(windows) {
-        Platform::Windows
-    } else {
-        Platform::Linux
-    }
-}
+#[cfg(target_os = "macos")]
+const PLATFORM: Platform = Platform::MacOs;
+#[cfg(windows)]
+const PLATFORM: Platform = Platform::Windows;
+#[cfg(not(any(target_os = "macos", windows)))]
+const PLATFORM: Platform = Platform::Linux;
+
+#[cfg(debug_assertions)]
+const DEBUG_BUILD: bool = true;
+#[cfg(not(debug_assertions))]
+const DEBUG_BUILD: bool = false;
 
 fn app_name<R: Runtime>(app: &AppHandle<R>) -> String {
     app.config()
@@ -48,9 +50,9 @@ fn app_name<R: Runtime>(app: &AppHandle<R>) -> String {
 
 fn options(name: &str) -> MenuOptions<'_> {
     MenuOptions {
-        platform: platform(),
+        platform: PLATFORM,
         app_name: name,
-        debug_build: cfg!(debug_assertions),
+        debug_build: DEBUG_BUILD,
         // The updater is WP6/WP8's: until it is wired the item is disabled.
         can_check_for_updates: false,
         // The panel listens for `agentrq:side-panel:toggle` (WP7b).
@@ -117,7 +119,7 @@ fn native_submenu<R: Runtime>(app: &AppHandle<R>, model: &Submenu) -> tauri::Res
             MenuItem::Action(action) => {
                 // Off macOS the keys are the page's, not GTK's or Windows':
                 // see `core::menu_keys`.
-                let (label, accelerator) = item_parts(platform(), action);
+                let (label, accelerator) = item_parts(PLATFORM, action);
                 submenu.append(&NativeItem::with_id(
                     app,
                     action.id.as_str(),
