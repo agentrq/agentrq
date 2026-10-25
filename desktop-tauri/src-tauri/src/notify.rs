@@ -313,7 +313,7 @@ pub(crate) mod tests {
         rig_with(FakeDesk::default(), workspaces).await
     }
 
-    fn reply_event(task: &str, sender: &str, message: &str) -> Value {
+    pub(crate) fn reply_event(task: &str, sender: &str, message: &str) -> Value {
         json!({"type": "reply.received", "payload": {
             "id": task, "workspaceId": "w1", "title": "Ship it",
             "messages": [{"id": message, "sender": sender}],

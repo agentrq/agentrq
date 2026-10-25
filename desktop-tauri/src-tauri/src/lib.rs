@@ -402,9 +402,15 @@ impl<R: Runtime> Shell for Windows<R> {
     }
 }
 
-/// What notify.rs asks of the app. The badge and the tray are WP6a's: until
-/// they land, the count and the recent workspaces go nowhere.
+/// What notify.rs asks of the app. The Notifier owns the unread count; the
+/// shell shows it, and holds a route until the main webview can take it.
 struct TauriDesk<R: Runtime>(AppHandle<R>);
+
+impl<R: Runtime> TauriDesk<R> {
+    fn shell(&self) -> Option<tauri::State<'_, shell::ShellState<R>>> {
+        self.0.try_state::<shell::ShellState<R>>()
+    }
+}
 
 impl<R: Runtime> Desk for TauriDesk<R> {
     fn show(&self, notification: &Notification) -> bool {
@@ -419,18 +425,22 @@ impl<R: Runtime> Desk for TauriDesk<R> {
     }
 
     fn navigate(&self, route: &str) {
-        if let Some(webview) = chrome::main_webview(&self.0) {
-            let window = webview.window();
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
+        if let Some(shell) = self.shell() {
+            shell.navigate(&self.0, route);
         }
-        let _ = self.0.emit_to(MAIN_WEBVIEW, "agentrq:navigate", route);
     }
 
-    fn set_unread(&self, _count: u32) {}
+    fn set_unread(&self, count: u32) {
+        if let Some(shell) = self.shell() {
+            shell.set_unread_count(&self.0, count.into());
+        }
+    }
 
-    fn touch_workspace(&self, _id: &str, _name: &str) {}
+    fn touch_workspace(&self, id: &str, name: &str) {
+        if let Some(shell) = self.shell() {
+            shell.touch_recent_workspace(&self.0, id, Some(name));
+        }
+    }
 }
 
 /// A removed profile's store that a quit kept from being deleted, deleted now.
@@ -630,15 +640,6 @@ pub fn run() {
                 && app.state::<Reopening>().0.swap(false, Ordering::SeqCst) =>
             {
                 rebuild_main(app);
-            }
-            // A badge answers "is there anything new"; looking at the app
-            // answers it.
-            RunEvent::WindowEvent {
-                label,
-                event: WindowEvent::Focused(true),
-                ..
-            } if label == MAIN_WEBVIEW => {
-                app.state::<Arc<Notifier>>().clear_unread();
             }
             RunEvent::Exit => {
                 if let Some(installer) = app.try_state::<ExitInstaller>() {

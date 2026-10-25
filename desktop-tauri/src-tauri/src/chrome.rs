@@ -32,7 +32,7 @@ use agentrq_desktop_core::window_view::{
 use serde_json::Value;
 use tauri::window::Color;
 use tauri::{
-    AppHandle, Manager, RunEvent, Runtime, Theme, Url, Webview, WebviewUrl, WebviewWindow,
+    AppHandle, Manager, RunEvent, Runtime, Theme, Url, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -42,13 +42,6 @@ use crate::chrome_state::{chooser_start, StateFile, ZoomTable};
 use crate::profiles::{app_origin, Profiles};
 
 pub const MAIN: &str = "main";
-
-/// The main window's own webview. Never `get_webview_window(MAIN)`: Tauri
-/// counts a window as a webview window only while every webview in it shares
-/// its label, so that is `None` whenever the side panel's guest is open.
-pub fn main_webview<R: Runtime>(app: &AppHandle<R>) -> Option<Webview<R>> {
-    app.get_webview(MAIN)
-}
 
 /// What the chrome keeps for the whole app.
 pub struct Chrome {

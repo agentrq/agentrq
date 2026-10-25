@@ -32,6 +32,8 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::notify::Notifier;
+
 /// State for the desktop shell (unread badges, recent workspaces, deep link pending route).
 pub struct ShellState<R: Runtime = tauri::Wry> {
     pub(crate) pending_route: Mutex<PendingRoute>,
@@ -123,17 +125,11 @@ impl<R: Runtime> ShellState<R> {
         }
     }
 
-    /// Update the unread count, refreshing the tray and badge.
-    #[allow(dead_code)]
+    /// Show the Notifier's unread count in the tray and badge.
     pub fn set_unread_count(&self, app: &AppHandle<R>, count: i64) {
         self.unread_count.store(count, Ordering::SeqCst);
         self.refresh_tray(app);
         self.set_badge_count(app, count);
-    }
-
-    /// Clear unread count, updating badge and tray.
-    pub fn clear_unread(&self, app: &AppHandle<R>) {
-        self.set_unread_count(app, 0);
     }
 
     /// Set the application badge count (macOS/Linux: dock badge, Windows: taskbar overlay).
@@ -174,7 +170,6 @@ impl<R: Runtime> ShellState<R> {
     }
 
     /// Touch a recent workspace.
-    #[allow(dead_code)]
     pub fn touch_recent_workspace(&self, app: &AppHandle<R>, id: &str, name: Option<&str>) {
         self.recent_workspaces.lock().unwrap().touch(id, name);
         self.refresh_tray(app);
@@ -309,10 +304,7 @@ pub(crate) fn handle_tray_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                     self.state.navigate(self.app, &format!("/workspaces/{id}"));
                 }
                 fn quit(&mut self) {
-                    #[cfg(not(test))]
-                    self.app.exit(0);
-                    #[cfg(test)]
-                    let _ = self.app;
+                    crate::app_menu::quit(self.app);
                 }
             }
             let mut actions = ShellTrayActions {
@@ -332,12 +324,13 @@ pub(crate) fn handle_second_instance<R: Runtime>(app: &AppHandle<R>, argv: &[Str
     }
 }
 
-/// Handle window focus events for badge and unread clearing.
+/// Looking at the app answers "is there anything new". The count is the
+/// Notifier's, which publishes the cleared badge and tray.
 pub(crate) fn handle_window_event<R: Runtime>(window: &tauri::Window<R>, event: &WindowEvent) {
     if window.label() == "main" {
         if let WindowEvent::Focused(true) = event {
-            if let Some(state) = window.app_handle().try_state::<ShellState<R>>() {
-                state.clear_unread(window.app_handle());
+            if let Some(notifier) = window.app_handle().try_state::<Arc<Notifier>>() {
+                notifier.clear_unread();
             }
         }
     }
@@ -404,6 +397,8 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::events::Events;
+    use crate::notify::tests::{reply_event, FakeDesk};
     use std::sync::Arc;
     use tauri::Listener;
 
@@ -601,9 +596,19 @@ mod tests {
         assert_eq!(state.unread_count.load(Ordering::SeqCst), 5);
         reapply_badge(&handle);
 
+        // Focus clears the Notifier's count, which the Desk then shows.
+        let desk = Arc::new(FakeDesk::default());
+        let dir = tempfile::tempdir().unwrap();
+        let notifier = Arc::new(Notifier::new(
+            Arc::new(crate::network::tests::network(dir.path(), "")),
+            desk.clone(),
+        ));
+        handle.manage(notifier.clone());
+        notifier.on_event(&reply_event("t1", "agent", "m1"));
         handle_window_event(&win.as_ref().window(), &WindowEvent::Focused(true));
-        assert_eq!(state.unread_count.load(Ordering::SeqCst), 0);
         handle_window_event(&win.as_ref().window(), &WindowEvent::Focused(false));
+        assert_eq!(*desk.unread.lock().unwrap(), [1, 0]);
+        state.set_unread_count(&handle, 0);
 
         // Readiness signal via navigation_ready
         navigation_ready(&handle);

@@ -217,6 +217,15 @@ fn run<R: Runtime>(app: &AppHandle<R>, action: ActionId) {
 }
 
 /// Install the system tray icon and initial menu.
+/// The tray's Quit. Here, outside the coverage gate, because the line that
+/// exits is compiled out of the tests, which must not end the runner.
+pub fn quit<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(not(test))]
+    app.exit(0);
+    #[cfg(test)]
+    let _ = app;
+}
+
 pub fn install_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let icon_bytes = include_bytes!("../icons/icon.png");
     let img = Image::from_bytes(icon_bytes)?;

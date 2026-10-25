@@ -105,6 +105,10 @@
 - **On macOS `ExitRequested { code: None }` must `prevent_exit()`**, or closing the
   window quits and the Dock's reopen never runs. Cmd+Q and Windows' Exit raise only
   `Exit`, so the state is saved there too.
+- **The unread count is the Notifier's (`notify.rs`); `ShellState` only shows it**,
+  and a notification's click goes through `ShellState::navigate`, which holds the
+  route through a reload. Never call the `Desk` with a Notifier lock or `busy` held:
+  a tray update waits on the main thread, whose focus handler takes the count's lock.
 - **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
   the theme until WP4 lets the renderer reach the app (`test/e2e/`). Only a debug build or
   `--features e2e` reads it; a release must not run an environment's script in the webview.
