@@ -55,7 +55,10 @@
   before the page, so Ctrl+W closed the app under a terminal that wanted it, and Ctrl+R,
   Z, Q, M, 0 and - went the same way. The label keeps a hint; the bridge runs the key
   from a bubbling `keydown` that is not `defaultPrevented`, against the table in
-  `core::menu_keys` (Electron's rule). Windows is treated alike, unmeasured. A guest
+  `core::menu_keys` (Electron's rule). The bridge's listener is the first on the window, so
+  it decides in a `setTimeout(0)`, after the page's own; a held key is ignored but zoom's;
+  a non-Latin letter matches by `code`; Undo and Redo are the page's own default. `menu_run`
+  runs only an id the table binds. The hint is `Reload (Ctrl+R)`: GTK draws a tab as a gap. Windows is treated alike, unmeasured. A guest
   page's keys (WP7b's side panel) never reach it, so the guest must forward them.
 - **A command's arguments are required unless the page may leave them out.** An `Option`
   turns a key the bridge misspelled (`fileUrl` for `rawUrl`) into `None`, silently.
@@ -63,5 +66,5 @@
 - **On macOS `ExitRequested { code: None }` must `prevent_exit()`**, or closing the
   window quits and the Dock's reopen never runs. Cmd+Q and Windows' Exit raise only
   `Exit`, so the state is saved there too.
-- **`AGENTRQ_E2E_INIT_SCRIPT` is CI's**: a script the main webview runs first, which seeds
+- **`AGENTRQ_E2E_INIT_SCRIPT` is CI's, and only a debug build or `--features e2e` reads it**: a script the main webview runs first, which seeds
   the theme until WP4 lets the renderer reach the app (`test/e2e/`).

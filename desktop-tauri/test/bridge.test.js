@@ -217,12 +217,13 @@ describe('an on* listener', () => {
 })
 
 describe('the menu keys', () => {
-  const REDO = { id: 'redo', key: 'z', ctrl: true, shift: true, alt: false, meta: false }
-  const CLOSE = { id: 'close', key: 'w', ctrl: true, shift: false, alt: false, meta: false }
-  const PLUS = { id: 'zoom-in', key: '+', ctrl: true, shift: true, alt: false, meta: false }
+  const REDO = { id: 'redo', key: 'z', code: 'KeyZ', ctrl: true, shift: true, alt: false, meta: false }
+  const CLOSE = { id: 'close', key: 'w', code: 'KeyW', ctrl: true, shift: false, alt: false, meta: false }
+  const PLUS = { id: 'zoom-in', key: '+', code: null, ctrl: true, shift: true, alt: false, meta: false }
+  const MINUS = { id: 'zoom-out', key: '-', code: null, ctrl: true, shift: false, alt: false, meta: false }
 
   /** A window that keeps its `keydown` listener, with the bindings the shell would answer. */
-  async function install(platform, bindings = [CLOSE, REDO, PLUS]) {
+  async function install(platform, bindings = [CLOSE, REDO, PLUS, MINUS]) {
     let listener
     const target = { addEventListener: (type, fn) => type === 'keydown' && (listener = fn) }
     tauri.invoke.mockImplementation((command) =>
@@ -236,25 +237,71 @@ describe('the menu keys', () => {
       e.defaultPrevented = e.defaultPrevented ?? false
       e.preventDefault = vi.fn()
       listener?.(e)
+      vi.runAllTimers()
       return e
     }
   }
 
   const runs = () => tauri.invoke.mock.calls.filter(([c]) => c === 'menu_run').map(([, a]) => a)
 
-  it('runs the action of a key the page left unhandled, and keeps the page from it too', async () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('runs the action of a key the page left unhandled', async () => {
     const press = await install('linux')
-    const e = press({ key: 'w', ctrlKey: true })
+    press({ key: 'w', ctrlKey: true })
     expect(runs()).toEqual([{ id: 'close' }])
-    expect(e.preventDefault).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a key the page handled to the page', async () => {
     const press = await install('linux')
-    const e = press({ key: 'w', ctrlKey: true, defaultPrevented: true })
+    press({ key: 'w', ctrlKey: true, defaultPrevented: true })
     press({ key: 'w', ctrlKey: true, isComposing: true })
     expect(runs()).toEqual([])
-    expect(e.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it("waits for the page's own listeners, which run after this one, before it decides", async () => {
+    const listeners = []
+    const target = { addEventListener: (_, fn) => listeners.push(fn) }
+    tauri.invoke.mockImplementation((command) =>
+      Promise.resolve(command === 'menu_key_bindings' ? [CLOSE] : true)
+    )
+    bridge.installMenuKeys(target, 'linux')
+    await Promise.resolve()
+    await Promise.resolve()
+    const dispatch = (cancel) => {
+      const e = { key: 'w', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, defaultPrevented: false }
+      listeners.push((ev) => cancel && (ev.defaultPrevented = true))
+      for (const fn of listeners) fn(e)
+      listeners.pop()
+      // Not before the page has had its turn.
+      expect(runs()).toEqual([])
+      vi.runAllTimers()
+    }
+    dispatch(true)
+    expect(runs()).toEqual([])
+    dispatch(false)
+    expect(runs()).toEqual([{ id: 'close' }])
+  })
+
+  it('ignores a held key, except for zoom', async () => {
+    const press = await install('linux')
+    press({ key: 'w', ctrlKey: true, repeat: true })
+    expect(runs()).toEqual([])
+    press({ key: '-', ctrlKey: true, repeat: true })
+    press({ key: '+', ctrlKey: true, shiftKey: true, repeat: true })
+    expect(runs()).toEqual([{ id: 'zoom-out' }, { id: 'zoom-in' }])
+  })
+
+  it('matches a letter by its physical key when the layout gives a non-Latin one', async () => {
+    const press = await install('linux')
+    press({ key: 'ц', code: 'KeyW', ctrlKey: true })
+    expect(runs()).toEqual([{ id: 'close' }])
+    // A Latin layout that moves the letter is matched by what it types, as Electron does.
+    press({ key: ',', code: 'KeyW', ctrlKey: true })
+    press({ key: 'ц', code: 'KeyE', ctrlKey: true })
+    press({ key: 'Dead', ctrlKey: true })
+    expect(runs()).toEqual([{ id: 'close' }])
   })
 
   it('matches every modifier exactly, and the key whatever its case', async () => {
@@ -279,6 +326,7 @@ describe('the menu keys', () => {
     await Promise.resolve()
     await Promise.resolve()
     listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    vi.runAllTimers()
     expect(error).toHaveBeenCalled()
     expect(runs()).toEqual([])
 
@@ -287,6 +335,7 @@ describe('the menu keys', () => {
     await Promise.resolve()
     await Promise.resolve()
     listener({ key: 'w', ctrlKey: true, preventDefault: vi.fn() })
+    vi.runAllTimers()
     expect(runs()).toEqual([])
   })
 

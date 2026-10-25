@@ -41,6 +41,10 @@ webview2-com = "0.39.1"
 windows = { version = "0.62.2", features = ["Win32_Foundation"] }
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
+[features]
+# CI's screenshot run (`AGENTRQ_E2E_INIT_SCRIPT`) in a release build.
+e2e = []
+
 [dev-dependencies]
 tauri = { version = "2.12.5", features = ["test"] }
 tempfile = "3.27.0"

@@ -64,6 +64,9 @@ function deepFreeze(object) {
   return Object.freeze(object)
 }
 
+// Held down, only zoom goes on; Ctrl+R would reload for as long as the key is.
+const REPEATING = new Set(['zoom-in', 'zoom-out'])
+
 /**
  * Off macOS the menu's keys are the page's to run, not GTK's or Windows': a
  * native accelerator takes the key before the page, so Ctrl+W would close the
@@ -82,17 +85,23 @@ export function installMenuKeys(target, platform) {
   target.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.isComposing) return
     const key = String(e.key).toLowerCase()
+    // A letter on a non-Latin layout (`ц` for Ctrl+W) is matched by its place on the keyboard.
+    const latin = /^(?:[\x21-\x7e]|f\d+)$/.test(key)
     const hit = table.find(
       (b) =>
-        b.key === key &&
+        (b.key === key || (!latin && b.code && b.code === e.code)) &&
         b.ctrl === e.ctrlKey &&
         b.shift === e.shiftKey &&
         b.alt === e.altKey &&
         b.meta === e.metaKey
     )
-    if (!hit) return
-    e.preventDefault()
-    invoke('menu_run', { id: hit.id }).catch((err) => console.error('window.agentrq: menu key', err))
+    if (!hit || (e.repeat && !REPEATING.has(hit.id))) return
+    // Our listener is the first on the window: the page's own run after it, and
+    // may still cancel the key. Look again once they have.
+    setTimeout(() => {
+      if (e.defaultPrevented) return
+      invoke('menu_run', { id: hit.id }).catch((err) => console.error('window.agentrq: menu key', err))
+    }, 0)
   })
 }
 

@@ -11,7 +11,7 @@
 use agentrq_desktop_core::menu::{
     build_menu, ActionId, MenuItem, MenuOptions, Platform, Role, Submenu,
 };
-use agentrq_desktop_core::menu_keys::{item_parts, key_bindings};
+use agentrq_desktop_core::menu_keys::{bound_action, item_parts, key_bindings};
 use agentrq_desktop_core::window_view::{toggle_full_screen, toggle_maximize, zoom_window};
 use tauri::menu::{
     IsMenuItem, Menu, MenuItem as NativeItem, PredefinedMenuItem, Submenu as NativeMenu,
@@ -75,10 +75,13 @@ pub fn menu_key_bindings<R: Runtime>(app: AppHandle<R>) -> serde_json::Value {
         .collect()
 }
 
-/// An action the bridge dispatched from a key the page left unhandled.
+/// An action the bridge dispatched from a key the page left unhandled. Only
+/// one this platform binds to a key, in its present state: the page is not
+/// trusted to name a disabled item or another platform's.
 #[tauri::command]
 pub fn menu_run<R: Runtime>(app: AppHandle<R>, id: String) -> bool {
-    let action = ActionId::parse(&id);
+    let name = app_name(&app);
+    let action = bound_action(options(&name), &id);
     if let Some(action) = action {
         run(&app, action);
     }

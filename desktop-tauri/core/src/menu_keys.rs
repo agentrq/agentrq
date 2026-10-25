@@ -21,11 +21,13 @@ pub fn native_accelerators(platform: Platform) -> bool {
 }
 
 /// One key that runs one action, as `KeyboardEvent` spells it: `key` is
-/// lower case, and every modifier is exact.
+/// lower case, `code` the physical key where it is a letter, a digit or a
+/// function key, and every modifier is exact.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyBinding {
     pub action: ActionId,
     pub key: String,
+    pub code: Option<String>,
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
@@ -38,6 +40,7 @@ impl KeyBinding {
         serde_json::json!({
             "id": self.action.as_str(),
             "key": self.key,
+            "code": self.code,
             "ctrl": self.ctrl,
             "shift": self.shift,
             "alt": self.alt,
@@ -80,6 +83,21 @@ fn parse(accelerator: &str) -> Chord<'_> {
     chord
 }
 
+/// `KeyboardEvent.code` of a key that moves between layouts as a letter does:
+/// Ctrl+W is `KeyW` on a Cyrillic layout too, where `key` is `ц`. Punctuation
+/// is left out, as its place differs between layouts.
+fn code_of(key: &str) -> Option<String> {
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c @ 'a'..='z'), None) => Some(format!("Key{}", c.to_ascii_uppercase())),
+        (Some(c @ '0'..='9'), None) => Some(format!("Digit{c}")),
+        (Some('f'), Some(_)) if key[1..].bytes().all(|b| b.is_ascii_digit()) => {
+            Some(key.to_uppercase())
+        }
+        _ => None,
+    }
+}
+
 fn actions<'a>(items: &'a [MenuItem], found: &mut Vec<&'a ActionItem>) {
     for item in items {
         match item {
@@ -91,7 +109,9 @@ fn actions<'a>(items: &'a [MenuItem], found: &mut Vec<&'a ActionItem>) {
 }
 
 /// Every key the page dispatches, for an enabled item with an accelerator.
-/// Zoom In is also `+`, which is what Ctrl+Shift+= (and a numpad) types.
+/// Zoom In is also `+`, which is what Ctrl+Shift+= (and a numpad) types. Undo
+/// and Redo are not here: the page's own default runs after its listeners, so
+/// a key sent on from a later task would undo twice in a text field.
 pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
     if native_accelerators(options.platform) {
         return Vec::new();
@@ -102,7 +122,10 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
         actions(&submenu.items, &mut items);
     }
     let mut bindings = Vec::new();
-    for item in items.into_iter().filter(|item| item.enabled) {
+    for item in items
+        .into_iter()
+        .filter(|item| item.enabled && !matches!(item.id, ActionId::Undo | ActionId::Redo))
+    {
         let Some(accelerator) = item.accelerator else {
             continue;
         };
@@ -110,6 +133,7 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
         let binding = |key: &str, shift: bool| KeyBinding {
             action: item.id,
             key: key.to_lowercase(),
+            code: code_of(&key.to_lowercase()),
             ctrl: chord.ctrl,
             shift,
             alt: chord.alt,
@@ -124,8 +148,20 @@ pub fn key_bindings(options: MenuOptions<'_>) -> Vec<KeyBinding> {
     bindings
 }
 
+/// The action a key may run: one `key_bindings` holds, for this platform and
+/// state. A disabled item, one another platform has and one with no key are
+/// not, so the page cannot ask for them.
+pub fn bound_action(options: MenuOptions<'_>, id: &str) -> Option<ActionId> {
+    let action = ActionId::parse(id)?;
+    key_bindings(options)
+        .iter()
+        .any(|binding| binding.action == action)
+        .then_some(action)
+}
+
 /// The label and native accelerator a menu item is given. Where the keys are
-/// the page's, the accelerator stays in the label as a hint.
+/// the page's, the accelerator stays in the label as a hint. A tab would show as
+/// a small gap on GTK, not a right-aligned column, so it is in parentheses.
 pub fn item_parts(platform: Platform, item: &ActionItem) -> (String, Option<&'static str>) {
     match item.accelerator {
         Some(accelerator) if !native_accelerators(platform) => {
@@ -142,7 +178,7 @@ pub fn item_parts(platform: Platform, item: &ActionItem) -> (String, Option<&'st
                 }
             }
             hint.push_str(&chord.key.to_uppercase());
-            (format!("{}\t{hint}", item.label), None)
+            (format!("{} ({hint})", item.label), None)
         }
         accelerator => (item.label.to_string(), accelerator),
     }
@@ -182,8 +218,6 @@ mod tests {
                 ("w", false, ActionId::Close),
                 ("r", false, ActionId::Reload),
                 ("r", true, ActionId::ForceReload),
-                ("z", false, ActionId::Undo),
-                ("z", true, ActionId::Redo),
                 ("q", false, ActionId::Quit),
                 ("m", false, ActionId::Minimize),
                 ("0", false, ActionId::ResetZoom),
@@ -192,7 +226,7 @@ mod tests {
                 ("n", true, ActionId::NewTask),
                 ("i", true, ActionId::ToggleDevTools),
             ] {
-                // Windows draws Close, Quit, Minimize and Undo itself.
+                // Windows draws Close, Quit and Minimize itself.
                 let there = bound(platform, key, true, shift);
                 if platform == Platform::Linux || there.is_some() {
                     assert_eq!(there, Some(action), "{platform:?} {key}");
@@ -234,16 +268,74 @@ mod tests {
     }
 
     #[test]
+    fn undo_and_redo_are_left_to_the_page() {
+        let all = key_bindings(options(Platform::Linux));
+        assert!(!all
+            .iter()
+            .any(|b| matches!(b.action, ActionId::Undo | ActionId::Redo)));
+    }
+
+    #[test]
+    fn a_letter_digit_or_function_key_has_a_physical_code() {
+        for (key, code) in [
+            ("w", Some("KeyW")),
+            ("0", Some("Digit0")),
+            ("f11", Some("F11")),
+            ("-", None),
+            ("\\", None),
+            ("+", None),
+            ("f", Some("KeyF")),
+            ("fx", None),
+            ("ab", None),
+            ("", None),
+        ] {
+            assert_eq!(code_of(key).as_deref(), code, "{key:?}");
+        }
+        let all = key_bindings(options(Platform::Linux));
+        let code = |action| {
+            all.iter()
+                .find(|b| b.action == action)
+                .unwrap()
+                .code
+                .clone()
+        };
+        assert_eq!(code(ActionId::Close).as_deref(), Some("KeyW"));
+        assert_eq!(code(ActionId::ToggleFullScreen).as_deref(), Some("F11"));
+        assert_eq!(code(ActionId::ZoomOut), None);
+    }
+
+    #[test]
+    fn only_a_bound_action_may_be_run_by_a_key() {
+        let linux = options(Platform::Linux);
+        assert_eq!(bound_action(linux, "close"), Some(ActionId::Close));
+        assert_eq!(bound_action(linux, "zoom-in"), Some(ActionId::ZoomIn));
+        // Unknown, unbound (no accelerator, or left to the page) and unknown ids.
+        for id in ["log-out", "switch-server", "undo", "delete", "nope", ""] {
+            assert_eq!(bound_action(linux, id), None, "{id:?}");
+        }
+        // Disabled in this state: the item is there, the key is not.
+        let off = MenuOptions {
+            can_toggle_side_panel: false,
+            debug_build: false,
+            ..linux
+        };
+        assert_eq!(bound_action(off, "toggle-side-panel"), None);
+        assert_eq!(bound_action(off, "toggle-dev-tools"), None);
+        // macOS has its own keys, the page sends none.
+        assert_eq!(bound_action(options(Platform::MacOs), "close"), None);
+    }
+
+    #[test]
     fn a_binding_reads_as_json() {
         let binding = key_bindings(options(Platform::Linux))
             .into_iter()
-            .find(|b| b.action == ActionId::Redo)
+            .find(|b| b.action == ActionId::Close)
             .unwrap();
         assert_eq!(
             binding.to_json(),
             serde_json::json!({
-                "id": "redo", "key": "z",
-                "ctrl": true, "shift": true, "alt": false, "meta": false,
+                "id": "close", "key": "w", "code": "KeyW",
+                "ctrl": true, "shift": false, "alt": false, "meta": false,
             })
         );
     }
@@ -260,12 +352,12 @@ mod tests {
     #[test]
     fn off_macos_the_accelerator_is_only_a_hint_in_the_label() {
         for (accelerator, label) in [
-            ("CmdOrCtrl+R", "Reload\tCtrl+R"),
-            ("Shift+CmdOrCtrl+R", "Reload\tCtrl+Shift+R"),
-            ("Ctrl+Shift+I", "Reload\tCtrl+Shift+I"),
-            ("Alt+Cmd+I", "Reload\tAlt+Super+I"),
-            ("F11", "Reload\tF11"),
-            ("CmdOrCtrl+-", "Reload\tCtrl+-"),
+            ("CmdOrCtrl+R", "Reload (Ctrl+R)"),
+            ("Shift+CmdOrCtrl+R", "Reload (Ctrl+Shift+R)"),
+            ("Ctrl+Shift+I", "Reload (Ctrl+Shift+I)"),
+            ("Alt+Cmd+I", "Reload (Alt+Super+I)"),
+            ("F11", "Reload (F11)"),
+            ("CmdOrCtrl+-", "Reload (Ctrl+-)"),
         ] {
             let (text, native) = item_parts(Platform::Linux, &item(Some(accelerator)));
             assert_eq!((text, native), (label.to_string(), None));

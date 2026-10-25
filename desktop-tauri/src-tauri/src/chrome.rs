@@ -180,7 +180,8 @@ pub fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 }
             });
     // CI's harness (`test/e2e/theme-seed.js`): a script for the page to run
-    // first. Whoever sets the variable already controls this process.
+    // first. Not in a release: only a debug build or one made with `e2e`.
+    #[cfg(any(debug_assertions, feature = "e2e"))]
     if let Ok(script) = std::env::var("AGENTRQ_E2E_INIT_SCRIPT") {
         builder = builder.initialization_script(script);
     }
