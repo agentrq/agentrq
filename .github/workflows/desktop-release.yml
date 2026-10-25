@@ -14,6 +14,7 @@ on:
   pull_request:
     paths:
       - 'desktop/**'
+      - 'desktop-tauri/**'
       - 'frontend/**'
       - '.github/workflows/desktop-release.yml'
   workflow_dispatch:
@@ -216,6 +217,121 @@ jobs:
             desktop/release/*.deb
             desktop/release/latest*.yml
 
+  build-tauri:
+    name: Build Tauri ${{ matrix.os }}
+    needs: versions
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Use npm 12.2.0
+        run: npm install -g npm@12.2.0
+
+      - name: Install the Linux webview packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install desktop-tauri dependencies
+        working-directory: desktop-tauri
+        run: npm ci
+
+      - name: Build the renderer
+        working-directory: desktop-tauri
+        run: npm run build:renderer
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            desktop-tauri/core -> target
+            desktop-tauri/src-tauri -> target
+
+      - name: Detect signing credentials
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "tauri_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tauri_signing=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No TAURI_SIGNING_PRIVATE_KEY configured; updater artifacts will not be signed."
+          fi
+
+      - name: Build Tauri bundles
+        working-directory: desktop-tauri
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$TAURI_KEY" ]; then
+            export TAURI_SIGNING_PRIVATE_KEY="$TAURI_KEY"
+            export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_KEY_PASSWORD"
+            npx tauri build
+          else
+            npx tauri build --no-sign
+          fi
+
+      - name: Collect Tauri release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node desktop-tauri/scripts/collect-artifacts.mjs
+
+      - name: Upload to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [ -d tauri-release ] && [ -n "$(ls -A tauri-release)" ]; then
+            for i in $(seq 1 30); do
+              if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                break
+              fi
+              sleep 10
+            done
+            gh release upload "$TAG" tauri-release/* --clobber --repo "$GITHUB_REPOSITORY"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentrq-desktop-tauri-${{ matrix.os }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: tauri-release/*
+
   # electron-builder attaches to a draft; publishing only once every platform
   # has finished means users never see a release missing the installer for
   # their machine, and electron-updater never reads a half-populated feed.
@@ -236,3 +352,38 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
           echo "Published $TAG" >> "$GITHUB_STEP_SUMMARY"
+
+  updater-manifest:
+    name: Generate Tauri updater manifest
+    needs: build-tauri
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Generate and upload latest-tauri.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_KEY" ]; then
+            echo "::warning::No TAURI_SIGNING_PRIVATE_KEY configured; updater artifacts will not be signed. Skipping latest-tauri.json generation."
+            exit 0
+          fi
+          TAG="${GITHUB_REF#refs/tags/}"
+          mkdir -p sigs
+          if gh release download "$TAG" -p "*.sig" --dir sigs --repo "$GITHUB_REPOSITORY"; then
+            node desktop-tauri/scripts/collect-artifacts.mjs --manifest-only --dir sigs --tag "$TAG" --repo "$GITHUB_REPOSITORY"
+            if [ -f sigs/latest-tauri.json ]; then
+              gh release upload "$TAG" sigs/latest-tauri.json --clobber --repo "$GITHUB_REPOSITORY"
+              echo "Uploaded latest-tauri.json to release $TAG"
+            fi
+          else
+            echo "::warning::No .sig files found in release $TAG; skipping latest-tauri.json generation."
+          fi
