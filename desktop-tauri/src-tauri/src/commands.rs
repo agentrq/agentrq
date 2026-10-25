@@ -192,28 +192,62 @@ pub fn extensions_uninstall() -> Result<(), String> {
     todo("extensions.uninstall", "WP9")
 }
 
+use tauri::{AppHandle, Manager, Runtime};
+
 /// `agentrq:update:check`
 #[tauri::command]
-pub fn update_check() -> Result<(), String> {
-    todo("updates.check", "WP8")
+pub fn update_check<R: Runtime>(app: AppHandle<R>) -> agentrq_desktop_core::updater::ActionResult {
+    if let Some(updater) = app.try_state::<agentrq_desktop_core::updater::Updater>() {
+        updater.check_now()
+    } else {
+        agentrq_desktop_core::updater::ActionResult {
+            ok: false,
+            reason: Some("Updates are unavailable".into()),
+        }
+    }
 }
 
 /// `agentrq:update:get`
 #[tauri::command]
-pub fn update_get() -> Result<(), String> {
-    todo("updates.get", "WP8")
+pub fn update_get<R: Runtime>(app: AppHandle<R>) -> agentrq_desktop_core::updater::UpdateState {
+    if let Some(updater) = app.try_state::<agentrq_desktop_core::updater::Updater>() {
+        updater.state()
+    } else {
+        agentrq_desktop_core::updater::UpdateState {
+            status: agentrq_desktop_core::updater::UpdateStatus::Disabled,
+            detail: "Updates are disabled in a development build".into(),
+            remedy: String::new(),
+            version: String::new(),
+            progress: None,
+            enabled: false,
+            can_install_via_script: false,
+        }
+    }
 }
 
 /// `agentrq:update:install`
 #[tauri::command]
-pub fn update_install() -> Result<(), String> {
-    todo("updates.installNow", "WP8")
+pub fn update_install<R: Runtime>(app: AppHandle<R>) -> bool {
+    if let Some(updater) = app.try_state::<agentrq_desktop_core::updater::Updater>() {
+        updater.install_now()
+    } else {
+        false
+    }
 }
 
 /// `agentrq:update:install-via-script`
 #[tauri::command]
-pub fn update_install_via_script() -> Result<(), String> {
-    todo("updates.installViaScript", "WP8")
+pub fn update_install_via_script<R: Runtime>(
+    app: AppHandle<R>,
+) -> agentrq_desktop_core::updater::ActionResult {
+    if let Some(updater) = app.try_state::<agentrq_desktop_core::updater::Updater>() {
+        updater.install_via_script()
+    } else {
+        agentrq_desktop_core::updater::ActionResult {
+            ok: false,
+            reason: Some("Updates are unavailable".into()),
+        }
+    }
 }
 
 /// `agentrq:side-panel:open-external`
@@ -320,8 +354,8 @@ mod tests {
     #[cfg(not(windows))]
     const LOCAL: &str = "tauri://localhost";
 
-    /// Every command, and the `window.agentrq` member it answers for.
-    const COMMANDS: &[(&str, &str)] = &[
+    /// The remaining stub commands answering `todo`.
+    const STUB_COMMANDS: &[(&str, &str)] = &[
         ("attachments_forget_all", "attachments.forgetAll"),
         ("attachments_forget_task", "attachments.forgetTask"),
         (
@@ -339,10 +373,6 @@ mod tests {
         ("profiles_remove", "profiles.remove"),
         ("profiles_rename", "profiles.rename"),
         ("profiles_switch", "profiles.switch"),
-        ("files_open", "files.open"),
-        ("clipboard_write", "clipboard.write"),
-        ("emoji_show_panel", "emoji.showPanel"),
-        ("dialog_choose_directory", "dialog.chooseDirectory"),
         ("extensions_authorize", "extensions.authorize"),
         ("extensions_choose_folder", "extensions.chooseFolder"),
         ("extensions_configure", "extensions.configure"),
@@ -361,33 +391,12 @@ mod tests {
         ("extensions_state", "extensions.state"),
         ("extensions_supervisor", "extensions.supervisor"),
         ("extensions_uninstall", "extensions.uninstall"),
-        ("update_check", "updates.check"),
-        ("update_get", "updates.get"),
-        ("update_install", "updates.installNow"),
-        ("update_install_via_script", "updates.installViaScript"),
         ("side_panel_open_external", "sidePanel.openExternal"),
         ("side_panel_pages", "sidePanel.pages"),
         ("side_panel_permission_answer", "sidePanel.answerPermission"),
         ("side_panel_permission_remove", "sidePanel.removePermission"),
         ("side_panel_permissions", "sidePanel.permissions"),
         ("panel_send", "panel.send"),
-        ("view_fullscreen", "view.toggleFullScreen"),
-        ("view_get", "view.get"),
-        ("view_zoom", "view.zoom"),
-        ("theme_set", "theme.set"),
-    ];
-
-    /// Commands a work package has implemented, in `chrome.rs` and beside it:
-    /// they no longer answer `todo`, so they are not asked to.
-    const IMPLEMENTED: &[&str] = &[
-        "files_open",
-        "clipboard_write",
-        "emoji_show_panel",
-        "dialog_choose_directory",
-        "view_fullscreen",
-        "view_get",
-        "view_zoom",
-        "theme_set",
     ];
 
     #[test]
@@ -400,11 +409,8 @@ mod tests {
             .build()
             .expect("mock window");
 
-        assert_eq!(COMMANDS.len(), 47, "one command per Electron IPC channel");
-        for (cmd, member) in COMMANDS
-            .iter()
-            .filter(|(cmd, _)| !IMPLEMENTED.contains(cmd))
-        {
+        assert_eq!(STUB_COMMANDS.len(), 35, "stub commands answering todo");
+        for (cmd, member) in STUB_COMMANDS {
             let res = get_ipc_response(
                 &webview,
                 InvokeRequest {
@@ -426,5 +432,117 @@ mod tests {
                 "{cmd}: {err}"
             );
         }
+    }
+
+    fn body_str(body: tauri::ipc::InvokeResponseBody) -> String {
+        match body {
+            tauri::ipc::InvokeResponseBody::Json(s) => s,
+            tauri::ipc::InvokeResponseBody::Raw(b) => String::from_utf8(b).unwrap(),
+        }
+    }
+
+    #[test]
+    fn update_commands_answer_when_updater_is_absent() {
+        let app = mock_builder()
+            .invoke_handler(super::handler())
+            .build(mock_context(noop_assets()))
+            .expect("mock app");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("mock window");
+
+        let call = |cmd: &str| {
+            get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: LOCAL.parse().unwrap(),
+                    body: InvokeBody::default(),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+        };
+
+        assert_eq!(
+            body_str(tauri::ipc::InvokeResponseBody::Raw(b"raw".to_vec())),
+            "raw"
+        );
+
+        let res = body_str(call("update_check").expect("update_check response"));
+        assert_eq!(res, r#"{"ok":false,"reason":"Updates are unavailable"}"#);
+
+        let res = body_str(call("update_get").expect("update_get response"));
+        assert!(res.contains(r#""status":"disabled""#));
+
+        let res = body_str(call("update_install").expect("update_install response"));
+        assert_eq!(res, "false");
+
+        let res = body_str(
+            call("update_install_via_script").expect("update_install_via_script response"),
+        );
+        assert_eq!(res, r#"{"ok":false,"reason":"Updates are unavailable"}"#);
+    }
+
+    struct FakeAutoUpdater;
+    impl agentrq_desktop_core::updater::AutoUpdater for FakeAutoUpdater {
+        fn set_auto_download(&self, _enabled: bool) {}
+        fn set_auto_install_on_app_quit(&self, _enabled: bool) {}
+        fn check_for_updates(&self) -> Result<(), String> {
+            Ok(())
+        }
+        fn quit_and_install(&self) {}
+    }
+
+    #[test]
+    fn update_commands_delegate_to_managed_updater() {
+        let auto = std::sync::Arc::new(FakeAutoUpdater);
+        let deps = agentrq_desktop_core::updater::UpdaterDeps::new(auto, true, |_| {});
+        let updater = agentrq_desktop_core::updater::Updater::new(deps);
+        updater.start();
+        updater.handle_event(agentrq_desktop_core::updater::UpdaterEvent::Downloaded {
+            version: Some("1.2.3".into()),
+        });
+
+        let app = mock_builder()
+            .manage(updater)
+            .invoke_handler(super::handler())
+            .build(mock_context(noop_assets()))
+            .expect("mock app");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("mock window");
+
+        let call = |cmd: &str| {
+            get_ipc_response(
+                &webview,
+                InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: CallbackFn(0),
+                    error: CallbackFn(1),
+                    url: LOCAL.parse().unwrap(),
+                    body: InvokeBody::default(),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.to_string(),
+                },
+            )
+        };
+
+        let res = body_str(call("update_get").expect("update_get response"));
+        assert!(res.contains(r#""status":"ready""#));
+        assert!(res.contains(r#""enabled":true"#));
+
+        let res = body_str(call("update_check").expect("update_check response"));
+        assert_eq!(res, r#"{"ok":true}"#);
+
+        let res = body_str(call("update_install").expect("update_install response"));
+        assert_eq!(res, "true");
+
+        let res = body_str(
+            call("update_install_via_script").expect("update_install_via_script response"),
+        );
+        assert!(res.contains(r#""ok":false"#));
     }
 }
