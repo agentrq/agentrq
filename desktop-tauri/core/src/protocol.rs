@@ -149,10 +149,26 @@ pub fn filter_response_headers<'a>(
 /// bridge. `sandbox` gives such a document an opaque origin and no scripts, and
 /// `nosniff` stops a type being guessed from the bytes. They replace any the
 /// server sent.
+///
+/// A real PDF keeps only `nosniff`: a sandboxed document cannot load a plugin,
+/// so Chromium (WebView2) would refuse to show it in the preview. With
+/// `nosniff` and exactly `application/pdf` it can only ever render as a PDF;
+/// `text/html;pdf` is HTML, and is sandboxed.
 pub const PROXIED_RESPONSE_GUARDS: [(&str, &str); 2] = [
     ("x-content-type-options", "nosniff"),
     ("content-security-policy", "sandbox; default-src 'none'"),
 ];
+
+/// Is this content type exactly a PDF, parameters aside?
+fn is_pdf(headers: &HeaderList) -> bool {
+    headers.iter().any(|(name, value)| {
+        name == "content-type"
+            && value
+                .split(';')
+                .next()
+                .is_some_and(|essence| essence.trim().eq_ignore_ascii_case("application/pdf"))
+    })
+}
 
 fn guarded(mut headers: HeaderList) -> HeaderList {
     headers.retain(|(name, _)| {
@@ -160,7 +176,12 @@ fn guarded(mut headers: HeaderList) -> HeaderList {
             .iter()
             .all(|(guard, _)| guard != name)
     });
-    for (name, value) in PROXIED_RESPONSE_GUARDS {
+    let guards = if is_pdf(&headers) {
+        &PROXIED_RESPONSE_GUARDS[..1]
+    } else {
+        &PROXIED_RESPONSE_GUARDS[..]
+    };
+    for (name, value) in guards {
         headers.push((name.to_string(), value.to_string()));
     }
     headers
@@ -1295,6 +1316,38 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn leaves_a_real_pdf_unsandboxed_so_the_preview_can_show_it() {
+        for pdf in ["application/pdf", "Application/PDF; charset=binary"] {
+            let out = proxied_response_headers(pairs(&[
+                ("Content-Type", pdf),
+                ("content-security-policy", "default-src *"),
+            ]));
+            assert_eq!(
+                out,
+                [
+                    ("content-type".to_string(), pdf.to_string()),
+                    ("x-content-type-options".to_string(), "nosniff".to_string()),
+                ],
+                "{pdf}"
+            );
+        }
+        for not_pdf in ["text/html;pdf", "application/pdf+html", "application/x-pdf"] {
+            let out = proxied_response_headers(pairs(&[("content-type", not_pdf)]));
+            assert!(
+                out.iter()
+                    .any(|(name, value)| name == "content-security-policy"
+                        && value == "sandbox; default-src 'none'"),
+                "{not_pdf}"
+            );
+        }
+        let cached = attachment_hit_reply(b"%PDF".to_vec(), "application/pdf", "");
+        assert!(cached
+            .headers
+            .iter()
+            .all(|(name, _)| name != "content-security-policy"));
     }
 
     // buildCSP
